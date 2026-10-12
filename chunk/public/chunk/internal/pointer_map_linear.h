@@ -21,29 +21,18 @@
  * @brief The linear-scan core shared by the array→metadata registries.
  *
  * @details PointerMapChunk (proxy.h) and PointerMapChunk2 (pointer_map_chunk2.h)
- *          both map an array's address to that array's metadata, and both do it
- *          by walking a flat sequence of (key, payload) pairs. Their erase(),
- *          exists(), size(), for_each_key() and swap_entries() are the same
- *          code. Only the payload differs: a table number for the first, a
- *          (second_value, ind, num_tab) record for the second.
+ *          map an array's address to its metadata by walking flat (key, payload)
+ *          pairs; the plain scans live here once. Payload: a table number (v1),
+ *          a (second_value, ind, num_tab) record (v2).
  *
- *          Everything that is a plain scan lives here once. Each registry keeps
- *          what is specific to it: v1 its table-number accessors, v2 its whole
- *          second-value surface.
+ * @note The CONTAINER is a template parameter on purpose: PointerMapChunk2
+ *       needs a std::deque, since a std::vector reallocates as it grows and a
+ *       concurrent reader (get_info_second_value, from a deferred compression
+ *       body) would read freed memory. See PointerMapChunk2's storage note.
+ *       PointerMapChunk uses a std::vector.
  *
- * @note The CONTAINER is a template parameter, and that is deliberate — do not
- *       "simplify" it away. PointerMapChunk2 stores in a std::deque precisely
- *       because a std::vector reallocates as it grows, and a reader walking the
- *       registry concurrently (get_info_second_value, reached from a deferred
- *       compression body on another thread) would then read freed memory. That
- *       showed up as intermittent "Key not found" failures and vtable
- *       corruption on aarch64 in release builds. See the note on
- *       PointerMapChunk2's storage for the full account. PointerMapChunk uses
- *       a std::vector.
- *
- * @note NOT used by PointerMapChunk2A (proxy2A.h): it stores in a small vector
- *       that switches to a hash map past a threshold, so its lookups are not
- *       linear scans at all. Folding it in here would trade that away.
+ * @note NOT used by PointerMapChunk2A (proxy2A.h), whose small vector turns
+ *       into a hash map past a threshold.
  */
 
 #include <utility> // std::swap
@@ -65,12 +54,9 @@ class PointerMapLinear
     /**
      * @brief Remove the entry for @p key, if present.
      *
-     * @details Called from the array destructors. Without it a later array
-     *          reusing this address (rechunk_to's tmp lives on the stack, so the
-     *          reuse is systematic) is SHADOWED by the dead entry, because every
-     *          lookup returns the first match — the new array would read the
-     *          dead one's metadata. Idempotent, first match only, O(n),
-     *          teardown-only.
+     * @details Called from the array destructors: otherwise a later array at
+     *          this address (systematic with rechunk_to's stack tmp) is SHADOWED
+     *          by the dead entry (first-match lookups). Idempotent, O(n).
      *
      * @param key the array address to drop.
      */
@@ -89,11 +75,8 @@ class PointerMapLinear
     /**
      * @brief Exchange the payloads of two registered keys.
      *
-     * @details rechunk_to's identity swap: once *this and tmp have exchanged
-     *          storage, the registry exchanges which metadata each address maps
-     *          to, so get_num_tab(this) resolves tmp's fresh row (and
-     *          get_num_tab(&tmp) the old one, for tmp's coherent destruction).
-     *          Only rebinds payloads — no element is erased or moved, so no
+     * @details The identity swap of rechunk_to and swap(): each address then
+     *          resolves the other's metadata. Only payloads move, so no
      *          reference into the container is invalidated.
      *
      * @param key_a the first array address.
@@ -156,9 +139,7 @@ class PointerMapLinear
     /**
      * @brief Address of the payload registered for @p key, or nullptr.
      *
-     * @details FIRST match only, like every lookup here: a stale entry left by a
-     *          destroyed array would otherwise shadow a live one that reused its
-     *          address, which is exactly what erase() exists to prevent.
+     * @details FIRST match only, like every lookup here (see erase()).
      */
     [[nodiscard]] const Payload* find_payload(const void* key) const noexcept
     {

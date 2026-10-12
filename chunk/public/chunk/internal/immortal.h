@@ -24,9 +24,8 @@
 // Proxy2A<T>::..., ChunkBase<T, ...>::...) has UNORDERED dynamic
 // initialisation, and is destroyed at exit in the reverse order of the end of
 // its initialisation. A global array is built during static initialisation and
-// destroyed after main returns: measured under ASan, it could reach a member
-// not yet constructed (a std::map still zero, a SEGV in the constructor) and,
-// at exit, members already destroyed (heap-use-after-free in the destructor).
+// destroyed after main returns: with plain statics it can reach a member not yet
+// constructed (in its constructor) or already destroyed (in its destructor).
 //
 //   Immortal<T>      for a T whose default constructor is constexpr
 //                    (std::vector, std::array...): constant-initialised, so it

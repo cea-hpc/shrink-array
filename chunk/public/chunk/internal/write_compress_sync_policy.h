@@ -193,20 +193,17 @@ class WriteCompressSyncPolicy
   public:
     /// @brief One writer flag, padded to its own cache line: the chunk the
     ///        rank is writing, or nullptr.
-    /// @details Per-thread rather than a shared counter: an
-    ///          active_writer_count hammered on every write produced a
-    ///          cache-line storm ("very bad perf"), so the write side pays only
-    ///          for its own line. The scan cost is pushed to the rare reader,
+    /// @details Per-thread, not a shared counter: a counter written on every
+    ///          write is a cache-line storm. The write side pays only for its
+    ///          own line; the scan cost goes to the rare reader,
     ///          any_thread_writing().
     ///
-    ///          A pointer rather than a bool, same store, same line: it lets
-    ///          the compressor's writer window be "no writer on a chunk I
+    ///          A pointer rather than a bool (same store, same line): the
+    ///          compressor's writer window becomes "no writer on a chunk I
     ///          MARKED" (any_thread_writing_on_marked) instead of "no writer
-    ///          anywhere" -- the latter needs every writer steered away for the
-    ///          window to open at 64 threads (350 000 waits of ~40 yields per
-    ///          reference run). "Non-null" keeps the
-    ///          flag's other meaning, an enqueue in progress on this rank, for
-    ///          the flushers (is_thread_writing).
+    ///          anywhere", which at high thread counts makes the compressor wait
+    ///          very often. "Non-null" keeps the flag's other meaning, an enqueue
+    ///          in progress on this rank, for the flushers (is_thread_writing).
     struct alignas(128) WritingFlag
     {
         std::atomic<const void*> v{nullptr}; ///< The chunk being written, or nullptr.
@@ -269,11 +266,10 @@ class WriteCompressSyncPolicy
      *            - after both: L was already executed, so S was too (it precedes
      *              L in program order and the barrier drains the store buffer):
      *              the scan sees our flag -> it waits.
-     *          Exactly one side proceeds. The compiler barrier is what keeps
-     *          S before L in program order; without it the compiler could hoist
-     *          the load. This is the argument of membarrier(2) itself, and of
-     *          every asymmetric Dekker in production (HotSpot safepoints,
-     *          .NET FlushProcessWriteBuffers, Folly asymmetricHeavyBarrier).
+     *          Exactly one side proceeds. The compiler barrier keeps S before L
+     *          in program order; without it the compiler could hoist the load.
+     *          Same argument as membarrier(2) itself (and Folly's
+     *          asymmetricHeavyBarrier).
      *
      *          SYMMETRIC (non-Linux and TSan builds, and the run-time fallback
      *          when membarrier registration fails): seq_cst store + seq_cst fence, the
@@ -291,9 +287,8 @@ class WriteCompressSyncPolicy
      * @see announce_flush for the mirror image on the flush side, and
      *      CompressionManager::start() for the compressor's
      */
-    // always_inline: gcc -O3 left this out of line (a call on every element
-    // write, for a load, a compare and a store); the fallback branch is what
-    // tipped its heuristic.
+    // always_inline: otherwise gcc -O3 may outline it (the fallback branch
+    // tips its heuristic), a call on every element write.
     [[gnu::always_inline]] static void announce_write(int thr, const void* chunk) noexcept
     {
         if (dekker::asymmetric_active()) [[likely]]
@@ -475,15 +470,13 @@ class WriteCompressSyncPolicy
 
     /// @brief Number of threads currently inside a flush critical section
     ///        (begin_flush()/end_flush()).
-    /// @details A counter, not a per-thread flag array, because the only query
-    ///          is the aggregate "is ANY thread flushing?" -- never a per-rank
-    ///          one. The asymmetry with per_thread_writing is deliberate: this
-    ///          is written only on the RARE flush path, so making it shared
-    ///          costs nothing, while it turns the HOT reader
-    ///          any_thread_flushing() -- called on every deferred enqueue and in
-    ///          start() -- into a single O(1) load instead of an O(max_thr) scan
-    ///          of 128 flags. That scan was around 10% of the AArch64 profile in
-    ///          to_be_queued_for_deferred_processing() at 128 threads.
+    /// @details A counter, not a per-thread flag array: the only query is "is
+    ///          ANY thread flushing?". The asymmetry with per_thread_writing is
+    ///          deliberate: this is written only on the RARE flush path, and it
+    ///          makes the HOT reader any_thread_flushing() (every deferred
+    ///          enqueue, start()) one O(1) load instead of an O(max_thr) scan,
+    ///          which was a significant share of the enqueue cost at high
+    ///          thread counts.
     alignas(128) static inline std::atomic<int> num_thread_flushing{0};
 };
 

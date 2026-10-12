@@ -19,19 +19,15 @@
  * @brief Disjoint address-space arenas, so two slab pools can never collide.
  *
  * @par The hazard this makes impossible
- * The op pool and the value pool both taking their slabs from the general
- * allocator: when an op slab is freed -- thread-local allocator destruction
- * between parallel regions -- its address goes back to glibc, and the value
- * pool's next large allocation can reobtain THE SAME ADDRESS while a deferred
- * op still lives there. The value writes then overwrite the op's vtable
- * pointer (data bytes where a vtable should be, at op+0).
+ * Do not let the op pool and the value pool take their slabs from the general
+ * allocator: a freed op slab (thread-local allocator destroyed between parallel
+ * regions) goes back to glibc, the value pool can reobtain THE SAME ADDRESS while
+ * a deferred op still lives there, and value writes overwrite the op's vtable.
  *
  * @par The fix
  * Each pool gets its own arena: one large mmap reservation carved by a bump
- * pointer, never unmapped. An address handed out by one arena can never be
- * handed out by another, because it was never given back to anyone who could.
- * Freed slabs are still recycled, but only WITHIN their own arena, through a
- * free-list keyed by size.
+ * pointer, never unmapped, so an address of one arena is never handed out by
+ * another. Freed slabs are recycled only WITHIN their arena (free-list by size).
  *
  * @par What that costs
  * A slab returned with deallocate() stays resident: the arena keeps it, the OS
@@ -74,9 +70,8 @@
 namespace fast_alloc
 {
 
-// The reclaim counters and helper live HERE, in the lowest-level header, so the
-// call sites in tc_allocator.h and report_all_arenas() below all see one
-// definition -- no cross-header ordering or two-phase-lookup question.
+// The reclaim counters live in this lowest-level header so tc_allocator.h and
+// report_all_arenas() see one definition (no cross-header ordering issue).
 
 /// @brief How many slabs have been advised away (by an EmptySlabSweep, or
 ///        one by one by detail::advise_one_slab()). A count of SLABS, not of syscalls: see
@@ -92,11 +87,9 @@ inline std::atomic<std::size_t>& reclaim_bytes() noexcept
     static std::atomic<std::size_t> counter{0};
     return counter;
 }
-/// @brief How many madvise() system calls those slabs took. Equal to
-///        reclaim_calls() when every slab is advised on its own; an
-///        EmptySlabSweep that merges adjacent slabs makes it smaller. The
-///        ratio is what the coalescing buys: each syscall is one TLB shootdown
-///        to every CPU the process runs on.
+/// @brief How many madvise() system calls those slabs took; smaller than
+///        reclaim_calls() when an EmptySlabSweep merges adjacent slabs (each
+///        syscall is a TLB shootdown to every CPU of the process).
 inline std::atomic<std::size_t>& reclaim_syscalls() noexcept
 {
     static std::atomic<std::size_t> counter{0};
@@ -115,10 +108,8 @@ inline std::atomic<std::size_t>& reclaim_sweeps() noexcept
     return counter;
 }
 
-/// @brief Why a slab was NOT advised away, counted per reason. An emptied slab
-///        that madvise cannot take is the difference between "the drain works"
-///        and "the memory comes back"; without these the two look alike from
-///        the outside (madvise_calls stays 0 either way).
+/// @brief Why a slab was NOT advised away, per reason: tells "nothing was
+///        drained" from "drained but madvise could not take it".
 ///@{
 inline std::atomic<std::size_t>& reclaim_skip_live() noexcept
 {
@@ -143,24 +134,21 @@ inline std::atomic<std::size_t>& reclaim_entered() noexcept
 ///@}
 
 /// @brief A global counter alone on its cache lines.
-/// @details A bare `static std::atomic` is 8 bytes the linker packs next to
-///          whatever comes before and after it. Two of these landed on the
-///          line holding the head of Proxy2<double>::share_info_array, which
-///          every Chunk2 write reads: each fetch_add then invalidated that
-///          line on all the other cores (false sharing; 36% of a 64-thread
-///          run attributed to get_info_second_value, a read-only function).
-///          128 rather than 64: adjacent-line prefetch, and 128-byte lines.
+/// @details Do not use a bare `static std::atomic` for a hot counter: the linker
+///          packs it next to other globals (e.g. the head of
+///          Proxy2<double>::share_info_array, read by every Chunk2 write) and
+///          each fetch_add then invalidates that line on every core (false
+///          sharing, large at high thread counts). 128, not 64: adjacent-line
+///          prefetch, and 128-byte lines.
 struct alignas(128) IsolatedCounter
 {
     std::atomic<std::size_t> v{0};
 };
 static_assert(sizeof(IsolatedCounter) == 128, "IsolatedCounter must fill its alignment");
 
-/// @brief What the chunk layer did with a buffer it stopped using. A slab can
-///        only empty if blocks actually reach the allocator, so when
-///        "emptied-slab calls" is 0 these say whether any free ever happened:
-///        parked blocks are retained by design, freed ones are not. Bumped
-///        through CHUNK_FREEPATH_INC (chunk/internal/freepath_counters.h).
+/// @brief What the chunk layer did with a buffer it stopped using: says whether
+///        any block reached the allocator (parked blocks are retained by design).
+///        Bumped through CHUNK_FREEPATH_INC (chunk/internal/freepath_counters.h).
 ///@{
 inline std::atomic<std::size_t>& freepath_freed() noexcept
 {
@@ -184,10 +172,9 @@ inline std::atomic<std::size_t>& freepath_kept_nomigrate() noexcept
 }
 ///@}
 /// @brief Materialisations routed with NO affinity key (the rank's shared pool)
-///        and with one. A slab can only empty if it holds a single array's
-///        blocks, so a large keyless count while keys were granted means the
-///        key does not reach the allocation: several arrays then share slabs
-///        and none of them can ever empty, whatever the drain frees.
+///        and with one. A slab can only empty if it holds one array's blocks: a
+///        large keyless count while keys were granted means the key does not
+///        reach the allocation, and shared slabs never empty.
 ///@{
 inline std::atomic<std::size_t>& freepath_alloc_key0() noexcept
 {
@@ -255,8 +242,7 @@ inline std::size_t reclaim_page_size() noexcept
 
 /// @brief The checks before a slab is advised away, without the syscall: how
 ///        many bytes of @p slab may be advised away, or 0 if none. Bumps the
-///        reclaim_entered() / reclaim_skip_*() counters exactly as the
-///        single-slab path always did.
+///        reclaim_entered() / reclaim_skip_*() counters.
 template <typename Slab>
 std::size_t reclaimable_bytes(const Slab* slab) noexcept
 {
@@ -297,11 +283,9 @@ std::size_t reclaimable_bytes(const Slab* slab) noexcept
 /**
  * @brief Give ONE emptied slab's pages back, on its own: the fallback of
  *        EmptySlabSweep::add() when the batch cannot grow (bad_alloc).
- * @details The same work as a sweep, for one slab and one syscall: the checks
- *          of reclaimable_bytes(), backptr_dropped set before the madvise, the
- *          same counters. The rationale and the two preconditions are
- *          EmptySlabSweep's. No other caller is meant to exist -- a sweep
- *          merges adjacent slabs into one madvise, this cannot.
+ * @details A sweep of one slab: same checks, flag-before-madvise and counters;
+ *          rationale and preconditions are EmptySlabSweep's. No other caller is
+ *          meant to exist (it cannot merge adjacent slabs).
  * @return true if the pages were dropped and @p slab was flagged.
  */
 template <typename Slab>
@@ -340,12 +324,9 @@ bool advise_one_slab(Slab* slab) noexcept
  *          them through the freed elements and would be destroyed by this.
  *
  *          The last page holds the self back-pointer TCSlab::slab_from() reads
- *          on every free, and it is advised too. Kept resident, it is 6% of a
- *          1 MiB slab, and at scale the whole residue: 17 205 slabs emptied by
- *          the four re-chunks of one iteration (64 threads, 10^9 elements, v1)
- *          kept 1 075 MB that way -- all of what the re-chunk then failed to
- *          give back. Keeping it would also forbid advising single-page slabs
- *          at all (short / char / bool at 64 threads on 64 KiB pages).
+ *          on every free, and it is advised too: kept resident, it is the whole
+ *          residue a large re-chunk fails to give back (about a gigabyte at
+ *          scale), and single-page slabs could not be advised at all.
  *
  *          The back-pointer can go because nobody can read it: the slab holds
  *          no block (nn_ref == 0 is checked first), so no free can resolve
@@ -355,11 +336,10 @@ bool advise_one_slab(Slab* slab) noexcept
  *
  * @par Batching
  *          Each MADV_DONTNEED is a syscall plus a TLB shootdown to every CPU
- *          the process runs on; one per slab is ~82 700 calls for a re-chunk
- *          sweep on the 64-thread bench. Slabs of one size
- *          are carved back to back from the value arena and aligned on their
- *          size, so an abandoned (key, size) set is largely contiguous across
- *          ranks; merging adjacent ones turns thousands of calls into a few.
+ *          of the process; one per slab is tens of thousands of calls per
+ *          re-chunk sweep. Slabs of one size are carved back to back from the
+ *          value arena and aligned on their size, so an abandoned (key, size)
+ *          set is largely contiguous; merging turns thousands of calls into a few.
  *
  *          add() only records the slab. flush() drops duplicates (the same slab
  *          reached through two routes, e.g. an unregistered key falling back to
@@ -371,11 +351,9 @@ bool advise_one_slab(Slab* slab) noexcept
  *          the slab (not a page multiple) ends its run, so nothing outside a
  *          slab is ever advised.
  *
- *          The floor is the sweep's, not each instance's: a re-chunk gathers
- *          every rank into one sweep, and each rank holds only ~1/ranks of the
- *          abandoned set. A per-instance floor would drop whole ranks -- holes in
- *          the very runs the batching is there to merge -- while the set as a
- *          whole was far above the bar.
+ *          The floor is the sweep's, not each instance's: each rank holds only
+ *          ~1/ranks of the abandoned set, and a per-instance floor would drop
+ *          whole ranks -- holes in the runs the batching is there to merge.
  *
  * @warning Two preconditions, neither checkable here, held from the first
  *          add() until flush() returns. Every collected slab is empty as a
@@ -426,12 +404,10 @@ class EmptySlabSweep
     ///        none of them if the sweep holds fewer distinct slabs than
     ///        CHUNK_RECLAIM_MIN_SLABS.
     /// @details Serial part: sort, drop duplicates, floor, checks, runs
-    ///          (merging adjacent slabs), every
-    ///          backptr_dropped flag and the counters. Then the madvise calls,
-    ///          from CHUNK_RECLAIM_THREADS threads (serial by default). Every
-    ///          flag is set before the first madvise, which is what the
-    ///          flag-before-madvise rule asks; the syscalls touch disjoint
-    ///          ranges and are thread-safe. The whole call is timed
+    ///          (merging adjacent slabs), every backptr_dropped flag and the
+    ///          counters. Then the madvise calls, from CHUNK_RECLAIM_THREADS
+    ///          threads (serial by default): every flag is set before the first
+    ///          madvise, and the syscalls touch disjoint ranges. Timed
     ///          (reclaim_sweep_ns / reclaim_sweeps).
     /// @return Number of slabs advised.
     std::size_t flush() noexcept
@@ -573,17 +549,14 @@ class EmptySlabSweep
  * @brief A growable bump arena whose mmap reservations are never unmapped.
  *
  * @details Carves slabs out of large reservations with a bump pointer, and
- *          recycles freed ones through a per-size free list. Nothing ever goes
- *          back to the OS, which is the whole point: an address this arena
- *          handed out can never be handed out by another allocator.
+ *          recycles freed ones through a per-size free list. Nothing goes back
+ *          to the OS, on purpose: an address this arena handed out can never be
+ *          handed out by another allocator.
  *
- * @note One mutex guards everything. That is affordable because this is not a
- *       hot path -- one call per slab, amortised over every small allocation
- *       carved from it.
+ * @note One mutex guards everything: not a hot path (one call per slab).
  *
- * @warning Growing STRANDS whatever was left of the previous reservation: the
- *          bump cursor jumps to the new region and never returns. With a 256 MiB
- *          default that is a rare event, but a workload of many oversized
+ * @warning Growing STRANDS the rest of the previous reservation (the cursor
+ *          never returns): rare with 256 MiB regions, but many oversized
  *          requests would waste the tail of each region.
  */
 class SlabArena
@@ -611,11 +584,9 @@ class SlabArena
      * @details Prefers an exactly-@p size slab from the free list, falls back to
      *          bumping the cursor, and grows the reservation if that does not
      *          fit.
-     * @warning Aborts if the free list hands back a slab still marked live --
-     *          that would mean a slab was recycled with blocks still in it,
-     *          which is the corruption this whole file exists to prevent. The
-     *          check is unconditional and fatal on purpose: it is cheap here,
-     *          and silent recovery would hide exactly the bug worth finding.
+     * @warning Aborts if the free list hands back a slab still marked live (a
+     *          slab recycled with blocks in it). Unconditional and fatal on
+     *          purpose: cheap here, and silent recovery would hide the bug.
      */
     void* allocate(std::size_t size, std::size_t align, int rank = -1)
     {
@@ -646,9 +617,7 @@ class SlabArena
         {
             void* block = it->second.back();
             it->second.pop_back();
-            // Detect a slab handed out while still marked live (freed and
-            // reused with live blocks in it). Impossible by construction: a slab
-            // on the free-list must have been deallocate()'d (removed from live_).
+            // Impossible by construction (a free-list slab was removed from live_).
             if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
             {
                 std::fprintf(stderr,
@@ -687,8 +656,8 @@ class SlabArena
      *        keyed by it, and a wrong key makes the slab unreachable.
      * @note An unknown or already-freed slab warns and is dropped rather than
      *       aborting: at teardown a ~TCTypeCAllocator may free a slab whose
-     *       bookkeeping is already gone, which is harmless. The dangerous
-     *       direction -- a live slab handed out again -- is fatal in allocate().
+     *       bookkeeping is gone (harmless). A live slab handed out again is
+     *       fatal, in allocate().
      */
     void deallocate(void* block, std::size_t size) noexcept
     {
@@ -697,10 +666,7 @@ class SlabArena
             return;
         }
         const std::scoped_lock lk(mtx_);
-        // A slab freed while not live. Warn but do NOT abort — at
-        // program teardown a ~TCTypeCAllocator may deallocate() a slab whose
-        // bookkeeping is already gone, which is harmless. The DANGEROUS direction
-        // (a live slab handed out again) is caught fatally in allocate().
+        // Not live: warn, do NOT abort (see @note).
         if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
         {
             std::fprintf(stderr, "[ARENA %s] double-free/unknown slab %p (size=%zu) — ignored\n", name_, block, size);
@@ -723,12 +689,10 @@ class SlabArena
      * @param rank The rank that held them (-1 counts as 0): allocate(size, ..,
      *        rank) takes them back first, their pages having been first
      *        touched there.
-     * @details Unlike deallocate(), the slabs KEEP their pages. The re-chunk's
-     *          next slice allocates about as much as the last one released, at
-     *          another chunk size but the same slab size, and a recycled slab
-     *          is resident memory: no page fault, no kernel zeroing -- a
-     *          madvise'd slab costs both, plus the madvise. What the next slice
-     *          does not take is given back by advise_recycled().
+     * @details Unlike deallocate(), the slabs KEEP their pages: the re-chunk's
+     *          next slice allocates about as much at the same slab size, and a
+     *          resident slab costs no page fault nor kernel zeroing. What the next
+     *          slice does not take is given back by advise_recycled().
      * @note An unknown or already-freed slab warns and is dropped, as in
      *       deallocate().
      */
@@ -773,14 +737,12 @@ class SlabArena
      * @brief Give back the pages of every recycled slab nobody took and that
      *        was not advised yet: one madvise per run of adjacent slabs.
      * @return Number of slabs advised.
-     * @details The slabs stay on their rank's list, without pages: a later
-     *          allocate() still takes them first, and its first touch faults
-     *          zero pages back in, as for any madvise'd slab. Each slab is
-     *          advised once. Done under the lock, so that no allocate() can
-     *          take a slab while its pages are being dropped. Whole slabs,
-     *          last page included: nothing of a free slab is read before its
-     *          next owner rewrites it (TCSlab::alloc_block writes the
-     *          back-pointer).
+     * @details The slabs stay on their rank's list, without pages (a later
+     *          allocate() still takes them first). Each slab is advised once.
+     *          Under the lock, so no allocate() can take a slab while its pages
+     *          are dropped. Whole slabs, last page included: nothing of a free
+     *          slab is read before its next owner rewrites it
+     *          (TCSlab::alloc_block writes the back-pointer).
      * @pre Meant for a quiescent point (the re-chunk calls it between slices,
      *      for the previous boundary's surplus, and after the last one).
      */
@@ -936,8 +898,7 @@ class SlabArena
      * @brief Print one line of arena accounting on stderr.
      * @param when Free-text label for the moment of the call.
      *
-     * @details The four numbers answer different questions and are routinely
-     *          confused:
+     * @details The four numbers answer different questions:
      *          - `mapped`   virtual reservation, the sum of the mmap regions.
      *                       Never shrinks, and is NOT resident memory -- a 256
      *                       MiB reservation costs nothing until touched.
@@ -1096,15 +1057,12 @@ class SlabArena
 /**
  * @brief The arena backing the deferred-operation pool.
  *
- * @warning IMMORTAL, and the leak is the point. It is heap-allocated and never
- *          deleted so it outlives EVERY other static and thread_local --
- *          including the TCTypeCAllocator instances whose destructors call
- *          value_arena().deallocate() at exit. A function-local
- *          `static SlabArena a` would be destroyed at exit too, and a later
- *          destructor touching the dead arena's members would segfault during
- *          teardown (~unique_ptr<TCTypeCAllocator[]> from __libc_start_main).
- *          The memory has to live for the whole program anyway, so nothing is
- *          lost.
+ * @warning IMMORTAL on purpose: heap-allocated and never deleted, so it
+ *          outlives EVERY static and thread_local, including the
+ *          TCTypeCAllocator instances whose destructors call
+ *          value_arena().deallocate() at exit. Do not make it a function-local
+ *          `static SlabArena`: it would be destroyed at exit and a later
+ *          destructor would touch a dead arena.
  */
 inline SlabArena& op_arena()
 {
@@ -1131,10 +1089,8 @@ inline SlabArena& value_arena()
 /**
  * @brief Which arena an allocator draws its slabs from.
  *
- * @details The three must never share an address, and each pairing was found
- *          the hard way: op/value had double data overwriting an op's vtable,
- *          op/ctx had ctx layout doing the same. Hence three reservations, not
- *          one shared one.
+ * @details The three must never share an address: value data or a ctx layout
+ *          landing on a live op overwrites its vtable. Hence three reservations.
  *
  * @warning The default is Op. A pool that holds values or contexts has to say
  *          so before its first slab -- @see TCSlabPool::set_arena.
@@ -1177,10 +1133,9 @@ inline bool arena_report_enabled() noexcept
 /**
  * @brief Report all three arenas and the reclaim counters, if enabled.
  * @param when Free-text label for the moment of the call.
- * @details Called at each end-of-parallel-region drain point. What it is for:
- *          telling apart an RSS gap made of recycled-but-resident free-list
- *          bytes -- which an EmptySlabSweep can reclaim -- from one made of
- *          genuinely live bytes, which nothing can.
+ * @details Called at each end-of-parallel-region drain point: tells an RSS gap
+ *          of recycled-but-resident free-list bytes (EmptySlabSweep can reclaim
+ *          them) from one of genuinely live bytes.
  */
 inline void report_all_arenas(const char* when) noexcept
 {

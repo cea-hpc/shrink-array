@@ -49,20 +49,15 @@ class ManagerChunk;
 /**
  * @brief Chunked array whose chunks may each compress to their OWN second value.
  *
- * @details Same chunked layout as ArrayChunk2, but with a different compression
- *          contract: ArrayChunk2 shares a SINGLE second value across the whole
- *          array, whereas here every chunk registers its own (the find-or-set
- *          path), so a chunk compresses as soon as all its elements are equal to
- *          any one constant. That pays off on data with several distinct
- *          constant runs, and costs an extra per-chunk second-value table --
- *          held by ProxySpec2A and garbage-collected through GlobalVecHolder
- *          (see gc_collect_live()).
+ * @details Same layout as ArrayChunk2, but where ArrayChunk2 shares a SINGLE second value
+ *          across the array, here every chunk registers its own (find-or-set), so a chunk
+ *          compresses as soon as all its elements equal any one constant. Costs a per-chunk
+ *          second-value table (ProxySpec2A), garbage-collected through GlobalVecHolder.
  *
- *          Each array registers its address in Proxy2A::share_info_array to get
- *          a num_tab, the index into every per-tab metadata table. That
- *          registration is the array's identity: it is taken in
- *          pre_create_hook(), exchanged by rechunk_swap_identity(), and released
- *          in the destructor.
+ *          Each array registers its address in Proxy2A::share_info_array to get a num_tab,
+ *          the index into every per-tab metadata table. That registration is the array's
+ *          identity: taken in pre_create_hook(), exchanged by rechunk_swap_identity(),
+ *          released in the destructor.
  *
  * @tparam T        stored element type
  * @tparam ind_type index type used for sizes and element positions
@@ -82,10 +77,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     friend Base2;                                     ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; ///< For swap_identity().
 
-    // Re-declared here (not only inherited): the mixins above declare them too,
-    // so without a member of the same name in ArrayChunk2A an outside
-    // `Arr::chunk_type` would be ambiguous between base subobjects. Name lookup
-    // precedes access control, so hiding them in the mixins would not help.
+    // Re-declared (not only inherited): the mixins declare them too, so an outside
+    // `Arr::chunk_type` would be ambiguous between base subobjects (lookup precedes access).
     using Traits       = Base2::Traits;       ///< ArrayChunkTraits<ArrayChunk2A>.
     using chunk_type   = Base2::chunk_type;   ///< Chunk2A<T>, the chunk type held in chunk_list.
     using manager_type = Base2::manager_type; ///< ManagerChunk<Chunk2A, T>, the per-type manager.
@@ -101,12 +94,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using Base::num_tab;
     using Base::size_policy_;
 
-    // Mode-specific members, moved out of this class into the mixins above.
-    // The using-declarations are not decoration: ArrayChunkBase re-exports
-    // RechunkSupport's hook DEFAULTS under these very names, so without them a
-    // hook call through the CRTP self() would see two base subobjects and be
-    // ambiguous. Naming them here makes them members of ArrayChunk2A, which
-    // hides both bases' versions.
+    // Mode-specific members of the mixins. Required: ArrayChunkBase re-exports RechunkSupport's
+    // hook DEFAULTS under these names, so a hook call through self() would be ambiguous.
     using Hooks2A::rechunk_drain_reuse_list;
     using Hooks2A::rechunk_drop_candidates;
     using Hooks2A::rechunk_swap_identity;
@@ -130,11 +119,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     // ── The copy family: deep, element by element ────────────────────────────
     //
-    // A copy is a copy, never an alias of the source's buffers: built on
-    // ArrayChunkBase::copy_from (sized to the source, every element read
-    // through the source's gate and written through this array's proxy);
-    // the (first, last) and initializer-list constructors are the same loop
-    // over an iterator. All sequential, like resize().
+    // Never an alias of the source's buffers: ArrayChunkBase::copy_from reads every element
+    // through the source's gate and writes it through this array's proxy. All sequential.
     // chunk2a finds each chunk's second value by itself: nothing to carry over.
 
     /// @brief Deep copy: from.size() elements read from @p from. Sequential context.
@@ -148,16 +134,11 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @brief Move-construct: an empty array at the active geometry takes
      *        @p other's chunks, geometry and identity -- the exchange of
      *        swap() -- and @p other is left empty and valid.
-     * @details O(1) in the elements. With a copy constructor and a
-     *          move-assignment declared, none was generated: `ArrayChunk2A a(std::move(b))`
-     *          and every return that is not elided ran the copy constructor,
-     *          element by element. Sequential context, as the constructors.
-     * @note noexcept, so that std::vector moves arrays when it reallocates
-     *       instead of copying them element by element. What can fail here
-     *       -- the empty array's registration, the deferred-write drain --
-     *       only fails on memory exhaustion or a corrupt registry, which the
-     *       library already treats as fatal (alloc_chunk() is noexcept too):
-     *       std::terminate.
+     * @details O(1) in the elements. Must be user-declared: the copy constructor and
+     *          move-assignment suppress the implicit one. Sequential context.
+     * @note noexcept, so std::vector moves arrays on reallocation. What can fail (the
+     *       registration, the deferred-write drain) fails only on memory exhaustion or a
+     *       corrupt registry, already fatal: std::terminate.
      */
     ArrayChunk2A(ArrayChunk2A&& other) noexcept : ArrayChunk2A(0)
     {
@@ -179,11 +160,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     /**
      * @brief Release the storage, then the registry entry.
-     * @warning The erase() below is not optional. A later array reusing this
-     *          address -- very common for stack arrays, e.g. rechunk_to()'s
-     *          @c tmp -- would otherwise inherit the stale num_tab, because
-     *          get_num_tab() returns the FIRST matching entry; the new array
-     *          would then read another tab's metadata and corrupt it.
+     * @warning The erase() is required: a later array at this address (common for stack
+     *          arrays, e.g. rechunk_to()'s @c tmp) would inherit the stale num_tab
+     *          (get_num_tab() returns the FIRST match) and corrupt another tab's metadata.
      */
     ~ArrayChunk2A()
     {
@@ -195,10 +174,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @brief Move-assign: this array's own contents are released (clear()),
      *        then it takes @p other's -- chunks, geometry and identity, by the
      *        same exchange as swap(); @p other is left empty and valid.
-     * @details Not just a steal of @p other's chunk list: this array's old
-     *          chunks are released first (their candidates purged), the moved
-     *          chunks keep their metadata rows (num_tab) with them, and
-     *          @p other is left with nb_chunk 0. Sequential context, as clear().
+     * @details This array's old chunks are released first (candidates purged); the moved
+     *          chunks keep their metadata rows (num_tab). Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
     ArrayChunk2A& operator=(ArrayChunk2A&& other) noexcept
@@ -239,11 +216,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     void resize(ind_type newsz);
 
   private:
-    /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
-    ///        a shrinking resize() drops. Same release as clear_core(): freed
-    ///        in place serially; under OpenMP parked in this array's geometry's
-    ///        reuse list and the chunk neutralised to cst_val1. Sequential
-    ///        point; the candidate lists must hold none of them.
+    /// @brief Release the buffers of chunks [@p first, @p last) (a shrinking resize()). Same
+    ///        release as clear_core(): freed serially; under OpenMP parked in this geometry's
+    ///        reuse list, chunk set to cst_val1. Sequential point; no candidate list may hold them.
     void release_chunk_range(int first, int last);
 
   public:
@@ -252,10 +227,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @param count new element count
      * @param val   value every element takes
      *
-     * @note Fills [0, count), not only the new elements: Base2::resize(count,
-     *       val) has std::vector::resize semantics ([old_size, count) only),
-     *       so this goes through ArrayChunkBase::assign -- resize(count), then
-     *       fill everything -- as chunk and chunk2 do. Covered by --test_stl.
+     * @note Fills [0, count), not only the new elements: Base2::resize(count, val) has
+     *       std::vector::resize semantics, so this goes through ArrayChunkBase::assign.
      */
     void assign(ind_type count, T val) // T, not in_t<T>: see ArrayChunkBase::assign
     {
@@ -324,28 +297,20 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *        refers to any more, so that the registry reuses their
      *        identifiers instead of carving new ones.
      *
-     * @details The registry of a type (GlobalVecHolder) forgets nothing on
-     *          its own: a workload whose constants drift registers a new
-     *          value at every compression to one not seen before, until the
-     *          identifiers run out (CHUNK_CST_VAL2_MAX_IDS), which stops the
-     *          run. This marks what is still referenced, over every live
-     *          array of the type whatever its index type, and frees the rest:
-     *            - a chunk compressed to a second value: its values pointer
-     *              is the slot;
-     *            - a per-chunk second-value slot (Proxy2A's table) naming a
-     *              registered value: a materialised chunk keeps its second
-     *              value there, and init_values_cst_val() finds the slot from
-     *              it by value.
+     * @details The registry (GlobalVecHolder) forgets nothing on its own: drifting constants
+     *          register new values until the identifiers run out (CHUNK_CST_VAL2_MAX_IDS),
+     *          which stops the run. This marks what is referenced, over every live array of
+     *          the type whatever its index type, and frees the rest:
+     *            - a chunk compressed to a second value: its values pointer is the slot;
+     *            - a per-chunk second-value slot (Proxy2A's table) naming a registered value
+     *              (init_values_cst_val() finds the slot from it by value).
      *          O(chunks of every ArrayChunk2A<T>) + O(registered values).
      *
-     * @return How many identifiers were freed. 0 as well when the call is
-     *         refused: inside an active parallel region, during a re-chunk
-     *         rebuild, or with a degraded index (a registered value may
-     *         then be unfindable by value, and the mark could miss it).
+     * @return How many identifiers were freed; 0 when refused: inside a parallel region,
+     *         during a re-chunk rebuild, or with a degraded index (the mark could miss a
+     *         value unfindable by value).
      *
-     * @warning A sequential point, like everything that rebuilds storage:
-     *          no thread may be writing to or compressing an
-     *          ArrayChunk2A<T> meanwhile.
+     * @warning Sequential point: no thread may write to or compress an ArrayChunk2A<T>.
      */
     static std::size_t reclaim_second_values()
     {
@@ -389,8 +354,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                     }
                 });
 
-            // Every per-chunk second-value slot of every row: a released row
-            // is empty, and a stale entry only keeps a value one pass longer.
+            // Every slot of every row: a released row is empty, a stale entry only keeps a
+            // value one pass longer.
             using spec              = typename Proxy2A<T>::BaseSpec;
             const std::size_t nrows = spec::second_value_row_count();
             for (std::size_t r = 0; r < nrows; ++r)
@@ -432,9 +397,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     /**
      * @brief Claim this array's identity before its storage is built.
-     * @details Called by create() through ArrayChunkBase. Registers the array's
-     *          address in the shared registry and takes the next free num_tab,
-     *          which every per-tab metadata table is then indexed by.
+     * @details Called by create() through ArrayChunkBase: registers the address and takes
+     *          the next free num_tab.
      * @post num_tab is valid and the array is discoverable by address.
      */
     void pre_create_hook()
@@ -455,11 +419,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     /**
      * @brief (Re)allocate storage at the current active geometry.
      *
-     * @details Does the allocation work of create() WITHOUT its identity and
-     *          registration side effects. Used by create() right after
-     *          create_common(), and by rechunk_to() to rebuild an array that is
-     *          already registered and has just been torn down, at a new geometry
-     *          but under the same num_tab.
+     * @details create()'s allocation WITHOUT identity/registration. Used by create(), and
+     *          by rechunk_to() to rebuild a registered, torn-down array at a new geometry
+     *          under the same num_tab.
      *
      * @param sz element count to allocate for
      */
@@ -477,13 +439,10 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     /// @brief Storage teardown shared by clear() and rechunk_to().
     ///
-    /// Everything clear() does EXCEPT the end-of-life I/O (compression stats and
-    /// the size predictor): drain, terminal compression, per-chunk buffer
-    /// release, and metadata reset. Factored out so rechunk_to() can release
-    /// this array's storage through the SAME proven path (ledger-correct) rather
-    /// than reproducing it by hand. In non-OMP builds this does NOT tear down the
-    /// shared cst_val2 holder (that lives only on the OMP path), so it is safe to
-    /// call on one array without affecting others.
+    /// Everything clear() does EXCEPT the end-of-life I/O: drain, terminal compression,
+    /// buffer release, metadata reset. rechunk_to() must release storage through this same
+    /// (ledger-correct) path. In non-OMP builds it does NOT tear down the shared cst_val2
+    /// holder, so it does not affect other arrays.
     void clear_core();
 
     /**
@@ -495,13 +454,10 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     /**
      * @brief Take this array's reference on the cst2 registry, once, as soon
      *        as it has chunks.
-     * @details The registry is shared by every ArrayChunk2A<T> and counted:
-     *          create() registers a user, clear() drops one and frees
-     *          everything with the last. One reference per array, taken here
-     *          as soon as it has chunks and given back in clear_core() only if
-     *          taken: an array built empty and grown by resize() needs one too
-     *          (its first compression pass looks the registry up), and an empty
-     *          array's teardown must not drop one it never took.
+     * @details The registry is shared by every ArrayChunk2A<T> and reference-counted (the
+     *          last release frees everything). Given back in clear_core() only if taken: an
+     *          array built empty and grown by resize() needs one too, and an empty array's
+     *          teardown must not drop one it never took.
      */
     void acquire_cst2_registry()
     {
@@ -523,17 +479,14 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         Proxy2A<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
     }
 
-    // ── cst2 mark-sweep GC — STEP B: read-only mark + report ─────────────────
+    // ── cst2 mark-sweep GC: read-only mark + report ──────────────────────────
 
     /**
      * @brief Mark phase of the cst2 garbage collection: collect live buffers.
      *
-     * @details Scans every live ArrayChunk2A<T> through the shared registry and
-     *          inserts the cst2 buffer pointer of each chunk that is currently
-     *          compressed to its second value. Read-only: it touches no chunk
-     *          state, so it is safe at any quiescent point (the advisor tick,
-     *          for instance). num_tab and geometry are per-array, so walking
-     *          chunk_list without the global size is correct here.
+     * @details Scans every live ArrayChunk2A<T> through the shared registry and inserts the
+     *          cst2 buffer pointer of each chunk compressed to its second value. Read-only:
+     *          safe at any quiescent point.
      *
      * @param[out] live set the referenced cst2 buffer pointers are inserted into
      * @see gc_mark_report for the reporting counterpart
@@ -564,9 +517,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
 } // namespace shrink_array
 
-// Template method bodies. Included here (after the class definition) so that
-// every translation unit using ArrayChunk2A<T> sees the definitions and can
-// auto-instantiate the exact T it needs.
+// Template method bodies, after the class definition.
 
 #include "chunk/internal/array_chunk2A_inline.h" // the template bodies
 

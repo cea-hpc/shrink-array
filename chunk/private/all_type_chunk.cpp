@@ -35,10 +35,8 @@
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
 #include "chunk/param_chunk.h"               // ParamChunk::init_indexes (ensure_ready)
 
-// Stays a directive, and cannot be anything else: a std-alloc build does not put
-// fast_allocators/public on the include path at all, so the header is not merely
-// unused there -- it is unreachable. The two report_all_arenas() calls below are
-// guarded the same way for the same reason.
+// Must stay a directive: a std-alloc build does not put fast_allocators/public on the
+// include path, so the header is unreachable there. Same for the two report_all_arenas() calls.
 #if !CHUNK_OPT_STD_ALLOC
     #include "fast_allocators/slab_arena.h" // step-1 arena RSS instrumentation
 #endif
@@ -122,18 +120,11 @@ struct SerialFlushOwnership
 };
 } // namespace
 
-// Aggressive-compression scheduling is a constexpr build mode driven by the
-// CMake option HAVE_AGGRESSIVE_COMPRESSION (-> chunk_config::have_aggressive_compression).
-//
-//   have_aggressive_compression == false (default, "release"):
-//       the deferred sweep is triggered explicitly at end-of-parallel-phase
-//       boundaries via compress_chunk_to_compress_potentially(true) below.
-//   have_aggressive_compression == true ("aggressive"):
-//       the between-phase sweep is skipped; all compression falls on the
-//       opportunistic in-loop path (heavier MT stress, better bug detection).
-//
-// The two if constexpr guards below select the between-phase sweep only in the
-// release mode, i.e. when !have_aggressive_compression.
+// chunk_config::have_aggressive_compression (CMake HAVE_AGGRESSIVE_COMPRESSION):
+//   false (default): the deferred sweep runs at end-of-parallel-phase boundaries,
+//       via compress_chunk_to_compress_potentially(true) below;
+//   true: no between-phase sweep; all compression falls on the opportunistic
+//       in-loop path (heavier MT stress, better bug detection).
 
 void begin_parallel_phase()
 {
@@ -218,10 +209,7 @@ void finalize_parallel_phase()
         if constexpr (!chunk_config::have_aggressive_compression)
         {
             // Drain the deferred-compression backlog here, between parallel
-            // phases, where it runs parallel and with no concurrent writers
-            // (no start() barrier). Condition was inverted (compressed only
-            // when there was NOTHING to compress); compress when there IS
-            // something.
+            // phases: parallel, with no concurrent writers (no start() barrier).
             if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);
@@ -473,11 +461,8 @@ std::size_t AllTypeChunk::trim_reuse_pools(std::size_t keep_per_thread)
     }
 
 #if defined(__GLIBC__)
-    // Give the pages back to the KERNEL, not just to malloc.
-    //
-    // free() returns a block to its arena's free lists and the resident size
-    // does not move, so without this the trim only changes which of our two
-    // layers holds the memory -- invisible from outside the process.
+    // Give the pages back to the KERNEL, not just to malloc: free() alone leaves
+    // the resident size unchanged, the memory only moves from our pool to malloc's.
     if (freed != 0)
     {
         malloc_trim(0);

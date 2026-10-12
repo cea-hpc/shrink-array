@@ -40,8 +40,8 @@
  * @file chunk2A_std_inline.h
  * @brief Out-of-line definitions of Chunk2A: materialisation and compression.
  *
- * A Chunk2A block is in one of three states, and every function here either
- * moves it between them or decides that it should move:
+ * A Chunk2A block is in one of three states; every function here moves it between them
+ * or decides that it should move:
  *  - **cst_val1**: `values` points at the shared all-`first_value` block;
  *  - **cst_val2**: `values` points at the identifier slot of THIS chunk's own
  *    second value (tab_cst_val2_holder.h; Chunk2A's distinguishing feature —
@@ -49,10 +49,9 @@
  *  - **materialised**: `values` points at a private heap buffer.
  *
  * The two directions:
- *  - **materialise** (create_value(), create_value_bool()): allocate a
- *    buffer, pre-fill it, then CAS it into `values`. Publication is the CAS,
- *    which is what makes a concurrent reader
- *    see either the old constant or the finished buffer, never a half-built one;
+ *  - **materialise** (create_value(), create_value_bool()): allocate a buffer, pre-fill it,
+ *    then CAS it into `values`. The CAS is the publication: a concurrent reader sees either
+ *    the old constant or the finished buffer, never a half-built one;
  *  - **compress** (the clear / block_clear / clear_int_st family): release the
  *    buffer and point `values` back at a shared constant block.
  *
@@ -61,18 +60,13 @@
  * "all-first_value" or "all-one-other-value" list, and make_block_compression()
  * applies the clears and clears the flags.
  *
- * Two things to keep in mind when reading:
- *
- *  - **The materialise / clear functions exist twice**, on the two
- *    specialisations of Chunk2AOmpPolicy (build_config::use_openmp); the
- *    compression passes branch with `if constexpr` instead. The serial twin is
- *    not just the parallel one minus the locking: it often takes a different,
- *    shorter path (no CAS, no rank, no compression handshake).
- *  - **Geometry is pinned per chunk, never inherited.** The candidate list can
- *    hold chunks from several arrays at once, so a single pin at the top of a
- *    pass is wrong; each entry carries its owning array's ChunkElems and the
- *    ambient size is set from it right before the clear. Getting this wrong
- *    frees a buffer through the wrong size pool.
+ *  - **The materialise / clear functions exist twice**, on the two specialisations of
+ *    Chunk2AOmpPolicy (build_config::use_openmp); the passes branch with `if constexpr`.
+ *    The serial twin often takes a shorter path (no CAS, no rank, no handshake).
+ *  - **Geometry is pinned per chunk, never inherited.** A candidate list can hold chunks
+ *    of several arrays, so a single pin at the top of a pass is wrong: each entry carries
+ *    its array's ChunkElems, set as ambient size right before the clear. Otherwise a buffer
+ *    is freed through the wrong size pool.
  *
  * @see chunk2A_std.h for the declarations, chunk_base.h for the shared
  *      allocate/free machinery, proxy2A_inline.h for the write paths that feed
@@ -92,12 +86,9 @@ template <typename T, typename Derived, bool Enabled>
     return static_cast<void*>(v);
 }
 
-// Out of line on purpose, as operator new[] above. Inlined, either one hands
-// gcc's -Wmismatched-new-delete a ::operator new or ::operator delete paired
-// with the class's other operator -- a test calling the two directly
-// (chunk_array_new_validation) inlined new[] -- and it warns (a false
-// positive: operator new[] allocates with ::operator new). Kept calls, the
-// pair it sees is the class's own new[] / delete[].
+// Out of line on purpose, as operator new[] above: inlined, either one shows gcc's
+// -Wmismatched-new-delete a ::operator new/delete paired with the class's other operator
+// (a false positive). As calls, the pair it sees is the class's own new[] / delete[].
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void Chunk2AOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
@@ -132,15 +123,11 @@ void Chunk2A<T>::set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_c
 /**
  * @brief Scans this chunk and sorts it into one of the two compression lists.
  *
- * Reads the whole chunk once, tracking two hypotheses at the same time — "every
- * element is first_value" and "every element is this one other value" — and
- * stops as soon as both are disproved. A chunk that satisfies both (a constant
- * run of first_value) is filed as compact1 only.
+ * One read of the chunk tracks two hypotheses -- "all first_value" and "all one other
+ * value" -- and stops once both are disproved. A chunk satisfying both is filed compact1 only.
  *
- * Two cases, on whether the chunk is currently compressed to its second value:
- *  - **materialised**: the candidate second value is taken from element 0, and
- *    a compact2 hit is queued WITH that value, for the caller to register;
- *  - **already cst_val2**: the entry is queued with a `T{}` marker instead.
+ * The candidate second value is element 0; a compact2 hit is queued WITH that value, for
+ * the caller to register. A chunk already at cst_val2 is not scanned (see the body).
  *
  * @param ll_compt1  List of chunks compressible to first_value.
  * @param ll_compt2  List of chunks compressible to one other value.
@@ -151,10 +138,8 @@ void Chunk2A<T>::set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_c
  *                   check builds assert it.
  *
  * @note Chunks already compressed to first_value are skipped outright.
- * @note The `T{}` marker is only unambiguous because `first_value` is 0: a
- *       genuinely all-zero chunk is classified compact1, so it never reaches
- *       ll_compt2 with a zero value. Nothing in the library reassigns
- *       first_value today, but the coupling is worth knowing about.
+ * @note make_block_compression() treats a `T{}` second value as "skip": unambiguous only
+ *       because `first_value` is 0 (an all-zero chunk is classified compact1).
  */
 template <typename T>
 void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
@@ -166,18 +151,14 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
 {
     if (Base::is_not_cst_val1())
     {
-        // The chunk about to be scanned must be claimed:
-        // make_block_compression() marks every entry of vec_tuple_to_compress
-        // before start(), whose barrier publishes the marks to the writers.
-        // Asserted rather than assumed (TSan once reported scan_constants()
-        // reading a chunk another thread's store_value() was writing).
+        // The chunk scanned must be claimed: make_block_compression() marks every entry
+        // before start(), whose barrier publishes the marks to the writers. Asserted: an
+        // unclaimed scan races store_value().
         if constexpr (build_config::any_check && chunk_config::use_chunk_steal_mark)
         {
-            // Only where a claim was made. The resize entry point
-            // (ArrayChunk2A::make_block_compression -> Chunk2A::
-            // make_block_compression(thr, nullptr)) runs outside any parallel
-            // region and skips the claim loop by design: no writer can be in
-            // flight, so no mark is needed and its absence proves nothing.
+            // Only where a claim was made: the resize entry point
+            // (make_block_compression(thr, nullptr)) runs outside any parallel region and
+            // skips the claim loop by design.
             if (claimed && !Base::steal_marked()) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (num_chunk=%d num_tab=%d)",
@@ -185,23 +166,18 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
             }
         }
 
-        // CHUNK_STATS: one compression candidate scanned. compress/compress_attempt
-        // is the yield of the scan (how much of this work pays off).
+        // CHUNK_STATS: one candidate scanned (compress/compress_attempt = scan yield).
         increm_chunk_compress_attempt<Chunk2A<T>>();
 
-        // Already compressed to its second value: nothing to scan, and
-        // nothing that may be scanned. A candidate can be in that state when
-        // the single-chunk compress() ran over it while it was still queued.
-        // Never scan through `values` here: it is a second-value slot that was
-        // never written, every element reads 0 == first_value, the chunk goes
-        // on ll_compt1 and block_clear() frees the slot as a buffer.
+        // Already at its second value (compress() ran over it while queued): do not scan.
+        // `values` is a second-value slot that reads as all first_value; the chunk would go
+        // on ll_compt1 and block_clear() would free the slot as a buffer.
         if (this->is_cst_val2())
         {
             return;
         }
 
-        // No second value yet: whatever the first element holds is the
-        // candidate second constant.
+        // The first element is the candidate second constant.
         const in_t<T> second_v = Base::read_value_scan(0);
         const auto    scan     = Base::scan_constants(first_value, second_v, size.count());
 
@@ -219,38 +195,26 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
 /**
  * @brief Runs a full compression pass over one thread's candidate list.
  *
- * The compressor proper. Scans every queued candidate into the two lists
- * (fill_list_chunk_to_compress_in_par), applies the clears, then resets the
- * per-chunk "already queued" flags and empties the list.
+ * Scans every queued candidate into the two lists (fill_list_chunk_to_compress_in_par),
+ * applies the clears, resets the per-chunk "already queued" flags and empties the list.
  *
- * The second list needs one extra step: the chunk's new second value must be
- * REGISTERED (find_or_set_ind_cst_val2) before the clear, so that
- * clear_int_st() can commit the resulting pointer and a later read returns the
- * right constant. Entries carrying the `T{}` marker are skipped — those chunks
- * are already compressed to their second value.
+ * A second-list chunk's new second value must be REGISTERED (find_or_set_ind_cst_val2)
+ * before the clear, so clear_int_st() commits the right pointer. `T{}` entries are skipped.
  *
  * @param thr     Rank whose candidate list is processed.
- * @param proxy2A Proxy of the write that triggered the pass; may be null. Used
- *                ONLY for the compression handshake and for re-queueing that
- *                chunk afterwards — never for sizing, since the list can hold
- *                chunks from other arrays.
+ * @param proxy2A Proxy of the write that triggered the pass; may be null. Used ONLY for
+ *                the compression handshake and re-queueing its chunk, never for sizing.
  *
- * @note Under OpenMP the whole body is gated by
- *       `compression_mgr.start()`, which can decline: another thread is already
- *       compressing, and this pass returns having done nothing.
+ * @note Under OpenMP the body is gated by `compression_mgr.start()`, which can decline
+ *       (another thread is compressing): the pass then does nothing.
  */
 template <typename T>
 void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
 {
-    // Geometry is pinned PER CHUNK, never once here: vec_tuple_to_compress can
-    // hold candidates from MORE THAN ONE array (proxy2A is only "whichever
-    // write triggered this pass"). Each ll_compt1/ll_compt2 entry carries its
-    // OWN array's geometry (a ChunkElems captured by push_to_compress_list()),
-    // and each loop below pins it right before the clear_int_st() call that
-    // reaches ChunkBase::free_values(), which routes by the ambient
-    // thread_chunk_size(), not by the buffer being freed (see
-    // Proxy2::manage_full_first_value() in proxy2.h). proxy2A itself is only
-    // used for the compression_mgr start/finish handshake below.
+    // Geometry is pinned PER CHUNK, never once here (see the @file comment): each entry
+    // carries its array's ChunkElems (from push_to_compress_list()), pinned right before
+    // clear_int_st() reaches ChunkBase::free_values(), which routes by the ambient
+    // thread_chunk_size() (see Proxy2::manage_full_first_value() in proxy2.h).
     auto& vec_tuple_to_compress = manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
 
     const auto sz = static_cast<int>(vec_tuple_to_compress.size());
@@ -260,22 +224,18 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         return;
     }
 
-    // The compression body runs in BOTH modes. Only the inter-thread
-    // coordination (compression_mgr start/finish) is OpenMP-specific; the type-2
-    // detection/registration (fill_list -> find_or_set_ind_cst_val2 ->
-    // clear_int_st) is identical, just single-threaded when OpenMP is off.
+    // The body runs in both modes; only the compression_mgr start/finish coordination is
+    // OpenMP-specific.
     if constexpr (build_config::use_openmp)
     {
         if (proxy2A)
         {
-            // Per-chunk exclusion (ChunkBase::steal_mark_): claim every
-            // candidate BEFORE start(), whose heavy barrier publishes the
-            // marks to the writers (its window then waits only for the
-            // writers whose flag points to a marked chunk). Each chunk
-            // is released as the pass is done with it (scanned and left, or
-            // stolen), and all of them again at the end, whatever happened.
-            // A flush in progress makes start() decline: ask first, before
-            // marking -- see block_pass_precheck.h.
+            // Per-chunk exclusion (ChunkBase::steal_mark_): claim every candidate BEFORE
+            // start(), whose heavy barrier publishes the marks to the writers (its window then
+            // waits only for writers whose flag points to a marked chunk). Each chunk is
+            // released when the pass is done with it, and all again at the end.
+            // A flush in progress makes start() decline: ask first, before marking
+            // (block_pass_precheck.h).
             if (block_pass_yields_to_flush<Proxy2A<T>, Chunk2A<T>>(CHUNK_PMP_MAX_THREADS))
             {
                 return;
@@ -299,8 +259,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
                 }
                 return;
             }
-            // Check builds: the window is shut, commit the claims -- what the
-            // store_value() guard tests (ChunkBase::steal_commit).
+            // Check builds: window shut, commit the claims (tested by store_value()'s guard).
             if constexpr (build_config::any_check)
             {
                 for (int k = 0; k < sz; ++k)
@@ -314,15 +273,13 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         }
     }
 
-    // Now we're inside the compression phase.
     vec_tuple_chunkA2p_int2  ll_compt1;
     vec_tuple_chunkA2p_Tint2 ll_compt2;
 
     ll_compt1.reserve((sz / 50) + 1);
     ll_compt2.reserve((sz / 50) + 1);
 
-    // `claimed`: the claim loop above runs only with a proxy. Without one
-    // this is the resize path, outside any parallel region.
+    // `claimed`: the claim loop runs only with a proxy (without: the resize path).
     fill_list_chunk_to_compress_in_par(thr, ll_compt1, ll_compt2, proxy2A != nullptr);
 
     for (auto& tup : ll_compt1)
@@ -362,10 +319,8 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
             {
                 char* ptr_type_cst = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
 
-                // Type-2 registration, identical in both modes. find_or_set records
-                // the second value in the chunk's slot and returns the shared
-                // array; clear_int_st installs it as the chunk's values pointer
-                // (the CAS). thr is 0 with OpenMP off.
+                // find_or_set records the second value in the chunk's slot and returns the
+                // shared array; clear_int_st installs it as `values` (the CAS).
                 const SecondValueRef<T> ptr_second_value =
                     Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
 
@@ -395,8 +350,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     {
         const auto& tup       = vec_tuple_to_compress[k];
         const int   num_chunk = std::get<1>(tup);
-        // Nothing sets num_chunk to -1 (purged entries are erased from the
-        // lists), so a negative num_chunk is a corrupt entry -- reported in
+        // A negative num_chunk is a corrupt entry (purged entries are erased): reported in
         // check builds, skipped otherwise.
         if constexpr (build_config::any_check)
         {
@@ -405,14 +359,11 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
                 CHUNK_INVARIANT_FAILED("Chunk2A block pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
             }
         }
-        // Hand the candidate back: its mark FIRST, then the dedup flag. While
-        // the flag is up the chunk is in no other thread's list, so no other
-        // pass can have marked it and this unmark only drops our own claim
-        // (idempotent for the ones released above). The other way round,
-        // another thread could queue the chunk once the flag was down, start
-        // its pass and mark it -- and this unmark erased that claim: writers
-        // then wrote into a chunk that pass was scanning and stealing
-        // (read_reclaim_validation, mode `remark`).
+        // Hand the candidate back: its mark FIRST, then the dedup flag. While the flag is up
+        // the chunk is in no other thread's list, so this unmark only drops our own claim.
+        // The other order lets another thread queue the chunk, start its pass and mark it,
+        // and this unmark would erase that claim: writers would then write into a chunk
+        // that pass is scanning and stealing.
         if (auto* const chunk_t = std::get<0>(tup))
         {
             chunk_t->steal_unmark();
@@ -443,8 +394,8 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         if (proxy2A->is_not_cst_val())
         {
             proxy2A->set_info_on_chunk();
-            // We are in a critical section: this guarantees that only one thread executes this part of the code at
-            // a time, but another thread may be running add_to_compression_list at the same time
+            // Only one thread runs this section at a time, but another may be in
+            // add_to_compression_list concurrently.
             proxy2A->add_to_compression_list(vec_tuple_to_compress);
         }
 
@@ -458,18 +409,14 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
 /**
  * @brief Scans one chunk and compresses it in place if it is constant.
  *
- * The single-chunk counterpart of make_block_compression(): same two-hypothesis
- * scan, but the clear happens right here instead of being collected into a
- * list.
+ * Single-chunk counterpart of make_block_compression(): same scan, the clear done here.
  *
  * @param thr_rank       Calling thread's rank (OMPT path only).
  * @param num_chunk      Index of this chunk in its array.
  * @param num_tab        Table number of the owning array.
  * @param apply          true: scan, and compress the chunk if constant;
- *                       false: nothing at all in an OpenMP build without OMPT
- *                       (the candidate lists' purge walks call it so: the
- *                       scan with no clear to show for it measured ~40 % of an
- *                       aarch64 profile), the scan alone elsewhere.
+ *                       false: nothing at all in an OpenMP build without OMPT (see the
+ *                       body), the scan alone elsewhere.
  * @param size           Geometry of the owning array.
  *
  * @note In an OpenMP build without OMPT the between-region pass is
@@ -483,14 +430,9 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
                           [[maybe_unused]] bool apply,
                           ChunkElems            size)
 {
-    // In an OpenMP build without OMPT neither clear_int_st branch at the
-    // bottom is compiled in, so with apply = false the body would only SCAN
-    // every value and register a cst_val2 that make_block_compression redoes
-    // itself (find_or_set is idempotent) -- a scan with zero compression
-    // effect that measured ~40% of an aarch64 profile: the lists' purge walks
-    // (apply = false) skip it. With apply = true -- the rechunk fold, on a
-    // chunk no writer can reach -- the scan and the clear run here as in
-    // every other build.
+    // OpenMP without OMPT, apply = false (the lists' purge walks): the body would only scan
+    // and register a cst_val2 that make_block_compression redoes -- a large cost for no
+    // compression, so skip it. apply = true (rechunk fold, chunk no writer can reach) runs.
     if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
         if (!apply)
@@ -499,14 +441,12 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
         }
     }
 
-    // Only a MATERIALISED chunk can be compressed: a queued entry can outlive
-    // the chunk's materialisation (see Chunk2FastCompPolicy::compress). Testing
-    // cst_val1 alone let a chunk already at cst_val2 through, whose scan then
-    // read the shared second-value block and cleared it a second time.
+    // Only a MATERIALISED chunk can be compressed: a queued entry can outlive the chunk's
+    // materialisation. Do not test cst_val1 alone: a chunk at cst_val2 would be scanned and
+    // its shared second-value block cleared a second time.
     if (this->written())
     {
-        // CHUNK_STATS: one compression candidate scanned. compress/compress_attempt
-        // is the yield of the scan (how much of this work pays off).
+        // CHUNK_STATS: one candidate scanned (compress/compress_attempt = scan yield).
         increm_chunk_compress_attempt<Chunk2A>();
         bool compact1 = false;
         bool compact2 = false;
@@ -517,12 +457,8 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
 
         if constexpr (Base::is_not_bool)
         {
-            // Against values[0], as fill_list_to_compress does, whatever
-            // second value the chunk has registered: a chunk uniform at a
-            // value other than its current one is compressed to THAT value,
-            // which find_or_set registers and the clear commits. Scanning
-            // against the registered value alone would leave such a chunk
-            // materialised until it passed through first_value.
+            // Against values[0], as fill_list_to_compress does, not the registered second
+            // value: a chunk uniform at another value is compressed to THAT value.
             const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             const in_t<T>           second_v         = Base::read_value_scan(0);
             const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
@@ -544,11 +480,9 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
             }
         }
 
-        // Serial: clears here, outside any callback. OMPT: clears only from the
-        // callback. Both go through the long clear_int_st(): the type-2 clear
-        // MUST commit new_cst_val2_ptr first, or init_values_cst_val() points
-        // the chunk at a second-value slot that was never installed (nullptr),
-        // dereferenced at the first read after a rechunk_to().
+        // Both modes go through the long clear_int_st(): the type-2 clear MUST commit
+        // new_cst_val2_ptr first, or init_values_cst_val() points the chunk at a never
+        // installed second-value slot (nullptr).
         if (apply)
         {
             const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
@@ -568,12 +502,9 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
 /**
  * @brief Compresses every thread's candidate chunks, opening a parallel region if needed.
  *
- * Entry point used between parallel phases. Reuses the current team when
- * already inside a region, and opens its own otherwise. The OMPT callbacks are
- * disarmed for the duration, so the region this opens does not re-enter the
- * compression machinery through its own parallel-begin/end. Without OMPT the
- * per-chunk compress() is a no-op, and the pass is make_block_compression()
- * over every rank instead (see below).
+ * Used between parallel phases (by compress_chunk_to_compress(), which disarms the OMPT
+ * callbacks so its own region does not re-enter compression). Without OMPT the per-chunk
+ * compress() is a no-op and the pass is make_block_compression() over every rank.
  *
  * @param thr            Rank whose candidate chunks are compressed.
  * @param apply          Forwarded to compress().
@@ -583,15 +514,10 @@ void Chunk2A<T>::compress_sweep_rank(int thr, bool apply)
 {
     if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
-        // An OpenMP build without OMPT has no other between-region compressor
-        // for chunk2a: compress() returns at once there, so without this pass
-        // what the last phases of a run left constant would never be
-        // compressed. Between two regions no writer is live, so the writers'
-        // pass runs without its handshake (nullptr proxy), each rank on its own
-        // list -- the lists are per rank, the second-value registry takes its
-        // mutex, the in-loop passes already run concurrently -- and the ranks
-        // beyond the team's size serially (compress_sweep_mops_up), as Chunk2's
-        // pass does.
+        // The only between-region compressor for chunk2a in this mode. No writer is live
+        // between regions, so the pass runs without handshake (nullptr proxy), each rank on
+        // its own list (the second-value registry takes its mutex); ranks beyond the team
+        // are done serially (compress_sweep_mops_up), as Chunk2 does.
         if (apply)
         {
             make_block_compression(thr, nullptr);
@@ -608,10 +534,8 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
 
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        // Inside a region: this rank's own list, and nothing else. Opening
-        // the region below from inside one (as this did, with no `else`) ran
-        // a serialised copy of the pass on every thread of the team, and the
-        // mop-up swept every rank's list from every thread at once.
+        // Inside a region: this rank's own list only. Do not open the region below from
+        // inside one: every thread would run the pass and sweep every rank's list at once.
         compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
     }
     else
@@ -641,8 +565,7 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
 /**
  * @brief Is there any chunk waiting to be compressed?
  *
- * Cheap gate for the callers that would otherwise open a parallel region for
- * nothing.
+ * Cheap gate for callers that would otherwise open a parallel region for nothing.
  *
  * @param max_thr Number of per-thread lists to examine (OpenMP builds only).
  * @return True as soon as one list is non-empty.
@@ -688,12 +611,9 @@ bool Chunk2A<T>::have_chunk_to_compress([[maybe_unused]] int max_thr)
  * @param thr            Rank whose list is processed.
  * @param apply          Forwarded to compress().
  *
- * @warning The "already queued" flag reset and the list clear MUST stay gated on
- *          the same condition. Clearing the flag while leaving the entry in the
- *          list lets a later write queue the same chunk twice, and the second
- *          clear then hits an already-constant chunk. That is why the flag reset
- *          sits under the same `use_compression_with_ompt` condition as the
- *          clear at the end.
+ * @warning The "already queued" flag reset and the list clear MUST stay under the same
+ *          condition (`use_compression_with_ompt`): a flag cleared with the entry still listed
+ *          lets a later write queue the chunk twice, and the second clear hits a constant.
  */
 template <typename T>
 void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, bool apply)
@@ -702,14 +622,9 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
 
     if constexpr (build_config::use_openmp)
     {
-        // Geometry: the scan inside compress() reads csize explicitly, but the
-        // clear it triggers reaches free_block_to_pool(), which routes by the
-        // ambient thread_chunk_size() (reuse list AND allocator). This list
-        // mixes chunks of every array this rank wrote -- an array and the tmp
-        // rechunk_to() builds from it, at two sizes -- so pin each chunk to its
-        // own csize and restore afterwards, exactly as make_block_compression()
-        // does (same rule as Chunk2FastCompPolicy::
-        // compress_chunk_to_compress_in_par_impl).
+        // The clear reaches free_block_to_pool(), which routes by the ambient
+        // thread_chunk_size(); the list mixes arrays (e.g. an array and its rechunk tmp), so
+        // pin each chunk to its own csize and restore afterwards, as make_block_compression().
         [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
 
         for (const auto& tup : vec_tup)
@@ -727,12 +642,7 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
                 }
 
                 chunk_t->compress(thr, num_chunk, num_tab, apply, csize);
-                // Flag reset and list clear TOGETHER (see the @warning above):
-                // the flag gates add_to_compression_list's CAS, and resetting it
-                // while the entry stays in vec_tup lets a later write append the
-                // same chunk twice -- make_block_compression then double-clears
-                // it. So the flag reset is gated on the SAME condition as the
-                // list clear.
+                // Same condition as the list clear below: see the @warning above.
                 if constexpr (chunk_config::use_compression_with_ompt)
                 {
                     Proxy2A<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
@@ -752,9 +662,7 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
             const int num_chunk = std::get<1>(tup);
             const int num_tab   = std::get<2>(tup);
 
-            // Per-entry geometry, exactly like the OpenMP branch above -- a
-            // default chunk size would under-scan dynamic chunks (see
-            // chunk2A_std.h).
+            // Per-entry geometry, as above: a default size would under-scan dynamic chunks.
             std::get<0>(tup)->compress(0, num_chunk, num_tab, apply, std::get<3>(tup));
             Proxy2A<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
         }
@@ -762,8 +670,7 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
 
     if constexpr (chunk_config::use_compression_with_ompt)
     {
-        // clear() keeps the capacity: the list is already reserved for the
-        // next pass, at the size this one reached.
+        // clear() keeps the capacity for the next pass.
         vec_tup.clear();
     }
 }
@@ -799,15 +706,13 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
         {
             const int num_chunk = std::get<1>(tup);
             const int num_tab   = std::get<2>(tup);
-            // Per-entry geometry (see chunk2A_std.h): in dynamic builds each
-            // queued chunk carries the chunk size of its owning array.
+            // Per-entry geometry: the chunk size of its owning array.
             const ChunkElems csize = std::get<3>(tup);
 
             const auto n1 = ll_compt1.size();
             const auto n2 = ll_compt2.size();
             chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
-            // Not selected: nothing will be stolen, the writers may have it
-            // back now rather than at the end of the pass.
+            // Not selected: nothing will be stolen, release it to the writers now.
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
             {
                 chunk_t->steal_unmark();
@@ -822,22 +727,17 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
 /**
  * @brief Materialise-side exclusion against the compressor's steal.
  *
- * make_block_compression() CAS-steals a chunk's `values` and
- * free_block_to_pool()s it; allocating and filling a block for that chunk
- * while that is in flight races the free on the same recycled block.
+ * make_block_compression() CAS-steals a chunk's `values` and free_block_to_pool()s it;
+ * materialising that chunk meanwhile races the free on the same recycled block.
  *
- * With the per-chunk marks the compressor only ever steals a chunk it has
- * MARKED, and it holds the mark from before its start() to after the CAS: so
- * this chunk's own mark is the exact condition. (The global condition,
- * is_hard_compression_inflight(), made every materialisation that fell in a
- * pass spin for the whole scan.) A writer on the fast path never reaches here
- * with the chunk marked (the gate stopped it), a flush replay never overlaps
- * a stealer (flush_deferred waits stealing_inflight_ out and blocks start()
- * while it replays), so the wait is a no-op in practice and the load is on
- * the header line, not on the compressors' shared counter. Builds without the
- * marks keep the global condition -- never a broad "compression active",
- * which would also count flush-draining slow paths and deadlock from a
- * flusher's write body.
+ * The compressor only steals a chunk it has MARKED, holding the mark from before start()
+ * to after the CAS, so this chunk's own mark is the exact condition (cheaper than the global
+ * is_hard_compression_inflight(), which makes every materialisation spin for a whole pass).
+ * A fast-path writer never gets here with the chunk marked (the gate stopped it), and a
+ * flush replay never overlaps a stealer (flush_deferred waits stealing_inflight_ out and
+ * blocks start()), so the wait is a no-op in practice. Builds without marks use the global
+ * condition -- never a broad "compression active", which also counts flush-draining slow
+ * paths and deadlocks from a flusher's write body.
  *
  * @param chunk The chunk about to be materialised.
  */
@@ -863,10 +763,8 @@ void wait_before_materialise(const ChunkT& chunk) noexcept
 /**
  * @brief Materialises this chunk: allocate a buffer, fill it, publish it by CAS.
  *
- * The buffer is filled with either first_value or the chunk's second value
- * BEFORE it is published, and publication is a single CAS against the constant
- * pointer the chunk currently holds. A reader therefore sees the old constant
- * or the finished buffer, never a partially built one. Losing the CAS means
+ * The buffer is filled BEFORE publication, a single CAS against the constant pointer the
+ * chunk holds: a reader sees the old constant or the finished buffer. Losing the CAS means
  * another thread materialised first; apply_cas_or_recup() recycles our buffer.
  *
  * @warning Waits first until no compressor may steal THIS chunk
@@ -881,14 +779,9 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
 {
     if constexpr (is_not_bool)
     {
-        // Exclude create_value from a concurrent compression:
-        // make_block_compression() (another thread) CAS-steals this chunk's
-        // `values` and free_block_to_pool()s it; allocating + filling a block
-        // now would race that free on the same recycled block. See
-        // wait_before_materialise() for the condition.
+        // Exclude a concurrent steal of this chunk: see wait_before_materialise().
         wait_before_materialise<T>(derived());
 
-        // Lambda to select the right initialization function
         const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
         {
             if (!need_set_second_value)
@@ -897,19 +790,17 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
             }
             else
             {
-                // Object-level fill: safe for double, complex, float, etc.
-                // Compilers will optimize this into SIMD or optimized assembly.
+                // Object-level fill: safe for any T (complex...).
                 std::fill_n(ptr, shrink_array::alloc_chunk_count(), ptr_second_value.get());
             }
         };
 
         T* values_loc = Base::allocate_chunk_internal(thr_rank, init_func);
 
-        // Reuse the unified CAS/Recycle logic from Chunk2Base.
         Base::apply_cas_or_recup(values_loc, thr_rank,
                                  [this, need_set_second_value](T* cst_ptr)
                                  {
-                                     // Single CAS operation targeting the specific constant pointer.
+                                     // Single CAS against the specific constant pointer.
                                      return this->compare_and_swap(cst_ptr, need_set_second_value);
                                  });
     }
@@ -924,26 +815,23 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
 /**
  * @brief Materialises a `bool` chunk.
  *
- * Same allocate-fill-CAS shape as create_value(), simplified by bool having no
- * per-chunk second value: the flag doubles as the fill value.
+ * Same allocate-fill-CAS shape as create_value(); bool has no per-chunk second value, so
+ * the flag doubles as the fill value.
  *
- * @note No compression-inflight wait here, unlike create_value().
+ * @note Same wait_before_materialise() as create_value(): bool chunks are stolen alike.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value, int thr_rank)
 {
     if constexpr (is_bool)
     {
-        // Same exclusion as create_value(), which this twin was missing: make_block_compression() is a single function
-        // for every T, so a bool chunk's `values` is CAS-stolen and free_block_to_pool()d exactly like any other.
-        // Allocating and filling a block here while that is in flight races the free on the same recycled block -- see
-        // wait_before_materialise() for the condition.
+        // Same exclusion as create_value(): a bool chunk is CAS-stolen like any other (see
+        // wait_before_materialise()).
         wait_before_materialise<T>(derived());
 
         const auto init_func = [need_set_second_value](bool* ptr)
         {
-            // need_set_second_value is false (0) or true (1),
-            // matching exactly the required initialization state.
+            // The flag is the fill value.
             std::fill_n(ptr, shrink_array::alloc_chunk_count(), need_set_second_value);
         };
 
@@ -952,7 +840,6 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
         Base::apply_cas_or_recup(values_loc, thr_rank,
                                  [this, need_set_second_value](bool* cst_ptr)
                                  {
-                                     // Single CAS operation targeting the specific constant pointer.
                                      return this->compare_and_swap(cst_ptr, need_set_second_value);
                                  });
     }
@@ -990,7 +877,6 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
 template <typename T, typename Derived>
 void Chunk2AOmpPolicy<T, Derived, false>::create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value)
 {
-    // Lambda to select the right initialization function
     const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
     {
         if (!need_set_second_value)
@@ -1016,10 +902,8 @@ void Chunk2AOmpPolicy<T, Derived, false>::create_value(bool need_set_second_valu
 template <typename T, typename Derived>
 void Chunk2AOmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second_value)
 {
-    // bool's second value is always `true`, so this IS create_value() at that
-    // value: Base::init_block() is the `false` fill (a memset for any
-    // arithmetic T, bool included), and the second-value fill with
-    // ptr_second_value.get() == true is the `true` one.
+    // bool's second value is always `true`: this IS create_value() at that value
+    // (Base::init_block() is the `false` fill).
     static T k_second_value = static_cast<T>(true); // a slot the handle can point at; never written
     create_value(need_set_second_value, SecondValueRef<T>{&k_second_value});
 }
@@ -1071,10 +955,8 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear(char* ptr_type_cst, SecondValueR
 template <typename T, typename Derived>
 void Chunk2AOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
 {
-    // Check condition only if debug mode is active at compile-time
     Base::debug_check_written();
 
-    // Core logic: executed always in Release, and only if written() is true in Debug
     Base::free_values(values);
 
     ptr_second_value.reset();
@@ -1085,9 +967,8 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondVal
 /**
  * @brief Releases this chunk's buffer and points it back at a constant.
  *
- * The single point every compression path funnels through, in both modes and
- * every chunk variant — which is why the "block compressed" statistic is
- * counted here and nowhere else.
+ * The single point every compression path funnels through (both modes, every variant):
+ * the "block compressed" statistic is counted here and nowhere else.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
@@ -1096,13 +977,9 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num
                                                         [[maybe_unused]] int thr_rank,
                                                         T*                   cst2_ptr)
 {
-    // CHUNK_STATS: one materialised block released by a successful compression.
-    // Counted here because block_clear is the single point every variant and
-    // both OMP/non-OMP modes funnel through (the old counter only fired on the
-    // plain-chunk sweep, so chunk2/chunk2a always reported 0).
+    // CHUNK_STATS: one block released (see the function comment).
     increm_chunk_compress<Derived>();
-    // Bytes released, as Chunk2 counts them: with bytes_alloc and bytes_reused
-    // this gives the buffers still materialised at any point of a run.
+    // Bytes released, as Chunk2 counts them (with bytes_alloc/bytes_reused: live buffers).
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
     Base::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_cst, ptr_second_value, cst2_ptr);
 }
@@ -1110,9 +987,8 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num
 /**
  * @brief Compresses this chunk, committing its second-value pointer first.
  *
- * The full compression step. When compressing to the second constant it
- * publishes the registered pointer BEFORE releasing the buffer: block_clear()
- * reads that pointer while doing so, and would otherwise pick up a stale one.
+ * When compressing to the second constant, the registered pointer is resolved BEFORE
+ * block_clear(), which installs it; otherwise it would pick up a stale one.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_compress_value,
@@ -1123,9 +999,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_c
 {
     Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
 
-    // The array to install for a type-2 compression: the caller's, or the one
-    // registered for the chunk's second value (the bool path, which passes
-    // none; there it is the single shared array).
+    // Type-2 array: the caller's, or the one registered for the second value (bool path).
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
     {
         new_cst_val2_ptr = Derived::tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
@@ -1148,10 +1022,8 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_comp
                                                       int,
                                                       T* cst2_ptr)
 {
-    // Same refusal as try_mark_cst_and_get_old() on the OpenMP side: a chunk
-    // whose values already point at a constant has no buffer to release, and
-    // handing that pointer to the allocator corrupts it (or faults: a
-    // second-value identifier is not backed by a page). The type table is left as it is -- it
+    // As try_mark_cst_and_get_old() on the OpenMP side: a chunk already at a constant has no
+    // buffer; freeing that pointer corrupts the allocator (or faults). The type table already
     // describes the constant in place.
     if (values == Base::get_cst_val1() || Derived::tab_cst_val2_holder::is_cst_val2_ptr(values)) [[unlikely]]
     {
@@ -1162,8 +1034,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_comp
     Base::free_values(values);
     Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
 
-    // Serial: no CAS, the values pointer is set outright to the constant --
-    // the caller's array for a type 2, from the tables otherwise.
+    // Serial: no CAS; the caller's array for a type 2, from the tables otherwise.
     if (num_compress_value == 1 && cst2_ptr != nullptr)
     {
         values = cst2_ptr;
@@ -1175,9 +1046,8 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_comp
 }
 
 /**
- * @brief Serial twin of the five-argument clear_int_st(): same commit-then-
- *        block_clear order, so the sequential compression can register a
- *        cst_val2 exactly like the OpenMP path. thr_rank is 0 here.
+ * @brief Serial twin of the five-argument clear_int_st(): same commit-then-block_clear
+ *        order. thr_rank is 0 here.
  * @copydetails Chunk2AOmpPolicy::clear_int_st
  */
 template <typename T, typename Derived>
@@ -1195,8 +1065,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_int_st(int               num_com
     block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
 }
 
-// clear_st(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value) --
-// the entry point that supplies the calling thread's rank -- is defined
-// in-class on the OpenMP Chunk2AOmpPolicy specialisation.
+// clear_st(num_compress_value, ptr_type_cst, ptr_second_value), which supplies the calling
+// rank, is defined in-class on the OpenMP Chunk2AOmpPolicy specialisation.
 
 } // namespace shrink_array

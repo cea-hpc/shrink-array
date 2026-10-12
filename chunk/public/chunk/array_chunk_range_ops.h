@@ -24,32 +24,24 @@
  *
  *          Every write through `arr[i] = v` builds a Proxy, arms ptr_on_array /
  *          num_chunk, runs the compression-candidacy bookkeeping and only then
- *          stores. That is the right price for an isolated write. For a bulk
- *          fill it is paid chunk_size times over for a decision that is the
- *          same across the whole chunk -- and it shows: a bulk copy through
- *          these functions is ~13x faster than through the proxy (the re-chunk
- *          refill goes through them).
+ *          stores. For a bulk fill that is paid chunk_size times for a decision
+ *          that is the same across the chunk: a bulk copy through these
+ *          functions is about an order of magnitude faster than through the
+ *          proxy (the re-chunk refill uses them).
  *
- *          The idea: arm the chunk once with real proxy writes, write straight
- *          into its buffer, then restore the invariants the bulk write
- *          bypassed.
+ *          Arm the chunk once with real proxy writes, write straight into its
+ *          buffer, then restore the invariants the bulk write bypassed.
  *
- *          NOT MEMBER FUNCTIONS, on purpose. ArrayChunk deliberately does not
- *          promise std::vector's interface (no data(), no stable element
- *          address -- a constant chunk has no storage at all), but the CALLERS
- *          of a bulk fill should not have to care which container they hold.
- *          Free functions with a generic fallback let the same call site take a
- *          std::vector or an ArrayChunk: the vector goes to std::fill, the
- *          ArrayChunk takes the fast path. Same shape the standard library uses
- *          to turn std::fill on char* into memset.
+ *          NOT MEMBER FUNCTIONS, on purpose: ArrayChunk does not promise
+ *          std::vector's interface (no data(), no stable element address), but
+ *          a caller should not care which container it holds. Free functions
+ *          with a generic fallback send a std::vector to std::fill and an
+ *          ArrayChunk to the fast path.
  *
- *          THE COMPRESSION WIN. Filling a range with the compressible constant
- *          (first_value, normally 0) through operator[] materialises every
- *          chunk it touches and waits for a later compression pass to reclaim
+ *          Filling a range with the compressible constant (first_value) through
+ *          operator[] materialises every chunk and waits for a pass to reclaim
  *          them. Here a fully covered chunk is set constant directly: no
- *          allocation, and a materialised chunk hands its buffer back on the
- *          spot. On a zero-fill of a whole array that is the difference between
- *          allocating the entire array and allocating nothing.
+ *          allocation, and a materialised chunk releases its buffer at once.
  *
  * @warning Serial contract. These are bulk operations over an array the caller
  *          owns; they do not synchronise with concurrent writers or with a
@@ -96,16 +88,15 @@ namespace internal
  *
  * @details bool only: its chunks are bit-packed. Chunk2 takes the raw paths
  *          under three conditions:
- *           - the materialised test asks written(ind2), with the array's
- *             second-value index: the index-less written() is bool-only and
- *             false for every other T (materialised(a, ch, ind2));
+ *           - the materialised test asks written(ind2): the index-less
+ *             written() is bool-only, false for every other T;
  *           - queue_for_compression() loads the second value before queueing
  *             (set_info_on_chunk): Chunk2's candidate lists are keyed by it,
- *             and an entry queued in the list of T{} is drained by no pass and
- *             crashes the teardown of a rechunk's temporary array;
- *           - in counter mode (the serial builds) a raw store recounts Chunk2's
- *             two per-chunk counters (resync_counters), as it does v1's zero
- *             count -- otherwise runs of the second value are lost to chunks
+ *             and an entry in the list of T{} is drained by no pass (the
+ *             teardown of a rechunk's temporary array then fails);
+ *           - in counter mode (serial builds) a raw store recounts Chunk2's
+ *             two per-chunk counters (resync_counters), as v1's zero count --
+ *             otherwise runs of the second value are lost to chunks
  *             compressed to the first one.
  */
 template <typename T>
@@ -116,12 +107,9 @@ inline constexpr bool raw_fillable_v = !is_bool_like_v<T>;
  *
  * @details Dispatch on the TYPE, never on chunk_config::use_chunk /
  *          use_chunk2 / use_chunk2a: those say which variants the BUILD
- *          contains, and a build may contain several (chunk_v1v2:
- *          CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1). Testing the flags there sent an ArrayChunk2 down
- *          v1's paths (a fill_range_mt of its second value never queued) and
- *          an ArrayChunk down Chunk2's (get_ind_second_value(), written(ind2):
- *          no compile). In a single-variant build both forms fold to the same
- *          constants.
+ *          contains, and a build may contain several (CHUNK_VARIANT_V1=1 with
+ *          CHUNK_VARIANT_V2=1): testing the flags sends an ArrayChunk2 down
+ *          v1's paths and an ArrayChunk down Chunk2's.
  */
 template <typename Arr>
 inline constexpr bool is_v1_v = std::is_same_v<typename Arr::chunk_type, Chunk<typename Arr::value_type>>;
@@ -155,15 +143,12 @@ inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_
  *          block compression -- the serial builds) the compression of a chunk
  *          is decided by counters the proxy maintains INCREMENTALLY: v1's
  *          nb_val_eq_zero, Chunk2's nb_val_eq_first_value and
- *          nb_val_eq_second_value. A raw store moves none of them, so they
- *          describe a state that no longer exists and nothing detects the
- *          drift: later writes only nudge them by one, and the full tests
- *          compare to chunk_size() exactly, so the chunk compresses the moment
- *          a count happens to land there -- a chunk that is NOT all constant,
- *          after which every read returns the constant. Recount, don't adjust
- *          (rechunk_refill documents the same trap). Chunk2 included: the
- *          second-value count is taken against the array's second value,
- *          exactly as Proxy2 counts it.
+ *          nb_val_eq_second_value. A raw store moves none of them, and nothing
+ *          detects the drift: the full tests compare to chunk_size() exactly,
+ *          so a chunk that is NOT all constant compresses when a count lands
+ *          there, and every read then returns the constant. Recount, don't
+ *          adjust (as rechunk_refill). Chunk2's second-value count is taken
+ *          against the array's second value, as Proxy2 counts it.
  */
 template <typename Arr, typename Chunk, typename T>
 void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, unsigned int S)
@@ -314,13 +299,11 @@ template <typename Arr, typename Chunk>
  *
  * @details The raw stores of the bulk paths below go straight into a
  *          materialised chunk's buffer, past the write path and its marking:
- *          a chunk they leave constant (a fill of the constant over the whole
- *          chunk, a copy of a mostly-constant source) was never queued and
- *          would stay materialised for the run. This does what
- *          the last write of the span would have done: the flag's CAS and, on
- *          the first time, one entry in the caller's candidate list; the pass
- *          scans the chunk once and drops it if it is not constant. Fast-block
- *          builds only (the serial counters are resynced by the caller).
+ *          a chunk they leave constant would otherwise stay materialised. This
+ *          does what the span's last write would have done: the flag's CAS
+ *          and, the first time, one entry in the caller's candidate list; the
+ *          pass drops the chunk if it is not constant. Fast-block builds only
+ *          (the serial counters are resynced by the caller).
  */
 template <typename Arr>
 void queue_for_compression(Arr& arr, std::size_t i)
@@ -340,10 +323,10 @@ void queue_for_compression(Arr& arr, std::size_t i)
         }
         auto proxy = arr.element_proxy(static_cast<decltype(arr.size())>(i));
         // Chunk2 FIRST: Proxy2 also has set_num_tab_ptr_is_inside_chunk() (from
-        // the shared base), but that one does not load the second value -- the
-        // key of Chunk2's candidate list -- so the chunk landed in the list of
-        // T{} (first_value), which no pass ever drains. set_info_on_chunk()
-        // loads (second_value, ind, num_tab) and the flag pointer.
+        // the shared base), but it does not load the second value -- the key of
+        // Chunk2's candidate list -- and the chunk would land in the list of
+        // T{}, which no pass drains. set_info_on_chunk() loads (second_value,
+        // ind, num_tab) and the flag pointer.
         if constexpr (std::is_same_v<typename Arr::proxy_type, Proxy2<typename Arr::value_type>>)
         {
             proxy.set_info_on_chunk(); // Proxy2
@@ -467,9 +450,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
 
     // Drain this array's pending deferred writes FIRST: the bulk stores below
     // bypass the deferred machinery, and an op still queued on one of these
-    // chunks would be replayed AFTER them and silently restore the old value.
-    // Forced: the pending-ops counter has been seen to read 0 while ops were
-    // still queued, so the usual gate cannot be trusted here.
+    // chunks would replay AFTER them and restore the old value. Forced: the
+    // pending-ops counter can read 0 while ops are still queued, so do not
+    // rely on the usual gate here.
     if (drain)
     {
         arr.flush_pending_deferred_ops(/*force=*/true);
@@ -504,19 +487,12 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
 
         // ── Whole chunk set to the compressible constant: no storage needed ──
         //
-        // Only where releasing the buffer is a two-argument clear_st(thr,
-        // n_elems), i.e. v1. Chunk2A's clear_st also takes the compression state
-        // (num_compress_value, ptr_type_cst, ptr_second_value), which this loop
-        // has no business synthesising -- rechunk_refill draws the same line for
-        // the same reason. Those variants fall through to the paths below, which
-        // are correct, just without the free-the-buffer shortcut.
-        // BOTH spellings, not either: the two-argument probe alone does NOT
-        // discriminate. Chunk2 has clear_st(int num_compress_value, int ind),
-        // which accepts (thr, n) by conversion while meaning something else
-        // entirely -- the OpenMP branch below would then pass a THREAD RANK as
-        // the constant to compress to, silently, and the serial branch would
-        // fail to compile on the zero-argument call that Chunk2 lacks. Only v1
-        // offers both, so requiring both is what actually names v1 here.
+        // v1 only. Chunk2A's clear_st also takes the compression state, which
+        // this loop must not synthesise (as rechunk_refill); the other variants
+        // take the paths below, without the free-the-buffer shortcut.
+        // Require BOTH spellings: Chunk2's clear_st(int num_compress_value, int
+        // ind) accepts (thr, n) by conversion and would take a THREAD RANK as
+        // the constant to compress to. Only v1 offers both.
         constexpr bool can_release = requires(chunk_type& chunk, int thr, unsigned int count) {
             chunk.clear_st(thr, count);
         } && requires(chunk_type& chunk) { chunk.clear_st(); };
@@ -571,13 +547,11 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
         else
         {
             // ── Arm, then bulk-store ────────────────────────────────────────
-            // Real proxy writes until the chunk materialises: that is what
-            // allocates the buffer and registers the compression bookkeeping.
-            // Writing a chunk's constant into it changes nothing, so this loop
-            // can walk the whole range without materialising -- in which case
-            // the chunk is genuinely constant and there is nothing left to do.
-            // "Materialises" is written(), not !is_cst_val1(): see
-            // internal::materialised for the Chunk2A second-constant trap.
+            // Real proxy writes until the chunk materialises: that allocates the
+            // buffer and registers the compression bookkeeping. If the loop
+            // walks the whole range without materialising, the chunk is
+            // constant and nothing is left to do. "Materialises" is written(),
+            // not !is_cst_val1(): see internal::materialised.
             std::size_t i = lo;
             while (i < hi && !internal::materialised(arr, ch, ind2))
             {
@@ -641,11 +615,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
     }
     last = std::min(last, size);
 
-    // Drain this array's pending deferred writes FIRST: the bulk stores below
-    // bypass the deferred machinery, and an op still queued on one of these
-    // chunks would be replayed AFTER them and silently restore the old value.
-    // Forced: the pending-ops counter has been seen to read 0 while ops were
-    // still queued, so the usual gate cannot be trusted here.
+    // Drain first, forced: see fill_range.
     if (drain)
     {
         arr.flush_pending_deferred_ops(/*force=*/true);
@@ -861,10 +831,9 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
         }
         const int thr = get_thr_rank_fast();
 
-        // One buffer per thread and element type, reused across calls: the
-        // callers cut a range into small spans (a block per call), and an
-        // allocation per call cost more than the copy (malloc contention,
-        // plus the zeroing of a whole chunk's worth per span).
+        // One buffer per thread and element type, reused across calls: callers
+        // cut a range into small spans, and an allocation per call (malloc
+        // contention, zeroing a chunk's worth) costs more than the copy.
         buf_value_t* buf = nullptr;
         if constexpr (!Constant)
         {
@@ -981,15 +950,13 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         {
                             dst[k - c_begin] = at(k - c_begin);
                         }
-                        // No read of elements this span does not own: other
-                        // writers of the chunk store them PLAIN here (only
-                        // Chunk2A's are relaxed atomics), and reading them was a
-                        // data race (TSan, bench_phase_range_mt). Queue on the
-                        // span's values instead, as the element paths mark: v1
-                        // compresses only to first_value, Chunk2 only to
-                        // first_value or the array's second value. Chunk2A
-                        // aggregates (no lock-free atomic_ref): only a span
-                        // covering the whole chunk, uniform.
+                        // Do not read elements this span does not own: other
+                        // writers store them PLAIN here (only Chunk2A's are
+                        // relaxed atomics), so a read is a data race. Queue on
+                        // the span's values, as the element paths mark: v1
+                        // compresses only to first_value, Chunk2 to first_value
+                        // or the second value; Chunk2A aggregates (no lock-free
+                        // atomic_ref): only a whole-chunk uniform span.
                         if constexpr (is_v1_v<Arr>)
                         {
                             uniform = same && static_cast<T>(v0) == static_cast<T>(chunk_type::first_value);
@@ -1040,14 +1007,13 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
  *          the constant leaves it materialised and queued).
  *
  *          Chunk2A, Chunk2 and Chunk under OpenMP with fast block compression
- *          (ArrayChunkBits too: bits::fill_bit_range_atomic, one atomic update
- *          per word); everywhere else (bool, serial builds) it is the element loop
- *          -- correct in parallel, without the speed-up. Chunk: its zero
- *          counter, which a raw fill would have to resync from the whole chunk,
- *          does not exist with fast block compression; and the null sentinel
- *          its element path adds while the slow compression path is active is
- *          never reached (the flag is raised on WriteCompressSyncPolicy<Proxy<T>>
- *          but tested on WriteCompressSyncPolicy<Chunk<T>>).
+ *          (ArrayChunkBits too: one atomic update per word); elsewhere (bool,
+ *          serial builds) the element loop -- correct, without the speed-up.
+ *          Chunk qualifies because its zero counter does not exist with fast
+ *          block compression, and the null sentinel its element path adds
+ *          during the slow compression path is never reached (the flag is
+ *          raised on WriteCompressSyncPolicy<Proxy<T>> but tested on
+ *          WriteCompressSyncPolicy<Chunk<T>>).
  *
  * @pre   Called inside or outside a parallel region; concurrent callers write
  *        DISJOINT indices (any chunk may be shared). No rechunk_to() / resize /

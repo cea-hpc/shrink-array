@@ -35,15 +35,12 @@ namespace shrink_array
 template <typename Derived>
 void RechunkHooks2A<Derived, true>::rechunk_drop_candidates()
 {
-    // 2A uses the num_tab MEMBER (set in create_common/pre_create_hook) as the
-    // key for its candidate store. See RechunkSupport::rechunk_to for why the
-    // drop must happen at the owning geometry.
+    // 2A keys its candidates by the num_tab MEMBER. See RechunkSupport::rechunk_to
+    // for why the drop happens at the owning geometry.
     //
-    // COMPRESS them first: a chunk queued by the write that made it uniform,
-    // dropped here, would stay materialised through the rebuild (copied, not
-    // folded) and never be re-queued. compress() is the variant's own,
-    // guarded against an already-compressed chunk; the geometry is the array's
-    // current one, and each entry carries its own element count.
+    // COMPRESS them first: a dropped candidate would stay materialised through
+    // the rebuild and never be re-queued. compress() is guarded against an
+    // already-compressed chunk; each entry carries its own element count.
     if constexpr (chunk_config::use_fast_block_compression)
     {
         const int num_tab = self().num_tab;

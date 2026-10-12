@@ -37,7 +37,7 @@ void Chunk2Base<T, Derived>::block_clear_common(int                  num_compres
 {
     if constexpr (is_chunk2A_derived)
     {
-        // 1. Update metadata BEFORE the CAS — same as before, this is correct
+        // 1. Update the metadata BEFORE the CAS.
         if (num_compress_value == 0)
         {
             ptr_second_value.reset();
@@ -48,7 +48,7 @@ void Chunk2Base<T, Derived>::block_clear_common(int                  num_compres
             derived().set_cst_val_to_cst_val2(ptr_type_cst);
         }
 
-        // 2. Atomic CAS — installs the correct constant pointer AND retrieves the old heap pointer
+        // 2. The CAS installs the constant pointer AND returns the old heap pointer.
         T* old = derived().try_mark_cst_and_get_old(num_compress_value, cst2_ptr);
         if (!old)
         {
@@ -58,22 +58,19 @@ void Chunk2Base<T, Derived>::block_clear_common(int                  num_compres
             return;
         }
 
-        // 3. Free the memory block ONLY AFTER the CAS success
+        // 3. Free the block ONLY after the CAS succeeded.
         Base::free_block_to_pool(thr_rank, old);
     }
     else
     {
-        // Only the thread that wins the atomic transition performs the clear/free.
-        // All other threads return immediately and do nothing.
+        // Only the thread that wins the atomic transition frees; the others return.
         T* old = derived().try_mark_cst_and_get_old(num_compress_value, index_opt);
         if (old)
         {
-            // This thread is the unique owner of the old block.
             Base::free_block_to_pool(thr_rank, old);
         }
         else
         {
-            // Already compressed or another thread won the race.
             return;
         }
     }
@@ -92,7 +89,6 @@ void Chunk2Base<T, Derived>::clear_impl(IndexType         index_opt,
                                         char*             ptr_type_cst,
                                         SecondValueRef<T> ptr_second_value)
 {
-    // Check if written - use index if provided
     bool is_written = false;
     if constexpr (std::is_same_v<IndexType, std::nullopt_t>)
     {
@@ -111,7 +107,6 @@ void Chunk2Base<T, Derived>::clear_impl(IndexType         index_opt,
     if constexpr (build_config::any_check)
     {
         const auto* current_ptr = static_cast<const void*>(values_load());
-        // Safety checks
         if (is_cst_val1())
         {
             invariant_failed(
@@ -127,7 +122,6 @@ void Chunk2Base<T, Derived>::clear_impl(IndexType         index_opt,
             type_name<T>(), static_cast<const void*>(this), current_ptr, get_thr_rank_fast());
     }
 
-    // Free the chunk
     auto& ll_block_free_thr = derived().get_manager().get_list_block_free_thr(thr_rank);
     ll_block_free_thr.push_back(values.load());
 

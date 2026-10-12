@@ -26,9 +26,8 @@
  * between regions: begin_parallel_phase() by every thread inside the region,
  * finalize_parallel_phase() (or the only_flush / after_flush pair) outside
  * it. Skip the brackets and a deferred write of one region lands AFTER a
- * direct write of the next one -- values silently wrong, only on the chunks
- * that happened to be deferred, only at the thread counts that push a list
- * past the threshold. compress_roundtrip found it that way on Chunk2A<bool>.
+ * direct write of the next one: values silently wrong, only on the deferred
+ * chunks, only at thread counts that push a list past the threshold.
  *
  * Measured (8 threads, forced deferrals, team size changing from region to
  * region): finalize forgotten between regions replays a freed deferred op

@@ -17,13 +17,12 @@
 #pragma once
 
 // ============================================================================
-// Re-chunk cost model (phase 2 of adaptive chunk sizing)
+// Re-chunk cost model (adaptive chunk sizing)
 // ============================================================================
 //
 // Estimates the time cost of re-chunking one array from geometry S_old to a
-// coarser or finer one, so the phase-3 decision can weigh it against the memory
-// gain the ChunkSizeAdvisor predicts. Objective recap: minimum memory; this
-// module supplies the "what does it cost to get there" half.
+// coarser or finer one, so the re-chunk decision can weigh it against the
+// memory gain the ChunkSizeAdvisor predicts.
 //
 // Cost formula:
 //   cost = n_elems      * cost_elem_ns    [the refill walks every element]
@@ -36,27 +35,21 @@
 //                  bytes (elem_bytes is 1/8 for packed bits).
 //
 // Compressed chunks carry no buffer, but they are not free: counting the
-// materialised data alone underestimates sparse arrays 10 to 20 times (5 ms
-// for rebuilds measured at 85 ms on tab_long, 7% of the chunks materialised).
+// materialised data alone underestimates sparse arrays by an order of magnitude.
 //
-// The constants were fitted (least squares) on 61 rebuilds measured with
-// CHUNK_RECHUNK_TRACE: shrink_bench_chunk2_dyn, Release, ARM, 64 threads,
-// --divisor 1 and 10, 64 -> 256, 256 -> 1024 and 1024 -> 4096, fifteen
-// element types of 1 to 24 bytes, 11 to 179 ms. Median error 7%, worst 33%.
-// They are HARDWARE-specific; elsewhere the formula's shape holds and the
-// scalars move. The [RECHUNK-DECIDE] lines log the estimate, the chunk and
+// The constants were fitted (least squares) on rebuilds measured with
+// CHUNK_RECHUNK_TRACE on one ARM machine at 64 threads (median error under
+// 10%). They are HARDWARE-specific; elsewhere the formula's shape holds and
+// the scalars move. The [RECHUNK-DECIDE] lines log the estimate, the chunk and
 // materialised counts, and CHUNK_RECHUNK_TRACE the measured total, which is
 // what a refit needs.
 //
 // Thread count: the constants hold at 64 threads, and the rebuild does not
-// all run in parallel. The refill scales almost linearly, the teardown by
-// half, the prologue, temporary, swap and pool drain not at all. Measured on
-// the same bench (24 rebuilds, --divisor 10), 8 / 16 / 32 / 64 threads: 669 /
-// 474 / 343 / 291 ms, of which ~150 ms the same at every count. So
+// all run in parallel (the refill scales almost linearly, the teardown by
+// half, the prologue, temporary, swap and pool drain not at all). So
 //   cost(T) = cost_64 * (s + (1 - s) * (64 / T)^alpha),  s = 0.5, alpha = 0.63
-// (1.70 at 16 threads, 2.35 at 8; within 5% of the measurements). Below 8
-// threads nothing was measured, and extrapolating says 7.4 at one: T is
-// taken as 8 there.
+// fitted between 8 and 64 threads. Below 8 nothing was measured and the
+// extrapolation is unreliable: T is taken as 8 there.
 //
 // This module has no side effects and is not gated: it is pure arithmetic.
 
@@ -110,7 +103,7 @@ inline double g_rechunk_cost_min_threads  = 8.;   // below the measured range: t
 
 // Convenience: is a re-chunk worth it? gain_bytes is the advisor's predicted
 // memory saving; the caller passes a policy (min gain, max cost). Kept separate
-// from the cost so phase 3 can layer hysteresis/cooldown on top. Returns true
+// from the cost so the decision can layer hysteresis/cooldown on top. Returns true
 // when the move clears both thresholds.
 [[nodiscard]] inline bool
 rechunk_is_worth_it(std::size_t gain_bytes, double cost_ms, std::size_t min_gain_bytes, double max_cost_ms) noexcept

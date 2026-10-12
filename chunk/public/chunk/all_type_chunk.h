@@ -47,27 +47,20 @@ struct ManagerChunkInt;
 // ===========================================================================
 // Build-dependent halves of the registry's surface.
 //
-// Which methods AllTypeChunk offers depends on the build, and a method cannot
-// be declared conditionally -- so the conditional halves live here, in
-// policies selected by a constexpr.
-// AllTypeChunk inherits both; each contributes the members its own
-// configuration has.
+// A method cannot be declared conditionally, so the build-dependent halves of
+// AllTypeChunk live in policies selected by a constexpr; AllTypeChunk inherits
+// both. They mirror (and forward to) ManagerChunkInt's
+// ManagerChunkParallelInterface / DynInterface.
 //
-// The bodies stay in all_type_chunk.cpp. A template's member is only
-// instantiated when something uses it, and the explicit instantiation at the
-// end of that file names exactly one specialisation of each policy -- so the
-// other one is never type-checked, which is what lets the OpenMP bodies call
-// manager virtuals that a serial build does not declare.
+// The bodies stay in all_type_chunk.cpp, whose explicit instantiation names
+// exactly one specialisation of each policy: the other is never type-checked,
+// which lets the OpenMP bodies call manager virtuals a serial build does not
+// declare.
 //
-// This mirrors what ManagerChunkInt already does with
-// ManagerChunkParallelInterface / DynInterface; these forward
-// to those.
-//
-// Each body reaches the registry with an inline static_cast rather than through
-// a self() helper or CRTPSupport<Derived>. That is the same rule ChunkAllocPolicy
-// and ChunkDeferredOpsPolicy follow, for the same reason, and here it bites
-// harder: AllTypeChunk inherits both policies at once, so a helper named in
-// more than one of them makes that name ambiguous on AllTypeChunk.
+// Each body reaches the registry with an inline static_cast, not a self()
+// helper or CRTPSupport<Derived> (same rule as ChunkAllocPolicy /
+// ChunkDeferredOpsPolicy): AllTypeChunk inherits both policies, so a helper
+// named in both would be ambiguous on AllTypeChunk.
 // ===========================================================================
 
 /**
@@ -286,7 +279,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      *          type, outside the registry lock. Any context the first array can
      *          be built in: a global array (static initialisation), a parallel
      *          region (std::call_once serialises the threads). An explicit
-     *          init_indexes() call keeps working as before, before or after.
+     *          init_indexes() call still works, before or after.
      */
     static void ensure_ready();
 
@@ -316,9 +309,8 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      *
      * @details Printed with CHUNK_STATS (see param_chunk.cpp). The stats counters
      *          measure EVENTS -- allocations, reuses, compressions -- and say
-     *          nothing about what is still held when a run ends; this does. On
-     *          chunk2a@256 at 64 threads it reported 3.4 GB of a 4.9 GB
-     *          footprint, i.e. 70% of the resident memory sitting in the pools.
+     *          nothing about what is still held when a run ends; this does (the
+     *          pools can hold most of the resident memory).
      *
      * @note Declared in every build, not in the OpenMP policy: the reuse pools
      *       exist in every build, and so does the CHUNK_STATS block of
@@ -464,14 +456,12 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
  *
  * @details Worth calling FIRST THING in main, before any parallel region.
  *
- *          glibc gives each contending thread its own arena -- up to 8 per core
+     *          glibc gives each contending thread its own arena -- up to 8 per core
  *          -- and an arena never lends a freed block to another. A program that
- *          allocates and frees millions of buffers across 64 threads therefore
- *          pays for the high-water mark of EVERY arena, not of the process.
- *          Measured on shrink_bench, chunk2a, 64 threads, --divisor 5: 5232 MB
- *          against 2765 MB once the arenas were capped at one. The same run
- *          reports identical CHUNK_STATS counters and identical pool retention,
- *          so the difference is entirely in how glibc spread the same bytes.
+ *          allocates and frees millions of buffers across many threads therefore
+ *          pays for the high-water mark of EVERY arena, not of the process:
+ *          capping the arenas at one roughly halves the RSS of the benchmark,
+ *          with the same bytes allocated.
  *
  *          Exporting MALLOC_ARENA_MAX does the same thing, but it has to be set
  *          in the environment: glibc reads it at the first allocation, which

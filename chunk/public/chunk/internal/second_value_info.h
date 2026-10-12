@@ -22,10 +22,8 @@ namespace shrink_array
  * @brief Chunk2's per-array second-value record (its `inf_array_t`): the
  *        second constant, its slot in the cst2 registry, the array's table
  *        number.
- * @details Was a `std::tuple<T, int, int>` read through `std::get<0/1/2>`,
- *          which said nothing about which int was which at the ~50 places
- *          that read it. An aggregate: brace-initialised in that order, and
- *          structured bindings still work.
+ * @details A named aggregate rather than a tuple so the two ints cannot be
+ *          confused; brace-initialised in member order, structured bindings work.
  * @tparam T element type
  */
 template <typename T>

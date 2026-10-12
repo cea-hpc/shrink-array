@@ -66,7 +66,6 @@ class GlobalStatsChunkList
         long double total_metadata_mem = 0;
         const int   nb_threads         = CHUNK_PMP_MAX_THREADS;
 
-        // Header Cyan
         std::cout << "\n" << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n";
         std::cout << tc.BOLD << tc.CYAN << std::string((total_width - 35) / 2, ' ')
                   << "GLOBAL COMPRESSION LISTS MONITORING" << tc.RESET << "\n";
@@ -74,7 +73,6 @@ class GlobalStatsChunkList
                   << " active threads" << tc.RESET << "\n";
         std::cout << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n";
 
-        // Titles Bold White
         std::cout << tc.BOLD << std::left << std::setw(col_type) << "Chunk Type Instance" << std::right
                   << std::setw(col_data) << "Allocated Chunks" << std::right << std::setw(col_list)
                   << "Op-List Capacity" << std::right << std::setw(col_mem) << "List Memory" << tc.RESET << "\n";

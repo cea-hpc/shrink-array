@@ -28,23 +28,14 @@
 //   * modulo()   — size - 1, the last offset in a chunk; decalage() is
 //                  log2(size), meaningful for a power of two only.
 //
-// Two policies provide this interface, so one container implementation can be
-// instantiated in two flavours without duplicating its logic:
+//   * StaticChunkSize  — compile-time geometry (-DCHUNK_SIZE), every accessor
+//     constexpr. The default.
+//   * DynamicChunkSize — run-time geometry, changed by set_size() (rechunk_to,
+//     set_chunk_size). Selected by CHUNK_DYNAMIC.
 //
-//   * StaticChunkSize  — compile-time geometry, fixed by CHUNK_SIZE /
-//     -DCHUNK_SIZE: every accessor is constexpr, so `i >> decalage()` /
-//     `i & modulo()` fold into immediate shifts/masks on the hot path and
-//     `std::array<T, size()>` remains legal. The default.
-//
-//   * DynamicChunkSize — run-time geometry, changeable during execution via
-//     set_size() (rechunk_to, set_chunk_size). Selected by CHUNK_DYNAMIC.
-//
-// ActiveSizePolicy (below) picks one; each array holds it as a member
-// (ArrayChunkCore::size_policy_, [[no_unique_address]]), so StaticChunkSize
-// costs zero bytes and DynamicChunkSize lives once per array, never per chunk.
-// The shared constant buffers, which need a compile-time extent, are sized by
-// cst_buffer_size: the chunk size in static builds, chunk_dyn_max_size in
-// dynamic ones.
+// ActiveSizePolicy picks one; each array holds it once
+// (ArrayChunkCore::size_policy_, [[no_unique_address]]), never per chunk. The
+// shared constant buffers are sized by cst_buffer_size (below).
 
 #include <cstddef>     // std::size_t (func_p2.h uses size_t unqualified)
 #include <cstdint>     // std::uint64_t (DynamicChunkSize's divider)
@@ -61,20 +52,13 @@ namespace shrink_array
 // -----------------------------------------------------------------------------
 // Runtime "active" chunk size (dynamic builds only). Two layers:
 //
-//   * g_active_chunk_size : a PROCESS-WIDE seed/default. It is used to prime the
-//     allocator pool at init_indexes and as the fallback when a thread has not
-//     (yet) declared which size it is operating on.
+//   * g_active_chunk_size : PROCESS-WIDE seed, used at init_indexes and as the
+//     fallback when a thread has declared no size.
+//   * t_active_chunk_size : PER-THREAD size, set by the write/resize paths from
+//     the owning array right before an allocation may happen, so that each
+//     allocation goes to the allocator of the right size.
 //
-//   * t_active_chunk_size : a PER-THREAD active size. The write/resize paths set
-//     it (from the owning array's chunk_size()) right before an allocation may
-//     happen, so that — when several arrays with different chunk sizes coexist —
-//     each allocation is routed to the allocator for the correct size. Because
-//     it is thread-local, worker threads in a parallel region each carry the
-//     size of the array they are currently operating on.
-//
-// The free path needs none of this: freed blocks are address-routed back to
-// their owning allocator (each slab block stores a back-pointer to it), so a
-// free works regardless of which size the freeing thread currently has active.
+// Frees need neither: a slab block stores a back-pointer to its allocator.
 inline unsigned int              g_active_chunk_size = __chunk_size;
 inline thread_local unsigned int t_active_chunk_size = 0; // 0 = "unset, use global"
 // Set around rechunk_to()'s temporary, which the refill needs born at exactly
@@ -85,19 +69,11 @@ inline thread_local bool t_birth_at_active_size = false;
 /**
  * @brief Seed the process-wide runtime geometry.
  *
- * @warning Setting the size is NOT enough: the per-size reuse free-list needs a
- *          slot for @p size, created by register_runtime_chunk_size(). Only
- *          rechunk_to() and ArrayChunkBase::set_chunk_size() ever called it, so
- *          the STARTING geometry -- the one every array is born with -- had no
- *          entry, and get_list_block_free_thr_for_size() fell back to the legacy
- *          store for all of its buffers. drain_reuse_list_for_size(old_size)
- *          never visits that store, so after a re-chunk the old geometry's
- *          buffers stayed resident forever: measured 99482 blocks and a 45 MB
- *          gap (64 then re-chunk to 256 = 169 MB, versus 123 MB for an array
- *          born at 256).
- *
- *          Callers cannot register it themselves without knowing this rule, so
- *          the registration belongs here. It is idempotent and sequential.
+ * @warning Every size in use, the STARTING one included, must be registered:
+ *          an unregistered size's buffers go to the legacy store, which
+ *          drain_reuse_list_for_size() never visits, so after a re-chunk they
+ *          stay resident for good (a sizeable share of the array's footprint).
+ *          Idempotent and sequential.
  * @note Defined in param_chunk.cpp: the array headers must not include
  *       param_chunk.h (include cycle).
  */
@@ -106,13 +82,10 @@ void register_runtime_chunk_size(unsigned int size);
 /**
  * @brief Whether @p size can be a chunk geometry: a power of two, or a
  *        multiple of 64; not 0.
- * @details The index split is a division (SizePolicy::chunk_of / offset_of):
- *          a shift and a mask for a power of two, a multiplication by a magic
- *          number otherwise. A multiple of 64 keeps a chunk's buffer whole
- *          64-bit words of packed bits and, for 8-byte elements, whole cache
- *          lines. The public entry points (rechunk_to, set_chunk_size) refuse
- *          another size; set_size() and set_active_chunk_size() stop on it in
- *          check builds.
+ * @details A multiple of 64 keeps a buffer whole 64-bit words of packed bits
+ *          (and whole cache lines for 8-byte elements). rechunk_to and
+ *          set_chunk_size refuse another size; set_size() and
+ *          set_active_chunk_size() stop on it in check builds.
  */
 [[nodiscard]] constexpr bool is_valid_chunk_size(unsigned int size) noexcept
 {
@@ -148,11 +121,9 @@ inline void set_thread_chunk_size(unsigned int size) noexcept
     t_active_chunk_size = size;
 }
 
-// Per-thread active ALLOCATION KEY: the affinity key of the array whose chunk
-// is about to be materialised (0 = the rank's shared pool). Set by the proxy
-// next to the geometry, read by get_chunk_allocator() / the reuse-list lookup
-// in allocate_chunk_internal(). Same implicit-parameter pattern as the size;
-// they are two properties of the same array and travel together.
+// Per-thread ALLOCATION KEY: affinity key of the array about to materialise a
+// chunk (0 = the rank's shared pool). Set together with the size, read by
+// get_chunk_allocator() and allocate_chunk_internal().
 inline thread_local unsigned int t_alloc_key = 0;
 /// @brief Set the calling thread's allocation key.
 /// @param k Affinity key (0 = the rank's shared pool).
@@ -173,9 +144,7 @@ inline void set_thread_alloc_key(unsigned int k) noexcept
     return t_active_chunk_size != 0u ? t_active_chunk_size : g_active_chunk_size;
 }
 
-// The element count to allocate for a real chunk's value buffer. In dynamic
-// builds this is the runtime active size; in static builds it folds to the
-// compile-time __chunk_size (so static codegen is unchanged).
+// Element count of a chunk's value buffer: the thread's size, or __chunk_size (static).
 [[nodiscard]] inline unsigned int alloc_chunk_count() noexcept
 {
     if constexpr (build_config::chunk_dynamic)
@@ -190,11 +159,8 @@ inline void set_thread_alloc_key(unsigned int k) noexcept
 
 /// @brief RAII: pin the calling thread's active chunk size (dynamic builds
 ///        only) and restore the previous value on scope exit.
-/// @details Used on deferred-replay paths where create_value /
-///          allocate_chunk_internal must size a buffer at the op's FROZEN
-///          geometry (proxy.chunk_size()), not the flushing thread's ambient --
-///          and must not leak that size into the flusher's own in-flight write.
-///          No-op in static builds (the geometry is compile-time there).
+/// @details For deferred replays: allocate at the op's FROZEN geometry, not the
+///          flusher's, without leaking it into the flusher's in-flight write.
 class DynChunkSizeGuard
 {
   public:
@@ -226,13 +192,10 @@ class DynChunkSizeGuard
 
 /// @brief Strong type for a chunk's element count as it travels through the
 ///        compression pipeline.
-/// @details A plain `unsigned int size` parameter sits in the same signatures
-///          as `int num_chunk` / `int num_tab`: positional mix-ups and stray
-///          defaults compile silently — exactly the failure that let a
-///          `= __chunk_size` default under-scan runtime-sized chunks and
-///          corrupt data in CHUNK_DYNAMIC builds. The deleted default
-///          constructor and explicit conversion make every creation of a count
-///          a visible, greppable act; count() is the only way out.
+/// @details A plain `unsigned int` next to `int num_chunk` / `int num_tab`
+///          lets positional mix-ups and stray defaults compile (a
+///          `= __chunk_size` default under-scans runtime-sized chunks). No
+///          default constructor, explicit conversion: every count is visible.
 class ChunkElems
 {
   public:
@@ -272,10 +235,8 @@ struct StaticChunkSize
         return __modulo_chunk;
     }
 
-    /// @brief The chunk of element @p i (>= 0): i / size(). An unsigned
-    ///        division by the constant: a shift for a power of two, a
-    ///        multiplication by the compiler's magic number otherwise (a
-    ///        signed one would add a fix-up for negative values).
+    /// @brief The chunk of element @p i (>= 0): i / size(). Unsigned: a signed
+    ///        division would add a fix-up for negative values.
     template <typename I>
     [[nodiscard]] static constexpr I chunk_of(I i) noexcept
     {
@@ -289,9 +250,7 @@ struct StaticChunkSize
         return static_cast<I>(static_cast<std::make_unsigned_t<I>>(i) % size());
     }
 
-    /// @brief No-op in static mode: geometry is fixed at compile time. Present
-    ///        so generic code (e.g. ArrayChunkBase::set_chunk_size) compiles
-    ///        under both policies.
+    /// @brief No-op, so generic code compiles under both policies.
     static constexpr void set_size(unsigned int) noexcept {}
 };
 
@@ -325,13 +284,10 @@ class DynamicChunkSize
         return modulo_;
     }
 
-    /// @brief The chunk of element @p i (>= 0): i / size(), without a
-    ///        division -- the run-time size's magic numbers, computed by
-    ///        set_size(). A 32-bit index: one 64x64->128 multiplication
-    ///        (Lemire, Kaser & Kurz 2019, exact for every 32-bit dividend). A
-    ///        64-bit one: Granlund & Montgomery's round-down method (as
-    ///        libdivide's branch-free path), a multiplication, two shifts, an
-    ///        add and a subtract.
+    /// @brief The chunk of element @p i (>= 0): i / size(), without a division.
+    ///        32-bit index: one 64x64->128 multiplication (Lemire, Kaser & Kurz
+    ///        2019, exact for every 32-bit dividend). 64-bit: Granlund &
+    ///        Montgomery's round-down method (libdivide's branch-free path).
     template <typename I>
     [[nodiscard]] I chunk_of(I i) const noexcept
     {
@@ -397,12 +353,7 @@ class DynamicChunkSize
     }
 
   private:
-    // A freshly constructed array adopts the process-wide active size
-    // (g_active_chunk_size), which the program seeds via set_active_chunk_size
-    // before priming the allocators. This way arrays built after that seed have
-    // the correct geometry immediately, without a separate set_chunk_size call.
-    // g_active_chunk_size defaults to __chunk_size, so a dynamic build that never
-    // seeds it behaves exactly like the static geometry.
+    // A new array adopts the process-wide active size (default __chunk_size).
     unsigned int size_     = g_active_chunk_size;
     unsigned int decalage_ = static_cast<unsigned int>(log2int(static_cast<std::size_t>(g_active_chunk_size)));
     unsigned int modulo_   = g_active_chunk_size - 1u;
@@ -432,23 +383,16 @@ class DynamicChunkSize
 
 
 // -----------------------------------------------------------------------------
-// Active policy selector. Define CHUNK_DYNAMIC to build the runtime-geometry
-// flavour; otherwise the compile-time StaticChunkSize is used (default, zero
-// cost). This is the single switch that turns the whole container dynamic.
+// Active policy selector: CHUNK_DYNAMIC switches the whole container dynamic.
 // -----------------------------------------------------------------------------
 using ActiveSizePolicy = std::conditional_t<build_config::chunk_dynamic, DynamicChunkSize, StaticChunkSize>;
 
-// Size of the shared constant-value buffers (m_ptr_cst_val1 / cst_val2). In
-// static mode they only ever need __chunk_size elements.
-// Dynamic-mode ceiling for the shared constant buffers. A compressed (constant)
-// chunk is read as buffer[num] for num in [0, N), so this MUST be >= the largest
-// runtime chunk size ever produced by a re-chunk. It is NOT the absolute type
-// ceiling (65535): that wastes cst_buffer_size*sizeof(T) per DISTINCT cst2 value
-// (e.g. 524 KB/value for double at 65535) and, since those buffers accumulate,
-// blows up memory. Cap it at the realistic max instead. Override with
-// -DCHUNK_DYN_MAX_SIZE=<power-of-two> if a run re-chunks above the default.
-// SAFETY: rechunk_to refuses any new_size > cst_buffer_size (array_chunk_rechunk_inline.h),
-// so an out-of-range geometry is rejected up-front, never read out of bounds.
+// Extent of the shared constant buffers (m_ptr_cst_val1 / cst_val2): a constant
+// chunk is read as buffer[num], so it MUST be >= every runtime chunk size. Not
+// the type ceiling (65535): one buffer per DISTINCT cst2 value accumulates
+// (cst_buffer_size * sizeof(T) each). Override with
+// -DCHUNK_DYN_MAX_SIZE=<power-of-two>; rechunk_to refuses a larger size
+// (array_chunk_rechunk_inline.h).
 #ifndef CHUNK_DYN_MAX_SIZE
 inline constexpr unsigned int chunk_dyn_max_size = 4096u;
 #else

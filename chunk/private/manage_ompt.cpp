@@ -223,13 +223,12 @@ void ompt_finalize(ompt_data_t*)
 void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int flags)
 {
     // The INITIAL task is the program's own thread, not a parallel region: no
-    // phase to begin, and the rank cache is recomputed on demand. It must not
-    // be seeded here either: libomp reports it while the runtime initialises,
-    // i.e. from inside the program's first OpenMP call -- which can be the
-    // omp_get_max_threads() of chunk_thread_capacity()'s static initialiser.
-    // begin_parallel_phase() -> CHUNK_PMP_THREAD_RANK -> chunk_thread_capacity()
-    // then re-entered that initialisation: recursive_init_error at start-up in
-    // every clang/libomp OpenMP binary. gcc (no OMPT) never took this path.
+    // phase to begin, and the rank cache is recomputed on demand. Do not seed
+    // it here: libomp reports it from inside the program's first OpenMP call,
+    // which can be the omp_get_max_threads() of chunk_thread_capacity()'s
+    // static initialiser; begin_parallel_phase() -> CHUNK_PMP_THREAD_RANK ->
+    // chunk_thread_capacity() would re-enter that initialisation
+    // (recursive_init_error at start-up).
     if ((flags & ompt_task_initial) != 0)
     {
         return;
@@ -244,20 +243,16 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
     shrink_array::begin_parallel_phase();
 }
 
-// No `ompt_callback_parallel_begin` any more. It pre-reserved every rank's
-// compression-candidate list to the size it reached in the previous phase --
-// a no-op, since the passes empty the lists with clear(), which keeps their
-// capacity. The candidates themselves are consumed at parallel_end.
+// No `ompt_callback_parallel_begin`: pre-reserving the candidate lists is
+// useless, the passes empty them with clear(), which keeps their capacity.
 
 /**
  * @brief The chunk library's part of `ompt_callback_parallel_end`.
  *
  * The library's main phase boundary: flushes the deferred writes through
  * shrink_array::finalize_parallel_phase(), then compresses the candidates
- * accumulated during the region. Both steps are individually suppressed during
- * a chunk-level rechunk rebuild (`g_in_rechunk_rebuild`) — see the inline
- * comments, which record why each suppression is needed and what regressed
- * when it was missing.
+ * accumulated during the region. Both steps are suppressed during a
+ * chunk-level rechunk rebuild (`g_in_rechunk_rebuild`); see the inline comments.
  */
 void parallel_end_chunk_work()
 {
@@ -268,29 +263,23 @@ void parallel_end_chunk_work()
         return;
     }
 
-    // During the chunk-level rechunk rebuild, skip the DEFERRED FLUSH only: the
+    // During the chunk-level rechunk rebuild, skip the DEFERRED FLUSH: the
     // rebuild drives the deferred write path inside its own parallel region, and
     // flushing those half-applied ops here corrupts grow regions spanning several
-    // old chunks (rechunk_to flushes them properly afterwards, at a quiescent
-    // point). The COMPRESSION below is NOT skipped — it drains the freshly
-    // written chunks' compression candidates (e.g. Chunk2A raw-fill), which is
-    // what reclaims their materialised buffers; suppressing it caused a large
-    // memory retention on global re-chunks.
+    // old chunks (rechunk_to flushes them afterwards, at a quiescent point).
     const bool in_rebuild = shrink_array::g_in_rechunk_rebuild.load(std::memory_order_acquire);
     if (shrink_array::__global_need_flush_deferred && !in_rebuild)
     {
         shrink_array::finalize_parallel_phase();
     }
 
-    // During the chunk-level rechunk rebuild, ALSO skip block compression here.
-    // The rebuild writes tmp's new chunks inside its own parallel region; if we
-    // compress them at this parallel-end (before rechunk_to reaches its quiescent
-    // flush/drop point), an all-second_value new chunk that spans the old-chunk
-    // boundary gets re-materialised at the OLD geometry, dropping every element
-    // past old_size (they read back first_value). rechunk_to compresses/drops the
-    // new chunks itself, afterwards, at the correct new geometry. (Buffer reclaim
-    // during the rebuild is handled by rechunk_drain_reuse_list on the
-    // swapped-out storage -- a separate, quiescent path.)
+    // During the rebuild, ALSO skip block compression. The rebuild writes tmp's
+    // new chunks inside its own parallel region; compressing them here (before
+    // rechunk_to's quiescent flush/drop point) re-materialises an
+    // all-second_value chunk spanning the old-chunk boundary at the OLD
+    // geometry, and every element past old_size reads back first_value.
+    // rechunk_to compresses the new chunks itself, at the new geometry. (Buffer
+    // reclaim during the rebuild: rechunk_drain_reuse_list, a quiescent path.)
     if (in_rebuild)
     {
         return;
@@ -314,8 +303,7 @@ void parallel_end_chunk_work()
  * @details Inside a region StaticConstArray::freeBlock / freeBlockAlign park
  *          freed blocks in a per-thread batch that is flushed only when it
  *          overflows (4 MiB or 10000 blocks, per ladder): without this, up to
- *          that much per thread stayed out of every free list after the region,
- *          until the same thread overflowed again in a later one.
+ *          that much per thread stays out of every free list after the region.
  *
  *          Outside any ACTIVE region only (the outermost parallel_end): the
  *          flush takes no lock, so no rank may be freeing meanwhile. A nested
@@ -359,11 +347,9 @@ void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, 
  * Suppressed during a rechunk rebuild for the same reason as on_parallel_end().
  */
 //
-// The signature is the runtime's ompt_callback_sync_region_t; none of the
-// parameters is read. Note what the runtime does:
-// it calls this at BOTH the begin and the end of EVERY sync region, whatever
-// its kind (barriers, taskwait, taskgroup, reductions). CHUNK_OMPT_STATS
-// counts them.
+// The signature is the runtime's ompt_callback_sync_region_t. The runtime
+// calls this at BOTH the begin and the end of EVERY sync region, whatever its
+// kind (barriers, taskwait, taskgroup, reductions). CHUNK_OMPT_STATS counts them.
 void on_barrier_end(ompt_sync_region_t    kind,
                     ompt_scope_endpoint_t endpoint,
                     ompt_data_t*          parallel_data,
@@ -390,23 +376,18 @@ void on_barrier_end(ompt_sync_region_t    kind,
     }
 
     // The end of the implicit barrier that closes a parallel region: a worker
-    // has LEFT the team by then (libomp reports it with parallel_data null,
-    // and older runtimes spell the kind ompt_sync_region_barrier_implicit), so
-    // the rank lookup of the flush below -- omp_get_level() -- reads a team
-    // that is gone: SIGSEGV in every clang/libomp OpenMP binary, on a worker,
-    // at the first region's end. Nothing is lost by skipping it: the master's
-    // on_parallel_end() runs finalize_parallel_phase() right after, which
-    // drains the deferred ops of EVERY rank.
+    // has LEFT the team by then (libomp passes parallel_data null; older
+    // runtimes spell the kind ompt_sync_region_barrier_implicit), and the rank
+    // lookup of the flush below (omp_get_level()) would read a team that is
+    // gone. Skipping loses nothing: the master's on_parallel_end() runs
+    // finalize_parallel_phase() right after, for EVERY rank.
     if (endpoint == ompt_scope_end && (kind == ompt_sync_region_barrier_implicit_parallel || parallel_data == nullptr))
     {
         return;
     }
 
-    // Same suppression as on_parallel_end: the rechunk rebuild's own parallel
-    // region ends with an implicit barrier; flushing the half-applied deferred
-    // writes here corrupts grow regions spanning several old chunks (rechunk_to
-    // flushes them properly afterwards). Without this guard the barrier path
-    // reintroduced the cst2 grow loss that on_parallel_end's guard alone fixed.
+    // Same suppression as on_parallel_end (see parallel_end_chunk_work): the
+    // rebuild's own parallel region ends with an implicit barrier too.
     const bool in_rebuild = shrink_array::g_in_rechunk_rebuild.load(std::memory_order_acquire);
     if (shrink_array::__global_need_flush_deferred && !in_rebuild)
     {
@@ -494,11 +475,9 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
  *
  * @return Pointer to a function-local static result, valid for the whole run.
  */
-// extern "C": the runtime finds the tool with dlsym("ompt_start_tool"). The
-// omp-tools.h of some LLVM releases (18 at least) does not declare it, and a
-// C++-mangled definition is then never found -- the tool stays silently
-// inert (OMP_TOOL_VERBOSE_INIT=stdout reports "Failed"). Where the header
-// does declare it extern "C", this is the same declaration.
+// extern "C": the runtime finds the tool with dlsym("ompt_start_tool"). Some
+// omp-tools.h (LLVM 18) do not declare it, and a C++-mangled definition is
+// never found: the tool stays silently inert.
 extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
 {
     static ompt_start_tool_result_t ompt_start_tool_result = {&ompt_initialize, &ompt_finalize, {0}};

@@ -59,14 +59,10 @@ namespace shrink_array
 // ===========================================================================
 // Build-dependent halves of the façade.
 //
-// Two of ParamChunk's verbs differ by build in their very NAME, which no
-// `if constexpr` can express -- so they live in policies selected by a
-// constexpr, as ManagerChunkInt and AllTypeChunk already do. ParamChunk
-// inherits both; everything here is static, so there is no CRTP down-cast to
-// arrange, only a name to bring into scope.
-//
-// The bodies stay in param_chunk.cpp, where one explicit instantiation per
-// policy names exactly the specialisation this build selected.
+// Two of ParamChunk's verbs differ by build in their very NAME, which no `if constexpr` can
+// express, so they live in policies selected by a constexpr (as in ManagerChunkInt and
+// AllTypeChunk). All static: no CRTP down-cast. The bodies are in param_chunk.cpp, with one
+// explicit instantiation of the specialisation this build selects.
 // ===========================================================================
 
 /**
@@ -74,25 +70,13 @@ namespace shrink_array
  * @tparam Enabled build_config::use_openmp.
  * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING -- see below.
  *
- * @note AllT looks redundant (it is only ever AllTypeChunk) and is not. It is
- *       what keeps the two bodies TEMPLATES, so only the one this build selects
- *       is ever instantiated -- param_chunk.cpp instantiates exactly
- *       ParamChunkParallelInterface<build_config::use_openmp, AllTypeChunk> and
- *       the other body is never compiled.
- *
- *       A plain `template <>` full specialisation would NOT do: its members are
- *       ordinary functions, compiled eagerly, and the two bodies cannot both
- *       compile (the OpenMP one calls AllTypeChunk verbs -- the per-rank
- *       resizes, init_allocator_thr -- that only AllTypeChunkParallelInterface
- *       <Derived, true> declares; the serial one calls init_allocator, which
- *       only <Derived, false> declares).
- *
- *       And a merely DUMMY type parameter would not do either: the calls have
- *       to be DEPENDENT on it, or phase-1 lookup resolves them against the
- *       concrete AllTypeChunk at definition time and rejects the body of the
- *       build we are not in. Hence the bodies go through SingletonChk<AllT>,
- *       not SingletonChk<AllTypeChunk>. Same trick, same reason, as the Derived
- *       parameter of AllTypeChunkParallelInterface.
+ * @note AllT looks redundant (it is only ever AllTypeChunk) and is not: it keeps the two
+ *       bodies TEMPLATES, so only the one this build selects is instantiated. A `template <>`
+ *       full specialisation would be compiled eagerly, and the two bodies cannot both compile
+ *       (each calls AllTypeChunk verbs only its own AllTypeChunkParallelInterface<Derived, B>
+ *       declares). The calls must also stay DEPENDENT on AllT (SingletonChk<AllT>, never
+ *       SingletonChk<AllTypeChunk>), or phase-1 lookup rejects the other build's body. Same
+ *       reason as the Derived parameter of AllTypeChunkParallelInterface.
  */
 template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
 struct ParamChunkParallelInterface; // primary left undefined: only the 2 specializations exist
@@ -125,19 +109,12 @@ struct ParamChunkParallelInterface<false, AllT>
 /**
  * @brief The runtime-geometry verb, present only in dynamic builds.
  * @tparam Enabled build_config::chunk_dynamic.
- * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING, exactly as it is on
- *                 ParamChunkParallelInterface above -- see the note there for
- *                 the full rationale.
+ * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING, as on ParamChunkParallelInterface
+ *                 (see the note there).
  *
- * @note In short: AllT is what keeps the body a TEMPLATE, so a static build
- *       never instantiates it and never compiles it. It has to be so, because
- *       the body calls AllTypeChunk::register_chunk_size(), which only
- *       AllTypeChunkDynInterface<Derived, true> declares -- a `template <>`
- *       full specialisation would be compiled eagerly and fail there. And the
- *       call must stay DEPENDENT on AllT (SingletonChk<AllT>, never
- *       SingletonChk<AllTypeChunk>), or phase-1 lookup resolves it against the
- *       concrete type at definition time and the static build fails to
- *       compile.
+ * @note The body calls AllTypeChunk::register_chunk_size(), which only
+ *       AllTypeChunkDynInterface<Derived, true> declares: keep it a template and the call
+ *       dependent on AllT, or the static build fails to compile.
  */
 template <bool Enabled = build_config::chunk_dynamic, typename AllT = AllTypeChunk>
 struct ParamChunkDynInterface; // primary left undefined: only the 2 specializations exist
@@ -159,10 +136,9 @@ struct ParamChunkDynInterface<true, AllT>
      * @note Idempotent per size, and to be called in a sequential context before
      *       an array of that size is used in parallel.
      * @warning The free-list slot is not optional even with the standard allocator:
-     *          without it the by-size map stays empty, every lookup falls back to
-     *          the single legacy list, and buffers of different geometries end up
-     *          sharing it — a size-A buffer parked there is later popped for a
-     *          size-B chunk and overflows in init_block's memset.
+     *          without it every lookup falls back to the single legacy list, and a
+     *          buffer of one geometry is popped for a chunk of another (overflow in
+     *          init_block's memset).
      * @see shrink_array::register_runtime_chunk_size, the build-agnostic wrapper
      */
     static void register_chunk_size(unsigned int size);
@@ -175,21 +151,13 @@ struct ParamChunkDynInterface<false, AllT>
     /**
      * @brief Accepts the call and does nothing (fixed-geometry build).
      *
-     * @details Deliberately a silent no-op rather than an absent member. It is
-     *          what lets register_runtime_chunk_size() -- and any other
-     *          build-agnostic caller -- call ParamChunk::register_chunk_size()
-     *          with no <tt>\#ifdef CHUNK_DYNAMIC</tt> around it: the call compiles in
-     *          every build and costs nothing where there is no runtime geometry
-     *          to declare.
+     * @details Deliberately a silent no-op rather than an absent member, so that
+     *          build-agnostic callers (register_runtime_chunk_size()) need no
+     *          <tt>\#ifdef CHUNK_DYNAMIC</tt>.
      *
-     * @warning The trade-off is deliberate and worth knowing: calling
-     *          ParamChunk::register_chunk_size() in a static build is accepted
-     *          and ignored, not a compile error. A caller who expects a size to
-     *          be honoured will not be told by the compiler that this build
-     *          cannot honour it. Guard on build_config::chunk_dynamic where
-     *          that distinction matters -- and see dyn_geometry_validation,
-     *          which catches at run time an array built at a size no one
-     *          registered.
+     * @warning So a static build accepts and ignores the call; the compiler will not
+     *          say the size cannot be honoured. Guard on build_config::chunk_dynamic
+     *          where it matters (dyn_geometry_validation checks this at run time).
      */
     static void register_chunk_size(unsigned int /*size*/) {}
 };
@@ -199,12 +167,9 @@ struct ParamChunkDynInterface<false, AllT>
 class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInterface<>
 {
   public:
-    // The policies read #block_size, which is private and stays that way: it is
-    // an implementation detail of the façade, not part of its surface.
-    // Both policies are befriended as TEMPLATES rather than as their
-    // instantiations: their bodies reach block_size through a non-dependent
-    // expression, which is access-checked against the template being defined --
-    // naming only <true, AllTypeChunk> would not cover it.
+    // The policies read the private #block_size. They are befriended as TEMPLATES: their
+    // bodies reach it through a non-dependent expression, access-checked against the
+    // template being defined, which a friend instantiation would not cover.
     template <bool, typename>
     friend struct ParamChunkParallelInterface;
     template <bool, typename>
@@ -376,11 +341,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     /**
      * @brief No-op compatibility shim for the former runtime chunk-size setter.
      *
-     * @details __chunk_size is a compile-time constant now, so the size cannot be
-     *          changed at run time. Rather than silently ignoring the call, this
-     *          warns when a caller asks for a size the binary was not built with —
-     *          otherwise the program would keep running on a geometry it did not
-     *          request.
+     * @details __chunk_size is a compile-time constant. Warns when asked for a size
+     *          the binary was not built with, rather than ignoring it silently.
      *
      * @param v the chunk size the caller wanted; only compared, never applied
      * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=v`
@@ -414,10 +376,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *          log2(__chunk_size), computed at compile time.
      *
      * @param v the shift the caller wanted; only compared, never applied
-     * @warning Warns when asked for a shift the binary was not built with,
-     *          rather than accepting it in silence -- the same contract as
-     *          set_chunk_size(). A caller that got no answer here would have
-     *          gone on believing it had changed the geometry.
+     * @warning Warns when asked for a shift the binary was not built with, as
+     *          set_chunk_size() does.
      */
     static void set_decalage_chunk(unsigned int v)
     {

@@ -37,10 +37,9 @@
 
 namespace shrink_array
 {
-// No build guard: the ChunkOmpPolicy definitions below belong to the PRIMARY
-// template, instantiated only with Enabled=true (i.e. only under OpenMP); the
-// serial build selects the empty <..., false> specialisation. Chunk's own
-// members here compile in both modes.
+// No build guard: the ChunkOmpPolicy definitions below belong to the PRIMARY template,
+// instantiated only with Enabled=true (OpenMP); the serial build uses the <..., false>
+// specialisation. Chunk's own members compile in both modes.
 
 // Out of line on purpose, as operator delete[] below: see there.
 template <typename T, typename Derived, bool Enabled>
@@ -57,12 +56,8 @@ void ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk<T>* v, std::
     chunk_array_new::init_chunks(v, count, [](Chunk<T>& chunk) { chunk.init_values_cst_val(); });
 }
 
-// Out of line on purpose, as operator new[] above. Inlined, either one hands
-// gcc's -Wmismatched-new-delete a ::operator new or ::operator delete paired
-// with the class's other operator -- a test calling the two directly
-// (chunk_array_new_validation) inlined new[] -- and it warns (a false
-// positive: operator new[] allocates with ::operator new). Kept calls, the
-// pair it sees is the class's own new[] / delete[].
+// Out of line on purpose, as operator new[] above: avoids a false -Wmismatched-new-delete
+// (see Chunk2AOmpPolicy::operator delete[] in chunk2A_std_inline.h).
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
@@ -85,8 +80,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_pa
         const int&  num_chunk = std::get<1>(tup);
         const int   num_tab   = std::get<2>(tup);
 
-        // Pass the chunk's OWN geometry, captured at enqueue -- not this
-        // thread's ambient size, which may belong to a different array.
+        // The chunk's OWN geometry, captured at enqueue -- not the ambient size.
         const auto count = ll_compt.size();
         chunk_t->fill_list_to_compress(ll_compt, num_chunk, num_tab, std::get<3>(tup).count());
         // Not selected by the scan: the writers may have it back now.
@@ -105,8 +99,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(vec_tuple_c
 {
     if (derived().written())
     {
-        // CHUNK_STATS: one compression candidate scanned (counted as scan
-        // reads, never as application reads).
+        // CHUNK_STATS: one candidate scanned (scan reads, not application reads).
         increm_chunk_compress_attempt<Derived>();
         if (derived().is_constant_to(zero, n_elems))
         {
@@ -118,16 +111,10 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(vec_tuple_c
 template <typename T, typename Derived, bool Enabled>
 void ChunkOmpPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_elems)
 {
-    // Already compressed -> nothing to do. Chunk2A::compress() has always
-    // guarded this way; v1 did not, and the consequence is not benign. A chunk
-    // can be reached twice: the candidate queued by the write that materialised
-    // it stays in the list even after something else compresses the chunk, and
-    // the re-chunk rebuild now folds chunks back on the spot. On a cst1 chunk
-    // `values` IS the shared zero sentinel, so is_constant_to(0) reads it,
-    // answers true, and clear_st() parks the SENTINEL into a reuse list -- from
-    // there it is handed out as an ordinary chunk buffer. A check build trips
-    // the invariant inside clear_st first ("trying to clear a chunk that is not
-    // written"); a release build reports nothing at all.
+    // Already compressed: nothing to do. Required: a chunk can be reached twice (its queued
+    // candidate outlives a compression by another path, e.g. the re-chunk fold). On a cst1
+    // chunk `values` IS the shared zero sentinel: is_constant_to(0) would answer true and
+    // clear_st() would park the SENTINEL into a reuse list, to be handed out as a buffer.
     if (!derived().written())
     {
         return;
@@ -153,17 +140,10 @@ void Chunk<T>::compress_sweep_rank(int thr)
     // Bypasses CompressionManager::start(): see check_no_flush_outside_start.
     check_no_flush_outside_start<Proxy<T>>("Chunk::compress_sweep_rank");
     auto& chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
-    // Dynamic geometry: pin the ambient chunk size to EACH candidate's own
-    // (the tuple's ChunkElems, captured when it was queued), restored after
-    // the loop. clear_st() -> free_block_to_pool() parks the buffer in the
-    // reuse list of the AMBIENT size, and a thread's ambient size after a
-    // re-chunk is that array's new one (the rebuild region sets it and
-    // never restores the workers'): compressing a 64-chunk of another
-    // array from a rank left at 128 would park its 64-buffer in the 128 list,
-    // which hands it out as a 128-buffer later (non-reproducible results after
-    // a re-chunk, at 2-3 threads).
-    // Chunk2 and Chunk2A pin the same way (compress_chunk_to_compress_in_par_impl,
-    // make_block_compression_impl).
+    // Dynamic geometry: pin the ambient chunk size to EACH candidate's own (its ChunkElems),
+    // restored after the loop. free_block_to_pool() parks in the list of the AMBIENT size,
+    // which after a re-chunk may be another array's: a 64-buffer parked in the 128 list
+    // is later handed out as a 128-buffer. Chunk2 and Chunk2A pin the same way.
     [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
     for (auto& tup : chunk_t)
     {
@@ -174,15 +154,11 @@ void Chunk<T>::compress_sweep_rank(int thr)
         }
         chunk_p->compress(thr, std::get<3>(tup).count());
 
-        // Release the dedup gate for this chunk. add_to_compression_list only
-        // queues a chunk when its is_inside flag CASes 0->1, so a flag left at 1
-        // means the chunk can NEVER be queued again: it was compressed once and
-        // then ignored for the rest of the run (measured: 98.7% of marks refused,
-        // compress stuck at 0 for chunk v1 under OpenMP). Reset it TOGETHER with
-        // the list clear below -- resetting one without the other lets a later
-        // write re-append the same chunk and make_block_compression then
-        // double-clears it (see the same note in
-        // Chunk2A<T>::compress_chunk_to_compress_in_par).
+        // Release the dedup gate: add_to_compression_list queues a chunk only when its
+        // is_inside flag CASes 0->1, so a flag left at 1 means the chunk is never queued
+        // again (compression stalls). Reset it TOGETHER with the list clear below: one
+        // without the other lets a write re-append the chunk and make_block_compression
+        // double-clears it (see Chunk2A<T>::compress_chunk_to_compress_in_par).
         Proxy<T>::reset_tab_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
     }
 
@@ -190,8 +166,7 @@ void Chunk<T>::compress_sweep_rank(int thr)
     {
         shrink_array::set_thread_chunk_size(saved_sz);
     }
-    // clear() keeps the capacity: the list is already reserved for the
-    // next pass, at the size this one reached.
+    // clear() keeps the capacity for the next pass.
     chunk_t.clear();
 }
 
@@ -202,9 +177,8 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        // Inside a region: this rank's own list, and nothing else (as
-        // Chunk2A::compress_chunk_to_compress): the mop-up below, run by every
-        // thread of the team, would sweep the other ranks' lists concurrently.
+        // Inside a region: this rank's own list only (as Chunk2A): the mop-up below, run by
+        // every thread, would sweep the other ranks' lists concurrently.
         compress_sweep_rank(CHUNK_PMP_THREAD_RANK);
     }
     else
@@ -219,10 +193,8 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
             }
             compress_sweep_rank(thr);
         }
-        // The ranks this team does not have (a team opened with num_threads(n)
-        // above omp_get_max_threads()): their candidates were never swept, and
-        // their flags stayed at 1, so those chunks could not be queued again.
-        // The mop-up of Chunk2 / Chunk2A.
+        // Ranks this team does not have (an earlier team larger than this one): sweep their
+        // lists too, or their flags stay at 1 and those chunks are never queued again.
         for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
         {
             compress_sweep_rank(thr);
@@ -258,11 +230,9 @@ bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_th
 /**
  * @brief Zero-fill a freshly allocated v1 buffer before it is published (create_value's fresh-block initialiser).
  * @param vals buffer of shrink_array::alloc_chunk_count() elements
- * @details svcalloc_align already returns zeroed memory, so the fill is only
- *          needed for the pooled allocator, whose blocks carry whatever the
- *          previous owner left. The std path must stay on a zeroing allocator:
- *          plain malloc leaves garbage (subnormal doubles, say) in cells not
- *          written before the next read.
+ * @details Only the pooled allocator needs the fill (svcalloc_align returns zeroed memory).
+ *          The std path must stay on a zeroing allocator: plain malloc leaves garbage in
+ *          cells read before written.
  */
 template <typename T, typename Derived, bool Enabled>
 void ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
@@ -276,16 +246,9 @@ void ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
 template <typename T, typename Derived, bool Enabled>
 void ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
 {
-    // Two sources: the manager's per-thread reuse pool, then a fresh allocation.
-    // Both live in ChunkAllocPolicy::allocate_chunk_internal, shared with
-    // v2/v2A, so a fix there (e.g. the bounds-checked size lookup) reaches every
-    // variant at once.
-    //
-    // The two initialisers are the one thing v1 does NOT share: a v1 chunk is
-    // compressed only when it is all-zero, so a buffer coming back from the
-    // reuse pool is already zero and re-filling it would memset the hot path
-    // for nothing. v2/v2A compress to an arbitrary constant and so hand the
-    // same initialiser to both branches.
+    // Reuse pool first, then a fresh allocation (ChunkAllocPolicy::allocate_chunk_internal,
+    // shared with v2/v2A). Initialisers differ from v2/v2A: a v1 chunk is compressed only when
+    // all-zero, so a recycled buffer is already zero and needs no fill.
     T* values_loc = Base::allocate_chunk_internal(
         thr_rank, [](T*) noexcept { /* recycled: already zero, see above */ },
         [](T* vals) noexcept { zero_fill_fresh(vals); });
@@ -295,17 +258,12 @@ void ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
         Base::recup_value(values_loc, thr_rank);
     }
 
-    // Release fence so that the stores following in the caller cannot be
-    // reordered before the CAS (AArch64).
-
+    // Release fence: the caller's following stores cannot be reordered before the CAS (AArch64).
     std::atomic_thread_fence(std::memory_order_release);
 }
 
-// Single definition for both modes. Under OpenMP it delegates to the
-// rank-aware overload the policy provides; serially it allocates directly,
-// since there is no per-thread free-list to consult. `this->` is required on
-// the delegating call: create_value(int) lives in the dependent base
-// ChunkOmpPolicy, which unqualified lookup does not search.
+// OpenMP: delegates to the rank-aware overload. The serial specialisation below allocates
+// directly (no per-thread free list).
 template <typename T, typename Derived, bool Enabled>
 void ChunkOmpPolicy<T, Derived, Enabled>::create_value() noexcept
 {
@@ -315,9 +273,8 @@ void ChunkOmpPolicy<T, Derived, Enabled>::create_value() noexcept
 template <typename T, typename Derived>
 void ChunkOmpPolicy<T, Derived, false>::create_value() noexcept
 {
-    // Same shared path as the OpenMP overload above; serially there is no reuse
-    // list, so the first initialiser is never reached (see the serial
-    // ChunkAllocPolicy specialisation, which accepts and ignores it).
+    // Serially there is no reuse list: the first initialiser is ignored (serial
+    // ChunkAllocPolicy).
     values = Base::allocate_chunk_internal(
         0, [](T*) noexcept {},
         [](T* vals) noexcept
@@ -329,18 +286,12 @@ void ChunkOmpPolicy<T, Derived, false>::create_value() noexcept
         });
 }
 
-// Out-of-line body of the Enabled=true specialisation's method. No guard is
-// needed: the primary template is only ever instantiated with Enabled=true (the
-// false case is a separate specialisation with its own no-op), so this is never
-// instantiated in the counter-based build.
+// No guard needed: the primary template is only instantiated with Enabled=true.
 template <typename T, typename Derived, bool Enabled>
 void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, const Proxy<T>* proxy)
 {
-    // Before the first parallel region the per-rank lists do not exist yet
-    // (they are sized at region begin), and ArrayChunk::resize() calls this
-    // from create(): nothing queued, nothing to do. Indexing the empty vector
-    // aborted every v1 array creation under a hardened libstdc++ (multi-mat),
-    // and read past it elsewhere.
+    // Before the first parallel region the per-rank lists do not exist (sized at region
+    // begin), yet ArrayChunk::resize() calls this from create(): do not index them.
     if (thr < 0 || static_cast<size_t>(thr) >= manager_chunk::chunk_to_compress_potentially_thr.size())
     {
         return;
@@ -359,9 +310,8 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
 
     if (proxy && max_thr > 1)
     {
-        // A flush in progress makes start() decline: ask first, before
-        // marking -- see block_pass_precheck.h (10 million mark/unmark rounds
-        // at 128 threads on Grace otherwise).
+        // A flush in progress makes start() decline: ask first, before marking, or the pass
+        // spins in mark/unmark rounds (block_pass_precheck.h).
         if (block_pass_yields_to_flush<Proxy<T>, Chunk<T>>(max_thr))
         {
             return;
@@ -389,8 +339,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
             }
             return;
         }
-        // Check builds: the window is shut, commit the claims -- what the
-        // store_value() guard tests (ChunkBase::steal_commit).
+        // Check builds: window shut, commit the claims (tested by store_value()'s guard).
         if constexpr (build_config::any_check)
         {
             for (int k = 0; k < sz; ++k)
@@ -409,15 +358,9 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
 
     fill_list_chunk_to_compress_in_par(thr, ll_compt);
 
-    // Geometry: the list of one rank mixes chunks from EVERY array, at their
-    // own sizes once one has been re-chunked. clear_int_st() frees the buffer
-    // into the reuse list of the AMBIENT size (free_block_to_pool), so each
-    // chunk is pinned to its own n_elems right before its clear, as Chunk2's
-    // make_block_compression_impl and Chunk2A's do. Pinned once to the
-    // triggering array's size (FastBlockSupport::make_block_compression),
-    // a 64-chunk of another array cleared from a pass at 128 would park its
-    // buffer in the 128 list, which hands it out as a 128-buffer later:
-    // non-reproducible results after a re-chunk, at 2-3 threads.
+    // Geometry: a rank's list mixes chunks of EVERY array, at their own sizes. clear_int_st()
+    // frees into the reuse list of the AMBIENT size, so pin each chunk to its own n_elems
+    // right before its clear (as Chunk2 / Chunk2A) -- never once to the triggering array's.
     [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
     for (const auto& tup : ll_compt)
     {
@@ -442,14 +385,8 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
         const int num_chunk = std::get<1>(tup);
 
         const int num_tab = std::get<2>(tup);
-        // Hand the candidate back: its mark FIRST, then the dedup flag. While
-        // the flag is up the chunk is in no other thread's list, so no other
-        // pass can have marked it and this unmark only drops our own claim
-        // (idempotent for the ones released above). The other way round,
-        // another thread could queue the chunk once the flag was down, start
-        // its pass and mark it -- and this unmark erased that claim: writers
-        // then wrote into a chunk that pass was scanning and stealing
-        // (read_reclaim_validation, mode `remark`).
+        // Hand the candidate back: its mark FIRST, then the dedup flag (the reverse order can
+        // erase another pass's claim: see Chunk2A<T>::make_block_compression).
         if (auto* const chunk_t = std::get<0>(tup))
         {
             chunk_t->steal_unmark();
@@ -481,12 +418,9 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
     }
 }
 
-// CHUNK_STATS: the release counter differs between modes -- pool under OpenMP
-// (the buffer goes back to the per-thread pool), free serially (it is released
-// outright). NOT counted by the OMP caller: unlike chunk2/chunk2a, whose
-// clear_int_st delegates here, the OMP chunk-v1 path calls clear_int_st
-// directly and releases the block itself, so the counter lives there; adding
-// one here too would double-count if this entry point is ever wired up.
+// CHUNK_STATS: release counter is "pool" under OpenMP, "free" serially. The OMP chunk-v1
+// path does not come here (clear_int_st releases the block itself and counts there): do not
+// count in both if this entry point is ever wired up.
 template <typename T>
 void Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
 {
@@ -537,13 +471,9 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
 template <typename T, typename Derived, bool Enabled>
 void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_elems)
 {
-    // CHUNK_STATS: a compression completing -- the buffer is parked and the chunk
-    // returns to the constant. Counted here rather than in init_values_cst_val:
-    // that one is also reached from teardown and neutralisation paths, which are
-    // not compressions (it reported 1175% success against `attempts`). The
-    // re-chunk rebuild releases old chunks through release_st() instead: counted
-    // here, every rebuilt chunk was also a "compression" (198% success, and
-    // ~29 GB of phantom compress bytes on a 64-thread shrink_bench run).
+    // CHUNK_STATS: a compression completing. Count here, not in init_values_cst_val (also
+    // reached from teardown/neutralisation, which are not compressions). The re-chunk
+    // rebuild releases through release_st() directly so it is not counted as compression.
     if constexpr (chunk_config::stats)
     {
         increm_chunk_compress<Chunk<T>>();
@@ -556,8 +486,8 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_
 template <typename T, typename Derived, bool Enabled>
 void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int n_elems, bool count_release)
 {
-    // CHUNK_STATS: a release that is not a compression (the re-chunk rebuild's
-    // old chunks) -- its bytes leave the live figure all the same.
+    // CHUNK_STATS: a release that is not a compression (re-chunk rebuild): bytes still
+    // leave the live figure.
     if constexpr (chunk_config::stats)
     {
         if (count_release)
@@ -575,18 +505,10 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int 
         }
     }
 
-    // Park into the list keyed by the buffer's OWN geometry (n_elems), not the
-    // ambient one. get_list_block_free_thr(thr) routes by thread_chunk_size(),
-    // i.e. by whichever array happened to write last. Once two geometries are
-    // alive at once -- a re-chunked array next to one left at the original size
-    // -- that is the wrong list roughly half the time: a 64-element buffer freed
-    // by the 64-array while the ambient reads 256 lands in the 256 list, and
-    // the next create_value() at 256 pops it for a 256-element chunk. ASan then
-    // shows tab2 reading 0 bytes past a 512-byte region still owned by tab5.
-    //
-    // The memset below already used n_elems for exactly this reason; the push
-    // must agree with it. Same defect family as 4f5a6c48 ("pin ambient on the
-    // free path, not just alloc"), fixed for Chunk2 and never for v1.
+    // Park into the list of the buffer's OWN geometry (n_elems), not the ambient one:
+    // get_list_block_free_thr(thr) routes by thread_chunk_size(), i.e. by whichever array
+    // wrote last. With two geometries alive, a 64-element buffer would land in the 256 list
+    // and be popped for a 256-element chunk (overflow). The memset and the push must agree.
     auto& ll_block_free_thr = manager_chunk::get_list_block_free_thr_for_size(thr_rank, n_elems);
 
     Base::init_block(values.load(), n_elems);
@@ -599,8 +521,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int 
 template <typename T, typename Derived>
 void ChunkOmpPolicy<T, Derived, false>::clear_st()
 {
-    // CHUNK_STATS: serial twin of the OpenMP clear_st above -- count the
-    // compression, then release.
+    // CHUNK_STATS: serial twin of the OpenMP clear_st above.
     if constexpr (chunk_config::stats)
     {
         increm_chunk_compress<Chunk<T>>();
@@ -627,8 +548,8 @@ void ChunkOmpPolicy<T, Derived, false>::release_st(bool count_release)
     {
         if (!derived().written())
         {
-            // As ChunkBase::debug_check_written: clearing an unwritten chunk
-            // parks the shared sentinel as a buffer. Was a message, then on.
+            // As ChunkBase::debug_check_written: clearing an unwritten chunk frees the shared
+            // sentinel as a buffer.
             CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written");
         }
     }

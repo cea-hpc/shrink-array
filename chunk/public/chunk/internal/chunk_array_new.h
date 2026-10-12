@@ -19,22 +19,17 @@
  * @file chunk_array_new.h
  * @brief The array-new of the three chunk variants, in one place.
  *
- * @details Chunk, Chunk2 and Chunk2A each offer `operator new[]`, and each one
- *          does the same thing: allocate the raw memory, then point every
- *          chunk of the array at its first constant, in parallel when the
- *          array is large enough. Only the per-chunk initialiser differs
- *          (`init_values_cst_val()` on v1, `init_after_constructor()` on
- *          chunk2 / chunk2A), so that is what the helper below takes, and the
- *          three operators are one line each.
+ * @details Each variant's `operator new[]` allocates, then points every chunk
+ *          at its first constant (in parallel when large enough); only the
+ *          per-chunk initialiser differs (`init_values_cst_val()` on v1,
+ *          `init_after_constructor()` on chunk2 / chunk2A), which the helper takes.
  *
- * @note These operators are for a PLACEMENT-new array. `new C[n]` runs the
- *       default constructors right after the operator, which overwrite what it
- *       wrote; nothing in the library array-news a chunk (the arrays hold a
- *       std::vector<chunk_type>, initialised by their own loops).
+ * @note For a PLACEMENT-new array only: `new C[n]` runs the default
+ *       constructors afterwards, overwriting it. The library never array-news
+ *       a chunk.
  *
- * @see examples/validation/chunk_array_new_validation.cpp -- the harness that
- *      covers every size regime of all three variants, inside and outside a
- *      parallel region.
+ * @see examples/validation/chunk_array_new_validation.cpp -- covers every size
+ *      regime of the three variants, inside and outside a parallel region.
  */
 
 #include <cstddef> // std::size_t
@@ -45,25 +40,19 @@ namespace shrink_array::chunk_array_new
 {
 
 /**
- * @brief Run @p init on each of the @p count chunks at @p v: on a team of its
+ * @brief Run @p init on each of the @p count chunks at @p v, on a team of its
  *        own from parallel_storage_init::kParallelInitMinChunks chunks on,
- *        outside a region -- parallel_storage_init::for_each_chunk(), the
- *        rule the arrays' own init loops follow too.
+ *        outside a region (parallel_storage_init::for_each_chunk()).
  *
- * @details The initialiser is one store per chunk, so this is a memory-bound
- *          sweep: worth a team on a large array, and only OUTSIDE a parallel
- *          region, where this function may open its own. Inside one it stays
- *          on the calling thread, deliberately:
+ * @details A memory-bound sweep (one store per chunk). Inside a parallel region
+ *          it stays on the calling thread, deliberately:
  *
- *          - an orphaned `omp for` would require EVERY thread of the team to
- *            call this, which no allocation does. Called from one thread (an
- *            `omp single`, a `master`, a branch), the caller blocks on the
- *            loop's barrier and the others on theirs: measured, it hangs at
- *            4 threads;
- *          - a nested `omp parallel` is worse: every default runtime
- *            serialises it (max_active_levels 1), so it runs on ONE thread
- *            anyway, and with nesting enabled it would open N x N/2 threads
- *            from an allocation.
+ *          - an orphaned `omp for` requires EVERY thread of the team to call
+ *            this, which no allocation does: called from one thread (`single`,
+ *            `master`, a branch), it hangs on the loop's barrier;
+ *          - a nested `omp parallel` is serialised by default runtimes
+ *            (max_active_levels 1), and with nesting enabled would open N x N/2
+ *            threads from an allocation.
  *
  * @tparam C    chunk type
  * @tparam Init callable `void(C&)`

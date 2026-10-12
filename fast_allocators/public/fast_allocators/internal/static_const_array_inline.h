@@ -130,10 +130,9 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
 
     if (sz <= max_const_block_size)
     {
-        // Batch per thread inside a region. Serially FAST_ALLOC_PMP_IN_PARALLEL_REGION is
-        // a constant false and the batch was never allocated, so the branch
-        // is dead; it still type-checks (rank 0, declarations present), which
-        // is what lets this be plain code rather than a directive.
+        // Batch per thread inside a region. Serially FAST_ALLOC_PMP_IN_PARALLEL_REGION is a
+        // constant false and the batch was never allocated: the branch is dead but still
+        // type-checks, so it can be plain code rather than a directive.
         if (alloc_config::use_openmp && FAST_ALLOC_PMP_IN_PARALLEL_REGION)
         {
             const int thr_rank = FAST_ALLOC_PMP_THREAD_RANK;

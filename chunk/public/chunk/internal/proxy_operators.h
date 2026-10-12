@@ -32,15 +32,9 @@ namespace shrink_array
  * @tparam Derived The derived proxy class (Proxy2A, Proxy2, etc.)
  * @tparam T The underlying value type
  *
- * This class implements all arithmetic operators (+, -, *, /) for proxy types,
- * handling both composite types (complex, matrices, vectors) and scalar types.
- *
- * Key features:
- * - Uses C++20 concepts for cleaner constraints
- * - CRTP pattern for zero-overhead abstraction
- * - Preserves type precision with std::common_type_t for scalars
- * - Supports any composite type (matrices, complex, quaternions, etc.)
- * - Separate overloads for composite and scalar to avoid ambiguity
+ * Binary +, -, *, / between a proxy and a composite (result in U) or a scalar
+ * (result in std::common_type_t, to keep precision). Composite and scalar have
+ * separate overloads to avoid ambiguity.
  *
  * @note All operators are constexpr and noexcept where possible
  */
@@ -54,12 +48,10 @@ class ProxyOperators
 
     /**
      * @brief Multiplies a composite type by a Proxy (commutative: composite * proxy)
-     * @tparam U Composite arithmetic type (complex, matrix, vector, quaternion, etc.)
+     * @tparam U Composite arithmetic type (complex, matrix, vector, ...)
      * @param lhs Left operand (composite value)
      * @param rhs Right operand (proxy)
      * @return Result of multiplication in type U
-     *
-     * @note Works with any type supporting arithmetic operations with T
      */
     template <typename U>
         requires composite_arithmetic<U, T>
@@ -70,12 +62,10 @@ class ProxyOperators
 
     /**
      * @brief Multiplies a Proxy by a composite type (commutative: proxy * composite)
-     * @tparam U Composite arithmetic type (complex, matrix, vector, quaternion, etc.)
+     * @tparam U Composite arithmetic type (complex, matrix, vector, ...)
      * @param lhs Left operand (proxy)
      * @param rhs Right operand (composite value)
      * @return Result of multiplication in type U
-     *
-     * @note Works with any type supporting arithmetic operations with T
      */
     template <typename U>
         requires composite_arithmetic<U, T>
@@ -86,7 +76,7 @@ class ProxyOperators
 
     /**
      * @brief Multiplies a scalar by a Proxy (commutative: scalar * proxy)
-     * @tparam U Scalar arithmetic type (int, float, double, etc.)
+     * @tparam U Scalar arithmetic type
      * @param lhs Left operand (scalar)
      * @param rhs Right operand (proxy)
      * @return Result in common type to preserve precision
@@ -99,7 +89,7 @@ class ProxyOperators
 
     /**
      * @brief Multiplies a Proxy by a scalar (commutative: proxy * scalar)
-     * @tparam U Scalar arithmetic type (int, float, double, etc.)
+     * @tparam U Scalar arithmetic type
      * @param lhs Left operand (proxy)
      * @param rhs Right operand (scalar)
      * @return Result in common type to preserve precision
@@ -116,12 +106,10 @@ class ProxyOperators
 
     /**
      * @brief Divides a composite type by a Proxy
-     * @tparam U Composite arithmetic type (complex, matrix, vector, quaternion, etc.)
+     * @tparam U Composite arithmetic type (complex, matrix, vector, ...)
      * @param lhs Left operand (composite value)
      * @param rhs Right operand (proxy, divisor)
      * @return Result of division in type U
-     *
-     * @note Works with any type supporting arithmetic operations with T
      */
     template <typename U>
         requires composite_arithmetic<U, T>
@@ -132,12 +120,10 @@ class ProxyOperators
 
     /**
      * @brief Divides a Proxy by a composite type
-     * @tparam U Composite arithmetic type (complex, matrix, vector, quaternion, etc.)
+     * @tparam U Composite arithmetic type (complex, matrix, vector, ...)
      * @param lhs Left operand (proxy, dividend)
      * @param rhs Right operand (composite value, divisor)
      * @return Result of division in type U
-     *
-     * @note Works with any type supporting arithmetic operations with T
      */
     template <typename U>
         requires composite_arithmetic<U, T>
@@ -148,7 +134,7 @@ class ProxyOperators
 
     /**
      * @brief Divides a scalar by a Proxy
-     * @tparam U Scalar arithmetic type (int, float, double, etc.)
+     * @tparam U Scalar arithmetic type
      * @param lhs Left operand (scalar, dividend)
      * @param rhs Right operand (proxy, divisor)
      * @return Result in common type to preserve precision
@@ -161,7 +147,7 @@ class ProxyOperators
 
     /**
      * @brief Divides a Proxy by a scalar
-     * @tparam U Scalar arithmetic type (int, float, double, etc.)
+     * @tparam U Scalar arithmetic type
      * @param lhs Left operand (proxy, dividend)
      * @param rhs Right operand (scalar, divisor)
      * @return Result in common type to preserve precision
@@ -178,12 +164,10 @@ class ProxyOperators
 
     /**
      * @brief Adds a composite type and a Proxy (commutative: composite + proxy)
-     * @tparam U Composite arithmetic type (complex, matrix, vector, quaternion, etc.)
+     * @tparam U Composite arithmetic type (complex, matrix, vector, ...)
      * @param lhs Left operand (composite value)
      * @param rhs Right operand (proxy)
      * @return Result of addition in type U
-     *
-     * @note Works with any type supporting arithmetic operations with T
      */
     template <typename U>
         requires composite_arithmetic<U, T>
@@ -194,12 +178,10 @@ class ProxyOperators
 
     /**
      * @brief Adds a Proxy and a composite type (commutative: proxy + composite)
-     * @tparam U Composite arithmetic type (complex, matrix, vector, quaternion, etc.)
+     * @tparam U Composite arithmetic type (complex, matrix, vector, ...)
      * @param lhs Left operand (proxy)
      * @param rhs Right operand (composite value)
      * @return Result of addition in type U
-     *
-     * @note Works with any type supporting arithmetic operations with T
      */
     template <typename U>
         requires composite_arithmetic<U, T>
@@ -210,7 +192,7 @@ class ProxyOperators
 
     /**
      * @brief Adds a scalar and a Proxy (commutative: scalar + proxy)
-     * @tparam U Scalar arithmetic type (int, float, double, etc.)
+     * @tparam U Scalar arithmetic type
      * @param lhs Left operand (scalar)
      * @param rhs Right operand (proxy)
      * @return Result in common type to preserve precision
@@ -223,7 +205,7 @@ class ProxyOperators
 
     /**
      * @brief Adds a Proxy and a scalar (commutative: proxy + scalar)
-     * @tparam U Scalar arithmetic type (int, float, double, etc.)
+     * @tparam U Scalar arithmetic type
      * @param lhs Left operand (proxy)
      * @param rhs Right operand (scalar)
      * @return Result in common type to preserve precision
@@ -240,12 +222,10 @@ class ProxyOperators
 
     /**
      * @brief Subtracts a Proxy from a composite type
-     * @tparam U Composite arithmetic type (complex, matrix, vector, quaternion, etc.)
+     * @tparam U Composite arithmetic type (complex, matrix, vector, ...)
      * @param lhs Left operand (composite value, minuend)
      * @param rhs Right operand (proxy, subtrahend)
      * @return Result of subtraction in type U
-     *
-     * @note Works with any type supporting arithmetic operations with T
      */
     template <typename U>
         requires composite_arithmetic<U, T>
@@ -256,12 +236,10 @@ class ProxyOperators
 
     /**
      * @brief Subtracts a composite type from a Proxy
-     * @tparam U Composite arithmetic type (complex, matrix, vector, quaternion, etc.)
+     * @tparam U Composite arithmetic type (complex, matrix, vector, ...)
      * @param lhs Left operand (proxy, minuend)
      * @param rhs Right operand (composite value, subtrahend)
      * @return Result of subtraction in type U
-     *
-     * @note Works with any type supporting arithmetic operations with T
      */
     template <typename U>
         requires composite_arithmetic<U, T>
@@ -272,7 +250,7 @@ class ProxyOperators
 
     /**
      * @brief Subtracts a Proxy from a scalar
-     * @tparam U Scalar arithmetic type (int, float, double, etc.)
+     * @tparam U Scalar arithmetic type
      * @param lhs Left operand (scalar, minuend)
      * @param rhs Right operand (proxy, subtrahend)
      * @return Result in common type to preserve precision
@@ -285,7 +263,7 @@ class ProxyOperators
 
     /**
      * @brief Subtracts a scalar from a Proxy
-     * @tparam U Scalar arithmetic type (int, float, double, etc.)
+     * @tparam U Scalar arithmetic type
      * @param lhs Left operand (proxy, minuend)
      * @param rhs Right operand (scalar, subtrahend)
      * @return Result in common type to preserve precision
@@ -297,7 +275,7 @@ class ProxyOperators
     }
 
   protected:
-    // Protected constructor ensures this is only used as a base class
+    // Base class only.
     constexpr ProxyOperators() noexcept  = default;
     constexpr ~ProxyOperators() noexcept = default;
 };

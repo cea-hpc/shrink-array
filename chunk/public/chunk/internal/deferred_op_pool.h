@@ -116,10 +116,9 @@ struct DeferredOpDeleter
 /// @brief Non-owning handle on a queued op (destroy() releases it, not the pointer).
 using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 
-// Everything below is the per-thread deferred-op / ctx pool machinery. Only the
-// OpenMP write path ever allocates from it, but it compiles in every build:
-// the registries are thread_local vectors that stay empty serially, so the
-// reset entry points are no-ops there without a separate definition.
+// The per-thread deferred-op / ctx pools. Only the OpenMP write path allocates
+// from them, but they compile in every build: serially the thread_local
+// registries stay empty and the reset entry points are no-ops.
 
 // ============================================================================
 // Polymorphic allocator base
@@ -155,20 +154,15 @@ struct FastAllocatorBase
 /**
  * @brief Per-element-type storage slot for the byte allocator of allocator().
  *
- * The byte allocator itself is TCTypeAllocator<std::byte> — a type that does
- * NOT depend on T. Its only T-dependent input is element_size = sizeof(T).
- * When two element types have the SAME size (e.g. a 56-byte ctx and a 56-byte
- * op), FastAllocatorConcrete<Ctx>::allocator() and FastAllocatorConcrete<Op>::
- * allocator() compile to byte-identical bodies, and GCC's -fipa-icf (on at -O2)
- * folds them into ONE function sharing ONE thread_local pool — so the ctx pool
- * and the op pool alias and hand out the same address for a live ctx and a new
- * op (caught by POOL_LEDGER: "op_alloc ... but block is LIVE as ctx"; ARM-only
- * because folding decisions are target-dependent).
+ * Do not hold a plain `thread_local TCTypeAllocator<std::byte>` in allocator():
+ * that type does not depend on T, so for two same-sized types (a 56-byte ctx and
+ * a 56-byte op) the allocator() bodies are byte-identical and GCC's -fipa-icf (on
+ * at -O2, target-dependent) folds them into ONE function sharing ONE pool: the
+ * ctx and op pools alias and hand out a live ctx's block to a new op.
  *
- * Wrapping the thread_local in a T-parameterised type makes the two allocator()
- * bodies reference DIFFERENT types, which (a) gives each element type genuinely
- * disjoint storage and (b) makes the bodies non-identical so ICF cannot fold
- * them. This is portable — it does not rely on -fno-ipa-icf at the build level.
+ * Wrapping the thread_local in a T-parameterised type gives each element type
+ * disjoint storage and makes the bodies non-identical, so ICF cannot fold them,
+ * without relying on -fno-ipa-icf in the build.
  */
 template <typename T>
 struct DeferredByteAllocSlot
@@ -180,11 +174,9 @@ struct DeferredByteAllocSlot
 /**
  * @brief Per-element-type free-list slot.
  *
- * std::vector<T*> operations are pointer-generic and compile to identical code
- * regardless of T, so free_list() is foldable by -fipa-icf just like allocator()
- * — a shared free list would recycle a ctx block into the op pool (and vice
- * versa). Wrapping the vector in a T-parameterised type keeps each element
- * type's free list disjoint and the free_list() bodies non-identical.
+ * Same -fipa-icf hazard as DeferredByteAllocSlot: std::vector<T*> code is
+ * identical for every T, and a folded free_list() would recycle a ctx block into
+ * the op pool (and vice versa). The T-parameterised wrapper keeps them disjoint.
  */
 template <typename T>
 struct DeferredFreeListSlot
@@ -197,17 +189,11 @@ struct DeferredFreeListSlot
     DeferredFreeListSlot(DeferredFreeListSlot&&)                 = delete;
     DeferredFreeListSlot& operator=(DeferredFreeListSlot&&)      = delete;
 
-    // In std-alloc, allocate_raw() hands out blocks via
-    // ::operator new and recycle() parks them here in `fl` for reuse. Nothing
-    // else owns them, so when this thread_local slot dies the vector is
-    // destroyed but the pointed-to blocks are not — a real (if bounded, one-shot)
-    // leak that LSan flags. fast-alloc has no such gap: there the blocks live in
-    // the slab allocator, whose ~TCTypeAllocator frees every slab at thread
-    // teardown, and `fl` does not own anything. So we release here ONLY in
-    // std-alloc, making std-alloc symmetric with fast-alloc without needing the
-    // CHUNK_POOL_NO_REUSE diagnostic define. Under CHUNK_POOL_NO_REUSE the
-    // free-list is bypassed entirely (recycle deletes immediately), so `fl` is
-    // empty and this loop is a no-op — the two mechanisms don't double-free.
+    // std-alloc only: the blocks parked in `fl` come from ::operator new and
+    // nothing else owns them, so they are deleted here (else a bounded leak at
+    // thread exit). Under fast-alloc `fl` owns nothing: ~TCTypeAllocator frees
+    // the slabs. Under CHUNK_POOL_NO_REUSE recycle() deletes at once, `fl` stays
+    // empty and this loop is a no-op (no double free).
     ~DeferredFreeListSlot()
     {
         if constexpr (!build_config::use_fast_alloc)
@@ -243,10 +229,9 @@ class FastAllocatorConcrete : public FastAllocatorBase
     }
 
   private:
-    // Aliasing check (POOL_LEDGER): identity of this (type,thread) pool. Under
-    // fast-alloc it's the byte-slab address; otherwise the free-list address.
-    // Two element types share this address iff -fipa-icf folded their
-    // allocator()/free_list() (or the T-tag failed to prevent it).
+    // Aliasing check (POOL_LEDGER): identity of this (type,thread) pool -- the
+    // byte-slab address under fast-alloc, else the free-list address. Two element
+    // types share it iff -fipa-icf folded their allocator()/free_list().
     [[nodiscard]] const void* slab_addr() const noexcept override
     {
         if constexpr (build_config::use_fast_alloc)
@@ -266,12 +251,9 @@ class FastAllocatorConcrete : public FastAllocatorBase
     {
         if constexpr (build_config::pool_no_reuse)
         {
-            // Diagnostic mode (CHUNK_POOL_NO_REUSE): bypass the free-list AND the fast pool.
-            // Every block is a fresh global allocation, so a later recycle() is a
-            // real ::operator delete. This gives ASan/TSan full visibility into
-            // use-after-free / double-free of deferred ctx/op blocks — which the
-            // recycling free-list normally hides (freed blocks stay mapped and
-            // readable, so a use-after-recycle silently returns stale data).
+            // Diagnostic mode (CHUNK_POOL_NO_REUSE): bypass the free-list AND the fast
+            // pool, so recycle() is a real ::operator delete and sanitizers see a
+            // use-after-recycle that the free-list would hide (stale but mapped data).
             return ::operator new(sizeof(T));
         }
         auto& fl = free_list();
@@ -279,11 +261,8 @@ class FastAllocatorConcrete : public FastAllocatorBase
         {
             T* block = fl.back();
             fl.pop_back();
-            // Check-build guard: validate the pointer taken from the
-            // thread-local free-list BEFORE returning it. The crash is a wild
-            // address returned by allocate_raw and written by construct_at; this
-            // catches it at the source and blames the free-list path (a corrupt
-            // recycled pointer, e.g. a bad recycle() push) rather than the slab.
+            // Check-build guard: a firing here blames the free-list (a corrupt
+            // recycled pointer), not the slab.
             if constexpr (build_config::any_check)
             {
                 probe_returned_block(static_cast<void*>(block), "freelist");
@@ -294,10 +273,8 @@ class FastAllocatorConcrete : public FastAllocatorBase
         if constexpr (build_config::use_fast_alloc)
         {
             std::byte* raw = allocator().alloc();
-            // Check-build guard: validate the pointer fresh from the slab
-            // bump-allocator. If THIS fires, the TCTypeAllocator itself produced
-            // a wild address (corrupt block/bump state); if only the free-list
-            // probe fires, recycling is the culprit.
+            // Check-build guard: a firing here blames TCTypeAllocator itself
+            // (corrupt block/bump state).
             if constexpr (build_config::any_check)
             {
                 probe_returned_block(static_cast<void*>(raw), "slab");
@@ -314,44 +291,33 @@ class FastAllocatorConcrete : public FastAllocatorBase
      * @brief Recycles a raw memory block back into the per-thread free list.
      *
      * CROSS-THREAD SAFETY: a block may reach recycle() on a thread other than
-     * the one that allocated it — notably destroy_after_flush()'s defensive
-     * drain, which runs another thread's ops on the calling thread (see the
-     * warning in ManagerChunk::destroy_after_flush and reset_all). If we blindly
-     * push a foreign block into THIS thread's free_list, it survives here after
-     * the owning thread's thread_local TCTypeAllocator is destroyed and munmap()s
-     * its slabs — a later allocate_raw() then hands out a pointer into an
-     * unmapped page.
+     * the one that allocated it (destroy_after_flush()'s defensive drain runs
+     * another thread's ops here; see ManagerChunk::destroy_after_flush and
+     * reset_all). A foreign block pushed on THIS thread's free_list would outlive
+     * its owner's thread_local TCTypeAllocator, which munmap()s its slabs: a later
+     * allocate_raw() would hand out an unmapped pointer.
      *
-     * Guard: only recycle blocks that belong to THIS thread's slab (checked via
-     * TCTypeAllocator::is_free_able_elt, which resolves the block header from the
-     * pointer). A foreign block is dropped rather than recycled — a bounded,
-     * one-phase leak that is vastly preferable to a deferred use-after-free. The
-     * block's real owner still frees its whole slab at teardown.
+     * So only blocks of THIS thread's slab are recycled
+     * (TCTypeAllocator::is_free_able_elt); a foreign one is dropped -- a bounded
+     * leak, its owner still frees the whole slab at teardown.
      */
     void recycle(void* block) override
     {
         if constexpr (build_config::pool_no_reuse)
         {
-            ::operator delete(block); // CHUNK_POOL_NO_REUSE: real free for ASan/TSan
+            ::operator delete(block); // CHUNK_POOL_NO_REUSE: real free, visible to sanitizers
             return;
         }
         if constexpr (build_config::use_fast_alloc)
         {
-            // Only pool blocks owned by this thread's slab may go on this
-            // thread's free_list. Foreign blocks (cross-thread drain) are
-            // dropped to avoid a use-after-munmap when their owner's slab dies.
+            // Foreign block (cross-thread drain): drop it (see above).
             if (!allocator().is_free_able_elt(static_cast<std::byte*>(block)))
             {
                 if constexpr (build_config::any_check)
                 {
-                    // Dropping a foreign block is the EXPECTED outcome of a
-                    // cross-thread drain -- the guard doing its job, not an
-                    // anomaly. One line per block buried every other message in
-                    // check/debug runs, so report the first, then on a doubling
-                    // schedule with the running total: the fact stays visible,
-                    // the output stays bounded (~log2(N) lines per thread) and a
-                    // change of ORDER of magnitude is still obvious.
-                    // CHUNK_RECYCLE_TRACE=1 restores one line per block.
+                    // Expected, not an anomaly: report the first, then on a
+                    // doubling schedule with the running total (~log2(N) lines
+                    // per thread). CHUNK_RECYCLE_TRACE=1 prints one line per block.
                     static const bool               trace     = env_flag("CHUNK_RECYCLE_TRACE");
                     static thread_local std::size_t n_foreign = 0;
                     ++n_foreign;
@@ -399,38 +365,30 @@ class FastAllocatorConcrete : public FastAllocatorBase
      */
     static ByteAlloc& allocator()
     {
-        // T-tagged storage: distinct type per element type so -fipa-icf cannot
-        // fold this body across same-sized element types and make ctx/op pools
-        // share one slab. See DeferredByteAllocSlot above.
+        // T-tagged storage against -fipa-icf folding: see DeferredByteAllocSlot.
         thread_local DeferredByteAllocSlot<T> slot;
 
         if (!slot.initialized)
         {
-            // Route this pool's slabs to its own arena. Op and ctx pools use the
-            // same TCTypeAllocator<byte> but MUST draw from disjoint arenas -- a
-            // freed ctx slab reobtained by the op pool overwrites a live op's
-            // vtable with ctx layout. Arena is a template param so op and ctx
-            // get genuinely separate never-unmapped arenas.
+            // Op and ctx pools MUST draw from disjoint arenas: a freed ctx slab
+            // reobtained by the op pool would overwrite a live op's vtable.
             slot.alloc.set_arena(Arena);
 
             constexpr size_t element_size = sizeof(T);
             // TCAllocator threads its free list through the freed elements (an
-            // int in each): the same condition TCAllocator::init() checks at run
-            // time, caught here at compile time where the size is known.
+            // int in each): TCAllocator::init()'s run-time check, at compile time.
             static_assert(element_size >= sizeof(int) && element_size % alignof(int) == 0,
                           "deferred-op pool: an object must hold TCAllocator's free-list index");
 
-            // Slab size in BYTES -- what TCSlabPool::init's second parameter is
-            // (an OBJECT count there would give an object above a few KiB a
-            // slab smaller than itself). Never fewer than 64 objects per slab.
+            // Slab size in BYTES (TCSlabPool::init's second parameter; not an
+            // object count). Never fewer than 64 objects per slab.
             const uintptr_t slab_request =
                 std::max<uintptr_t>(deferred_pool_slab_granularity(), uintptr_t{64} * element_size);
 
-            // Last arg = nb_max_block_empty = -1 -> the op allocator NEVER
-            // munmaps an empty slab: a freed op slab's address could be
-            // reobtained by fast_alloc::map_anonymous() for the chunk VALUE pool
-            // on another thread and overwrite a still-live op. Op slabs are small
-            // and bounded, so the retained memory is modest.
+            // nb_max_block_empty = -1: NEVER munmap an empty slab. A freed op
+            // slab's address could be remapped by fast_alloc::map_anonymous() for
+            // the VALUE pool on another thread and overwrite a still-live op. Op
+            // slabs are small and bounded.
             slot.alloc.init(element_size, slab_request, -1);
             slot.initialized = true;
         }
@@ -442,22 +400,14 @@ class FastAllocatorConcrete : public FastAllocatorBase
      */
     static std::vector<T*>& free_list()
     {
-        // T-tagged storage (same anti-ICF rationale as allocator()): keeps each
-        // element type's recycled-block list disjoint even when vector<T*> code
-        // is identical across types.
+        // T-tagged storage against -fipa-icf folding: see DeferredFreeListSlot.
         thread_local DeferredFreeListSlot<T> slot;
         return slot.fl;
     }
 
-    // Check-build guard -- validate a pointer just before allocate_raw hands
-    // it to construct_at (wild addresses, mapped in NO region, have been seen).
-    //
-    // Do NOT discriminate on the address range: fast_alloc::map_anonymous()
-    // uses mmap(nullptr, ...), so the kernel may place a valid slab high in the
-    // 0xffff... band (same band as thread stacks). Ask the kernel whether the
-    // page is mapped, via msync(): it returns ENOMEM for an unmapped address
-    // and never faults. Only genuinely unmapped / misaligned / null pointers
-    // trip the probe.
+    // Do NOT discriminate on the address range: map_anonymous() uses
+    // mmap(nullptr, ...), so a valid slab may sit high in the 0xffff... band (with
+    // thread stacks). msync() asks the kernel instead: ENOMEM if unmapped, never faults.
     /// @brief Check-only: fail the invariant if @p ptr, returned by @p path,
     ///        is null, misaligned or not a mapped page.
     static void probe_returned_block(const void* ptr, const char* path) noexcept
@@ -477,12 +427,9 @@ class FastAllocatorConcrete : public FastAllocatorBase
                                        static_cast<const void*>(ptr), sizeof(T));
             }
 
-            // Page-containing-p mapped? msync(MS_ASYNC) touches nothing but the
-            // kernel's VMA table: 0 = mapped, -1/ENOMEM = not mapped. The whole
-            // object [p, p+sizeof(T)) may straddle two pages, so check both ends.
-            // Page bases as pointer arithmetic from p, not integer -> pointer
-            // casts (performance-no-int-to-ptr): p minus its offset in its page,
-            // and the same for the last byte of the object.
+            // msync(MS_ASYNC) only reads the VMA table: 0 = mapped, -1/ENOMEM = not.
+            // The object may straddle two pages: check both ends. Page bases by
+            // pointer arithmetic from p, not int -> pointer casts (performance-no-int-to-ptr).
             const long  pg   = ::sysconf(_SC_PAGESIZE);
             const auto  mask = static_cast<std::uintptr_t>(pg - 1);
             const auto* base = static_cast<const char*>(ptr);
@@ -555,9 +502,7 @@ class AllocatorRegistry
     template <typename T>
     static FastAllocatorBase* get_or_create()
     {
-        // Called at every allocation and every release of a deferred op or
-        // context: the answer for T is cached per thread, until reset()
-        // empties the registry (its generation moves on).
+        // Hot (every alloc/release): cached per thread until reset() moves the generation.
         thread_local CachedAllocatorSlot<Tag, T> cached;
         if (cached.alloc != nullptr && cached.generation == generation()) [[likely]]
         {
@@ -737,11 +682,10 @@ inline void reset_ctx_allocators()
  *    thread_local, independent of descriptor lifetime. Destroying
  *    descriptors releases nothing; blocks live for program lifetime.
  *
- * Kept for now as a phase-boundary hook. DO NOT refactor descriptors
- * into owning their pools without first fixing cross-thread free_list
- * references (destroy_after_flush's defensive drain recycles other
- * threads' blocks into the draining thread's free_list) — otherwise
- * this call becomes a deferred use-after-free.
+ * DO NOT make descriptors own their pools without first fixing cross-thread
+ * free_list references (destroy_after_flush's defensive drain recycles other
+ * threads' blocks into the draining thread's free_list): this call would become
+ * a deferred use-after-free.
  */
 inline void reset_all()
 {

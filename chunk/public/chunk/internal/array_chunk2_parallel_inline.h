@@ -17,9 +17,8 @@
 #pragma once
 
 // Out-of-line bodies of ArrayChunk2's mode-gated surfaces (ParallelSupport2,
-// FastBlockSupport2). Included at the end of array_chunk2.h, after the class and
-// its own inline file, so the CRTP self() down-cast sees a complete Derived and
-// so the compression manager stays out of the container declaration itself.
+// FastBlockSupport2). Included at the end of array_chunk2.h, so self() sees a complete
+// Derived.
 
 #include <tuple> // std::get on the candidate tuples (sweep of the other second-value keys)
 
@@ -37,17 +36,12 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
 {
     if constexpr (build_config::chunk_dynamic)
     {
-        // The compressibility scan reads the active size; make it THIS array's
-        // size regardless of whatever size the calling thread last operated on.
+        // The scan reads the active size: make it THIS array's.
         shrink_array::set_thread_chunk_size(self().chunk_size());
     }
 
-    // bool has its own pass and no second value: the (thr, inf_array, proxy)
-    // overload static_asserts for it, so ArrayChunk2<bool>::resize() did not
-    // compile with fast-block compression.
-    // [&], not [this]: `this` is used by the non-bool branch only, and an
-    // explicit capture unused in the bool instantiation is a clang warning
-    // (-Wunused-lambda-capture). [&] captures it where it is used.
+    // bool has its own pass (the (thr, inf_array, proxy) overload static_asserts for it).
+    // [&], not [this]: `this` is unused in the bool instantiation (-Wunused-lambda-capture).
     const auto pass_on_rank = [&](int thr)
     {
         if constexpr (Derived::is_not_bool)
@@ -60,9 +54,8 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
         }
     };
 
-    // No region opened here (the `omp parallel` form hit an LLVM OpenMP
-    // runtime bug): outside a region the caller drains every rank's list
-    // serially, inside one each thread drains its own.
+    // Do not open a region here (an `omp parallel` form hits an LLVM OpenMP runtime bug):
+    // outside a region every rank's list is drained serially, inside one each thread its own.
     if (!CHUNK_PMP_IN_PARALLEL_REGION)
     {
         for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
@@ -70,16 +63,12 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
             pass_on_rank(thr);
         }
 
-        // The passes above drain the key of this array's CURRENT second value
-        // only. Writes queued before a set_second_value() -- or a
-        // copy-assignment, which calls it -- sit under the EARLIER key, and
-        // nothing moved them: resize() then reallocated chunk_list under them
-        // (&chunk_list[j] dangling) and resize_tab_is_int() cleared their
-        // flags. Sweep every rank and every key for this array's leftovers:
-        // compress each against the current value (what the chunk holds is
-        // what counts now), clear its flag, then drop them by num_tab -- the
-        // other arrays' candidates are untouched. Same walk as
-        // rechunk_drop_candidates(). Sequential point: outside a region only.
+        // The passes above drain this array's CURRENT second-value key only. Writes queued
+        // before a set_second_value() (or a copy-assignment) sit under an EARLIER key; left
+        // there, resize() reallocates chunk_list under them (dangling &chunk_list[j]). Sweep
+        // every rank and key: compress this array's leftovers against the current value,
+        // clear their flags, drop them by num_tab (as rechunk_drop_candidates()).
+        // Sequential point: outside a region only.
         if constexpr (Derived::is_not_bool)
         {
             using proxy_t   = typename Traits::proxy_type;

@@ -60,20 +60,14 @@ namespace shrink_array
  * @brief Trait: does @p D provide a CHUNK-indexed `chunk_written(int)`?
  *
  * @details ArrayChunk2 does (Chunk2::written() needs the array's second-value
- *          index); ArrayChunk and ArrayChunk2A do not, and is_written_at()
- *          asks the chunk directly for them.
+ *          index); for ArrayChunk and ArrayChunk2A is_written_at() asks the chunk.
+ *          Do not test `written(int)` instead: every variant has it, but it takes
+ *          an ELEMENT index.
  *
- *          Not `written(int)`: every variant has that overload, but it takes an
- *          ELEMENT index -- fed a chunk index, it tests elements of chunk 0 and
- *          reports chunks written that are not.
- *
- *          NOTE: deliberately NOT written inline as
- *          @code if constexpr (requires { derived().chunk_written(j); }) @endcode
- *          inside is_written_at(): nvc++ (EDG) mis-evaluates a requires-expression
- *          that references a CRTP-cast (`derived()`) plus a captured local
- *          parameter, taking the FALSE branch even when the overload exists.
- *          A free trait with explicit declval'd parameters is standard SFINAE
- *          that all three frontends (gcc/llvm/nvc++) evaluate identically.
+ *          Do not inline this as `if constexpr (requires { derived().chunk_written(j); })`
+ *          in is_written_at(): nvc++ (EDG) takes the false branch for a
+ *          requires-expression over a CRTP cast plus a local parameter. A free
+ *          trait is evaluated alike by gcc, clang and nvc++.
  *
  * @tparam D the candidate derived array type
  * @see ArrayChunkBase::is_written_at
@@ -92,16 +86,10 @@ inline constexpr bool has_chunk_written_v = requires(const D& obj, int j) { obj.
  *          const side and a write proxy on the non-const side rather than
  *          @c T& / @c const T&.
  *
- *          Everything variant-specific (deferred compression state, second
- *          value, registry identity) is reached through derived(); the
- *          @c rechunk_* hooks give each variant a place to plug into the shared
- *          re-chunking algorithm.
- *
- *          What does not depend on the index type -- geometry, chunk list,
- *          dirty bitset, registry identity -- is ArrayChunkCore, the one part of
- *          the array the proxies and the per-T registries see (see
- *          array_chunk_core.h). This class adds the index-typed part: m_size and
- *          the element API.
+ *          Variant-specific state is reached through derived() and the
+ *          @c rechunk_* hooks. The index-independent part (geometry, chunk list,
+ *          dirty bitset, registry identity) is ArrayChunkCore, the only part the
+ *          proxies and registries see; this class adds m_size and the element API.
  *
  * @tparam Derived the concrete array type (ArrayChunk, ArrayChunk2,
  *         ArrayChunk2A), which must specialise ArrayChunkTraits.
@@ -114,17 +102,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                        public RechunkSupport<Derived>
 {
   public:
-    // RechunkSupport rebuilds the container from the outside — it swaps
-    // chunk_list / m_size / nb_chunk / size_policy_ between *this and the fresh
-    // array at the new geometry. It is a BASE of this class, so inheritance
-    // alone gives it no access to these protected members through a Derived
-    // object; the friendship does. Both specialisations are named, hence the
-    // <typename, bool> form.
+    // RechunkSupport swaps chunk_list / m_size / nb_chunk / size_policy_ with the
+    // fresh array; as a base it cannot reach these protected members through a
+    // Derived object without friendship (both specialisations: <typename, bool>).
     template <typename, bool>
     friend class RechunkSupport;
 
-    // Same reason for v1's re-chunk hooks: RechunkHooks::rechunk_swap_identity
-    // swaps num_tab, which lives here and is protected.
+    // Same for RechunkHooks::rechunk_swap_identity, which swaps num_tab.
     template <typename, bool>
     friend class RechunkHooks;
 
@@ -140,17 +124,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @name STL-vector-like member typedefs
      *
-     * Provided for generic code that inspects Container::value_type etc. NOTE
-     * the deliberate divergences from std::vector, forced by the compressed,
-     * gate-driven storage (see operator[] and front/back below):
-     *  - reference is proxy_type, NOT T&: a non-const positional access returns
-     *    the write proxy that drives deferred compression and the write gate. A
-     *    raw T& would bypass the gate.
-     *  - const_reference is T (a value), NOT const T&: a const access returns the
-     *    materialised value after sync_chunk; there is no stable address to
-     *    reference (a chunk may be cst / compressed / recycled).
-     *  - there is intentionally no `pointer` / `data()`: elements are not
-     *    contiguous and may be constant-folded, so a raw pointer cannot exist.
+     * Deliberate divergences from std::vector, forced by the compressed storage:
+     *  - reference is the write proxy, NOT T&: a raw T& would bypass the write gate;
+     *  - const_reference is T, NOT const T&: an element has no stable address
+     *    (its chunk may be constant, compressed or recycled);
+     *  - no `pointer` / `data()`: elements are not contiguous.
      * @{
      */
     using value_type      = T;
@@ -194,60 +172,36 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief Read-only random-access iterator over the elements.
      *
-     * @details Read-only by design: dereference yields a VALUE (T), like the
-     *          const operator[], never a T&/proxy — the compressed store has no
-     *          stable element address, and a writing iterator would need a proxy
-     *          reference that breaks permuting algorithms anyway. This iterator
-     *          makes the read half of the STL work: range-for,
-     *          std::copy/accumulate/find/equal/for_each, reverse traversal
-     *          (rbegin/rend) and, being random access, it[n], it2 - it1,
-     *          std::distance in O(1), and std::lower_bound / upper_bound /
-     *          equal_range / binary_search in O(log n) moves, not only O(log n)
-     *          comparisons.
+     * @details Dereference yields a VALUE (T), like the const operator[]: the
+     *          compressed store has no stable element address. Random access, so
+     *          std::distance is O(1) and std::lower_bound & co. move in O(log n).
+     *          Permuting algorithms (std::sort) are excluded by construction, as
+     *          they swap through T&: sort a std::vector copy, then assign() it back.
      *
-     *          std::sort and the other permuting algorithms stay out BY
-     *          CONSTRUCTION: they swap through T&, and an element that may live
-     *          in a chunk folded to a constant has no address. Sort a copy:
-     *          std::vector<T> v(a.begin(), a.end()); std::sort(v.begin(), v.end());
-     *          a.assign(v.begin(), v.end()).
+     *          Both tags are random_access, although a C++17
+     *          LegacyRandomAccessIterator wants a real reference type: the classic
+     *          algorithms pick their O(1) paths from iterator_category alone
+     *          (std::vector<bool>::const_iterator does the same). The C++20
+     *          std::random_access_iterator concept accepts a prvalue reference
+     *          (iterator_validation asserts it, and that std::sortable is false).
      *
-     *          Both tags are random_access. Formally a C++17
-     *          LegacyRandomAccessIterator wants a real reference type, but the
-     *          classic algorithms (std::lower_bound, std::distance, std::advance)
-     *          pick their O(1) paths from iterator_category alone -- with
-     *          iterator_concept only, just the std::ranges algorithms would --
-     *          and std::vector<bool>::const_iterator does the same with
-     *          reference = bool. The C++20 std::random_access_iterator concept
-     *          accepts a prvalue reference as is (iterator_validation asserts it,
-     *          and that std::sortable is false).
+     *          Cursor, not index: the iterator keeps the chunk pointer and offset
+     *          and syncs only on chunk entry, so ++ is ++offset in the common case.
+     *          The read gate on entry applies EVERY op pending on the chunk (the
+     *          counter is per chunk), so without a concurrent writer the whole
+     *          chunk reads as the const operator[] would.
      *
-     *          Cursor, not index: a naive iterator would recompute
-     *          (i>>decalage, i&modulo) and run sync_chunk on EVERY dereference.
-     *          Instead we keep the current chunk pointer + intra-chunk offset and
-     *          only cross to the next chunk when the offset overflows — so ++ is
-     *          a trivial ++offset in the common case, and sync_chunk is amortised
-     *          once per chunk (called on chunk entry). On entry the read gate
-     *          applies EVERY op pending on the chunk (the counter is per chunk,
-     *          not per offset), so with no concurrent writer the whole chunk then
-     *          reads exactly as the const operator[] would, 1/chunk_size as
-     *          often.
-     *
-     *          Jumps (+=, -=, +, -, []) go through seek(): a shift, a mask and a
-     *          sync of the target chunk -- one const operator[] read's worth.
-     *          O(1), not free: walk with ++, not with it[i] in a loop, which
-     *          pays a sync per element where ++ pays one per chunk.
+     *          Jumps (+=, -=, +, -, []) go through seek(): one const operator[]
+     *          read's worth. Walk with ++, not it[i] in a loop (a sync per element).
      *
      * @warning Invalidation contract = std::vector's: any resize/push_back/
      *          pop_back (reallocation) invalidates all iterators.
-     * @warning Concurrency contract = std::vector's too: no other thread may
-     *          write the array while an iteration over it is under way. A write
-     *          deferred onto the current chunk after its entry is NOT seen by the
-     *          rest of the chunk (the const operator[] has the same window, on one
-     *          element). Check builds (build_config::any_check, precise read gate)
+     * @warning Concurrency contract = std::vector's: no other thread may write
+     *          the array during an iteration. A write deferred onto the current
+     *          chunk after its entry is NOT seen; check builds (precise read gate)
      *          detect it at the next dereference.
      * @warning Iterators of two different arrays must not be compared or
-     *          subtracted (undefined, as for std containers); check builds stop
-     *          on it.
+     *          subtracted; check builds stop on it.
      */
     class const_iterator
     {
@@ -366,8 +320,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
          */
         [[nodiscard]] reference operator*() const noexcept
         {
-            // chunk_ already sync'd on entry (see enter_chunk(), reached by seek() and ++);
-            // this is the raw per-element read, identical to chunk_t[num].
+            // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[num].
             check_no_write_since_entry();
             return (*chunk_)[num_];
         }
@@ -476,19 +429,16 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
         /**
          * @brief Move the cursor to absolute index @p lin: every jump comes here.
-         * @details Chunk and offset recomputed from @p lin (chunk_of, offset_of), then
-         *          enter_chunk() -- ALWAYS, even when the jump stays in the same
-         *          chunk: the read gate of sync_chunk takes the offset, so a jump
-         *          reads exactly as the const operator[] does, never weaker.
-         *          @p lin may be m_size (end) or -1 (one before begin, which --
-         *          reaches too): that is chunk -1, its last slot, and
-         *          enter_chunk() leaves chunk_ null outside the list.
+         * @details Always calls enter_chunk(), even within the same chunk: the
+         *          read gate takes the offset, so a jump reads as the const
+         *          operator[] does, never weaker. @p lin may be m_size (end) or -1
+         *          (one before begin): the last slot of chunk -1, left null by
+         *          enter_chunk().
          * @param lin absolute linear index
          */
         void seek(ind_type lin) noexcept
         {
-            // -1 (one before begin) is the last slot of chunk -1, as an
-            // arithmetic shift and a mask gave it; the split itself wants i >= 0.
+            // -1 handled apart: the chunk/offset split wants i >= 0.
             lin_       = lin;
             num_chunk_ = lin < 0 ? -1 : owner_->chunk_index_of(lin);
             num_       = lin < 0 ? modulo_ : owner_->offset_in_chunk(lin);
@@ -527,11 +477,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief Set the runtime chunk geometry.
      *
-     * @details Only meaningful with DynamicChunkSize; with StaticChunkSize the
-     *          geometry is fixed at compile time and this is a no-op (guarded by
-     *          if constexpr so it compiles in both modes). In a dynamic build it
-     *          also registers the value allocators for @p new_chunk_size and records @p new_chunk_size as
-     *          the calling thread's active size.
+     * @details No-op with StaticChunkSize. With DynamicChunkSize it also
+     *          registers the value allocators for @p new_chunk_size and records it
+     *          as the calling thread's active size.
      *
      * @param new_chunk_size the new chunk size (a power of two or a multiple of 64)
      * @warning Must be called on an empty container, before any
@@ -588,14 +536,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     // ── Capacity, and the growth by one ──────────────────────────────────────
     //
-    // A container is nb_chunk chunks of chunk_size() elements, and the last
-    // chunk is never full: resize() to n allocates n / chunk_size + 1 of them.
-    // That spare room is the capacity, exactly as std::vector's. A push_back
-    // within it is ++m_size and one proxied write; only the push_back that
-    // needs a new chunk goes through resize(), which is a sequential point
-    // (a compression pass of the candidates, a drain of the deferred ops, the
-    // chunk list and the per-chunk tables regrown). reserve() moves that cost
-    // up front, once. Sequential context, as resize().
+    // resize() to n allocates n / chunk_size + 1 chunks (the last is never full):
+    // that spare room is the capacity. A push_back within it is ++m_size and one
+    // proxied write; beyond it, resize(), a sequential point (compression pass,
+    // drain of the deferred ops, tables regrown). reserve() pays that up front.
+    // Sequential context, as resize().
 
     /// @return The element count the current chunks can hold without a resize().
     [[nodiscard]] size_type capacity() const noexcept
@@ -634,10 +579,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /**
      * @brief Append one element built from @p args.
-     * @details An element type is trivially copyable, so this is push_back()
-     *          of a `T{args...}` -- here for the interface, not for a move it
-     *          could save. Braces, so that an aggregate (a struct of doubles)
-     *          builds from its members.
+     * @details push_back() of `T{args...}` (T is trivially copyable). Braces, so
+     *          that an aggregate builds from its members.
      */
     template <typename... Args>
     void emplace_back(Args&&... args)
@@ -710,14 +653,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief Call @p f(value) on every element of [@p first, @p last), in order.
      *
-     * @details Chunk by chunk: one sync_chunk per chunk (as the iterator on
-     *          chunk entry), then blocks of kBulkBlock elements copied under
-     *          one read section each (ChunkBase::read_block), @p f called
-     *          outside it. A range-for pays a section and the iterator's
-     *          bookkeeping per element.
-     *
-     *          Stats and NaN-check builds read through the iterator instead,
-     *          so every element still goes through the const operator[].
+     * @details One sync_chunk per chunk, then blocks of kBulkBlock elements
+     *          copied under one read section each (ChunkBase::read_block), @p f
+     *          called outside it. Stats and NaN-check builds read through the
+     *          iterator, so every element still goes through the const operator[].
      * @param first first index, inclusive (clamped to [0, size()])
      * @param last  last index, exclusive (clamped to size())
      * @param f     called as f(value); its return value is ignored
@@ -780,18 +719,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @brief Call @p f(std::span<const T>) on [@p first, @p last), block by
      *        block, in order: the loop over the span can be vectorised.
      *
-     * @details for_each_value() handing over each block of up to kBulkBlock
-     *          elements instead of its elements one by one.
-     *
-     *          When @p f is also callable as f(const T& v, std::size_t count),
-     *          a compressed chunk is passed that way: its constant and the
-     *          number of elements of the range it covers, in O(1), nothing
-     *          copied -- a sum adds v * count. Other callables get the
-     *          constant as spans, like any block.
-     *
-     *          Stats and NaN-check builds fill each block through the
-     *          iterator, so every element still goes through the const
-     *          operator[], and never call f(v, count).
+     * @details for_each_value() by blocks of up to kBulkBlock elements. When @p f
+     *          is also callable as f(const T& v, std::size_t count), a compressed
+     *          chunk is passed that way in O(1); other callables get it as spans.
+     *          Stats and NaN-check builds fill blocks through the iterator and
+     *          never call f(v, count).
      * @param first first index, inclusive (clamped to [0, size()])
      * @param last  last index, exclusive (clamped to size())
      * @param f     called as f(std::span<const T>), and f(v, count) when it
@@ -917,13 +849,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @brief What shrink_to_fit means for a container that compresses: every
      *        chunk that has become constant is folded now, and the buffers the
      *        pools keep parked for reuse are given back.
-     * @details Both are process-wide -- the compression candidates and the
-     *          reuse pools are per element type and per rank, not per array --
-     *          so this serves every array of the process, and the memory it
-     *          returns is theirs as much as this one's. The size and the
-     *          capacity do not change: a chunk is the unit of storage, and the
-     *          spare room in the last one is one chunk at most.
-     *          Sequential context.
+     * @details Both are process-wide (candidates and pools are per element type
+     *          and rank, not per array), so this serves every array. Size and
+     *          capacity do not change. Sequential context.
      */
     void shrink_to_fit();
 
@@ -946,11 +874,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @name First / last element
      *
-     * front()/back() on an empty container is UB in std::vector; here the store
-     * is compressed/gate-driven, so an access into an unallocated chunk geometry
-     * would corrupt silently rather than segfault cleanly. We throw instead — the
-     * same safety contract as at(). These are not hot-path (the hot path is
-     * operator[] in loops), so the emptiness test is free in practice.
+     * Unlike std::vector, these throw on an empty container (as at() does): an
+     * access into an unallocated chunk would corrupt silently. Not hot-path.
      *
      * @throws std::out_of_range if the container is empty
      * @{
@@ -965,9 +890,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief assign(count, val): std::vector semantics.
      *
-     * @details Drop current contents, size to @p count, fill with @p val. Built on
-     *          resize + operator[]. Serial (positional writes go through the
-     *          proxy gate); callers that want a parallel fill use the bulk init.
+     * @details resize + operator[], serial; use the bulk init for a parallel fill.
      *
      * @param count new element count
      * @param val value written to every position
@@ -985,23 +908,17 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief swap(): O(1) exchange of two containers.
      *
-     * @details No element moves: the chunk lists are exchanged, and with them
-     *          everything that describes those chunks. The per-array tables of
-     *          the proxies (constant types, Chunk2A's per-chunk second values,
-     *          the compression candidates) are indexed by num_tab, and the
-     *          registries map the array's address to it -- so the identity is
-     *          exchanged too, as rechunk_to() does, and the metadata travel
-     *          with their chunks. So do the slab-affinity key (the buffers were
-     *          drawn under it) and the dirty bitset. Exchanging the chunks
-     *          alone would leave each array reading the other's metadata rows.
-     *
-     *          Sequential context: the deferred writes of both arrays are
-     *          drained first, since they carry the array they were queued on.
+     * @details The chunk lists are exchanged with everything describing them:
+     *          the identity (num_tab indexes the proxies' per-array tables and the
+     *          registries map the address to it, as in rechunk_to()), the
+     *          slab-affinity key and the dirty bitset. Exchanging the chunks alone
+     *          would leave each array reading the other's metadata rows.
+     *          Sequential context: both arrays' deferred writes are drained first
+     *          (they carry the array they were queued on).
      *
      * @param other the container to exchange state with
-     * @note noexcept, as std::vector::swap. The drain and the registry
-     *       update around the O(1) exchange only fail on memory exhaustion or
-     *       a corrupt registry, which terminates.
+     * @note noexcept: the drain and registry update only fail on memory
+     *       exhaustion or a corrupt registry, which terminates.
      * @pre Both operands must share chunk geometry (enforced under check; with
      *      StaticChunkSize this is always true).
      */
@@ -1019,9 +936,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
 
     /**
-     * @brief CONST operator() for fast READ access.
-     * Marks the function as const so it can be called by read_value()
-     * and other const contexts.
+     * @brief Const read access (used by read_value()).
      * @param i global element index (unchecked)
      * @return the element value, after the read gate has been honoured
      */
@@ -1033,13 +948,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
         sync_chunk(chunk_t, num_chunk, num);
 
-        // Direct read from the chunk
         return chunk_t.read_value(num);
     }
 
     /**
-     * @brief NON-CONST operator() for direct REFERENCE access (Write).
-     * This version allows modification: arr(i) = value;
+     * @brief Raw reference access: arr(i) = value.
      * @param i global element index (unchecked)
      * @return a reference to the physical storage of the element
      * @warning Bypasses the write proxy: valid only where the chunk is known to
@@ -1051,22 +964,18 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         const int num       = offset_in_chunk(i);
         auto&     chunk_t   = chunk_list[num_chunk];
 
-        // Read gate
         sync_chunk(chunk_t, num_chunk, num);
 
-        // Reference to the physical storage
         return chunk_t(num);
     }
 
     /**
      * @brief Unchecked read access (hot path).
      *
-     * @details Force-inlined: GNU otherwise leaves this out-of-line, and it showed
-     *          up as ~30% of the 128-thread GNU profile (operator[] across all
-     *          types). LLVM and nvc++ already inline it. CHUNK_FORCE_INLINE degrades to
-     *          plain `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
-     *          -DSHRINK_AGGRESSIVE_INLINE, never nvc++) additionally pulls the
-     *          whole read path into this leaf on GNU/clang.
+     * @details Force-inlined: GCC otherwise leaves it out-of-line, where it costs
+     *          a large share of a many-thread profile. CHUNK_FORCE_INLINE is plain
+     *          `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
+     *          -DSHRINK_AGGRESSIVE_INLINE, never nvc++) pulls the whole read path in.
      *
      * @param i global element index; the caller guarantees 0 <= i < size()
      * @return the element VALUE (see the member-typedef note on const_reference)
@@ -1075,10 +984,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         const int num_chunk = chunk_index_of(i);
         const int num       = offset_in_chunk(i);
-        // Loop index is always in range; lets the compiler drop bounds/negative
-        // checks. Side-effect free (C++23 [[assume]] when available, else no-op).
-        // num = i & size_policy_.modulo()  =>  0 <= num <= static_cast<int>(size_policy_.modulo()) by construction.
-        // modulo() read into a local first: clang ignores an assumption that
+        // Lets the compiler drop bounds/sign checks (0 <= num <= modulo by construction).
+        // modulo() is read into a local first: clang ignores an assumption that
         // calls a function it cannot prove side-effect free (-Wassume).
         [[maybe_unused]] const int chunk_mod = static_cast<int>(size_policy_.modulo());
         CHUNK_ASSUME(num_chunk >= 0);
@@ -1096,23 +1003,16 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param i global element index; the caller guarantees 0 <= i < size()
      * @return the write proxy for that element, armed with the owning array and
      *         chunk number
-     * @warning The proxy is a HANDLE on the element, not a copy of its value:
-     *          it holds references into this array's chunk storage. It must not
-     *          outlive any operation that rebuilds or releases that storage -- resize()
-     *          (a push_back/emplace_back beyond the capacity included),
-     *          reserve(), shrink_to_fit(), clear(), assign(), swap(), a copy or
-     *          move assignment, the array's destruction, and above all a
-     *          re-chunk, whether called explicitly (rechunk_to) or decided by a
-     *          RechunkDecider. (shrink_to_fit() keeps the chunks but compresses
-     *          them and releases their buffers, which a proxy's ctor-time
-     *          `values` snapshot may still point into.) Reading a stale proxy
-     *          reads swapped-out or released storage.
-     *          Take a value when it has to survive: `T v = a[i];`, not
-     *          `auto v = a[i];` (which keeps the proxy). The compound operators
-     *          (+= ... >>=) and the prefix ++/-- return the same kind of proxy.
-     *          The proxy comes wrapped in an ElementRef, whose
-     *          operations only a temporary may use: a use of
-     *          `auto v = a[i];` does not compile (internal/element_ref.h).
+     * @warning The proxy is a HANDLE into this array's chunk storage, not a
+     *          value. It must not outlive an operation that rebuilds or releases
+     *          that storage: resize() (push_back/emplace_back beyond the capacity
+     *          included), reserve(), shrink_to_fit() (it releases buffers a
+     *          proxy's `values` snapshot may point into), clear(), assign(),
+     *          swap(), copy/move assignment, destruction, and any re-chunk
+     *          (rechunk_to or a RechunkDecider). Keep a value: `T v = a[i];`, not
+     *          `auto v = a[i];`. The compound operators and prefix ++/-- return
+     *          the same kind of proxy. The ElementRef wrapper makes a use of
+     *          `auto v = a[i];` fail to compile (internal/element_ref.h).
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](ind_type i) noexcept
     {
@@ -1146,22 +1046,18 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         val.set_this_and_num_chunk(registry_key(), num_chunk, num_tab);
         val.arm_storage_generation(&storage_generation_); // check builds only
 
-        // Chunk2 only: arm the proxy with the address of this array's registry
-        // mirror, so the write path copies the (second_value, ind, num_tab)
-        // tuple instead of scanning share_info_array for it. Discriminated on
-        // the DECLARED proxy type (chunk_traits.h), not on a `requires`: a
-        // renamed member must fail to compile, not silently fall back to the
-        // registry.
+        // Chunk2 only: arm the proxy with this array's registry mirror, so the
+        // write path copies (second_value, ind, num_tab) instead of scanning
+        // share_info_array. Tested on the DECLARED proxy type, not a `requires`:
+        // a renamed member must fail to compile, not fall back silently.
         if constexpr (std::is_same_v<proxy_type, Proxy2<T>>)
         {
             val.arm_inf_array(derived().registry_mirror());
         }
 
-        // The write entry does not sync: visibility is pulled by the read
-        // entries (proxy operator T()/read_values -> ChunkBase::reader_sync),
-        // and a same-offset WAW is handled on the direct write path. The const
-        // operator[]/operator() and the raw-reference T& operator() keep
-        // sync_chunk.
+        // No sync on the write entry: the read entries pull visibility
+        // (ChunkBase::reader_sync), and a same-offset WAW is handled on the
+        // direct write path. The const accessors and T& operator() keep sync_chunk.
 
         chunk_config::CheckNaN<chunk_config::do_check>::maybe(val, static_cast<long>(i));
 
@@ -1191,11 +1087,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /**
      * @name Index splitting
-     * A global element index is an ind_type (int or long); the chunk it falls
-     * in and its offset there are ints -- nb_chunk, the per-chunk tables and the
-     * chunks' own offsets are int, which holds while size() < INT_MAX *
-     * chunk_size(). The narrowing is written here, once, rather than implied at
-     * every `const int c = i >> ...`.
+     * ind_type (int or long) -> int chunk number and offset: the one place of
+     * the narrowing, valid while size() < INT_MAX * chunk_size().
      * @{
      */
     /// @brief The chunk holding element @p i (>= 0): i / chunk_size() (SizePolicy::chunk_of).
@@ -1233,20 +1126,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *        element read from @p from (a const read, through its gate) and
      *        written here through the proxy.
      *
-     * @details Element by element on purpose, like rechunk_refill: the copy
-     *          is then correct for every variant, for arrays of different
-     *          geometries, and for a destination that already holds data. A
-     *          chunk of @p from at the first constant costs one early-out per
-     *          element here (the destination's fresh chunks are at the first
-     *          constant too); a run of a second value or of any repeated
-     *          value is written materialised and folded back by the next
-     *          compression pass -- the copy is right at once, compact soon
-     *          after. Sequential context: the writes are this thread's, and
-     *          resize() is a sequential point.
-     *
-     *          chunk2's array-level second value is re-declared first when
-     *          @p from has one (the derived copy hooks take care of it: this
-     *          base knows no second value).
+     * @details Element by element on purpose, like rechunk_refill: correct for
+     *          every variant, any geometry pair, and a non-empty destination.
+     *          Repeated values are written materialised and folded back by the
+     *          next compression pass. Sequential context (resize() is a
+     *          sequential point). chunk2's second value is re-declared first by
+     *          the derived copy hooks.
      */
     void copy_from(const Derived& from);
 
@@ -1279,11 +1164,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     ind_type m_size; ///< Number of elements exposed by size().
 
-    /// @brief Bumped by every operation that rebuilds or releases the storage
-    ///        -- the list that invalidates a proxy (see operator[]). A check
-    ///        build's proxy keeps the value it saw and aborts on use when it
-    ///        changed (ProxyBase::check_not_stale); other builds never read
-    ///        it. Per array, not swapped: a swap invalidates both sides.
+    /// @brief Bumped by every operation that invalidates a proxy (see operator[]).
+    ///        Check builds' proxies abort on use when it changed
+    ///        (ProxyBase::check_not_stale). Not swapped: a swap invalidates both.
     unsigned int storage_generation_ = 0;
 
     /// @brief Counts this array among the live ones (live_arrays.h): the
@@ -1296,13 +1179,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         ++storage_generation_;
     }
 
-    /// @brief clear() takes the end-of-life census (print_compression_stats():
-    ///        the per-array line and the "still compressed (at exit)" counter).
-    ///        False on a re-chunk's tmp, which dies mid-run holding the OLD
-    ///        geometry: its census is not an exit, and its state depends on the
-    ///        build (an OpenMP re-chunk releases the source chunks during the
-    ///        copy, a serial one leaves them materialised), so counting it
-    ///        would make still-at-exit differ between sequential and OpenMP runs.
+    /// @brief clear() takes the end-of-life census (print_compression_stats()).
+    ///        False on a re-chunk's tmp: its state depends on the build (OpenMP
+    ///        releases the source chunks during the copy, serial does not), so
+    ///        counting it would make still-at-exit differ between the two.
     bool exit_census_ = true;
 
     /**
@@ -1402,28 +1282,16 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         if constexpr (build_config::use_openmp)
         {
-            // Per-chunk pre-filter: the deferred-enqueue path marks this bit
-            // with the CHUNK index (proxy_base_inline.h: mark_chunk_dirty(
-            // ctx->num_chunk)), so a clear bit reliably means "no deferred op
-            // was ever queued for this chunk" — skip the global check and the
-            // flush entirely. Only chunks that actually received a deferred
-            // write reach is_not_available(). This is what keeps the hot read
-            // path cheap: without it, every read of every chunk would run
-            // any_pending_ops() and (whenever anything is pending anywhere)
-            // trigger flush_chunk_all_ranks.
-            //
-            // Note: the bit is sticky (only clear_dirty_bitset() resets it), so a
-            // chunk stays "dirty" for the rest of the phase after its first
-            // deferred op. That is acceptable: it is only a coarse pre-filter.
-            // The precise, authoritative gate below is the chunk's OWN pending
-            // counter — see next comment.
+            // Coarse pre-filter: the deferred-enqueue path marks this bit with
+            // the CHUNK index (proxy_base_inline.h), so a clear bit means no
+            // deferred op was ever queued for this chunk: skip the gate. This
+            // keeps the hot read path cheap. The bit is sticky until
+            // clear_dirty_bitset(); the authoritative gate is the chunk's own
+            // pending counter, below.
             if (derived().is_chunk_dirty(num_chunk)) [[unlikely]]
             {
-                // Precise per-chunk gate (per-chunk pending_ops_ load) or coarse
-                // is_not_available() fallback under SHRINK_SMALL_CHUNK — selected
-                // by DeferredReadGate<Derived> (chunk_base.h). The
-                // outer `if constexpr (use_openmp)` already excludes serial builds,
-                // where the gate would be a no-op anyway.
+                // Precise per-chunk gate, or the coarse is_not_available()
+                // fallback under SHRINK_SMALL_CHUNK (DeferredReadGate, chunk_base.h).
                 if (chunk_t.read_gate_should_wait(offset)) [[unlikely]]
                 {
                     chunk_t.wait_for_availability(offset);
@@ -1435,8 +1303,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).
     static void rechunk_thunk(Core& core, unsigned int new_size)
     {
-        // The core IS the base of a Derived: its fn pointer was set by this
-        // very class, in the constructor of that Derived.
+        // Safe: rechunk_fn_ is only set by this class's ctor, inside a Derived.
         static_cast<Derived&>(core).rechunk_to(new_size);
     }
 };

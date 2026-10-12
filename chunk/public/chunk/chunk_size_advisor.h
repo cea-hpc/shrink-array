@@ -39,24 +39,17 @@
 // (chunk_size_policy.h).
 //
 // How U_mat(C) is obtained without re-chunking: the array is cut into
-// windows of C elements, each classified from the CURRENT chunks it overlaps.
-//   * Inside a run of constant chunks of one constant: compressed. Exact, from
-//     the chunk STATES alone. For Chunk2A the identity of a cst_val2 constant
-//     IS the values_load() pointer (a TabCstVal2Holder slot), so a run is a
-//     pointer comparison:
+// windows of C elements, each classified from the CURRENT chunks it overlaps
+// (details at "The window model" in analyze()). For Chunk2A the identity of a
+// cst_val2 constant IS the values_load() pointer (a TabCstVal2Holder slot), so
+// a constant run is a pointer comparison:
 //         cst1 + cst1           -> cst1
 //         cst2(p) + cst2(p)     -> cst2
 //         anything else         -> materialized
-//   * Covering a whole materialised chunk: materialised.
-//   * Overlapping a materialised chunk in part: its data is read (sampled,
-//     capped) -- uniform at a compressible value, and matching the rest of the
-//     window, it compresses -- then extrapolated.
-//   When S divides C (S * 2, S * 3, ...) the last case never occurs: the row is
-//   EXACT, the fold of the current states. NOTE: this rule is deliberately
-//   CONSERVATIVE for Chunk2A's mixed dual-value patterns; the demo harness
-//   cross-checks it against ground truth. Constant-at-C windows read from the
-//   data are counted as compressed regardless of which constant (cst1 vs cst2
-//   registry growth is a second-order cost, ignored here and documented).
+// When S divides C the row is EXACT; otherwise partly-overlapped materialised
+// chunks are sampled (capped) and extrapolated. Deliberately CONSERVATIVE for
+// Chunk2A's mixed dual-value patterns. Constant-at-C windows count as
+// compressed whichever constant (cst2 registry growth is ignored).
 //
 // CONCURRENCY CONTRACT: call at a QUIESCENT phase boundary only (same contract
 // as flush_pending_deferred_ops: no concurrent writers/compressors, deferred
@@ -123,11 +116,9 @@ template <typename T>
 struct ChunkSizeAdvisor
 {
     /// @brief Options::grid_bits' default: CHUNK_ADVISOR_GRID_BITS, read once, else 2.
-    /// @details Measured (shrink_bench chunk2a_dyn, --divisor 4, 16 threads,
-    ///          end of run): 1 (powers of two) 2320 MB, 2 2317 MB, 3 2396 MB.
-    ///          At 3 the cheapest size is often a small step (256 -> 384) whose
-    ///          metadata gain the decider's rate gate refuses -- and it does not
-    ///          fall back to the next best: two arrays stayed at 256.
+    /// @details 1 and 2 give about the same footprint, 3 a few % more: at 3 the
+    ///          cheapest size is often a small step (256 -> 384) that the
+    ///          decider's rate gate refuses, with no fallback to the next best.
     [[nodiscard]] static int default_grid_bits() noexcept
     {
         static const int bits = env_number<int>("CHUNK_ADVISOR_GRID_BITS", 2);
@@ -149,13 +140,10 @@ struct ChunkSizeAdvisor
         /// see the GLOBAL COMPRESSION LISTS monitoring table: List Memory /
         /// Allocated Chunks) + dirty bitset (128 B / 64 chunks = 2 B) + slack.
         double   meta_extra_bytes = 3.0;
-        uint32_t min_size         = 64; ///< don't evaluate below this. Raised from
-                                        ///< 16: the cost model under-counts real
-                                        ///< per-chunk overhead (slab block +
-                                        ///< fragmentation, not just meta_bytes),
-                                        ///< so it over-shrinks toward tiny chunks
-                                        ///< that fragment. 64 caps the descent at
-                                        ///< a sane overhead ratio.
+        uint32_t min_size         = 64; ///< don't evaluate below this: the model
+                                        ///< under-counts real per-chunk overhead
+                                        ///< (slab block, fragmentation), so a
+                                        ///< lower floor over-shrinks to tiny chunks.
     };
 
     /// @brief Estimate, from @p tab's constant runs, the memory each
@@ -200,20 +188,10 @@ struct ChunkSizeAdvisor
             }
         }();
 
-        // Classify one chunk: kind 0 = cst1, 1 = cst2, 2 = mat; `key`
-        // distinguishes cst2 constants for the coarser fold (two cst2 children
-        // merge iff same key). 2A: per-chunk value -> key = buffer ptr. Chunk2:
-        // one array-level value -> all cst2 share a sentinel key. v1: no cst2.
-        // Which constant values this variant can actually store WITHOUT keeping
-        // the buffer. Mirrors classify() below, at value level rather than at
-        // chunk-state level: classify() asks "is this chunk already constant?",
-        // this asks "would a uniform run of THIS value be storable as one?".
-        //
-        // v1 has a single designated constant (first_value). chunk2/2A add a
-        // second one, per array; when it is not yet designated the second slot
-        // is simply unavailable and only first_value counts -- which is the
-        // conservative answer, and the right one for a predictor whose errors
-        // have been one-sided so far.
+        // compressible_value: would a uniform run of THIS value be storable as
+        // a constant? (classify() below asks whether a chunk already is one.)
+        // v1: first_value only. Chunk2: also the array's second value, when
+        // designated (otherwise only first_value: the conservative answer).
         const in_t<T> cst1_value = Arr::chunk_type::first_value;
         bool          has_cst2   = false;
         T             cst2_value = cst1_value;
@@ -224,15 +202,11 @@ struct ChunkSizeAdvisor
         }
         const auto compressible_value = [&]([[maybe_unused]] const T& elem) -> bool
         {
-            // Chunk2A: any uniform value is compressible -- each chunk
-            // registers its own second value, and compress() compresses a
-            // chunk uniform at ANY value to that value (find_or_set). Its
-            // arrays have no array-level second value, so the gate below kept
-            // first_value only: the finer rows missed every other uniform
-            // sub-block, and a coarsening that turned out costly (writes
-            // materialising whole large chunks) could never look worse than
-            // refining back (tab1 stuck at "best=1024" while its data grew
-            // 406 -> 565 MB over six ticks at S=512).
+            // Chunk2A: any uniform value is compressible (compress() registers
+            // it per chunk, find_or_set). Do not apply the first_value gate
+            // below to it: the finer rows would miss every other uniform
+            // sub-block, and a costly coarsening could never look worse than
+            // refining back.
             if constexpr (chunk_config::use_chunk2a)
             {
                 return true;
@@ -247,6 +221,8 @@ struct ChunkSizeAdvisor
             }
         };
 
+        // classify: kind 0 = cst1, 1 = cst2, 2 = mat; two cst2 chunks merge iff
+        // same `key` (2A: buffer ptr; Chunk2: one shared sentinel).
         const auto classify = [&](const auto& chunk, const void*& key) -> int
         {
             key = nullptr;
@@ -285,11 +261,8 @@ struct ChunkSizeAdvisor
         };
 
         // ── Candidate sizes ───────────────────────────────────────────────────
-        // The powers-of-two ratios S >> k (k <= finer_levels) and S << l
-        // (l <= coarser_levels), plus, between the same bounds, every multiple
-        // of 64 whose C / 64 has at most grid_bits significant bits (2: 64 x
-        // 1, 2, 3, 4, 6, 8, 12, 16, ... -- steps of at most 50%; 3 adds 5, 7,
-        // 10, 14, ...). Never above cst_buffer_size: rechunk_to would refuse it.
+        // As in the header comment. Never above cst_buffer_size: rechunk_to
+        // would refuse it.
         std::vector<uint32_t> cand;
         {
             const auto     cap = static_cast<uint64_t>(shrink_array::cst_buffer_size);
@@ -332,24 +305,16 @@ struct ChunkSizeAdvisor
         // of the current extent L = nc * S (the last one shorter). A window
         // stays compressed iff it holds one compressible value -- read from
         // the CURRENT chunks it overlaps:
-        //   * inside a run of constant chunks of one (kind, key): compressed.
-        //     Counted exactly, per run, without reading any data;
-        //   * covering a whole materialised chunk: materialised (the chunk
-        //     was not compressible at S, it is not at C either: the coarser
-        //     fold's rule);
-        //   * overlapping a materialised chunk only in part: the ambiguous
-        //     case -- the overlapped data may be uniform at the window's value
-        //     (a finer or a misaligned size). Settled by reading the data, on
-        //     a sample of the materialised chunks.
-        // When S divides C every window covers whole chunks: no ambiguous
-        // window, the row is exact -- the coarser fold, at any multiple. When
-        // C divides S the ambiguous windows are the sub-blocks of the
-        // materialised chunks: the former finer sampling.
+        //   * inside a run of constant chunks of one (kind, key): compressed,
+        //     counted exactly per run without reading data;
+        //   * covering a whole materialised chunk: materialised;
+        //   * overlapping a materialised chunk only in part: ambiguous, settled
+        //     by reading the data of a sample of the materialised chunks.
+        // When S divides C there is no ambiguous window: the row is exact.
         //
-        // The ambiguous window is attributed to ONE owner, its first
-        // materialised chunk overlapped in part (only its first and last
-        // chunks can be), so that sampling the owners counts each once; the
-        // count is scaled by mat0 / scanned (picked owners).
+        // An ambiguous window is attributed to ONE owner, its first chunk
+        // materialised and overlapped in part, so sampling counts it once; the
+        // count is scaled by mat0 / scanned.
         const int64_t L    = nc * static_cast<int64_t>(S);
         const auto    nwin = [&](uint32_t c) { return (L + c - 1) / c; };
 
@@ -382,25 +347,18 @@ struct ChunkSizeAdvisor
         };
 
         // ── Classification, constant runs and sampling selection ──────────────
-        // No per-chunk scratch array: each pass classifies the chunks it reads
-        // (classify() is pure-read -- const accessors, a pointer compare against
-        // stable sentinels -- so concurrent reads are race-free; analyze() is
-        // called at a quiescent serial point, so spawning a region here is safe).
-        // Storing the classification instead (9 bytes per chunk: 140 MB for a
-        // 15.6-million-chunk array, zeroed and faulted in at EVERY call) cost
-        // 1-2 s of a 6.5 s run on the 64-thread chunk2a_dyn bench; classifying
-        // twice costs a fraction of that.
+        // No per-chunk scratch array: each pass re-classifies the chunks it reads
+        // (classify() is pure-read, so concurrent reads are race-free; analyze()
+        // runs at a quiescent serial point, so a region here is safe). Storing
+        // the classification (9 B per chunk, faulted in at every call) costs far
+        // more than classifying twice.
         //
         // Work unit: a PART, a contiguous run of chunks.
-        //  - the runs: a part counts the runs that lie inside it, and leaves its
-        //    first and last ones (they may continue in the parts around it) to
-        //    a serial merge -- the same runs, so the same integers, as a
-        //    sequential walk;
-        //  - each part counts its materialised chunks; the selection gives part p
-        //    the running count of the parts before it, so it picks exactly the
-        //    chunks the sequential walk picked (every stride-th materialised
-        //    chunk), and the parts' picks are concatenated in part order: the same
-        //    list, in the same order. The report is byte-identical.
+        //  - a part counts the runs inside it and leaves its first and last ones
+        //    to a serial merge -- the same runs as a sequential walk;
+        //  - part p starts from the materialised count of the parts before it,
+        //    so it picks exactly the sequential walk's chunks (every stride-th),
+        //    concatenated in part order. The report is byte-identical.
         // Parts are indexed by the loop, never by a thread rank, so a serial build
         // runs the same code in order.
         int64_t mat0 = 0;
@@ -830,12 +788,9 @@ struct ChunkSizeAdvisor
         }
         std::printf("   estimated gain best vs current : %.2f Mo\n", rep.best_gain_bytes() / (1024. * 1024.));
 
-        // Re-chunk cost (phase 2 model): only meaningful when best != current.
-        // Uses the chunk and materialised-chunk counts the table already holds.
-        // The gain is memory (bytes), the cost is time (ms) — different units,
-        // shown side by side so the reader can judge the trade-off. Constants
-        // are hardware specific (rechunk_cost_model.h: fitted on ARM, 64
-        // threads).
+        // Re-chunk cost, when best != current: gain (bytes) and cost (ms) are
+        // shown side by side. The constants are hardware specific
+        // (rechunk_cost_model.h).
         if (rep.best >= 0 && rep.cur >= 0 && rep.best != rep.cur)
         {
             const auto&  cur_e = rep.table[static_cast<std::size_t>(rep.cur)];

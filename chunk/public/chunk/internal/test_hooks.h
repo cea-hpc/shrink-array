@@ -37,7 +37,7 @@
  *          CMakeLists in Debug, CHECK_OPTIM and sanitizer builds), so the
  *          harnesses share one executable -- one definition of the
  *          header-only engine -- with the others. Elsewhere they compile to
- *          nothing. The former per-target macros still work for a whole-tree
+ *          nothing. The per-target macros also work for a whole-tree
  *          build: CHUNK_FORCE_DEFER_EVERY (config.h, build_config::
  *          force_defer_every), CHUNK_TEST_READ_DELAY_EVERY / _US and
  *          CHUNK_TEST_PASS_DELAY_EVERY / _US give the initial values, and a

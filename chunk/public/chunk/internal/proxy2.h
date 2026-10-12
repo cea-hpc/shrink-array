@@ -41,10 +41,7 @@
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
 
-// compression_manager.h is already included unconditionally by proxy_base.h
-// (which this file includes above), and CompressionManagerType is referenced
-// outside any guard below (Proxy2's own alias), so no conditional include is
-// needed here.
+// compression_manager.h (CompressionManagerType) comes unconditionally through proxy_base.h.
 
 namespace shrink_array
 {
@@ -77,8 +74,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 
     using Base::Base;
 
-    // Template (auto* ctx): never instantiated unless actually called, so it
-    // needs no build-mode guard. The real implementation lives in
+    // Template: instantiated only if called, so no build-mode guard. Implemented in
     // Proxy2FastCompPolicy<..., true>.
     /**
      * @brief Async-context counterpart of get_ptr_on_array().
@@ -107,10 +103,8 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     void set_info_second_value_ind();
 
     /**
-     * @brief Like set_info_second_value_ind(), but resolves the metadata
-     *        for an explicitly given array pointer rather than this
-     *        proxy's own ptr_on_array (used when the caller already has a
-     *        different array's key in hand, e.g. rechunk's tmp).
+     * @brief Like set_info_second_value_ind(), for an explicit array key instead of
+     *        ptr_on_array (e.g. rechunk's tmp).
      * @param key Array pointer to resolve metadata for.
      * @post second_value and ind are valid; num_tab unchanged.
      */
@@ -148,13 +142,9 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 
     /// @brief Arm this proxy with the owning array's registry mirror
     ///        (ArrayChunk2::registry_mirror()).
-    /// @details Called by ArrayChunkBase::operator[]. A proxy that
-    ///          is NOT armed -- a deferred-replay reconstruction, a *_from_key
-    ///          path -- keeps resolving the tuple through share_info_array.
-    /// @note Without it, every write scans the registry (deque::size(), then
-    ///       per entry a divide and a double dereference, then the tuple copy)
-    ///       -- a third of a 64-thread chunk2 run. The array already knows the
-    ///       answer.
+    /// @details Called by ArrayChunkBase::operator[]. An unarmed proxy (deferred-replay
+    ///          reconstruction, *_from_key path) resolves the tuple through share_info_array.
+    /// @note Without it every write scans the registry, a large share of the write cost.
     void arm_inf_array(const inf_array_t* src) const noexcept
     {
         inf_array_src_ = src;
@@ -162,10 +152,8 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 
   protected:
     /**
-     * @brief The second_value carried in inf_array, as populated by
-     *        set_info_on_chunk() -- an alternative source to
-     *        get_second_value() for callers that already went through the
-     *        full metadata load rather than the lighter-weight one.
+     * @brief The second_value in inf_array (set by set_info_on_chunk()), for callers that did
+     *        the full metadata load.
      * @return The second constant value.
      */
     [[nodiscard]] T make_second_value() const noexcept
@@ -234,15 +222,8 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
 
     using Base::Base;
 
-    /// @brief Arm this proxy with the owning array's registry mirror
-    ///        (ArrayChunk2::registry_mirror()).
-    /// @details Called by ArrayChunkBase::operator[]. A proxy that
-    ///          is NOT armed -- a deferred-replay reconstruction, a *_from_key
-    ///          path -- keeps resolving the tuple through share_info_array.
-    /// @note Without it, every write scans the registry (deque::size(), then
-    ///       per entry a divide and a double dereference, then the tuple copy)
-    ///       -- a third of a 64-thread chunk2 run. The array already knows the
-    ///       answer.
+    /// @brief Arm this proxy with the owning array's registry mirror (see the non-bool
+    ///        ProxySpec2::arm_inf_array()).
     void arm_inf_array(const inf_array_t* src) const noexcept
     {
         inf_array_src_ = src;
@@ -252,7 +233,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
     ///        set_info_second_value_ind() below for why this is NOT a no-op.
     void set_info_on_chunk();
 
-    // See the non-bool ProxySpec2 above: template, so no guard needed.
+    // Template: no guard needed (see the non-bool ProxySpec2).
     /**
      * @brief Async-context counterpart of get_ptr_on_array().
      * @param ctx Async write context.
@@ -262,12 +243,10 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
         return derived().get_ptr_on_array_async(ctx);
     }
 
-    // NOT a no-op. bool's second_value (true) and ind (0) are fixed, but num_tab
-    // is PER-ARRAY: with a second bool array (a rechunk's tmp), a default
-    // num_tab 0 indexes the wrong compression flag array (heap overflow) and
-    // queues candidates rechunk_drop_candidates(tmp) cannot remove. Resolve the
-    // real per-array tuple like the non-bool path; only num_tab is consumed
-    // (second_value/ind stay their constexpr).
+    // Must NOT be a no-op: bool's second_value (true) and ind (0) are fixed, but num_tab is
+    // per array. With a second bool array (rechunk's tmp) a default num_tab 0 indexes the wrong
+    // compression flag array (heap overflow) and queues candidates rechunk_drop_candidates(tmp)
+    // cannot remove. Only num_tab is consumed.
     /**
      * @brief Resolve this proxy's real per-array num_tab from the global
      *        metadata map (second_value/ind stay their constexpr values).
@@ -350,10 +329,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     using Base::values;
     using ProxySpec2<T, Derived>::inf_array;
 
-    // second_value lives in the dependent base ProxySpec2<T, Derived>; an
-    // unqualified reference from this template would not find it (two-phase
-    // lookup), so import it explicitly -- same reason Proxy2 itself does
-    // `using BaseSpec::second_value;`.
+    // second_value is in a dependent base: import it for unqualified use (two-phase lookup).
     using ProxySpec2<T, Derived>::second_value;
 
     using manager_chunk2 = ManagerChunk<Chunk2, T>;
@@ -507,27 +483,19 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     }
 
     // ------------------------------------------------------------------
-    // Compression-tracking surface. Every member of this specialisation needs the per-tab
-    // tracking arrays, which only exist in
-    // this mode; the Enabled=false specialisation provides the two no-op
-    // stubs its shared call site requires. Same shape as
-    // ProxyBaseFastCompPolicy in proxy_base.h.
+    // Compression-tracking surface: needs the per-tab tracking arrays, which exist only in
+    // this mode. Same shape as ProxyBaseFastCompPolicy in proxy_base.h.
     // ------------------------------------------------------------------
 
     /**
-     * @brief No-op (called at array teardown, before this array's num_tab is
-     *        dropped from the compression-candidate queues). The slot's
-     *        unique_ptr is released when resize_tab_is_int() reassigns this
-     *        num_tab to a new array; a slot never reused keeps its buffer until
-     *        program exit.
+     * @brief No-op, called at array teardown. The slot's buffer is released when
+     *        resize_tab_is_int() reassigns this num_tab; a slot never reused keeps it until exit.
      * @param num_tab Tab index being torn down.
      */
     static void clear_is_int([[maybe_unused]] int num_tab)
     {
-        // Intentionally empty -- see the @details above. The function itself
-        // must exist: ArrayChunk2::clear_core() calls it unconditionally inside
-        // its `if constexpr (use_fast_block_compression)` branch, so commenting
-        // the declaration out breaks every OpenMP build.
+        // Intentionally empty, but must exist: ArrayChunk2::clear_core() calls it in its
+        // `if constexpr (use_fast_block_compression)` branch.
         //  tab_is_inside_chunk_list_to_compress[num_tab].clear();
     }
 
@@ -592,13 +560,11 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
 
   protected:
     /**
-     * @brief Shared implementation behind operator*=, operator/=, and
-     *        operator%=: materialise the chunk if needed, then apply `op`
-     *        in a common high-precision type before truncating back to T.
-     * @details Deferred-compression form: the result is compared with the
-     *          second constant BEFORE the store, and the write is marked
-     *          for compression afterwards. The serial specialisation below
-     *          keeps the per-chunk counters instead.
+     * @brief Shared implementation of operator*=, /=, %=: materialise the chunk if needed,
+     *        apply `op` in a common high-precision type, truncate back to T.
+     * @details Deferred-compression form: the result is compared with the second constant
+     *          BEFORE the store, then the write is marked for compression. The serial
+     *          specialisation keeps per-chunk counters instead.
      * @tparam OP Binary operator to apply.
      * @tparam LAMBDA Callable `(op)` used on the materialise-and-apply path.
      * @tparam U Type of the operand.
@@ -641,22 +607,12 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
 
     using ProxySpec2<T, Derived>::ProxySpec2;
 
-    // Non-OpenMP (no embedded fast block compression): Proxy2 has no compression
-    // tracking tabs, so these are no-op stubs. They must still exist because
-    // ArrayChunkBase::create_common() calls resize_tab_is_int(nb_tab)
-    // unconditionally (Proxy2A needs it in both modes; Proxy2 does not, but the
-    // call site is shared).
     // ------------------------------------------------------------------
-    // Synchronous (counter-based) full-compression handlers. Counter mode is
-    // the exact complement of fast block compression
-    // (use_compression_with_counter == !use_fast_block_compression, see
-    // config.h), so this Enabled=false specialisation IS the counter-based
-    // mode -- these are its compression trigger, the counterpart of
-    // perform_compression()/the async candidate lists in the Enabled=true
-    // specialisation above. All call sites in proxy2_inline.h invoke them
-    // via `this->`, which reaches a dependent base correctly, and each is
-    // already inside `if constexpr (chunk_config::use_compression_with_counter)`
-    // -- the config constant matching this very specialisation.
+    // Counter mode is the exact complement of fast block compression
+    // (use_compression_with_counter == !use_fast_block_compression, config.h), so this
+    // specialisation IS the counter-based mode; the handlers below are its compression trigger.
+    // Callers (proxy2_inline.h) reach them via `this->` under
+    // `if constexpr (chunk_config::use_compression_with_counter)`.
     // ------------------------------------------------------------------
     // ========================================================================
     // Full compression handlers (counter-based variant)
@@ -670,15 +626,11 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
      */
     void manage_full_first_value() const
     {
-        // Pin the ambient size before triggering the free/compress chain
-        // (clear_st -> clear_int_st -> ChunkBase::free_values ->
-        // get_chunk_allocator(thr_rank).free_elt_pow2()). get_chunk_allocator()
-        // ROUTES by the ambient thread_chunk_size(), it does not derive it from
-        // the buffer being freed (addr_to_block(), deeper inside, does). A stale
-        // ambient -- left by an unrelated array's write elsewhere -- returns the
-        // WRONG pool object, and free_elt_pow2() then sl_remove()s the node from
-        // that pool's lists (sl_contains assertion / SIGSEGV). Fast-alloc only:
-        // std-alloc's svfree() does not route by ambient.
+        // Pin the ambient chunk size before the free chain (clear_st -> ... ->
+        // get_chunk_allocator(thr_rank).free_elt_pow2()): get_chunk_allocator() routes by the
+        // ambient thread_chunk_size(), not by the buffer. A stale ambient (left by another
+        // array's write) selects the wrong pool, which then removes a node it does not own.
+        // Fast-alloc only: std-alloc's svfree() does not route by ambient.
         if constexpr (build_config::chunk_dynamic)
         {
             shrink_array::set_thread_chunk_size(this->chunk_size());
@@ -729,10 +681,7 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
     void execute_arithmetic_compound_operation(OP op, const U& operand, LAMBDA operation);
 
   private:
-    // Aliases needed by the counter-based handlers above (the Enabled=true
-    // specialisation declares its own equivalents). `chunk` comes from the
-    // dependent base ProxyBase, so it must be imported explicitly for
-    // unqualified use -- two-phase lookup does not search dependent bases.
+    // Used by the counter-based handlers above (the Enabled=true specialisation has its own).
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 };
@@ -779,22 +728,15 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
 
     using values_type_ref = Base::atomic_ptr_ref_t; // C++20: no typename in an alias
 
-    // Both members exist in BOTH ProxyBaseFastCompPolicy specialisations (see
-    // proxy_base.h), so these using-declarations need no guard.
-    // NOTE: `using Base::read_values_async;` deliberately does NOT appear here.
-    // Unlike the two data members, read_values_async() is a METHOD declared only
-    // in the Enabled=true specialisation, so importing it into Proxy2 (which is
-    // instantiated in both modes) fails to compile without fast block
-    // compression. It is already imported where it is valid and actually used:
-    // Proxy2FastCompPolicy<..., true> (see `using Base::read_values_async;`
-    // there), which is the only place the async paths that call it live.
+    // Both members exist in both ProxyBaseFastCompPolicy specialisations: no guard needed.
+    // Do not add `using Base::read_values_async;`: it exists only in the Enabled=true
+    // specialisation (imported in Proxy2FastCompPolicy<..., true>), so it breaks builds
+    // without fast block compression.
     using Base::ptr_is_inside_chunk_list_to_compress; ///< Per-chunk compression flag pointer
     using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
 
-    // execute_arithmetic_compound_operation(op, operand, operation) is declared
-    // on each Proxy2FastCompPolicy specialisation: the deferred-compression
-    // form and the counter form are different algorithms (and hand `operation`
-    // different arguments).
+    // Declared per Proxy2FastCompPolicy specialisation: the deferred and counter forms are
+    // different algorithms (and pass `operation` different arguments).
     using FastCompPolicy::execute_arithmetic_compound_operation;
 
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
@@ -803,15 +745,12 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     /**
      * @brief Chunk2's marking pre-check: a write of a constant, on an array that
      *        has a candidate list for its second value.
-     * @details Shadows Proxy2Base::pre_check_mark_for_compression(), as
-     *          Proxy2A does. Candidate lists are keyed by second value and
-     *          created only by ArrayChunk2::set_second_value(); an array that
-     *          never declared one has none, and is not walked by the
-     *          compression pass either (it walks share_info_array's inf-array
-     *          list, filled by the same call). Such writes are rejected HERE,
-     *          before add_to_compression_list() CASes the chunk's "queued" flag
-     *          -- giving up after the CAS would leave the chunk flagged for
-     *          good.
+     * @details Shadows Proxy2Base::pre_check_mark_for_compression(), as Proxy2A does.
+     *          Candidate lists are keyed by second value and created only by
+     *          ArrayChunk2::set_second_value(); an array without one is not walked by the
+     *          compression pass either. Reject such writes HERE, before
+     *          add_to_compression_list() CASes the chunk's "queued" flag: giving up after the
+     *          CAS would leave the chunk flagged for good.
      * @param new_value The new value to check.
      * @param first_value The first constant value to compare against.
      * @param second_val The second constant value to compare against.
@@ -841,10 +780,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     {
         if constexpr (build_config::chunk_dynamic)
         {
-            // Route this (possibly worker-thread) allocation to the allocator
-            // for THIS array's chunk size: set the per-thread active size from
-            // the array right before materializing, so parallel-region writes
-            // on any worker allocate from the correct size pool.
+            // Route this (possibly worker-thread) allocation to the pool of THIS array's chunk
+            // size: set the per-thread active size right before materialising.
             shrink_array::set_thread_chunk_size(this->chunk_size());
         }
         if constexpr (is_not_bool)
@@ -868,17 +805,13 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     void perform_core_assignment(in_t<T> v) const noexcept;
 
-    /// @brief Materialise the chunk if it is stored in a compressed (cst_val1 /
-    ///        cst_val2) form, so `values` points at writable heap storage.
+    /// @brief Materialise the chunk if it is compressed (cst_val1 / cst_val2), so `values`
+    ///        points at writable heap storage.
     ///
-    /// Structural twin of Proxy2A::ensure_writable_storage: runs
-    /// set_info_second_value_ind when the counter policy provides it,
-    /// decompresses the second-value form first, then the first-value form,
-    /// seeding the nb_val_eq_* counters to "full". Bool and non-bool are both handled (the
-    /// non-bool test goes through BaseSpec::ind, which is what the no-argument
-    /// is_cst_val2() does too). Note the deliberate re-test of is_cst_val1()
-    /// AFTER the possible cst_val2 decompression: the two states are mutually
-    /// exclusive (single storage pointer), so at most one create_value runs.
+    /// Twin of Proxy2A::ensure_writable_storage: decompresses the second-value form, then
+    /// the first-value form, seeding the nb_val_eq_* counters to "full". is_cst_val1() is
+    /// re-tested AFTER the cst_val2 step on purpose: the states are mutually exclusive (single
+    /// storage pointer), so at most one create_value runs.
     void ensure_writable_storage();
 
     /**
@@ -923,10 +856,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @note Thread safety: Thread-safe via fast-path counters or slow-path lock.
      */
     template <typename U>
-    // in_t<U>, not const U&: this is the write engine, the one frame the
-    // operators do NOT inline into the caller, so its parameter is what
-    // crosses a call -- a char by value stays in a register, a struct goes by
-    // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
+    // in_t<U>, not const U&: this frame is not inlined into the caller, so small types pass
+    // in registers. Non-deducible, hence the explicit assign_impl<U>(v).
     [[nodiscard]] T assign_impl(in_t<U> v) noexcept;
 
     // ========================================================================
@@ -992,11 +923,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     }
 
     /**
-     * @brief Proxy-to-proxy assignment, `a[i] = b[j]`: read @p from's value
-     *        through operator T() (the gated read), then write it through
-     *        assign_impl() (the whole write engine) -- Proxy::operator='s
-     *        meaning. Deleted before, so code written for std::vector did not
-     *        compile.
+     * @brief Proxy-to-proxy assignment, `a[i] = b[j]`: read @p from through operator T()
+     *        (the gated read), then write through assign_impl() (Proxy::operator='s meaning).
      * @param from Proxy to read the value from.
      * @return *this.
      */
@@ -1095,14 +1023,10 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *          set_ptr_is_inside_chunk_list_to_compress()
      * @post Both num_tab and ptr_is_inside_chunk_list_to_compress are valid
      *
-     * @note No build-mode guard: both Base methods are declared
-     *       unconditionally in proxy_base.h, and the sole caller
-     *       (Proxy2Base::write_with_optional_lock_with_set_ptr) already gates
-     *       this behind `if constexpr (chunk_config::use_fast_block_compression)`.
-     *       Without fast block compression the discarded branch is never
-     *       instantiated, so
-     *       tab_is_inside_chunk_list_to_compress (left empty in that mode) is
-     *       never indexed.
+     * @note No build-mode guard: the sole caller
+     *       (Proxy2Base::write_with_optional_lock_with_set_ptr) is under
+     *       `if constexpr (chunk_config::use_fast_block_compression)`, so the empty
+     *       tab_is_inside_chunk_list_to_compress of other modes is never indexed.
      */
     void set_num_tab_ptr_is_inside_chunk() noexcept
     {
@@ -1162,9 +1086,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const Proxy2<T>& proxy)
 {
-    // Through the proxy's read entry, like operator T(): the raw values[num]
-    // snapshot is stale while a deferred op pends on this offset (forced-
-    // defer builds print 0 right after the write).
+    // Through the proxy's read entry, like operator T(): the raw values[num] snapshot is stale
+    // while a deferred op pends on this offset.
     os << proxy.read_pure();
     return os;
 }

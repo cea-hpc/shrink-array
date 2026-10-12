@@ -30,8 +30,7 @@ namespace shrink_array
 {
 
 /// @brief A Chunk2 write reached a candidate list that does not exist (see
-///        Proxy2::pre_check_mark_for_compression). Was a null dereference;
-///        now says what happened.
+///        Proxy2::pre_check_mark_for_compression).
 [[noreturn]] inline void chunk2_missing_candidate_list(int thr) noexcept
 {
     CHUNK_INVARIANT_FAILED("[CHUNK2] rank {}: no compression candidate list for this array's second value -- "

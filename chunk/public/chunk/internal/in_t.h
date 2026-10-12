@@ -24,42 +24,30 @@ namespace shrink_array
 // ─────────────────────────────────────────────────────────────────────────────
 // in_t<T> — small-type parameter helper
 //
-// Passes T by value when it's trivially copyable and ≤ 2*sizeof(void*)
-// (≤ 16 bytes on 64-bit), else by const reference. Intended for parameters of
-// hot signatures that don't need to distinguish lvalue/rvalue arguments.
+// Passes T by value when it is trivially copyable and ≤ 2*sizeof(void*)
+// (16 bytes on 64-bit), else by const reference. For parameters of hot
+// signatures that need not distinguish lvalue/rvalue arguments.
 //
 // ─── DECISION CHECKLIST FOR A NEW SIGNATURE ──────────────────────────────────
 //
-// When adding a function/method with a parameter of some type X, walk the
-// questions in order. Stop at the first "yes":
+// For a parameter of type X, stop at the first "yes":
 //
-//   Q1. Is X deduced from the argument at the call site (i.e. X is a
-//       function template parameter, not fixed at the enclosing scope)?
-//         → YES: use `const X&` or `X&&` (forwarding-ref). NOT in_t<X>.
-//                See rule (1) below.
-//
-//   Q2. Does the function body write, directly or transitively, to memory
-//       that the caller could alias via that parameter (e.g. writes through
-//       a pointer whose target might be the same object as the argument)?
-//         → YES: keep `X v` by value. NOT in_t<X>.
-//                See rule (2) below.
-//
-//   Q3. Otherwise → use `in_t<X> v`. Optimal in both directions: by-value
-//                   for small X (no indirection), by-const-ref for large X
-//                   (no copy).
+//   Q1. Is X deduced from the call-site argument (a function template
+//       parameter)?  → `const X&` or `X&&`, NOT in_t<X>. Rule (1).
+//   Q2. Does the body write, directly or transitively, to memory the caller
+//       could alias through that parameter?  → `X v` by value, NOT in_t<X>.
+//       Rule (2).
+//   Q3. Otherwise → `in_t<X> v`: by value for small X, by const ref for large X.
 //
 // ─── RULE (1): DEDUCTION ─────────────────────────────────────────────────────
 //
-// `in_t<X>` is a non-deducible context because computing `small_type<X>`
-// requires X to be known first — chicken-and-egg. Example that FAILS:
+// `in_t<X>` is a non-deducible context (small_type<X> needs X first):
 //
 //     template <typename U>
 //     void f(in_t<U> v);        // caller f(3.14) → "no matching function"
 //
-// Keep `const U&` (or `U&&` forwarding-ref) in that case. Representative
-// sites templated on U that keep `const U&` or a plain `U` (list is
-// illustrative, not exhaustive — grep for `template <typename U>` in the
-// Proxy hierarchy to find the current full set):
+// Representative sites templated on U that keep `const U&` or a plain `U`
+// (illustrative; grep `template <typename U>` in the Proxy hierarchy):
 //
 //     Proxy::operator=/+=/-=/*=//=/%=                 (proxy.h)
 //     Proxy2::operator=                               (proxy2.h)
@@ -74,35 +62,28 @@ namespace shrink_array
 //
 // The engines those operators call -- assign_impl (the three proxies),
 // ProxyBase::arithmetic_assign / bitwise_assign, Proxy::apply_compound_operation
-// -- DO take `in_t<U>`: their callers name U explicitly (`assign_impl<U>(v)`),
-// so nothing is deduced there.
+// -- DO take `in_t<U>`: their callers name U explicitly (`assign_impl<U>(v)`).
 //
 // ─── RULE (2): ALIASING ──────────────────────────────────────────────────────
 //
-// Do not use in_t<T> for a parameter that the function body both READS and
-// later OVERWRITES some memory it may alias. For large T, `in_t<T> = const T&`
-// may bind to memory that the function itself mutates, causing a subsequent
-// read of the reference to return a stale value. Since the element contract
-// opened to aggregates (a struct of three doubles is 24 bytes), in_t<T> IS
-// `const T&` for some T in use: the sites below keep `T v` by value for that
-// reason, not for a hypothetical future.
+// Do not use in_t<T> for a parameter when the body reads it and later
+// overwrites memory it may alias: for large T, `in_t<T> = const T&` may bind to
+// that memory and a later read returns the new value. Aggregate elements (a
+// struct of three doubles is 24 bytes) make in_t<T> a `const T&` in practice,
+// so the sites below keep `T v` for a real reason.
 //
-// The proxies' operator= are deduced sites too: they take `const U&` (one
-// overload for a clean conversion, one deprecated for a risky one) and hand
-// the operand to assign_impl<U>, whose in_t<U> copies a small operand once
-// and passes a large one (a struct) by reference into the chunk write. No
-// aliasing there: the operand comes from the caller (a const read returns a
-// VALUE, never a reference into a chunk buffer).
+// The proxies' operator= (deduced, `const U&`) hand the operand to
+// assign_impl<U>, whose in_t<U> is safe: the operand comes from the caller (a
+// const read returns a VALUE, never a reference into a chunk buffer).
 //
-// Canonical alias site — the function writes the chunk's second-value slot
-// through `ptr_second_value` (a SecondValueRef) after reading `second_v`, so
-// a `const T&` bound to that slot would change under it:
+// Canonical alias site — writes the chunk's second-value slot through
+// `ptr_second_value` (a SecondValueRef) after reading `second_v`, so a
+// `const T&` bound to that slot would change under it:
 //
 //     TabCstVal2Holder::find_or_set_ind_cst_val2      (tab_cst_val2_holder.h)
 //
-// Additional sites deliberately kept as `T v` under the same policy — no
-// aliasing manifests today, but they participate in write paths where a
-// future user extension with large T could introduce one:
+// Also kept as `T v` by policy: no aliasing today, but on write paths where a
+// large user T could introduce one:
 //
 //     TabCstVal2Holder::alloc_chunk(T val)            (tab_cst_val2_holder.h)
 //     ArrayChunk2::set_second_value(T)                (array_chunk2.h and
@@ -111,26 +92,20 @@ namespace shrink_array
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //
-// The aliasing rule extends to local snapshots of the form
-//
 //     const T v_old = values[num];       // snapshot
 //     ...                                // code that mutates values[num]
 //     if (v_old == something) { ... }    // read snapshot
 //
-// The copy is INTENTIONAL to isolate the snapshot from the subsequent write.
-// Do NOT "optimise" these to `const T&` — that would reintroduce the aliasing
-// hazard the outer function was carefully avoiding. `const T v_old`,
-// `const T v_new`, `const T current`, `const T second_v` throughout the
-// Proxy inline files and chunk*_std_inline.h are all intentional snapshots.
+// The copy is INTENTIONAL. Do NOT turn these into `const T&`: that
+// reintroduces the aliasing hazard. `const T v_old`, `v_new`, `current`,
+// `second_v` in the Proxy inline files and chunk*_std_inline.h are all
+// intentional snapshots.
 //
-// ─── ANTI-PATTERN: `const T x = expr; return x;` (unrelated but tempting) ───
+// ─── ANTI-PATTERN: `const T x = expr; return x;` ─────────────────────────────
 //
-// Not covered by in_t<T> at all, but often noticed at the same time as the
-// snapshot pattern above. The `const` on a local kills NRVO on the return
-// (the compiler cannot move a const object), forcing a copy at the return
-// site for any T that isn't cheaply copyable. Prefer a direct `return expr;`
-// — C++17 mandatory copy elision applies to the returned prvalue and
-// removes the copy entirely.
+// Unrelated to in_t but often seen next to snapshots: `const` on a returned
+// local kills NRVO (a const object cannot be moved), forcing a copy. Prefer
+// `return expr;` (C++17 guaranteed elision).
 //
 // ─────────────────────────────────────────────────────────────────────────────
 

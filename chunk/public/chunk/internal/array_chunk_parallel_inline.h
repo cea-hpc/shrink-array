@@ -39,7 +39,7 @@ void FastBlockSupport<Derived, true>::make_block_compression()
         shrink_array::set_thread_chunk_size(self().chunk_size());
     }
 
-    // No region opened here (the `omp parallel` form hit an LLVM OpenMP
+    // Do not open an `omp parallel` region here (it triggers an LLVM OpenMP
     // runtime bug): outside a region the caller drains every rank's list
     // serially, inside one each thread drains its own.
     if (!CHUNK_PMP_IN_PARALLEL_REGION)

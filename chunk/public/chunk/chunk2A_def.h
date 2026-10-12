@@ -24,24 +24,19 @@ class Chunk2ADef
 {
   private:
     // --- Compression List Settings ---
-    // The compression pass (make_block_compression -> start()) runs only once
-    // the per-thread "to compress" list grows past szm/2, where szm derives
-    // from these two constants. Raising the threshold amortizes start()'s
-    // atomic CAS + cross-thread flush scan over many writes instead of firing
-    // on nearly every write (the __aarch64_cas8_rel hotspot on short/ulong
-    // arrays at high thread counts).
+    // The compression pass (make_block_compression -> start()) runs only once the
+    // per-thread "to compress" list grows past szm/2, szm derived from the two
+    // constants below. A higher threshold amortizes start()'s atomic CAS and
+    // cross-thread flush scan over many writes.
     //
-    // This is driven by a DEDICATED knob, CHUNK2A_COMPRESS_LEVEL, NOT the global
-    // CHUNK_TUNING_LEVEL: the global one also drives chunk2's thresholds and buffer
-    // reuse, so tuning chunk2a through it would move several unrelated
-    // variables at once and make A/B comparisons meaningless.
-    // Override at build time with -DCHUNK2A_COMPRESS_LEVEL=<0|1|2|3>:
-    //   0 (default): original chunk2a values (factor 50 / min 500).
-    //   1 : extreme stress — compress very often (tiny threshold).
-    //   2 : intermediate — between original and level 3 (sweet-spot sweep).
-    //   3 : throughput — compress rarely (large threshold). Removed the CAS but
-    //       doubled the time in testing (writes then hit the costly
-    //       enqueue_deferred_write path on still-uncompressed blocks).
+    // Driven by its own knob, CHUNK2A_COMPRESS_LEVEL, not CHUNK_TUNING_LEVEL: the
+    // global one also moves chunk2's thresholds and buffer reuse, which would make
+    // A/B comparisons of chunk2a meaningless. -DCHUNK2A_COMPRESS_LEVEL=<0|1|2|3>:
+    //   0 (default): factor 50 / min 500.
+    //   1 : stress -- compress very often (tiny threshold).
+    //   2 : intermediate between 0 and 3.
+    //   3 : compress rarely. Slower overall: writes then take the costly
+    //       enqueue_deferred_write path on still-uncompressed blocks.
 #ifndef CHUNK2A_COMPRESS_LEVEL
     #define CHUNK2A_COMPRESS_LEVEL 0
 #endif

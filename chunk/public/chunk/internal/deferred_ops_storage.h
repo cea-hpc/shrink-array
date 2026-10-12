@@ -36,16 +36,13 @@ class DeferredOpsStorage
 {
   public:
     /**
-     * @brief Singleton access.
-     * The instance is constant-initialised (deferred_ops_storage_instance,
-     * below): no "Magic Static" lock check, usable before any dynamic
-     * initialisation.
+     * @brief Singleton access. Constant-initialised (deferred_ops_storage_instance): no
+     * magic-static guard, usable before any dynamic initialisation.
      */
     static DeferredOpsStorage& instance() noexcept;
 
     /**
-     * @brief Returns the raw pointer to the thread maps.
-     * Uses acquire memory order to ensure visibility of allocated data.
+     * @brief Raw pointer to the thread maps (acquire: pairs with allocate()'s publication).
      */
     per_thread_map* get() noexcept
     {
@@ -55,13 +52,10 @@ class DeferredOpsStorage
     /**
      * @brief Allocates the per-thread map array (idempotent, thread-safe).
      *
-     * Double-checked locking on arr_raw, under alloc_mutex. NOT std::call_once
-     * with a unique_ptr<once_flag> member: a DYNAMIC default-member-initializer
-     * (make_unique) on a static-storage singleton (the instance) is a
-     * static-initialization-order hazard -- allocate() running before that init
-     * dereferences a null unique_ptr (SIGABRT under nvc++). std::mutex has a
-     * constexpr constructor, so alloc_mutex is CONSTANT-initialized and
-     * the instance needs no dynamic init at all.
+     * Double-checked locking on arr_raw, under alloc_mutex. Do not use std::call_once with a
+     * dynamically initialised member (e.g. unique_ptr<once_flag>): allocate() can run before
+     * that init (static-init order). std::mutex is constant-initialized, so the instance
+     * needs no dynamic init at all.
      */
     void allocate()
     {
@@ -85,10 +79,8 @@ class DeferredOpsStorage
     }
 
     /**
-     * @brief Destroys the maps and invalidates the raw pointer.
-     * Can be called safely during execution. Serialized against allocate() by
-     * alloc_mutex so a concurrent (re)allocation cannot race the teardown. A
-     * later allocate() simply re-allocates (no once_flag to re-arm).
+     * @brief Destroys the maps and invalidates the raw pointer. Serialized against
+     * allocate() by alloc_mutex; a later allocate() re-allocates.
      */
     void destroy()
     {
@@ -98,8 +90,7 @@ class DeferredOpsStorage
             return;
         }
 
-        // Invalidate the global pointer so threads see it as null immediately,
-        // then free.
+        // Invalidate the pointer first, then free.
         arr_raw.store(nullptr, std::memory_order_release);
         std::vector<per_thread_map>().swap(arr_owner); // frees the maps and their storage
     }
@@ -121,12 +112,9 @@ class DeferredOpsStorage
 
 /**
  * @brief The one DeferredOpsStorage of each map type.
- * @details Every member is constant-initialisable (constexpr mutex and atomic
- *          constructors, an empty std::vector), so it needs no dynamic
- *          initialisation -- no static-init-order hazard -- and, as an
- *          Immortal (chunk/internal/immortal.h), it is never destroyed: a
- *          global array still reaches it after main returns. Outside the class:
- *          an Immortal of the class needs the class complete.
+ * @details Constant-initialisable (no static-init-order hazard) and, as an Immortal
+ *          (chunk/internal/immortal.h), never destroyed: a global array still reaches it
+ *          after main returns. Outside the class: an Immortal needs the class complete.
  */
 template <typename per_thread_map>
 inline constinit internal::Immortal<DeferredOpsStorage<per_thread_map>> deferred_ops_storage_instance{};

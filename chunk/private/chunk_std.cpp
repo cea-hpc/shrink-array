@@ -37,12 +37,12 @@ namespace shrink_array
 std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, CHUNK_STATS_N_VARIANT> __chunk_stats;
 #endif
 
-// No #ifdef _OPENMP left here. The bodies below are members of
+// No #ifdef _OPENMP here. The bodies below are members of
 // ChunkPoolParallelInterface (chunk_std.h), so they are TEMPLATES: a build
 // instantiates only its own specialisation and never compiles the other's. They
-// reach the facade through SingletonChk<AllT>, never SingletonChk<AllTypeChunk>
-// -- the calls must stay dependent, or phase-1 lookup resolves them against the
-// concrete type at definition time and we are back to needing the directive.
+// reach the facade through SingletonChk<AllT>, never SingletonChk<AllTypeChunk>:
+// the calls must stay dependent, or phase-1 lookup resolves them against the
+// concrete type at definition time and the other model fails to compile.
 
 // --- OpenMP: the pools are per-rank -------------------------------------
 

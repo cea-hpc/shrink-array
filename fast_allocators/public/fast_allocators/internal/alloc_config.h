@@ -20,13 +20,10 @@
  * @file alloc_config.h
  * @brief `constexpr` mirrors of the macros that configure the fast allocators.
  *
- * The macros are read HERE and nowhere else, so the allocator bodies can branch
- * with `if constexpr` instead of <tt>\#ifdef</tt>. Both arms then have to compile in
- * every configuration, which is the point: a build that does not exercise a
- * branch still type-checks it.
+ * The macros are read HERE and nowhere else, so the allocator bodies branch with
+ * `if constexpr` instead of <tt>\#ifdef</tt>: every branch type-checks in every build.
  *
- * This mirrors chunk/config.h for the chunk layer. It is deliberately separate:
- * fast_allocators does not include anything from chunk/, and must not start to.
+ * Mirrors chunk/config.h, deliberately separate: fast_allocators must not include chunk/.
  */
 
 #include <charconv>     // std::from_chars (CHUNK_RECLAIM_MIN_SLABS)
@@ -69,50 +66,33 @@ inline constexpr bool check_slab_lists = FAST_ALLOC_OPT_DEBUG != 0 && FAST_ALLOC
 
 /**
  * @brief An emptied slab gets MADV_DONTNEED instead of staying resident.
- * @details On by default; the CMake option `CHUNK_RECLAIM_EMPTY_SLABS=OFF`
- *          turns it off. Recorded in the generated build_options.h, so a
- *          project that includes the installed headers gets the value the
- *          library was built with. Only worth anything once slabs actually reach
- *          nn_ref == 0 -- see ManagerChunk::drain_reuse_list_for_size, which
- *          is what empties the old geometry's slabs after a re-chunk.
+ * @details On by default (CMake `CHUNK_RECLAIM_EMPTY_SLABS=OFF` turns it off), recorded in
+ *          the generated build_options.h. Useful only once slabs reach nn_ref == 0 -- see
+ *          ManagerChunk::drain_reuse_list_for_size (empties the old geometry's slabs).
  */
 inline constexpr bool reclaim_empty_slabs = FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS != 0;
 
 /**
  * @brief Fewest distinct empty slabs an EmptySlabSweep must hold for its
- *        flush() to advise them, read once from `CHUNK_RECLAIM_MIN_SLABS`.
- *        A re-chunk's sweep spans every rank, so the bar is the whole
- *        abandoned set's, not one rank's share of it.
+ *        flush() to advise them, read once from `CHUNK_RECLAIM_MIN_SLABS`. A re-chunk's
+ *        sweep spans every rank, so the bar is the whole abandoned set's.
  *
- * @details A sweep costs one madvise per slab -- a 2000-iteration bench run
- *          made 82708 of them -- and returns that slab's pages. The two scale
- *          together per slab, so the trade is decided by how many slabs a set
- *          empties at once: a re-chunk that empties 5887 returns gigabytes for
- *          its syscalls, a teardown that empties three returns three megabytes
- *          for the same price each. The threshold keeps the first and drops the
- *          second.
+ * @details One madvise per slab: the trade is decided by how many slabs a set empties at
+ *          once (a re-chunk returns gigabytes for its syscalls, a teardown of a few slabs
+ *          a few megabytes). The threshold keeps the first and drops the second. With
+ *          sweeping off, this allocator is a few percent faster than the standard one at
+ *          equal memory; sweeping trades that speed for pages.
  *
- *          Measured (chunk2a static 256, 2000 iterations, 64 threads, one seed):
- *          the standard allocator runs 12.59 s at 4350 MB, this one 11.71 s at
- *          4392 MB with sweeping off -- 7% faster at equal memory, and it is the
- *          sweeping that trades that speed back for pages. Before this the
- *          choice needed a rebuild.
- *
- *          0 sweeps everything (what reclaim_empty_slabs always did),
- *          which is the default when unset, so existing builds do not change.
- *          Read once, at a point that runs a handful of times per re-chunk:
- *          the free path is deliberately not a consumer of this -- it stopped
- *          madvising anything after a slab whose nn_ref briefly read zero had
- *          a live block's page dropped under it.
+ *          0 (default when unset) sweeps everything. Read once, at a point that runs a
+ *          handful of times per re-chunk. The free path must never madvise: a slab whose
+ *          nn_ref briefly reads zero can still hold a live block.
  */
 inline std::size_t reclaim_min_empty_slabs() noexcept
 {
     static const std::size_t min_slabs = []() -> std::size_t
     {
-        // The whole value must be a non-negative integer (std::from_chars:
-        // a '-', trailing text or an overflow is refused, with a warning, and
-        // 0 kept) -- the rule of chunk/internal/env_parse.h, which this
-        // library cannot include.
+        // The whole value must be a non-negative integer, else warning and 0 (the rule of
+        // chunk/internal/env_parse.h, which this library cannot include).
         const char* env = std::getenv("CHUNK_RECLAIM_MIN_SLABS");
         if (env == nullptr || env[0] == '\0')
         {
@@ -135,18 +115,13 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
  * @brief CHUNK_THP: advise transparent huge pages on the slab arenas and the
  *        cst2 region? EXPERIMENTAL, off by default.
  *
- * @details Read once. `1` (any value but empty or `0`) asks for
- *          madvise(MADV_HUGEPAGE) on each arena reservation
- *          (SlabArena::grow) and on the cst2 region. Honoured only when the
- *          kernel's PMD huge page is no larger than a slab (2 MiB, a 4 KiB-page
- *          kernel): with 64 KiB base pages it is 512 MiB, which no arena
- *          reservation can hold and which would make the cst2 region resident
- *          by 512 MiB at a time -- the switch is then ignored, with a message.
- *          The kernel's THP mode must be `madvise` or `always` for the advice
- *          to matter.
+ * @details Read once. `1` (any value but empty, `0` or `never`) asks for
+ *          madvise(MADV_HUGEPAGE) on each arena reservation (SlabArena::grow) and the cst2
+ *          region. Honoured only when the PMD huge page is no larger than a slab (2 MiB);
+ *          with 64 KiB base pages it is 512 MiB, and the switch is ignored with a message.
+ *          The kernel's THP mode must be `madvise` or `always`.
  *
- * @warning The cost: a slab becomes resident whole at its first touch, not
- *          page by page as its elements are handed out. Measure the exact RSS
+ * @warning A slab becomes resident whole at its first touch. Measure the exact RSS
  *          (smaps_rollup) along with the time.
  */
 inline bool thp_advise() noexcept
@@ -193,15 +168,11 @@ inline bool thp_advise() noexcept
  * @brief CHUNK_THP=never: madvise(MADV_NOHUGEPAGE) on the slab arenas and the
  *        ladder's mappings. Read once.
  *
- * @details Without any advice the kernel's THP mode decides, and under
- *          `always` -- the RHEL / AlmaLinux default -- a 2 MiB-aligned slab is
- *          backed by a huge page at its first touch: resident WHOLE, not page
- *          by page as its elements are handed out (a 16-byte element slab uses
- *          512 KiB of its 2 MiB, the side-link cap), and khugepaged later
- *          collapses partly touched ranges too. `never` keeps base pages. The
- *          default stays the kernel's until a measurement on one binary --
- *          RSS and AnonHugePages (/proc/<pid>/smaps_rollup), and the time --
- *          says which is better.
+ * @details Without advice the kernel's THP mode decides; under `always` (RHEL / AlmaLinux
+ *          default) a 2 MiB-aligned slab is resident WHOLE at first touch (a 16-byte element
+ *          slab uses only 512 KiB of it, the side-link cap), and khugepaged collapses partly
+ *          touched ranges. `never` keeps base pages. The default stays the kernel's until
+ *          measured (RSS, AnonHugePages in smaps_rollup, time).
  */
 inline bool thp_never() noexcept
 {

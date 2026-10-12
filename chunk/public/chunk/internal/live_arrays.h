@@ -16,11 +16,9 @@
 
 #pragma once
 
-// The count of arrays alive in the process, for the teardown verbs
-// (release_chunk_pools, destroy_block_chunk, chunk_std.cpp): with arrays still
-// alive -- a global or static array, destroyed after main returns -- they keep
-// the structures those arrays will park their buffers in, rather than pull
-// them from under them.
+// The count of arrays alive, for the teardown verbs (release_chunk_pools,
+// destroy_block_chunk, chunk_std.cpp): while arrays live (a global or static one
+// dies after main returns), they keep the pools those arrays will park buffers in.
 
 #include <atomic>  // std::atomic
 #include <cstdint> // std::int64_t
@@ -40,10 +38,9 @@ inline std::atomic<std::int64_t> g_live_arrays{0};
 
 /**
  * @brief Member of every array: counts it in g_live_arrays.
- * @details A member, not code in the arrays' constructors, so that every
- *          constructor -- default, copy, move, the sized ones -- counts. It is
- *          destroyed after the array's destructor body has released the
- *          storage, so a count of zero means every buffer is back in the pools.
+ * @details A member, so every constructor counts. Destroyed after the
+ *          destructor body released the storage: zero means every buffer is
+ *          back in the pools.
  */
 class LiveArrayToken
 {

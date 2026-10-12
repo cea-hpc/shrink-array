@@ -21,43 +21,26 @@
  *        the construction of its per-chunk vectors, and the per-chunk
  *        initialisation loop.
  *
- * @details rebuild_storage() of the three variants sizes a handful of
- *          per-chunk vectors (chunk_list, and for Chunk2A the second-value
- *          and type-of-constant rows), then runs one init per chunk. The init
- *          loop was parallel; the sizing was not, and it was most of the time:
- *          measured on ArrayChunk2A<double> with 4.2 M chunks, 70 ms serial
- *          (chunk_list 40, the Proxy2A rows 30) against an 84 ms init loop
- *          that a team divides. Most of those 70 ms are page faults: a fresh
- *          vector of tens of MB is faulted in page by page by the one thread
- *          that value-initialises it -- which also puts every page on that
- *          thread's NUMA node.
+ * @details rebuild_storage() of the three variants sizes per-chunk vectors
+ *          (chunk_list; for Chunk2A also the second-value and type-of-constant
+ *          rows), then runs one init per chunk. Sizing a fresh vector serially
+ *          costs as much as the init loop itself, mostly page faults, and puts
+ *          every page on one NUMA node.
  *
- *          The per-chunk vectors are no_init_vector: their allocator
- *          (NoInitAllocator) leaves a default-inserted element unconstructed,
- *          so a resize() or a vector(n) only allocates, and make_filled() /
+ *          So the per-chunk vectors are no_init_vector: NoInitAllocator leaves
+ *          a default-inserted element unconstructed, and make_filled() /
  *          resize_filled() construct the new elements from a team, static
- *          schedule -- page faults, stores and NUMA placement all shared out
- *          where the static per-chunk loops will use them. The atomic rows
- *          (candidate flags, dirty bitset) are built the same way: an atomic
- *          is not movable, so a reserve-then-resize could not even compile for
- *          them. (The first version only faulted the pages in from a team and
- *          left the value-initialising resize -- a std::fill -- serial.)
- *          Same element types, and an allocator without state: not one byte
- *          more per chunk, nor in the vector itself.
+ *          schedule, where the per-chunk loops will use them. The atomic rows
+ *          are built the same way (an atomic is not movable). No extra byte per
+ *          chunk nor in the vector.
  *
- *          for_each_chunk() is the init loop of the three variants, in one
- *          place: a team of its own outside a region for a large array, the
- *          calling thread otherwise -- never an orphaned `omp for`, which is
- *          wrong for an array built inside a region (an array created by each
- *          thread of a team gets 1/N of its chunks initialised; one created
- *          under `omp single` blocks on a barrier the others never reach).
- *          The rule -- use_own_team(): kParallelInitMinChunks or more chunks,
- *          outside a region, two threads or more -- is the library's only one:
- *          chunk_array_new::init_chunks (the chunks' operator new[]) is a
- *          wrapper of for_each_chunk(). It was a copy once, and the two had
- *          drifted: `>=` against `>`, and the array paths passing their own
- *          literals (500, and 16384 for Chunk2A, undocumented) rather than
- *          the constant.
+ *          for_each_chunk() is the init loop of the three variants: a team of
+ *          its own outside a region for a large array, the calling thread
+ *          otherwise. Never an orphaned `omp for`: an array built by each
+ *          thread of a team would get 1/N of its chunks initialised, and one
+ *          built under `omp single` would block on a barrier. use_own_team() is
+ *          the library's only threshold rule; chunk_array_new::init_chunks
+ *          wraps for_each_chunk(). Do not pass local literals instead.
  */
 
 #include <cstddef>     // std::size_t
@@ -73,12 +56,9 @@ namespace shrink_array
 {
 /**
  * @brief std::allocator whose argument-less construct() does nothing.
- * @details A default-inserted element (resize(n), vector(n)) is left
- *          unconstructed: the caller constructs it, on the thread that will
- *          use it -- chunk_list's chunks in the init loops
- *          (ArrayChunkCore::construct_chunk), the per-chunk rows in
- *          parallel_storage_init::make_filled / resize_filled. Copies and moves
- *          (a reallocation) still construct, through the forwarding overload.
+ * @details A default-inserted element is left unconstructed, for the thread
+ *          that will use it (ArrayChunkCore::construct_chunk, make_filled,
+ *          resize_filled). Copies and moves still construct.
  *
  *          Contract: every element a growing resize() or a vector(n) adds is
  *          constructed before any other use.
@@ -125,10 +105,8 @@ static_assert(sizeof(no_init_vector<char>) == sizeof(std::vector<char>));
 ///        calling thread: a team costs more than the faults it would share.
 inline constexpr std::size_t kFirstTouchMinBytes = std::size_t{2} << 20U;
 
-/// @brief Chunk count from which a per-chunk initialisation takes a team of
-///        its own (outside a region): below it, the calling thread is faster
-///        than a team's start-up. Every per-chunk init loop of the library
-///        goes through for_each_chunk(), so this is THE threshold.
+/// @brief Chunk count from which a per-chunk init takes a team of its own:
+///        below it, a team's start-up costs more. THE library threshold.
 inline constexpr int kParallelInitMinChunks = 500;
 
 /// @brief May this call open a team of its own? Outside a parallel region,
@@ -180,9 +158,8 @@ void for_each_chunk(int n, Init&& init)
  * @brief Construct elements [@p first, @p last) of @p base with @p make(p): on a
  *        team of its own, static schedule, for kFirstTouchMinBytes or more
  *        outside a region; on the calling thread otherwise.
- * @details The elements' storage is fresh (no_init_vector): this loop is its
- *          first touch, so the pages land with the threads of the static
- *          per-chunk loops.
+ * @details First touch of fresh storage: the pages land with the threads of
+ *          the static per-chunk loops.
  */
 template <typename T, typename Make>
 void construct_range(T* base, std::size_t first, std::size_t last, Make&& make)

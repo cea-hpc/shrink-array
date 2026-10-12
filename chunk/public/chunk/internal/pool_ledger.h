@@ -18,24 +18,17 @@
 
 // ============================================================================
 // CHECK-BUILD INSTRUMENTATION — block-lifecycle ledger (grep tag: POOL_LEDGER).
-// Born of the ctx/op pool aliasing hunt; kept as a permanent guard because it
-// costs nothing in release, and it has since paid for itself on the teardown
-// double-free (see manager_chunk_inline.h). -DCHUNK_NO_LEDGER drops it.
+// Costs nothing in release; -DCHUNK_NO_LEDGER drops it.
 //
-// The DEFERRED_LIFECYCLE sentinels proved that, on a single thread, a block
-// referenced as a deferred `ctx` was reused as a deferred `op` (its slot held
-// op_dead_magic). ctx and op are supposed to come from two disjoint pools
-// (CtxRegistry vs OpRegistry); this ledger verifies that invariant directly.
+// Invariant checked: deferred `ctx` and `op` blocks come from two disjoint pools
+// (CtxRegistry vs OpRegistry), so no address is ever live as both. The typical
+// trip is op_alloc(p) while p is still live as a ctx: a pending op still
+// references p as its ctx, yet the pool just handed p out as an op.
 //
-// It maintains two GLOBAL address sets (ctx-live, op-live), protected by a
-// mutex — global, not thread_local, because cross-thread flush legitimately
-// frees a block on a thread other than the one that allocated it (see the
-// warning in reset_all()). A thread_local ledger would false-positive on that
-// path; a global one does not.
-//
-// The check that is expected to fire first for this bug:
-//   op_alloc(p): p is still live as a ctx  →  a pending op still references p
-//                as its ctx, yet the pool just handed p out as an op.
+// Two GLOBAL address sets (ctx-live, op-live) under one mutex. Not thread_local:
+// a cross-thread flush legitimately frees a block on another thread than the one
+// that allocated it (see deferred_op_pool.h, reset_all()); a per-thread ledger
+// would false-positive there.
 //
 // All hooks compile to nothing when build_config::any_check is false.
 // ============================================================================
@@ -93,34 +86,27 @@ inline ankerl::unordered_dense::map<void*, Rec>& op_live()
 /// @brief The calling thread's rank, or -1 outside a parallel region.
 inline int current_rank() noexcept
 {
-    // No directive: this is not a template, so an `if constexpr` branch is
-    // still compiled in a serial build where omp_in_parallel() does not exist
-    // -- but PMP_CHUNK.h's shims ARE the serial build's declarations (false
-    // and 0), so the expression compiles either way and still yields -1
-    // outside a parallel region.
+    // No directive needed: PMP_CHUNK.h's serial shims (false, 0) make this
+    // compile in both builds, and it yields -1 outside a parallel region.
     return CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
 }
 
 // Master switch for BOTH ledgers (ctx/op above + block below).
 //
-// Every hook takes a GLOBAL std::mutex plus a global map lookup. The cost is
-// not symmetric between build modes, so neither is the default:
+// Every hook takes a GLOBAL std::mutex plus a global map lookup, so the default
+// differs by build mode:
 //
-//   - serial build: the lock is never contended. The overhead is marginal and
-//     the detection (double-free, illegal park, leaked LIVE block) is free ->
+//   - serial build: the lock is never contended, the overhead is marginal ->
 //     ON by default under any_check.
-//   - OpenMP build: the single lock serialises EVERY allocation across all
-//     threads. At 16+ threads it dominates run time, but the real problem is
-//     that it changes the concurrency the debug build exists to exercise: a
-//     race on the allocation path can become unreproducible precisely because
-//     the ledger is holding a global lock around it -> OFF by default.
+//   - OpenMP build: the single lock serialises EVERY allocation across threads.
+//     Beyond the cost, it changes the concurrency the debug build exists to
+//     exercise: a race on the allocation path can hide behind the global lock
+//     -> OFF by default.
 //
 // Overrides:
-//   -DCHUNK_FORCE_LEDGER : force ON wherever any_check is on, OpenMP included.
-//                          Use it when hunting a multi-threaded double-free --
-//                          and see the cmake-build-omp-gnu-debug-ledger target,
-//                          which exists so this coverage does not silently
-//                          vanish from the build matrix.
+//   -DCHUNK_FORCE_LEDGER : force ON wherever any_check is on, OpenMP included
+//                          (scripts/compile_all.sh --with-ledger builds the
+//                          cmake-build-omp-gnu-debug-ledger config with it).
 //   -DCHUNK_NO_LEDGER    : force OFF everywhere, whatever the build mode.
 //
 // Either way, every other any_check invariant/assert stays active.
@@ -189,8 +175,8 @@ inline void on_op_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) n
     if constexpr (pool_ledger_enabled)
     {
         const std::scoped_lock lk(mtx());
-        // Prime suspect for this bug: a pending op still holds p as its ctx.
-        // ctx_slab vs op_slab tells us WHY they alias:
+        // A pending op still holds p as its ctx. ctx_slab vs op_slab tells WHY
+        // they alias:
         //   ctx_slab == op_slab  -> ctx & op share one pool (ICF fold / tag fail)
         //   ctx_slab != op_slab  -> two distinct pools returned the same block
         //                           (TCTypeAllocator slab hands out overlapping mem)
@@ -239,9 +225,8 @@ inline void on_op_free(void* ptr) noexcept
 // ----------------------------------------------------------------------------
 // Distinct from the ctx/op ledger above: this one tracks the heap chunk-blocks
 // that flow through allocate_chunk_internal / recup_value / free_block_to_pool.
-// It catches deterministically what TSan only samples (an "init_block (memset)
-// <-> free_block_to_pool (svfree) on the same address" race): it trips at the
-// FIRST illegal transition, with the address and BOTH ranks.
+// It trips deterministically at the FIRST illegal transition, with the address
+// and BOTH ranks, where a race detector only samples the resulting race.
 //
 // State per block, with legal transitions (op : from -> to):
 //   b_alloc   : FREE   -> LIVE     fresh block from allocator/svcalloc
@@ -251,7 +236,7 @@ inline void on_op_free(void* ptr) noexcept
 //
 // Illegal (each trips the assert, naming previous state + previous rank):
 //   double-park  (park a PARKED block)     → two chunks think they own it
-//   pop LIVE     (hand a LIVE block twice) → the "init_block <-> free" TSan pair
+//   pop LIVE     (hand a LIVE block twice) → one chunk inits a block another frees
 //   park/pop/discard of an UNTRACKED block → foreign or already-recycled ptr
 // A released block leaves the table (malloc may hand its address out again),
 // so a second release of it is not seen here: glibc / ASan report that one.
@@ -376,13 +361,10 @@ inline void report_live_blocks() noexcept
 /// @brief Register report_live_blocks() at exit (CHUNK_LEDGER_REPORT), once,
 ///        on the first block the ledger sees.
 //
-// ORDER MATTERS: block_live() is a function-local static, destroyed at exit in
-// the REVERSE order of construction relative to std::atexit registrations. The
-// map must therefore be CONSTRUCTED BEFORE the handler is registered, so that
-// the handler runs first and reads a live map. Registering first (the naive
-// order) destroys the map before the report runs, which then reads freed
-// memory and prints arbitrary states -- observed: a LIVE block reported as
-// PARKED. The explicit block_live() call below forces construction first.
+// ORDER MATTERS: function-local statics and std::atexit handlers run in the
+// REVERSE order of construction/registration. Construct block_live() BEFORE
+// registering the handler, so the handler runs first on a live map; the other
+// order makes the report read freed memory and print arbitrary states.
 inline void maybe_register_live_report() noexcept
 {
     if constexpr (pool_ledger_enabled)
@@ -418,17 +400,14 @@ inline void block_transition(const void* block,
     {
         const int rank = current_rank();
 
-        // Guard: a stray non-pointer value leaking in as a "block" key (e.g. a
-        // double like 42.0 = 0x4045000000000008) corrupts the ledger map and
-        // later SIGSEGVs in hashing. Catch it at the source with the site.
-        // Architecture-aware range check:
-        //  - x86-64: canonical user pointers have the top 17 bits clear (<2^47).
-        //  - aarch64: user virtual addresses legitimately use up to 48 bits (52
-        //    with LVA), so the x86 "<2^47" rule false-flags valid high heap keys
-        //    (e.g. 0x0000fdcf........). Reject only keys >= 2^52; this still
-        //    catches a leaked normal-magnitude double, whose exponent bits (52-62)
-        //    are set. (Standard ASan on aarch64 does not tag pointers; if hwasan/
-        //    MTE tagging is ever enabled, strip the top byte before this check.)
+        // Guard: a stray non-pointer value used as a "block" key (e.g. a double
+        // like 42.0 = 0x4045000000000008) would corrupt the map; catch it here,
+        // with the site. Architecture-aware range check:
+        //  - x86-64: canonical user pointers are < 2^47.
+        //  - aarch64: user addresses use up to 48 bits (52 with LVA), so the x86
+        //    rule false-flags valid heap keys. Reject only keys >= 2^52, which
+        //    still catches a normal-magnitude double (exponent bits 52-62 set).
+        //    If hwasan/MTE tagging is ever enabled, strip the top byte first.
         {
             const auto up = reinterpret_cast<std::uintptr_t>(block);
 #ifdef __aarch64__
@@ -540,16 +519,10 @@ inline void on_block_discard(const void* block, const char* site) noexcept
 } // namespace shrink_array::pool_ledger
 
 // ── Call-site macros for the BLOCK ledger ────────────────────────────────────
-// Defined unconditionally; the underlying hooks compile to nothing when
-// build_config::any_check is false (same policy as the ctx/op ledger above).
-// CHUNK_NO_LEDGER: hard off-switch for the block ledger, independent of
-// build_config::any_check. Each hook takes a global std::mutex + a global
-// map lookup, so under any_check at high thread counts the single lock
-// serialises every thread and dominates debug run time. Define CHUNK_NO_LEDGER
-// (e.g. -DCHUNK_NO_LEDGER) to compile the hooks to nothing for a fast debug
-// build while keeping every other any_check invariant/assert active. A double
-// free is caught by glibc / ASan rather than by this ledger (see the table
-// above), so turning it off loses no coverage for it.
+// The hooks compile to nothing when build_config::any_check is false.
+// CHUNK_NO_LEDGER compiles them to nothing regardless (a fast debug build that
+// keeps every other any_check invariant); a double free is still reported by
+// glibc / ASan (see the table above).
 #ifdef CHUNK_NO_LEDGER
     #define CHUNK_LEDGER_ALLOC(p, site) ((void)0)
     #define CHUNK_LEDGER_POP(p, site) ((void)0)

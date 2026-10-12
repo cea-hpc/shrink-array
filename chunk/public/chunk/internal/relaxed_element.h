@@ -27,13 +27,10 @@
  *              1, and S-1 or S-2;
  *            - fill_range_mt's may_be_uniform(): 0, S/2 and S-1.
  *          Both only take a hint from the value, but plain accesses there are
- *          a data race all the same -- undefined behaviour, and what TSan
- *          reported on chunk2a (bench_phase_fill, 8 threads on chunk 0: the
- *          filter's read of element 0 against thread 0's store_value()).
- *          Both sides therefore go through std::atomic_ref, relaxed: no
- *          ordering is wanted, only the absence of a race. On x86-64 and
- *          AArch64 a relaxed load or store of a lock-free scalar is the plain
- *          instruction.
+ *          still a data race (undefined behaviour). Both sides therefore go
+ *          through std::atomic_ref, relaxed: no ordering is wanted, only the
+ *          absence of a race. On x86-64 and AArch64 a relaxed load or store of a
+ *          lock-free scalar is the plain instruction.
  *
  *          Eligible: types atomic_ref handles without a lock and at their own
  *          alignment -- the scalars. The aggregates (complex, Point3, Cell)

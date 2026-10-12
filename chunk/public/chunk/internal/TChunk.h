@@ -28,31 +28,24 @@ namespace shrink_array
 {
 /// @brief A list of queued compression candidates: (chunk, num_chunk,
 ///        num_tab, the chunk's element count).
-/// @details The 4th field is the queued chunk's element count, carried as the
-///          ChunkElems strong type (chunk_size_policy.h) end to end -- the SAME
-///          alias must be used by producers (push_to_compress_list) and
-///          consumers (Chunk2A drain paths); this file is its single
-///          definition.
+/// @details The 4th field is the chunk's OWN element count (ChunkElems),
+///          captured at enqueue by push_to_compress_list. Consumers (compress(),
+///          fill_list_to_compress_impl(), the drain paths) scan with it, never
+///          with alloc_chunk_count() -- the consuming thread's ambient size,
+///          which after a rechunk overflows a buffer of another geometry.
+///          Producers and consumers must share this single alias.
 template <template <typename> class TCHUNK, typename T>
 using VectorTuple4ChunkInt2 = std::vector<std::tuple<TCHUNK<T>*, int, int, ChunkElems>>;
 
 /// @brief Map from a second value to the shared list of queued chunks
 ///        (4-element tuples) holding it.
-/// @details The 4th tuple element is the chunk's OWN geometry, captured at
-///          enqueue by push_to_compress_list (as for Chunk v1 and Chunk2A, see
-///          TChunkComp / TChunk2AComp below). compress() and
-///          fill_list_to_compress_impl() scan with it, not with
-///          alloc_chunk_count() (the CONSUMING thread's ambient size), which
-///          after a rechunk overflows a buffer allocated at another geometry.
-///          Keyed by the second value, ordered by ValueLess (value_less.h).
+/// @details Tuples as VectorTuple4ChunkInt2. Ordered by ValueLess (value_less.h).
 template <template <typename> class TCHUNK, typename T>
 using MapTypeChunk2P = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<TCHUNK, T>>, ValueLess<T>>;
 
 /// @brief Chunk2's candidate lists, one per second value.
-/// @details 4-element tuples: this backing store is copied into the shared_ptr
-///          held by map_chunk2_to_compress_potentially_thr (see
-///          ArrayChunk2::set_second_value), so both must carry the chunk
-///          geometry -- see MapTypeChunk2P above for why.
+/// @details Copied into map_chunk2_to_compress_potentially_thr's shared_ptr
+///          (ArrayChunk2::set_second_value): same tuples as MapTypeChunk2P.
 template <template <typename> class TCHUNK, typename T>
 using TChunk2Comp = std::vector<VectorTuple4ChunkInt2<TCHUNK, T>>;
 
@@ -60,12 +53,7 @@ using TChunk2Comp = std::vector<VectorTuple4ChunkInt2<TCHUNK, T>>;
 template <template <typename> class TCHUNK, typename T>
 using TChunk2AComp = VectorTuple4ChunkInt2<TCHUNK, T>;
 
-/// @brief Chunk's candidate list.
-/// @details 4-element: the 4th is the chunk's OWN geometry, captured at enqueue
-///          by push_to_compress_list. compress() scans with it, not with
-///          alloc_chunk_count() (the CONSUMING thread's ambient size), which
-///          overflows a buffer allocated at a different geometry under a live
-///          rechunk.
+/// @brief Chunk's candidate list (tuples: see VectorTuple4ChunkInt2).
 template <template <typename> class TCHUNK, typename T>
 using TChunkComp = VectorTuple4ChunkInt2<TCHUNK, T>;
 
@@ -73,18 +61,13 @@ using TChunkComp = VectorTuple4ChunkInt2<TCHUNK, T>;
  * @brief One thread's slot in a per-thread candidate store, on cache lines of
  *        its own.
  *
- * @details The stores below are `std::vector<per-thread container>`, so the
- *          containers' HEADERS (begin / end / capacity, 24 bytes) sit side by
- *          side: three threads' vectors share one 64-byte line, and every
- *          push_back by one of them -- mark_for_compression_if_needed, on the
- *          write path -- invalidates the line the two others read on EVERY
- *          write, in trigger_compression_if_needed()'s size(). Measured on
- *          shrink_bench chunk2a_256 (aarch64, 64 threads): that size() was
- *          8.6% of write_with_optional_lock_impl<double>, on a `ldp` of the
- *          header. The same padding ManagerChunk::PerThreadFreeList already
- *          uses; 128 rather than 64 so adjacent-line prefetchers do not pair
- *          two slots either. It IS the container (inherits it), so every
- *          `store[thr]` use is unchanged.
+ * @details Without padding, the containers' 24-byte headers of three threads
+ *          share a cache line: every push_back on the write path invalidates
+ *          the line the others read on every write
+ *          (trigger_compression_if_needed()'s size()), a measurable share of
+ *          the write path. 128, not 64, so adjacent-line prefetchers do not
+ *          pair two slots (as ManagerChunk::PerThreadFreeList). It inherits the
+ *          container, so `store[thr]` is used unchanged.
  */
 template <typename Container>
 struct alignas(128) PerThreadSlot : public Container

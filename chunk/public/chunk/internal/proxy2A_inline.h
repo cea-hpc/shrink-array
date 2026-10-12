@@ -45,35 +45,23 @@
  * @file proxy2A_inline.h
  * @brief Out-of-line definitions of Proxy2A and Proxy2AFastCompPolicy.
  *
- * Proxy2A is the element proxy of Chunk2A, the chunk flavour that stores TWO
- * constant values: a global `first_value` shared by every chunk, and a
- * per-chunk `second_value`. A chunk is therefore in one of three states —
- * cst_val1 (all elements are first_value), cst_val2 (all are this chunk's
- * second value), or materialised on the heap — and the whole file is organised
- * around moving between them without ever losing a concurrent write.
+ * Chunk2A stores TWO constants: a global `first_value` and a per-chunk
+ * `second_value`. A chunk is cst_val1, cst_val2, or materialised on the heap;
+ * this file moves between those states without losing a concurrent write:
+ * metadata arming (set_info_on_chunk() and siblings), compression driving
+ * (trigger_compression_if_needed(), perform_compression()), materialisation
+ * (ensure_writable_storage()), and the write bodies, each with an `_async`
+ * twin replayed from a deferred op.
  *
- * What lives here:
- *  - **metadata arming** (set_info_on_chunk() and its three narrower siblings),
- *    which caches the per-chunk pointers a write is about to need;
- *  - **compression driving**: trigger_compression_if_needed() flags the
- *    candidate list as worth a pass, perform_compression() runs it;
- *  - **materialisation**: ensure_writable_storage(), which decompresses a
- *    constant chunk before a write can touch it;
- *  - **the write bodies**, each in a synchronous form and an `_async` twin
- *    replayed later from a deferred op.
+ * The `_async` protocol: a replay runs long after its write was issued, so it
+ * rebuilds a fresh proxy from the context, checks that `chunk.values` is a heap
+ * buffer BEFORE storing and re-reads it AFTER -- a change means a compressor
+ * swapped the buffer and the store was lost, so the whole body retries
+ * (internal::replay_retry).
  *
- * The `_async` twins share a common shape, and the reason for it: a replay runs
- * long after its write was issued, so nothing may be assumed to still hold.
- * Each one rebuilds a fresh proxy from the context, re-checks that
- * `chunk.values` is a real heap buffer BEFORE storing, and re-reads it AFTER —
- * a change means a compressor swapped the buffer under us and the store was
- * lost, so the whole body retries. Under `build_config::any_check` a retry
- * counter turns a livelock into a diagnosable failure instead of a hang.
- *
- * Under dynamic geometry these paths also pin the per-thread chunk size before
- * every materialisation: the flushing thread's ambient size has nothing to do
- * with the chunk being written, and allocating at the wrong size is a
- * heap-buffer-overflow (see the inline notes, which record the ASan findings).
+ * Under dynamic geometry every materialisation first pins the per-thread chunk
+ * size to the chunk being written: allocating at the flushing thread's ambient
+ * size overflows the buffer.
  *
  * @see proxy2A.h for the declarations, proxy_base_inline.h for the write engine
  *      these bodies are handed to, array_chunk2A.h for the chunk itself.
@@ -94,15 +82,11 @@ inline constexpr int kReplayRetrySpin = 64;
  * @brief One more turn of a deferred-replay retry loop (the `_async` bodies
  *        below and lbd_equal_asynch).
  *
- * @details A retry means `values` changed under the replay -- a compressor
- *          finished in between, so the system made progress. The loop is
- *          therefore NOT bounded in release: an abort there would turn a
- *          contention spike into a lost run. What happens instead, in every
- *          build: each turn is counted (saturating); past kReplayRetrySpin the
- *          thread yields its core so the compressor it waits for can run; at
- *          kReplayRetryCap a check build fails (CHUNK_INVARIANT_FAILED -- the tests
- *          are where a runaway loop must stop) and a release build prints one
- *          warning to stderr for the whole process, then keeps going.
+ * @details A retry means a compressor finished in between: progress was made,
+ *          so the loop is NOT bounded in release (an abort would turn a
+ *          contention spike into a lost run). Past kReplayRetrySpin the thread
+ *          yields; at kReplayRetryCap a check build fails and a release build
+ *          warns once per process and keeps going.
  *
  * @param retry_count the loop's counter, starting at 0
  * @param where       the loop and path, for the message
@@ -199,12 +183,9 @@ void Proxy2A<T>::mark_for_compression_if_needed(in_t<T> new_value, [[maybe_unuse
     }
 }
 
-// Explicit-old-value variant: preferred over mark_for_compression_if_needed()
-// because it does not re-read the slot, which could race with another writer.
-// bool has no per-chunk second value, so it routes to Proxy2Base's
-// (old, new) bool form. (It called Base::, which has no such member: nothing
-// instantiates this arm -- the bool compound replay that would is
-// unreachable -- so the error never surfaced.)
+// Explicit-old-value variant: preferred, as it does not re-read the slot (which
+// could race with another writer). bool routes to Proxy2Base's (old, new) form;
+// this arm is not instantiated today, so a wrong qualifier would not be caught.
 template <typename T>
 void Proxy2A<T>::mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value) const
 {
@@ -229,26 +210,19 @@ void Proxy2A<T>::resize_tab_is_int(int nb_tab)
     Base::tab_is_inside_chunk_list_to_compress.resize(nb_tab);
 }
 
-// Grow one tab's per-chunk tables. Note the asymmetry between the three:
-// BaseSpec::resize() and tab_type_cst_val preserve existing entries and only
-// initialise the new tail, whereas tab_is_inside_chunk_list_to_compress is
-// REALLOCATED outright, so every chunk's "already queued for compression" flag
-// is reset to 0, not just the new ones. That is only safe if no chunk of this
-// tab is queued at the time -- a chunk still sitting in a candidate list with a
-// cleared flag could be queued a second time (and its entry would point into
-// the chunk_list the caller just reallocated).
-// Guaranteed by ArrayChunk2Base::resize_common(), which flushes the deferred
-// ops (whose replay can queue chunks) THEN runs the compression pass that
-// empties every rank's list, before any realloc. Not merely by resize being a
-// sequential point: with the flush after the pass, the invariant did not hold.
-// Asserted below in check builds -- flag 1 <=> entry in a list.
+// Grow one tab's per-chunk tables. BaseSpec::resize() and tab_type_cst_val keep
+// existing entries, but tab_is_inside_chunk_list_to_compress is REALLOCATED:
+// every "queued for compression" flag goes back to 0. Safe only if no chunk of
+// this tab is queued -- a queued chunk with a cleared flag could be queued twice
+// (pointing into the chunk_list just reallocated).
+// ArrayChunk2Base::resize_common() guarantees it by flushing the deferred ops
+// (whose replay can queue chunks) BEFORE the compression pass that empties every
+// list. Do not swap those two steps. Asserted below (flag 1 <=> entry in a list).
 template <typename T>
 void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
 {
     BaseSpec::resize(num_tab, nb_chunk_old, nb_chunk);
-    // Check builds: no chunk of this tab may still be queued -- see the
-    // comment above. A flag at 1 here means a candidate entry survives the
-    // realloc, and the zeroed flag would admit it into a list again.
+    // Check builds: no chunk of this tab may still be queued (see above).
     if constexpr (build_config::any_check)
     {
         const auto& row = Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)];
@@ -272,13 +246,9 @@ void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
 /**
  * @brief Flags this thread's candidate list as worth a compression pass.
  *
- * Called after every successful write on the fast path. It does NOT compress:
- * once the list grows past the configured threshold it only marks it
- * "dangerous", which is what makes the next write take the slow path and call
- * perform_compression(), which clears it (mark_list_safe_for_thread) once it
- * has looked at the list, work or not.
- *
- * OpenMP-only: the sequential build drives perform_compression() directly.
+ * Called after every fast-path write. It does NOT compress: past the threshold
+ * it marks the list "dangerous", so the next write takes the slow path into
+ * perform_compression(), which clears the mark. OpenMP-only.
  *
  * @param thr_rank Rank whose candidate list is examined.
  */
@@ -308,15 +278,10 @@ void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
 /**
  * @brief Compresses this thread's candidate chunks, if there are enough of them.
  *
- * The slow path of the write engine, and the sequential build's only
- * compression driver. Self-gating: below half the configured maximum the
- * candidate list is left alone, so calling it speculatively stays cheap.
- *
- * Above the threshold it drains the thread's deferred write ops first — they
- * must be applied before their chunks are compressed — then runs the block
- * compression and clears the "dangerous" mark. Both of those are OpenMP-only
- * and guarded as such (see the inline notes for why an unguarded decrement made
- * the counter drift negative).
+ * The write engine's slow path, and the sequential build's only compression
+ * driver. Self-gating: below half the configured maximum it does nothing.
+ * Above, it drains the thread's deferred ops first (they must be applied
+ * before their chunks are compressed), then runs the block compression.
  */
 template <typename T>
 void Proxy2A<T>::perform_compression() noexcept
@@ -336,23 +301,16 @@ void Proxy2A<T>::perform_compression() noexcept
 
     if (sz_before > sz_threshold)
     {
-        // flush_deferred drains per-thread deferred write ops. Those are only
-        // ever enqueued on the OMP write path; the non-OMP write executes
-        // write_body() directly (no deferral), so there is nothing to drain — and
-        // flush_deferred is declared only in CompressionManagerOmpPolicy's
-        // <..., true> specialisation, so naming it at all in a serial build
-        // would not compile. Guard the call.
+        // Serial builds defer nothing, and flush_deferred exists only in the
+        // OpenMP policy specialisation.
         if constexpr (build_config::use_openmp)
         {
             static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
         }
 
-        // Route make_block_compression's free_values (get_chunk_allocator keys on
-        // thread_chunk_size) to THIS chunk's allocator. An earlier op on a
-        // DIFFERENT-size array may have left the per-thread size stale, so freeing
-        // this chunk's block would hit the wrong-size slab -> TCAllocator
-        // sl_contains assert (fast-alloc). Harmless under std-alloc (svfree is
-        // size-agnostic). Dynamic geometry only.
+        // free_values picks its allocator from thread_chunk_size, which an op on
+        // a different-size array may have left stale: pin it to THIS chunk, or
+        // the block is freed into the wrong-size slab (fast-alloc).
         if constexpr (build_config::chunk_dynamic)
         {
             shrink_array::set_thread_chunk_size(this->chunk_size());
@@ -360,22 +318,17 @@ void Proxy2A<T>::perform_compression() noexcept
         }
         Chunk2A<T>::make_block_compression(thr_rank, this);
     }
-    // Whether or not there was work: the list has been looked at, and the
-    // trigger raises the flag again when it next crosses the threshold. Left
-    // inside the `if` above, a list drained meanwhile (the between-phase
-    // region) kept the rank on the slow path for every write -- see
-    // mark_list_dangerous_for_thread. OMP only: the trigger that raises the
-    // flag is compiled out in the serial build.
+    // Cleared whether or not there was work. Do not move it inside the `if`:
+    // a list drained meanwhile would keep the rank on the slow path for every
+    // write (see mark_list_dangerous_for_thread). OpenMP only, as the trigger.
     if constexpr (build_config::use_openmp)
     {
         CompressionManagerType::mark_list_safe_for_thread(thr_rank);
     }
 }
 
-// Materialises a constant chunk onto the heap. Note the ordering constraint:
-// is_cst_val2() is sampled BEFORE set_info_on_chunk(), but the cached pointers
-// it arms are only valid against the post-allocation state, hence the arming
-// sits between the sample and create_value().
+// Materialises a constant chunk onto the heap. is_cst_val2() is sampled BEFORE
+// set_info_on_chunk(); the arming sits between the sample and create_value().
 template <typename T>
 void Proxy2A<T>::ensure_writable_storage()
 {
@@ -398,19 +351,14 @@ void Proxy2A<T>::ensure_writable_storage()
     }
     const bool is_val2 = is_cst_val2();
 
-    // Cached per-chunk pointers (ptr_second_value, ptr_type_cst, …) are only
-    // valid against the post-allocation chunk state, so arm them here — never
-    // before.
+    // The cached per-chunk pointers are armed here, never earlier.
     set_info_on_chunk();
 
-    // Route the materialisation to THIS array's chunk-size pool. Without this the
-    // buffer is allocated at the STALE per-thread thread_chunk_size (left by a
-    // previous op on another array), while operator[]/num use this array's
-    // size_policy_ -> a smaller buffer written at a larger intra-chunk index ->
-    // heap-buffer-overflow under dynamic geometry (ASan-confirmed on the
-    // operator--/in-place path, which reaches create_value only through here).
-    // Mirrors Proxy2A::create_value (proxy2A.h), which already sets it on the
-    // direct-assignment path. Dynamic-only: fixed geometry has one size.
+    // Allocate from THIS array's chunk-size pool: the per-thread size may be
+    // stale (left by an op on another array), and a smaller buffer written at
+    // this array's offsets overflows. The in-place path reaches create_value
+    // only through here; Proxy2A::create_value (proxy2A.h) does the same on
+    // the direct-assignment path.
     if constexpr (build_config::chunk_dynamic)
     {
         shrink_array::set_thread_chunk_size(this->chunk_size());
@@ -457,12 +405,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_stor
 {
     const bool is_val2 = proxy.is_cst_val2();
 
-    // Route the materialisation to THIS array's chunk-size pool -- the async twin
-    // of the sync ensure_writable_storage above. Without it, create_value
-    // allocates at the STALE per-thread thread_chunk_size while operator[]/num use
-    // size_policy_ -> heap-buffer-overflow after a re-chunk (read_value OOB: i >=
-    // alloc_chunk_count). proxy.chunk_size() is the live geometry here (frozen only
-    // on the deferred-replay path, which does not reach this async materialiser).
+    // THIS array's chunk-size pool: see ensure_writable_storage() above.
     if constexpr (build_config::chunk_dynamic)
     {
         shrink_array::set_thread_chunk_size(proxy.chunk_size());
@@ -496,12 +439,10 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_stor
 /**
  * @brief Stores a value, materialising the chunk only if it has to.
  *
- * The store itself, once the metadata is armed. Three outcomes, cheapest first:
- *  -# writing the chunk's second value onto a chunk that already reads back as
- *     that value is a no-op — the compressed state is exactly what was wanted;
- *  -# from cst_val1 to the second value, the chunk is materialised and the
- *     value stored;
- *  -# otherwise the chunk is materialised if still constant, then written.
+ * Three outcomes, cheapest first:
+ *  -# the second value onto a chunk that already reads it back: no-op;
+ *  -# from cst_val1 to the second value: materialise, then store;
+ *  -# otherwise materialise if still constant, then store.
  *
  * @param vals The chunk's values pointer, loaded by the caller inside the write
  *        session; every state test reads it instead of reloading `values`.
@@ -512,9 +453,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_stor
 template <typename T>
 void Proxy2A<T>::perform_core_assignment(T* vals, in_t<T> v) const
 {
-    // After a materialisation, the one reload: create_value() does not return
-    // the live buffer, and a concurrent writer may have won its CAS (ours then
-    // went back to the pool). Materialised now, so stable until the session ends.
+    // The one reload, after a materialisation: a concurrent writer may have won
+    // the CAS (ours went back to the pool). Stable until the session ends.
     const auto materialise = [this, &vals]
     {
         if constexpr (is_not_bool)
@@ -588,10 +528,8 @@ void Proxy2A<T>::perform_core_assignment(T* vals, in_t<T> v) const
 /**
  * @brief Assignment body for non-bool element types.
  *
- * Arms the per-chunk metadata the write engine has not, marks the chunk for
- * compression when the new value closes a constant run, then stores. The
- * second value is resolved first, so that writing it onto a cst_val2 chunk
- * returns without paying for the rest.
+ * Arms the metadata the write engine has not, marks for compression, stores.
+ * The second value is resolved first, for the cst_val2 early-out.
  *
  * @param v Value to assign.
  */
@@ -600,17 +538,14 @@ void Proxy2A<T>::handle_no_bool_assignment(in_t<T> v)
 {
     if constexpr (is_not_bool)
     {
-        // ONE load of the values pointer for the whole body, as in
-        // Proxy::assign_impl: inside the write session no compressor can change
-        // it, and no writer either once it is not a constant -- the only change
-        // left, a concurrent materialisation, is what perform_core_assignment()
-        // reloads after.
+        // ONE load of the values pointer, as in Proxy::assign_impl: inside the
+        // write session no compressor can change it, and no writer once it is
+        // not a constant. A concurrent materialisation is what
+        // perform_core_assignment() reloads after.
         T* const vals = chunk.values_load();
 
-        // num_tab and the queued-flag pointer: with the fast block compression
-        // the write engine armed both before this body
-        // (write_with_optional_lock_with_set_ptr), and the acquire loads since
-        // keep the compiler from merging a second arming with the first.
+        // With fast block compression the engine already armed num_tab and the
+        // queued-flag pointer (write_with_optional_lock_with_set_ptr).
         if constexpr (!chunk_config::use_fast_block_compression)
         {
             set_num_tab();
@@ -618,8 +553,7 @@ void Proxy2A<T>::handle_no_bool_assignment(in_t<T> v)
         }
         set_ptr_second_value();
 
-        // Writing its second value onto a cst_val2 chunk: nothing to do, and
-        // no need for the rest of the metadata.
+        // Second value onto a cst_val2 chunk: nothing to do.
         if (chunk.is_cst_val2_ptr_of(vals) && v == static_cast<T>(BaseSpec::ptr_second_value.get()))
         {
             return;
@@ -636,9 +570,7 @@ void Proxy2A<T>::handle_no_bool_assignment(in_t<T> v)
 /**
  * @brief Assignment body for `T = bool`.
  *
- * Same shape as handle_no_bool_assignment(), with the comparisons specialised:
- * bool keeps no per-chunk second value, so cst_val2 simply means "all true" and
- * the early-out tests `v == true` directly.
+ * As handle_no_bool_assignment(); for bool, cst_val2 means "all true".
  *
  * @param v Value to assign.
  */
@@ -671,12 +603,10 @@ void Proxy2A<T>::handle_bool_assignment(in_t<T> v)
     }
 }
 
-// Entry point of every assignment. Early-outs when the chunk is already
-// all-first_value and that is what is being written, hands the real body to the
-// write engine, and re-issues it as a deferred op when the engine refuses.
-// The deferred body is written out in full here rather than reusing
-// handle_*_assignment: a replay cannot trust the cached metadata, so it works
-// straight off a freshly loaded values pointer under the retry protocol.
+// Entry point of every assignment: early-out on first_value onto cst_val1, the
+// body through the write engine, a deferred op when the engine refuses. The
+// deferred body does not reuse handle_*_assignment: a replay cannot trust the
+// cached metadata, so it works off a fresh values pointer under the retry protocol.
 template <typename T>
 template <typename U>
 T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
@@ -691,9 +621,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
 
     if constexpr (is_not_bool)
     {
-        // By reference: v is this call's parameter (a value, or the caller's
-        // object through the large-operand operator=), alive for the whole
-        // synchronous call; the deferred path below copies it into its context.
+        // By reference: v outlives the synchronous call; the deferred path copies it.
         const auto assignment_body = [this, &v] { handle_no_bool_assignment(v); };
 
         need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body);
@@ -705,7 +633,6 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
         need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body_bool);
     }
 
-    // Asynchronous slow path
     if constexpr (build_config::use_openmp)
     {
         if (need_async)
@@ -714,7 +641,6 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
             // behind the large-operand operator='s `const U&`.
             using CtxType = ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, Proxy2A<T>>;
 
-            // Capture only location + operand
             auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array);
 
             auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
@@ -723,11 +649,9 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                 const int  num   = ctx->num;
                 const auto proxy = Base::template make_proxy_with_info<Proxy2A>(ctx);
 
-                // Deferred replay: create_value -> allocate_chunk_internal sizes the
-                // buffer from the ambient thread_chunk_size(), but here the flushing
-                // thread's ambient is unrelated to THIS op's chunk. Pin the frozen
-                // per-op geometry for the write, restore on exit so the flusher's own
-                // in-flight write is untouched. Dynamic geometry only.
+                // The flusher's ambient chunk size is unrelated to THIS op's chunk:
+                // pin the frozen per-op geometry, restored on exit for the
+                // flusher's own in-flight write.
                 [[maybe_unused]] const DynChunkSizeGuard sz_guard{proxy.chunk_size()};
 
                 int retry_count = 0;
@@ -761,14 +685,9 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
 
                     if constexpr (build_config::any_check)
                     {
-                        // Check-build guard: catch a CULPRIT op whose index is out of range
-                        // BEFORE it writes out of bounds (same guard as the v2 path).
-                        //
-                        // Compare against proxy.chunk_size(), the per-op geometry
-                        // frozen at enqueue, NOT the static __chunk_size: in a dynamic
-                        // build the real chunk width is runtime (size_policy_.size())
-                        // and __chunk_size only the static default, so the guard would
-                        // fire a false OUT OF RANGE. In static builds the two agree.
+                        // Catch an out-of-range index BEFORE it writes. Compare against
+                        // proxy.chunk_size() (frozen at enqueue), NOT the static
+                        // __chunk_size, which is only the default in a dynamic build.
                         const unsigned int csz_guard = proxy.chunk_size();
                         if (std::cmp_greater_equal(num, csz_guard))
                         {
@@ -777,17 +696,11 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                                                    num, csz_guard, static_cast<const void*>(&chunk));
                         }
 
-                        // Check-build guard: garbage-pointer check on the write target.
                         CHUNK_CHECK_VALUES_PTR_C(values_before, "deferred2A.pre_store", &chunk);
 
-                        // Check-build guard: narrow-race re-check. The pre-store guard above
-                        // looked at values_before; if the chunk was (re)compressed
-                        // between values_load() and here, writing would corrupt a
-                        // constant array.
-                        // Re-checking cst state routes those cases back through the
-                        // retry loop (consistent with the post-store retry design)
-                        // instead of writing blind; the retry_count cap still turns
-                        // a persistent loop into a diagnosable failure.
+                        // Narrow-race re-check: a chunk (re)compressed since
+                        // values_load() goes back through the retry loop instead of
+                        // being written blind.
                         if (proxy.is_cst_val1() || proxy.is_cst_val2()) [[unlikely]]
                         {
                             if (++retry_count > internal::kReplayRetryCap)
@@ -804,7 +717,6 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         }
                     }
 
-                    // Safe to write.
                     // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                     values_before[num] = static_cast<T>(ctx->operand);
 
@@ -860,10 +772,8 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
 /**
  * @brief Runs a write body on a materialised chunk, bracketed by compression marking.
  *
- * The generic sync wrapper the load/store write paths funnel through:
- * materialise, snapshot the old value, run the body, then re-mark the chunk for
- * compression from the before/after pair. The body does its own store — this
- * only guarantees it runs against heap storage.
+ * Materialise, snapshot the old value, run the body (which does its own
+ * store), then re-mark for compression from the before/after pair.
  *
  * @tparam ModifyFn Callable performing the store.
  * @param modify_fn Write body.
@@ -884,11 +794,8 @@ void Proxy2A<T>::execute_simple_operation(ModifyFn modify_fn)
 /**
  * @brief Replay twin of execute_simple_operation().
  *
- * Follows the file's retry protocol: rebuild the proxy, materialise, check that
- * the values pointer is a real heap buffer, run the body on THAT pointer, and
- * confirm afterwards that it did not move. Any failed check restarts the loop —
- * the whole body, proxy included, since a compressor may have changed the chunk
- * state, not just its buffer.
+ * The file's retry protocol; a failed check restarts the whole body, proxy
+ * included, since a compressor may have changed the chunk state, not just its buffer.
  *
  * @tparam LAMBDA Callable taking the values pointer to write through.
  * @param ctx       Deferred-operation context being replayed.
@@ -907,10 +814,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_opera
 
         const in_t<T> v_old = Base::read_values_async(ctx);
 
-        // Fresh load
         T* values_before = ctx->chunk.values_load();
 
-        // Pre-store guard
         if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_simple_operation_async (pre-store)",
@@ -920,7 +825,6 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_opera
 
         operation(values_before);
 
-        // Post-store confirmation
         const T* values_after = ctx->chunk.values_load();
         if (values_after != values_before) [[unlikely]]
         {
@@ -937,16 +841,11 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_opera
 /**
  * @brief Applies a compound arithmetic operation, materialising only when the result leaves the constant.
  *
- * Computes in `std::common_type_t<T, U>` and truncates back to T, then branches
- * on what the result means for the chunk's state:
- *  - result differs from the chunk's second value while the chunk IS cst_val2:
- *    the constant no longer holds, so materialise and let @p modify_fn store;
- *  - chunk already materialised: store directly and re-mark for compression;
- *  - result equals the second value on a cst_val2 chunk: nothing to do, the
- *    compressed representation already says it.
- *
- * That third case is why the operation is not simply "read, compute, store":
- * a compressed chunk whose value does not change must not be materialised.
+ * Computes in `std::common_type_t<T, U>`, truncates to T, then:
+ *  - cst_val2 chunk, result != second value: materialise, @p modify_fn stores;
+ *  - materialised chunk: store and re-mark for compression;
+ *  - cst_val2 chunk, result == second value: nothing (a compressed chunk whose
+ *    value does not change must not be materialised).
  *
  * @tparam OP       Binary operation type.
  * @tparam ModifyFn Callable storing the result on the materialised path.
@@ -959,7 +858,6 @@ template <typename T>
 template <typename OP, typename ModifyFn, typename U>
 void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, ModifyFn modify_fn)
 {
-    // Determine high-precision type (e.g. double if mixing float array and double constant)
     using CalcType = std::common_type_t<T, base_t<U>>;
 
     if constexpr (build_config::chunk_dynamic)
@@ -968,10 +866,8 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, Modify
         shrink_array::set_thread_alloc_key(this->alloc_key());
     }
 
-    // Read current value from memory
     const in_t<T> v_old = read_values();
 
-    // 1. Perform math in high precision to verify if result matches constant values
     const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(v));
     const auto     v_new_truncated = static_cast<T>(v_new_precise);
 
@@ -979,29 +875,24 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, Modify
 
     if constexpr (is_not_bool)
     {
-        // 2. Check if the result deviates from the second constant value stored in this tab
         const bool will_be_not_second_value = (v_new_truncated != BaseSpec::ptr_second_value.get()) && cst_val2;
 
         if (will_be_not_second_value)
         {
-            // Result is no longer the constant second_value: allocate memory
             chunk.create_value(true, BaseSpec::ptr_second_value);
 
-            // Execute the final write using the provided lambda
             modify_fn(op);
         }
         else if (Base2::is_not_cst_val2())
         {
-            // Standard path: write result back to allocated memory
             Base::store_value(v_new_truncated);
 
-            // Check if this write makes the chunk compressible again
             mark_for_compression_if_needed_with_value(v_old, v_new_truncated);
         }
     }
     else
     {
-        // 3. Boolean specific logic (cst_val2 is true)
+        // bool: cst_val2 means "all true".
         const bool will_be_not_second_value = !v_new_truncated && cst_val2;
 
         if (will_be_not_second_value)
@@ -1022,10 +913,8 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, Modify
 /**
  * @brief Replay twin of execute_arithmetic_compound_operation().
  *
- * Same three-way branch on the chunk state, each arm wrapped in the file's
- * retry protocol. The no-op arm is guarded too: "the result already equals the
- * second value" was decided from a state that may have changed since, so it is
- * re-tested before the loop is allowed to exit.
+ * Same three-way branch, each arm under the retry protocol. The no-op arm is
+ * re-tested before exiting: the state it was decided on may have changed.
  *
  * @tparam OP  Binary operation type.
  * @tparam LBD Callable storing the result on the materialised path.
@@ -1048,16 +937,12 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 
     while (true)
     {
-        // Rebuild proxy each iteration (it caches state we want fresh)
+        // Rebuilt each iteration: it caches state that must be fresh.
         const Proxy2A proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
-        // Route create_value below to THIS op's geometry (proxy.chunk_size(),
-        // frozen for a replay), not the stale per-thread thread_chunk_size. Mirror
-        // of the sync twin execute_arithmetic_compound_operation. Without it,
-        // create_value allocates at the stale TLS while num / the store offset use
-        // the proxy geometry -> out-of-bounds write -> heap corruption that surfaces
-        // at a later free (malloc_consolidate / free(): corrupted unsorted chunks in
-        // destroy_after_flush). Dynamic geometry only.
+        // create_value below must allocate at THIS op's frozen geometry, not the
+        // stale per-thread size: otherwise the store overflows the buffer (heap
+        // corruption detected only at a later free).
         if constexpr (build_config::chunk_dynamic)
         {
             shrink_array::set_thread_chunk_size(proxy.chunk_size());
@@ -1076,12 +961,10 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 
             if (will_be_not_second_value)
             {
-                // Decompress path: lbd will re-read and store
                 ctx->chunk.create_value(true, proxy.ptr_second_value);
 
                 const T* values_before = ctx->chunk.values_load();
 
-                // Pre-store guard inside the decompressed-path branch
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
                     internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (decompress path)",
@@ -1091,7 +974,6 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 
                 lbd(op);
 
-                // Post-store: did `values` change?
                 const T* values_after = ctx->chunk.values_load();
                 if (values_after != values_before) [[unlikely]]
                 {
@@ -1107,7 +989,6 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
             {
                 const T* values_before = ctx->chunk.values_load();
 
-                // Pre-store guard
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
                     internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (heap path)",
@@ -1117,7 +998,6 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 
                 Base::store_value_async(ctx, v_new_truncated);
 
-                // Post-store confirmation
                 const T* values_after = ctx->chunk.values_load();
                 if (values_after != values_before) [[unlikely]]
                 {
@@ -1131,12 +1011,9 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 break;
             }
             {
-                // is_cst_val2 AND v_new_truncated == ptr_second_value.get()
-                // → no-op write (the result is already the constant value)
-                // BUT we should validate this still holds at break time:
+                // No-op arm (result == second value on cst_val2): re-test before exiting.
                 if (proxy.is_cst_val2() && v_new_truncated == proxy.ptr_second_value.get())
                 {
-                    // Confirmed: nothing to do.
                     break;
                 }
                 // State changed between decision and now: retry.
@@ -1146,11 +1023,9 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
         }
         else
         {
-            // bool: the same protocol as above -- pre-store guard, store,
-            // post-store confirmation, re-tested no-op -- with the bool second
-            // value (true) in place of ptr_second_value. Unreachable today (no
-            // compound operator on a bool proxy), kept complete so that a future
-            // one does not skip the protocol in silence.
+            // bool: the same protocol, second value = true. Unreachable today (no
+            // compound operator on a bool proxy); kept complete so a future one
+            // does not skip the protocol.
             const bool will_be_not_second_value = !v_new_truncated && cst_val2;
 
             if (will_be_not_second_value)
@@ -1213,13 +1088,11 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 /**
  * @brief Runs an in-place write body (bitwise, ++/--) on a materialised chunk.
  *
- * Like execute_simple_operation(), except the body is handed the values array
- * and writes through it directly.
+ * Like execute_simple_operation(), but the body writes through the values array.
  *
- * @note The old value is snapshotted BEFORE materialising here, and AFTER in
- *       execute_simple_operation(). Both read the same value — a constant chunk
- *       still reads back its constant — but the asymmetry is real, so do not
- *       assume the two wrappers order these steps alike.
+ * @note The old value is snapshotted BEFORE materialising here, AFTER in
+ *       execute_simple_operation(). Same value either way, but do not assume
+ *       the two wrappers order these steps alike.
  *
  * @tparam ModifyFn Callable taking the values array.
  * @param modify_fn Write body.
@@ -1237,10 +1110,8 @@ void Proxy2A<T>::execute_inplace_operation(ModifyFn modify_fn)
     mark_for_compression_if_needed_with_value(v_old, read_values());
 }
 
-// Replay twin of execute_inplace_operation(): the file's retry protocol around
-// a body that writes through the freshly-loaded values pointer. The extra
-// any_check assertions after the store catch a chunk that went back to a
-// constant state while we were writing it.
+// Replay twin of execute_inplace_operation(), under the retry protocol. Check
+// builds assert the chunk did not go back to a constant during the store.
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 template <typename LAMBDA>
 void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_operation_async(auto*  ctx,
@@ -1250,19 +1121,15 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
 
     while (true)
     {
-        // Load old value (best-effort; will be re-checked via post-store)
+        // Best-effort; re-checked by the post-store test.
         const in_t<T> v_old = Base::read_values_async(ctx);
 
-        // Rebuild proxy each iteration to refresh state
         const Proxy2A proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
-        // Ensure heap storage (decompresses if needed)
         derived().ensure_writable_storage_async(proxy);
 
-        // Fresh load of values pointer for the actual store
         T* values_before = ctx->chunk.values_load();
 
-        // Pre-store guard
         if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_inplace_operation_async (pre-store)",
@@ -1270,10 +1137,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
             continue;
         }
 
-        // Apply the operation on the freshly-loaded pointer
         internal::modify_element<ChunkType, T>(values_before, ctx->num, operation);
 
-        // Post-store confirmation
         const T* values_after = ctx->chunk.values_load();
         if (values_after != values_before) [[unlikely]]
         {
@@ -1282,7 +1147,6 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
             continue;
         }
 
-        // Diagnostic checks (any_check only)
         if constexpr (build_config::any_check)
         {
             if (proxy.is_cst_val1())
@@ -1299,7 +1163,6 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
             }
         }
 
-        // Success — mark for compression and exit
         Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, derived().read_values());
         break;
     }
@@ -1307,14 +1170,10 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
 /**
  * @brief Compound operation entry point, with an absorbing-element short-circuit.
  *
- * Arms the metadata, materialises any foreign deferred write on this offset so
- * the read-modify-write sees a truthful old value, then delegates to
- * ProxyBase::apply_atomic_op().
- *
- * Skips the operation entirely when the current value is `first_value` — the
- * callers pass operations for which first_value absorbs (`0 * v == 0`). The
- * check is racy by design and safe: a writer changing the value concurrently
- * would only have made this call store what is returned anyway.
+ * Applies any foreign deferred write on this offset first, so the RMW sees a
+ * truthful old value, then delegates to ProxyBase::apply_atomic_op(). Skipped
+ * when the current value is `first_value`, which absorbs the callers'
+ * operations (`0 * v == 0`).
  *
  * @tparam U  Operand type.
  * @tparam Op Binary operation type.
@@ -1327,31 +1186,26 @@ void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v) noexcept
 {
     this->check_not_stale();
     // No set_info_on_chunk() here: nothing before apply_atomic_op() reads the
-    // cached pointers (reader_sync is the chunk's, read_values resolves the
-    // values pointer itself), and under fast block compression the engine
-    // arms them anyway (write_with_optional_lock_info's lbd_info). Arming
-    // here too recomputed every pointer twice per *=, /=, %=.
+    // cached pointers, and under fast block compression the engine arms them
+    // (write_with_optional_lock_info's lbd_info). Arming here would do it twice.
 
-    // Cross-rank RMW materialisation: see arithmetic_assign.
-    // Pull any foreign deferred write to this offset to applied state before we
-    // read v_old, so the RMW cannot clobber it. Precise gate, outside begin_write.
+    // Apply any foreign deferred write to this offset before reading v_old, so
+    // the RMW cannot clobber it (see arithmetic_assign). Outside begin_write.
     chunk.reader_sync(num);
 
-    // Outside the write session: read under a ReadSection, or a pass in the
-    // region may release (and a materialisation zero-fill) the buffer between
-    // the pointer load and the element load -- the shortcut below then drops
-    // the operation (read_reclaim_validation, mode `compound`).
+    // Outside the write session: read under a ReadSection, or a pass may release
+    // (and a materialisation zero-fill) the buffer between the pointer and the
+    // element loads, and the shortcut below would drop the operation
+    // (read_reclaim_validation, mode `compound`).
     const in_t<T> v_old = Base::read_values_outside_session();
 
-    // Fast shortcut: if current value is first_value (usually 0), 0 * v is 0.
-    // Safe to short-circuit because a concurrent writer that changes this
-    // value cannot make the previous-value-was-first_value branch wrong:
-    // the operation would have left it unchanged anyway. That holds for a
-    // value the element really held -- hence the ReadSection above.
+    // first_value absorbs (0 * v == 0). Racy but safe: a concurrent writer
+    // cannot make the "was first_value" branch wrong, provided v_old is a value
+    // the element really held (hence the ReadSection).
     if (v_old != Chunk2A<T>::first_value)
     {
-        // Serial build: apply_atomic_op() runs the body straight away, without
-        // the engine and its lbd_info, and the body reads ptr_second_value.
+        // Serial build: apply_atomic_op() runs the body without the engine's
+        // lbd_info, and the body reads ptr_second_value.
         if constexpr (!chunk_config::use_fast_block_compression)
         {
             set_info_on_chunk();

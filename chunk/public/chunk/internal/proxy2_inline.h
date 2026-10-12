@@ -37,9 +37,8 @@ namespace shrink_array
 
 // No acquire fence ends set_info_second_value_ind() or the two
 // set_info_on_chunk(): they would follow plain (non-atomic) reads of the
-// share_info_array registry and pair with no release. Their `dmb ishld` was the
-// hottest instruction of assign_impl on aarch64; without them, 64 threads
-// chunk2_256 --mode perf: 11.48 s -> 10.68 s (-7.0%).
+// share_info_array registry and pair with no release. Do not add one: on
+// aarch64 it was the hottest instruction of assign_impl (several % of a run).
 
 // The armed mirror, checked against the registry under any_check; nullptr when
 // the proxy is not armed. Callers read the fields THROUGH this pointer: see the
@@ -118,11 +117,9 @@ ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() con
 // which returns the 16-byte record through a stack temporary (a q-register
 // store) and reads it straight back with 8- and 4-byte loads: a store the core
 // cannot forward to narrower loads, so each write waits for it to reach the
-// cache: on Grace (Neoverse V2), 64 threads, 38.6 % of
-// Proxy2<double>::assign_impl's samples behind those loads, and Chunk2's
-// constant-write pass 7-12 % behind Chunk2A's. Unarmed proxies (replay,
-// *_from_key) keep the registry path: rare, and a registry lookup costs more
-// than the stall anyway.
+// cache -- a large share of assign_impl's time on AArch64. Unarmed proxies
+// (replay, *_from_key) keep the registry path: rare, and a registry lookup
+// costs more than the stall anyway.
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_on_chunk()
 {
@@ -397,12 +394,10 @@ void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
                 chunk.set_nb_val_eq_second_value(this->chunk_size() - 1);
                 // The write that leaves cst_val2 skipped the first-value block
                 // at the top (it only counts on a materialised chunk), and
-                // create_value's crossed reset just zeroed nb_val_eq_first_value: a
-                // first_value written here is the one this chunk holds, count
-                // it. Without it a chunk that went all-second then all-first
-                // stopped at size - 1 and never compressed back (serial builds:
-                // the counters are the only path; chunk2<bool> showed it, the
-                // other types were reclaimed by compress_int's self-heal).
+                // create_value's crossed reset just zeroed nb_val_eq_first_value:
+                // count a first_value written here. Otherwise a chunk that went
+                // all-second then all-first stops at size - 1 and never
+                // compresses back (serial builds: the counters are the only path).
                 if (v == static_cast<T>(Chunk2<T>::first_value))
                 {
                     chunk.inc_nb_val_eq_first_value();
@@ -456,16 +451,15 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
     // or the current stored value is already second_value, nothing to do --
     // unless the chunk has a deferred op pending: an older op at this offset
     // would replay over the value we are leaving in place (see
-    // is_cst_val1_and_v_equal_first_value). The stored-value test is what made
-    // this early-out the frequent one: a bool re-set to true over a pending
-    // `false` lost the true in deferred_path_validation.
+    // is_cst_val1_and_v_equal_first_value); e.g. a bool re-set to true over a
+    // pending `false` would lose the true.
     //
     // The stored-value test reads the buffer OUTSIDE the write session: a pass
     // in the region may release it between a pointer load and the element load,
-    // and a second-constant materialisation refill it with second_value -- the
-    // early-out then skipped a real write. The test reloads the pointer inside
-    // a ReadSection (read_reclaim.h), which that pass waits for; only when it
-    // is reached, so an ordinary assignment pays nothing.
+    // and a second-constant materialisation refill it with second_value, making
+    // the early-out skip a real write. So the test reloads the pointer inside a
+    // ReadSection (read_reclaim.h), which that pass waits for -- only when
+    // reached, so an ordinary assignment pays nothing.
     if (!chunk.pending_any()) [[likely]]
     {
         if constexpr (is_not_bool)
@@ -598,14 +592,12 @@ template <typename T>
 void Proxy2<T>::ensure_writable_storage()
 {
     // Route this materialisation to THIS array's chunk-size pool -- the sync
-    // twin of Proxy2AFastCompPolicy::ensure_writable_storage_async.
-    // Without it, chunk.create_value() below allocates at whatever the STALE
-    // per-thread thread_chunk_size happens to be (left behind by an unrelated
-    // array's create_value()/rechunk_to(), neither of which restores it --
-    // only Proxy2<T>::create_value() self-corrects it, and this function
-    // calls chunk.create_value() directly, bypassing that wrapper), while
-    // num/store_value use this array's OWN size_policy_ -- heap-buffer-
-    // overflow the moment num exceeds the stale (smaller) allocation.
+    // twin of Proxy2AFastCompPolicy::ensure_writable_storage_async. Required:
+    // chunk.create_value() (called directly, bypassing Proxy2<T>::create_value()'s
+    // self-correction) allocates at the per-thread thread_chunk_size, which an
+    // unrelated array may have left STALE, while num/store_value use this
+    // array's own size_policy_: a heap overflow once num exceeds a smaller
+    // stale allocation.
     if constexpr (build_config::chunk_dynamic)
     {
         shrink_array::set_thread_chunk_size(this->chunk_size());
@@ -659,7 +651,7 @@ void Proxy2<T>::execute_simple_operation(LAMBDA operation)
     // Capture state AFTER create_value: before it, `values` still points at the
     // shared cst buffer, so v_old / was_* would read the wrong storage and the
     // counter transitions below would desync (driving the chunk to a spurious
-    // "full second value" and re-compressing it — the tab_int 10-vs-1 bug).
+    // "full second value" and re-compressing it).
     const in_t<T> v_old = read_values();
 
     [[maybe_unused]] bool was_second_value = false;
@@ -1074,11 +1066,11 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op op, in_t<U> v) noex
             // after it): in_t, no copy of a struct.
             const in_t<T> v_new = this->raw_elem();
             // Transition OUT of the second value first, independently of the
-            // transition IN below (as execute_simple_operation does). Chained
-            // to the first-value branch, `second_value * 0` (or `/ inf`) counted
-            // the new zero but kept the old second value counted: one too many,
-            // so a later second-value write reached "full" with one element
-            // still different and folded the chunk to cst2 -- that element lost.
+            // transition IN below (as execute_simple_operation does). Do not
+            // chain it to the first-value branch: `second_value * 0` (or
+            // `/ inf`) would count the new zero and keep the old second value
+            // counted, and a later write would fold the chunk to cst2 with one
+            // element still different (lost).
             if (was_second_value0 && v_new != second_value)
             {
                 chunk.dec_nb_val_eq_second_value();

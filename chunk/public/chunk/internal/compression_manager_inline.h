@@ -34,15 +34,12 @@
 namespace shrink_array
 {
 
-// No build guard: every definition below belongs to the PRIMARY
-// CompressionManagerOmpPolicy template, which is only instantiated with
-// Enabled=true -- i.e. only in OpenMP builds. The serial build selects the
-// empty <..., false> specialisation and never reaches any of this.
+// No build guard: everything below belongs to the PRIMARY CompressionManagerOmpPolicy
+// template, instantiated only with Enabled=true (OpenMP builds).
 
 // ── Per-rank flush lock (sharded xflush_lock) ─────────────────────────────
-// Spin-acquire the flush lock for rank r. The library's spin discipline
-// (CHUNK_CPU_PAUSE, yield after 1000 spins). Guards the per-rank op-map
-// container arr[r] against concurrent structural mutation by another flusher.
+// Spin-acquire the flush lock for rank r (CHUNK_CPU_PAUSE, yield after 1000 spins).
+// Guards the per-rank op-map arr[r] against structural mutation by another flusher.
 template <typename T, typename ChunkType, bool Enabled>
 void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_acquire(int rank) noexcept
 {
@@ -94,10 +91,8 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
     }
 
     auto& deferred_chunk_loc = deferred_chunk_per_thread[thr];
-    // Emptiness is checked under rank_flush_acquire(thr) below, NOT here:
-    // flush_chunk_all_ranks erases from deferred_chunk_per_thread[thr] while
-    // holding that same rank shard, so an unlocked .empty() read here is a data
-    // race on the unordered_dense set (TSan-confirmed).
+    // Do not test emptiness here: flush_chunk_all_ranks erases from this set under the
+    // rank-thr shard, so an unlocked .empty() is a data race. Checked under the lock below.
 
     auto* arr = ChunkType::get_deferred_ops();
     if (!arr)
@@ -109,36 +104,27 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
 
     using Policy = WriteCompressSyncPolicy<typename ChunkType::ProxyType>;
 
-    // Serialize against flush_chunk_all_ranks (cross-thread flush): both may
-    // drain arr[thr] for the same chunk, so they must not run concurrently.
-    // flush_deferred touches ONLY arr[thr], so it holds this rank's shard for
-    // the whole loop. flush_chunk_all_ranks acquires the same shard when (and
-    // only when) it processes rank thr — giving mutual exclusion on arr[thr]
-    // while letting flushes on other ranks proceed in parallel.
+    // Serialise against flush_chunk_all_ranks: both may drain arr[thr] for the same chunk.
+    // We touch ONLY arr[thr] and hold its shard for the whole loop; flush_chunk_all_ranks
+    // takes the same shard only while processing rank thr, so other ranks flush in parallel.
     const RankFlushLock xflush_guard(thr);
 
-    // Now under the rank shard: safe to read emptiness against concurrent erases.
     if (deferred_chunk_loc.empty())
     {
         return false; // RankFlushLock releases the shard
     }
 
     // ─── Flush has priority over compression ──────────────────────────
-    // ONE announce for the whole call, not one per chunk. begin_flush()
-    // blocks any FUTURE compressor's start() (it returns false); we then
-    // wait for any INFLIGHT compressor to drain -- they cannot be aborted,
-    // but they finish in bounded time (finite chunk list). Once no
-    // compressor is stealing, none can start while our flushing count is
-    // held, so every chunk below is replayed under one exclusion.
+    // The announce blocks any FUTURE compressor's start() (it returns false); we then
+    // wait for INFLIGHT compressors, which cannot be aborted but finish in bounded time.
+    // Once none is stealing, none can start while our flushing count is held, so every
+    // chunk below is replayed under one exclusion. No livelock: bounded drain, no new
+    // admissions.
     //
-    // Not one announce per chunk: announce_flush() is a membarrier() (an
-    // IPI to every CPU running one of our threads), and the bulk-init phases
-    // flush tens of thousands of chunks per second per rank -- per-chunk
-    // announces turned seconds into minutes at 64 threads. Holding the flag
-    // across the loop only defers compressors a little longer, which they
-    // already tolerate (start() yields to a flush).
-    //
-    // No livelock: bounded inflight drain x no new admissions.
+    // ONE announce per call, not per chunk: announce_flush() is a membarrier() (an IPI to
+    // every CPU running one of our threads) and bulk-init phases flush many thousands of
+    // chunks per second per rank; per-chunk announces slow them by an order of magnitude.
+    // Holding the flag across the loop only defers compressors a little longer.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
     increm_chunk_gate_flush<ChunkType>();
     struct FlushFlagGuard
@@ -155,13 +141,12 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
     };
     const FlushFlagGuard flush_flag_guard;
 
-    // Drain any compression that won the race. This loop terminates
-    // because (a) inflight is monotonically non-increasing once we
-    // hold the flushing flag, and (b) live compressors are finite.
+    // Drain any compression that won the race. Terminates: inflight cannot grow while we
+    // hold the flushing flag, and live compressors are finite.
     {
         int spin = 0;
-        // HARD compressors only — never the driver count (deadlock
-        // invariant, see compression_manager.h).
+        // HARD compressors only, never the driver count (deadlock invariant, see
+        // compression_manager.h).
         while (is_hard_compression_inflight())
         {
             if (++spin > 1000)
@@ -176,14 +161,11 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
         }
     }
 
-    // Walk a SNAPSHOT of this rank's chunk set, not the live set. Nothing
-    // should insert into it meanwhile: a replayed write runs under
-    // FlushReplayGuard (in_flush_replay) and is applied directly, never
-    // enqueued -- record_enqueue_deferred() checks it -- and other threads'
-    // inserts into rank thr's set take the shard lock held here. The walk no
-    // longer depends on it: an insert into the live set cannot invalidate
-    // this loop, and a chunk that still holds ops afterwards goes back into
-    // the live set (end of the loop), where the next flush finds it.
+    // Walk a SNAPSHOT of this rank's chunk set, not the live set. Nothing should insert
+    // meanwhile (a replayed write runs under FlushReplayGuard and is applied directly --
+    // record_enqueue_deferred() checks it -- and other threads take the shard lock held
+    // here), but the walk does not depend on it: an insert cannot invalidate this loop, and
+    // a chunk still holding ops goes back into the live set (end of the loop).
     std::remove_reference_t<decltype(deferred_chunk_loc)> chunks;
     chunks.swap(deferred_chunk_loc);
     for (ChunkType* chunk : chunks)
@@ -209,12 +191,10 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
         FlushLog log(payload);
 
         int64_t flushed_here = 0;
-        // Drain by ONE swap: move the current entries into a local batch and
-        // iterate that, never *op_map itself. A replayed write_body() applies
-        // its write directly (in_flush_replay) and should enqueue nothing;
-        // should an op land in *op_map all the same, it is left there for the
-        // NEXT flush and the chunk stays in the set (below) -- not redrained
-        // here (looping while !empty could livelock).
+        // Drain by ONE swap into a local batch; never iterate *op_map itself. A replayed
+        // write_body() should enqueue nothing; an op that lands in *op_map anyway is left
+        // for the NEXT flush (the chunk stays in the set, below). Do not loop while
+        // !empty: that could livelock.
         {
             std::remove_reference_t<decltype(*op_map)> batch;
             batch.swap(*op_map);
@@ -233,16 +213,13 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
                 op_ptr->destroy();
                 ++flushed_here;
             }
-            // batch destroyed here; any reentrant enqueue now sits in *op_map
-            // and will be drained by the NEXT flush (not redrained here).
         }
 
         // Keep the sharded pending counter in sync (read by any_pending_ops).
         dec_pending_ops(thr, flushed_here);
 
-        // Per-chunk counter: -flushed AFTER draining/applying, release so a
-        // reader that acquire-observes 0 also sees the write_body results.
-        // (pending_retire is a no-op in counterless builds.)
+        // Per-chunk counter, AFTER applying, with release: a reader that acquire-observes 0
+        // also sees the write_body results. (No-op in counterless builds.)
         if (flushed_here > 0)
         {
             chunk->pending_retire(static_cast<int32_t>(flushed_here));
@@ -250,14 +227,10 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
 
         log.end();
 
-        // Preserve concurrent re-enqueues, as flush_chunk_all_ranks does.
-        // The batch was swapped out; ops enqueued into *op_map after the swap
-        // are un-replayed pending writes. clear()+erase would drop them
-        // (lost write + counter drift). Erase the entry only when empty;
-        // otherwise keep it AND put the chunk back into the live set: the set
-        // is the only thing flush_deferred walks, so a chunk left out of it
-        // would never be flushed again, and flush_all_deferred's
-        // storage.destroy() would discard its ops.
+        // Preserve concurrent re-enqueues (see flush_chunk_all_ranks): erase the entry only
+        // when empty; otherwise keep it AND put the chunk back into the live set, the only
+        // thing flush_deferred walks -- left out, its ops would never be flushed and
+        // flush_all_deferred's storage.destroy() would discard them.
         if (op_map->empty())
         {
             (void)thread_map.erase(it_chunk);
@@ -276,19 +249,16 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
         }
     }
 
-    // Nothing put back (the usual case): hand the walked buffer back, so the
-    // live set keeps its capacity from one flush to the next.
+    // Nothing put back (the usual case): hand the buffer back so the live set keeps its capacity.
     chunks.clear();
     if (deferred_chunk_loc.empty())
     {
         deferred_chunk_loc.swap(chunks);
     }
 
-    // The flag is the CALLING thread's, so only a drain of its own rank may
-    // lower it: draining another rank (the all-ranks loop of a serial flush)
-    // says nothing about this thread's own queue, and a false "holds none"
-    // would let a compound op on a zero skip itself while one of this
-    // thread's ops on the element is still queued.
+    // The flag is the CALLING thread's: only a drain of its own rank may lower it. A false
+    // "holds none" would let a compound op on a zero skip itself while one of this thread's
+    // ops on the element is still queued.
     if (thread_map.empty() && thr == get_thr_rank_fast())
     {
         clear_thread_has_ops(thr);
@@ -331,25 +301,20 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
     const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
 
     // ─── Cross-flush mutual exclusion is PER RANK ─────────────────────────
-    // The double-free guard (two flushers draining the same arr[r][chunk] and
-    // both destroy()-ing an op) only needs mutual exclusion on the rank whose
-    // map is being drained. We therefore take xflush_lock_rank[r] INSIDE the
-    // per-rank loop below, not a single global lock here — so concurrent
-    // flush_chunk_all_ranks() calls draining DIFFERENT ranks run in parallel.
-    // begin_flush()/inflight below are per-thread/global atomics (compressor
-    // exclusion), independent of the container lock, so they stay unguarded.
+    // Preventing two flushers from draining the same arr[r][chunk] (double destroy())
+    // needs exclusion only on the rank being drained: xflush_lock_rank[r] is taken INSIDE
+    // the loop, so flushes of DIFFERENT ranks run in parallel. The flush announce and the
+    // inflight drain (compressor exclusion) are independent atomics, outside that lock.
 
-    // ─── Take the flush lock on OUR rank ──────────────────────────────────
-    // begin_flush(self_rank) blocks any future compressor start(); we then
-    // drain inflight compressors. Once inflight == 0 and we hold the flush
-    // flag, no compressor is mutating any chunk.
+    // ─── Take the flush flag ──────────────────────────────────────────────
+    // Blocks any future compressor start(); once inflight compressors are drained, none
+    // is mutating any chunk.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
     increm_chunk_gate_flush<ChunkType>();
 
     {
         int spin = 0;
-        // HARD compressors only — never the driver count (deadlock invariant,
-        // see compression_manager.h).
+        // HARD compressors only (see flush_deferred).
         while (is_hard_compression_inflight())
         {
             if (++spin > 1000)
@@ -369,32 +334,24 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
 
     bool flushed_any = false;
 
-    // Total ops drained for THIS chunk across all ranks. Feeds pending_retire
-    // (a no-op in counterless builds — a plain int64 accumulation is cheaper
-    // than gating it).
+    // Ops drained for THIS chunk across all ranks, for pending_retire.
     int64_t total_flushed_chunk = 0;
 
-    // ─── Scan the selected rank(s)' map for this chunk ────────────────────
-    // self_only: just our rank (stage 1 of wait_for_availability) — one lock,
-    // no cross-rank walk. Otherwise every rank (stage 2).
+    // self_only: just our rank (stage 1 of wait_for_availability); otherwise every rank (stage 2).
     const int r_begin = self_only ? self_rank : 0;
     const int r_end   = self_only ? self_rank + 1 : max_thr;
     for (int r = r_begin; r < r_end; ++r)
     {
         auto& thread_map = arr[r];
 
-        // Hold rank r's shard for the entire time we touch arr[r] (find, drain,
-        // erase) and its dangerous-list. RAII so every exit (the two `continue`s
-        // and normal fall-through) releases it. This is the mutual exclusion
-        // that prevents two flushers from double-draining arr[r][chunk]; other
-        // ranks' shards stay free so their flushes run concurrently.
+        // Hold rank r's shard while touching arr[r] (find, drain, erase) and its
+        // dangerous-list: no double drain of arr[r][chunk]; other ranks stay free.
         const RankFlushLock rank_scope_guard(r);
 
-        // No writer wait: the enqueue path takes rank r's shard lock around
-        // its map insert, so holding rank_flush_acquire(r) IS the mutual
-        // exclusion with rank r's writer. (Writers backing off on a GLOBAL
-        // flushing count instead would make every enqueue in the process wait
-        // for ANY flush anywhere: a convoy that collapsed x86 at 64-128 threads.)
+        // No writer wait: the enqueue path takes rank r's shard lock around its map
+        // insert, so this lock IS the exclusion with rank r's writer. Do not make writers
+        // back off on a GLOBAL flushing count instead: every enqueue would wait for any
+        // flush anywhere, a convoy that collapses throughput at high thread counts.
 
         const auto it_chunk = thread_map.find(chunk);
         if (it_chunk == thread_map.end())
@@ -410,9 +367,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
 
         auto*   op_map       = ops_map_ptr.get();
         int64_t flushed_here = 0;
-        // Drain by ONE swap (see flush_deferred): iterate a local batch, leave
-        // reentrant enqueues in *op_map for the next flush. Do NOT loop to
-        // redrain — that can livelock if each write_body re-enqueues.
+        // Drain by ONE swap (see flush_deferred); do NOT loop to redrain (livelock).
         {
             std::remove_reference_t<decltype(*op_map)> batch;
             batch.swap(*op_map);
@@ -442,8 +397,6 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
                     }
                 }
 
-                // Ring-log trace of the cross-rank flush, same as flush_deferred;
-                // compiled only under ring_log_debug / ring_log_op_only.
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
                     ring_log_op(get_tid(), EV_OP_FLUSH_ONE, static_cast<uint32_t>(num),
@@ -454,8 +407,6 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
                 op_ptr->destroy();
                 ++flushed_here;
             }
-            // batch destroyed here; reentrant enqueues are now in *op_map,
-            // picked up by the next flush.
         }
 
         if (flushed_here > 0)
@@ -466,25 +417,19 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
         }
 
         // ── Preserve concurrent re-enqueues ──────────────────────────────────
-        // We drained a SWAPPED-OUT batch; any op enqueued into *op_map AFTER the
-        // swap (a writer still active on rank r during this reader-triggered
-        // flush) is a genuine pending write that has NOT been replayed. A
-        // `op_map->clear(); thread_map.erase()` would destroy exactly those ops
-        // without applying them AND without decrementing pending_ops for them
-        // (dec only counts the batch) -- a lost published write plus a counter
-        // that no longer matches reality. Never clear() the live map: erase the
-        // chunk entry ONLY when nothing was re-enqueued; otherwise leave it (and
-        // the dangerous-list membership) for the next flush to pick up, exactly
-        // as the batch-swap comment promises.
+        // An op enqueued into *op_map AFTER the swap (a writer still active on rank r) is a
+        // pending write NOT yet replayed. Never clear() the live map: that would drop it
+        // unapplied and leave pending_ops wrong (dec counts only the batch). Erase the
+        // chunk entry ONLY when nothing was re-enqueued; otherwise leave it (and the
+        // dangerous-list membership) for the next flush.
         if (op_map->empty())
         {
-            // ankerl's erase throws on a key it finds changed (a corrupted
-            // map); this function is noexcept: say where instead of terminate.
+            // ankerl's erase throws on a key it finds changed (a corrupted map); this
+            // function is noexcept: say where instead of terminate.
             try
             {
                 thread_map.erase(it_chunk);
-                // Drop the chunk from rank r's dangerous-list set so a later
-                // flush_deferred(r) doesn't try to re-find an absent entry.
+                // Keep a later flush_deferred(r) from looking for an absent entry.
                 deferred_chunk_per_thread[r].erase(chunk);
             }
             catch (const std::exception& e)
@@ -498,11 +443,9 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
     Policy::end_flush();
     log.end();
 
-    // Per-chunk counter: subtract everything drained across ranks (mirrors
-    // flush_deferred). Independent atomic; each op is drained exactly once (the
-    // per-rank shard makes flush paths mutually exclusive on any given rank),
-    // so no underflow even without a container lock held here. Release pairs
-    // with the reader's acquire load.
+    // Per-chunk counter: subtract everything drained (as flush_deferred). Each op is drained
+    // exactly once (per-rank shard exclusion), so no underflow without a lock here. Release
+    // pairs with the reader's acquire load.
     if (total_flushed_chunk > 0)
     {
         chunk->pending_retire(static_cast<int32_t>(total_flushed_chunk));
@@ -521,9 +464,8 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
         return;
     }
 
-    // Serialise against a concurrent flush of OUR rank for this chunk (the same
-    // shard lock flush_deferred / flush_chunk_all_ranks take). Owner-recursive;
-    // uncontended in the common case. Held only for the single-entry erase.
+    // Serialise against a concurrent flush of OUR rank (the flushes' shard lock).
+    // Owner-recursive; usually uncontended.
     const RankFlushLock xflush_guard(thr);
 
     auto&      thread_map = arr[thr];
@@ -546,18 +488,13 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
         return; // no older op at this offset — the direct write is unshadowed
     }
 
-    // APPLY-then-erase (not discard): the direct write that follows supersedes
-    // the queued value, so discarding LOOKED equivalent — but the write body
-    // reads v_old (read_values) to feed the incremental compression counters
-    // (mark_for_compression_if_needed_with_value). Discarding left values[num]
-    // at its pre-op state, so v_old was OLDER than program order and the
-    // counters received a wrong (old->new) transition — a silent corruption
-    // vector on counter-trusted compression paths, frequent exactly where
-    // pendings survive across parallel regions (no per-barrier drains: gnu /
-    // libgomp). Replaying the single op here restores the OFF-mode program
-    // order: op value applied, THEN our direct write overwrites it. The body
-    // runs under FlushReplayGuard so it writes directly (no re-defer, no lock
-    // machinery — this is one op body, not a flush walk).
+    // APPLY-then-erase, do not just discard: the direct write that follows supersedes the
+    // queued value, but its write body reads v_old to feed the incremental compression
+    // counters (mark_for_compression_if_needed_with_value). Discarded, values[num] stays at
+    // its pre-op state, v_old is older than program order and the counters get a wrong
+    // transition (silent corruption where pendings survive across parallel regions, e.g.
+    // libgomp). Replaying restores program order: op applied, THEN our direct write. Under
+    // FlushReplayGuard the body writes directly (no re-defer, no lock machinery).
     {
         const FlushReplayGuard replay_guard;
         it_op->second->write_body();
@@ -573,14 +510,13 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
                                static_cast<const void*>(chunk), num);
     }
 
-    // Exact bookkeeping of the flush erase path.
+    // Same bookkeeping as the flush erase path.
     dec_pending_ops(thr, 1);
-    // release so a reader that acquire-observes the decremented per-chunk count
-    // also sees the direct store that follows. No-op in counterless builds.
+    // Release: a reader that acquire-observes the decremented count also sees the direct
+    // store that follows. No-op in counterless builds.
     chunk->pending_retire(1);
 
-    // If this chunk has no more ops on our rank, drop it from the rank tracking
-    // structures exactly as flush_deferred does.
+    // No more ops on our rank: drop the chunk from the rank tracking, as flush_deferred does.
     if (op_map->empty())
     {
         try // ankerl's erase throws on a key it finds changed; this function is noexcept
@@ -615,16 +551,12 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
     const int max_thr = CHUNK_PMP_RANK_BOUND;
 
     // ─── Yield to flush_deferred ──────────────────────────────────────
-    // After incrementing hard_inflight_ and the seq_cst fence, check
-    // whether any thread has already claimed a flush. If so, undo our
-    // increment and return false — the caller (make_block_compression_impl)
-    // already handles this by skipping compression. This implements
-    // "defer compression, but not flush_deferred".
+    // A flush already claimed: undo our increment and return false; the caller
+    // (make_block_compression_impl) skips compression. "Defer compression, not the flush."
     //
-    // This first look is only an early-out: the flush drains spin on
-    // stealing_inflight_, not on hard_inflight_, so the load that actually
-    // pairs with their announce_flush() is the one AFTER the writer wait,
-    // once stealing_inflight_ is published (see the end of this function).
+    // Only an early-out: the flush drains spin on stealing_inflight_, not hard_inflight_,
+    // so the load that pairs with their announce_flush() is the one AFTER the writer wait
+    // (end of this function).
     if (WriteCompressSyncPolicy<ProxyType>::any_thread_flushing(max_thr))
     {
         increm_chunk_gate_start_flush_yield<ChunkType>();
@@ -637,53 +569,38 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
         return false;
     }
 
-    // The compressor's announce towards the WRITERS: the seq_cst increment
-    // above, then the heavy barrier -- a fence, and under the asymmetric
-    // protocol the membarrier() that stands in for the fence the writers no
-    // longer execute (WriteCompressSyncPolicy::announce_write() says why one
-    // side then always sees the other). AFTER the flush early-out on
-    // purpose: that early-out pairs with nothing (see above), and on the
-    // bulk-init phases it is taken 96% of the time -- a membarrier() before
-    // it was an IPI storm for compressions that never ran.
+    // The compressor's announce towards the WRITERS: the seq_cst increment above, then the
+    // heavy barrier -- a fence, and under the asymmetric protocol the membarrier() standing
+    // in for the writers' fence (see WriteCompressSyncPolicy::announce_write()). Keep it
+    // AFTER the flush early-out: that early-out pairs with nothing, and on bulk-init phases
+    // it is taken almost every time -- a membarrier() before it is an IPI storm for
+    // compressions that never run.
     dekker::heavy_barrier();
 
-    // Drain any write_body() calls already in progress.
-    // Bounded wait for a "no writer" window. Under heavy write load (e.g. many
-    // threads assigning to a short-typed array, where most chunks are
-    // compressible so perform_compression fires constantly) that window may never
-    // open, and an unbounded spin here livelocks every compressing thread at ~97%
-    // CPU in sched_yield with no progress. Bound the wait: after a yield budget,
-    // give up and return false. The caller (make_block_compression) then skips
-    // compression WITHOUT touching P — the chunks stay queued and are retried on
-    // the next opportunistic pass, and are drained for good by the dedicated
-    // compress_chunk_to_compress OMP region between phases (which runs with no
-    // concurrent writers and no start() barrier). So deferring here loses no
-    // compression; it only avoids spinning when the opportunistic window is shut.
+    // Bounded wait for a "no writer" window (drains write_body() calls in progress). Under
+    // heavy write load the window may never open, and an unbounded spin livelocks every
+    // compressing thread in sched_yield. Past the yield budget, return false: the caller
+    // skips compression WITHOUT touching P, the chunks stay queued and are retried on the
+    // next pass, and the between-phase compress_chunk_to_compress region (no concurrent
+    // writers, no start() barrier) drains them for good. Deferring loses no compression.
     int spin   = 0;
     int yields = 0;
-// Spin budget before deferring the opportunistic compression. Under heavy
-// write load the "no writer" window barely opens, so a large budget makes a
-// compressing thread spin for a long time (seconds) — the periodic global
-// stalls observed at high thread counts. Since deferring loses no
-// compression (the dedicated between-phase region drains the chunks), a low
-// budget is usually better: give up fast and keep writing. Override with
-// -DCHUNK_COMPRESS_MAX_YIELDS=<n> (0 = give up on the first blocked check).
+// Spin budget before deferring. A large budget makes a compressing thread spin for a long
+// time (up to seconds: periodic global stalls at high thread counts); since deferring loses
+// nothing, a low budget is usually better. Override with -DCHUNK_COMPRESS_MAX_YIELDS=<n>
+// (0 = give up on the first blocked check).
 #ifndef CHUNK_COMPRESS_MAX_YIELDS
     #define CHUNK_COMPRESS_MAX_YIELDS 10000
 #endif
     constexpr int kMaxYields = CHUNK_COMPRESS_MAX_YIELDS; // tune via -D
 
-    // Bounded wait for a "no writer" window, HOLDING our hard increment:
-    // that is deliberate — the write-path gate consults hard_inflight_, so a
-    // parked compressor steers new writers to the slow path and the window
-    // actually opens (compressor priority). This cannot re-create the parked
-    // livelock triangle: since the Parked-vs-Stealing split, create_value and
-    // the flush drains wait on stealing_inflight_ only, which we have NOT
-    // incremented yet.
-    // With the per-chunk marks the window is "no writer on a chunk this
-    // pass MARKED" -- the writers of the other chunks are not in the way and
-    // are neither waited for nor steered away; without the marks it is "no
-    // writer anywhere", as it always was.
+    // Wait HOLDING our hard increment, deliberately: the write-path gate consults
+    // hard_inflight_, so a parked compressor steers new writers to the slow path and the
+    // window opens (compressor priority). No parked livelock triangle: create_value and the
+    // flush drains wait on stealing_inflight_ only, not incremented yet.
+    // With the per-chunk marks the window is "no writer on a chunk this pass MARKED" (other
+    // chunks' writers are neither waited for nor steered away); without them, "no writer
+    // anywhere".
     const auto window_shut = [max_thr]
     {
         if constexpr (chunk_config::use_chunk_steal_mark)
@@ -703,9 +620,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
             spin = 0;
             if (++yields > kMaxYields)
             {
-                // Give up this opportunistic compression: undo the active-count
-                // increment (symmetric with add_compression_active() above, as in
-                // the any_thread_flushing early-out) and report deferral.
+                // Give up: undo add_compression_active() (as the flush early-out does).
                 increm_chunk_gate_start_deferred<ChunkType>();
                 decrement_inflight();
                 if constexpr (chunk_config::ring_log_debug)
@@ -727,26 +642,16 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
     stealing_inflight_.fetch_add(1, std::memory_order_seq_cst);
     std::atomic_thread_fence(std::memory_order_seq_cst);
 
-    // Re-check the flushers AFTER publishing stealing_inflight_: this is the
-    // Dekker pair the flush drains actually rely on. flush_deferred() and
-    // flush_chunk_all_ranks() do announce_flush() (flushing++, fence) and then
-    // spin on stealing_inflight_ -- NOT on hard_inflight_ (waiting on a parked
-    // compressor is the livelock triangle, see compression_manager.h). So the
-    // any_thread_flushing() check at the top of this function, taken while we
-    // were only parked, pairs with nothing: a flusher that announced itself
-    // between that check and the fetch_add above saw stealing == 0 and is
-    // already replaying deferred write bodies. Without this second look we
-    // would scan and CAS-steal `values` underneath that replay: the scan sees
-    // the pre-replay constant run, the replay's store lands (its post-store
-    // pointer check passes, the CAS has not happened yet), then the CAS parks
-    // the chunk back on the constant and the replayed write is lost -- seen as
-    // a stale second value at one index of a Chunk2A (shrink_bench, tab3,
-    // "read : 0 != 1", once in ~2300 runs).
-    //
-    // Before the Parked/Stealing split start() re-took hard_inflight_ and
-    // re-checked the flushers after the writer wait; the split dropped that
-    // second check. Flush keeps priority ("defer compression, not
-    // flush_deferred"): a flusher never backs off, we do.
+    // Re-check the flushers AFTER publishing stealing_inflight_: this is the Dekker pair
+    // the flush drains rely on. They announce_flush() (flushing++, fence) then spin on
+    // stealing_inflight_ -- NOT hard_inflight_ (waiting on a parked compressor is the
+    // livelock triangle, see compression_manager.h). So the early check at the top, taken
+    // while only parked, pairs with nothing: a flusher announced between it and the
+    // fetch_add above saw stealing == 0 and is already replaying write bodies. Do not drop
+    // this second look: we would scan and CAS-steal `values` under that replay (scan sees
+    // the pre-replay constant run, the replayed store lands, the CAS parks the chunk back
+    // on the constant) and the replayed write would be lost. Flush keeps priority: a
+    // flusher never backs off, we do.
     if (WriteCompressSyncPolicy<ProxyType>::any_thread_flushing(max_thr))
     {
         increm_chunk_gate_start_flush_yield<ChunkType>();
@@ -763,15 +668,11 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
     return true;
 }
 
-// Yield budget of the writer-side wait at the gate. With the per-chunk marks
-// the wait is a parked compressor's window (microseconds) or the pass
-// reaching this chunk; without them it is the whole pass, scan included
-// (~300 us at 6 threads on x86, ~1 ms at 64 on AArch64). Past the budget the
-// write is deferred, as it would be without the wait, so a bigger budget
-// only buys fewer deferrals when a pass is unusually
-// long. A yield is ~1 us; the 1000 pauses before it are ~50 us on x86 and
-// under 1 us on AArch64 (`yield` is a hint there), so the budget in time is
-// mostly the yields.
+// Yield budget of the writer-side wait at the gate. With the per-chunk marks the wait is a
+// parked compressor's window (microseconds) or the pass reaching this chunk; without them,
+// the whole pass (hundreds of microseconds to a millisecond). Past the budget the write is
+// deferred, as without the wait, so a bigger budget only buys fewer deferrals on unusually
+// long passes. The budget in time is mostly the yields (~1 us each).
 #ifndef CHUNK_WRITE_WAIT_MAX_YIELDS
     #define CHUNK_WRITE_WAIT_MAX_YIELDS 64
 #endif
@@ -795,7 +696,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::wait_out_compressor(con
             spin = 0;
             if (++yields > kMaxYields)
             {
-                break; // budget spent: the caller defers, as it always did
+                break; // budget spent: the caller defers
             }
         }
         else
@@ -810,11 +711,9 @@ template <typename T, typename ChunkType, bool Enabled>
 template <typename ProxyType>
 void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::finish()
 {
-    // Undo the Parked -> Stealing transition FIRST: waiters on
-    // stealing_inflight_ (create_value, flush drains) may proceed as soon as
-    // we are no longer allowed to steal; hard follows for the gate/remaining
-    // accounting. finish() only runs after a start() that returned true, so
-    // the counters are always paired.
+    // Undo Parked -> Stealing FIRST: waiters on stealing_inflight_ (create_value, flush
+    // drains) may proceed as soon as we can no longer steal; hard follows. finish() only
+    // runs after a start() that returned true, so the counters are paired.
     stealing_inflight_.fetch_sub(1, std::memory_order_seq_cst);
 
     const int remaining = decrement_inflight();

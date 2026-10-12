@@ -44,9 +44,8 @@ template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk;
 
 /// @brief The per-type facade these verbs drive. Forward-declared, not included:
-///        chunk_std.h sits inside the chunk_func.h -> chunk_std.h -> proxy.h ->
-///        manager_chunk.h include cycle and cannot pull all_type_chunk.h in.
-///        Only chunk_std.cpp, which defines the bodies, needs the full type.
+///        chunk_std.h sits inside an include cycle (chunk_func.h -> chunk_std.h ->
+///        proxy.h -> manager_chunk.h). Only chunk_std.cpp needs the full type.
 class AllTypeChunk;
 
 /**
@@ -54,26 +53,17 @@ class AllTypeChunk;
  *        the thread model.
  *
  * @tparam Enabled build_config::use_openmp.
- * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING -- same role, same
- *                 reason, as on ParamChunkParallelInterface (param_chunk.h):
- *                 it keeps the bodies TEMPLATES so a build only ever
- *                 instantiates its own, and it keeps the calls DEPENDENT so
- *                 phase-1 lookup does not resolve them against the concrete
- *                 facade at definition time. Without it these bodies cannot
- *                 coexist, because the two halves of the teardown are verbs of
- *                 DIFFERENT policies: AllTypeChunkParallelInterface<Derived,
- *                 true> declares clear_list_block_free_thr() and
- *                 delete_list_block_chunk_free_itself(), <Derived, false>
- *                 declares delete_chunk_allocator(), and neither declares the
- *                 other's.
+ * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING (as on
+ *                 ParamChunkParallelInterface, param_chunk.h): it keeps the
+ *                 bodies TEMPLATES, so a build instantiates only its own, and
+ *                 the calls DEPENDENT, so phase-1 lookup does not resolve them
+ *                 against the concrete facade. The two teardown halves are verbs
+ *                 of DIFFERENT policies (AllTypeChunkParallelInterface<Derived,
+ *                 true> vs <Derived, false>), neither declaring the other's.
  *
- * @note EVERY verb exists in BOTH specialisations, so a caller needs no build
- *       guard of its own. The ones with nothing to do in a given model are
- *       honest no-ops -- a serial build has no per-thread free lists to clear
- *       or balance, an OpenMP build frees its pools through the per-rank pair
- *       rather than through the single allocator.
- * @see release_chunk_pools(), which is the verb to call when what you want is
- *      simply "let go of the reuse pools", whichever build this is.
+ * @note EVERY verb exists in BOTH specialisations, so callers need no build
+ *       guard; those with nothing to do in a model are no-ops.
+ * @see release_chunk_pools(), the verb for "let go of the reuse pools" in any build.
  */
 template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
 struct ChunkPoolParallelInterface; // primary left undefined: only the 2 specializations exist
@@ -124,9 +114,8 @@ struct ChunkPoolParallelInterface<false, AllT>
 ///        do nothing. Nothing either while an array is alive (see release_chunk_pools()).
 extern void destroy_block_chunk();
 
-// Build-agnostic free functions over the policy above. Declared -- and defined,
-// in chunk_std.cpp -- in EVERY build, which is the point: calling any of them
-// links in both models.
+// Build-agnostic free functions over the policy above, declared and defined
+// (chunk_std.cpp) in EVERY build, so calling any of them links in both models.
 /// @brief ChunkPoolParallelInterface<>::delete_chunk_allocator() of this build.
 extern void delete_chunk_allocator();
 /// @brief ChunkPoolParallelInterface<>::clear_all_list_block_free_thr() of this build.
@@ -142,38 +131,32 @@ extern bool need_load_balance_list_block_free();
 /**
  * @brief Let go of the chunk reuse pools, whichever thread model this build is.
  *
- * @details The teardown halves are not the same verb in the two models:
- *          OpenMP releases the per-rank lists (clear_all_list_block_free_thr()
- *          then delete_list_block_chunk_free_itself()), a serial build deletes
- *          its single allocator (delete_chunk_allocator()). This does the right
- *          one, so the caller need not know which.
- * @note Pair it with destroy_block_chunk(), which is build-agnostic already.
- *       Both are optional: the process can simply exit.
- * @note While an array is alive -- typically a global or static one, which is
- *       destroyed after main returns -- this only empties the free lists, and
- *       destroy_block_chunk(), delete_list_block_chunk_free_itself() and
- *       delete_chunk_allocator() do nothing: the array will park its buffers
- *       in those structures when it dies. They stay reachable until the exit.
+ * @details OpenMP releases the per-rank lists (clear_all_list_block_free_thr()
+ *          then delete_list_block_chunk_free_itself()); a serial build deletes
+ *          its single allocator (delete_chunk_allocator()).
+ * @note Pair it with destroy_block_chunk(). Both are optional: the process can
+ *       simply exit.
+ * @note While an array is alive (typically a global one, destroyed after main)
+ *       this only empties the free lists, and destroy_block_chunk(),
+ *       delete_list_block_chunk_free_itself() and delete_chunk_allocator() do
+ *       nothing: the array parks its buffers there when it dies.
  */
 extern void release_chunk_pools();
 
 /**
  * @brief Per-chunk zero-counter, the serial path's compression trigger.
  *
- * @details Chunk v1 compresses a chunk once ALL its elements are zero. Rather
- *          than rescanning the buffer on every write, the serial build keeps a
- *          running count of zero elements and compresses when it reaches the
- *          chunk size. The OpenMP build does not use this: it queues candidates
- *          and scans them in batches instead (see ChunkFastCompPolicy), which is
- *          why the counter is behind a policy rather than always present.
+ * @details Chunk v1 compresses a chunk once ALL its elements are zero. The
+ *          serial build keeps a running count of zero elements instead of
+ *          rescanning; the OpenMP build queues candidates and scans them in
+ *          batches instead (see ChunkFastCompPolicy).
  *
  * @tparam EnableCounter chunk_config::use_compression_with_counter; false makes
  *                       ConditionalCounter an empty type, so the counter costs
  *                       nothing in the modes that do not consult it
- * @warning The count must track the buffer exactly. Chunk's copy constructor and
- *          copy assignment forward to this base explicitly for that reason --
- *          see their comments; a desynchronised counter compresses a chunk that
- *          is not actually all-zero, and later reads return the constant.
+ * @warning The count must track the buffer exactly (hence Chunk's copy
+ *          constructor and assignment forward to this base explicitly): a
+ *          desynchronised counter compresses a chunk that is not all-zero.
  */
 template <bool EnableCounter>
 class ChunkCounterPolicy
@@ -182,20 +165,20 @@ class ChunkCounterPolicy
     /// @brief Record one more zero element.
     void inc_nb_val_eq_zero() noexcept
     {
-        ++nb_val_eq_zero; // Uses operator++
+        ++nb_val_eq_zero;
     }
 
     /// @brief Record one fewer zero element.
     void dec_nb_val_eq_zero() noexcept
     {
-        --nb_val_eq_zero; // Uses operator--
+        --nb_val_eq_zero;
     }
 
     /// @brief Set the zero count outright.
     /// @param v new count
     void set_nb_val_eq_zero(counter_value_t v) noexcept
     {
-        nb_val_eq_zero = v; // Uses operator=
+        nb_val_eq_zero = v;
     }
 
     /// @brief Is every element of the chunk zero?
@@ -203,29 +186,24 @@ class ChunkCounterPolicy
     /// @return true when the count has reached @p size -- the compression trigger
     [[nodiscard]] bool is_full_zero(unsigned int size = __chunk_size) const noexcept
     {
-        // Implicit conversion to unsigned char happens here
         return nb_val_eq_zero == size;
     }
 
   private:
-    // [[no_unique_address]]: a DISABLED counter is an empty type, but an
-    // empty MEMBER still takes a byte unless told otherwise -- and that byte,
-    // as a base of Chunk, pushed `values` to offset 8 and the chunk header
-    // from 16 to 24 bytes in every OpenMP build (where the counter mode is
-    // off). Enabled, the attribute changes nothing.
+    // [[no_unique_address]]: a DISABLED counter is an empty type, but an empty
+    // MEMBER still takes a byte, which grows the chunk header from 16 to 24
+    // bytes in OpenMP builds (counter off).
     [[no_unique_address]] ConditionalCounter<EnableCounter> nb_val_eq_zero;
 };
 
 /**
  * @brief Chunk's OpenMP-only surface: per-thread allocation, CAS and clearing.
  *
- * @details A serial build has no thread ranks, no CAS-stealing window and no
- *          per-thread free-lists, so the members below have no meaning there.
- *          Splitting them onto the build_config::use_openmp axis -- the same
- *          technique as ChunkDeferredOpsPolicy and CompressionManagerOmpPolicy
- *          -- needs no preprocessor fence and lets each mode declare exactly
- *          the clearing verb it actually has: clear_st(int) here, clear_st() in
- *          the serial specialisation.
+ * @details A serial build has no thread ranks, CAS-stealing window or
+ *          per-thread free-lists. Split on build_config::use_openmp (as
+ *          ChunkDeferredOpsPolicy, CompressionManagerOmpPolicy): each mode
+ *          declares the clearing verb it has, clear_st(int) here, clear_st()
+ *          serially.
  *
  *          Sits between ChunkFastCompPolicy and ChunkBase in the inheritance
  *          chain, so Chunk inherits both policies through one path.
@@ -250,12 +228,9 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
     ///        first constant (init_chunks_cst_val).
-    /// @warning `new Chunk<T>[n]` runs the DEFAULT CONSTRUCTORS after this, so
-    ///          that initialisation is immediately overwritten; the operator
-    ///          pays off for a placement-new array, where the caller does not
-    ///          construct. Nothing in the library array-news a chunk --
-    ///          ArrayChunk* hold a std::vector<chunk_type>, initialised by
-    ///          their own loops.
+    /// @warning `new Chunk<T>[n]` runs the DEFAULT CONSTRUCTORS after this,
+    ///          overwriting that initialisation; it pays off only for a
+    ///          placement-new array. The library never array-news a chunk.
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
@@ -330,11 +305,10 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
     }
 
     /// @brief Point @p count freshly allocated chunks at the first constant.
-    /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
-    ///          parallel region (inside one it stays on the calling thread: an
-    ///          allocation is made by one thread, and an orphaned `omp for`
-    ///          would hang waiting for the others). Public: an application
-    ///          that placement-news an array of chunks initialises it here.
+    /// @details Parallel past 500 chunks, and only from OUTSIDE a parallel
+    ///          region (inside one, an orphaned `omp for` would hang waiting for
+    ///          the other threads). An application that placement-news an array
+    ///          of chunks initialises it here.
     static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
 
     /**
@@ -377,10 +351,9 @@ struct ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
  * @details Where the serial build compresses eagerly on a zero-counter (see
  *          ChunkCounterPolicy), this one defers: a write that leaves a chunk
  *          eligible queues it on the writer's per-thread candidate list, and a
- *          later pass scans and compresses the batch. That keeps the write path
- *          free of a full buffer scan, at the cost of the candidate bookkeeping
- *          held here.
- * *
+ *          later pass scans and compresses the batch, keeping full buffer
+ *          scans off the write path.
+ *
  * @tparam T       stored element type
  * @tparam Derived CRTP derived chunk type (Chunk<T>)
  * @tparam Enabled chunk_config::use_fast_block_compression, i.e. embedded
@@ -392,9 +365,8 @@ class ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
 {
   public:
     // 4th element: the chunk's OWN geometry, captured at enqueue by
-    // push_to_compress_list. compress() must scan exactly that many elements --
-    // NOT alloc_chunk_count(), which is the CONSUMING thread's ambient size and
-    // may differ (heap-buffer-overflow: a 64-element buffer scanned at 256).
+    // push_to_compress_list. compress() must scan exactly that many elements,
+    // NOT alloc_chunk_count() (the CONSUMING thread's ambient size, may differ).
     using vec_tuple_chunkp_int2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
     using manager_chunk = ManagerChunk<Chunk, T>;
@@ -449,10 +421,7 @@ template <typename T, typename Derived>
 class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
 {
   public:
-    // 4th element: the chunk's OWN geometry, captured at enqueue by
-    // push_to_compress_list. compress() must scan exactly that many elements --
-    // NOT alloc_chunk_count(), which is the CONSUMING thread's ambient size and
-    // may differ (heap-buffer-overflow: a 64-element buffer scanned at 256).
+    // 4th element: the chunk's own geometry (see the enabled policy).
     using vec_tuple_chunkp_int2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
     /// @brief No block compression in this mode.
@@ -535,15 +504,11 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     /// @brief Copy the zero-counter base and the `values` pointer of @p other.
     ///
-    ///  Copy the ChunkCounterPolicy base: it holds nb_val_eq_zero, the count
-    /// of zero elements. A user-defined copy ctor otherwise DEFAULT-constructs
-    /// the bases, resetting the counter to 0. That desync makes
-    /// inc_nb_val_eq_zero later reach __chunk_size on a chunk that is not
-    /// actually all-zero, so manage_full_zero() wrongly re-compresses it to
-    /// cst_val1 (observed: a later read returns the constant instead of the
-    /// stored value). We can't copy the ChunkFastCompPolicy base the same way
-    /// because it contains the atomic `values` (non-copyable) — that's why
-    /// `values` is copied by hand below.
+    /// The ChunkCounterPolicy base must be copied explicitly: a user-defined
+    /// copy ctor otherwise DEFAULT-constructs it, resetting nb_val_eq_zero, and
+    /// manage_full_zero() later re-compresses a chunk that is not all-zero.
+    /// ChunkFastCompPolicy holds the atomic `values` (non-copyable), copied by
+    /// hand below.
     Chunk(const Chunk& other)
 
         : ChunkCounterPolicy<chunk_config::use_compression_with_counter>(other)
@@ -630,15 +595,12 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /// @brief Get reference to the chunk manager (static access)
     static auto& get_manager() noexcept
     {
-        // NOTE: was a function-local `static manager_chunk s_manager;` (lazy Meyers
-        // singleton). Chunk<T> is a class template compiled across several TUs /
-        // library targets; the lazy guard's first init happened from compress()
-        // inside an OpenMP region, deadlocking threads on __cxa_guard_acquire.
-        // An `inline static` member has one definition across TUs (C++17). It is
-        // a LazyImmortal (chunk/internal/immortal.h): built by the registration
-        // of the manager (ManagerChunk::init_static_state), before any array or
-        // thread can reach it, under a mutex rather than a __cxa guard, and
-        // never destroyed -- a global array still uses it after main.
+        // Do not make this a function-local static: its lazy guard's first init
+        // can run from compress() inside an OpenMP region and deadlock threads on
+        // __cxa_guard_acquire. A LazyImmortal (chunk/internal/immortal.h) is built
+        // by the manager's registration (ManagerChunk::init_static_state), before
+        // any array or thread reaches it, and never destroyed (a global array
+        // still uses it after main).
         return *s_manager_;
     }
 
@@ -656,10 +618,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     static void compress_sweep_rank(int thr);
 
   private:
-    // compress(int thr_rank, unsigned n_elems) lives in ChunkOmpPolicy: it is
-    // the queue consumer's per-chunk step (compress_chunk_to_compress above)
-    // and needs a thread rank, so it belongs on the OpenMP surface with
-    // clear_st(int, unsigned) rather than behind a preprocessor guard here.
+    // compress(int thr_rank, unsigned n_elems) lives in ChunkOmpPolicy (needs a rank).
     constexpr static T zero{};
 
     /**
