@@ -356,7 +356,7 @@ class GlobalVecHolder
     ///        freed identifiers included (they are reused before it moves).
     [[nodiscard]] static std::size_t ids_handed_out() noexcept
     {
-        return region_stride == 0 ? 0 : region_used.load(std::memory_order_relaxed) / region_stride;
+        return region_used.load(std::memory_order_relaxed) / region_stride; // 0 before region_init()
     }
 
     /// @brief Identifiers freed by reclaim_unmarked() and not handed out again.
@@ -799,7 +799,11 @@ class GlobalVecHolder
     static inline std::atomic<bool> index_degraded{false};
 
     static inline std::atomic<char*> region_begin{nullptr}; ///< Reservation start; null before init().
-    static inline std::size_t        region_stride = 0; ///< Bytes per slot: every slot is carved at a multiple of it.
+    /// @brief Bytes per slot: every slot is carved at a multiple of it.
+    /// @note constexpr, not set by region_init(): a pointer <-> identifier
+    ///       conversion (id_of_ptr, slot_id, on Chunk2A's constant-2 reads)
+    ///       is then a shift by 6, not a 64-bit `div` by a global.
+    static constexpr std::size_t region_stride = kIdStride;
 
     /// @brief The value registered under each identifier, contiguous: what
     ///        a chunk's second value is read through on every write of a
@@ -851,18 +855,15 @@ class GlobalVecHolder
                 (void)madvise(raw, kRegionUsable, MADV_HUGEPAGE);
             }
         }
-        // Every slot is carved at a multiple of the stride, which is what turns
-        // a slot pointer into a small identifier and back
+        // Every slot is carved at a multiple of region_stride (kIdStride),
+        // which is what turns a slot pointer into a small identifier and back
         // (TabCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
         // in the region, so a slot only has to give each identifier a distinct
         // address: one cache line does, and no page is ever backed.
-        const std::size_t stride = kIdStride;
-
         if (char* expected = nullptr;
             region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
         {
-            region_stride         = stride;
-            region_end            = static_cast<char*>(raw) + kRegionUsable;
+            region_end           = static_cast<char*>(raw) + kRegionUsable;
             const std::size_t lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
             id_limit              = (lim >= 1 && lim < kMaxIds) ? lim : kMaxIds; // lowers only
         }
