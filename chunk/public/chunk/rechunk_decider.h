@@ -135,6 +135,16 @@ struct RechunkPolicy
                                         ///< stays available. 0 disables the
                                         ///< feedback.
     bool dry_run = true;                ///< never mutate, only log the verdict
+    int  max_backoff_ticks = 8;         ///< an array whose verdict is a settled "no move"
+                                        ///< ("already optimal", "gain below deadband") is
+                                        ///< looked at again after 2, 4, ... ticks, up to
+                                        ///< this many; any other verdict, or a move, brings
+                                        ///< it back to every tick. The analysis scans the
+                                        ///< array's data, so once the geometry has settled
+                                        ///< it was a fixed cost for nothing (shrink_bench
+                                        ///< v1 dyn, 64 threads: ~9% of an iteration).
+                                        ///< 1 or 0 disables. CHUNK_ADVISOR_BACKOFF_MAX
+                                        ///< overrides it at run time.
 };
 
 /// @brief Decides, per array, whether a re-chunk is worthwhile from ChunkSizeReport ticks and a RechunkPolicy.
@@ -211,6 +221,10 @@ class RechunkDecider
         long     churn_creates = -1;
         long     churn_phases  = 0;
         long     churn_mat     = 0;
+        // Back-off (max_backoff_ticks): the current gap, in ticks, between two
+        // analyses of this array, and the first tick it is analysed again.
+        int backoff         = 1;
+        int next_look_tick  = -1000000000;
     };
 
     // `tick` is a monotone counter that increments once per advisor call (the

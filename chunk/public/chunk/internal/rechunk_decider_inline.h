@@ -269,6 +269,25 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         reason = "RE-CHUNK";
     }
 
+    // Back-off: a settled "no move" doubles the gap to this array's next
+    // analysis (capped); anything else -- a move, a cooldown, a best still
+    // stabilising, an anti-reversal hold -- looks again at the next tick.
+    // consider() skips the analysis until next_look_tick.
+    static const int backoff_env = shrink_array::env_number<int>("CHUNK_ADVISOR_BACKOFF_MAX", -1);
+    const int        backoff_max = backoff_env >= 0 ? backoff_env : pol_.max_backoff_ticks;
+    const bool settled = !act && (std::strcmp(reason, "already optimal") == 0 ||
+                                  std::strcmp(reason, "gain below deadband") == 0);
+    if (settled && backoff_max > 1)
+    {
+        hist.backoff        = std::min(hist.backoff * 2, backoff_max);
+        hist.next_look_tick = tick + hist.backoff;
+    }
+    else
+    {
+        hist.backoff        = 1;
+        hist.next_look_tick = tick + 1;
+    }
+
     if (act)
     {
         std::fprintf(stderr,
@@ -301,10 +320,13 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         std::fprintf(stderr,
                      "[RECHUNK-DECIDE] %s: wait (%s) "
                      "S=%u best=%u gain %.1f MB "
-                     "(meta %.1f + data %.1f; cur %.1f MB, data gate %.1f MB, est. cost %.0f ms, %.0f MB/s)\n",
+                     "(meta %.1f + data %.1f; cur %.1f MB, data gate %.1f MB, est. cost %.0f ms, %.0f MB/s)"
+                     "%s%d%s\n",
                      name, reason, cur_size, best_sz, gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.),
                      gain_data / (1024. * 1024.), cur_e.mem_bytes / (1024. * 1024.),
-                     static_cast<double>(data_gate) / (1024. * 1024.), est_cost_ms, meta_rate);
+                     static_cast<double>(data_gate) / (1024. * 1024.), est_cost_ms, meta_rate,
+                     hist.backoff > 1 ? ", next look in " : "", hist.backoff > 1 ? hist.backoff : 0,
+                     hist.backoff > 1 ? " ticks" : "");
         std::fflush(stderr);
     }
     return act;
@@ -410,6 +432,16 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 }
                 std::fflush(stderr);
             }
+        }
+
+        // Back-off (RechunkPolicy::max_backoff_ticks): an array whose last
+        // verdict was a settled "no move" is not analysed again before its
+        // next_look_tick -- the analysis scans the array. Never while a
+        // re-chunk of it still awaits its "after" measurement.
+        if (const auto h = hist_.find(&arr);
+            h != hist_.end() && tick < h->second.next_look_tick && !pending_after_.contains(&arr))
+        {
+            return false;
         }
 
         const ChunkSizeReport& rep = ChunkSizeAdvisor<T>::analyze(arr);
