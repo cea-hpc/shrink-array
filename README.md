@@ -89,7 +89,9 @@ cmake --install build
 | `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` at the top level | the examples, the benchmark and the validation harnesses (the harnesses in Debug, `CHECK_OPTIM` or sanitizer builds, or with `-DCHUNK_BUILD_VALIDATION=ON`) |
 | `SHRINK_ARRAY_BUILD_TESTS` | `ON` at the top level | register the tests with `ctest` |
 
-Every option, macro and environment variable: [docs/environment_variables.md](docs/environment_variables.md).
+The user settings: [docs/environment_variables.md](docs/environment_variables.md). The developers'
+switches (tuning, traces, benchmark, debugging options, build scripts):
+[docs/developer_settings.md](docs/developer_settings.md).
 
 ### With Spack
 

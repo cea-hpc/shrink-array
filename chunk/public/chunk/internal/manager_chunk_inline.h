@@ -23,7 +23,6 @@
 #include <atomic>        // std::atomic, std::memory_order
 #include <cstdio>        // std::fprintf, std::fflush
 #include <cstdlib>       // std::getenv (the trace switches)
-#include <iostream>      // std::cout (DEBUG_SET_SIZE)
 #include <algorithm>     // std::max, std::ranges::sort, std::ranges::push_heap
 #include <functional>    // std::less
 #include <tuple>         // std::tuple (the memory estimate)
@@ -1299,38 +1298,6 @@ void ManagerChunk<CHUNK_T, T>::compute_size_buffer_reuse()
     size_buffer_reuse = std::max(size_buffer_reuse, Chunk2ADef::size_min_buffer_reuse);
 }
 
-/// @brief Print @p count and the size count * elem_size, in the largest unit reached (Go, Mo, Ko or bytes).
-/// @param label Prefix of the printed line.
-/// @param count Number of elements.
-/// @param elem_size Size of one element, in bytes.
-inline void print_mem_estimate(const char* label, std::size_t count, std::size_t elem_size)
-{
-    const long double bytes = static_cast<long double>(count) * static_cast<long double>(elem_size);
-
-    const long double kib = bytes / 1024.0L;
-    const long double mib = kib / 1024.0L;
-    const long double gib = mib / 1024.0L;
-
-    std::cout << label << " : " << count << " elements, approx ";
-
-    if (gib >= 1.0L)
-    {
-        std::cout << gib << " Go\n";
-    }
-    else if (mib >= 1.0L)
-    {
-        std::cout << mib << " Mo\n";
-    }
-    else if (kib >= 1.0L)
-    {
-        std::cout << kib << " Ko\n";
-    }
-    else
-    {
-        std::cout << bytes << " bytes\n";
-    }
-}
-
 // compute_size_max_number_of_chunk_to_check_compress (documented in
 // manager_chunk.h): sets the threshold past which a rank's candidate list is
 // flagged dangerous -- the szm that ProxyBase::should_trigger_compression
@@ -1355,44 +1322,6 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
     threshold     = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
 
     set_size_max_number_of_chunk_to_check_compress(threshold);
-    if constexpr (build_config::debug_set_size)
-    {
-        std::cout << "somme_chunk_create : " << somme_chunk_create << "\n";
-        std::cout << "VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS : "
-                  << VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS << "\n";
-
-        const int max_chunks = get_size_max_number_of_chunk_to_check_compress();
-        std::cout << "size_max_number_of_chunk_to_check_compress : " << max_chunks << "\n";
-
-        if constexpr (build_config::use_openmp)
-        {
-            std::cout << "\n=== Estimated memory footprint per container ===\n";
-
-            std::cout << "Threads (CHUNK_PMP_MAX_THREADS): " << CHUNK_PMP_MAX_THREADS << "\n";
-            std::cout << "Total estimated memory = above values × number of threads\n";
-
-            if constexpr (IsChunk2<CHUNK_T, T>)
-            {
-                using Chunk2Cont = std::decay_t<decltype(chunk2_to_compress_potentially_thr[0])>;
-                print_mem_estimate("chunk2_to_compress_potentially_thr (per thread)", max_chunks,
-                                   sizeof(typename Chunk2Cont::value_type));
-            }
-            else if constexpr (IsChunk2A<CHUNK_T, T>)
-            {
-                using Chunk2ACont = std::decay_t<decltype(chunk2A_to_compress_potentially_thr[0])>;
-
-                print_mem_estimate("chunk2A_to_compress_potentially_thr (per thread)", max_chunks,
-                                   sizeof(typename Chunk2ACont::value_type));
-            }
-            else
-            {
-                using ChunkCont = std::decay_t<decltype(chunk_to_compress_potentially_thr[0])>;
-
-                print_mem_estimate("chunk_to_compress_potentially_thr (per thread)", max_chunks,
-                                   sizeof(typename ChunkCont::value_type));
-            }
-        }
-    }
     const size_t element_size = sizeof(std::tuple<CHUNK_T<T>*, int, int>);
 
     global_stats.record(type_name<CHUNK_T<T>>(), somme_chunk_create, threshold, element_size);

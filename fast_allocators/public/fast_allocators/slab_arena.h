@@ -224,14 +224,6 @@ inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) no
     return v;
 }
 
-/// @brief CHUNK_RECLAIM_COALESCE (default 1): 0 issues one madvise per slab,
-///        the pre-coalescing behaviour, for an A/B in the same binary.
-inline bool reclaim_coalesce() noexcept
-{
-    static const bool on = reclaim_env_number("CHUNK_RECLAIM_COALESCE", 1) != 0;
-    return on;
-}
-
 /// @brief CHUNK_RECLAIM_THREADS (default 1 = serial): threads issuing the
 ///        sweep's madvise calls; 0 = omp_get_max_threads().
 inline int reclaim_sweep_threads() noexcept
@@ -434,7 +426,7 @@ class EmptySlabSweep
     ///        none of them if the sweep holds fewer distinct slabs than
     ///        CHUNK_RECLAIM_MIN_SLABS.
     /// @details Serial part: sort, drop duplicates, floor, checks, runs
-    ///          (merging adjacent slabs unless CHUNK_RECLAIM_COALESCE=0), every
+    ///          (merging adjacent slabs), every
     ///          backptr_dropped flag and the counters. Then the madvise calls,
     ///          from CHUNK_RECLAIM_THREADS threads (serial by default). Every
     ///          flag is set before the first madvise, which is what the
@@ -488,7 +480,6 @@ class EmptySlabSweep
                      items_.end());
         std::sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
 
-        const bool  coalesce     = detail::reclaim_coalesce();
         std::size_t bytes        = 0;
         std::size_t inline_calls = 0; // runs advised at once because runs_ could not grow
         runs_.clear();
@@ -498,7 +489,7 @@ class EmptySlabSweep
             // Extend the run while the next slab starts exactly where this one's
             // advisable bytes end.
             std::size_t last = first;
-            while (coalesce && last + 1 < items_.size() &&
+            while (last + 1 < items_.size() &&
                    items_[last].begin + items_[last].len == items_[last + 1].begin)
             {
                 ++last;
@@ -842,13 +833,12 @@ class SlabArena
         }
         std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.begin < b.begin; });
         // Coalesced in place: spans[0, runs) become the runs.
-        const bool  coalesce = detail::reclaim_coalesce();
         std::size_t runs     = 0;
         std::size_t bytes    = 0;
         for (std::size_t first = 0; first < spans.size();)
         {
             std::size_t last = first;
-            while (coalesce && last + 1 < spans.size() && spans[last].begin + spans[last].len == spans[last + 1].begin)
+            while (last + 1 < spans.size() && spans[last].begin + spans[last].len == spans[last + 1].begin)
             {
                 ++last;
             }
@@ -1205,14 +1195,13 @@ inline void report_all_arenas(const char* when) noexcept
         stderr,
         "[RECLAIM] %-16s madvise_calls=%zu  slabs=%zu  advised=%zu MiB  "
         "(emptied-slab calls=%zu, skipped: still-live=%zu unaligned=%zu too-small=%zu)  "
-        "sweep=%.1f ms in %zu flushes (coalesce=%d threads=%d)\n",
+        "sweep=%.1f ms in %zu flushes (threads=%d)\n",
         when, reclaim_syscalls().load(std::memory_order_relaxed), reclaim_calls().load(std::memory_order_relaxed),
         reclaim_bytes().load(std::memory_order_relaxed) >> 20U, reclaim_entered().load(std::memory_order_relaxed),
         reclaim_skip_live().load(std::memory_order_relaxed), reclaim_skip_unaligned().load(std::memory_order_relaxed),
         reclaim_skip_small().load(std::memory_order_relaxed),
         static_cast<double>(reclaim_sweep_ns().load(std::memory_order_relaxed)) * 1e-6,
-        reclaim_sweeps().load(std::memory_order_relaxed), detail::reclaim_coalesce() ? 1 : 0,
-        detail::reclaim_sweep_threads());
+        reclaim_sweeps().load(std::memory_order_relaxed), detail::reclaim_sweep_threads());
     std::fprintf(stderr, "[FREEPATH] %-15s freed=%zu  parked_own=%zu  parked_foreign=%zu  kept_no_migrate=%zu\n", when,
                  freepath_freed().load(std::memory_order_relaxed), freepath_park_own().load(std::memory_order_relaxed),
                  freepath_park_foreign().load(std::memory_order_relaxed),

@@ -98,7 +98,7 @@ dans des répertoires neufs avec la même configuration, alterner, et se méfier
 | taille maximale d'un pas de grossissement | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
 | ordonnancement de la reconstruction | `CHUNK_RECHUNK_SCHEDULE=…` |
 
-La liste complète est dans [variables_environnement_fr.md](variables_environnement_fr.md).
+La liste complète est dans [reglages_developpeur_fr.md](reglages_developpeur_fr.md).
 Attention : `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` ne bloque plus les grossissements depuis le
 critère « gain par coût » ; utiliser `CHUNK_RECHUNK_DRY_RUN=1`.
 

@@ -544,7 +544,7 @@ types sans atomique sans verrou, et pour Chunk et Chunk2, ce sont des lectures o
 ## 11. Variables d'environnement utiles
 
 La liste complète, avec les macros et les options CMake, est dans
-[variables_environnement_fr.md](variables_environnement_fr.md). Celles qui concernent le plus
+[reglages_developpeur_fr.md](reglages_developpeur_fr.md). Celles qui concernent le plus
 Chunk2 :
 
 | variable | effet |

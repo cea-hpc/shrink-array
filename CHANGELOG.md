@@ -17,8 +17,9 @@ The **public interface** that the version describes is:
 - the headers of `chunk/public/chunk/` that are not in `internal/`, and what they declare;
 - the installed CMake targets (`chunk::chunk_v2a_256`, `chunk::chunk_v2a`, ...) and the
   variables `find_package(chunk)` sets;
-- the CMake options and the environment variables documented as user settings
-  (`docs/environment_variables.md` §1 and §7);
+- the CMake options and the environment variables of `docs/environment_variables.md` (the user
+  settings); those of `docs/developer_settings.md` are development tools, which can change in any
+  release;
 - the documented behaviour: what is compressed, the thread contract, the sequential points.
 
 Everything under `internal/`, the benchmark, the harnesses and the scripts can change in any
@@ -27,7 +28,7 @@ release.
 | bump | when | examples |
 |---|---|---|
 | **MAJOR** | a change that can break a correct consumer: a public name, target, option or variable removed or renamed with no compatibility path, a changed contract | removing `ArrayChunk2::set_second_value`; dropping `chunk::chunk_v1` |
-| **MINOR** | an addition, or a change with a compatibility path (the old name kept, deprecated) | new targets installed; `HAVE_AGRESSIVE_COMPRESSION` renamed with the old spelling still accepted |
+| **MINOR** | an addition, or a change with a compatibility path (the old name kept, deprecated) | new targets installed; a user option renamed with the old spelling still accepted |
 | **PATCH** | a fix that changes no interface | a race fixed; a wrong value in a trace |
 
 The installed package declares `SameMajorVersion` compatibility: `find_package(chunk 1.2)`
@@ -194,9 +195,9 @@ were internal.
 - The variant libraries carry C++20 and OpenMP (when built with it) to their consumers
   (PUBLIC). An OMPT build links its consumers with `-rdynamic`, so the OpenMP runtime
   finds the library's OMPT tool in the executable.
-- `HAVE_AGRESSIVE_COMPRESSION` is renamed `HAVE_AGGRESSIVE_COMPRESSION` (option,
-  `chunk_config::have_aggressive_compression`, build directory names). CMake still accepts the
-  old option name, with a deprecation message.
+- HAVE_AGRESSIVE_COMPRESSION is renamed `HAVE_AGGRESSIVE_COMPRESSION` (option,
+  `chunk_config::have_aggressive_compression`, build directory names). The old spelling is no
+  longer accepted.
 - The `cmake-build-omp-gnu-debug-ledger` build is no longer part of the default
   `compile_all.sh` run (`--with-ledger`, or a `--target` that selects it).
 - The `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` build is no longer part of the
@@ -247,8 +248,8 @@ were internal.
 - Renamed, without the old names: the variant macros CHUNK, CHUNK2, CHUNK2A are
   `CHUNK_VARIANT_V1`, `CHUNK_VARIANT_V2`, `CHUNK_VARIANT_V2A`. The bare `-D` switches DEBUG,
   PERF, DO_CHECK, DEBUG_SET_SIZE, RECHUNK_LEDGERTRACE, RING_LOG_DEBUG, RING_LOG_OP are
-  CMake options `CHUNK_DEBUG` (on with a Debug build), `CHUNK_PERF`, `CHUNK_DO_CHECK`,
-  `CHUNK_DEBUG_SET_SIZE`, `CHUNK_RECHUNK_LEDGERTRACE`, `CHUNK_RING_LOG_DEBUG`,
+  CMake options `CHUNK_DEBUG` (on with a Debug build), CHUNK_PERF, `CHUNK_DO_CHECK`,
+  CHUNK_DEBUG_SET_SIZE, `CHUNK_RECHUNK_LEDGERTRACE`, `CHUNK_RING_LOG_DEBUG`,
   `CHUNK_RING_LOG_OP`; MM_PROTECT is the option `CHUNK_MM_PROTECT` alone. fast_allocators:
   STD_ALLOC and ALLOC_ALIGN are `FAST_ALLOC_STD_ALLOC` and `FAST_ALLOC_ALIGN`; the platform
   macros MIC, KNL, ARM, ATOS_7, BSD are gone (no build defined them; `MAP_ANON` is used
@@ -309,9 +310,18 @@ were internal.
   license (`.py`, `.sh`, `.cmake`, the CMake config templates, `CMakeLists.txt`) carry SPDX lines; the three
   vendored headers, installed with chunk, the SPDX line of their own license (MIT, BSL-1.0).
 
-### Deprecated
+### Removed
 
-- The CMake option `HAVE_AGRESSIVE_COMPRESSION`: use `HAVE_AGGRESSIVE_COMPRESSION`.
+- The A/B switches CHUNK_RECLAIM_COALESCE (sweeps always merge adjacent slabs) and
+  CHUNK_RECHUNK_ADVISE_EACH_SLICE (the recycled slabs a v1 refill leaves are advised once, at
+  its end), with their code paths.
+- The CMake options CHUNK_PERF (the Chunk2 audit scan `compress()` now always runs when called)
+  and CHUNK_DEBUG_SET_SIZE, and the old spelling HAVE_AGRESSIVE_COMPRESSION.
+- `docs/environment_variables.md` keeps the user settings only (`CHUNK_THREAD_CAPACITY`,
+  `CHUNK_REQUIRE_OMPT`, `CHUNK_RECHUNK_DRY_RUN`, and eight CMake options); every other switch
+  moves to `docs/developer_settings.md`, outside the versioning policy. There,
+  `CHUNK_RECHUNK_RECYCLE`, `CHUNK_RECHUNK_REUSE_LIST`, `CHUNK_THP`, `CHUNK_RECLAIM_EMPTY_SLABS`
+  and the `CHUNK2A_COMPRESS_LEVEL` levels 1 to 3 carry a removal date (2026-12-31).
 
 ## Before 0.1.0
 

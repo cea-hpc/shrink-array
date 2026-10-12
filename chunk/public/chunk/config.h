@@ -147,9 +147,6 @@ inline constexpr std::size_t deferred_pool_granularity = std::size_t{64} * 1024;
 inline constexpr bool verbose = false;
 
 // --- Diagnostic switches: the CMake option of the same name ---
-/// Perf build: ArrayChunk2's diagnostic scan of missed compressions is skipped (CHUNK_PERF).
-inline constexpr bool perf_build = CHUNK_OPT_PERF != 0;
-
 /// Deferred-op pool without free-list: every block a real new/delete (ASan / TSan; CHUNK_POOL_NO_REUSE).
 inline constexpr bool pool_no_reuse = CHUNK_OPT_POOL_NO_REUSE != 0;
 
@@ -165,9 +162,6 @@ inline constexpr bool free_guard = false;
 #else
 inline constexpr bool free_guard = true;
 #endif
-
-/// Print the compression thresholds and the lists' memory estimate (CHUNK_DEBUG_SET_SIZE).
-inline constexpr bool debug_set_size = CHUNK_OPT_DEBUG_SET_SIZE != 0;
 
 /// Chunk2A: second values of more than 4 bytes stored as 4-byte identifiers (CHUNK_SECOND_VALUE_INDEXED).
 inline constexpr bool second_value_indexed = CHUNK_OPT_SECOND_VALUE_INDEXED != 0;

@@ -70,15 +70,6 @@ inline const bool g_rechunk_recycle = []() noexcept
     return env == nullptr || env[0] == '\0' || env[0] != '0';
 }();
 
-/// CHUNK_RECHUNK_ADVISE_EACH_SLICE (default off; 1 = on): with slab recycling,
-/// madvise the recycled slabs a slice did not take at EVERY slice boundary, as
-/// before, rather than once at the end of the refill.
-inline const bool g_rechunk_advise_each_slice = []() noexcept
-{
-    const char* env = std::getenv("CHUNK_RECHUNK_ADVISE_EACH_SLICE");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
-
 /// CHUNK_RECHUNK_TRACE_MEM (read once, set = on): the MEMORY side of the trace --
 /// [RECHUNK-RSS] (exact RSS, a page-table walk per read), the new geometry's
 /// occupancy, the allocator census. Kept apart from CHUNK_RECHUNK_TRACE so the
@@ -1315,9 +1306,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 }
                                 std::fill(recycle_held.begin(), recycle_held.end(), static_cast<unsigned char>(0));
                                 // The previous boundary's slabs this slice did
-                                // not take: back to the kernel now only under
-                                // CHUNK_RECHUNK_ADVISE_EACH_SLICE=1. By default
-                                // they wait for the end of the refill (one
+                                // not take wait for the end of the refill (one
                                 // pass, below the slice loop): what they hold
                                 // is memory the OLD geometry released, so the
                                 // RSS stays at its entry level plus whatever
@@ -1327,12 +1316,6 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 // the 15 serial madvise passes of a re-chunk
                                 // (one TLB shootdown on every CPU per run)
                                 // become one.
-                                if (internal::g_rechunk_advise_each_slice)
-                                {
-                                    set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                                    chunk_type::get_chunk_allocator(0, old_key_refill).advise_recycled_slabs();
-                                    set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                                }
                                 if (internal::g_rechunk_trace)
                                 {
                                     slice_t1 = slice_clock::now();

@@ -849,17 +849,11 @@ void ArrayChunk2<T, ind_type>::clear_core()
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2<T, ind_type>::compress_int()
 {
-    // Diagnostic-only pass: scans for constant-but-materialised chunks the
-    // incremental compression missed; it reports, never compresses (the abort is
-    // commented out below), so it is pure overhead in perf/release. Skip it there
-    // via PERF (defined by the perf targets); the check targets (CHECK) and debug
-    // builds keep it. NB: do NOT gate on build_config::any_check here -- that is
-    // is_debug||check_optim (DEBUG/CHECK_OPTIM) and does NOT match the _check
-    // target's CHECK macro, so it would silently disable the scan in check builds.
-    if constexpr (build_config::perf_build)
-    {
-        return;
-    }
+    // Diagnostic pass: scans for constant-but-materialised chunks the
+    // incremental compression missed. NB: do NOT gate it on
+    // build_config::any_check -- that is is_debug||check_optim and does NOT
+    // match the _check target's CHECK macro, so it would silently disable the
+    // scan in check builds.
 
     // Pin the ambient size to THIS array's geometry: the frees below route on
     // thread_chunk_size(), not on the buffer (see clear_core()). Left to

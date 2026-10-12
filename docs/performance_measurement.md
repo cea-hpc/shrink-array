@@ -98,7 +98,7 @@ in fresh directories with the same configuration, alternate, and be wary.
 | maximum size of a coarsening step | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
 | scheduling of the rebuild | `CHUNK_RECHUNK_SCHEDULE=…` |
 
-The full list is in [environment_variables.md](environment_variables.md).
+The full list is in [developer_settings.md](developer_settings.md).
 Beware: `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` no longer blocks coarsenings since the
 "gain per cost" criterion; use `CHUNK_RECHUNK_DRY_RUN=1`.
 
