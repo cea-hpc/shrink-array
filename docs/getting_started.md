@@ -132,14 +132,10 @@ well as inside the tree.
 
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // sa::build_config::has_not_ompt
-#include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
-
-static void begin_phase() { if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase(); }
-static void end_phase()   { if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase(); }
 
 int main()
 {
@@ -149,15 +145,12 @@ int main()
         const int n = 1 << 24;                   // 16 M doubles: 128 MiB as a std::vector
         sa::ArrayChunk2A<double> a(n);           // (2) all 0.0, nothing allocated yet
 
-#pragma omp parallel
-        {
-            begin_phase();                       // (3) every thread, top of the region
+        sa::parallel_phase([&] {                 // (3) a parallel region, phases marked
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = i < n / 8 ? 1.0 + i % 7   //     varied values: these chunks keep a buffer
                                  : 3.5;          //     one constant: these chunks compress
-        }
-        end_phase();                             // (3) once, after the region
+        });
 
         const auto& ca = std::as_const(a);       // (4) read through a const reference
         double sum = 0.0;
@@ -179,8 +172,10 @@ int main()
    program runs `init_indexes(true)` itself. Element types need no declaration: each one is
    registered the first time an array of it is built.
 2. **A new array** reads `T{}` everywhere and allocates no buffer.
-3. **The phase calls**, needed only without OMPT (§5). They compile to nothing when the
-   library was built with OMPT, and in a serial build.
+3. **`parallel_phase()`** opens a parallel region and runs the lambda on every thread. Without
+   OMPT (§5) it also marks the phase for the library: `begin_parallel_phase()` on every thread
+   before the lambda, `finalize_parallel_phase()` after the region. With OMPT, and in a serial
+   build, those two calls compile to nothing.
 4. **Reading**: through a `const` array, `operator[]` returns a `T`. On a non-const array it
    returns a *proxy* (§6).
 5. **`shrink_to_fit()`** runs a full compression pass, outside any parallel region. You do not

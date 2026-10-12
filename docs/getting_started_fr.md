@@ -137,14 +137,10 @@ installation comme dans l'arbre des sources.
 
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // sa::build_config::has_not_ompt
-#include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
-
-static void begin_phase() { if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase(); }
-static void end_phase()   { if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase(); }
 
 int main()
 {
@@ -154,15 +150,12 @@ int main()
         const int n = 1 << 24;                   // 16 M doubles : 128 Mio en std::vector
         sa::ArrayChunk2A<double> a(n);           // (2) tout à 0.0, rien d'alloué
 
-#pragma omp parallel
-        {
-            begin_phase();                       // (3) chaque thread, en début de région
+        sa::parallel_phase([&] {                 // (3) une région parallèle, phases marquées
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = i < n / 8 ? 1.0 + i % 7   //     valeurs variées : ces chunks gardent un tampon
                                  : 3.5;          //     une constante : ces chunks se compressent
-        }
-        end_phase();                             // (3) une fois, après la région
+        });
 
         const auto& ca = std::as_const(a);       // (4) lire par une référence constante
         double sum = 0.0;
@@ -184,8 +177,10 @@ int main()
    tableau du programme lance lui-même `init_indexes(true)`. Les types d'éléments ne se
    déclarent pas : chacun est enregistré à la construction du premier tableau de ce type.
 2. **Un tableau neuf** lit `T{}` partout et n'alloue aucun tampon.
-3. **Les appels de phase**, nécessaires seulement sans OMPT (§5). Ils ne compilent rien quand
-   la bibliothèque a été construite avec OMPT, ni dans un build séquentiel.
+3. **`parallel_phase()`** ouvre une région parallèle et exécute la lambda sur chaque thread.
+   Sans OMPT (§5), il marque aussi la phase pour la bibliothèque : `begin_parallel_phase()` sur
+   chaque thread avant la lambda, `finalize_parallel_phase()` après la région. Avec OMPT, et
+   dans un build séquentiel, ces deux appels ne compilent rien.
 4. **La lecture** : sur un tableau `const`, `operator[]` rend un `T`. Sur un tableau non
    constant, il rend un *proxy* (§6).
 5. **`shrink_to_fit()`** lance une passe de compression complète, hors région parallèle. Il

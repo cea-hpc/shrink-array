@@ -89,7 +89,8 @@ more than the `std::vector`.
 - **OMPT**: with Clang or oneAPI the OpenMP runtime has the OMPT interface, and the library hooks
   the start and end of the parallel regions itself. GCC's `libgomp` has none: the program then
   marks its regions -- `begin_parallel_phase()` by every thread at the top of a region,
-  `finalize_parallel_phase()` once after it.
+  `finalize_parallel_phase()` once after it -- or opens them with `parallel_phase()`, which
+  does both.
 - Python 3, for the source checks run by `ctest` (optional).
 
 ## Build and install
@@ -158,8 +159,7 @@ variant.
 #include <cstdio>
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // sa::build_config::has_not_ompt
-#include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
@@ -171,14 +171,11 @@ int main()
         const int                n = 1 << 24;
         sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer yet
 
-#pragma omp parallel
-        {
-            if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase();
+        sa::parallel_phase([&] {             // a parallel region; marks the phases without OMPT
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // the 3.5 run compresses
-        }
-        if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase();
+        });
 
         a.shrink_to_fit();                    // fold the chunks that became constant
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());
