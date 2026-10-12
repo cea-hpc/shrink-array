@@ -44,9 +44,10 @@ compute loop. Memory of the whole process at the end of the run, measured exactl
 | Chunk2A | 7.26 GB | 6.0 GB |
 | Chunk2 | 17.3 GB | 16.3 GB |
 | Chunk (v1) | 40.2 GB | 40.3 GB |
+| `std::vector` (`shrink_bench_vector_perf`) | 125.9 GB | — |
 
-For scale, the same arrays as `std::vector`s hold about 100 GB of elements (computed from the
-element sizes, not measured). The gap between the variants is the share of the data each one
+For scale, the same benchmark on `std::vector`s uses 125.9 GB, measured the same way; their
+elements alone are about 100 GB. The gap between the variants is the share of the data each one
 can compress: v1 only the zero runs, Chunk2 one more value per array, Chunk2A every run of a
 repeated value. On data where every chunk holds varied values, there is nothing to compress and
 the arrays cost a little more than a `std::vector`.

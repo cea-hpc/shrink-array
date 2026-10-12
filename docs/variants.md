@@ -67,6 +67,7 @@ of the run:
 | Chunk2A | 7.26 GB | **6.0 GB** |
 | Chunk2 | 17.3 GB | **16.3 GB** |
 | Chunk (v1) | 40.2 GB | 40.3 GB (and 39.7 GB in static 1,024, the size it reaches) |
+| `std::vector` (`shrink_bench_vector_perf`) | 125.9 GB | — |
 
 The dynamic geometry gives a clear gain for Chunk2 and Chunk2A. For v1, whose memory is
 mostly data, it breaks even with static 256: see the known limits

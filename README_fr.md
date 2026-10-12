@@ -47,9 +47,10 @@ Grace avec 64 threads :
 | Chunk2A | 7,26 Go | 6,0 Go |
 | Chunk2 | 17,3 Go | 16,3 Go |
 | Chunk (v1) | 40,2 Go | 40,3 Go |
+| `std::vector` (`shrink_bench_vector_perf`) | 125,9 Go | — |
 
-Pour comparaison, les mêmes tableaux en `std::vector` contiennent environ 100 Go d'éléments
-(calculé à partir de la taille des éléments, pas mesuré). L'écart entre les variantes est la
+Pour comparaison, le même banc en `std::vector` utilise 125,9 Go, mesurés de la même façon ;
+leurs éléments seuls font environ 100 Go. L'écart entre les variantes est la
 part des données que chacune sait compresser : v1 les plages nulles seulement, Chunk2 une
 valeur de plus par tableau, Chunk2A toute plage d'une valeur répétée. Sur des données où
 chaque chunk contient des valeurs variées, il n'y a rien à compresser et les tableaux coûtent
