@@ -132,7 +132,7 @@ void begin_parallel_phase()
     {
         g_fast_omp_rank = CHUNK_PMP_THREAD_RANK;
     }
-    phase_guard::check_begin(); // check builds: finalize forgotten before this region
+    phase_guard::check_begin(); // finalize forgotten before this region: stops, in every build
 }
 
 void finalize_parallel_phase_only_flush()
@@ -167,7 +167,7 @@ void finalize_parallel_phase_only_flush()
 
 void finalize_parallel_phase_after_flush()
 {
-    if constexpr (phase_guard::active)
+    if constexpr (phase_guard::tracked)
     {
         phase_guard::next_phase();
     }
@@ -195,7 +195,7 @@ void finalize_parallel_phase_after_flush()
 
 void finalize_parallel_phase()
 {
-    if constexpr (phase_guard::active)
+    if constexpr (phase_guard::tracked)
     {
         phase_guard::next_phase();
     }

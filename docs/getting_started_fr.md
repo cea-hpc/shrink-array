@@ -227,10 +227,11 @@ Si on les oublie, rien n'échoue tout de suite. Avec la même équipe d'une rég
 valeurs restent justes, mais les passes de compression entre régions n'ont pas lieu : la
 mémoire reste plus haute qu'elle ne devrait. Quand la taille de l'équipe change d'une région à
 l'autre, un `finalize_parallel_phase()` oublié rejoue une écriture différée déjà libérée, et
-si les deux appels sont oubliés, des valeurs sont fausses, sans message. Les builds de contrôle
-(Debug, `CHECK_OPTIM`) s'arrêtent sur un `begin_parallel_phase()` sans
-`finalize_parallel_phase()` depuis la région précédente, et sur une écriture différée par un
-thread qui n'a pas appelé `begin_parallel_phase()`. Les écrire derrière
+si les deux appels sont oubliés, des valeurs sont fausses, sans message. Le programme
+s'arrête, dans tous les builds, sur un `begin_parallel_phase()` sans
+`finalize_parallel_phase()` depuis la région précédente ; les builds de contrôle (Debug,
+`CHECK_OPTIM`) s'arrêtent aussi sur une écriture différée par un thread qui n'a pas appelé
+`begin_parallel_phase()`. Les écrire derrière
 `if constexpr (sa::build_config::has_not_ompt)`, comme ci-dessus, garde un seul source pour les deux
 runtimes.
 

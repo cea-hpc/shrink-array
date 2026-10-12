@@ -18,7 +18,7 @@
 
 /**
  * @file phase_guard.h
- * @brief Check-build guard of the parallel-phase protocol (manage_ompt.h).
+ * @brief Guard of the parallel-phase protocol (manage_ompt.h).
  *
  * Without OMPT the library does not see region boundaries. A write can be
  * DEFERRED to the writing thread's queue (once the chunk's candidate list is
@@ -51,9 +51,13 @@
  *    without the brackets is legitimate (region_storage_validation). What
  *    needs the brackets is a write left queued in a rank's queue.
  *
- * Check builds only (build_config::any_check), and only where the protocol
- * is manual (build_config::has_not_ompt): under OMPT the runtime callbacks
- * make the calls themselves. Costs nothing elsewhere. shrink_array::
+ * Only where the protocol is manual (build_config::has_not_ompt, OpenMP):
+ * under OMPT the runtime callbacks make the calls themselves (`tracked`).
+ * The finalize check runs in EVERY such build, release included: it costs
+ * one level query and one comparison per thread and per region, never per
+ * write, and what it stops is a freed op replayed or values silently wrong.
+ * The begin check is a check-build one (`active`, build_config::any_check):
+ * alone, a forgotten begin leaves the values right. shrink_array::
  * parallel_phase() (manage_ompt.h) makes both calls for the program.
  */
 
@@ -89,8 +93,12 @@ inline void next_phase() noexcept
     return armed_for == generation.load(std::memory_order_relaxed);
 }
 
-/// @brief Whether the check applies in this build: manual protocol, check build.
-inline constexpr bool active = build_config::any_check && build_config::use_openmp && build_config::has_not_ompt;
+/// @brief The protocol is manual in this build (OpenMP without OMPT): the
+///        generations are kept and the finalize check runs, in every build type.
+inline constexpr bool tracked = build_config::use_openmp && build_config::has_not_ompt;
+
+/// @brief ... and it is a check build: the begin check (check_write) runs too.
+inline constexpr bool active = tracked && build_config::any_check;
 
 /// @brief begin_parallel_phase(): fail if the calling thread already began in
 ///        this phase (finalize forgotten), then stamp it.
@@ -98,7 +106,7 @@ inline constexpr bool active = build_config::any_check && build_config::use_open
 ///          to bracket. In a nested region it only stamps (see the file).
 inline void check_begin() noexcept
 {
-    if constexpr (active)
+    if constexpr (tracked)
     {
         const int level = CHUNK_PMP_LEVEL;
         if (level == 0)

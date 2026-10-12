@@ -68,6 +68,15 @@
 #                           sized for it), and a team past the capacity stops
 #                           with an invariant failure (the executable re-runs
 #                           itself with --beyond to check it).
+#   phase_protocol_validation the guard of the phase protocol
+#                           (chunk/internal/phase_guard.h), team size
+#                           changing between regions, deferrals forced: a
+#                           forgotten finalize stops at the next begin (every
+#                           build), a forgotten begin at the first deferred
+#                           write and release_chunk_pools() in a region (check
+#                           builds); the correct uses -- by hand,
+#                           parallel_phase(), the split pair, a nested begin
+#                           -- run and read back right. Each case in a child.
 #   region_storage_validation an array created, grown (with and without a
 #                           value), shrunk and regrown by ONE thread inside a
 #                           parallel region (`omp single`, `omp masked`)
@@ -316,6 +325,13 @@ foreach(_geom IN LISTS _rt_geometries)
     if (OMP AND NOT _geom STREQUAL "dyn")
       list(APPEND _group read_reclaim_validation)
     endif()
+    # phase_protocol_validation: the guard of the phase protocol (phase_guard.h)
+    # stops a forgotten finalize / begin and lets the correct uses run, each
+    # case in a child. OpenMP builds only, default static size, at 8 threads;
+    # 77 = skipped (OMPT: the protocol is not manual there).
+    if (OMP AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group phase_protocol_validation)
+    endif()
     # rechunk_validation (content invariance across rechunk_to(), one test per
     # case) and dyn_geometry_validation (an array reads back what was written
     # at every registered runtime chunk size): dyn only, at 8 threads.
@@ -354,6 +370,9 @@ foreach(_geom IN LISTS _rt_geometries)
         validation_add_test(chunk2_foreign_key_validation ${_exe} ${_h} "8")
       elseif (_h STREQUAL "deferred_path_validation")
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
+      elseif (_h STREQUAL "phase_protocol_validation")
+        validation_add_test(${_base} ${_exe} ${_h} "8")
+        set_property(TEST ${_base}_8thr PROPERTY SKIP_RETURN_CODE 77)
       elseif (_h STREQUAL "read_reclaim_validation")
         validation_add_test(${_base} ${_exe} ${_h} "8")
         validation_add_test(${_base}_compound ${_exe} ${_h} "8" compound)

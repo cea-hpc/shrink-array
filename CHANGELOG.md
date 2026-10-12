@@ -60,11 +60,12 @@ the tag's checksum to the recipe.
 - `shrink_array::parallel_phase([n,] body)` (`chunk/manage_ompt.h`): a parallel region with
   `begin_parallel_phase()` on every thread and `finalize_parallel_phase()` after it, both left
   out under OMPT. Without OMPT, nothing left for the program to forget.
-- Check builds (Debug, `CHECK_OPTIM`) without OMPT stop on a `begin_parallel_phase()` with no
-  `finalize_parallel_phase()` since the previous region. It was not caught before (the message
-  of the deferred-write check claimed it was); with a team size changing between regions it
-  replays a freed deferred op. `release_chunk_pools()` and `destroy_block_chunk()` called inside
-  a parallel region stop too.
+- Without OMPT, a `begin_parallel_phase()` with no `finalize_parallel_phase()` since the
+  previous region stops the program, in every build (one comparison per thread and per region).
+  It was not caught before (the message of the deferred-write check claimed it was); with a
+  team size changing between regions it replays a freed deferred op. Check builds (Debug,
+  `CHECK_OPTIM`) also stop on `release_chunk_pools()` and `destroy_block_chunk()` called inside
+  a parallel region. Harness `phase_protocol_validation`.
 
 ### Added
 
