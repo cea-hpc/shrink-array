@@ -50,6 +50,8 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.1.1 -- 2026-10-12
+
 ### Added
 
 - `ArrayChunk2A<T>::reclaim_second_values()`: at a sequential point, frees the second values
@@ -66,9 +68,6 @@ the tag's checksum to the recipe.
   team size changing between regions it replays a freed deferred op. Check builds (Debug,
   `CHECK_OPTIM`) also stop on `release_chunk_pools()` and `destroy_block_chunk()` called inside
   a parallel region. Harness `phase_protocol_validation`.
-
-### Added
-
 - Chunk sizes may be multiples of 64 as well as powers of two (`CHUNK_SIZE`, `CHUNK_STATIC_SIZES`,
   `set_chunk_size`, `rechunk_to`): 192, 384, 576... `ParamChunk::check_chunk_size()` tells a valid
   size. `rechunk_to` moves between sizes that do not divide each other (256 -> 384).
@@ -88,11 +87,29 @@ the tag's checksum to the recipe.
 - fast_allocators: the macro `FAST_ALLOC_MAX_CONST_BLOCK_SIZE` is now `StaticConstArray::max_const_block_size`, a
   `static constexpr int` checked against the ladder's top bucket;
   `internal/static_const_array_define.h` is removed.
+- A large shrink (`resize()` down) releases its chunks on a team, as `clear()` does, instead
+  of one thread.
+- Chunk2A: reading a chunk at its second value turns the slot pointer into the value's
+  identifier with a shift (`region_stride` is a constant), not a 64-bit division.
+- fast_allocators 2.1.9 (its two changes above); `CHUNK_FAST_ALLOCATORS_VERSION` follows.
 
 ### Deprecated
 
 - `ParamChunk::check_pow2()` (use `check_chunk_size()`), `ArrayChunkBase::chunk_decalage()` and
   `ParamChunk::get_decalage_chunk()` (a shift means nothing for 384: use `i / chunk_size()`).
+
+### Removed
+
+- The A/B switches CHUNK_RECLAIM_COALESCE (sweeps always merge adjacent slabs) and
+  CHUNK_RECHUNK_ADVISE_EACH_SLICE (the recycled slabs a v1 refill leaves are advised once, at
+  its end), with their code paths.
+- The CMake options CHUNK_PERF (the Chunk2 audit scan `compress()` now always runs when called)
+  and CHUNK_DEBUG_SET_SIZE, and the old spelling HAVE_AGRESSIVE_COMPRESSION.
+- `docs/environment_variables.md` keeps the user settings only (`CHUNK_THREAD_CAPACITY`,
+  `CHUNK_REQUIRE_OMPT`, `CHUNK_RECHUNK_DRY_RUN`, and eight CMake options); every other switch
+  moves to `docs/developer_settings.md`, outside the versioning policy. There,
+  `CHUNK_RECHUNK_RECYCLE`, `CHUNK_RECHUNK_REUSE_LIST`, `CHUNK_THP`, `CHUNK_RECLAIM_EMPTY_SLABS`
+  and the `CHUNK2A_COMPRESS_LEVEL` levels 1 to 3 carry a removal date (2026-12-31).
 
 ## 0.1.0 -- 2026-10-11
 
@@ -205,8 +222,8 @@ were internal.
   (PUBLIC). An OMPT build links its consumers with `-rdynamic`, so the OpenMP runtime
   finds the library's OMPT tool in the executable.
 - HAVE_AGRESSIVE_COMPRESSION is renamed `HAVE_AGGRESSIVE_COMPRESSION` (option,
-  `chunk_config::have_aggressive_compression`, build directory names). The old spelling is no
-  longer accepted.
+  `chunk_config::have_aggressive_compression`, build directory names). CMake still accepts the
+  old option name, with a deprecation message.
 - The `cmake-build-omp-gnu-debug-ledger` build is no longer part of the default
   `compile_all.sh` run (`--with-ledger`, or a `--target` that selects it).
 - The `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` build is no longer part of the
@@ -319,18 +336,9 @@ were internal.
   license (`.py`, `.sh`, `.cmake`, the CMake config templates, `CMakeLists.txt`) carry SPDX lines; the three
   vendored headers, installed with chunk, the SPDX line of their own license (MIT, BSL-1.0).
 
-### Removed
+### Deprecated
 
-- The A/B switches CHUNK_RECLAIM_COALESCE (sweeps always merge adjacent slabs) and
-  CHUNK_RECHUNK_ADVISE_EACH_SLICE (the recycled slabs a v1 refill leaves are advised once, at
-  its end), with their code paths.
-- The CMake options CHUNK_PERF (the Chunk2 audit scan `compress()` now always runs when called)
-  and CHUNK_DEBUG_SET_SIZE, and the old spelling HAVE_AGRESSIVE_COMPRESSION.
-- `docs/environment_variables.md` keeps the user settings only (`CHUNK_THREAD_CAPACITY`,
-  `CHUNK_REQUIRE_OMPT`, `CHUNK_RECHUNK_DRY_RUN`, and eight CMake options); every other switch
-  moves to `docs/developer_settings.md`, outside the versioning policy. There,
-  `CHUNK_RECHUNK_RECYCLE`, `CHUNK_RECHUNK_REUSE_LIST`, `CHUNK_THP`, `CHUNK_RECLAIM_EMPTY_SLABS`
-  and the `CHUNK2A_COMPRESS_LEVEL` levels 1 to 3 carry a removal date (2026-12-31).
+- The CMake option HAVE_AGRESSIVE_COMPRESSION: use `HAVE_AGGRESSIVE_COMPRESSION`.
 
 ## Before 0.1.0
 
