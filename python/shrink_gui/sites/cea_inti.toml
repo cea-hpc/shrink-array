@@ -1,0 +1,125 @@
+# shrink_gui -- the site: where and how the runs are submitted.
+#
+# This one is CEA's inti (ccc_msub, #MSUB, ccc_mprun), the default when there
+# is no ~/.config/shrink_gui/site.toml and no $SHRINK_GUI_SITE. For another
+# site, copy this file (or slurm_example.toml) to ~/.config/shrink_gui/site.toml
+# and edit it. An unknown key, or a missing one, stops the window with a
+# message naming it.
+#
+# The batch jobs are Slurm's underneath: the window follows them with squeue,
+# start conditions are Slurm options (--dependency, --begin).
+
+[site]
+name = "inti"                    # how the interface names the machine
+host = "inti"                    # the ssh host (ssh -fNM <host> beforehand)
+repo = "~/shrink-array"          # the shrink-array repository there
+runs_dir = "~/shrink_runs"       # where the window keeps its runs there
+# Where compile_all.sh puts its cmake-build-* trees ($USER expands there):
+# the "Choisir…" of --exec looks in it, and {build_root} in [defaults] is it.
+build_root = "$CCCWORKDIR/shrink-array"
+partition = "gh200-bxi"          # the partition selected at first start
+
+# The batch scheduler. Commands are split as a shell would.
+[batch]
+label = "ccc_msub (batch)"       # the submission mode, as listed
+submit = "ccc_msub"              # run as `<submit> job.sh` in the run directory
+jobid_re = '\b(\d{2,})\b'        # the job id in what submit prints (last match, group 1)
+cancel = ["ccc_mdel", "scancel"] # `<cancel> <jobid>`, tried in order
+qos_info = "ccc_mqinfo"          # prints the QoS limits table; "" when there is none
+# The job script header: one "<directive> <option>" line each. Fields:
+# {name}; {seconds}, {minutes} (rounded up) or {hms} ([D-]HH:MM:SS); {log}
+# (out.log, output and error both); {qos}; Slurm start conditions as
+# {options} (all on one line) or {option} (one line each). "" leaves it out.
+directive = "#MSUB"
+name = "-r {name}"
+time = "-T {seconds}"
+output = "-o {log}"
+error = "-e {log}"
+qos = "-Q {qos}"
+slurm = '-E "{options}"'
+
+# The detached mode: the command started from the login node, in the
+# background: `<command> <partition's detached options> <time> <qos> bash run.sh`
+# (time: {seconds}, {minutes} or {hms}; qos: {qos}). Leave the table out when
+# the site has no such command.
+[detached]
+label = "ccc_mprun détaché"
+command = "ccc_mprun"
+time = "-T{seconds}"
+qos = "-Q {qos}"
+
+# The QoS limits until the connection check has read qos_info: same shape as
+# its output (test: priority, short, 2 jobs; normal: 1 day; long: 3 days, not
+# on milan-bxi; xlong: not on gh200-bxi).
+[qos]
+fallback = """
+Name    Partition   Priority  MaxCPUs  MaxSub     MaxTime
+------  ----------  --------  -------  ------  ----------
+test    gh200-bxi         40                2    02:00:00
+test    milan-bxi         40                2    02:00:00
+normal  gh200-bxi         20              100  1-00:00:00
+normal  milan-bxi         20              100  1-00:00:00
+long    gh200-bxi         20              100  3-00:00:00
+xlong   milan-bxi         20              100  7-00:00:00
+"""
+
+# The partitions. label: as listed; arch: "arm" or "x86" (it picks the
+# defaults below and the builds); directives: the partition's lines of the
+# job script (name, time, output, error, QoS and start conditions are added
+# from the form); launcher: how the job starts run.sh on its node ("" runs it
+# in the job's shell -- gh200 goes through `ccc_mprun -C ccc-rhel9` as the
+# interactive commands do: a Slurm --constraint=ccc-rhel9 is rejected,
+# "Invalid feature specification"); detached: the options of the detached
+# command (no -s, no -T). The last three are editable in the window and
+# remembered per partition.
+[partitions.gh200-bxi]
+label = "gh200-bxi — ARM, 288 cœurs"
+arch = "arm"
+directives = """
+#MSUB -q gh200-bxi
+#MSUB -N 1
+#MSUB -n 1
+#MSUB -c 288
+"""
+launcher = "ccc_mprun -C ccc-rhel9 -n 1 -c 288"
+detached = "-N1 -c 288 -p gh200-bxi -C ccc-rhel9 -Xfirst"
+
+[partitions.milan-bxi]
+label = "milan-bxi — x86, 64 cœurs"
+arch = "x86"
+directives = """
+#MSUB -q milan-bxi
+#MSUB -N 1
+#MSUB -n 1
+#MSUB -c 64
+"""
+launcher = ""
+detached = "-N1 -c 64 -p milan-bxi -Xfirst"
+
+# The options' defaults per program and architecture, by argparse dest: a
+# string is the option's value (shell variables expand there; {build_root}
+# is [site] build_root), true/false the state of a flag. "Enregistrer comme
+# défauts" in the window replaces them.
+[defaults."multi_launch_stress.py".arm]
+min_threads = "40"
+max_threads = "200"
+regen_ref = true
+all_exec = true
+build_root = "{build_root}"
+builds = "build_arm.txt"
+
+[defaults."multi_launch_stress.py".x86]
+min_threads = "8"
+max_threads = "64"
+regen_ref = true
+all_exec = true
+build_root = "{build_root}"
+builds = "build_x86_64.txt"
+
+[defaults."bench_and_test.py".arm]
+build_root = "{build_root}"
+output_dir = "{build_root}/bench_results"
+
+[defaults."bench_and_test.py".x86]
+build_root = "{build_root}"
+output_dir = "{build_root}/bench_results"

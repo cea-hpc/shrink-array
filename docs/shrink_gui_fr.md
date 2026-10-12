@@ -2,7 +2,7 @@
 
 > English version: [shrink_gui.md](shrink_gui.md).
 
-> Octobre 2026, `shrink_gui` 0.12 (prototype). Une fenêtre sur le portable pour soumettre
+> Octobre 2026, `shrink_gui` 0.13 (prototype). Une fenêtre sur le portable pour soumettre
 > `compile_all.sh`, `bench_and_test.py` et `multi_launch_stress.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
@@ -33,8 +33,8 @@ Un **run** est un dossier sur le calculateur, `<dossier des runs>/<id>/` :
 ## 2. Prérequis et lancement
 
 - Sur le portable : Python 3.9 ou plus récent et **PySide6** (`pip install PySide6`).
-- Sur le calculateur : Python 3.6 ou plus récent, le dépôt shrink-array cloné, et `ccc_msub`
-  pour le mode batch.
+- Sur le calculateur : Python 3.6 ou plus récent, le dépôt shrink-array cloné, et la commande de
+  soumission du site pour le mode batch (`ccc_msub` sur inti ; voir §6).
 - Une connexion maître ssh ouverte, une fois par session :
 
 ```sh
@@ -160,15 +160,39 @@ retard datent du dernier `fetch` ; un `git pull` les remet à jour.
 
 ## 6. Adapter l'interface au site
 
-Tout ce qui dépend du site est dans `python/shrink_gui/config.py` :
+Ce qui dépend du site est dans un fichier TOML, le premier trouvé de :
+
+1. le fichier nommé par la variable d'environnement `SHRINK_GUI_SITE` ;
+2. `~/.config/shrink_gui/site.toml` (`$XDG_CONFIG_HOME/shrink_gui/site.toml`) ;
+3. `python/shrink_gui/sites/cea_inti.toml`, inti du CEA, le défaut.
+
+Pour en écrire un, copier un exemple dans `~/.config/shrink_gui/site.toml` et l'éditer :
+`sites/cea_inti.toml` (`ccc_msub`, `#MSUB`, `ccc_mprun` ; chaque clé commentée) ou
+`sites/slurm_example.toml` (Slurm standard : `sbatch`, `#SBATCH`, `scancel`, sans mode détaché).
+
+| table | contenu |
+|---|---|
+| `[site]` | le nom affiché dans l'interface, l'hôte ssh, le dépôt, le dossier des runs, la racine des builds, la partition au démarrage |
+| `[batch]` | l'ordonnanceur : libellé du mode, commandes de soumission, d'annulation et des QoS, motif du numéro de job, préfixe des directives et gabarits de leurs lignes (nom, durée, sortie, erreur, QoS, conditions de démarrage Slurm) |
+| `[detached]` | la commande du mode détaché et ses options de durée et de QoS ; absente si le site n'en a pas |
+| `[qos]` | les limites des QoS en attendant que la vérification de la connexion les lise |
+| `[partitions.<nom>]` | libellé, architecture, directives, lanceur, options du mode détaché |
+| `[defaults."<programme>".<arch>]` | les valeurs par défaut des options par programme et architecture (`{build_root}` est celle du site) |
+
+Un fichier inutilisable (syntaxe, clé inconnue ou manquante, champ de gabarit inconnu) arrête
+la fenêtre avec un message qui nomme le fichier et la clé. Le fichier est lu par `tomllib`
+(Python 3.11+), `tomli` s'il est installé, sinon par un petit lecteur intégré du sous-ensemble
+qu'utilisent les exemples.
+
+Les jobs batch sont des jobs Slurm : l'interface les suit par `squeue`, et les conditions de
+démarrage sont des options Slurm (`--dependency`, `--begin`).
+
+Ce qui dépend du dépôt reste dans `python/shrink_gui/config.py` :
 
 | nom | contenu |
 |---|---|
-| `PRESETS` | les partitions : directives `#MSUB`, lanceur, options `ccc_mprun` ; `local` est cette machine |
 | `PROGRAMS` | les programmes : script, répertoire de travail, lecture des options, motifs d'avancement et de sortie |
-| `ARCH_DEFAULTS` | les valeurs par défaut par (programme, architecture) |
-| `DEFAULTS` | hôte, dépôt, dossier des runs, dossier local, partition et programme au démarrage |
-| `LOCAL_DEFAULTS` | le dépôt et le dossier des runs de cette machine |
+| `PRESETS["local"]`, `LOCAL_DEFAULTS` | cette machine : sa « partition », son dépôt et son dossier des runs |
 | `LOCAL_SHELL` | comment le helper tourne sur cette machine (`bash -c`, ou `wsl.exe -e bash -c` sous Windows) |
 | `SHRINK_GUI_SSH` (variable d'environnement) | le binaire ssh à utiliser (défaut `ssh`) |
 
@@ -182,14 +206,15 @@ cd python && python3 -m pytest shrink_gui/tests -q
 ```
 
 Les tests tournent sans écran (`QT_QPA_PLATFORM=offscreen`) contre un faux calculateur local :
-de faux `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun` et `ccc_mqinfo` (`tests/fakes`).
+de faux `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun` et `ccc_mqinfo` (`tests/fakes`), avec
+le fichier de site d'inti quel que soit le contenu de `~/.config` ; `test_site.py` fait aussi
+tourner un site Slurm standard (faux `sbatch` et `scancel`).
 Ils sont sautés si PySide6 n'est pas installé.
 
 ## 8. Limites
 
-- C'est un prototype, écrit pour les machines du TGCC et leurs commandes `ccc_*`
-  (`ccc_msub`, `ccc_mprun`, `ccc_mqinfo`). Un autre site adapte `config.py` et les commandes de soumission de
-  `runscripts.py`.
+- C'est un prototype, écrit pour les machines du TGCC ; un autre site écrit son fichier de
+  site (§6). L'ordonnanceur doit être Slurm en dessous (`squeue`, `--dependency`, `--begin`).
 - Une seule connexion à la fois. L'interface n'ouvre pas la connexion maître elle-même.
 - « Cette machine » depuis Windows (`wsl.exe`) n'est pas couverte par les tests (ils tournent
   sous Linux). WSL peut arrêter une distribution quand plus aucune de ses fenêtres n'est

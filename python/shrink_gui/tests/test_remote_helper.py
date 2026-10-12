@@ -10,7 +10,7 @@ import io
 
 import pytest
 
-from conftest import FAKE_PROGRAM, PKG, REPO
+from conftest import BATCH, BATCH_ARG, FAKE_PROGRAM, PKG, REPO
 from shrink_gui.runscripts import make_run_sh
 
 HELPER = (PKG / "remote_helper.py").read_text()
@@ -22,7 +22,7 @@ def test_helper_is_python36():
 
 
 def test_check(site):
-    r = site.helper("check", "~/shrink-array")
+    r = site.helper("check", "~/shrink-array", BATCH_ARG)
     assert r["host"] and r["python"]
     assert r["msub"] is True                      # the fake ccc_msub is on the PATH
     assert "git" in r
@@ -94,6 +94,7 @@ def test_git_info(site, tmp_path):
 def _spec(command, mode="msub", repo="~/shrink-array"):
     return {"mode": mode, "run.sh": make_run_sh(repo, FAKE_PROGRAM["cwd"], command),
             "msub": "#MSUB -q fake\n", "launcher": "", "launch.sh": "", "name": "t", "time_s": 600,
+            "batch": BATCH,
             "meta": dict({k: FAKE_PROGRAM[k] for k in ("out_re", "out_files", "progress_re", "eta_re",
                                                        "summary", "summary_file")},
                          program="fake_stress.py", partition="gh200-bxi", mode=mode, repo=repo,
@@ -137,7 +138,7 @@ def test_failure_code_and_stop(site):
     assert _status(site, "bad")["code"] == 3
     _launch(site, "long", "python3 fake_stress.py --runs 500 --step 0.5")
     assert site.wait(lambda: _status(site, "long")["status"] == "en cours")
-    assert site.helper("stop", "~/shrink_runs", "long")["ok"]
+    assert site.helper("stop", "~/shrink_runs", "long", BATCH_ARG)["ok"]
     assert site.wait(lambda: _status(site, "long")["status"] == "arrêté")
 
 
@@ -173,7 +174,7 @@ def test_run_sh_is_valid_bash():
 
 def test_check_reads_mqinfo(site):
     from shrink_gui import qos
-    rows = qos.parse_mqinfo(site.helper("check", "~/shrink-array")["mqinfo"])
+    rows = qos.parse_mqinfo(site.helper("check", "~/shrink-array", BATCH_ARG)["mqinfo"])
     assert qos.limits(rows, "test", "gh200-bxi")["max_time"] == 3 * 3600    # the fake's
 
 

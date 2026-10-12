@@ -1,0 +1,53 @@
+# shrink_gui -- the site: a plain Slurm cluster (sbatch, #SBATCH, scancel).
+#
+# An example to adapt: copy it to ~/.config/shrink_gui/site.toml (or point
+# $SHRINK_GUI_SITE at it) and set the host, the paths and the partitions.
+# cea_inti.toml documents every key.
+
+[site]
+name = "cluster"
+host = "cluster"                 # the ssh host (ssh -fNM <host> beforehand)
+repo = "~/shrink-array"
+runs_dir = "~/shrink_runs"
+build_root = "$HOME/shrink-array-builds"
+partition = "cpu"
+
+[batch]
+label = "sbatch (batch)"
+submit = "sbatch"
+jobid_re = 'Submitted batch job (\d+)'
+cancel = "scancel"
+# The QoS limits: sacctmgr prints a header and a line of dashes, as the
+# window expects; a QoS with no Partition column applies to every partition.
+qos_info = "sacctmgr show qos format=Name,Priority,MaxWall,MaxSubmitPU"
+directive = "#SBATCH"
+name = "--job-name={name}"
+time = "--time={minutes}"
+output = "--output={log}"
+error = ""                       # stderr goes to the output file
+qos = "--qos={qos}"
+slurm = "{option}"               # --dependency=..., --begin=..., one line each
+
+# No [detached] table: no detached mode, the runs are batch jobs.
+
+[qos]
+fallback = ""                    # no QoS until the connection check reads them
+
+[partitions.cpu]
+label = "cpu — x86, 64 cœurs"
+arch = "x86"
+directives = """
+#SBATCH --partition=cpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=64
+"""
+launcher = ""
+
+[defaults."multi_launch_stress.py".x86]
+min_threads = "8"
+max_threads = "64"
+regen_ref = true
+all_exec = true
+build_root = "{build_root}"
+builds = "build_x86_64.txt"

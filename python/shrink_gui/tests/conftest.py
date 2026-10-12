@@ -3,16 +3,19 @@
 """Test fixtures: a fake inti on this machine.
 
 `site` builds, in a temporary directory:
-  - bin/  the fakes of ssh, ccc_msub, squeue, ccc_mdel, ccc_mprun, ccc_mqinfo
-          (tests/fakes);
+  - bin/  the fakes of ssh, ccc_msub, squeue, ccc_mdel, ccc_mprun, ccc_mqinfo,
+          sbatch, scancel (tests/fakes);
   - home/ the home directory "on inti", whose shrink-array is a link to THIS
     repository: the option reading runs the real scripts;
   - settings/ where QSettings writes, so the tests never touch yours.
+The site is CEA's inti (sites/cea_inti.toml), whatever ~/.config holds:
+BATCH is its [batch] table, BATCH_ARG the argument check and stop take.
 The GUI tests run offscreen (no display needed); they are skipped without
 PySide6.
 
 Run from python/:  python3 -m pytest shrink_gui/tests -q
 """
+import base64
 import json
 import os
 import pathlib
@@ -30,6 +33,13 @@ PKG = TESTS.parent
 PYDIR = PKG.parent
 REPO = PYDIR.parent
 sys.path.insert(0, str(PYDIR))
+# The tests are written for inti: never the developer's own site file.
+os.environ["SHRINK_GUI_SITE"] = str(PKG / "sites" / "cea_inti.toml")
+
+from shrink_gui import sitecfg  # noqa: E402
+
+BATCH = sitecfg.load(PKG / "sites" / "cea_inti.toml").batch
+BATCH_ARG = base64.b64encode(json.dumps(BATCH).encode()).decode()
 
 FAKE_PROGRAM = {
     "script": "python/shrink_gui/tests/data/fake_stress.py", "cwd": "python/shrink_gui/tests/data",

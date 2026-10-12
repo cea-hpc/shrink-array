@@ -22,8 +22,8 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, 
                                QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from shrink_gui import i18n, qos
-from shrink_gui.config import (APP, ARCH_DEFAULTS, BUILD_REP, COLOR_BY, DEFAULTS, LOCAL, LOCAL_DEFAULTS, PRESETS,
-                               PROGRAMS, VIZ, exe_parts)
+from shrink_gui.config import (APP, ARCH_DEFAULTS, BATCH, BUILD_REP, COLOR_BY, DEFAULTS, DETACHED, LOCAL,
+                               LOCAL_DEFAULTS, PRESETS, PROGRAMS, QOS_FALLBACK, SITE, VIZ, exe_parts)
 from shrink_gui.i18n import T, status_text, tip
 from shrink_gui.remote import Remote
 from shrink_gui.runscripts import make_launch_sh, make_local_launch_sh, make_run_sh
@@ -79,9 +79,11 @@ class Main(QMainWindow):
         self.fill_machine_lists()
         self.time_s = DurationBox()
         self.time_s.setValue(int(self._get("time_s")))
-        # QoS: the limits of ccc_mqinfo (read by the connection check, else
-        # those of qos.FALLBACK), "auto" picks one from the duration
-        self.qos_rows = qos.parse_mqinfo(self.settings.value("mqinfo", "")) or qos.parse_mqinfo(qos.FALLBACK)
+        # QoS: the limits of the site's qos_info (read by the connection check,
+        # kept per site, else the site's [qos] fallback), "auto" picks one from
+        # the duration
+        self.qos_rows = (qos.parse_mqinfo(self.settings.value(self.mqinfo_key(), "")) or
+                         qos.parse_mqinfo(QOS_FALLBACK))
         self.qos = QComboBox()
         self.fill_qos(self.settings.value("qos", "auto"))
         self.qos_note = TLabel("")
@@ -135,8 +137,8 @@ class Main(QMainWindow):
         where.addRow("Directives", self.directives)
         self.launcher = QLineEdit()
         self.launcher.setPlaceholderText("vide : la commande tourne directement dans le job")
-        self.launcher.setToolTip("ccc_msub : ce qui lance run.sh sur le nœud réservé, par exemple "
-                                 "« ccc_mprun -C ccc-rhel9 -n 1 -c 288 » (environnement RHEL 9 du gh200).\n"
+        self.launcher.setToolTip("ccc_msub : ce qui lance run.sh sur le nœud réservé (le lanceur de la "
+                                 "partition dans le fichier de site ; vide : directement dans le job).\n"
                                  "Mémorisé par partition.")
         self.launcher_row_label = QLabel("Lanceur (job)")
         where.addRow(self.launcher_row_label, self.launcher)
@@ -477,11 +479,10 @@ class Main(QMainWindow):
                   "« terminé sans code ». Se tape « 1 h 30 », « 90 min », « 2 j » ou « 1-00:00:00 ».\n\n"
                   "Mémorisée par programme : compile_all.sh court, bench_and_test.py quelques heures, "
                   "multi_launch_stress.py long.",
-        "qos": "La QoS du job (-Q), dont dépend la durée maximale (ccc_mqinfo) : test (prioritaire, "
-               "court, 2 jobs soumis au plus), normal (1 jour), long (3 jours, pas sur milan-bxi), "
-               "xlong (pas sur gh200-bxi).\n\n« auto » prend la plus prioritaire qui accepte la durée, "
-               "puis la plus courte. Un -Q écrit dans les directives l'emporte.\n\nLes limites sont "
-               "relues sur inti à chaque vérification de la connexion.",
+        "qos": "La QoS du job, dont dépend la durée maximale : la liste a les QoS de la partition, "
+               "avec leurs limites (ccc_mqinfo).\n\n« auto » prend la plus prioritaire qui accepte la "
+               "durée, puis la plus courte. Une QoS écrite dans les directives l'emporte.\n\nLes limites "
+               "sont relues sur inti à chaque vérification de la connexion.",
         "after": "Démarrer après la fin d'une compilation (run compile_all.sh pas encore fini).\n\n"
                  "ccc_msub : dépendance Slurm (le job attend dans la file sans prendre de nœud). "
                  "ccc_mprun détaché : le lancement attend le code de retour de ce run.\n\n"
@@ -605,6 +606,17 @@ class Main(QMainWindow):
             self.tabs.setTabToolTip(i, tip(t))
 
     # ---------------------------------------------------------------- utils
+    @staticmethod
+    def mqinfo_key():
+        """The settings key of the QoS table last read: the CEA site keeps the
+        historical key, another site its own."""
+        return "mqinfo" if SITE.name == "inti" else f"mqinfo/{SITE.name}"
+
+    @staticmethod
+    def batch_arg():
+        """The site's batch table, as the helper's check and stop take it."""
+        return base64.b64encode(json.dumps(BATCH).encode()).decode()
+
     def _get(self, key):
         return self.settings.value(key, DEFAULTS[key])
 
@@ -645,8 +657,9 @@ class Main(QMainWindow):
         if local:
             self.mode.addItem(T("en arrière-plan sur cette machine"), "local")
         else:
-            self.mode.addItem("ccc_msub (batch)", "msub")
-            self.mode.addItem(T("ccc_mprun détaché"), "mprun")
+            self.mode.addItem(T(BATCH["label"]), "msub")
+            if DETACHED:
+                self.mode.addItem(T(DETACHED["label"]), "mprun")
             self.preset.setCurrentIndex(max(0, self.preset.findData(self._get("preset"))))
             self.mode.setCurrentIndex(max(0, self.mode.findData(self._get("mode"))))
         for c in (self.preset, self.mode):
@@ -668,8 +681,8 @@ class Main(QMainWindow):
         self.runs_label.setText(T(f"Runs ({name})"))
         local = self.is_local()
         self.host.setEnabled(not local)
-        for w in (self.qos_row, self.directives):    # the scheduler's QoS and #MSUB lines
-            self.where.setRowVisible(w, not local)
+        for w in (self.qos_row, self.directives):    # the scheduler's QoS and directive lines
+            self.where.setRowVisible(w, not local and (w is not self.qos_row or bool(BATCH["qos"])))
 
     def machine_changed(self, *_):
         """Cluster <-> this machine: each keeps its repository, runs directory,
@@ -989,6 +1002,8 @@ class Main(QMainWindow):
         """(qos to add with -Q or None, its row, error or None). A -Q already in
         the directives wins over the list: it is only checked."""
         directives = self.directives.toPlainText()
+        if not BATCH["qos"] or not self.qos_rows:    # no QoS known: the scheduler's default
+            return None, None, None
         fixed = qos.explicit_qos(directives)
         wanted = fixed or self.qos.currentData() or "auto"
         name, row, err = qos.choose(self.qos_rows, self.preset.currentData(), qos.job_cpus(directives),
@@ -999,6 +1014,9 @@ class Main(QMainWindow):
         name, row, err = self.qos_choice()
         if err:
             self.qos_note.setText(f"<span style='color:#c0392b'>{html.escape(T(err), quote=False)}</span>")
+            return
+        if row is None:
+            self.qos_note.setText("")
             return
         name = name or qos.explicit_qos(self.directives.toPlainText())
         bits = [T(f"max {qos.fmt(row['max_time'], i18n.LANG)}")]
@@ -1021,7 +1039,7 @@ class Main(QMainWindow):
                 self.conn.setText(f"<span style='color:#c0392b'>pas de connexion maître : "
                                   f"lancez <b>ssh -fNM {host}</b> dans un terminal</span>")
                 return
-            self.remote.helper("check", [self.repo.text().strip()], helper_ok)
+            self.remote.helper("check", [self.repo.text().strip(), self.batch_arg()], helper_ok)
 
         def helper_ok(r):
             if r is None:
@@ -1045,7 +1063,7 @@ class Main(QMainWindow):
             warn = "" if r.get("msub") else " — <b>ccc_msub introuvable</b>"
             rows = qos.parse_mqinfo(r.get("mqinfo") or "")
             if rows:
-                self.settings.setValue("mqinfo", r["mqinfo"])
+                self.settings.setValue(self.mqinfo_key(), r["mqinfo"])
                 self.qos_rows = rows
                 self.fill_qos(self.qos.currentData())
                 self.update_qos()
@@ -1075,7 +1093,7 @@ class Main(QMainWindow):
         mode = self.mode.currentData()
         if PROGRAMS[prog].get("msub_only") and mode == "mprun":
             self.error(f"{prog} se soumet par ccc_msub seulement (il ne doit pas tourner depuis le nœud "
-                       "de login) : choisissez « ccc_msub (batch) »")
+                       f"de login) : choisissez « {BATCH['label']} »")
             return
         qname, qerr = None, None
         if mode != "local":          # no scheduler, no QoS on this machine
@@ -1103,13 +1121,14 @@ class Main(QMainWindow):
             "run.sh": make_run_sh(self.repo.text().strip(), PROGRAMS[prog]["cwd"], cmd, check),
             "msub": self.directives.toPlainText() if mode == "msub" else "",
             "launcher": self.launcher.text().strip() if mode == "msub" else "",
-            "launch.sh": make_launch_sh(f"{' '.join(self.directives.toPlainText().split())} "
-                                        f"-T{self.time_s.value()}" + (f" -Q {qname}" if qname else ""),
-                                        after, delay_s)
+            "launch.sh": make_launch_sh(SITE.detached_options(self.directives.toPlainText(),
+                                                              self.time_s.value(), qname),
+                                        after, delay_s, command=DETACHED["command"])
                          if mode == "mprun" else
                          make_local_launch_sh(self.launcher.text().strip(), self.time_s.value(), after, delay_s)
                          if mode == "local" else "",
             "qos": qname or "",
+            "batch": BATCH,
             "after": after, "delay_s": delay_s,
             "name": re.sub(r"[^A-Za-z0-9_.-]", "_", f"{prog.split('.')[0]}_{pkey}")[:40],
             "time_s": self.time_s.value(),
@@ -1274,7 +1293,7 @@ class Main(QMainWindow):
                 self.info(f"{run['id']} : arrêt demandé")
             QTimer.singleShot(2000, self.refresh)
 
-        self.remote.helper("stop", [self.runs_dir.text().strip(), run["id"]], done)
+        self.remote.helper("stop", [self.runs_dir.text().strip(), run["id"], self.batch_arg()], done)
 
     @staticmethod
     def commit_text(run):

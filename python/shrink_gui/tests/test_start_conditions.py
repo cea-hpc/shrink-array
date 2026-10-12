@@ -8,7 +8,7 @@ import json
 import os
 import platform
 
-from conftest import FAKE_PROGRAM
+from conftest import BATCH, BATCH_ARG, FAKE_PROGRAM
 from shrink_gui.runscripts import make_launch_sh, make_run_sh
 
 
@@ -16,8 +16,8 @@ def _spec(command, mode="msub", program="fake_stress.py", after=None, delay_s=0,
     return {"mode": mode,
             "run.sh": make_run_sh("~/shrink-array", FAKE_PROGRAM["cwd"], command, check),
             "msub": "#MSUB -q fake\n", "launcher": "",
-            "launch.sh": make_launch_sh("-n 1", after, delay_s) if mode == "mprun" else "",
-            "name": "t", "time_s": 600, "after": after, "delay_s": delay_s,
+            "launch.sh": make_launch_sh("-n 1", after, delay_s, command="ccc_mprun") if mode == "mprun" else "",
+            "name": "t", "time_s": 600, "after": after, "delay_s": delay_s, "batch": BATCH,
             "meta": {"program": program, "partition": "gh200-bxi", "mode": mode, "repo": "~/shrink-array",
                      "command": command, "after": after, "delay_s": delay_s}}
 
@@ -59,7 +59,7 @@ def test_after_ok_failed_compile_never_starts(site):
     assert site.wait(lambda: _run(site, "c2")["status"] == "fini", 20)
     assert site.wait(lambda: _run(site, "b2")["status"].startswith("en attente sans fin"), 10)
     assert "c2 a échoué" in _run(site, "b2")["status"]
-    site.helper("stop", "~/shrink_runs", "b2")
+    site.helper("stop", "~/shrink_runs", "b2", BATCH_ARG)
 
 
 def test_after_already_finished(site):
@@ -112,7 +112,7 @@ def test_mprun_stopped_while_waiting(site):
     site.env["SHRINK_GUI_POLL"] = "0.2"
     _launch(site, "m3", _spec("echo STARTED", mode="mprun", delay_s=60))
     assert site.wait(lambda: _run(site, "m3")["status"] == "en attente", 5)
-    site.helper("stop", "~/shrink_runs", "m3")
+    site.helper("stop", "~/shrink_runs", "m3", BATCH_ARG)
     assert site.wait(lambda: _run(site, "m3")["status"] == "arrêté", 10)
 
 
