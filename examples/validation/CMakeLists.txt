@@ -83,6 +83,12 @@
 #                           reads back what std::vector would, and counts its
 #                           written chunks right. The storage paths once fell
 #                           back on an orphaned `omp for` there, and hung.
+#   bulk_write_team_validation the whole-array writes that take a team of
+#                           their own outside a region (copy construction and
+#                           assignment, assign, resize(n, val), a shrinking
+#                           resize's release) and Chunk2A's operator== equal a
+#                           std::vector's, with the phase bracketed; inside a
+#                           region they stay on the calling thread.
 #   compound_ops_validation `*=`, `/=`, `%=` read back what std::vector would
 #                           (results landing on zero included), `double /= 0.0`
 #                           gives inf, set_second_value(0) declares nothing;
@@ -198,7 +204,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
                         nested_region_validation iterator_validation stale_proxy_validation
-                        region_storage_validation compound_ops_validation)
+                        region_storage_validation compound_ops_validation bulk_write_team_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.

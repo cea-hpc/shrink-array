@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <algorithm>        // std::min (operator==)
+#include <atomic>           // std::atomic (operator==: a difference found)
 #include <cstddef>          // std::size_t
 #include <cstdint>          // std::uint8_t, std::uint32_t (reclaim_second_values' mark)
 #include <cstdio>           // std::printf
@@ -240,7 +242,10 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @param other array to compare against
      * @return true if both arrays have the same size and the same values
      * @note Compares decompressed values, so two arrays that are equal but
-     *       compressed differently still compare equal.
+     *       compressed differently still compare equal. Chunk by chunk, on a
+     *       team of its own for a large array outside a region
+     *       (parallel_storage_init::for_each_chunk); a difference found stops
+     *       the chunks not yet started. Neither array may be written meanwhile.
      */
     bool operator==(const ArrayChunk2A& other) const noexcept
     {
@@ -248,14 +253,32 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         {
             return false;
         }
-        for (ind_type i = 0; i < m_size; ++i)
+        if (m_size == 0)
         {
-            if (Base2::read_value(i) != other.read_value(i))
-            {
-                return false;
-            }
+            return true;
         }
-        return true;
+        const long long   csz = static_cast<long long>(this->chunk_size());
+        std::atomic<bool> differ{false};
+        parallel_storage_init::for_each_chunk(
+            this->chunk_index_of(m_size - 1) + 1,
+            [&](int c)
+            {
+                if (differ.load(std::memory_order_relaxed))
+                {
+                    return;
+                }
+                const long long lo = static_cast<long long>(c) * csz;
+                const long long hi = std::min(lo + csz, static_cast<long long>(m_size));
+                for (long long i = lo; i < hi; ++i)
+                {
+                    if (Base2::read_value(static_cast<ind_type>(i)) != other.read_value(static_cast<ind_type>(i)))
+                    {
+                        differ.store(true, std::memory_order_relaxed);
+                        return;
+                    }
+                }
+            });
+        return !differ.load(std::memory_order_relaxed);
     }
 
     /**

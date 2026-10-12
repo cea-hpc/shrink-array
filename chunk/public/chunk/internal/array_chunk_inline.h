@@ -524,23 +524,9 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz, in_t<T> val)
 
     resize(newsz);
 
-    // A team of its own outside a region; the calling thread inside one (an
-    // orphaned `omp for` would write only 1/N of the new range).
-    if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-    {
-#pragma omp parallel for schedule(static)
-        for (ind_type i = old_size; i < newsz; ++i)
-        {
-            (*this)[i] = val;
-        }
-    }
-    else
-    {
-        for (ind_type i = old_size; i < newsz; ++i)
-        {
-            (*this)[i] = val;
-        }
-    }
+    // A team of its own outside a region (the library's threshold, the phase
+    // bracketed), the calling thread inside one.
+    this->write_range_by_chunks(old_size, newsz, [&val](ind_type) { return static_cast<T>(val); });
 }
 
 } // namespace shrink_array

@@ -168,23 +168,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         const ind_type old_size = m_size;
         derived().resize(newsz); // calls derived resize(sz)
 
-        // A team of its own outside a region; the calling thread inside one (an orphaned
-        // `omp for` there would write only 1/N of the range).
-        if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-        {
-#pragma omp parallel for schedule(static)
-            for (ind_type i = old_size; i < newsz; ++i)
-            {
-                derived()[i] = val;
-            }
-        }
-        else
-        {
-            for (ind_type i = old_size; i < newsz; ++i)
-            {
-                derived()[i] = val;
-            }
-        }
+        // A team of its own outside a region (the library's threshold, the
+        // phase bracketed), the calling thread inside one.
+        this->write_range_by_chunks(old_size, newsz, [&val](ind_type) { return static_cast<T>(val); });
     }
 };
 

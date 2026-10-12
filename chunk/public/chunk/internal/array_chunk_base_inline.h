@@ -28,6 +28,8 @@
 #include "chunk/internal/chunk_size_policy.h" // register_runtime_chunk_size / set_thread_chunk_size
 #include "chunk/internal/process_verbs.h"     // compress_now_and_trim_pools -- shrink_to_fit()
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/manage_ompt.h"                // parallel_phase -- write_range_by_chunks
+#include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 
 namespace shrink_array
 {
@@ -139,24 +141,75 @@ double ArrayChunkBase<Derived>::stats_seq() const
 }
 
 template <typename Derived>
+template <typename ValueAt>
+void ArrayChunkBase<Derived>::write_range_by_chunks(ind_type first, ind_type last, ValueAt&& value_at)
+{
+    if (first >= last)
+    {
+        return;
+    }
+    // In long long: (c + 1) * chunk_size() may pass ind_type's range near its top.
+    const long long csz     = static_cast<long long>(chunk_size());
+    const int       c_first = chunk_index_of(first);
+    const int       c_last  = chunk_index_of(last - 1) + 1;
+    const auto      span    = [&](int c)
+    {
+        const long long lo_ll = static_cast<long long>(c) * csz;
+        const long long hi_ll = lo_ll + csz;
+        const ind_type  lo    = lo_ll > static_cast<long long>(first) ? static_cast<ind_type>(lo_ll) : first;
+        const ind_type  hi    = hi_ll < static_cast<long long>(last) ? static_cast<ind_type>(hi_ll) : last;
+        for (ind_type i = lo; i < hi; ++i)
+        {
+            (*this)[i] = value_at(i);
+        }
+    };
+
+    if constexpr (build_config::use_openmp)
+    {
+        if (parallel_storage_init::use_own_team(static_cast<long>(c_last) - c_first))
+        {
+            parallel_phase(
+                [&]
+                {
+#pragma omp for schedule(static)
+                    for (int c = c_first; c < c_last; ++c)
+                    {
+                        span(c);
+                    }
+                });
+            return;
+        }
+    }
+    for (int c = c_first; c < c_last; ++c)
+    {
+        span(c);
+    }
+}
+
+template <typename Derived>
 void ArrayChunkBase<Derived>::assign(ind_type count, T val)
 {
     derived().resize(count);
-    for (ind_type i = 0; i < count; ++i)
-    {
-        (*this)[i] = val;
-    }
+    write_range_by_chunks(0, count, [&val](ind_type) { return val; });
 }
 
 template <typename Derived>
 template <std::forward_iterator It>
 void ArrayChunkBase<Derived>::assign(It first, It last)
 {
-    derived().resize(static_cast<ind_type>(std::distance(first, last)));
-    ind_type i = 0;
-    for (; first != last; ++first)
+    const auto n = static_cast<ind_type>(std::distance(first, last));
+    derived().resize(n);
+    if constexpr (std::random_access_iterator<It>)
     {
-        (*this)[i++] = static_cast<T>(*first);
+        write_range_by_chunks(0, n, [&first](ind_type i) { return static_cast<T>(first[i]); });
+    }
+    else
+    {
+        ind_type i = 0;
+        for (; first != last; ++first)
+        {
+            (*this)[i++] = static_cast<T>(*first);
+        }
     }
 }
 
@@ -178,10 +231,9 @@ void ArrayChunkBase<Derived>::copy_from(const Derived& from)
 {
     const ind_type from_size = from.m_size;
     derived().resize(from_size);
-    for (ind_type i = 0; i < from_size; ++i)
-    {
-        (*this)[i] = std::as_const(from)[i];
-    }
+    // Const reads of @p from (through its gate) from every thread of the team:
+    // nothing writes it meanwhile.
+    write_range_by_chunks(0, from_size, [&from](ind_type i) { return std::as_const(from)[i]; });
 }
 
 template <typename Derived>

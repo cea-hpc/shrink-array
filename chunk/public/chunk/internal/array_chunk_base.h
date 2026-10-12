@@ -890,7 +890,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief assign(count, val): std::vector semantics.
      *
-     * @details resize + operator[], serial; use the bulk init for a parallel fill.
+     * @details resize, then operator[] chunk by chunk: a team of its own for a
+     *          large array outside a region (write_range_by_chunks), the
+     *          calling thread otherwise.
      *
      * @param count new element count
      * @param val value written to every position
@@ -900,7 +902,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief assign(): the elements of [first, last), in order.
      * @details Sized once (std::distance, so a forward iterator at least),
-     *          then one proxied write per element. Sequential.
+     *          then one proxied write per element: chunk by chunk on a team of
+     *          its own for a random-access source (write_range_by_chunks), in
+     *          order on the calling thread for a forward one.
      */
     template <std::forward_iterator It>
     void assign(It first, It last);
@@ -1129,11 +1133,32 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @details Element by element on purpose, like rechunk_refill: correct for
      *          every variant, any geometry pair, and a non-empty destination.
      *          Repeated values are written materialised and folded back by the
-     *          next compression pass. Sequential context (resize() is a
-     *          sequential point). chunk2's second value is re-declared first by
-     *          the derived copy hooks.
+     *          next compression pass. Called at a sequential point (resize() is
+     *          one); the writes go chunk by chunk on a team of its own for a
+     *          large array (write_range_by_chunks). chunk2's second value is
+     *          re-declared first by the derived copy hooks.
      */
     void copy_from(const Derived& from);
+
+    /**
+     * @brief Elements [@p first, @p last) set to @p value_at(i), through the
+     *        proxy, chunk by chunk.
+     *
+     * @details A team of its own when parallel_storage_init::use_own_team()
+     *          accepts the chunk count (outside a region, from
+     *          kParallelInitMinChunks chunks), each chunk written by one
+     *          thread; the calling thread otherwise -- inside a region an
+     *          orphaned `omp for` would write 1/N of the range. The team goes
+     *          through parallel_phase(): without OMPT its threads begin the
+     *          phase before writing and the deferred writes are flushed after
+     *          it, as for any region that writes.
+     * @param first    first index, inclusive
+     * @param last     last index, exclusive (<= size())
+     * @param value_at called as value_at(i); independent iterations, may run
+     *                 on any thread of the team
+     */
+    template <typename ValueAt>
+    void write_range_by_chunks(ind_type first, ind_type last, ValueAt&& value_at);
 
     /**
      * @brief The exchange behind swap() and the derived move-assignments:
