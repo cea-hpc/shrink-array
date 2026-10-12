@@ -28,6 +28,7 @@
 #include <vector>      // std::vector
 
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
+#include "chunk/bit.h"       // is_packed_bit_v (checksum_word)
 
 // -----------------------------------------------------------------------------
 // Cache-line-padded uint64 used as a per-thread accumulator to avoid false
@@ -112,7 +113,9 @@ struct is_atomic_pointer<std::atomic<U*>> : public std::true_type
 // reduction, modulo 2^64) and costs about what the byte loop did.
 //   - integral elements hash their VALUE, not their bytes: tab_bool is a
 //     std::vector<short> in the baseline and an Array<bool> in a shrink build
-//     (bench_array.h), and their checksums must agree;
+//     (bench_array.h), and their checksums must agree; so does a packed Bit
+//     (tab_bool_bits and tab_mask in a chunk2 build), hashed as its bool --
+//     its byte folded would never match the baseline's bool / short;
 //   - floating-point elements their bit pattern (-0.0 == T{} is skipped, as it
 //     always was: the library compresses it to +0.0 by design);
 //   - aggregates (complex, Point3, Cell -- no padding, bench_struct.h) their
@@ -141,6 +144,10 @@ inline std::uint64_t checksum_word(const T& e) noexcept
     if constexpr (std::is_integral_v<T>)
     {
         return static_cast<std::uint64_t>(e);
+    }
+    else if constexpr (shrink_array::is_packed_bit_v<T>)
+    {
+        return static_cast<std::uint64_t>(static_cast<bool>(e));
     }
     else if constexpr (std::is_same_v<T, double>)
     {
