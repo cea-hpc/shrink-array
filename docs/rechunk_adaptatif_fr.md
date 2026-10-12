@@ -85,6 +85,7 @@ prend la meilleure taille de la table, puis applique la politique (`RechunkPolic
 | `coarsen_min_meta_rate` | 250 Mo/s | gain de métadonnées par seconde de reconstruction estimée (`CHUNK_COARSEN_MIN_META_RATE`) |
 | `coarsen_trust_ratio` | 0,5 | apprentissage : un grossissement qui a rendu moins de la moitié de sa prévision interdit les suivants |
 | `dry_run` | `true` | ne rien appliquer (le banc le met à `false` ; `CHUNK_RECHUNK_DRY_RUN=1` le force) |
+| `max_backoff_ticks` | 8 | un tableau dont le verdict est un « pas de mouvement » établi (déjà optimal, gain sous le seuil) n'est réanalysé qu'après 2, 4, puis jusqu'à 8 passages ; tout autre verdict le ramène à chaque passage (`CHUNK_ADVISOR_BACKOFF_MAX`, 0 ou 1 désactive) |
 
 Un grossissement est accepté si **l'une** des deux branches passe : la branche
 **métadonnées** (gain de métadonnées au-dessus de son plancher, et débit suffisant au regard
@@ -206,6 +207,16 @@ se limite aux reconstructions.
   statique, et Chunk2 ne ralentit pas après ses rechunks : c'est l'état laissé par la
   reconstruction de v1 qui est en cause. Ni l'ordonnancement de la reconstruction, ni les
   seuils de compression n'expliquent l'écart. Cause encore inconnue.
+  Remesuré en octobre 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
+  2 000 itérations, `diag_v1_rechunk_slowdown.py`) : +17 % par itération après le
+  passage à 1 024. Inchangé avec une seule tranche, une reconstruction en
+  ordonnancement statique, sans recyclage des slabs, sans réutilisation de
+  `chunk_list`, en affinité lazy ; le placement NUMA est équilibré comme celui du
+  statique. Deux parts : les analyses de l'advisor, qui continuent une fois la
+  géométrie stabilisée (environ 7 points : `CHUNK_RECHUNK_DRY_RUN=1` contre
+  `CHUNK_ADVISOR_PERIOD=0` ; d'où `max_backoff_ticks`), et environ 10 points de
+  va-et-vient de compression que le statique n'a pas (~15 000 buffers libérés par
+  itération contre aucun).
 - **Le modèle est statique.** L'advisor juge sur l'état présent des chunks, pas sur les
   écritures à venir. Sur ce banc, les matérialisations passagères mesurées ne pèsent pas
   (`CHUNK_RECHUNK_CHURN=1`), mais une charge qui écrit beaucoup dans des zones constantes
