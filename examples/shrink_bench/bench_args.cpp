@@ -87,7 +87,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
 
     // Nouveaux facteurs
     double multiply_factor = 1.0;
-    Int    divisor_factor  = 1;
+    double divisor_factor  = 1.0;
 
     // Default iter_max (2000), overridable at runtime via --iter_max <N>.
     Int iter_max_arg = 2000;
@@ -177,7 +177,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             }
             else if (arg == "--divisor")
             {
-                divisor_factor = parse_int_arg("--divisor", next_value());
+                divisor_factor = parse_positive_real_arg("--divisor", next_value());
             }
             else if (arg == "--iter_max")
             {

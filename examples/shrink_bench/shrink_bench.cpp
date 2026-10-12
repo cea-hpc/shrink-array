@@ -250,7 +250,7 @@ int main(int argc, char* argv[])
     const bool      no_mask         = bench_args.no_mask;
     const double    mask_scale      = bench_args.mask_scale; // tab_mask's size / sz
     const double    multiply_factor = bench_args.multiply_factor;
-    const Int       divisor_factor  = bench_args.divisor_factor;
+    const double    divisor_factor  = bench_args.divisor_factor;
     const Int       iter_max_arg    = bench_args.iter_max_arg;
 
     // Before sz is computed: a factor past the Int range would wrap here.

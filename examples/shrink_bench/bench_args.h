@@ -63,7 +63,7 @@ struct BenchArgs
     double mask_scale = 1.0 / 32.0;
 
     double multiply_factor = 1.0; ///< --multiply (a real factor)
-    Int    divisor_factor  = 1;   ///< --divisor
+    double divisor_factor  = 1.0; ///< --divisor (a real factor, like --multiply)
 
     /// --iter_max. 2000 by default.
     Int iter_max_arg = 2000;
