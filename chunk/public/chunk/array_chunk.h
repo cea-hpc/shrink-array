@@ -262,6 +262,9 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// @brief Resize to @p newsz elements; new elements read the first
     ///        constant. A sequential point: the rank's candidates are
     ///        compressed and the deferred ops drained first.
+    /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
+    ///       freed serially, parked in the geometry's reuse list under OpenMP);
+    ///       chunk_list keeps its capacity.
     void resize(ind_type newsz);
 
   private:

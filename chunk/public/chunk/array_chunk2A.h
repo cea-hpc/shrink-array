@@ -214,6 +214,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     /**
      * @brief Resize the array, preserving the elements that still fit.
      * @param newsz new element count
+     * @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
+     *       freed serially, parked in the geometry's reuse list under OpenMP);
+     *       chunk_list keeps its capacity.
      */
     void resize(ind_type newsz);
 
