@@ -18,7 +18,21 @@
 
 #include <algorithm> // std::max (get_size_max_tab_omp)
 
-#include "chunk/config.h" // build_config::any_check, build_config::use_openmp
+#include "chunk/config.h"                       // build_config::any_check, build_config::use_openmp
+#include "fast_allocators/internal/pmp_loops.h" // fast_alloc::pmp: the loops re-exported below
+
+/// @brief The library's data-parallel loops (docs/threading_backends.md, use B):
+///        one implementation, in fast_allocators/internal/pmp_loops.h, shared
+///        with the allocator's sweeps.
+namespace shrink_array::pmp
+{
+using ::fast_alloc::pmp::options;
+using ::fast_alloc::pmp::parallel_for;
+using ::fast_alloc::pmp::parallel_for_local;
+using ::fast_alloc::pmp::parallel_sum;
+using ::fast_alloc::pmp::sched_kind;
+using ::fast_alloc::pmp::schedule;
+} // namespace shrink_array::pmp
 
 namespace shrink_array
 {

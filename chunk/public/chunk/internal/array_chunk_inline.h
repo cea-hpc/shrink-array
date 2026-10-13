@@ -25,7 +25,7 @@
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"               // per-size free lists, candidate filter
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, pmp::parallel_sum
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_PARK / DISCARD
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
@@ -113,33 +113,34 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
     // over a team (never nested in a caller's region, not for a few chunks).
     const auto csz = static_cast<unsigned int>(this->size_policy_.size());
 
-    int n_compressed  = 0;
-    int n_would_be_t2 = 0;
-
-#pragma omp parallel for reduction(+ : n_compressed, n_would_be_t2) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-    for (int j = 0; j < nb_chunk; ++j)
-    {
-        const auto& ck = chunk_list[j];
-        if (!ck.written())
+    // acc[0]: compressed (or compressible to first_value), acc[1]: would be type-2.
+    const auto counts = pmp::parallel_sum<int, 2>(
+        0, nb_chunk, pmp::options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500},
+        [&](int j, auto& acc)
         {
-            ++n_compressed; // collapsed to first_value
-            continue;
-        }
-        // Materialised: is it constant to a single value?
-        const auto v0 = ck.constant_value(csz);
-        if (!v0)
-        {
-            continue;
-        }
-        if (*v0 == Chunk<T>::first_value)
-        {
-            ++n_compressed; // compressible now; the drain just had not caught it yet
-        }
-        else
-        {
-            ++n_would_be_t2; // a second constant: Chunk2/Chunk2A material
-        }
-    }
+            const auto& ck = chunk_list[j];
+            if (!ck.written())
+            {
+                ++acc[0]; // collapsed to first_value
+                return;
+            }
+            // Materialised: is it constant to a single value?
+            const auto v0 = ck.constant_value(csz);
+            if (!v0)
+            {
+                return;
+            }
+            if (*v0 == Chunk<T>::first_value)
+            {
+                ++acc[0]; // compressible now; the drain just had not caught it yet
+            }
+            else
+            {
+                ++acc[1]; // a second constant: Chunk2/Chunk2A material
+            }
+        });
+    const int n_compressed  = counts[0];
+    const int n_would_be_t2 = counts[1];
 
     // Plain Chunk has no type-2 (n_t1 = 0).
     if constexpr (chunk_config::stats)

@@ -20,6 +20,11 @@
 // the StaticConstArray ladder (static_const_array.h, its _inline.h, and
 // InfoFreeElt's constructor in static_const_array.cpp). Mirrors chunk's
 // public/chunk/PMP_CHUNK.h.
+//
+// The data-parallel loops (fast_alloc::pmp::parallel_for, ...) come with it,
+// from pmp_loops.h, which chunk's PMP_CHUNK.h re-exports as shrink_array::pmp.
+
+#include "fast_allocators/internal/pmp_loops.h" // fast_alloc::pmp: parallel_for, parallel_for_local, parallel_sum
 
 #ifdef _OPENMP
     #include <omp.h> // omp_get_max_threads, omp_get_thread_num, omp_in_parallel

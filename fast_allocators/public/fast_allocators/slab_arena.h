@@ -66,6 +66,7 @@
 #include <system_error>  // std::errc (std::from_chars)
 
 #include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
+#include "fast_allocators/internal/pmp_alloc.h"    // pmp::parallel_for (the parallel madvise sweeps)
 
 namespace fast_alloc
 {
@@ -526,11 +527,9 @@ class EmptySlabSweep
         if (nthr > 1 && omp_in_parallel() == 0 && n_runs >= 4L * nthr)
         {
             const Run* runs = runs_.data();
-    #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
-            for (long i = 0; i < n_runs; ++i)
-            {
-                ::madvise(reinterpret_cast<void*>(runs[i].begin), runs[i].len, MADV_DONTNEED);
-            }
+            pmp::parallel_for(0L, n_runs, pmp::options{.num_threads = nthr, .sched = pmp::schedule::dynamic(16)},
+                              [runs](long i)
+                              { ::madvise(reinterpret_cast<void*>(runs[i].begin), runs[i].len, MADV_DONTNEED); });
             return;
         }
 #endif
@@ -831,11 +830,9 @@ class SlabArena
         if (nthr > 1 && omp_in_parallel() == 0 && n_runs >= 4L * nthr)
         {
             const Span* run = spans.data();
-    #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
-            for (long i = 0; i < n_runs; ++i)
-            {
-                ::madvise(reinterpret_cast<void*>(run[i].begin), run[i].len, MADV_DONTNEED);
-            }
+            pmp::parallel_for(0L, n_runs, pmp::options{.num_threads = nthr, .sched = pmp::schedule::dynamic(16)},
+                              [run](long i)
+                              { ::madvise(reinterpret_cast<void*>(run[i].begin), run[i].len, MADV_DONTNEED); });
         }
         else
 #endif

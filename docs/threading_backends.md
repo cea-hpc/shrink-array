@@ -62,7 +62,20 @@ gets an adaptor, `shrink_array::tbb::parallel_for(range, body)`, that calls
    lock only when `FAST_ALLOC_PMP_IN_PARALLEL_REGION`, an OpenMP query.
 3. **B**: `pmp::parallel_for` / `pmp::parallel_reduce` in `PMP_CHUNK.h`,
    OpenMP implementation (same `schedule`, same `if` thresholds), the B sites
-   converted. `fast_allocators` gets the same through `pmp_alloc.h`.
+   converted. `fast_allocators` gets the same through `pmp_alloc.h`. *Done*:
+   one implementation, `fast_allocators/internal/pmp_loops.h` (namespace
+   `fast_alloc::pmp`, included by `pmp_alloc.h`, re-exported by `PMP_CHUNK.h`
+   as `shrink_array::pmp`): `parallel_for`, `parallel_for_local` (a per-thread
+   state, the release of a shrink) and `parallel_sum<T, N>` (the only
+   reduction the sites need: N counters, `reduction(+ : acc[:N])`); a general
+   `parallel_reduce` waits for a site that needs another operator. Options:
+   `use_team` (the `if` clause: false still opens a team of one, so the OMPT
+   callbacks fire as before), `num_threads`, `schedule` (`static_blocks`,
+   `static_chunks(c)`, `dynamic(c)`). The loops that had no `schedule` clause
+   get `schedule(static)`, the default of libgomp and libomp. Converted: the
+   exit-census counts of the three variants, `get_nb_chunk_written`, the
+   Chunk2A size-prediction scan, `for_each_chunk`, `for_each_chunk_in`,
+   `construct_range`, the two `madvise` sweeps of `slab_arena.h`.
 4. **C**: `pmp::team` and `pmp::Team` (`for_static`, `for_dynamic`, `barrier`,
    `single`, `masked`, `rank`, `size`), OpenMP implementation (a `parallel`
    region whose body receives the team; the constructs inside stay orphaned

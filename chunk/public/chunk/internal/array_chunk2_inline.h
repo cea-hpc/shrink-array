@@ -37,7 +37,7 @@
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, pmp::parallel_sum
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/diag_mutex.h"                  // diag_print_mutex (the reports)
@@ -443,42 +443,31 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
     // guard as the other teardown loops: never nest inside a caller's region,
     // and not worth a team for a handful of chunks.
     const auto csz_audit = static_cast<unsigned int>(this->size_policy_.size());
-    int        n_t0      = 0;
-    int        n_t1      = 0;
+    int                n_t0      = 0; // compressed (or compressible) to first_value
+    int                n_t1      = 0; // ... to the second value
+    const pmp::options team_opt{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500};
 
     if constexpr (is_not_bool)
     {
         const int ind = get_ind_second_value();
-#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-        for (int j = 0; j < nb_chunk; ++j)
-        {
-            const auto& ck = chunk_list[j];
-            if (ck.written(ind))
-            {
-                const auto v0 = ck.constant_value(csz_audit);
-                if (!v0)
-                {
-                    continue;
-                }
-                if (*v0 == Chunk2<T>::first_value)
-                {
-                    ++n_t0;
-                }
-                else
-                {
-                    ++n_t1;
-                }
-                continue;
-            }
-            if (ck.is_cst_val1())
-            {
-                ++n_t0;
-            }
-            else
-            {
-                ++n_t1;
-            }
-        }
+        const auto counts = pmp::parallel_sum<int, 2>(0, nb_chunk, team_opt,
+                                                      [&](int j, auto& acc)
+                                                      {
+                                                          const auto& ck = chunk_list[j];
+                                                          if (ck.written(ind))
+                                                          {
+                                                              const auto v0 = ck.constant_value(csz_audit);
+                                                              if (!v0)
+                                                              {
+                                                                  return;
+                                                              }
+                                                              ++acc[*v0 == Chunk2<T>::first_value ? 0 : 1];
+                                                              return;
+                                                          }
+                                                          ++acc[ck.is_cst_val1() ? 0 : 1];
+                                                      });
+        n_t0              = counts[0];
+        n_t1              = counts[1];
     }
     else
     {
@@ -486,36 +475,24 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
         // for the type -- an all-true chunk is type-2. Do not count it as
         // type-1: the verdict would say "plain Chunk would suffice" for arrays
         // whose true chunks a plain Chunk cannot compress.
-#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-        for (int j = 0; j < nb_chunk; ++j)
-        {
-            const auto& ck = chunk_list[j];
-            if (ck.written())
-            {
-                const auto v0 = ck.constant_value(csz_audit);
-                if (!v0)
-                {
-                    continue;
-                }
-                if (*v0 == Chunk2<T>::first_value)
-                {
-                    ++n_t0;
-                }
-                else
-                {
-                    ++n_t1;
-                }
-                continue;
-            }
-            if (ck.is_cst_val1())
-            {
-                ++n_t0;
-            }
-            else
-            {
-                ++n_t1;
-            }
-        }
+        const auto counts = pmp::parallel_sum<int, 2>(0, nb_chunk, team_opt,
+                                                      [&](int j, auto& acc)
+                                                      {
+                                                          const auto& ck = chunk_list[j];
+                                                          if (ck.written())
+                                                          {
+                                                              const auto v0 = ck.constant_value(csz_audit);
+                                                              if (!v0)
+                                                              {
+                                                                  return;
+                                                              }
+                                                              ++acc[*v0 == Chunk2<T>::first_value ? 0 : 1];
+                                                              return;
+                                                          }
+                                                          ++acc[ck.is_cst_val1() ? 0 : 1];
+                                                      });
+        n_t0              = counts[0];
+        n_t1              = counts[1];
     }
     const int n_compressed = n_t0 + n_t1;
 
@@ -533,25 +510,25 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
         const auto    csz          = static_cast<unsigned int>(this->size_policy_.size());
         const int     ind          = get_ind_second_value();
         const in_t<T> second_value = get_second_value();
-        n_would_be_2a              = 0;
-#pragma omp parallel for reduction(+ : n_would_be_2a) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-        for (int j = 0; j < nb_chunk; ++j)
-        {
-            const auto& ck = chunk_list[j];
-            if (!ck.written(ind))
-            {
-                continue; // compressed: holds first_value or second_value by definition
-            }
-            const in_t<T> v = ck.read_value_scan(0);
-            if (v == Chunk2<T>::first_value || v == second_value)
-            {
-                continue; // Chunk2 material, caught or not
-            }
-            if (ck.is_constant_to(v, csz))
-            {
-                ++n_would_be_2a;
-            }
-        }
+        n_would_be_2a =
+            pmp::parallel_sum<int, 1>(0, nb_chunk, team_opt,
+                                      [&](int j, auto& acc)
+                                      {
+                                          const auto& ck = chunk_list[j];
+                                          if (!ck.written(ind))
+                                          {
+                                              return; // compressed: holds first_value or second_value by definition
+                                          }
+                                          const in_t<T> v = ck.read_value_scan(0);
+                                          if (v == Chunk2<T>::first_value || v == second_value)
+                                          {
+                                              return; // Chunk2 material, caught or not
+                                          }
+                                          if (ck.is_constant_to(v, csz))
+                                          {
+                                              ++acc[0];
+                                          }
+                                      })[0];
     }
 
     // Centralized rendering: shared layout/colors/verdict with ArrayChunk2A

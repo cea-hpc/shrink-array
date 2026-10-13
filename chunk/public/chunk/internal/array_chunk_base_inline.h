@@ -27,7 +27,7 @@
 #include "chunk/config.h"                     // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h" // register_runtime_chunk_size / set_thread_chunk_size
 #include "chunk/internal/process_verbs.h"     // compress_now_and_trim_pools -- shrink_to_fit()
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum
 #include "chunk/manage_ompt.h"                // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 
@@ -109,11 +109,8 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written() const
     }
     else
     {
-#pragma omp parallel for reduction(+ : nb_written)
-        for (int j = 0; j < nb_chunk; ++j)
-        {
-            nb_written += lbd(j);
-        }
+        nb_written =
+            pmp::parallel_sum<int, 1>(0, nb_chunk, pmp::options{}, [&](int j, auto& acc) { acc[0] += lbd(j); })[0];
     }
     return nb_written;
 }

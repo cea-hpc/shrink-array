@@ -33,7 +33,7 @@
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"               // ManagerChunk: per-size free lists, candidate filter
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, get_size_max_tab_omp
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, get_size_max_tab_omp, pmp loops
 #include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::getRef
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
@@ -146,41 +146,28 @@ void ArrayChunk2A<T, ind_type>::print_compression_stats(std::ostream& os) const
     // team (the counts are reductions). Same guard as the other teardown loops:
     // never nest inside a caller's region, no team for a handful of chunks.
     const auto csz_audit = static_cast<unsigned int>(this->size_policy_.size());
-    int        n_t0      = 0;
-    int        n_t1      = 0;
 
-#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-    for (int j = 0; j < nb_chunk; ++j)
-    {
-        const auto& ck = chunk_list[j];
-        if (ck.written())
+    // acc[0]: compressed (or compressible) to first_value, acc[1]: to a second value.
+    const auto counts = pmp::parallel_sum<int, 2>(
+        0, nb_chunk, pmp::options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500},
+        [&](int j, auto& acc)
         {
-            const auto v0 = ck.constant_value(csz_audit);
-            if (!v0)
+            const auto& ck = chunk_list[j];
+            if (ck.written())
             {
-                continue;
+                const auto v0 = ck.constant_value(csz_audit);
+                if (!v0)
+                {
+                    return;
+                }
+                ++acc[*v0 == Chunk2A<T>::first_value ? 0 : 1];
+                return;
             }
-            if (*v0 == Chunk2A<T>::first_value)
-            {
-                ++n_t0;
-            }
-            else
-            {
-                ++n_t1;
-            }
-            continue;
-        }
-        const char ct = Proxy2A<T>::tab_type_cst_val[num_tab][j];
-        if (ct == 0)
-        {
-            ++n_t0;
-        }
-        else
-        {
-            ++n_t1;
-        }
-    }
-    const int n_compressed = n_t0 + n_t1;
+            const char ct = Proxy2A<T>::tab_type_cst_val[num_tab][j];
+            ++acc[ct == 0 ? 0 : 1];
+        });
+    const int n_t1         = counts[1];
+    const int n_compressed = counts[0] + n_t1;
     if constexpr (chunk_config::stats)
     {
         add_chunk_still_compressed_at_exit<Chunk2A<T>>(n_compressed);
@@ -208,18 +195,18 @@ void ArrayChunk2A<T, ind_type>::clear()
         {
             const auto                      csz = static_cast<unsigned int>(this->size_policy_.size());
             std::vector<std::pair<bool, T>> summary(static_cast<std::size_t>(nb_chunk));
-#pragma omp parallel for if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-            for (int j = 0; j < nb_chunk; ++j)
-            {
-                const auto& ck = chunk_list[j];
-                if (!ck.written())
-                {
-                    summary[static_cast<std::size_t>(j)] = {true, ck.read_value_scan(0)};
-                    continue;
-                }
-                const auto v0                        = ck.constant_value(csz);
-                summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
-            }
+            pmp::parallel_for(0, nb_chunk, pmp::options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500},
+                              [&](int j)
+                              {
+                                  const auto& ck = chunk_list[j];
+                                  if (!ck.written())
+                                  {
+                                      summary[static_cast<std::size_t>(j)] = {true, ck.read_value_scan(0)};
+                                      return;
+                                  }
+                                  const auto v0                        = ck.constant_value(csz);
+                                  summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
+                              });
             const auto& sh_inf   = *Proxy2A<T>::share_info_array;
             const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
             report_size_prediction<T>(summary, csz, num_tab_, "chunk2a",

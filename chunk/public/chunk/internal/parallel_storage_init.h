@@ -30,7 +30,7 @@
  *          So the per-chunk vectors are no_init_vector: NoInitAllocator leaves
  *          a default-inserted element unconstructed, and make_filled() /
  *          resize_filled() construct the new elements from a team, static
- *          schedule, where the per-chunk loops will use them. The atomic rows
+ *          schedule (pmp::parallel_for), where the per-chunk loops will use them. The atomic rows
  *          are built the same way (an atomic is not movable). No extra byte per
  *          chunk nor in the vector.
  *
@@ -51,7 +51,7 @@
 #include <utility>     // std::forward
 #include <vector>      // std::vector
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION, pmp loops
 #include "chunk/config.h"    // build_config::use_openmp
 
 namespace shrink_array
@@ -142,11 +142,7 @@ void for_each_chunk(int n, Init&& init)
     {
         if (use_own_team(n))
         {
-#pragma omp parallel for schedule(static)
-            for (int i = 0; i < n; ++i)
-            {
-                init(i);
-            }
+            pmp::parallel_for(0, n, pmp::options{}, init);
             return;
         }
     }
@@ -179,15 +175,7 @@ void for_each_chunk_in(int first, int last, MakeCtx&& make_ctx, Body&& body)
     {
         if (use_own_team(static_cast<long>(last) - first))
         {
-#pragma omp parallel
-            {
-                decltype(auto) ctx = make_ctx();
-#pragma omp for schedule(static)
-                for (int j = first; j < last; ++j)
-                {
-                    body(j, ctx);
-                }
-            }
+            pmp::parallel_for_local(first, last, pmp::options{}, make_ctx, body);
             return;
         }
     }
@@ -212,13 +200,8 @@ void construct_range(T* base, std::size_t first, std::size_t last, Make&& make)
     {
         if ((last - first) * sizeof(T) >= kFirstTouchMinBytes && can_open_team())
         {
-            const long lo = static_cast<long>(first);
-            const long hi = static_cast<long>(last);
-#pragma omp parallel for schedule(static)
-            for (long i = lo; i < hi; ++i)
-            {
-                make(base + i);
-            }
+            pmp::parallel_for(static_cast<long>(first), static_cast<long>(last), pmp::options{},
+                              [base, &make](long i) { make(base + i); });
             return;
         }
     }
