@@ -976,7 +976,7 @@ class GlobalVecHolder
             region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
         {
             region_end           = static_cast<char*>(raw) + kRegionUsable;
-            const std::size_t lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
+            const auto lim        = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
             id_limit              = (lim >= 1 && lim < kMaxIds) ? lim : kMaxIds; // lowers only
         }
         else

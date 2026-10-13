@@ -146,10 +146,14 @@ enum class DeferReadGate : std::uint8_t
     Precise
 };
 
-inline constexpr DeferReadGate defer_read_gate_mode = !build_config::use_openmp ? DeferReadGate::None
-                                                      : !chunk_config::use_precise_pending_gate
-                                                          ? DeferReadGate::Coarse
-                                                          : DeferReadGate::Precise;
+inline constexpr DeferReadGate defer_read_gate_mode = []
+{
+    if (!build_config::use_openmp)
+    {
+        return DeferReadGate::None;
+    }
+    return chunk_config::use_precise_pending_gate ? DeferReadGate::Precise : DeferReadGate::Coarse;
+}();
 
 template <typename Derived, DeferReadGate Mode = defer_read_gate_mode>
 class DeferredReadGate; // primary left undefined: only the 3 specializations exist
@@ -316,7 +320,7 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
                 // stick and the drains run hyperactive.
                 const int32_t  cnt      = sign_extend_count(cur);
                 const uint32_t own      = cur >> kCountBits;
-                const uint32_t nown     = (cnt <= 0) ? me : (own == me ? own : kOwnerMulti);
+                const uint32_t nown     = (cnt <= 0 || own == me) ? me : kOwnerMulti;
                 const uint32_t ncnt     = static_cast<uint32_t>(cnt + 1) & kCountMask;
                 const uint32_t nw       = (nown << kCountBits) | ncnt;
                 auto           expected = static_cast<int32_t>(cur);
@@ -1963,7 +1967,8 @@ class ChunkBase : public CRTPSupport<Derived>,
             mine.free_elt_pow2(ptr);
             return;
         }
-        auto* owner = static_cast<std::remove_reference_t<decltype(mine)>*>(const_cast<void*>(slab->owner));
+        using AllocT = std::remove_reference_t<decltype(mine)>;
+        auto* owner  = const_cast<AllocT*>(static_cast<const AllocT*>(slab->owner));
         if (slab->owner_rank < 0 || slab->owner_rank == thr_rank || !CHUNK_PMP_IN_PARALLEL_REGION)
         {
             CHUNK_FREEPATH_INC(freed);

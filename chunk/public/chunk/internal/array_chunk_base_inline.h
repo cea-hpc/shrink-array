@@ -162,7 +162,7 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(ind_type first, ind_type las
         return;
     }
     // In long long: (c + 1) * chunk_size() may pass ind_type's range near its top.
-    const long long csz     = static_cast<long long>(chunk_size());
+    const auto      csz     = static_cast<long long>(chunk_size());
     const int       c_first = chunk_index_of(first);
     const int       c_last  = chunk_index_of(last - 1) + 1;
     const auto      span    = [&](int c)

@@ -44,7 +44,7 @@ class GlobalStatsChunkList
     /// @brief Record one element type's figures under @p name.
     void record(const std::string& name, long somme, int max_chunks, size_t elem_size)
     {
-        all_stats[name] = {somme, max_chunks, elem_size};
+        all_stats[name] = {.allocated_chunks = somme, .threshold_per_thr = max_chunks, .element_size = elem_size};
     }
 
     /**

@@ -457,7 +457,7 @@ namespace shrink_array
             freed += elm->trim_reuse_pools_int(keep_per_thread);
         }
 
-#if defined(__GLIBC__)
+#ifdef __GLIBC__
         // Give the pages back to the KERNEL, not just to malloc: free() alone leaves
         // the resident size unchanged, the memory only moves from our pool to malloc's.
         if (freed != 0)
@@ -613,7 +613,7 @@ namespace shrink_array
 
     bool set_max_malloc_arenas(int max_arenas)
     {
-#if defined(__GLIBC__)
+#ifdef __GLIBC__
         if (max_arenas <= 0)
         {
             return false;

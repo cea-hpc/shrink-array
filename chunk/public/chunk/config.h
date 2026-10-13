@@ -152,7 +152,7 @@ inline constexpr bool second_value_indexed = CHUNK_OPT_SECOND_VALUE_INDEXED != 0
 ///  - elsewhere (x86): 128. Lines are 64 bytes, but Intel's L2 spatial
 ///    prefetcher fetches them by 128-byte pairs.
 /// -DCHUNK_DIRTY_WORD_ALIGN=N overrides it (e.g. 256 on A64FX).
-#if defined(CHUNK_DIRTY_WORD_ALIGN)
+#ifdef CHUNK_DIRTY_WORD_ALIGN
 inline constexpr std::size_t dirty_word_align = CHUNK_DIRTY_WORD_ALIGN;
 #elif defined(__aarch64__)
 inline constexpr std::size_t dirty_word_align = 64;
@@ -310,7 +310,7 @@ inline constexpr bool use_fast_block_compression = use_openmp;
 
 // A ThreadSanitizer build, whichever compiler spells it. TSan does not model
 // membarrier(), so such a build keeps the symmetric handshake below.
-#if defined(__SANITIZE_THREAD__)
+#ifdef __SANITIZE_THREAD__
     #define CHUNK_TSAN_BUILD 1
 #elif defined(__has_feature)
     #if __has_feature(thread_sanitizer)

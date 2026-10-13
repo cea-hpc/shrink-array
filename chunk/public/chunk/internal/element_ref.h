@@ -199,6 +199,8 @@ class ElementRef
     }
 
 // The compound assignments: forwarded to the proxy where it has them.
+// OP is an operator token (+=, ...), which cannot be parenthesized.
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define CHUNK_ELEMENT_REF_COMPOUND(OP)                                                                                 \
     template <typename U>                                                                                              \
         requires requires(P& p, U&& u) { p OP element_ref_detail::unwrap(std::forward<U>(u)); }                        \
@@ -213,6 +215,7 @@ class ElementRef
         static_assert(element_ref_detail::misuse<U>, CHUNK_ELEMENT_REF_MISUSE);                                        \
         return *this;                                                                                                  \
     }
+    // NOLINTEND(bugprone-macro-parentheses)
 
     CHUNK_ELEMENT_REF_COMPOUND(+=)
     CHUNK_ELEMENT_REF_COMPOUND(-=)

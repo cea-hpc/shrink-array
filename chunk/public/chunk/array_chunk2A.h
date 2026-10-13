@@ -260,7 +260,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         {
             return true;
         }
-        const long long   csz = static_cast<long long>(this->chunk_size());
+        const auto        csz = static_cast<long long>(this->chunk_size());
         std::atomic<bool> differ{false};
         parallel_storage_init::for_each_chunk(
             this->chunk_index_of(m_size - 1) + 1,

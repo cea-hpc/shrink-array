@@ -105,7 +105,7 @@ predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned S, 
 
     const std::size_t mem = (static_cast<std::size_t>(n_blocks - n_const) * Sp * sizeof(T)) +
                             (static_cast<std::size_t>(n_blocks) * meta_per_block);
-    return {Sp, mem, n_const, n_blocks};
+    return {.S_prime = Sp, .mem_bytes = mem, .n_const_blocks = n_const, .n_blocks = n_blocks};
 }
 
 // Predict memory for S' in {S,2S,4S,...} from a summary the array collected,
@@ -124,13 +124,13 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
         return;
     }
 
-    PredictorPoint best{S, ~std::size_t{0}, 0, 0};
+    PredictorPoint best{.S_prime = S, .mem_bytes = ~std::size_t{0}, .n_const_blocks = 0, .n_blocks = 0};
     PredictorPoint current{};
     bool           have_current = false;
 
     for (unsigned k = 1; k <= max_multiple; k *= 2)
     {
-        if (static_cast<int>(k) > nb_chunk && k != 1)
+        if (std::cmp_greater(k, nb_chunk) && k != 1)
         {
             break;
         }

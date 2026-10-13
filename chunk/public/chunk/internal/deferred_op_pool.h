@@ -353,7 +353,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
         static const uintptr_t bytes = []
         {
             constexpr std::size_t def_kb = build_config::deferred_pool_granularity / 1024;
-            const std::size_t     kb     = shrink_array::env_number<std::size_t>("CHUNK_DEFERRED_POOL_KB", def_kb);
+            const auto            kb     = shrink_array::env_number<std::size_t>("CHUNK_DEFERRED_POOL_KB", def_kb);
             return static_cast<uintptr_t>(kb == 0 ? def_kb : kb) * 1024;
         }();
         return bytes;

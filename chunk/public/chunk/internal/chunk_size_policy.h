@@ -306,7 +306,7 @@ class DynamicChunkSize
         else
         {
             const auto          n = static_cast<std::uint64_t>(static_cast<std::make_unsigned_t<I>>(i));
-            const std::uint64_t t = static_cast<std::uint64_t>((static_cast<unsigned __int128>(magic_) * n) >> 64);
+            const auto          t = static_cast<std::uint64_t>((static_cast<unsigned __int128>(magic_) * n) >> 64);
             return static_cast<I>((t + ((n - t) >> 1)) >> magic_shift_);
         }
     }

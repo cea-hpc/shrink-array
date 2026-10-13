@@ -24,6 +24,7 @@
 #include <cstdint>  // std::uintptr_t
 #include <cstdlib>  // std::abort on an arena failure
 #include <iostream> // std::cerr on an arena failure
+#include <utility>
 #include <vector>   // std::vector
 
 #include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
@@ -106,8 +107,7 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
         // The free list is threaded THROUGH freed elements (free_block() writes the next
         // index, an int, into the element's first bytes): an element must hold an aligned int.
         // ElementSize is a run-time value, so this is a release check, once per slab.
-        if (ElementSize_ < static_cast<int>(sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0)
-            [[unlikely]]
+        if (std::cmp_less(ElementSize_, sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0) [[unlikely]]
         {
             std::cerr << "[TCAllocator] element size " << ElementSize_
                       << " bytes cannot hold the free-list index (an int: " << sizeof(int) << " bytes, aligned on "

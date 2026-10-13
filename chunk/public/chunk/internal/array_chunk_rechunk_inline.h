@@ -159,7 +159,7 @@ inline long rss_mib_now() noexcept
 ///        Serial builds parse it too; chunk_pmp_set_schedule() is then a no-op.
 struct RebuildSchedule
 {
-    chunk_pmp_schedule   schedule{chunk_pmp_sched::sched_guided, 16};
+    chunk_pmp_schedule   schedule{.kind = chunk_pmp_sched::sched_guided, .chunk = 16};
     std::array<char, 32> text{"guided,16"};
 };
 
@@ -214,7 +214,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
                          env);
             return parsed;
         }
-        parsed.schedule    = {k, chunk}; // chunk 0: the runtime's default for this kind
+        parsed.schedule    = {.kind = k, .chunk = chunk}; // chunk 0: the runtime's default for this kind
         const auto written = std::format_to_n(parsed.text.data(), parsed.text.size() - 1, "{},{}", kv, chunk);
         *written.out       = '\0';
         return parsed;

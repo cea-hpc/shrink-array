@@ -124,7 +124,7 @@ inline void* map_anonymous(size_t size)
 {
     // MAP_ANONYMOUS: not backed by any file; the contents are zero (mmap(2)).
     // MAP_ANON, its older BSD spelling, where it is the only one.
-#if defined(MAP_ANONYMOUS)
+#ifdef MAP_ANONYMOUS
     void* const tmp = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #else
     void* const tmp = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -167,7 +167,7 @@ inline void* map_anonymous(size_t size)
 
 
 /// @brief Where a slab keeps the links of its free list.
-enum class FreeLinks
+enum class FreeLinks : std::uint8_t
 {
     /// In the freed elements themselves: a freed element's first bytes hold
     /// the index of the next free one. No extra memory, but an element must be
@@ -334,7 +334,8 @@ class alignas(64) TCSlab
     ///        mask down to the slab base, read the back-pointer in its last word.
     [[nodiscard]] static TCSlab* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
     {
-        const char* base = reinterpret_cast<const char*>(reinterpret_cast<uintptr_t>(ptr) & (~(slab_bytes - 1)));
+        // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
+        const char* base = static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & (slab_bytes - 1));
         return *reinterpret_cast<TCSlab* const*>(base + slab_bytes - sizeof(void*));
     }
 
@@ -1073,10 +1074,13 @@ class TCSlabPool
     Slab* block_full{nullptr}; ///< Slabs with no room left.
     Slab* block{nullptr};      ///< Slabs with room. Null until the first slab.
 
-  protected:
+  private:
+    friend Derived; // CRTP: only the derived pool constructs this base
+
     /// @brief Empty and unusable until init(); its slabs will draw from @p arena.
     explicit TCSlabPool(fast_alloc::ArenaKind arena) noexcept : arena_kind(arena) {}
 
+  protected:
     /// @brief Frees every slab.
     ~TCSlabPool()
     {
@@ -1555,8 +1559,9 @@ class TCAllocatorEB
     static TCAllocatorEB* addr_to_block(const void* ptr) noexcept
     {
         // this pointer stored at the end of the block
-        return *reinterpret_cast<TCAllocatorEB**>(
-            reinterpret_cast<char*>(reinterpret_cast<uintptr_t>(ptr) & size_t(BlockAddrMask)) + UsedBlockSize);
+        // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
+        const char* base = static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & ~size_t(BlockAddrMask));
+        return *reinterpret_cast<TCAllocatorEB* const*>(base + UsedBlockSize);
     }
 
     char* data = nullptr; ///< The block itself, aligned on #BlockSizePOT.
@@ -1598,7 +1603,7 @@ class TCAllocatorEB
 
             char* mapping = static_cast<char*>(fast_alloc::map_anonymous(2 * BlockSize));
 
-            data = reinterpret_cast<char*>((reinterpret_cast<uintptr_t>(mapping) + (block_bytes - 1)) & -block_bytes);
+            data = mapping + ((0 - reinterpret_cast<uintptr_t>(mapping)) & (block_bytes - 1)); // align up
 
             const uintptr_t lng = reinterpret_cast<uintptr_t>(data) - reinterpret_cast<uintptr_t>(mapping);
             if (lng != 0 && munmap(mapping, lng) == -1)

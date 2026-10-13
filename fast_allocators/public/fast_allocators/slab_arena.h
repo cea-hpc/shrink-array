@@ -52,6 +52,7 @@
 #include <cstdio>     // std::fprintf, std::fflush
 #include <cstdlib>    // std::abort, std::getenv
 #include <functional> // std::less (the sweep orders slab pointers)
+#include <utility>
 #include <vector>     // std::vector
 #include <mutex>      // std::mutex, std::scoped_lock
 #include <atomic>     // std::atomic, std::memory_order_relaxed
@@ -238,6 +239,15 @@ inline std::size_t reclaim_page_size() noexcept
         return ps > 0 ? static_cast<std::size_t>(ps) : std::size_t{0};
     }();
     return page;
+}
+
+/// @brief The pointer at address @p addr. The arena keeps its addresses as
+///        integers (cursor, live set, runs) and only turns them back into
+///        pointers for the caller or a syscall (madvise, mincore), here.
+inline void* addr_ptr(std::uintptr_t addr) noexcept
+{
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    return reinterpret_cast<void*>(addr);
 }
 
 /// @brief The checks before a slab is advised away, without the syscall: how
@@ -483,7 +493,7 @@ class EmptySlabSweep
             }
             catch (...)
             {
-                ::madvise(reinterpret_cast<void*>(begin), end - begin, MADV_DONTNEED); // no room: now
+                ::madvise(detail::addr_ptr(begin), end - begin, MADV_DONTNEED); // no room: now
                 ++inline_calls;
             }
             bytes += end - begin;
@@ -528,14 +538,14 @@ class EmptySlabSweep
     #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
             for (long i = 0; i < n_runs; ++i)
             {
-                ::madvise(reinterpret_cast<void*>(runs[i].begin), runs[i].len, MADV_DONTNEED);
+                ::madvise(detail::addr_ptr(runs[i].begin), runs[i].len, MADV_DONTNEED);
             }
             return;
         }
 #endif
         for (long i = 0; i < n_runs; ++i)
         {
-            ::madvise(reinterpret_cast<void*>(runs_[i].begin), runs_[i].len, MADV_DONTNEED);
+            ::madvise(detail::addr_ptr(runs_[i].begin), runs_[i].len, MADV_DONTNEED);
         }
     }
 
@@ -645,7 +655,7 @@ class SlabArena
         bytes_live_ += size;
         bytes_high_ = std::max(bytes_high_, bytes_live_);
         ++alloc_calls_;
-        return reinterpret_cast<void*>(aligned);
+        return detail::addr_ptr(aligned);
     }
 
     /**
@@ -726,7 +736,7 @@ class SlabArena
             bytes_live_ -= size;
             ++dealloc_calls_;
             dealloc_bytes_ += size;
-            mine.push_back(Recycled{block, false});
+            mine.push_back(Recycled{.block = block, .advised = false});
             ++lists.count;
             ++recycled_in_;
         }
@@ -813,7 +823,7 @@ class SlabArena
                     }
                     try
                     {
-                        spans.push_back(Span{b, adv});
+                        spans.push_back(Span{.begin = b, .len = adv});
                     }
                     catch (...)
                     {
@@ -832,7 +842,7 @@ class SlabArena
                 }
             }
         }
-        std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.begin < b.begin; });
+        std::ranges::sort(spans, [](const Span& a, const Span& b) { return a.begin < b.begin; });
         // Coalesced in place: spans[0, runs) become the runs.
         std::size_t runs  = 0;
         std::size_t bytes = 0;
@@ -845,7 +855,7 @@ class SlabArena
             }
             const std::uintptr_t begin = spans[first].begin;
             const std::size_t    len   = spans[last].begin + spans[last].len - begin;
-            spans[runs++]              = Span{begin, len};
+            spans[runs++]              = Span{.begin = begin, .len = len};
             bytes += len;
             first = last + 1;
         }
@@ -861,7 +871,7 @@ class SlabArena
     #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
             for (long i = 0; i < n_runs; ++i)
             {
-                ::madvise(reinterpret_cast<void*>(run[i].begin), run[i].len, MADV_DONTNEED);
+                ::madvise(detail::addr_ptr(run[i].begin), run[i].len, MADV_DONTNEED);
             }
         }
         else
@@ -869,7 +879,7 @@ class SlabArena
         {
             for (std::size_t i = 0; i < runs; ++i)
             {
-                ::madvise(reinterpret_cast<void*>(spans[i].begin), spans[i].len, MADV_DONTNEED);
+                ::madvise(detail::addr_ptr(spans[i].begin), spans[i].len, MADV_DONTNEED);
             }
         }
         reclaim_calls().fetch_add(slabs, std::memory_order_relaxed);
@@ -902,7 +912,7 @@ class SlabArena
             const std::size_t len   = r.end - r.begin;
             const std::size_t pages = (len + psz - 1) / psz;
             vec.resize(pages);
-            if (::mincore(reinterpret_cast<void*>(r.begin), len, vec.data()) != 0)
+            if (::mincore(detail::addr_ptr(r.begin), len, vec.data()) != 0)
             {
                 continue;
             }
@@ -996,7 +1006,7 @@ class SlabArena
         }
         auto&             lists = it->second.by_rank;
         const std::size_t n     = lists.size();
-        const bool        known = rank >= 0 && static_cast<std::size_t>(rank) < n;
+        const bool        known = rank >= 0 && std::cmp_less(rank, n);
         const std::size_t start = known ? static_cast<std::size_t>(rank) : 0;
         for (std::size_t i = 0; i < n; ++i)
         {

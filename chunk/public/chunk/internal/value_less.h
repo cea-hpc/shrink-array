@@ -74,7 +74,7 @@ struct ValueLess
         // discarded `if constexpr` branches and warns "missing return statement".
         // Keyed on the LIBRARY feature macro, not __cplusplus: -std=c++23 alone does not
         // guarantee the library provides std::unreachable.
-#if defined(__cpp_lib_unreachable)
+#ifdef __cpp_lib_unreachable
         std::unreachable();
 #else
         return false;

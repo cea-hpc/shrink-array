@@ -30,6 +30,8 @@
 
 #include "chunk/internal/chunk_size_config.h" // CHUNK_SIZE (its default, when the build gives none)
 
+// The 0/1 flags are pasted (##) into the symbol name below, so they must stay macros.
+// NOLINTBEGIN(modernize-macro-to-enum)
 #ifdef CHUNK_VARIANT_V1
     #define CHUNK_LINK_CHECK_V1 1
 #else
@@ -50,6 +52,7 @@
 #else
     #define CHUNK_LINK_CHECK_DYN 0
 #endif
+// NOLINTEND(modernize-macro-to-enum)
 
 #define CHUNK_LINK_CHECK_NAME_(v1, v2, v2a, size, dyn) variant_v1_##v1##_v2_##v2##_v2a_##v2a##_size_##size##_dyn_##dyn
 #define CHUNK_LINK_CHECK_NAME(v1, v2, v2a, size, dyn) CHUNK_LINK_CHECK_NAME_(v1, v2, v2a, size, dyn)
