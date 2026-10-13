@@ -196,6 +196,9 @@ struct SecondValueRef
     /// @brief Record the value of a slot the caller already has.
     void set_from_array(const T* src) const noexcept
     {
+        // bool has no registry (TabCstVal2Holder<bool>): value_of_ptr would index
+        // value_by_id with an address-sized id. Never called for bool today.
+        static_assert(!std::is_same_v<T, bool>, "SecondValueRef<bool>::set_from_array: bool has no registry");
         if constexpr (SecondValueTraits<T>::indexed)
         {
             *slot = TabCstVal2Holder<T>::id_of_ptr(src);
@@ -721,8 +724,15 @@ class GlobalVecHolder
         }
         // Still exhausted: a registered value may now be unfindable by
         // index_lookup, so the cold path must re-enable its authoritative O(N)
-        // segment scan. Sticky flag (never reset until index_clear).
-        index_degraded.store(true, std::memory_order_relaxed);
+        // segment scan. Sticky flag (never reset until index_clear). Said once:
+        // from here on reclaim_second_values() is refused, so the identifiers
+        // only grow, and the exhaustion abort alone would not name the cause.
+        if (!index_degraded.exchange(true, std::memory_order_relaxed))
+        {
+            std::cerr << "[cst_val2] second-value index degraded (probe budget exhausted after a regrowth): "
+                         "lookups fall back to the O(N) chain scan, and reclaim_second_values() is refused "
+                         "until the last array of this type is destroyed -- the identifiers can only grow.\n";
+        }
     }
 
     /**

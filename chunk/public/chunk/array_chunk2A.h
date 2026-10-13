@@ -337,6 +337,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *         value unfindable by value).
      *
      * @warning Sequential point: no thread may write to or compress an ArrayChunk2A<T>.
+     *          The parallel-region refusal sees the CALLING thread only: a team
+     *          started by another host thread is not detected.
      *          Nor may one hold the result of a second-value lookup it has not
      *          recorded yet: the mark misses that slot and frees it. Not guarded
      *          beyond the refusals above (no epoch); check builds fail an
@@ -351,9 +353,21 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         else
         {
             using gvh = GlobalVecHolder<T>;
-            if (CHUNK_PMP_IN_PARALLEL_REGION || g_in_rechunk_rebuild.load(std::memory_order_acquire) ||
-                gvh::index_degraded.load(std::memory_order_relaxed))
+            if (CHUNK_PMP_IN_PARALLEL_REGION || g_in_rechunk_rebuild.load(std::memory_order_acquire))
             {
+                return 0;
+            }
+            if (gvh::index_degraded.load(std::memory_order_relaxed))
+            {
+                // Sticky until the last array of the type goes: say it once, the
+                // run will otherwise end on the identifier exhaustion with no cause.
+                static std::atomic<bool> warned{false};
+                if (!warned.exchange(true, std::memory_order_relaxed))
+                {
+                    std::cerr << "[cst_val2] reclaim_second_values() refused: the second-value index is "
+                                 "degraded, a value unfindable by value could be freed. Nothing is reclaimed "
+                                 "for this type until its last array is destroyed.\n";
+                }
                 return 0;
             }
             // Check builds: no lookup or registration in flight from here to the
