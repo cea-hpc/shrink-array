@@ -23,6 +23,7 @@
 // container declaration itself.
 
 #include <algorithm>   // std::min / std::max (CHUNK_RECHUNK_SLICES)
+#include <array>       // std::array (CHUNK_RECHUNK_SCHEDULE text buffers)
 #include <atomic>      // std::atomic<long> n_folded (CHUNK_RECHUNK_TRACE)
 #include <chrono>      // CHUNK_RECHUNK_TRACE phase timers
 #include <ratio>       // std::milli (the same timers)
@@ -121,8 +122,8 @@ inline long rss_mib_now() noexcept
 ///        Serial builds parse it too; chunk_pmp_set_schedule() is then a no-op.
 struct RebuildSchedule
 {
-    chunk_pmp_schedule schedule{chunk_pmp_sched::sched_guided, 16};
-    char               text[32]{"guided,16"};
+    chunk_pmp_schedule   schedule{chunk_pmp_sched::sched_guided, 16};
+    std::array<char, 32> text{"guided,16"};
 };
 
 /// @brief The rebuild loop's schedule, parsed once from CHUNK_RECHUNK_SCHEDULE ("kind[,chunk]").
@@ -137,14 +138,14 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         {
             return parsed;
         }
-        char            kind[16] = {};
-        int             chunk    = 0;
-        const int       nfields  = std::sscanf(env, "%15[a-z],%d", kind, &chunk);
-        chunk_pmp_sched k        = chunk_pmp_sched::sched_static;
-        bool            ok       = nfields >= 1 && chunk >= 0;
+        std::array<char, 16> kind{};
+        int                  chunk   = 0;
+        const int            nfields = std::sscanf(env, "%15[a-z],%d", kind.data(), &chunk);
+        chunk_pmp_sched      k       = chunk_pmp_sched::sched_static;
+        bool                 ok      = nfields >= 1 && chunk >= 0;
         if (ok)
         {
-            const std::string_view kv(kind);
+            const std::string_view kv(kind.data());
             if (kv == "static")
             {
                 k = chunk_pmp_sched::sched_static;
@@ -175,7 +176,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
             return parsed;
         }
         parsed.schedule = {k, chunk}; // chunk 0: the runtime's default for this kind
-        std::snprintf(parsed.text, sizeof parsed.text, "%s,%d", kind, chunk);
+        std::snprintf(parsed.text.data(), parsed.text.size(), "%s,%d", kind.data(), chunk);
         return parsed;
     }();
     return schedule;
@@ -330,7 +331,15 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // (counted inside rebuild_one below).
         increm_chunk_rechunk<chunk_type>();
         t2_out = t_now();
-        self().rechunk_refill(tmp, old_size, new_size);
+        {
+#if CHUNK_OPT_FAST_ALLOC
+            // The refill fills the slabs it takes: pre-fault each fresh one in
+            // one madvise instead of a fault per page, which past one socket
+            // contends on mmap_lock (CHUNK_POPULATE_SLABS, alloc_config.h).
+            const fast_alloc::alloc_config::PopulateScope populate_scope;
+#endif
+            self().rechunk_refill(tmp, old_size, new_size);
+        }
         t3_out   = t_now();
         r_refill = rss_now();
 
@@ -1081,7 +1090,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             chunk_pmp_set_schedule(rs.schedule);
             if (internal::g_rechunk_trace)
             {
-                std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text);
+                std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text.data());
             }
         }
         g_in_rechunk_rebuild.store(true, std::memory_order_release);

@@ -580,6 +580,10 @@ class SlabArena
      * @param rank Rank asking (TCSlab::owner_rank), -1 if none: a slab a
      *        re-chunk recycled (recycle_batch) is taken first from this rank's
      *        list, then from the others', before the free list and the cursor.
+     * @param fresh If not null, set to true when the slab comes from the free
+     *        list or the cursor (pages possibly not resident: the caller may
+     *        pre-fault it, alloc_config::populate_fresh_slab), false for a
+     *        recycled one (resident pages).
      * @return Never null: a failed mmap aborts.
      * @details Prefers an exactly-@p size slab from the free list, falls back to
      *          bumping the cursor, and grows the reservation if that does not
@@ -588,9 +592,13 @@ class SlabArena
      *          slab recycled with blocks in it). Unconditional and fatal on
      *          purpose: cheap here, and silent recovery would hide the bug.
      */
-    void* allocate(std::size_t size, std::size_t align, int rank = -1)
+    void* allocate(std::size_t size, std::size_t align, int rank = -1, bool* fresh = nullptr)
     {
         const std::scoped_lock lk(mtx_);
+        if (fresh != nullptr)
+        {
+            *fresh = true; // free list and cursor; the recycled path below clears it
+        }
 
         // A slab a re-chunk gave back (recycle_batch), this rank's first: its
         // pages are resident, and were first touched by this rank.
@@ -608,6 +616,10 @@ class SlabArena
             bytes_live_ += size;
             bytes_high_ = std::max(bytes_high_, bytes_live_);
             ++alloc_calls_;
+            if (fresh != nullptr)
+            {
+                *fresh = false; // resident pages: nothing to pre-fault
+            }
             return block;
         }
 
