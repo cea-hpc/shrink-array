@@ -251,7 +251,9 @@ inline int populate_slabs_mode() noexcept
         }
         const int m = (env[0] == '0') ? 0 : (env[0] == '2') ? 2 : 1;
         std::fprintf(stderr, "[env] CHUNK_POPULATE_SLABS=%d (%s)\n", m,
-                     m == 0 ? "off" : m == 1 ? "re-chunk refill only" : "every fresh value slab");
+                     m == 0   ? "off"
+                     : m == 1 ? "re-chunk refill only"
+                              : "every fresh value slab");
         return m;
     }();
     return mode;

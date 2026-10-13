@@ -918,16 +918,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return read_pure() == v;
     }
 
-    /// @brief Compare with a @p v already of the element type.
+    /// @brief Compare with a @p v already of the element type. Also serves
+    ///        `!=` (C++20 rewrites it as `!(p == v)`).
     [[nodiscard]] bool operator==(T v) const noexcept
     {
         return read_pure() == v;
-    }
-
-    /// @brief Complement of operator==().
-    [[nodiscard]] bool operator!=(T v) const noexcept
-    {
-        return read_pure() != v;
     }
 
     /// @brief Is the element's value falsy?

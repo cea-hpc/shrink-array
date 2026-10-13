@@ -112,7 +112,7 @@ class LazyImmortal
         return *object();
     }
 
-    alignas(T) unsigned char storage_[sizeof(T)]{}; // NOLINT(cppcoreguidelines-avoid-c-arrays)
+    alignas(T) unsigned char storage_[sizeof(T)]{}; // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
     std::atomic<bool> ready_{false};
     std::mutex        mutex_;
 };

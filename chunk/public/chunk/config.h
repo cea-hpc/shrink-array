@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <bit>     // std::has_single_bit (dirty_word_align)
 #include <cstddef> // std::size_t
 #include <cstdint> // std::int64_t
 #include <atomic>  // g_ompt_suspended
@@ -158,7 +159,7 @@ inline constexpr std::size_t dirty_word_align = 64;
 #else
 inline constexpr std::size_t dirty_word_align = 128;
 #endif
-static_assert(dirty_word_align >= sizeof(std::uint64_t) && (dirty_word_align & (dirty_word_align - 1)) == 0,
+static_assert(dirty_word_align >= sizeof(std::uint64_t) && std::has_single_bit(dirty_word_align),
               "dirty_word_align: a power of two, at least one 64-bit word");
 
 } // namespace shrink_array::build_config

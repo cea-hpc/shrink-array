@@ -46,11 +46,11 @@
  * What still has to be a directive, and why, is written at each site.
  */
 
-#include <array>       // std::array
-#include <bit>         // std::bit_width (bucket_index)
-#include <cassert>     // TypeAllocator::alloc: the size its free will route by
-#include <cstddef>     // std::size_t
-#include <tuple>       // std::tuple, std::get, std::apply (the ladder)
+#include <array>   // std::array
+#include <bit>     // std::bit_width (bucket_index)
+#include <cassert> // TypeAllocator::alloc: the size its free will route by
+#include <cstddef> // std::size_t
+#include <tuple>   // std::tuple, std::get, std::apply (the ladder)
 
 #include "fast_allocators/internal/svalloc.h" // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // FAST_ALLOC_PMP_MAX_THREADS / FAST_ALLOC_PMP_THREAD_RANK / FAST_ALLOC_PMP_IN_PARALLEL_REGION
@@ -87,8 +87,8 @@ class InfoFreeElt
     int* somme_sz{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
 
   public:
-    using IntMaxFreeElt  = std::array<int, max_free_elt>; ///< One rank's batched sizes.
-    using VoidMaxFreeElt = void* [max_free_elt];          ///< One rank's batched blocks.
+    using IntMaxFreeElt  = std::array<int, max_free_elt>;   ///< One rank's batched sizes.
+    using VoidMaxFreeElt = std::array<void*, max_free_elt>; ///< One rank's batched blocks.
 
     /// @brief Allocates the four per-thread arrays, sized by FAST_ALLOC_PMP_MAX_THREADS.
     ///        A serial build allocates nothing (pointers stay null, never reached).

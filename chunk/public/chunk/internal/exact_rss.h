@@ -29,6 +29,7 @@
  * periodic hot path.
  */
 
+#include <array>    // std::array (the smaps_rollup line buffer)
 #include <atomic>   // std::atomic, std::memory_order
 #include <chrono>   // std::chrono::milliseconds
 #include <cstdio>   // std::FILE, std::fopen, std::fclose
@@ -44,11 +45,11 @@ inline long exact_rss_kib() noexcept
 {
     if (std::FILE* f = std::fopen("/proc/self/smaps_rollup", "r"))
     {
-        char line[256];
-        long kib = -1;
-        while (std::fgets(line, sizeof line, f) != nullptr)
+        std::array<char, 256> line{};
+        long                  kib = -1;
+        while (std::fgets(line.data(), static_cast<int>(line.size()), f) != nullptr)
         {
-            if (std::sscanf(line, "Rss: %ld kB", &kib) == 1)
+            if (std::sscanf(line.data(), "Rss: %ld kB", &kib) == 1)
             {
                 break;
             }

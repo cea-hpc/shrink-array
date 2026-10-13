@@ -319,8 +319,8 @@ class FastAllocatorConcrete : public FastAllocatorBase
                     // Expected, not an anomaly: report the first, then on a
                     // doubling schedule with the running total (~log2(N) lines
                     // per thread). CHUNK_RECYCLE_TRACE=1 prints one line per block.
-                    static const bool               trace     = env_flag("CHUNK_RECYCLE_TRACE");
-                    static thread_local std::size_t n_foreign = 0;
+                    static const bool        trace     = env_flag("CHUNK_RECYCLE_TRACE");
+                    thread_local std::size_t n_foreign = 0;
                     ++n_foreign;
                     if (trace || std::has_single_bit(n_foreign))
                     {

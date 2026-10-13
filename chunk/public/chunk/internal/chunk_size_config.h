@@ -21,6 +21,8 @@
 //
 // Override at build time:  cmake -DCHUNK_SIZE=128  (a power of two or a multiple of 64).
 
+#include <bit> // std::has_single_bit
+
 #include "chunk/internal/func_p2.h" // constexpr log2int
 
 namespace shrink_array
@@ -29,13 +31,13 @@ namespace shrink_array
     #define CHUNK_SIZE 64
 #endif
 
-inline constexpr unsigned int __chunk_size     = static_cast<unsigned int>(CHUNK_SIZE);
+inline constexpr unsigned int __chunk_size = static_cast<unsigned int>(CHUNK_SIZE);
 // log2(CHUNK_SIZE): the index shift of a power-of-two size, meaningless otherwise.
 inline constexpr unsigned int __decalage_chunk = static_cast<unsigned int>(log2int(CHUNK_SIZE));
 inline constexpr unsigned int __modulo_chunk   = static_cast<unsigned int>(CHUNK_SIZE) - 1u;
 
 static_assert(CHUNK_SIZE >= 1, "CHUNK_SIZE must be positive");
-static_assert((CHUNK_SIZE & (CHUNK_SIZE - 1)) == 0 || CHUNK_SIZE % 64 == 0,
+static_assert(std::has_single_bit(__chunk_size) || CHUNK_SIZE % 64 == 0,
               "CHUNK_SIZE must be a power of two or a multiple of 64");
 
 } // namespace shrink_array

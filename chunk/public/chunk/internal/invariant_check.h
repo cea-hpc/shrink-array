@@ -19,6 +19,7 @@
 
 #include <format>          // std::format, std::format_string, std::formatter
 #include <string>          // the byte dump of an unformattable argument
+#include <string_view>     // its hex digits
 #include <cstdio>          // std::fputs, std::fwrite, std::fputc, std::fflush
 #include <cstdlib>         // std::abort
 #include <utility>         // std::forward
@@ -91,7 +92,7 @@ std::string invariant_fmt_arg(A&& arg)
     const auto* bytes = reinterpret_cast<const unsigned char*>(&arg);
     for (std::size_t i = 0; i < sizeof(V); ++i)
     {
-        static constexpr char hex[] = "0123456789abcdef";
+        static constexpr std::string_view hex = "0123456789abcdef";
         out += hex[static_cast<unsigned>(bytes[i]) >> 4U];
         out += hex[static_cast<unsigned>(bytes[i]) & 0xFU];
     }

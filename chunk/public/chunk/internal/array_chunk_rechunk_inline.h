@@ -646,7 +646,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // v1, OpenMP: how many new chunks have finished with each old chunk --
         // see the release below. Not needed when the new size is a multiple
         // of the old one: every old chunk then lies inside one new chunk.
-        [[maybe_unused]] const bool aligned_coarsening = new_size % old_size == 0;
+        [[maybe_unused]] const bool                    aligned_coarsening = new_size % old_size == 0;
         [[maybe_unused]] std::vector<std::atomic<int>> old_done;
         if constexpr (chunk_config::use_chunk && build_config::use_openmp)
         {
@@ -904,9 +904,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         // elements [oc_base, min(oc_end, total)). Release it with
                         // the last of them to finish, whoever that is.
                         const ind_type last_elem = (oc_end < total ? oc_end : total) - 1;
-                        const auto     readers =
-                            static_cast<int>(last_elem / static_cast<ind_type>(new_size) -
-                                             oc_base / static_cast<ind_type>(new_size) + 1);
+                        const auto     readers   = static_cast<int>(last_elem / static_cast<ind_type>(new_size) -
+                                                                    oc_base / static_cast<ind_type>(new_size) + 1);
                         if (old_done[static_cast<std::size_t>(oc)].fetch_add(1, std::memory_order_acq_rel) + 1 !=
                             readers)
                         {

@@ -963,8 +963,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
  * @tparam ChunkType Chunk variant the manager coordinates
  */
 template <typename T, typename ChunkType>
-struct CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
+class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
 {
+  public:
     /**
      * @brief Serial builds queue nothing, so no rank can hold deferred ops.
      *

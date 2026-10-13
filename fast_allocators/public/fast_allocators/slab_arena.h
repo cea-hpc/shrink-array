@@ -465,8 +465,7 @@ class EmptySlabSweep
             // Extend the run while the next slab starts exactly where this one's
             // advisable bytes end.
             std::size_t last = first;
-            while (last + 1 < items_.size() &&
-                   items_[last].begin + items_[last].len == items_[last + 1].begin)
+            while (last + 1 < items_.size() && items_[last].begin + items_[last].len == items_[last + 1].begin)
             {
                 ++last;
             }
@@ -807,8 +806,8 @@ class SlabArena
         }
         std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.begin < b.begin; });
         // Coalesced in place: spans[0, runs) become the runs.
-        std::size_t runs     = 0;
-        std::size_t bytes    = 0;
+        std::size_t runs  = 0;
+        std::size_t bytes = 0;
         for (std::size_t first = 0; first < spans.size();)
         {
             std::size_t last = first;

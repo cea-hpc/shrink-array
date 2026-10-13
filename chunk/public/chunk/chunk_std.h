@@ -325,8 +325,9 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
  * @tparam Derived CRTP derived chunk type (Chunk<T>)
  */
 template <typename T, typename Derived>
-struct ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
+class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
 {
+  public:
     using Base = ChunkBase<T, Derived>;
     using Base::derived;
     using Base::values;
