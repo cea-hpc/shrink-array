@@ -212,7 +212,7 @@ class DeferredReadGate<Derived, DeferReadGate::None>
 
     /// @brief Always false: nothing can ever be pending in a serial build.
     /// @return Always false.
-    [[nodiscard]] bool pending_any() const noexcept
+    [[nodiscard]] static bool pending_any() noexcept
     {
         return false;
     }
@@ -221,7 +221,7 @@ class DeferredReadGate<Derived, DeferReadGate::None>
     /// @param thr Calling thread's rank; unused.
     /// @param i Element offset; unused.
     /// @return Always false.
-    [[nodiscard]] bool foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) const noexcept
+    [[nodiscard]] bool static foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) noexcept
     {
         return false;
     }
@@ -239,16 +239,16 @@ class DeferredReadGate<Derived, DeferReadGate::Coarse>
     // so counter-only logic gated on it folds away.
     /// @brief No-op: this build has no per-chunk pending counter.
     /// @param thr Calling thread's rank; unused.
-    void pending_publish([[maybe_unused]] int thr) noexcept {}
+    static void pending_publish([[maybe_unused]] int thr) noexcept {}
 
     /// @brief No-op: this build has no per-chunk pending counter.
     /// @param count Number of operations retired; unused.
-    void pending_retire([[maybe_unused]] int32_t count) noexcept {}
+    static void pending_retire([[maybe_unused]] int32_t count) noexcept {}
 
     /// @brief Always false: this build has no per-chunk pending counter to
     ///        report on.
     /// @return Always false.
-    [[nodiscard]] bool pending_any() const noexcept
+    [[nodiscard]] static bool pending_any() noexcept
     {
         return false;
     }
@@ -688,7 +688,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     /// @brief Reclaim a memory block to the thread-local free list
     /// @param values_loc Pointer to the block to reclaim
     /// @param thr_rank Thread rank/ID
-    void recup_value(T* values_loc, int thr_rank)
+    void recup_value(T* values_loc, int thr_rank) const
     {
         const auto& self = static_cast<const Derived&>(*this);
         // Ledger: LIVE -> PARKED. This block was just allocated by create_value
@@ -963,20 +963,20 @@ class ChunkBase : public CRTPSupport<Derived>,
     struct NullValueAllocator
     {
         /// @brief No pool to set up.
-        void init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
+        static void init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
         /// @brief No pool to tear down.
-        void destroy() noexcept {}
+        static void destroy() noexcept {}
         /// @brief Never allocates: std-alloc buffers come from svalloc.
-        [[nodiscard]] T* alloc() noexcept
+        [[nodiscard]] static T* alloc() noexcept
         {
             return nullptr;
         }
         /// @brief Nothing to return to a pool.
-        void free_elt_pow2(const T* /*ptr*/) noexcept {}
+        static void free_elt_pow2(const T* /*ptr*/) noexcept {}
         /// @brief No-op counterpart to TCTypeAllocator::set_arena, so call
         ///        sites that set the arena unconditionally (before init())
         ///        compile in std-alloc builds too.
-        void set_arena(fast_alloc::ArenaKind) noexcept {}
+        static void set_arena(fast_alloc::ArenaKind) noexcept {}
     };
 
     using AllocatorType = std::conditional_t<

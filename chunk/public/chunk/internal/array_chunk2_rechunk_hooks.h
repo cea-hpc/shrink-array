@@ -72,7 +72,7 @@ class RechunkHooks2<Derived, true>
      * @param new_size the chunk size the array is moving to
      * @details The buffers parked there were sized for an older geometry.
      */
-    void rechunk_drain_reuse_list(unsigned int new_size);
+    void rechunk_drain_reuse_list(unsigned int new_size) const;
 
     /// @brief Capture the array-level state that must survive the rechunk.
     /// @return this array's second value
@@ -128,23 +128,23 @@ class RechunkHooks2<Derived, false>
     using value_type = Traits::value_type;        ///< Stored element type.
 
     /** @brief No-op: the geometry is fixed at compile time. */
-    void rechunk_drop_candidates() noexcept {}
+    void rechunk_drop_candidates() const noexcept  {}
     /** @brief No-op: the geometry is fixed at compile time. */
-    void rechunk_drain_reuse_list(unsigned int /*new_size*/) noexcept {}
+    void rechunk_drain_reuse_list(unsigned int /*new_size*/) const noexcept {}
     /** @brief No state to carry: there is no re-chunk to carry it across. */
     [[nodiscard]] value_type rechunk_capture_state() const
     {
         return value_type{};
     }
     /** @brief No-op: there is no fresh array to seed. */
-    void rechunk_seed_fresh(in_t<value_type> /*state*/) noexcept {}
+    void rechunk_seed_fresh(in_t<value_type> /*state*/) const noexcept {}
     /** @brief No-op: there is no temporary array to swap identities with. */
-    bool rechunk_swap_identity(Derived& /*tmp*/) noexcept
+    bool rechunk_swap_identity(Derived& /*tmp*/) const noexcept
     {
         return true;
     }
     /** @brief No-op: no identity was swapped, so nothing to re-own. */
-    void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<value_type> /*state*/) noexcept {}
+    void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<value_type> /*state*/) const noexcept {}
 };
 
 } // namespace shrink_array

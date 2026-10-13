@@ -68,7 +68,7 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size)
+void RechunkHooks2<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size) const
 {
     manager_type::drain_reuse_list_for_size(new_size);
 }
