@@ -30,7 +30,7 @@
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists (dependent calls)
 #include "chunk/internal/proxy.h"               // Proxy<T>: the compression pass's proxy
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
@@ -184,15 +184,16 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
     else
     {
         int team = 0;
-#pragma omp parallel
-        {
-            const int thr = CHUNK_PMP_THREAD_RANK;
-            if (thr == 0)
-            {
-                team = CHUNK_PMP_NUM_THREADS;
-            }
-            compress_sweep_rank(thr);
-        }
+        pmp::team(pmp::options{},
+                  [&](pmp::Team& /*team*/)
+                  {
+                      const int thr = CHUNK_PMP_THREAD_RANK;
+                      if (thr == 0)
+                      {
+                          team = CHUNK_PMP_NUM_THREADS;
+                      }
+                      compress_sweep_rank(thr);
+                  });
         // Ranks this team does not have (an earlier team larger than this one): sweep their
         // lists too, or their flags stay at 1 and those chunks are never queued again.
         for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)

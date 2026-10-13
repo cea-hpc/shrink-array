@@ -29,7 +29,7 @@
 #include "chunk/internal/manager_chunk.h"    // ManagerChunkInt, ManagerChunkParallelImpl
 #include "chunk/all_type_chunk.h"            // the declarations defined here
 #include "chunk/internal/churn_counters.h"   // churn::note_phase_end
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, g_fast_omp_rank
+#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, g_fast_omp_rank, pmp::team
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
@@ -302,18 +302,19 @@ namespace shrink_array
 
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
         int team = 0;
-#pragma omp parallel
-        {
-            const int thr = CHUNK_PMP_THREAD_RANK;
-            if (thr == 0)
-            {
-                team = CHUNK_PMP_NUM_THREADS;
-            }
-            for (auto* elm : work)
-            {
-                elm->sweep_rank(thr, apply);
-            }
-        }
+        pmp::team(pmp::options{},
+                  [&](pmp::Team& /*team*/)
+                  {
+                      const int thr = CHUNK_PMP_THREAD_RANK;
+                      if (thr == 0)
+                      {
+                          team = CHUNK_PMP_NUM_THREADS;
+                      }
+                      for (auto* elm : work)
+                      {
+                          elm->sweep_rank(thr, apply);
+                      }
+                  });
         for (auto* elm : work)
         {
             if (elm->sweep_mops_up(apply))
@@ -519,34 +520,35 @@ namespace shrink_array
             nb_buckets.push_back(elm->clear_list_block_free_prepare());
         }
 
-#pragma omp parallel
-        {
-            const int thr_rank = CHUNK_PMP_THREAD_RANK;
-            const int nthr = CHUNK_PMP_NUM_THREADS; // 1 without OpenMP
+        pmp::team(pmp::options{},
+                  [&](pmp::Team& team)
+                  {
+                      const int thr_rank = CHUNK_PMP_THREAD_RANK;
+                      const int nthr     = CHUNK_PMP_NUM_THREADS; // 1 without OpenMP
 
-            const auto for_each_bucket = [&](auto&& phase)
-            {
-                for (std::size_t i = 0; i < types.size(); ++i)
-                {
-                    for (auto b = static_cast<std::size_t>(thr_rank); b < nb_buckets[i];
-                         b += static_cast<std::size_t>(nthr))
-                    {
-                        phase(types[i], static_cast<int>(b));
-                    }
-                }
-            };
+                      const auto for_each_bucket = [&](auto&& phase)
+                      {
+                          for (std::size_t i = 0; i < types.size(); ++i)
+                          {
+                              for (auto b = static_cast<std::size_t>(thr_rank); b < nb_buckets[i];
+                                   b += static_cast<std::size_t>(nthr))
+                              {
+                                  phase(types[i], static_cast<int>(b));
+                              }
+                          }
+                      };
 
-            for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_screen(bucket); });
-#pragma omp barrier
-            for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_sort(bucket); });
-#pragma omp barrier
-            for (const auto& elm : types)
-            {
-                elm->clear_list_block_free_dedup(thr_rank, nthr);
-            }
-#pragma omp barrier
-            for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_thr(bucket); });
-        }
+                      for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_screen(bucket); });
+                      team.barrier();
+                      for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_sort(bucket); });
+                      team.barrier();
+                      for (const auto& elm : types)
+                      {
+                          elm->clear_list_block_free_dedup(thr_rank, nthr);
+                      }
+                      team.barrier();
+                      for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_thr(bucket); });
+                  });
     }
 
     template <typename Derived>

@@ -241,6 +241,15 @@ inline std::size_t reclaim_page_size() noexcept
     return page;
 }
 
+/// @brief The pointer at address @p addr. The arena keeps its addresses as
+///        integers (cursor, live set, runs) and only turns them back into
+///        pointers for the caller or a syscall (madvise, mincore), here.
+inline void* addr_ptr(std::uintptr_t addr) noexcept
+{
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    return reinterpret_cast<void*>(addr);
+}
+
 /// @brief The checks before a slab is advised away, without the syscall: how
 ///        many bytes of @p slab may be advised away, or 0 if none. Bumps the
 ///        reclaim_entered() / reclaim_skip_*() counters.
@@ -485,7 +494,7 @@ class EmptySlabSweep
             }
             catch (...)
             {
-                ::madvise(reinterpret_cast<void*>(begin), end - begin, MADV_DONTNEED); // no room: now
+                ::madvise(detail::addr_ptr(begin), end - begin, MADV_DONTNEED); // no room: now
                 ++inline_calls;
             }
             bytes += end - begin;
@@ -529,13 +538,13 @@ class EmptySlabSweep
             const Run* runs = runs_.data();
             pmp::parallel_for(0L, n_runs, pmp::options{.num_threads = nthr, .sched = pmp::schedule::dynamic(16)},
                               [runs](long i)
-                              { ::madvise(reinterpret_cast<void*>(runs[i].begin), runs[i].len, MADV_DONTNEED); });
+                              { ::madvise(detail::addr_ptr(runs[i].begin), runs[i].len, MADV_DONTNEED); });
             return;
         }
 #endif
         for (long i = 0; i < n_runs; ++i)
         {
-            ::madvise(reinterpret_cast<void*>(runs_[i].begin), runs_[i].len, MADV_DONTNEED);
+            ::madvise(detail::addr_ptr(runs_[i].begin), runs_[i].len, MADV_DONTNEED);
         }
     }
 
@@ -657,7 +666,7 @@ class SlabArena
         bytes_live_ += size;
         bytes_high_ = std::max(bytes_high_, bytes_live_);
         ++alloc_calls_;
-        return reinterpret_cast<void*>(aligned);
+        return detail::addr_ptr(aligned);
     }
 
     /**
@@ -832,14 +841,14 @@ class SlabArena
             const Span* run = spans.data();
             pmp::parallel_for(0L, n_runs, pmp::options{.num_threads = nthr, .sched = pmp::schedule::dynamic(16)},
                               [run](long i)
-                              { ::madvise(reinterpret_cast<void*>(run[i].begin), run[i].len, MADV_DONTNEED); });
+                              { ::madvise(detail::addr_ptr(run[i].begin), run[i].len, MADV_DONTNEED); });
         }
         else
 #endif
         {
             for (std::size_t i = 0; i < runs; ++i)
             {
-                ::madvise(reinterpret_cast<void*>(spans[i].begin), spans[i].len, MADV_DONTNEED);
+                ::madvise(detail::addr_ptr(spans[i].begin), spans[i].len, MADV_DONTNEED);
             }
         }
         reclaim_calls().fetch_add(slabs, std::memory_order_relaxed);
@@ -872,7 +881,7 @@ class SlabArena
             const std::size_t len   = r.end - r.begin;
             const std::size_t pages = (len + psz - 1) / psz;
             vec.resize(pages);
-            if (::mincore(reinterpret_cast<void*>(r.begin), len, vec.data()) != 0)
+            if (::mincore(detail::addr_ptr(r.begin), len, vec.data()) != 0)
             {
                 continue;
             }

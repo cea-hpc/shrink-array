@@ -323,22 +323,19 @@ void queue_for_compression(Arr& arr, std::size_t i)
             }
         }
         auto proxy = arr.element_proxy(static_cast<decltype(arr.size())>(i));
-        // Chunk2 FIRST: Proxy2 also has set_num_tab_ptr_is_inside_chunk() (from
-        // the shared base), but it does not load the second value -- the key of
-        // Chunk2's candidate list -- and the chunk would land in the list of
+        // Not for Proxy2: it also has set_num_tab_ptr_is_inside_chunk() (from
+        // the shared base), but that does not load the second value -- the key
+        // of Chunk2's candidate list -- and the chunk would land in the list of
         // T{}, which no pass drains. set_info_on_chunk() loads (second_value,
         // ind, num_tab) and the flag pointer.
-        if constexpr (std::is_same_v<typename Arr::proxy_type, Proxy2<typename Arr::value_type>>)
-        {
-            proxy.set_info_on_chunk(); // Proxy2
-        }
-        else if constexpr (requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
+        constexpr bool is_proxy2 = std::is_same_v<typename Arr::proxy_type, Proxy2<typename Arr::value_type>>;
+        if constexpr (!is_proxy2 && requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
         {
             proxy.set_num_tab_ptr_is_inside_chunk(); // Proxy2A
         }
         else
         {
-            proxy.set_info_on_chunk(); // Proxy (v1)
+            proxy.set_info_on_chunk(); // Proxy2, Proxy (v1)
         }
         proxy.add_to_compression_list();
     }

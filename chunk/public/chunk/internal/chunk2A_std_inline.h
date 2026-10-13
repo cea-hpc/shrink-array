@@ -26,7 +26,7 @@
 #include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*, get_thr_rank_fast
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*, get_thr_rank_fast, pmp::team
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_chunk_steal_mark
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
@@ -541,15 +541,16 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
     else
     {
         int team = 0;
-#pragma omp parallel
-        {
-            const int thr = CHUNK_PMP_THREAD_RANK;
-            if (thr == 0)
-            {
-                team = CHUNK_PMP_NUM_THREADS;
-            }
-            compress_sweep_rank(thr, apply);
-        }
+        pmp::team(pmp::options{},
+                  [&](pmp::Team& /*team*/)
+                  {
+                      const int thr = CHUNK_PMP_THREAD_RANK;
+                      if (thr == 0)
+                      {
+                          team = CHUNK_PMP_NUM_THREADS;
+                      }
+                      compress_sweep_rank(thr, apply);
+                  });
         if (compress_sweep_mops_up(apply))
         {
             for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)

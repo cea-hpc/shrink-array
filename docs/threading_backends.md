@@ -89,9 +89,17 @@ gets an adaptor, `shrink_array::tbb::parallel_for(range, body)`, that calls
    `compress()` / `compress_int()` passes of the three variants
    (`compress_int(pmp::Team&)`, the old signatures kept as forwarders on
    `current_team()`), their `clear_core()` teams, and the loop of
-   `write_range_by_chunks`. Left for 4b: the manager drains, the
-   `make_block_compression` regions (`chunk*_std_inline.h`),
-   `all_type_chunk.cpp`, the size advisor; 4c: the rechunk refill.
+   `write_range_by_chunks`. *4b done*: `team_any(opt, body)` (the
+   `parallel reduction(|| : ...)` region of the deferred flush); converted
+   the per-rank sweeps of `compress_chunk_to_compress` (`chunk*_std_inline.h`),
+   the manager drains (`manager_chunk.h`, `manager_chunk_inline.h`, its
+   orphaned `single` on `current_team()`), the sweep and the teardown free
+   team of `all_type_chunk.cpp`, and the size advisor's region. *4c done*:
+   `Team::for_runtime` (`schedule(runtime)`: `CHUNK_RECHUNK_SCHEDULE`); the
+   rechunk refill's slice team and `drain_reuse_list_for_size_team`, which now
+   takes the team it runs on. Left after step 4, for step 6 (use E): the
+   regions of `parallel_phase` (`manage_ompt.h`) and the `omp barrier` of
+   `all_type_chunk.cpp`'s phase end, run by the application's team.
 5. **A**: the queries through the backend; the `thread_local` rank registry for
    non-OpenMP threads (dense, bounded by the configured maximum, reused when a
    thread exits).

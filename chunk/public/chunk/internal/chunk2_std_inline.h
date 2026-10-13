@@ -21,7 +21,7 @@
 #include <optional> // std::nullopt (the clears)
 
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::OMPTcc
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // ChunkElems, set_thread_chunk_size
 #include "chunk/internal/in_t.h"                // in_t<T>
@@ -349,15 +349,16 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const
         // candidate flag reset is an atomic store -- so the ranks are
         // independent (a serial loop leaves the team idle during a re-chunk).
         int team = 0;
-#pragma omp parallel
-        {
-            const int thr = CHUNK_PMP_THREAD_RANK;
-            if (thr == 0) // one writer; `master` is deprecated since OpenMP 5.1
-            {
-                team = CHUNK_PMP_NUM_THREADS;
-            }
-            compress_chunk_to_compress_in_par(thr, inf_array, apply);
-        }
+        pmp::team(pmp::options{},
+                  [&](pmp::Team& /*team*/)
+                  {
+                      const int thr = CHUNK_PMP_THREAD_RANK;
+                      if (thr == 0) // one writer; `master` is deprecated since OpenMP 5.1
+                      {
+                          team = CHUNK_PMP_NUM_THREADS;
+                      }
+                      compress_chunk_to_compress_in_par(thr, inf_array, apply);
+                  });
         // Lists are sized by the thread capacity; a team smaller than the
         // ranks seen leaves the upper ranks unswept. Serial mop-up up to
         // CHUNK_PMP_RANK_BOUND, empty lists are cheap.
@@ -388,15 +389,16 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
         {
             // Same as compress_chunk_to_compress(): one region, rank-local sweeps.
             int team = 0;
-#pragma omp parallel
-            {
-                const int thr = CHUNK_PMP_THREAD_RANK;
-                if (thr == 0)
-                {
-                    team = CHUNK_PMP_NUM_THREADS;
-                }
-                compress_chunk_to_compress_bool_in_par(thr, apply);
-            }
+            pmp::team(pmp::options{},
+                      [&](pmp::Team& /*team*/)
+                      {
+                          const int thr = CHUNK_PMP_THREAD_RANK;
+                          if (thr == 0)
+                          {
+                              team = CHUNK_PMP_NUM_THREADS;
+                          }
+                          compress_chunk_to_compress_bool_in_par(thr, apply);
+                      });
             for (int thr_rank = team; thr_rank < CHUNK_PMP_RANK_BOUND; ++thr_rank)
             {
                 compress_chunk_to_compress_bool_in_par(thr_rank, apply);

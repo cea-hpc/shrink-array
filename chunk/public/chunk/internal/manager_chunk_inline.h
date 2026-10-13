@@ -34,7 +34,7 @@
 #include "chunk/config.h"                     // build_config::use_fast_alloc, chunk_config::use_fast_block_compression
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "fast_allocators/internal/svalloc.h" // svfree
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS, pmp::team / team_any / current_team
 #include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
 #include "chunk/internal/compression_manager.h"  // CompressionManager (the barrier flushes)
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
@@ -411,10 +411,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
 // region does not nest. Each thread drains only its own index (disjoint, race-free) and
 // recycles into its own pool. Compiled out under OMPT: opening a region would fire the
 // parallel_end compression callback, which must not run from a teardown drain.
-#pragma omp parallel
-                {
-                    drain_index(CHUNK_PMP_THREAD_RANK);
-                }
+pmp::team(pmp::options{}, [&](pmp::Team& /*team*/) { drain_index(CHUNK_PMP_THREAD_RANK); });
             }
 
             // Serial mop-up: the OMPT build (no region above) and any index the team did
@@ -431,12 +428,13 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
 
     if (in_parallel)
     {
-#pragma omp single
-        {
-            storage.destroy();
+        pmp::current_team().single(
+            [&]
+            {
+                storage.destroy();
 
-            ArrayType::clear_all_dirty_bitsets();
-        }
+                ArrayType::clear_all_dirty_bitsets();
+            });
     }
     else
     {
@@ -520,17 +518,18 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
                 break;
             }
 
-            bool pass_flushed = false;
             int  team         = 0;
-#pragma omp parallel reduction(|| : pass_flushed)
-            {
-                const int thr_rank = CHUNK_PMP_THREAD_RANK;
-                if (thr_rank == 0)
-                {
-                    team = CHUNK_PMP_NUM_THREADS;
-                }
-                pass_flushed |= CompressionManager<T, CHUNK_T<T>>::flush_deferred(thr_rank);
-            }
+            bool pass_flushed = pmp::team_any(pmp::options{},
+                                              [&](pmp::Team& /*team*/, bool& flushed)
+                                              {
+                                                  const int thr_rank = CHUNK_PMP_THREAD_RANK;
+                                                  if (thr_rank == 0)
+                                                  {
+                                                      team = CHUNK_PMP_NUM_THREADS;
+                                                  }
+                                                  flushed |=
+                                                      CompressionManager<T, CHUNK_T<T>>::flush_deferred(thr_rank);
+                                              });
             // The ranks this region's team does not have: a team opened with num_threads(n)
             // above omp_get_max_threads(), or one that shrank since, leaves ops on ranks >=
             // `team`, which storage.destroy() would discard (lost writes). Same mop-up as

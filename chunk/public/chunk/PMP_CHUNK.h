@@ -37,6 +37,7 @@ using ::fast_alloc::pmp::sched_kind;
 using ::fast_alloc::pmp::schedule;
 using ::fast_alloc::pmp::team;
 using ::fast_alloc::pmp::Team;
+using ::fast_alloc::pmp::team_any;
 using ::fast_alloc::pmp::team_sum;
 using ::fast_alloc::pmp::wait_mode;
 } // namespace shrink_array::pmp
