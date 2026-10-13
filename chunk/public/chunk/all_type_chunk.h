@@ -83,7 +83,7 @@ class AllTypeChunkParallelInterface<Derived, true>
      * @param in_parallel True when called from inside a parallel region (each
      *        thread then handles its own share); false for a joined, serial call.
      */
-    void destroy_after_flush(bool in_parallel);
+    void destroy_after_flush(bool in_parallel) const;
 
     /**
      * @brief Applies the pending deferred write ops of every type.
@@ -329,7 +329,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * @param keep_per_thread working margin kept in each list
      * @return bytes returned to the allocator
      */
-    std::size_t trim_reuse_pools(std::size_t keep_per_thread);
+    std::size_t trim_reuse_pools(std::size_t keep_per_thread) const;
 
     /**
      * @brief Print every type's reuse pools, broken down by geometry.
