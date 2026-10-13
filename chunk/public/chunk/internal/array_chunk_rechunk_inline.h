@@ -904,8 +904,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         // elements [oc_base, min(oc_end, total)). Release it with
                         // the last of them to finish, whoever that is.
                         const ind_type last_elem = (oc_end < total ? oc_end : total) - 1;
-                        const auto     readers   = static_cast<int>(last_elem / static_cast<ind_type>(new_size) -
-                                                                    oc_base / static_cast<ind_type>(new_size) + 1);
+                        const auto     readers   = static_cast<int>((last_elem / static_cast<ind_type>(new_size)) -
+                                                                    (oc_base / static_cast<ind_type>(new_size)) + 1);
                         if (old_done[static_cast<std::size_t>(oc)].fetch_add(1, std::memory_order_acq_rel) + 1 !=
                             readers)
                         {

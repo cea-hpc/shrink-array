@@ -123,11 +123,11 @@ class RechunkHooks<Derived, false>
 {
   public:
     /** @brief No-op: the geometry is fixed at compile time. */
-    void rechunk_drop_candidates() noexcept {}
+    static void rechunk_drop_candidates() noexcept {}
     /** @brief No-op: the geometry is fixed at compile time. */
-    void rechunk_drain_reuse_list(unsigned int /*new_size*/) noexcept {}
+    static void rechunk_drain_reuse_list(unsigned int /*new_size*/) noexcept {}
     /** @brief No-op: there is no temporary array to swap identities with. */
-    bool rechunk_swap_identity(Derived& /*tmp*/) noexcept
+    static bool rechunk_swap_identity(Derived& /*tmp*/) noexcept
     {
         return true;
     }

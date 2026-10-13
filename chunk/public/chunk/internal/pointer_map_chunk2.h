@@ -181,11 +181,11 @@ class PointerMapChunk2InfArrayPolicy<T, false>
         return nullptr;
     }
     /// @brief No registry: nothing to erase.
-    void erase_inf_array_by_ptr(const inf_array_t* /*self_ptr*/) {}
+    static void erase_inf_array_by_ptr(const inf_array_t* /*self_ptr*/) {}
 
   protected:
     /// @brief No registry: nothing recorded.
-    void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
+    static void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
 };
 
 /**

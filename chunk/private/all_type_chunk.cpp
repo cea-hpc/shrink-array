@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#include <algorithm> // std::find (the registered sizes), std::copy_n (the registry table)
+#include <algorithm> // std::ranges::find (the registered sizes), std::copy_n (the registry table),
+                     // std::ranges::any_of (the manager fan-outs)
 #include <cstddef>   // std::size_t (the reuse-pool byte counts)
 #include <mutex>     // std::mutex, std::scoped_lock
 #include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
@@ -173,7 +174,7 @@ namespace shrink_array
         }
         if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
         {
-            auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
             ens_type_chunk.destroy_after_flush(false);
 
             reset_all();
@@ -331,14 +332,8 @@ namespace shrink_array
     {
         const int max_thr = CHUNK_PMP_RANK_BOUND;
 
-        for (const auto& elm : getListTypeChunk())
-        {
-            if (elm->have_chunk_to_compress_potentially(max_thr))
-            {
-                return true;
-            }
-        }
-        return false;
+        return std::ranges::any_of(getListTypeChunk(), [max_thr](const auto* elm)
+                                   { return elm->have_chunk_to_compress_potentially(max_thr); });
     }
 
 
@@ -566,7 +561,8 @@ namespace shrink_array
     }
 
     template <typename Derived>
-    void AllTypeChunkParallelInterface<Derived, false>::init_manager(ManagerChunkInt& manager, int block_size) const
+    void AllTypeChunkParallelInterface<Derived, false>::init_manager(const ManagerChunkInt& manager,
+                                                                     int                    block_size) const
     {
         // std-alloc: the manager's init_allocator() is a no-op. Through Derived's
         // alias so that the call stays dependent (see the OpenMP body).
@@ -595,7 +591,7 @@ namespace shrink_array
         // registering on another thread.
         auto& reg = static_cast<Derived&>(*this);
         const std::scoped_lock lock(reg.registry_mutex_);
-        if (std::find(reg.registered_sizes_.begin(), reg.registered_sizes_.end(), size) == reg.registered_sizes_.end())
+        if (std::ranges::find(reg.registered_sizes_, size) == reg.registered_sizes_.end())
         {
             reg.registered_sizes_.push_back(size);
         }

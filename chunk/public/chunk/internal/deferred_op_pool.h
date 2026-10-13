@@ -108,7 +108,7 @@ struct DeferredOperationBase
 struct DeferredOpDeleter
 {
     /// @brief No-op: the operation is not destroyed or freed here.
-    void operator()(DeferredOperationBase* op) const noexcept
+    void operator()(const DeferredOperationBase* op) const noexcept
     {
         (void)op;
     }

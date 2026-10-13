@@ -156,7 +156,7 @@ class AllTypeChunkParallelInterface<Derived, false>
      * @param block_size Allocation block (slab) size, in bytes.
      * @note No-op in std-alloc builds.
      */
-    void init_manager(ManagerChunkInt& manager, int block_size) const;
+    void init_manager(const ManagerChunkInt& manager, int block_size) const;
 };
 
 /**

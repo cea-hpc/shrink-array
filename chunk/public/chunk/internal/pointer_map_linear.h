@@ -84,7 +84,7 @@ class PointerMapLinear
      * @return true when both keys were present and their payloads swapped;
      *         false, with nothing changed, when either is missing.
      */
-    bool swap_entries(const void* key_a, const void* key_b) const noexcept
+    bool swap_entries(const void* key_a, const void* key_b) noexcept
     {
         Payload* pa = nullptr;
         Payload* pb = nullptr;
