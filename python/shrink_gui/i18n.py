@@ -448,8 +448,10 @@ EN_RE = [(re.compile(a), b) for a, b in (
      + (" (+ local copy)" if m.group(4) else "")),
     (r"^Supprimer le run (\S+) \?\n\nSur inti, son dossier \(log, scripts, code de retour\)\.$",
      r"Delete run \1?\n\nOn inti, its directory (log, scripts, exit code)."),
-    (r"^aussi ses logs dans le dossier de sortie partagé \((.+) ; jamais oracle/\)$",
-     r"also its logs in the shared output directory (\1; never oracle/)"),
+    (r"^aussi ce qu'il a écrit dans le dossier de sortie partagé \((.+) ; les fichiers des autres runs et "
+     r"oracle/ restent\)$",
+     r"also what it wrote in the shared output directory (\1; the other runs' files and oracle/ stay)"),
+    (r"date de soumission de (\S+) illisible : rien supprimé", r"submission date of \1 unreadable: nothing deleted"),
     (r"^aussi la copie locale (.+)$", r"also the local copy \1"),
     (r"^pas de dossier de sortie annoncé dans le log de (\S+)$", r"no output directory announced in the log of \1"),
     (r"^dossier de sortie refusé : (.+)$", r"output directory refused: \1"),

@@ -951,14 +951,40 @@ def outputs_to_delete(base, rid, d, meta, own):
             return None, "%s, plus récent ou actif, écrit aussi dans %s : rien supprimé" % (other, od)
     if own == "dir":
         return [od], None
+    # A shared directory: what this run wrote, i.e. after it was submitted
+    # (meta.json) -- run_logs/ also holds the older runs' logs, kept.
+    try:
+        t0 = os.path.getmtime(os.path.join(d, "meta.json"))
+    except OSError:
+        return None, "date de soumission de %s illisible : rien supprimé" % rid
     out = []
     for name in own:
         if os.sep in name or name in ("", ".", ".."):
             continue
         p = os.path.join(od, name)
-        if os.path.lexists(p):
+        if os.path.isdir(p) and not os.path.islink(p):
+            for top, _dirs, files in os.walk(p):
+                for f in files:
+                    fp = os.path.join(top, f)
+                    if written_since(fp, t0):
+                        out.append(fp)
+        elif os.path.lexists(p) and written_since(p, t0):
             out.append(p)
     return out, None
+
+def written_since(p, t0):
+    try:
+        return os.lstat(p).st_mtime >= t0
+    except OSError:
+        return False
+
+def prune_empty(root):
+    """Remove the empty directories under @p root, @p root included."""
+    for top, _dirs, _files in os.walk(root, topdown=False):
+        try:
+            os.rmdir(top)
+        except OSError:
+            pass
 
 def act_delete(a):
     """Remove one run directory and, when a[2] asks for it ({"own": ...},
@@ -991,6 +1017,12 @@ def act_delete(a):
             except OSError:
                 continue
         removed.append(p)
+    if isinstance(opts.get("own"), list):
+        od = out_dir(d, meta)
+        for name in opts["own"]:
+            sub = os.path.join(os.path.expanduser(od), name) if od and os.sep not in name else None
+            if sub and os.path.isdir(sub) and not os.path.islink(sub):
+                prune_empty(sub)      # emptied by this run's files only
     shutil.rmtree(d)
     print(json.dumps({"ok": True, "removed": removed}))
 

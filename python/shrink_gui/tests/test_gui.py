@@ -197,9 +197,11 @@ def qos_max(w, name, part):
 def test_target_and_exec_pickers(gui, site, monkeypatch):
     from PySide6.QtCore import Qt
     from shrink_gui import app as app_mod
+    from shrink_gui import widgets as widgets_mod
     from test_remote_helper import _fake_build_rep
     _fake_build_rep(site)
-    monkeypatch.setattr(app_mod, "BUILD_REP", "~/br")
+    from shrink_gui import launch_form
+    monkeypatch.setattr(launch_form, "BUILD_REP", "~/br")       # read where the pickers are
     w, pump = gui
     w.program.setCurrentText("compile_all.sh")
     assert pump(lambda: w.form.schema is not None and "exec" in w.form.widgets)
@@ -213,14 +215,14 @@ def test_target_and_exec_pickers(gui, site, monkeypatch):
             items[t].setCheckState(Qt.Checked)
         return 1
 
-    monkeypatch.setattr(app_mod.PickerDialog, "exec", lambda dlg: fake_exec(dlg, ["omp-llvm", "omp-gnu-debug"]))
+    monkeypatch.setattr(widgets_mod.PickerDialog, "exec", lambda dlg: fake_exec(dlg, ["omp-llvm", "omp-gnu-debug"]))
     w.pick("target")
     assert pump(lambda: w.form.widgets["target"][1].text() != "", 20)
     multi = "comma" in w.form.widgets["target"][0]["help"].lower()
     got = w.form.widgets["target"][1].text().split(",")
     assert sorted(got) == (["omp-gnu-debug", "omp-llvm"] if multi else ["omp-gnu-debug"])   # one glob: the last ticked
     w.form.widgets["target"][1].setText("omp-llvm")
-    monkeypatch.setattr(app_mod.PickerDialog, "exec",
+    monkeypatch.setattr(widgets_mod.PickerDialog, "exec",
                         lambda dlg: fake_exec(dlg, ["shrink_bench_chunk_64", "shrink_bench_chunk_dyn"]))
     w.pick("exec")
     exes = seen["--exec : exécutables"]

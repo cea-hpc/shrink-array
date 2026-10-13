@@ -102,7 +102,7 @@ termine, et la première erreur d'un run en cours.
 | Arrêter | `ccc_mdel` du job, ou arrêt de `ccc_mprun` en mode détaché |
 | Récupérer les résultats | copie dans « Résultats (local) » le dossier du run et les fichiers de résumé du programme (CSV, log, erreurs ; jamais les `output_*`) |
 | Reprendre ses options | remet dans le formulaire le programme, la partition et les options du run |
-| Supprimer | supprime le dossier du run (run terminé seulement) ; au choix, aussi les sorties propres à ce run et la copie locale |
+| Supprimer | supprime le dossier du run (run terminé seulement) ; au choix, aussi les sorties propres à ce run (dans un dossier de sortie partagé, `bench_results/<arch>` : les fichiers qu'il a écrits, jamais ceux des runs plus anciens ni `oracle/`) et la copie locale |
 
 ### Cette machine
 

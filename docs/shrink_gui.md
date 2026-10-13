@@ -100,7 +100,7 @@ notification announces a run that ends, and the first error of a running one.
 | Stop | `ccc_mdel` of the job, or stops `ccc_mprun` in detached mode |
 | Fetch results | copies to "Results (local)" the run directory and the program's summary files (CSV, log, errors; never the `output_*`) |
 | Reuse its options | puts the run's program, partition and options back in the form |
-| Delete | deletes the run directory (finished runs only); optionally also the outputs that are this run's own, and the local copy |
+| Delete | deletes the run directory (finished runs only); optionally also the outputs that are this run's own (in a shared output directory, `bench_results/<arch>`: the files it wrote, never the older runs' ones nor `oracle/`), and the local copy |
 
 ### This machine
 

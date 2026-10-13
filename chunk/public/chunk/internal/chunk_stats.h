@@ -35,11 +35,12 @@
  */
 
 // All of these serve the CHUNK_STATS half of the file only.
-#include <array>    // std::array
-#include <chrono>   // __chunk_stats_t0, the rates ParamChunk::ChunkStats() prints
-#include <map>      // std::map
-#include <mutex>    // std::mutex, std::scoped_lock
-#include <concepts> // ChunkStatsZeroComparable
+#include <array>       // std::array
+#include <chrono>      // __chunk_stats_t0, the rates ParamChunk::ChunkStats() prints
+#include <map>         // std::map
+#include <mutex>       // std::mutex, std::scoped_lock
+#include <concepts>    // ChunkStatsZeroComparable
+#include <string_view> // chunk_variant_name
 
 #include "chunk/PMP_CHUNK.h" // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
 #include "chunk/config.h"    // build_config::chunk_dynamic
@@ -58,7 +59,8 @@ inline constexpr int CHUNK_STATS_N_VARIANT = 3;
 #endif
 
 /// @brief Display name for each variant, indexed by stat_variant.
-inline constexpr const char* chunk_variant_name[CHUNK_STATS_N_VARIANT] = {"chunk", "chunk2", "chunk2a"};
+inline constexpr std::array<std::string_view, CHUNK_STATS_N_VARIANT> chunk_variant_name = {"chunk", "chunk2",
+                                                                                           "chunk2a"};
 
 #if CHUNK_OPT_STATS
 
