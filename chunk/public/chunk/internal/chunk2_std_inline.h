@@ -1184,7 +1184,7 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_value, i
 /// pool, and resets the per-chunk element counters. The rank argument is
 /// unused (documented with the declaration).
 template <typename T, typename Derived>
-void Chunk2OmpPolicy<T, Derived, false>::block_clear(int num_compress_value, int ind, int)
+void Chunk2OmpPolicy<T, Derived, false>::block_clear(int num_compress_value, int ind, int /*thr_rank*/)
 {
     // CHUNK_STATS: as the OpenMP block_clear above.
     increm_chunk_compress<Derived>();

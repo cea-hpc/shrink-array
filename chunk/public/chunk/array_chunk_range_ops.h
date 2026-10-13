@@ -283,7 +283,7 @@ template <typename Arr>
  *          is bool-only (false for every other T), so it is asked with @p ind2.
  */
 template <typename Arr, typename Chunk>
-[[nodiscard]] bool materialised(const Arr&, const Chunk& ch, [[maybe_unused]] int ind2) noexcept
+[[nodiscard]] bool materialised(const Arr& /*arr*/, const Chunk& ch, [[maybe_unused]] int ind2) noexcept
 {
     if constexpr (has_second_value_v<Arr>)
     {
@@ -695,7 +695,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
 /// @brief fill_range() on an array whose deferred queue the caller has already
 ///        drained (the assume_drained tag): no flush first.
 template <internal::ChunkedArray Arr, typename U>
-void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assume_drained_t)
+void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assume_drained_t /*tag*/)
 {
     fill_range(arr, first, last, v, /*drain=*/false);
 }
@@ -703,7 +703,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assum
 /// @brief copy_range() on an array whose deferred queue the caller has already
 ///        drained (the assume_drained tag): no flush first.
 template <internal::ChunkedArray Arr, typename It>
-void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, assume_drained_t)
+void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, assume_drained_t /*tag*/)
 {
     copy_range(arr, first, last, src_first, /*drain=*/false);
 }

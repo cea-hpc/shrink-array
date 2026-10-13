@@ -577,7 +577,7 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param num_compress_value 0 for the first constant, non-zero for the second.
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      */
-    void block_clear(int num_compress_value, int ind, int);
+    void block_clear(int num_compress_value, int ind, int /*thr_rank*/);
 
   private:
     /**
@@ -949,20 +949,20 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
     /// @name No-op counterparts of the true specialization's queries and passes
     ///       (same pattern as ChunkFastCompPolicy<T, Derived, false>)
     /// @{
-    static bool have_chunk_to_compress(T, int)
+    static bool have_chunk_to_compress(T /*second_value*/, int /*max_thr*/)
     {
         return false;
     }
-    static bool have_chunk_to_compress_bool(int)
+    static bool have_chunk_to_compress_bool(int /*max_thr*/)
     {
         return false;
     }
 
-    static void make_block_compression(int, const inf_array_t&, Proxy2<T>*) {}
+    static void make_block_compression(int /*thr_rank*/, const inf_array_t& /*inf_array*/, Proxy2<T>* /*proxy2*/) {}
 
-    static void make_block_compression_bool(int, Proxy2<T>*) {}
+    static void make_block_compression_bool(int /*thr_rank*/, Proxy2<T>* /*proxy2*/) {}
 
-    static void make_block_compression(int) {}
+    static void make_block_compression(int /*thr_rank*/) {}
     /// @}
 
   private:
@@ -977,7 +977,7 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
     /// @name No-op compression passes
     /// @{
     template <typename FillFunc, typename ClearFunc>
-    static void make_block_compression_impl(int, T, Proxy2<T>*, FillFunc&&, ClearFunc&&)
+    static void make_block_compression_impl(int /*thr_rank*/, T /*second_value*/, Proxy2<T>* /*proxy2*/, FillFunc&& /*fill_func*/, ClearFunc&& /*clear_func*/)
     {
     }
 

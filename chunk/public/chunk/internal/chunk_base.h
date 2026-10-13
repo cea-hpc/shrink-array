@@ -976,7 +976,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         /// @brief No-op counterpart to TCTypeAllocator::set_arena, so call
         ///        sites that set the arena unconditionally (before init())
         ///        compile in std-alloc builds too.
-        static void set_arena(fast_alloc::ArenaKind) noexcept {}
+        static void set_arena(fast_alloc::ArenaKind /*k*/) noexcept {}
     };
 
     using AllocatorType = std::conditional_t<

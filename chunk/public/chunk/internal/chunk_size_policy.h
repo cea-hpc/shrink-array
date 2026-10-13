@@ -252,7 +252,7 @@ struct StaticChunkSize
     }
 
     /// @brief No-op, so generic code compiles under both policies.
-    static constexpr void set_size(unsigned int) noexcept {}
+    static constexpr void set_size(unsigned int /*size*/) noexcept {}
 };
 
 /// @brief Run-time geometry, settable during execution (CHUNK_DYNAMIC builds).

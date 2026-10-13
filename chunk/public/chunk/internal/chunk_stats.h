@@ -546,15 +546,15 @@ void increm_chunk_list() noexcept
 {
 }
 template <typename C>
-void add_chunk_bytes_alloc(long) noexcept
+void add_chunk_bytes_alloc(long /*bytes*/) noexcept
 {
 }
 template <typename C>
-void add_chunk_bytes_reused(long) noexcept
+void add_chunk_bytes_reused(long /*bytes*/) noexcept
 {
 }
 template <typename C>
-void add_chunk_bytes_freed(long) noexcept
+void add_chunk_bytes_freed(long /*bytes*/) noexcept
 {
 }
 template <typename C>
@@ -562,11 +562,11 @@ void increm_chunk_teardown_clear() noexcept
 {
 }
 template <typename C>
-void add_chunk_released(long, long) noexcept
+void add_chunk_released(long /*n*/, long /*bytes*/) noexcept
 {
 }
 template <typename C>
-void add_chunk_still_compressed_at_exit(long) noexcept
+void add_chunk_still_compressed_at_exit(long /*nb*/) noexcept
 {
 }
 template <typename C>
@@ -630,11 +630,11 @@ void increm_chunk_gate_deferred() noexcept
 {
 }
 template <typename C>
-void increm_chunk_gate_wait(int, bool) noexcept
+void increm_chunk_gate_wait(int /*yields*/, bool /*mark_hit*/) noexcept
 {
 }
 template <typename C>
-void add_chunk_scan_read(long) noexcept
+void add_chunk_scan_read(long /*count*/) noexcept
 {
 }
 template <typename C>
@@ -654,7 +654,7 @@ void increm_chunk_write() noexcept
 {
 }
 template <typename C, typename V>
-void increm_chunk_write(V) noexcept
+void increm_chunk_write(V /*v*/) noexcept
 {
 }
 inline void init_all_stats() noexcept {}

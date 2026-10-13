@@ -142,9 +142,9 @@ class AllTypeChunkParallelInterface<Derived, false>
     void delete_chunk_allocator() const;
 
     /// Serial build: nothing is deferred, so there is nothing to reclaim.
-    static void destroy_after_flush(bool) {}
+    static void destroy_after_flush(bool /*in_parallel*/) {}
     /// Serial build: writes are applied inline, so there is no queue to drain.
-    static bool flush_all_deferred(bool)
+    static bool flush_all_deferred(bool /*in_parallel*/)
     {
         return false;
     }
@@ -329,7 +329,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * @param keep_per_thread working margin kept in each list
      * @return bytes returned to the allocator
      */
-    std::size_t trim_reuse_pools(std::size_t keep_per_thread) const;
+    [[nodiscard]] std::size_t trim_reuse_pools(std::size_t keep_per_thread) const;
 
     /**
      * @brief Print every type's reuse pools, broken down by geometry.

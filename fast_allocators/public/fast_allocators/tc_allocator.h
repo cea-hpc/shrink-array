@@ -698,10 +698,10 @@ struct VTCTypeAllocator
 };
 
 /// @brief Enrol an allocator in the registry the memory report walks.
-void add_TCTypeAllocator_inst(VTCTypeAllocator*);
+void add_TCTypeAllocator_inst(VTCTypeAllocator* /*inst*/);
 
 /// @brief Withdraw it. Called from the destructor.
-void remove_TCTypeAllocator_inst(VTCTypeAllocator*);
+void remove_TCTypeAllocator_inst(VTCTypeAllocator* /*inst*/);
 
 /**
  * @brief Owns every slab serving one element size: the machinery common to

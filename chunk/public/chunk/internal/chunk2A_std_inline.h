@@ -1019,7 +1019,7 @@ template <typename T, typename Derived>
 void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_compress_value,
                                                       char*             ptr_type_cst,
                                                       SecondValueRef<T> ptr_second_value,
-                                                      int,
+                                                      int /*thr_rank*/,
                                                       T* cst2_ptr)
 {
     // As try_mark_cst_and_get_old() on the OpenMP side: a chunk already at a constant has no
