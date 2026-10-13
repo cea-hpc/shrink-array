@@ -567,7 +567,7 @@ class GlobalVecHolder
         const std::uint32_t id = free_ids.back();
         free_ids.pop_back();
         return reinterpret_cast<T*>(region_begin.load(std::memory_order_relaxed) +
-                                    (static_cast<std::size_t>(id) - 1u) * region_stride);
+                                    ((static_cast<std::size_t>(id) - 1u) * region_stride));
     }
 
     /// @brief Is @p ptr a second-value slot of this type?

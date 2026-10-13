@@ -1207,7 +1207,7 @@ bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int 
         // The array's own share per rank, where the global budget uses the
         // process-wide somme_chunk_create.
         set_size_buffer_reuse(key, nb_chunk / (Chunk2ADef::factor_div_somme_chunk_buffer_resuse * max_thr));
-        if (std::getenv("CHUNK_AFFINITY_TRACE"))
+        if (std::getenv("CHUNK_AFFINITY_TRACE") != nullptr)
         {
             std::fprintf(stderr, "[AFFINITY] key=%u size=%u nb_chunk=%d budget=%d threads=%d\n", key, size, nb_chunk,
                          get_size_buffer_reuse(key), max_thr);

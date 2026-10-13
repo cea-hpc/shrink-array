@@ -880,7 +880,7 @@ class SlabArena
             }
             for (const unsigned char v : vec)
             {
-                res += (v & 1u) ? psz : 0;
+                res += (v & 1u) != 0u ? psz : 0;
             }
         }
         return res;

@@ -1684,7 +1684,7 @@ class TCTypeAllocatorEBC
      */
     void* alloc()
     {
-        if (!block)
+        if (block == nullptr)
         {
             if (nb_block_empty > 0)
             {

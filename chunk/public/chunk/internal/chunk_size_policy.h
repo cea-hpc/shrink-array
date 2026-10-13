@@ -327,7 +327,7 @@ class DynamicChunkSize
         }
         else
         {
-            return static_cast<I>(i - chunk_of(i) * static_cast<I>(size_));
+            return static_cast<I>(i - (chunk_of(i) * static_cast<I>(size_)));
         }
     }
 
