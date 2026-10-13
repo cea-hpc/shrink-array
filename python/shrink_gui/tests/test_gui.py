@@ -516,3 +516,29 @@ def test_errors_column_and_first_error_notice(gui, site):
     w.runs = [dict(run, errors=[3, "CHECK_FAIL: x"])]
     w.notify_changes()
     assert w.statusBar().currentMessage() == ""
+
+
+def test_bench_chart_and_comparison(gui, site):
+    w, pump = gui
+    w.program.setCurrentText("fake_bench.py")
+    assert pump(lambda: w.form.schema is not None and w.form.schema["description"] == "fake bench")
+    a = _submit(w, pump, {}, len(w.runs))
+    b = _submit(w, pump, {"speed": "1.1"}, len(w.runs))
+    assert _wait_status(w, pump, a, "fini") and _wait_status(w, pump, b, "fini")
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == a))
+    w.tabs.setCurrentIndex(w.TAB_CHART)
+    assert pump(lambda: len(w.bc_view.points) == 12, 10)              # 3 variants x 4 thread counts
+    assert w.pt_stack.currentIndex() == 1 and w.bc_config.count() == 2
+    assert w.bc_note.text().startswith("12 point(s)")
+    w.bc_cmp.setCurrentIndex(w.bc_cmp.findData(b))
+    assert pump(lambda: "×1.100 (10.0 % plus lent)" in w.bc_note.text(), 10)
+    assert "24 point(s) communs (toutes configs)" in w.bc_note.text()
+    assert len(w.bc_view.points) == 24
+    w.bc_metric.setCurrentIndex(w.bc_metric.findData("speedup"))
+    assert len(w.bc_view.points) == 16 and "×1.000" in w.bc_note.text()
+    # a multi_launch_stress.py run: back to its own page
+    _choose_fake(w, pump)
+    m = _submit(w, pump, {"runs": "6", "step": "0.01"}, len(w.runs))
+    assert _wait_status(w, pump, m, "fini")
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == m))
+    assert pump(lambda: w.pt_stack.currentIndex() == 0 and len(w.pt_view.points) == 6, 10)

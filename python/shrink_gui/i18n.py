@@ -63,6 +63,16 @@ EN = {
     "rechercher dans les erreurs (Entrée : suivant)": "search the errors (Enter: next)",
     "(vide)": "(empty)",
     "Pas de décompte d'erreurs pour ce run.": "No error count for this run.",
+    "temps": "time", "mémoire": "memory", "speedup": "speedup", "Config": "Config", "Mesure": "Measure",
+    "Échelle log": "Log scale",
+    "Superpose un autre run de bench_and_test.py de la même architecture (en pointillés) et donne le "
+    "rapport B / A sur leurs points communs":
+        "Overlays another bench_and_test.py run of the same architecture (dashed) and gives the "
+        "B / A ratio over their common points",
+    "temps moyen (s)": "mean time (s)", "mémoire pic (Mo)": "peak memory (MB)",
+    "speedup vs la variante de référence": "speedup vs the baseline variant",
+    "speedup : la variante de référence n'a pas de point (1 par définition)":
+        "speedup: the baseline variant has no point (1 by definition)",
     "Relancer les échecs…": "Rerun failures…", "Relancer les échecs": "Rerun failures",
     "Répétitions": "Repetitions", "log d'erreurs": "error log",
     "pas de sortie complète enregistrée pour cet échec (une comparaison ou un garde, un bench_and_test.py "
@@ -466,6 +476,31 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"les siens$", r"warning: \1, newer or active, also writes in this directory: these files may be its own"),
     (r"^les (\d+) plus récents sur (\d+) fichiers$", r"the \1 newest of \2 files"),
     (r"^══ (.+) : introuvable ══$", r"══ \1: not found ══"),
+    (r"^Comparaison — ", "Comparison — "),
+    (r"^A : (\S+) \(traits pleins, ronds\) — B : (\S+) \(pointillés, triangles\)$",
+     r"A: \1 (solid, dots) — B: \2 (dashed, triangles)"),
+    (r"^(?:Comparison — )?(temps moyen \(s\)|mémoire pic \(Mo\)|speedup vs la variante de référence) selon "
+     r"le nombre de threads — ",
+     lambda m: m.group(0).replace("temps moyen (s)", "mean time (s)").replace("mémoire pic (Mo)", "peak memory (MB)")
+     .replace("speedup vs la variante de référence", "speedup vs the baseline variant")
+     .replace(" selon le nombre de threads — ", " against the thread count — ")),
+    (r"^(\d+) point\(s\)", r"\1 point(s)"),
+    (r"  —  (\S+) / (\S+) : ×", r"  —  \1 / \2: ×"),
+    (r" % plus lent\)", " % slower)"), (r" % plus rapide\)", " % faster)"),
+    (r" % de mémoire en plus\)", " % more memory)"), (r" % de mémoire en moins\)", " % less memory)"),
+    (r" % de speedup en plus\)", " % more speedup)"), (r" % de speedup en moins\)", " % less speedup)"),
+    (r", moyenne géométrique sur (\d+) point\(s\) communs \(toutes configs\)",
+     r", geometric mean over \1 common point(s) (all configs)"),
+    (r" ; le pire : ×", "; the worst: ×"),
+    (r"(×[\d.]+ \([\d.]+ % [a-z ]+\)) sur (\S+)", r"\1 on \2"),
+    (r"(\(all configs\)) ; ×", r"\1; ×"),
+    (r"  —  aucun point commun aux deux runs", "  —  no point common to both runs"),
+    (r"^les deux runs lisent le même bench_summary\.csv partagé \(lancés avant que chaque run en garde une "
+     r"copie\) : la comparaison n'a pas de sens$",
+     "both runs read the same shared bench_summary.csv (submitted before each run kept a copy): "
+     "the comparison means nothing"),
+    (r"^(\S+) : bench_summary\.csv partagé de l'architecture, peut-être réécrit par un run plus récent$",
+     r"\1: the architecture's shared bench_summary.csv, maybe rewritten by a newer run"),
     (r"^(\d+) run\(s\) en échec \(timings_summary\.csv\)\. Le détail : onglet Erreurs\.$",
      r"\1 failed run(s) (timings_summary.csv). The details: Errors tab."),
     (r"^(\d+) erreur\(s\) \(events\.jsonl\)\. Le détail : onglet Erreurs\.", r"\1 error(s) (events.jsonl). "
@@ -492,6 +527,9 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"complet\)$", r'[gui] … the first \1 are not shown ("Fetch results" copies the whole file)'),
     (r"« (.*) » absent des erreurs", r'"\1" not found in the errors'),
     (r"graphique disponible pour multi_launch_stress\.py seulement", "chart available for multi_launch_stress.py only"),
+    (r"graphique disponible pour multi_launch_stress\.py et bench_and_test\.py seulement",
+     "chart available for multi_launch_stress.py and bench_and_test.py only"),
+    (r"^pas encore de (\S+) \(écrit à la fin du run\)$", r"no \1 yet (written at the end of the run)"),
     (r"— (\d+) ligne\(s\), les 1000 dernières", r"— \1 row(s), the last 1000"),
     (r"— (\d+) ligne\(s\)", r"— \1 row(s)"),
     (r"nom de run invalide", "invalid run name"), (r"n'est pas un run", "is not a run"),

@@ -94,6 +94,9 @@ else
 fi
 # bench_and_test.py writes its structured progress here (bench_runner/events.py).
 export CHUNK_BENCH_EVENTS="$RUN_DIR/events.jsonl"
+# ... and, once over, a copy of its CSV / errors log / failure list (the output
+# directory is shared by the runs of an architecture, each rewrites them).
+export CHUNK_BENCH_KEEP_DIR="$RUN_DIR"
 # A batch job's shell may not have Environment Modules set up (compile_all.sh
 # needs `module`): take the login profile then.
 type module >/dev/null 2>&1 || source /etc/profile >/dev/null 2>&1

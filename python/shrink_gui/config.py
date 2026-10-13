@@ -86,6 +86,8 @@ PROGRAMS = {
         "out_files": ["bench_summary.csv", "bench_errors.log", "failed_cases.jsonl"],
         "progress_re": None, "eta_re": None,
         "summary": "csv", "summary_file": "bench_summary.csv",
+        # The Graphique tab: bench_summary.csv per config, variant and threads.
+        "chart": "bench",
         # The Erreurs tab: one entry per failure, written as it happens (the
         # full output of each run is in run_logs/).
         "errors_files": ["bench_errors.log"],

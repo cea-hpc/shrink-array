@@ -92,7 +92,7 @@ notification announces a run that ends, and the first error of a running one.
 |---|---|
 | Log | the selected run's log, followed live; search with Ctrl+F |
 | Summary | `multi_launch_stress.py`: per build (runs, failures, times); `bench_and_test.py`: its phases (duration, errors) or its `bench_summary.csv` |
-| Chart | `multi_launch_stress.py`: each run's time against the thread count, filtered by build and variant; "Compare with" overlays another run |
+| Chart | `multi_launch_stress.py`: each run's time against the thread count, filtered by build and variant; "Compare with" overlays another run. `bench_and_test.py`: its `bench_summary.csv`, one line per variant against the thread count for one config (time, peak memory or speedup); "Compare with" overlays another run of the same architecture, dashed, and gives the B / A ratio (geometric mean over the common points, and the worst point) |
 | Errors | the error log read in the output directory: `bench_errors.log` for `bench_and_test.py` (one entry per failure, as soon as it happens), the failed runs' `error_*.txt` for `multi_launch_stress.py`; the tab turns red when there are errors. For `bench_and_test.py`, the list on the left gives each failure (`failed_cases.jsonl`); a click shows its complete output (`run_logs/`). "Rerun failures…" submits a `--rerun-failed --rerun-repeat N` run of the run shown, same partition and options, its logs apart in `run_logs/rerun-<date>` |
 
 | button | effect |

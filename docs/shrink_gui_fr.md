@@ -94,7 +94,7 @@ termine, et la première erreur d'un run en cours.
 |---|---|
 | Log | le log du run sélectionné, suivi en direct ; recherche avec Ctrl+F |
 | Résumé | `multi_launch_stress.py` : par build (runs, échecs, temps) ; `bench_and_test.py` : ses phases (durée, erreurs) ou son `bench_summary.csv` |
-| Graphique | `multi_launch_stress.py` : le temps de chaque run selon le nombre de threads, filtrable par build et par variante ; « Comparer avec » superpose un autre run |
+| Graphique | `multi_launch_stress.py` : le temps de chaque run selon le nombre de threads, filtrable par build et par variante ; « Comparer avec » superpose un autre run. `bench_and_test.py` : son `bench_summary.csv`, une courbe par variante selon le nombre de threads pour une config (temps, mémoire pic ou speedup) ; « Comparer avec » superpose un autre run de la même architecture en pointillés et donne le rapport B / A (moyenne géométrique sur les points communs, et le pire point) |
 | Erreurs | le log d'erreurs lu dans le dossier de sortie : `bench_errors.log` pour `bench_and_test.py` (une entrée par échec, dès qu'il survient), les `error_*.txt` des runs en échec pour `multi_launch_stress.py` ; l'onglet passe en rouge s'il y a des erreurs. Pour `bench_and_test.py`, la liste à gauche donne chaque échec (`failed_cases.jsonl`) ; un clic affiche sa sortie complète (`run_logs/`). « Relancer les échecs… » soumet un run `--rerun-failed --rerun-repeat N` du run affiché, même partition et mêmes options, ses logs à part dans `run_logs/rerun-<date>` |
 
 | bouton | effet |

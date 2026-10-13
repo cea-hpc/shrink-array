@@ -367,7 +367,8 @@ def _bench_run(site, rid, created, od):
     d = site.runs / rid
     d.mkdir(parents=True)
     (d / "meta.json").write_text(json.dumps({"program": "bench_and_test.py", "created": created,
-                                             "out_re": r"Run outputs \S+ (\S+)"}))
+                                             "out_re": r"Run outputs \S+ (\S+)", "summary": "csv",
+                                             "summary_file": "bench_summary.csv"}))
     (d / "out.log").write_text("📁 Run outputs → %s  (arch: aarch64)\n" % od)
     (d / "exit_code").write_text("1")
 
@@ -477,3 +478,26 @@ def test_errors_column(site):
     assert _status(site, "m1")["errors"] == [2, None]
     assert json.loads((site.runs / "m1" / "errors_count.json").read_text()) == [2, None]
     assert _status(site, "b0") is None
+
+
+def test_own_copies_win_over_the_shared_directory(site):
+    od = site.home / "bench_results" / "aarch64"
+    od.mkdir(parents=True)
+    head = "Config,Variant,Threads,AvgTime_s,PeakMem_Mo,Speedup_vs_baseline\n"
+    (od / "bench_summary.csv").write_text(head + "omp-gnu,chunk,4,9.0,100,\n")      # a later run's
+    (od / "bench_errors.log").write_text("CHECK_FAIL: later\n")
+    _bench_run(site, "k1", "2026-10-13 10:00:00", od)
+    _bench_run(site, "k2", "2026-10-13 11:00:00", od)
+    p = site.helper("points", "~/shrink_runs", "k1")
+    assert p["own"] is False and p["rows"] == [["omp-gnu", "chunk", 4, 9.0, 100.0, None]]
+    d = site.runs / "k1"
+    (d / "bench_summary.csv").write_text(head + "omp-gnu,chunk,4,2.0,100,\nomp-gnu,chunk2a,4,1.0,,2.000\n")
+    (d / "bench_errors.log").write_text("CHECK_FAIL: mine\n")
+    p = site.helper("points", "~/shrink_runs", "k1")
+    assert p["own"] is True and p["configs"] == ["omp-gnu"] and p["variants"] == ["chunk", "chunk2a"]
+    assert p["rows"][1] == ["omp-gnu", "chunk2a", 4, 1.0, None, 2.0]
+    s = site.helper("summary", "~/shrink_runs", "k1")
+    assert [r[3] for r in s["rows"]] == ["2.0", "1.0"]
+    e = site.helper("errors", "~/shrink_runs", "k1", _files("bench_errors.log"))
+    assert "mine" in e["files"][0]["data"] and e["newer"] is None      # k2 cannot have rewritten it
+    assert e["newer"] is None and e["dir"] == str(d)

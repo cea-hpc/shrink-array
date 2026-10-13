@@ -73,7 +73,12 @@ Modules:
   remote.py         the ssh calls (QProcess)
   i18n.py           French / English
   widgets.py        log, options form, chart, cells
-  app.py            the window
+  app.py            the window: form, runs table, Log tab (Main)
+  git_panel.py      its Git (inti) rows                      } mixins of Main,
+  tab_summary.py    the Résumé tab                           } one file per
+  tab_chart.py      the Graphique tab (multi_launch_stress)  } part of the
+  tab_bench_chart.py   ... its bench_and_test.py page        } window
+  tab_errors.py     the Erreurs tab, the replay of failures  }
 """
 
 __version__ = "0.13"

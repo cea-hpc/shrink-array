@@ -703,6 +703,15 @@ def act_pack(a):
                         t.add(p, arcname="outputs/" + os.path.basename(p))
     sys.stdout.write(base64.b64encode(buf.getvalue()).decode())
 
+def own_copy(d, name):
+    """The run's own copy of output file @p name, kept in its directory when
+    it ended (bench_and_test.py: $CHUNK_BENCH_KEEP_DIR, report.py), or None.
+    It wins over the shared output directory, which later runs rewrite."""
+    if not name or os.sep in name or name in (".", ".."):
+        return None
+    p = os.path.join(d, name)
+    return p if os.path.isfile(p) else None
+
 def out_dir(d, meta):
     if not meta.get("out_re"):
         return None
@@ -724,7 +733,7 @@ def act_summary(a):
             print(json.dumps({"note": "pas de résumé pour ce programme"}))
         return
     od = out_dir(d, meta)
-    path = os.path.join(od, name) if od else None
+    path = own_copy(d, name) or (os.path.join(od, name) if od else None)
     if not path or not os.path.isfile(path):
         if phases:
             print(json.dumps({"sections": [phases, {"title": name, "note": "pas encore de %s" % name,
@@ -804,15 +813,63 @@ def summary_row(g, statistics):
     return [str(g["n"]), str(g["fail"]), "%.2f" % statistics.mean(w), "%.2f" % statistics.median(w),
             "%.2f" % max(w), "%d–%d" % (min(g["th"]), max(g["th"]))]
 
+def is_bench_chart(meta):
+    """The run is drawn as bench_and_test.py's (meta "chart", set from
+    PROGRAMS; the runs submitted before it by the program's name)."""
+    return meta.get("chart") == "bench" or meta.get("program") == "bench_and_test.py"
+
+def bench_points(d, meta):
+    """The Graphique tab of bench_and_test.py: bench_summary.csv, the run's
+    own copy (kept when it ended) or, before that, the shared one -- "own"
+    says which. {"configs", "variants", "rows": [config, variant, threads,
+    avg s, peak Mo or None, speedup or None]}."""
+    import csv
+    name = meta.get("summary_file") or "bench_summary.csv"
+    path = own_copy(d, name)
+    own = path is not None
+    if not own:
+        od = out_dir(d, meta)
+        path = os.path.join(os.path.expanduser(od), name) if od else None
+    if not path or not os.path.isfile(path):
+        return {"note": "pas encore de %s (écrit à la fin du run)" % name}
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    configs, variants, rows = [], [], []
+    with text_open(path) as f:
+        rd = csv.reader(f)
+        head = next(rd, [])
+        col = {h: i for i, h in enumerate(head)}
+        for r in rd:
+            try:
+                c, v, th, avg = r[col["Config"]], r[col["Variant"]], int(r[col["Threads"]]), float(r[col["AvgTime_s"]])
+            except (KeyError, ValueError, IndexError):
+                continue
+            mem = num(r[col["PeakMem_Mo"]]) if "PeakMem_Mo" in col and len(r) > col["PeakMem_Mo"] else None
+            sp = (num(r[col["Speedup_vs_baseline"]])
+                  if "Speedup_vs_baseline" in col and len(r) > col["Speedup_vs_baseline"] else None)
+            if c not in configs:
+                configs.append(c)
+            if v not in variants:
+                variants.append(v)
+            rows.append([c, v, th, avg, mem, sp])
+    return {"kind": "bench", "configs": configs, "variants": variants, "rows": rows, "own": own,
+            "mtime": os.path.getmtime(path)}
+
 def act_points(a):
     """The Graphique tab: one point per run of timings_summary.csv (the last
     30000), names factored out: {"builds", "exes", "rows": [run, b, e, threads,
-    seconds, returncode]}."""
+    seconds, returncode]}; bench_and_test.py: bench_points."""
     import csv
     d = rdir(a[0], a[1])
     meta = json.loads(read(os.path.join(d, "meta.json"), "{}"))
+    if is_bench_chart(meta):
+        print(json.dumps(bench_points(d, meta)))
+        return
     if meta.get("summary") != "multi_launch":
-        print(json.dumps({"note": "graphique disponible pour multi_launch_stress.py seulement"}))
+        print(json.dumps({"note": "graphique disponible pour multi_launch_stress.py et bench_and_test.py seulement"}))
         return
     od = out_dir(d, meta)
     path = os.path.join(od, meta["summary_file"]) if od else None
@@ -966,6 +1023,10 @@ def act_errors(a):
     od = os.path.expanduser(od)
     found = {}
     for pat in pats:
+        mine = own_copy(d, pat)
+        if mine:                 # the copy the run kept when it ended
+            found[mine] = False
+            continue
         for p in glob.glob(os.path.join(od, pat)):
             if os.path.isfile(p):
                 found[p] = bool(re.search(r"[*?[]", pat))
@@ -995,12 +1056,16 @@ def act_errors(a):
             count += 1 if found[p] else max(1, len(ERR_ENTRY_RE.findall(data)))
         files.append({"name": os.path.basename(p), "size": size, "mtime": mtime(p),
                       "data": data, "skipped": skipped})
-    out = {"dir": od, "files": files, "count": count, "total_files": len(paths),
-           "newer": newer_writer(base, rid, meta, od)}
+    shared = [p for p in paths if os.path.dirname(p) != d]
+    if opts.get("cases") and not own_copy(d, opts["cases"]):
+        shared.append(opts["cases"])
+    out = {"dir": od if shared or not paths else d, "files": files, "count": count,
+           "total_files": len(paths),
+           "newer": newer_writer(base, rid, meta, od) if shared else None}
     if not paths:
         out["note"] = "aucun fichier %s dans %s" % (", ".join(pats), od)
     if opts.get("cases"):
-        out["cases"] = failed_cases(od, opts["cases"])
+        out["cases"] = failed_cases(od, opts["cases"], d)
     if opts.get("full_logs"):
         out["logs"] = failure_logs(base, rid, d, meta, od, opts["full_logs"])
     print(json.dumps(out))
@@ -1014,12 +1079,12 @@ def inside(od, rel):
     root = os.path.realpath(od)
     return p if p.startswith(root + os.sep) else None
 
-def failed_cases(od, name):
+def failed_cases(od, name, d=None):
     """The failures failed_cases.jsonl records (bench_runner/runs.py), one per
     entry of bench_errors.log: its first line, whether --rerun-failed can
     replay it, and the complete output of its failed runs (relative to od)."""
     out = []
-    p = inside(od, name)
+    p = own_copy(d, name) or inside(od, name)
     if not p or not os.path.isfile(p):
         return out
     with text_open(p) as f:
