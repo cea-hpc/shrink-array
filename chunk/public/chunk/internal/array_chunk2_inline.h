@@ -681,72 +681,76 @@ void ArrayChunk2<T, ind_type>::clear_core()
     }
     else
     {
-#pragma omp parallel
-        {
-            const int nb_chunk0 = get_size_max_tab_omp(nb_chunk);
+        pmp::team(pmp::options{},
+                  [&](pmp::Team& team)
+                  {
+                      const int nb_chunk0 = get_size_max_tab_omp(nb_chunk);
 
-            std::vector<Chunk2<T>*> ll_chunk_loc;
-            ll_chunk_loc.reserve(nb_chunk0);
+                      std::vector<Chunk2<T>*> ll_chunk_loc;
+                      ll_chunk_loc.reserve(nb_chunk0);
 
-            // owns_live_buffer(): index-agnostic, and the bool test too (bool has
-            // one cst_val2 marker). Not written(ind): with a single global index
-            // it misclassifies chunks compressed at other indices and parks
-            // their (never-allocated) cst_val2 markers.
-#pragma omp for schedule(static) nowait
-            for (int j = 0; j < nb_chunk; ++j)
-            {
-                if (chunk_list[j].owns_live_buffer())
-                {
-                    if constexpr (chunk_config::stats)
-                    {
-                        increm_chunk_teardown_clear<Chunk2<T>>();
-                        // Released below without a compression: out of the live figures.
-                        add_chunk_released<Chunk2<T>>(1, static_cast<long>(sizeof(T)) *
-                                                             static_cast<long>(this->size_policy_.size()));
-                    }
+                      // owns_live_buffer(): index-agnostic, and the bool test too (bool has
+                      // one cst_val2 marker). Not written(ind): with a single global index
+                      // it misclassifies chunks compressed at other indices and parks
+                      // their (never-allocated) cst_val2 markers.
+                      team.for_static<int>(
+                          0, nb_chunk,
+                          [&](int j)
+                          {
+                              if (chunk_list[j].owns_live_buffer())
+                              {
+                                  if constexpr (chunk_config::stats)
+                                  {
+                                      increm_chunk_teardown_clear<Chunk2<T>>();
+                                      // Released below without a compression: out of the live figures.
+                                      add_chunk_released<Chunk2<T>>(1,
+                                                                    static_cast<long>(sizeof(T)) *
+                                                                        static_cast<long>(this->size_policy_.size()));
+                                  }
 
-                    ll_chunk_loc.push_back(&chunk_list[j]);
-                }
-            }
+                                  ll_chunk_loc.push_back(&chunk_list[j]);
+                              }
+                          },
+                          pmp::nowait);
 
-            const int thr_rank = CHUNK_PMP_THREAD_RANK;
+                      const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-            const int nb = ll_chunk_loc.size();
+                      const int nb = ll_chunk_loc.size();
 
-            if (nb > 0)
-            {
-                // Park into the reuse list of THIS array's geometry, not the
-                // ambient t_active (which may be another size mid-rechunk):
-                // a size-A buffer filed under list[B] is later popped and
-                // memset at B, and overflows. Single-size builds have one list.
-                const unsigned int my_sz = this->size_policy_.size();
-                auto&              lbf   = manager_chunk2::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                      if (nb > 0)
+                      {
+                          // Park into the reuse list of THIS array's geometry, not the
+                          // ambient t_active (which may be another size mid-rechunk):
+                          // a size-A buffer filed under list[B] is later popped and
+                          // memset at B, and overflows. Single-size builds have one list.
+                          const unsigned int my_sz = this->size_policy_.size();
+                          auto&              lbf   = manager_chunk2::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
-                for (int k = 0; k < nb; ++k)
-                {
-                    T* values_loc = ll_chunk_loc[k]->values;
-                    // Ledger LIVE -> PARKED, or a later pop trips an ILLEGAL b_pop.
-                    CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
-                    lbf.push_back(values_loc);
+                          for (int k = 0; k < nb; ++k)
+                          {
+                              T* values_loc = ll_chunk_loc[k]->values;
+                              // Ledger LIVE -> PARKED, or a later pop trips an ILLEGAL b_pop.
+                              CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
+                              lbf.push_back(values_loc);
 
-                    // Neutralise the chunk NOW that its buffer is parked. Otherwise
-                    // it stays materialised on the parked buffer, and a residual
-                    // compression candidate (one that slipped the removal above)
-                    // would try_mark_cst_and_get_old + free_block_to_pool the SAME
-                    // buffer again: under std-alloc that frees it twice (there and
-                    // in clear_list_block_free_thr). Storing cst_val1 makes every
-                    // compress path short-circuit. Mirrors ArrayChunk2A::clear_core.
-                    if constexpr (is_not_bool)
-                    {
-                        ll_chunk_loc[k]->init_values_cst_val1();
-                    }
-                    else
-                    {
-                        ll_chunk_loc[k]->init_values_cst_val_bool(0);
-                    }
-                }
-            }
-        }
+                              // Neutralise the chunk NOW that its buffer is parked. Otherwise
+                              // it stays materialised on the parked buffer, and a residual
+                              // compression candidate (one that slipped the removal above)
+                              // would try_mark_cst_and_get_old + free_block_to_pool the SAME
+                              // buffer again: under std-alloc that frees it twice (there and
+                              // in clear_list_block_free_thr). Storing cst_val1 makes every
+                              // compress path short-circuit. Mirrors ArrayChunk2A::clear_core.
+                              if constexpr (is_not_bool)
+                              {
+                                  ll_chunk_loc[k]->init_values_cst_val1();
+                              }
+                              else
+                              {
+                                  ll_chunk_loc[k]->init_values_cst_val_bool(0);
+                              }
+                          }
+                      }
+                  });
     }
 
     m_size = 0;
@@ -779,7 +783,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
 }
 
 template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk2<T, ind_type>::compress_int()
+void ArrayChunk2<T, ind_type>::compress_int(pmp::Team& team)
 {
     // Diagnostic pass: scans for constant-but-materialised chunks the
     // incremental compression missed, reports them and self-heals them (below).
@@ -829,50 +833,54 @@ void ArrayChunk2<T, ind_type>::compress_int()
         second_value = get_second_value();
         ind          = get_ind_second_value();
 
-#pragma omp for schedule(static) nowait
-        for (int j = 0; j < nb_chunk; ++j)
-        {
-            const auto& chunk = chunk_list[j];
-
-            if (chunk.written(ind))
+        team.for_static<int>(
+            0, nb_chunk,
+            [&](int j)
             {
-                // A run of first_value when the second value IS first_value
-                // (none registered, or 0) comes back as `first` only: filed in
-                // both lists, the reclaim below would clear_st it twice.
-                const auto scan = chunk.scan_constants(Chunk2<T>::first_value, second_value,
-                                                       static_cast<unsigned int>(this->size_policy_.size()));
-                if (scan.first)
+                const auto& chunk = chunk_list[j];
+
+                if (chunk.written(ind))
                 {
-                    tab_nb1.push_back(j);
+                    // A run of first_value when the second value IS first_value
+                    // (none registered, or 0) comes back as `first` only: filed in
+                    // both lists, the reclaim below would clear_st it twice.
+                    const auto scan = chunk.scan_constants(Chunk2<T>::first_value, second_value,
+                                                           static_cast<unsigned int>(this->size_policy_.size()));
+                    if (scan.first)
+                    {
+                        tab_nb1.push_back(j);
+                    }
+                    if (scan.second)
+                    {
+                        tab_nb2.push_back(j);
+                    }
                 }
-                if (scan.second)
-                {
-                    tab_nb2.push_back(j);
-                }
-            }
-        }
+            },
+            pmp::nowait);
     }
     else
     {
-#pragma omp for schedule(static) nowait
-        for (int j = 0; j < nb_chunk; ++j)
-        {
-            const auto& chunk = chunk_list[j];
-
-            if (chunk.written())
+        team.for_static<int>(
+            0, nb_chunk,
+            [&](int j)
             {
-                const auto scan = chunk.scan_constants(Chunk2<T>::first_value, static_cast<T>(true),
-                                                       static_cast<unsigned int>(this->size_policy_.size()));
-                if (scan.first)
+                const auto& chunk = chunk_list[j];
+
+                if (chunk.written())
                 {
-                    tab_nb1.push_back(j);
+                    const auto scan = chunk.scan_constants(Chunk2<T>::first_value, static_cast<T>(true),
+                                                           static_cast<unsigned int>(this->size_policy_.size()));
+                    if (scan.first)
+                    {
+                        tab_nb1.push_back(j);
+                    }
+                    if (scan.second)
+                    {
+                        tab_nb2.push_back(j);
+                    }
                 }
-                if (scan.second)
-                {
-                    tab_nb2.push_back(j);
-                }
-            }
-        }
+            },
+            pmp::nowait);
     }
 
     // Reclaim the misses the scan just found: materialised chunks fully

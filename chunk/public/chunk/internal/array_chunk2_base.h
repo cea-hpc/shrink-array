@@ -20,7 +20,7 @@
 #include "chunk/config.h"                    // build_config::not_use_openmp, chunk_config::use_fast_block_compression
 #include "chunk/chunk_traits.h"              // ArrayChunk2A forward declaration
 #include "chunk/internal/in_t.h"             // in_t<T>
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
 #include "chunk/internal/read_reclaim.h"     // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
@@ -81,7 +81,8 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     // (array_chunk_parallel_common.h), a sibling base: reach it through derived().
 
     /// @brief Compress every compressible chunk now, by every thread of the
-    ///        region compress_int() runs in (opened here when called outside one).
+    ///        team compress_int() runs on (the caller's region, or one opened
+    ///        here when called outside any).
     void compress()
     {
         if (CHUNK_PMP_IN_PARALLEL_REGION)
@@ -93,8 +94,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         }
         else
         {
-#pragma omp parallel
-            derived().compress_int();
+            pmp::team(pmp::options{}, [&](pmp::Team& team) { derived().compress_int(team); });
         }
     }
 

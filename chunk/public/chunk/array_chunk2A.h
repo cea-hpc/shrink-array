@@ -35,7 +35,7 @@
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for use_openmp, g_in_rechunk_rebuild
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values)
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
 #include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"            // the core the bases share
@@ -292,8 +292,17 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     void clear();
 
-    /// @brief Run a compression pass over this array's chunks.
-    void compress_int();
+    /// @brief Run a compression pass over this array's chunks, shared over
+    ///        @p team (the one compress() opens, or the caller's region).
+    void compress_int(pmp::Team& team);
+
+    /// @brief compress_int() on the calling thread's current team
+    ///        (pmp::current_team(): the caller's region, or a team of one).
+    void compress_int()
+    {
+        pmp::Team team = pmp::current_team();
+        compress_int(team);
+    }
 
     /// @brief Read-only access to the underlying chunk list.
     /// @return const reference to the chunks backing this array

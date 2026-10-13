@@ -28,7 +28,7 @@
 #include "chunk/internal/array_chunk_base.h"     // ArrayChunkBase
 #include "chunk/internal/array_chunk_parallel.h" // ParallelSupport — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/config.h"                               // build_config::use_openmp
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
@@ -283,9 +283,17 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// @brief Release the storage and report this array's end-of-life stats.
     void clear();
 
-    /// @brief The compression pass proper, run by every thread of the region
-    ///        compress() opens (or on the calling thread outside one).
-    void compress_int(bool verbose);
+    /// @brief The compression pass proper, run by every thread of @p team
+    ///        (the one compress() opens, or the caller's region).
+    void compress_int(pmp::Team& team, bool verbose);
+
+    /// @brief compress_int() on the calling thread's current team
+    ///        (pmp::current_team(): the caller's region, or a team of one).
+    void compress_int(bool verbose)
+    {
+        pmp::Team team = pmp::current_team();
+        compress_int(team, verbose);
+    }
 
     /// @brief Compress every chunk that is constant at the first value now.
     void compress(bool verbose = false)
@@ -301,10 +309,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         }
         else
         {
-#pragma omp parallel
-            {
-                compress_int(verbose);
-            }
+            pmp::team(pmp::options{}, [&](pmp::Team& team) { compress_int(team, verbose); });
         }
     }
 

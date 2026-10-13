@@ -80,6 +80,18 @@ gets an adaptor, `shrink_array::tbb::parallel_for(range, body)`, that calls
    `single`, `masked`, `rank`, `size`), OpenMP implementation (a `parallel`
    region whose body receives the team; the constructs inside stay orphaned
    OpenMP constructs). Sites converted one by one, the rechunk refill last.
+   *4a done*: the API, in `pmp_loops.h` with the loops (one backend file):
+   `team(opt, body)`, `team_sum<T, N>(opt, body)` (the `parallel
+   reduction(+ : ...)` regions), `current_team()` (the innermost team: the
+   library's, the caller's region, or a team of one) and `Team` (`rank`,
+   `size`, `for_static`, `for_dynamic`, `barrier`, `single`, `masked`, each
+   with `wait_mode::nowait` where OpenMP has it). Converted: the
+   `compress()` / `compress_int()` passes of the three variants
+   (`compress_int(pmp::Team&)`, the old signatures kept as forwarders on
+   `current_team()`), their `clear_core()` teams, and the loop of
+   `write_range_by_chunks`. Left for 4b: the manager drains, the
+   `make_block_compression` regions (`chunk*_std_inline.h`),
+   `all_type_chunk.cpp`, the size advisor; 4c: the rechunk refill.
 5. **A**: the queries through the backend; the `thread_local` rank registry for
    non-OpenMP threads (dense, bounded by the configured maximum, reused when a
    thread exits).

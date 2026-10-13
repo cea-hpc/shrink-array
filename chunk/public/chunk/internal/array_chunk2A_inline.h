@@ -412,77 +412,81 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     }
     else
     {
-        int nb_val2 = 0;
-
-#pragma omp parallel reduction(+ : nb_val2)
-        {
-            const int nb_chunk0 = get_size_max_tab_omp(nb_chunk);
-
-            std::vector<Chunk2A<T>*> ll_chunk_loc;
-            ll_chunk_loc.reserve(nb_chunk0);
-
-#pragma omp for schedule(static) nowait
-            for (int j = 0; j < nb_chunk; ++j)
+        // acc[0]: the second values the registry release counted (one thread's).
+        const int nb_val2 = pmp::team_sum<int, 1>(
+            pmp::options{},
+            [&](pmp::Team& team, auto& acc)
             {
-                if (chunk_list[j].written_test())
-                {
-                    if constexpr (chunk_config::stats)
+                const int nb_chunk0 = get_size_max_tab_omp(nb_chunk);
+
+                std::vector<Chunk2A<T>*> ll_chunk_loc;
+                ll_chunk_loc.reserve(nb_chunk0);
+
+                team.for_static<int>(
+                    0, nb_chunk,
+                    [&](int j)
                     {
-                        increm_chunk_teardown_clear<Chunk2A<T>>();
-                        // Released below without a compression: out of the live figures.
-                        add_chunk_released<Chunk2A<T>>(1, static_cast<long>(sizeof(T)) *
-                                                              static_cast<long>(this->size_policy_.size()));
+                        if (chunk_list[j].written_test())
+                        {
+                            if constexpr (chunk_config::stats)
+                            {
+                                increm_chunk_teardown_clear<Chunk2A<T>>();
+                                // Released below without a compression: out of the live figures.
+                                add_chunk_released<Chunk2A<T>>(1, static_cast<long>(sizeof(T)) *
+                                                                      static_cast<long>(this->size_policy_.size()));
+                            }
+                            ll_chunk_loc.push_back(&chunk_list[j]);
+                        }
+                    },
+                    pmp::nowait);
+
+                const int thr_rank = CHUNK_PMP_THREAD_RANK;
+
+                const int nb = ll_chunk_loc.size();
+
+                if (nb > 0)
+                {
+                    // Park into the reuse list of THIS array's geometry, not the ambient
+                    // t_active (may be another size mid-rechunk): a size-A buffer filed
+                    // under list[B] would be memset at B by a later pop and overflow.
+                    const unsigned int my_sz = this->size_policy_.size();
+                    auto&              lbf   = manager_chunk2A::get_list_block_free_thr_for_size(thr_rank, my_sz);
+
+                    for (int k = 0; k < nb; ++k)
+                    {
+                        T* values_loc = ll_chunk_loc[k]->values;
+                        // Ledger: LIVE -> PARKED, or a later pop of this block from the
+                        // free-list is an ILLEGAL b_pop (state=LIVE, expected PARKED).
+                        CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
+                        lbf.push_back(values_loc);
+
+                        // Neutralise the chunk NOW that its buffer is parked: a residual
+                        // compression candidate (one that slipped the removals above, or
+                        // the terminal sweep) would otherwise free_block_to_pool the SAME
+                        // buffer again (double-free). With cst_val1 stored, every compress
+                        // path short-circuits (the CAS reads values == cst_val1 and
+                        // returns nullptr). Mirrors the non-OMP clear_st path.
+                        ll_chunk_loc[k]->values_store(ChunkBase<T, Chunk2A<T>>::get_cst_val1());
                     }
-                    ll_chunk_loc.push_back(&chunk_list[j]);
                 }
-            }
 
-            const int thr_rank = CHUNK_PMP_THREAD_RANK;
-
-            const int nb = ll_chunk_loc.size();
-
-            if (nb > 0)
-            {
-                // Park into the reuse list of THIS array's geometry, not the ambient
-                // t_active (may be another size mid-rechunk): a size-A buffer filed
-                // under list[B] would be memset at B by a later pop and overflow.
-                const unsigned int my_sz = this->size_policy_.size();
-                auto&              lbf   = manager_chunk2A::get_list_block_free_thr_for_size(thr_rank, my_sz);
-
-                for (int k = 0; k < nb; ++k)
-                {
-                    T* values_loc = ll_chunk_loc[k]->values;
-                    // Ledger: LIVE -> PARKED, or a later pop of this block from the
-                    // free-list is an ILLEGAL b_pop (state=LIVE, expected PARKED).
-                    CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
-                    lbf.push_back(values_loc);
-
-                    // Neutralise the chunk NOW that its buffer is parked: a residual
-                    // compression candidate (one that slipped the removals above, or
-                    // the terminal sweep) would otherwise free_block_to_pool the SAME
-                    // buffer again (double-free). With cst_val1 stored, every compress
-                    // path short-circuits (the CAS reads values == cst_val1 and
-                    // returns nullptr). Mirrors the non-OMP clear_st path.
-                    ll_chunk_loc[k]->values_store(ChunkBase<T, Chunk2A<T>>::get_cst_val1());
-                }
-            }
-
-// BARRIER REQUIRED: the loop above is `omp for ... nowait`, so other threads may
-// still be in it writing values, whose slow path (make_block_compression ->
-// find_or_set_ind_cst_val2) SCANS the shared segment list. clear() below tears
-// that list down (head.exchange(nullptr) + delete of every Segment); without
-// the barrier the teardown races the scan (freed-Segment dereference).
-#pragma omp barrier
-#pragma omp single
-            {
-                // Only the reference this array took (acquire_cst2_registry).
-                if (holds_cst2_registry_)
-                {
-                    Chunk2A<T>::tab_cst_val2_holder::clear(nb_val2);
-                    holds_cst2_registry_ = false;
-                }
-            }
-        }
+                // BARRIER REQUIRED: the loop above is a for_static(..., nowait), so other threads may
+                // still be in it writing values, whose slow path (make_block_compression ->
+                // find_or_set_ind_cst_val2) SCANS the shared segment list. clear() below tears
+                // that list down (head.exchange(nullptr) + delete of every Segment); without
+                // the barrier the teardown races the scan (freed-Segment dereference).
+                team.barrier();
+                team.single(
+                    [&]
+                    {
+                        // Only the reference this array took (acquire_cst2_registry).
+                        if (holds_cst2_registry_)
+                        {
+                            Chunk2A<T>::tab_cst_val2_holder::clear(acc[0]);
+                            holds_cst2_registry_ = false;
+                        }
+                    });
+            })[0];
 
         if (nb_val2 != 0)
         {
@@ -511,7 +515,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
 }
 
 template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk2A<T, ind_type>::compress_int()
+void ArrayChunk2A<T, ind_type>::compress_int(pmp::Team& team)
 {
     // Pin the ambient size to THIS array's geometry: the frees below route on
     // thread_chunk_size(), not on the buffer (see clear_core()); left to the
@@ -529,31 +533,33 @@ void ArrayChunk2A<T, ind_type>::compress_int()
     tab_nb1.reserve(nb_res);
     tab_nb2.reserve(nb_res);
 
-#pragma omp for schedule(static) nowait
-    for (int j = 0; j < nb_chunk; ++j)
-    {
-        const auto& chunk = chunk_list[j];
-
-        // Through SecondValueRef::get(), not the raw slot: under
-        // CHUNK_SECOND_VALUE_INDEXED a slot holds the value's IDENTIFIER, and
-        // `const T v = slot` would silently convert that integer into a T.
-        const T second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j).get();
-
-        if (chunk.written())
+    team.for_static<int>(
+        0, nb_chunk,
+        [&](int j)
         {
-            // second_value == first_value comes back as `first` only.
-            const auto scan = chunk.scan_constants(Chunk2A<T>::first_value, second_value,
-                                                   static_cast<unsigned int>(this->size_policy_.size()));
-            if (scan.first)
+            const auto& chunk = chunk_list[j];
+
+            // Through SecondValueRef::get(), not the raw slot: under
+            // CHUNK_SECOND_VALUE_INDEXED a slot holds the value's IDENTIFIER, and
+            // `const T v = slot` would silently convert that integer into a T.
+            const T second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j).get();
+
+            if (chunk.written())
             {
-                tab_nb1.push_back(j);
+                // second_value == first_value comes back as `first` only.
+                const auto scan = chunk.scan_constants(Chunk2A<T>::first_value, second_value,
+                                                       static_cast<unsigned int>(this->size_policy_.size()));
+                if (scan.first)
+                {
+                    tab_nb1.push_back(j);
+                }
+                if (scan.second)
+                {
+                    tab_nb2.push_back(j);
+                }
             }
-            if (scan.second)
-            {
-                tab_nb2.push_back(j);
-            }
-        }
-    }
+        },
+        pmp::nowait);
 
     // ── What this reports, and what it does NOT assert ───────────────────────
     // compress_int() only SCANS; it never compresses (unlike ArrayChunk's, whose
