@@ -17,6 +17,7 @@
 #pragma once
 
 #include <algorithm>  // std::max (slab sizing)
+#include <bit>        // std::has_single_bit (the FOREIGN-block report schedule)
 #include <cassert>    // assert
 #include <cstddef>    // std::byte, std::size_t
 #include <cstdint>    // std::uintptr_t (the block probe)
@@ -321,7 +322,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
                     static const bool               trace     = env_flag("CHUNK_RECYCLE_TRACE");
                     static thread_local std::size_t n_foreign = 0;
                     ++n_foreign;
-                    if (trace || (n_foreign & (n_foreign - 1)) == 0)
+                    if (trace || std::has_single_bit(n_foreign))
                     {
                         std::fprintf(stderr,
                                      "[RECYCLE] dropped FOREIGN block %p (not owned by this thread's slab) "
