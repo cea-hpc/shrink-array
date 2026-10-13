@@ -65,25 +65,13 @@ inline void TCSlab<Links>::alloc_block()
     // and the op, ctx and value arenas are disjoint, so a freed op slab's address can never
     // be reobtained by the value pool. owner_rank (set before init()): a slab the rank
     // recycled comes back to it first (SlabArena::allocate).
-    bool fresh = false;
-    data       = static_cast<char*>(
-        fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator, owner_rank, &fresh));
+    data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator, owner_rank));
 
     if (data == nullptr) [[unlikely]]
     {
         std::cerr << "Fatal Error: slab arena (kind " << static_cast<int>(arena_kind) << ") failed to allocate "
                   << BlockAllocator << " bytes\n";
         std::abort();
-    }
-
-    // CHUNK_POPULATE_SLABS: one madvise(MADV_POPULATE_WRITE) for the whole slab
-    // instead of one fault per page (alloc_config::populate_slabs_mode). Value
-    // slabs only, fresh ones only (a recycled slab is resident), and here, outside
-    // the arena mutex: every thread of a refill populates its own at once. Before
-    // the back-pointer store below, which would fault the last page alone.
-    if (fresh && arena_kind == fast_alloc::ArenaKind::Value)
-    {
-        fast_alloc::alloc_config::populate_fresh_slab(data, BlockAllocator);
     }
 
     // NOTE: no memset, fresh slab or recycled. The pool makes no promise about element

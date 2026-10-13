@@ -89,6 +89,23 @@ inline const bool g_rechunk_keep_recycled = []() noexcept
     return on;
 }();
 
+/// CHUNK_RECHUNK_KEEP_RECYCLED_MB (default 0; MiB): the bounded form of
+/// CHUNK_RECHUNK_KEEP_RECYCLED -- at the end of the v1 refill, leave up to this
+/// much of the leftover recycled slabs resident per arena, split evenly over the
+/// ranks, and advise the rest away as before (SlabArena::advise_recycled).
+/// 0 = advise them all. Ignored when CHUNK_RECHUNK_KEEP_RECYCLED=1 (keep all).
+inline const std::size_t g_rechunk_keep_recycled_bytes = []() noexcept
+{
+    const auto mb = env_number<std::size_t>("CHUNK_RECHUNK_KEEP_RECYCLED_MB", 0);
+    if (mb != 0)
+    {
+        std::fprintf(stderr, "[env] CHUNK_RECHUNK_KEEP_RECYCLED_MB=%zu: up to %zu MiB of the refill's leftover "
+                             "recycled slabs stay resident per arena\n",
+                     mb, mb);
+    }
+    return mb << 20U;
+}();
+
 /// CHUNK_RECHUNK_TRACE_MEM (read once, set = on): the MEMORY side of the trace --
 /// [RECHUNK-RSS] (exact RSS, a page-table walk per read), the new geometry's
 /// occupancy, the allocator census. Kept apart from CHUNK_RECHUNK_TRACE so the
@@ -350,15 +367,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // (counted inside rebuild_one below).
         increm_chunk_rechunk<chunk_type>();
         t2_out = t_now();
-        {
-#if CHUNK_OPT_FAST_ALLOC
-            // The refill fills the slabs it takes: pre-fault each fresh one in
-            // one madvise instead of a fault per page, which past one socket
-            // contends on mmap_lock (CHUNK_POPULATE_SLABS, alloc_config.h).
-            const fast_alloc::alloc_config::PopulateScope populate_scope;
-#endif
-            self().rechunk_refill(tmp, old_size, new_size);
-        }
+        self().rechunk_refill(tmp, old_size, new_size);
         t3_out   = t_now();
         r_refill = rss_now();
 
@@ -1410,7 +1419,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             {
                 const auto a0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                chunk_type::get_chunk_allocator(0, old_key_refill).advise_recycled_slabs();
+                chunk_type::get_chunk_allocator(0, old_key_refill)
+                    .advise_recycled_slabs(internal::g_rechunk_keep_recycled_bytes);
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (internal::g_rechunk_trace)
                 {

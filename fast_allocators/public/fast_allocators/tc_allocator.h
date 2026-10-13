@@ -1012,8 +1012,9 @@ class TCSlabPool
 
     /// @brief Give back the pages of the recycled slabs nobody took, in this
     ///        instance's arena (fast_alloc::SlabArena::advise_recycled).
+    /// @param keep_bytes Bytes of them to leave resident (SlabArena::advise_recycled).
     /// @return Number of slabs advised.
-    std::size_t advise_recycled_slabs() const noexcept
+    std::size_t advise_recycled_slabs(std::size_t keep_bytes = 0) const noexcept
     {
         if constexpr (!alloc_config::use_slabs)
         {
@@ -1021,7 +1022,7 @@ class TCSlabPool
         }
         else
         {
-            return fast_alloc::arena_for(arena_kind).advise_recycled();
+            return fast_alloc::arena_for(arena_kind).advise_recycled(keep_bytes);
         }
     }
 
