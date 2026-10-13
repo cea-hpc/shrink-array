@@ -521,10 +521,12 @@ def progress_from_events(ev):
         phase = prog["phase"]
     return [done, total, eta, phase]
 
-def progress_of(path, meta):
+def progress_of(path, meta, ev=None):
     """(done, total, eta_s[, phase]): bench_and_test.py's events.jsonl when
-    there is one, else the log with the program's own regexes."""
-    ev = read_events(os.path.dirname(path))
+    there is one (@p ev, already read), else the log with the program's own
+    regexes."""
+    if ev is None:
+        ev = read_events(os.path.dirname(path))
     if ev:
         return progress_from_events(ev)
     if not meta.get("progress_re"):
@@ -541,6 +543,71 @@ def progress_of(path, meta):
             eta = float(e.group(1))
     return [int(m.group(1)), int(m.group(2)), eta]
 
+def errors_from_events(ev):
+    """[count, last error's first line] of a bench_and_test.py run: its end
+    record once there, else the errors logged so far (an "error" record each,
+    or phase_end counts before bench_runner wrote them), or None."""
+    if not ev:
+        return None
+    last = None
+    n_ev = n_phase = 0
+    for e in ev:
+        k = e.get("kind")
+        if k == "error":
+            n_ev += 1
+            last = e.get("summary") or e.get("kind")
+        elif k == "phase_end":
+            n_phase += e.get("errors", 0) or 0
+        elif k == "end":
+            return [e.get("errors", 0) or 0, last]
+    return [max(n_ev, n_phase), last]
+
+def errors_from_csv(d, meta):
+    """[failed runs, None] of multi_launch_stress.py (returncode != 0 in its
+    summary CSV), or None."""
+    import csv
+    od = out_dir(d, meta)
+    p = os.path.join(od, meta.get("summary_file") or "") if od else None
+    if not p or not os.path.isfile(p):
+        return None
+    n = 0
+    try:
+        with text_open(p) as f:
+            rows = csv.reader(f)
+            head = next(rows, [])
+            if "returncode" not in head:
+                return None
+            i = head.index("returncode")
+            for r in rows:
+                n += len(r) > i and r[i].strip() not in ("0", "")
+    except (IOError, OSError):
+        return None
+    return [n, None]
+
+def errors_of(d, meta, st, ev):
+    """The Erreurs column: errors_from_events, else (multi_launch_stress.py)
+    errors_from_csv -- kept in the run directory once the run is over, the
+    CSV no longer changes."""
+    r = errors_from_events(ev)
+    if r is not None or meta.get("summary") != "multi_launch":
+        return r
+    cache = os.path.join(d, "errors_count.json")
+    final = st not in ("en cours", "en attente", "démarrage") and not st.startswith("en attente")
+    if final:
+        c = read(cache)
+        if c:
+            try:
+                return json.loads(c)
+            except ValueError:
+                pass
+    r = errors_from_csv(d, meta)
+    if final and r is not None:
+        try:
+            write(cache, json.dumps(r))
+        except (IOError, OSError):
+            pass
+    return r
+
 def act_list(a):
     base = rdir(a[0])
     runs = []
@@ -553,9 +620,11 @@ def act_list(a):
                 continue
             st, code = status(d, q)
             meta = json.loads(meta)
+            ev = read_events(d)
             runs.append({"id": rid, "meta": meta, "status": st, "code": code,
+                         "errors": errors_of(d, meta, st, ev),
                          "jobid": (read(os.path.join(d, "jobid")) or "").strip(),
-                         "progress": progress_of(os.path.join(d, "out.log"), meta),
+                         "progress": progress_of(os.path.join(d, "out.log"), meta, ev),
                          "git_start": (read(os.path.join(d, "git_start")) or "").strip(),
                          "last": last_line(os.path.join(d, "out.log"))})
     print(json.dumps({"host": socket.gethostname(), "runs": runs}))

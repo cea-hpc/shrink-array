@@ -454,3 +454,26 @@ def test_rerun_command():
     assert rerun_command(once, spec, 1, "run_logs/rerun-2").endswith(
         '"/ccc/work/$USER/b" --rerun-failed --rerun-repeat 1 --full-log-dir run_logs/rerun-2')
     assert rerun_command("", spec, 1, "d") == "--rerun-failed --rerun-repeat 1 --full-log-dir d"
+
+
+def test_errors_column(site):
+    # bench_and_test.py: the "error" records while a phase runs, the end record once over
+    d = site.runs / "e1"
+    d.mkdir(parents=True)
+    (d / "meta.json").write_text(json.dumps({"program": "bench_and_test.py", "summary": "csv"}))
+    ev = [{"t": 1, "kind": "start"}, {"t": 2, "kind": "phase_start", "phase": "ctest"},
+          {"t": 3, "kind": "phase_end", "phase": "ctest", "errors": 1},
+          {"t": 4, "kind": "phase_start", "phase": "check"},
+          {"t": 5, "kind": "error", "phase": "check", "summary": "CHECK_FAIL: a"},
+          {"t": 6, "kind": "error", "phase": "check", "summary": "CHECK_FAIL: b"}]
+    (d / "events.jsonl").write_text("\n".join(json.dumps(e) for e in ev) + "\n")
+    assert _status(site, "e1")["errors"] == [2, "CHECK_FAIL: b"]
+    with open(d / "events.jsonl", "a") as f:
+        f.write(json.dumps({"t": 9, "kind": "end", "errors": 4}) + "\n")
+    assert _status(site, "e1")["errors"] == [4, "CHECK_FAIL: b"]       # + the memory guards
+    # multi_launch_stress.py: its failed runs, kept once the run is over
+    _launch(site, "m1", "python3 fake_stress.py --runs 6 --fail_every 3")
+    assert site.wait(lambda: _status(site, "m1")["status"] == "fini")
+    assert _status(site, "m1")["errors"] == [2, None]
+    assert json.loads((site.runs / "m1" / "errors_count.json").read_text()) == [2, None]
+    assert _status(site, "b0") is None

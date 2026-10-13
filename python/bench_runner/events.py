@@ -3,7 +3,8 @@
 """Structured progress of a bench_and_test.py run: one JSON object per line.
 
 Written to --events-file, else $CHUNK_BENCH_EVENTS, else nowhere. Kinds:
-start, phase_start, progress, phase_end, end (see emit's callers). Every
+start, phase_start, progress, error (one per failure, as it is logged),
+phase_end, end (see emit's callers). Every
 record carries "t" (epoch seconds). Writing is best effort: a full disk or a
 missing directory never reaches the bench.
 """

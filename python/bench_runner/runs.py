@@ -10,7 +10,7 @@ import threading
 import time
 import json
 
-from . import state
+from . import events, state
 from .builds import resolve_exe
 from .parsing import detect_compression_collapse, detect_nonfinite_checksum, parse_peak_memory_mo
 from .settings import SANITIZER_HIT_MARKERS
@@ -395,8 +395,12 @@ def _append_error_now(errors_log, entry):
             f.write(entry.rstrip("\n") + "\n")
     except OSError:
         pass
+    first = entry.strip().splitlines()[0] if entry.strip() else ""
+    # Live: shrink_gui counts the errors of a running phase and tells about
+    # the first one (phase_end only says how many, once the phase is over).
+    events.emit("error", phase=events.current_phase(), error_kind=first.split(":", 1)[0],
+                summary=first[:300])
     try:
-        first = entry.strip().splitlines()[0] if entry.strip() else ""
         case = {"kind": first.split(":", 1)[0], "summary": first[:300],
                 "runs": list(state._PENDING_FAILED_RUNS)}
         state._PENDING_FAILED_RUNS.clear()

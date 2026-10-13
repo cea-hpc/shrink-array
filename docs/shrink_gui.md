@@ -84,8 +84,9 @@ the cluster.
 ### The runs
 
 The table lists the runs of the runs directory, refreshed every 15 s: program, partition,
-commit, job, status, progress (k/N and time left when the program reports them), last line of
-the log. A notification announces a run that ends.
+commit, job, status, progress (k/N and time left when the program reports them), errors (live
+for `bench_and_test.py`, failed runs for `multi_launch_stress.py`), last line of the log. A
+notification announces a run that ends, and the first error of a running one.
 
 | tab | contents |
 |---|---|

@@ -184,6 +184,8 @@ struct SecondValueRef
     {
         if constexpr (SecondValueTraits<T>::indexed)
         {
+            // Up to the record: a reclaim must not run in between (LookupGuard).
+            const typename GlobalVecHolder<T>::LookupGuard in_flight;
             *slot = TabCstVal2Holder<T>::id_for_value(v);
         }
         else
@@ -374,6 +376,93 @@ class GlobalVecHolder
         return static_cast<std::uint32_t>((reinterpret_cast<const char*>(ptr) - base) / region_stride) + 1u;
     }
 
+    // ── Reclaim contract, checked in check builds ──────────────────────────
+    //
+    // A reclaim (mark + reclaim_unmarked()) has no epoch and no quiescence
+    // detection: it relies on its caller's sequential point. Two failures if a
+    // thread looks up or registers meanwhile, both silent in release:
+    //  - a slot found BEFORE the mark and recorded in the chunk's second-value
+    //    table AFTER it is unmarked, so freed; take_free_slot() hands its
+    //    identifier to another value and the chunk reads that one. The
+    //    revalidation (value_of_ptr(p) == v) does not catch it: value_by_id[]
+    //    keeps the freed identifier's value until it is handed out again.
+    //  - index_clear() destroys every index generation: a lookup holding one
+    //    reads freed memory.
+    // In check builds (build_config::any_check) LookupGuard counts the
+    // lookups and registrations in flight, from the lookup to the record in
+    // the second-value table, and ReclaimScope fails an invariant if one is
+    // in flight when a reclaim starts or ends, or starts while it runs.
+    // Release builds pay nothing.
+
+    /// @brief Lookups/registrations in flight (check builds only).
+    static inline std::atomic<int> lookups_in_flight{0};
+    /// @brief Reclaim scopes open, nested ones included (check builds only).
+    static inline std::atomic<int> reclaims_running{0};
+
+    /// @brief Brackets a lookup or registration up to the record of its
+    ///        result in the chunk's second-value table. No-op in release.
+    struct LookupGuard
+    {
+        LookupGuard() noexcept
+        {
+            if constexpr (build_config::any_check)
+            {
+                // seq_cst on both sides (ReclaimScope): each increments its own
+                // counter then reads the other's, so one of the two always sees
+                // the other.
+                lookups_in_flight.fetch_add(1, std::memory_order_seq_cst);
+                if (reclaims_running.load(std::memory_order_seq_cst) != 0) [[unlikely]]
+                {
+                    CHUNK_INVARIANT_FAILED("cst_val2: second-value lookup or registration during a reclaim "
+                                           "(reclaim_second_values() needs a sequential point)");
+                }
+            }
+        }
+        ~LookupGuard()
+        {
+            if constexpr (build_config::any_check)
+            {
+                lookups_in_flight.fetch_sub(1, std::memory_order_acq_rel);
+            }
+        }
+        LookupGuard(const LookupGuard&)            = delete;
+        LookupGuard& operator=(const LookupGuard&) = delete;
+    };
+
+    /// @brief Brackets a whole reclaim, mark included. No-op in release.
+    struct ReclaimScope
+    {
+        ReclaimScope() noexcept
+        {
+            if constexpr (build_config::any_check)
+            {
+                reclaims_running.fetch_add(1, std::memory_order_seq_cst);
+                check_no_lookup("starts");
+            }
+        }
+        ~ReclaimScope()
+        {
+            if constexpr (build_config::any_check)
+            {
+                check_no_lookup("ends");
+                reclaims_running.fetch_sub(1, std::memory_order_release);
+            }
+        }
+        ReclaimScope(const ReclaimScope&)            = delete;
+        ReclaimScope& operator=(const ReclaimScope&) = delete;
+
+        /// @brief Fail if a lookup or registration is in flight.
+        static void check_no_lookup(const char* when) noexcept
+        {
+            if (const int n = lookups_in_flight.load(std::memory_order_seq_cst); n != 0) [[unlikely]]
+            {
+                CHUNK_INVARIANT_FAILED("cst_val2: reclaim {} with {} second-value lookup(s) or registration(s) "
+                                       "in flight (reclaim_second_values() needs a sequential point)",
+                                       when, n);
+            }
+        }
+    };
+
     /**
      * @brief Forget every registered value whose identifier is not marked in
      *        @p referenced, and make those identifiers reusable.
@@ -396,9 +485,18 @@ class GlobalVecHolder
      *          (ArrayChunk2A::reclaim_second_values()): an identifier it
      *          misses goes to another value, and the chunk that kept it
      *          reads that value instead of its own, silently.
+     * @warning "No thread looking up" includes a lookup already DONE whose
+     *          result is not yet recorded in the chunk's second-value table:
+     *          the mark does not see that slot, frees it, and its identifier
+     *          goes to another value although the revalidation passed
+     *          (value_by_id[] keeps the old value until reuse). And
+     *          index_clear() below frees the index generation a lookup in
+     *          flight may hold. No epoch guards either case; check builds
+     *          detect them (LookupGuard / ReclaimScope).
      */
     static std::size_t reclaim_unmarked(const std::vector<std::uint8_t>& referenced)
     {
+        const ReclaimScope     scope; // check builds: no lookup in flight (nests in the caller's)
         const std::scoped_lock lk(insert_mutex); // the contract excludes appenders: uncontended
 
         std::vector<T*> kept;
@@ -1047,6 +1145,9 @@ class TabCstVal2Holder
      */
     [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
     {
+        // Up to the record in the second-value table, which the reclaim's mark
+        // scans: a reclaim must not run in between (LookupGuard).
+        const typename global_vec_holder::LookupGuard in_flight;
         T* buf = find_or_register(second_v);
         ptr_second_value.set_from_array(buf);
         return buf;
@@ -1071,6 +1172,7 @@ class TabCstVal2Holder
     [[nodiscard]] static T* find_cst_val2_ptr(in_t<T> second_v)
     {
         using gvh = GlobalVecHolder<T>;
+        const typename gvh::LookupGuard in_flight; // holds an index generation / the chain
         if (T* hit = gvh::index_lookup(second_v)) [[likely]]
         {
             return hit;
@@ -1199,6 +1301,7 @@ class TabCstVal2Holder
      */
     [[nodiscard]] static T* find_or_register(in_t<T> second_v)
     {
+        const typename global_vec_holder::LookupGuard in_flight; // check builds; nests in the callers'
         // ── Hot path, lock-free ───────────────────────────────────────────
         if (T* hit = global_vec_holder::index_lookup(second_v)) [[likely]]
         {

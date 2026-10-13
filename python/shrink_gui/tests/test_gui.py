@@ -490,3 +490,29 @@ def test_errors_tab_failures_and_rerun(gui, site, monkeypatch):
     assert pump(lambda: w.err_list.count() == 2, 10)
     w.err_list.setCurrentRow(1)
     assert pump(lambda: "still crashing" in w.err_view.toPlainText(), 10)
+
+
+def test_errors_column_and_first_error_notice(gui, site):
+    w, pump = gui
+    _choose_fake(w, pump)
+    rid = _submit(w, pump, {"runs": "6", "fail_every": "3", "step": "0.01"}, len(w.runs))
+    assert _wait_status(w, pump, rid, "fini")
+    row = next(i for i, r in enumerate(w.runs) if r["id"] == rid)
+    assert pump(lambda: w.table.item(row, w.COL_ERRORS) is not None
+                and w.table.item(row, w.COL_ERRORS).text() == "2", 10)
+    assert w.table.item(row, w.COL_ERRORS).font().bold()
+    # the first error of an active run: once, not again for the next ones
+    run = {"id": "r9", "status": "en cours", "code": None, "meta": {"program": "bench_and_test.py",
+                                                                    "partition": "gh200-bxi"}}
+    w.runs = [dict(run, errors=[0, None])]
+    w.prev_status = None
+    w.notify_changes()
+    w.notify_changes()
+    w.statusBar().clearMessage()
+    w.runs = [dict(run, errors=[1, "CHECK_FAIL: chunk2a t=4"])]
+    w.notify_changes()
+    assert w.statusBar().currentMessage() == "r9 : première erreur — CHECK_FAIL: chunk2a t=4"
+    w.statusBar().clearMessage()
+    w.runs = [dict(run, errors=[3, "CHECK_FAIL: x"])]
+    w.notify_changes()
+    assert w.statusBar().currentMessage() == ""

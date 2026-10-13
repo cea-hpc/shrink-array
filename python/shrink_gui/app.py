@@ -33,8 +33,10 @@ from shrink_gui.widgets import (DurationBox, LogView, NumItem, OptionsForm, Pick
 
 
 class Main(QMainWindow):
-    COLS = ["Run", "Programme", "Partition", "Commit", "Job", "Statut", "Avancement", "Dernière ligne"]
+    COLS = ["Run", "Programme", "Partition", "Commit", "Job", "Statut", "Avancement", "Erreurs",
+            "Dernière ligne"]
     COL_STATUS = 5
+    COL_ERRORS = 7
     ACTIVE = ("en cours", "en attente", "démarrage")
 
     def __init__(self):
@@ -48,6 +50,7 @@ class Main(QMainWindow):
         self.tail_busy = False
         self.list_busy = False
         self.prev_status = None  # id -> status at the previous refresh (notifications)
+        self.prev_errors = {}    # id -> errors at the previous refresh (first-error notice)
         self.build_info = {}     # arch suffix -> act_build_targets (the "Choisir…" lists)
         self.local_info = None   # this machine, from the check: machine, cpus, mem_gb
         self.rescan = False      # read the options again at the next check (machine changed)
@@ -1273,7 +1276,7 @@ class Main(QMainWindow):
                 commit, commit_tip = self.commit_text(run)
                 vals = [run["id"], run["meta"].get("program", ""), run["meta"].get("partition", ""),
                         commit, run.get("jobid", ""), status_text(run), T(self.progress_text(run)),
-                        run["last"]]
+                        self.errors_text(run), run["last"]]
                 for j, v in enumerate(vals):
                     it = QTableWidgetItem(str(v))
                     if j == 3:
@@ -1286,6 +1289,16 @@ class Main(QMainWindow):
                                  "#2471a3" if s in ("en cours", "démarrage") else
                                  "#7d3c98" if s == "en attente" else "#b9770e")
                         it.setForeground(QColor(color))
+                    if j == self.COL_ERRORS and (run.get("errors") or [0])[0]:
+                        it.setForeground(QColor("#c0392b"))
+                        f = it.font()
+                        f.setBold(True)
+                        it.setFont(f)
+                    if j == self.COL_ERRORS:
+                        it.setTextAlignment(Qt.AlignCenter)
+                        it.setToolTip(tip(self.errors_tip(run)))
+                        self.table.setItem(i, j, it)
+                        continue
                     it.setToolTip(commit_tip if j == 3 else
                                   run["meta"].get("command", "") if j < 2 else str(v))
                     self.table.setItem(i, j, it)
@@ -1398,6 +1411,23 @@ class Main(QMainWindow):
             lines.append(f"≠ le job a démarré sur {start[:8]} : le dépôt a changé entre la "
                          "soumission et le démarrage")
         return txt, tip("\n".join(lines))
+
+    @staticmethod
+    def errors_text(run):
+        """The Erreurs column: how many so far (bench_and_test.py's events,
+        multi_launch_stress.py's failed runs), empty when unknown."""
+        e = run.get("errors")
+        return "" if e is None else str(e[0])
+
+    @staticmethod
+    def errors_tip(run):
+        e = run.get("errors")
+        if e is None:
+            return "Pas de décompte d'erreurs pour ce run."
+        if run["meta"].get("summary") == "multi_launch":
+            return f"{e[0]} run(s) en échec (timings_summary.csv). Le détail : onglet Erreurs."
+        last = f"\n\nDernière : {e[1]}" if e[1] else ""
+        return f"{e[0]} erreur(s) (events.jsonl). Le détail : onglet Erreurs.{last}"
 
     @staticmethod
     def progress_text(run):
@@ -1598,8 +1628,24 @@ class Main(QMainWindow):
         return txt
 
     def notify_changes(self):
-        """A run that leaves the active states since the previous refresh."""
+        """A run that leaves the active states since the previous refresh, and
+        the first error of an active one (a long run is worth stopping or
+        looking at before it ends)."""
         now = {r["id"]: r["status"] for r in self.runs}
+        errs = {r["id"]: (r.get("errors") or [0])[0] for r in self.runs}
+        if self.prev_status is not None:
+            for r in self.runs:
+                if (r["status"] in self.ACTIVE and errs[r["id"]] > 0
+                        and self.prev_errors.get(r["id"], 0) == 0 and r["id"] in self.prev_status):
+                    last = (r.get("errors") or [0, None])[1]
+                    msg = T(f"{r['meta'].get('program', '')} sur {r['meta'].get('partition', '')} : "
+                            f"première erreur, le run continue") + (f"\n{last}" if last else "")
+                    self.statusBar().showMessage(T(f"{r['id']} : première erreur") + (f" — {last}" if last else ""),
+                                                 15000)
+                    if self.tray:
+                        self.tray.showMessage(f"Run {r['id']}", msg, QSystemTrayIcon.Warning, 15000)
+                    QApplication.alert(self)
+        self.prev_errors = errs
         if self.prev_status is not None:
             for r in self.runs:
                 before = self.prev_status.get(r["id"])

@@ -62,6 +62,7 @@ EN = {
     "Erreurs": "Errors", "Rafraîchir les erreurs": "Refresh errors",
     "rechercher dans les erreurs (Entrée : suivant)": "search the errors (Enter: next)",
     "(vide)": "(empty)",
+    "Pas de décompte d'erreurs pour ce run.": "No error count for this run.",
     "Relancer les échecs…": "Rerun failures…", "Relancer les échecs": "Rerun failures",
     "Répétitions": "Repetitions", "log d'erreurs": "error log",
     "pas de sortie complète enregistrée pour cet échec (une comparaison ou un garde, un bench_and_test.py "
@@ -465,6 +466,13 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"les siens$", r"warning: \1, newer or active, also writes in this directory: these files may be its own"),
     (r"^les (\d+) plus récents sur (\d+) fichiers$", r"the \1 newest of \2 files"),
     (r"^══ (.+) : introuvable ══$", r"══ \1: not found ══"),
+    (r"^(\d+) run\(s\) en échec \(timings_summary\.csv\)\. Le détail : onglet Erreurs\.$",
+     r"\1 failed run(s) (timings_summary.csv). The details: Errors tab."),
+    (r"^(\d+) erreur\(s\) \(events\.jsonl\)\. Le détail : onglet Erreurs\.", r"\1 error(s) (events.jsonl). "
+     r"The details: Errors tab."),
+    (r"\n\nDernière : ", "\n\nLast: "),
+    (r" ?: première erreur, le run continue$", ": first error, the run goes on"),
+    (r"^(\S+) : première erreur$", r"\1: first error"),
     (r"^relance des échecs de (\S+) : la liste ne garde que ce qui échoue encore, bench_errors\.log est "
      r"celui du run rejoué$",
      r"rerun of the failures of \1: the list keeps only what still fails, bench_errors.log is the replayed run's"),

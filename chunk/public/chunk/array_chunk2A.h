@@ -334,6 +334,10 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *         value unfindable by value).
      *
      * @warning Sequential point: no thread may write to or compress an ArrayChunk2A<T>.
+     *          Nor may one hold the result of a second-value lookup it has not
+     *          recorded yet: the mark misses that slot and frees it. Not guarded
+     *          beyond the refusals above (no epoch); check builds fail an
+     *          invariant (GlobalVecHolder::ReclaimScope).
      */
     static std::size_t reclaim_second_values()
     {
@@ -349,6 +353,11 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
             {
                 return 0;
             }
+            // Check builds: no lookup or registration in flight from here to the
+            // end of reclaim_unmarked() -- the mark included, since a slot found
+            // before it and recorded after it would be freed (GlobalVecHolder's
+            // "Reclaim contract").
+            const typename gvh::ReclaimScope scope;
             const std::size_t handed_out = gvh::ids_handed_out();
             if (handed_out == 0)
             {

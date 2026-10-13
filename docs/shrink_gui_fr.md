@@ -86,7 +86,9 @@ trouvés sur le calculateur.
 
 Le tableau liste les runs du dossier des runs, rafraîchi toutes les 15 s : programme,
 partition, commit, job, statut, avancement (k/N et temps restant quand le programme les
-donne), dernière ligne du log. Une notification signale un run qui se termine.
+donne), erreurs (en direct pour `bench_and_test.py`, runs en échec pour
+`multi_launch_stress.py`), dernière ligne du log. Une notification signale un run qui se
+termine, et la première erreur d'un run en cours.
 
 | onglet | contenu |
 |---|---|
