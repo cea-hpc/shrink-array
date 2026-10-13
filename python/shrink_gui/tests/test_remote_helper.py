@@ -360,3 +360,56 @@ def test_git_pull_without_repository(site):
     res = subprocess.run([str(site.bin / "ssh"), "inti", "python3 - git_pull ~/nothing merge"],
                          input=HELPER.encode(), env=site.env, capture_output=True, timeout=60)
     assert "error" in json.loads(res.stdout)
+
+
+def _bench_run(site, rid, created, od):
+    """A bench_and_test.py run whose log announces @p od."""
+    d = site.runs / rid
+    d.mkdir(parents=True)
+    (d / "meta.json").write_text(json.dumps({"program": "bench_and_test.py", "created": created,
+                                             "out_re": r"Run outputs \S+ (\S+)"}))
+    (d / "out.log").write_text("📁 Run outputs → %s  (arch: aarch64)\n" % od)
+    (d / "exit_code").write_text("1")
+
+
+def _files(*names):
+    return base64.b64encode(json.dumps({"files": list(names)}).encode()).decode()
+
+
+def test_errors_log(site):
+    od = site.home / "bench_results" / "aarch64"
+    od.mkdir(parents=True)
+    _bench_run(site, "b1", "2026-10-13 10:00:00", od)
+    r = site.helper("errors", "~/shrink_runs", "b1", _files("bench_errors.log"))
+    assert r["files"] == [] and r["note"].startswith("aucun fichier bench_errors.log")
+    (od / "bench_errors.log").write_text(
+        "CHECK_FAIL: chunk2a t=4 code=-11\n  stderr_tail:\n    Segmentation fault\n"
+        "PERF_FAIL: chunk t=8 timeout\n  stderr_tail:\n    \n")
+    r = site.helper("errors", "~/shrink_runs", "b1", _files("bench_errors.log"))
+    assert r["count"] == 2 and r["newer"] is None
+    assert r["files"][0]["name"] == "bench_errors.log" and "Segmentation fault" in r["files"][0]["data"]
+    # bench_results/<arch> is shared: a newer run rewrites the file
+    _bench_run(site, "b2", "2026-10-13 11:00:00", od)
+    assert site.helper("errors", "~/shrink_runs", "b1", _files("bench_errors.log"))["newer"] == "b2"
+    assert site.helper("errors", "~/shrink_runs", "b2", _files("bench_errors.log"))["newer"] is None
+
+
+def test_errors_tail_patterns_and_no_dir(site):
+    od = site.home / "out"
+    od.mkdir()
+    _bench_run(site, "m1", "2026-10-13 10:00:00", od)
+    (od / "error_1_a.txt").write_text("x" * 10 + "\n" + "y" * (2 * 1024 * 1024) + "\nEND\n")
+    (od / "error_2_a.txt").write_text("")
+    (od / "output_1_a.txt").write_text("not an error")
+    r = site.helper("errors", "~/shrink_runs", "m1", _files("error_*.txt", "../etc"))
+    assert sorted(f["name"] for f in r["files"]) == ["error_1_a.txt", "error_2_a.txt"]
+    big = next(f for f in r["files"] if f["name"] == "error_1_a.txt")
+    assert big["skipped"] > 0 and big["data"].endswith("END\n") and not big["data"].startswith("x")
+    assert r["count"] == 1                        # the empty file is no error
+    assert site.helper("errors", "~/shrink_runs", "m1", _files())["note"] == \
+        "pas de log d'erreurs pour ce programme"
+    d = site.runs / "m2"
+    d.mkdir()
+    (d / "meta.json").write_text(json.dumps({"out_re": r"Run outputs \S+ (\S+)"}))
+    assert "pas encore de dossier" in site.helper("errors", "~/shrink_runs", "m2",
+                                                  _files("bench_errors.log"))["note"]

@@ -92,6 +92,7 @@ the log. A notification announces a run that ends.
 | Log | the selected run's log, followed live; search with Ctrl+F |
 | Summary | `multi_launch_stress.py`: per build (runs, failures, times); `bench_and_test.py`: its phases (duration, errors) or its `bench_summary.csv` |
 | Chart | `multi_launch_stress.py`: each run's time against the thread count, filtered by build and variant; "Compare with" overlays another run |
+| Errors | the error log read in the output directory: `bench_errors.log` for `bench_and_test.py` (one entry per failure, as soon as it happens), the failed runs' `error_*.txt` for `multi_launch_stress.py`; the tab turns red when there are errors |
 
 | button | effect |
 |---|---|

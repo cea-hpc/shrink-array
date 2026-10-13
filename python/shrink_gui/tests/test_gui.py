@@ -56,6 +56,10 @@ def test_submit_follow_summary_fetch(gui, site):
     assert pump(lambda: w.sum_table.rowCount() == 4, 10)        # 3 builds + TOTAL
     w.tabs.setCurrentIndex(2)
     assert pump(lambda: len(w.pt_view.points) == 30, 10)
+    w.tabs.setCurrentIndex(w.TAB_ERRORS)                         # runs 11 and 22 failed
+    assert pump(lambda: w.err_note.text().startswith("2 erreur(s)"), 10)
+    assert "run 22 failed: code 1" in w.err_view.toPlainText()
+    assert w.tabs.tabBar().tabTextColor(w.TAB_ERRORS).name() == "#c0392b"
     w.fetch()
     assert pump(lambda: (site.local / rid / "outputs" / "timings_summary.csv").exists(), 10)
 

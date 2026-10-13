@@ -286,8 +286,7 @@ class Main(QMainWindow):
         lgl.addWidget(self.log, 1)
         find_act = QAction(self)
         find_act.setShortcut(QKeySequence.Find)
-        find_act.triggered.connect(lambda: (self.tabs.setCurrentIndex(0), self.find.setFocus(),
-                                            self.find.selectAll()))
+        find_act.triggered.connect(self.focus_find)
         self.addAction(find_act)
 
         # summary tab
@@ -363,10 +362,36 @@ class Main(QMainWindow):
         ptl.addWidget(self.pt_note)
         ptl.addWidget(self.pt_view, 1)
 
+        # errors tab: the error files the program writes in its output
+        # directory (PROGRAMS[...]["errors_files"]: bench_errors.log...)
+        self.err_note = TLabel("")
+        self.err_note.setWordWrap(True)
+        self.err_find = QLineEdit()
+        self.err_find.setPlaceholderText("rechercher dans les erreurs (Entrée : suivant)")
+        self.err_find.setClearButtonEnabled(True)
+        self.err_find.returnPressed.connect(self.err_find_next)
+        berr = QPushButton("Rafraîchir les erreurs")
+        berr.clicked.connect(self.load_errors)
+        erow = QHBoxLayout()
+        erow.addWidget(self.err_note, 1)
+        erow.addWidget(self.err_find)
+        erow.addWidget(berr)
+        self.err_view = LogView()
+        self.err_view.follow = False
+        self.err_view.setMaximumBlockCount(0)       # the helper already bounds what it sends
+        errw = QWidget()
+        el = QVBoxLayout(errw)
+        el.setContentsMargins(0, 0, 0, 0)
+        el.addLayout(erow)
+        el.addWidget(self.err_view, 1)
+        self.err_busy = False
+        self._err_shown = None
+
         self.tabs = QTabWidget()
         self.tabs.addTab(logw, "Log")
         self.tabs.addTab(sumw, "Résumé")
         self.tabs.addTab(ptw, "Graphique")
+        self.tabs.addTab(errw, "Erreurs")
         self.tabs.currentChanged.connect(self.tab_changed)
 
         # end-of-run notification: the tray when there is one
@@ -601,7 +626,13 @@ class Main(QMainWindow):
                     "Le résumé du run : par build pour multi_launch_stress.py (runs, échecs, temps), "
                     "le CSV tel quel pour bench_and_test.py.",
                     "Temps de chaque run selon le nombre de threads (multi_launch_stress.py). "
-                    "Survolez un point pour le détail ; « Comparer avec » superpose un autre run."]
+                    "Survolez un point pour le détail ; « Comparer avec » superpose un autre run.",
+                    "Le log d'erreurs du run, lu dans son dossier de sortie : bench_errors.log pour "
+                    "bench_and_test.py (une entrée par échec, écrite dès qu'il survient, avec la fin "
+                    "de sa sortie d'erreur ; la sortie complète de chaque exécution est dans run_logs/), "
+                    "les error_*.txt des runs en échec pour multi_launch_stress.py. Le plus récent "
+                    "d'abord, la fin de chaque fichier seulement.\n\nL'onglet passe en rouge "
+                    "quand il y a des erreurs."]
         for i, t in enumerate(tab_tips):
             self.tabs.setTabToolTip(i, tip(t))
 
@@ -702,6 +733,7 @@ class Main(QMainWindow):
         self.runs, self.prev_status, self.current = [], None, None
         self.table.setRowCount(0)
         self.log.clear()
+        self.clear_errors()
         self.inti_git = None
         self.show_git_state()
         self.build_info.clear()
@@ -1213,6 +1245,8 @@ class Main(QMainWindow):
                     self.load_summary()
                 elif self.tabs.currentIndex() == 2:
                     self.load_points()
+                elif self.tabs.currentIndex() == self.TAB_ERRORS:
+                    self.load_errors()
             keep = select or self.current
             self.table.blockSignals(True)
             self.table.setRowCount(len(self.runs))
@@ -1257,6 +1291,7 @@ class Main(QMainWindow):
         if rid and rid != self.current:
             self.current, self.offset = rid, -1     # -1: the end of the log first (act_tail)
             self.log.clear()
+            self.clear_errors()
             self.poll_tail()
             self.pt_data = None
             self.fill_compare()
@@ -1625,6 +1660,95 @@ class Main(QMainWindow):
             self.load_summary()
         elif i == 2:
             self.load_points()
+        elif i == self.TAB_ERRORS:
+            self.load_errors()
+
+    # ---------------------------------------------------------- errors tab
+    TAB_ERRORS = 3
+
+    def focus_find(self):
+        """Ctrl+F: the search field of the errors tab when it is shown, else
+        the log's."""
+        if self.tabs.currentIndex() == self.TAB_ERRORS:
+            self.err_find.setFocus()
+            self.err_find.selectAll()
+            return
+        self.tabs.setCurrentIndex(0)
+        self.find.setFocus()
+        self.find.selectAll()
+
+    def err_find_next(self):
+        text = self.err_find.text()
+        if not text:
+            return
+        if not self.err_view.find(text):
+            self.err_view.moveCursor(QTextCursor.Start)       # wrap around
+            if not self.err_view.find(text):
+                self.info(f"« {text} » absent des erreurs")
+
+    def clear_errors(self):
+        self.err_view.clear()
+        self.err_note.setText("")
+        self.tabs.tabBar().setTabTextColor(self.TAB_ERRORS, QColor())
+        self._err_shown = None
+
+    @staticmethod
+    def size_text(n):
+        mb, kb, b = ("MB", "kB", "B") if i18n.LANG == "en" else ("Mo", "Ko", "o")
+        return f"{n / 1e6:.1f} {mb}" if n >= 1e6 else f"{n / 1e3:.1f} {kb}" if n >= 1e3 else f"{n} {b}"
+
+    def load_errors(self, *_):
+        """The run's error files (remote_helper act_errors), newest first."""
+        run = next((x for x in self.runs if x["id"] == self.current), None)
+        if not run or self.err_busy:
+            return
+        rid = run["id"]
+        files = PROGRAMS.get(run["meta"].get("program"), {}).get("errors_files") or []
+        self.err_busy = True
+        if not self.err_view.toPlainText():
+            self.err_note.setText("chargement…")
+
+        def done(r):
+            self.err_busy = False
+            if r is None or rid != self.current:
+                return
+            notes = []
+            if r.get("note"):
+                notes.append(r["note"])
+            if r.get("newer"):
+                notes.append(f"attention : {r['newer']}, plus récent ou actif, écrit aussi dans ce dossier : "
+                             "ces fichiers sont peut-être les siens")
+            n, shown = r.get("count", 0), r.get("files") or []
+            if shown:
+                head = f"{n} erreur(s)" if n else "aucune erreur"
+                notes.insert(0, f"{head} — {r['dir']}")
+                if r.get("total_files", 0) > len(shown):
+                    notes.append(f"les {len(shown)} plus récents sur {r['total_files']} fichiers")
+            self.err_note.setText("\n".join(T(x) for x in notes))
+            self.tabs.tabBar().setTabTextColor(self.TAB_ERRORS, QColor("#c0392b") if n else QColor())
+            parts = []
+            for f in shown:
+                when = time.strftime("%F %T", time.localtime(f["mtime"])) if f.get("mtime") else ""
+                parts.append(T(f"══ {f['name']} · {self.size_text(f['size'])} · {when} ══") + "\n")
+                if f.get("skipped"):
+                    parts.append(T(f"[gui] … les {self.size_text(f['skipped'])} du début ne sont pas affichés "
+                                   "(« Récupérer les résultats » copie le fichier complet)") + "\n")
+                parts.append(f["data"] if f["data"].strip() else T("(vide)") + "\n")
+                if not parts[-1].endswith("\n"):
+                    parts.append("\n")
+                parts.append("\n")
+            text = "".join(parts)
+            if text == self._err_shown:      # unchanged: keep the scroll position and the selection
+                return
+            self._err_shown = text
+            bar = self.err_view.verticalScrollBar()
+            pos = bar.value()
+            self.err_view.clear()
+            self.err_view.append_raw(text)
+            bar.setValue(pos)
+
+        blob = base64.b64encode(json.dumps({"files": files}).encode()).decode()
+        self.remote.helper("errors", [self.runs_dir.text().strip(), rid, blob], done)
 
     def fill_compare(self):
         """The runs the current one can be compared with: the other

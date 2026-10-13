@@ -59,6 +59,20 @@ EN = {
     "Rafraîchir": "Refresh", "Arrêter": "Stop", "Récupérer les résultats": "Fetch results",
     "Reprendre ses options": "Reuse its options", "Supprimer": "Delete",
     "Log": "Log", "Résumé": "Summary", "Graphique": "Chart",
+    "Erreurs": "Errors", "Rafraîchir les erreurs": "Refresh errors",
+    "rechercher dans les erreurs (Entrée : suivant)": "search the errors (Enter: next)",
+    "(vide)": "(empty)",
+    "Le log d'erreurs du run, lu dans son dossier de sortie : bench_errors.log pour "
+    "bench_and_test.py (une entrée par échec, écrite dès qu'il survient, avec la fin "
+    "de sa sortie d'erreur ; la sortie complète de chaque exécution est dans run_logs/), "
+    "les error_*.txt des runs en échec pour multi_launch_stress.py. Le plus récent "
+    "d'abord, la fin de chaque fichier seulement.\n\nL'onglet passe en rouge "
+    "quand il y a des erreurs.":
+        "The run's error log, read in its output directory: bench_errors.log for bench_and_test.py "
+        "(one entry per failure, written as soon as it happens, with the end of its error output; "
+        "the full output of every execution is in run_logs/), the error_*.txt of the failed runs for "
+        "multi_launch_stress.py. Newest first, the end of each file only.\n\nThe tab turns red "
+        "when there are errors.",
     "rechercher dans le log (Entrée : suivant)": "search the log (Enter: next)",
     "Suivre la fin": "Follow the end", "Rafraîchir le résumé": "Refresh the summary",
     # chart controls
@@ -429,6 +443,16 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"aucune option reconnue dans (\S+) --help", r"no option recognised in \1 --help"),
     (r"^pas encore de (\S+)$", r"no \1 yet"), (r"(\S+) est vide", r"\1 is empty"),
     (r"pas de résumé pour ce programme", "no summary for this program"),
+    (r"pas de log d'erreurs pour ce programme", "no error log for this program"),
+    (r"pas encore de dossier de sortie annoncé dans le log", "no output directory announced in the log yet"),
+    (r"^aucun fichier (.+) dans (\S+)$", r"no \1 file in \2"),
+    (r"^(\d+) erreur\(s\) — ", r"\1 error(s) — "), (r"^aucune erreur — ", "no error — "),
+    (r"^attention : (\S+), plus récent ou actif, écrit aussi dans ce dossier : ces fichiers sont peut-être "
+     r"les siens$", r"warning: \1, newer or active, also writes in this directory: these files may be its own"),
+    (r"^les (\d+) plus récents sur (\d+) fichiers$", r"the \1 newest of \2 files"),
+    (r"^\[gui\] … les (.+) du début ne sont pas affichés \(« Récupérer les résultats » copie le fichier "
+     r"complet\)$", r'[gui] … the first \1 are not shown ("Fetch results" copies the whole file)'),
+    (r"« (.*) » absent des erreurs", r'"\1" not found in the errors'),
     (r"graphique disponible pour multi_launch_stress\.py seulement", "chart available for multi_launch_stress.py only"),
     (r"— (\d+) ligne\(s\), les 1000 dernières", r"— \1 row(s), the last 1000"),
     (r"— (\d+) ligne\(s\)", r"— \1 row(s)"),

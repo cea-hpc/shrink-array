@@ -58,6 +58,9 @@ PROGRAMS = {
         "progress_re": r"Run (\d+)/(\d+) on build",
         "eta_re": r"Estimated Time Left: ([\d.]+)s",
         "summary": "multi_launch", "summary_file": "timings_summary.csv",
+        # The Erreurs tab: these files of the output directory (names or glob
+        # patterns), newest first. One error_*.txt per failed run.
+        "errors_files": ["error_*.txt"],
         # The build check before the command ("Builds à jour"): the option
         # naming the build root, the one naming the builds (a list, or a file
         # of names one per line, relative to cwd).
@@ -83,6 +86,9 @@ PROGRAMS = {
         "out_files": ["bench_summary.csv", "bench_errors.log", "failed_cases.jsonl"],
         "progress_re": None, "eta_re": None,
         "summary": "csv", "summary_file": "bench_summary.csv",
+        # The Erreurs tab: one entry per failure, written as it happens (the
+        # full output of each run is in run_logs/).
+        "errors_files": ["bench_errors.log"],
         "builds_opt": {"root": "build_root", "builds": "configs"},
         # bench_results/<arch> is shared by every run of the architecture and
         # holds the oracles (oracle/): only what each run rewrites goes.
@@ -101,6 +107,7 @@ PROGRAMS = {
         "out_re": None, "out_files": [],
         "progress_re": None, "eta_re": None,
         "summary": None, "summary_file": None,
+        "errors_files": [],
     },
 }
 

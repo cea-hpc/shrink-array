@@ -48,6 +48,7 @@ FAKE_PROGRAM = {
     "out_files": ["timings_summary.csv", "multi_launch_output.log", "error_*.txt"],
     "progress_re": r"Run (\d+)/(\d+) on build", "eta_re": r"Estimated Time Left: ([\d.]+)s",
     "summary": "multi_launch", "summary_file": "timings_summary.csv",
+    "errors_files": ["error_*.txt"],
 }
 
 
