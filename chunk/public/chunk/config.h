@@ -142,6 +142,25 @@ inline constexpr bool free_guard = true;
 /// Chunk2A: second values of more than 4 bytes stored as 4-byte identifiers (CHUNK_SECOND_VALUE_INDEXED).
 inline constexpr bool second_value_indexed = CHUNK_OPT_SECOND_VALUE_INDEXED != 0;
 
+/// Alignment (hence size) of one word of the per-chunk dirty bitset
+/// (array_chunk_dirty_bitset.h): two words must never share the unit
+/// false sharing happens on.
+///  - aarch64 (Neoverse V1/V2, Grace, Graviton): 64-byte lines in L1, L2
+///    and SLC, coherence on 64 bytes -> 64. At 4.2 M chunks this halves the
+///    bitset: 4.2 MB per array instead of 8.4 MB.
+///  - elsewhere (x86): 128. Lines are 64 bytes, but Intel's L2 spatial
+///    prefetcher fetches them by 128-byte pairs.
+/// -DCHUNK_DIRTY_WORD_ALIGN=N overrides it (e.g. 256 on A64FX).
+#if defined(CHUNK_DIRTY_WORD_ALIGN)
+inline constexpr std::size_t dirty_word_align = CHUNK_DIRTY_WORD_ALIGN;
+#elif defined(__aarch64__)
+inline constexpr std::size_t dirty_word_align = 64;
+#else
+inline constexpr std::size_t dirty_word_align = 128;
+#endif
+static_assert(dirty_word_align >= sizeof(std::uint64_t) && (dirty_word_align & (dirty_word_align - 1)) == 0,
+              "dirty_word_align: a power of two, at least one 64-bit word");
+
 } // namespace shrink_array::build_config
 
 namespace shrink_array

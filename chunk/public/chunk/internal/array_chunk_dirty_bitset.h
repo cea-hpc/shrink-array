@@ -33,7 +33,8 @@
  *          serial version an empty class (no member, no allocation, zero bytes
  *          via the empty-base optimisation) whose verbs are no-ops the
  *          optimiser deletes -- a serial array would otherwise pay one heap
- *          allocation plus 128 bytes per 64 chunks that nothing ever reads.
+ *          allocation plus one padded word (build_config::dirty_word_align
+ *          bytes) per 64 chunks that nothing ever reads.
  *
  * @see ArrayChunkBase::sync_chunk — the sole hot-path reader of the bits
  */
@@ -57,13 +58,17 @@ namespace shrink_array
  * @details The bitset is written concurrently by the deferred-enqueue path
  *          (mark_chunk_dirty) from every thread. Packing the words together
  *          would make neighbouring chunks share a cache line and turn each mark
- *          into false sharing; alignas(128) gives each word a line of its own
- *          (128 bytes covers the 128-byte sectored lines of recent server CPUs).
+ *          into false sharing; the padding gives each word a line of its own.
+ *          Its size is build_config::dirty_word_align: 64 on aarch64 (64-byte
+ *          lines and coherence on Neoverse / Grace), 128 elsewhere (Intel's L2
+ *          spatial prefetcher pairs 64-byte lines). See config.h.
  */
-struct alignas(128) PaddedDirtyWord
+struct alignas(build_config::dirty_word_align) PaddedDirtyWord
 {
     std::atomic<uint64_t> word{0};
 };
+static_assert(sizeof(PaddedDirtyWord) == build_config::dirty_word_align,
+              "PaddedDirtyWord: exactly one padded line per word");
 
 /**
  * @brief Per-chunk dirty bitset, present only when the build has OpenMP.
@@ -91,14 +96,26 @@ class DirtyBitsetSupport<Derived, true>
      * @brief Mark a chunk as having received a deferred operation.
      * @param chunk_idx The global index of the chunk (not of an element: one
      *        bit per chunk, whatever the chunk size).
-     * @note Concurrent: an acq_rel fetch_or, called from the deferred-enqueue
-     *       path on any thread.
+     * @note Concurrent: called from the deferred-enqueue path on any thread.
+     *       Test before set: the bit is sticky for the whole phase, so most
+     *       marks find it already set. A plain load keeps the line shared
+     *       instead of taking it exclusive for an RMW that changes nothing;
+     *       only the first mark of a bit pays the acq_rel fetch_or.
+     *       Skipping the RMW loses nothing: a reader that happens-after this
+     *       load sees the bit set too (read-read coherence; only
+     *       clear_dirty_bitset() resets it, at a quiescent point), and the
+     *       bit is a pre-filter only -- the op itself is published by the
+     *       chunk's pending counter (increm_chunk_gate_deferred), after this.
      */
     void mark_chunk_dirty(int chunk_idx) noexcept
     {
         const int      word_idx = chunk_idx >> kWordShift;
         const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
-        bitset_[word_idx].word.fetch_or(bit_mask, std::memory_order_acq_rel);
+        auto&          word     = bitset_[word_idx].word;
+        if ((word.load(std::memory_order_relaxed) & bit_mask) == 0)
+        {
+            word.fetch_or(bit_mask, std::memory_order_acq_rel);
+        }
         // Raise the "some bit was set" flag (read first: raised once per phase,
         // then every later mark is a plain load).
         auto& any = any_marked_word();
@@ -201,7 +218,7 @@ class DirtyBitsetSupport<Derived, true>
      *       single region), not while writers may still be marking. Not a
      *       memset: writing a std::atomic through a non-atomic access is UB even
      *       at a quiescent point (-Wclass-memaccess), and with one word per
-     *       128-byte line a memset would touch the same lines anyway.
+     *       padded line a memset would touch the same lines anyway.
      */
     void clear_dirty_bitset() noexcept
     {
