@@ -1175,14 +1175,16 @@ void ArrayChunk2<T, ind_type>::release_chunk_range(int first, int last)
             [my_sz]() -> auto& {
                 return manager_chunk2::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz);
             },
-            [this, my_sz](int j, auto& lbf)
+            [this](int j, auto& lbf)
             {
                 if (chunk_list[j].owns_live_buffer())
                 {
                     if constexpr (chunk_config::stats)
                     {
                         increm_chunk_teardown_clear<Chunk2<T>>();
-                        add_chunk_released<Chunk2<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                        // The size read here, not captured: stats builds only use it.
+                        add_chunk_released<Chunk2<T>>(1, static_cast<long>(sizeof(T)) *
+                                                          static_cast<long>(this->size_policy_.size()));
                     }
                     T* values_loc = chunk_list[j].values;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
