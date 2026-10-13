@@ -16,7 +16,7 @@
 
 #include <algorithm> // std::find (the registered sizes), std::copy_n (the registry table)
 #include <cstddef>   // std::size_t (the reuse-pool byte counts)
-#include <mutex>     // std::mutex, std::lock_guard
+#include <mutex>     // std::mutex, std::scoped_lock
 #include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
 #include <memory>    // for unique_ptr
 #include <optional>  // SerialFlushOwnership
@@ -599,8 +599,8 @@ void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(unsigned int s
     // (register_manager replays the list); then declared to the managers that
     // exist. Both under the registry mutex: a first array of a new type may be
     // registering on another thread.
-    auto&                             reg = static_cast<Derived&>(*this);
-    const std::lock_guard<std::mutex> lock(reg.registry_mutex_);
+    auto&                  reg = static_cast<Derived&>(*this);
+    const std::scoped_lock lock(reg.registry_mutex_);
     if (std::find(reg.registered_sizes_.begin(), reg.registered_sizes_.end(), size) == reg.registered_sizes_.end())
     {
         reg.registered_sizes_.push_back(size);

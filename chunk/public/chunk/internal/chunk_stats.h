@@ -38,7 +38,7 @@
 #include <array>    // std::array
 #include <chrono>   // __chunk_stats_t0, the rates ParamChunk::ChunkStats() prints
 #include <map>      // std::map
-#include <mutex>    // std::mutex, std::lock_guard
+#include <mutex>    // std::mutex, std::scoped_lock
 #include <concepts> // ChunkStatsZeroComparable
 
 #include "chunk/PMP_CHUNK.h" // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
@@ -445,7 +445,7 @@ inline void record_chunk_size_at_exit(unsigned int size) noexcept
 {
     if constexpr (build_config::chunk_dynamic && chunk_config::stats)
     {
-        std::lock_guard<std::mutex> lock(__chunk_size_dist_mutex[C::stat_variant]);
+        const std::scoped_lock lock(__chunk_size_dist_mutex[C::stat_variant]);
         ++__chunk_size_dist[C::stat_variant][size];
     }
 }

@@ -32,7 +32,7 @@
 #include <cstddef>   // std::size_t (CHUNK_STATS report only: the retention)
 #include <iomanip>   // std::setprecision (CHUNK_STATS report only: the ratios)
 #include <iostream>  // std::cout, std::cerr
-#include <mutex>     // std::lock_guard (CHUNK_STATS report only: the size distribution)
+#include <mutex>     // std::scoped_lock (CHUNK_STATS report only: the size distribution)
 #include <utility>   // std::cmp_greater
 #include <unistd.h>  // sysconf(_SC_PAGESIZE): page-aware slab floor
 
@@ -430,8 +430,8 @@ void ParamChunk::ChunkStats()
 
             // Chunk size of each array at its own teardown (record_chunk_size_at_exit).
             {
-                std::lock_guard<std::mutex> lock(shrink_array::__chunk_size_dist_mutex[v]);
-                const auto&                 dist = shrink_array::__chunk_size_dist[v];
+                const std::scoped_lock lock(shrink_array::__chunk_size_dist_mutex[v]);
+                const auto&            dist = shrink_array::__chunk_size_dist[v];
                 if (!dist.empty())
                 {
                     std::cout << "  size dist      arrays at each chunk size, at their own teardown:\n";
