@@ -70,6 +70,25 @@ inline const bool g_rechunk_recycle = []() noexcept
     return env == nullptr || env[0] == '\0' || env[0] != '0';
 }();
 
+/// CHUNK_RECHUNK_KEEP_RECYCLED (default off; 1 = on): at the end of the v1
+/// refill, KEEP the recycled slabs no slice took on the arena's recycled lists,
+/// resident, instead of advising them away (SlabArena::advise_recycled: one
+/// MADV_DONTNEED per run, in practice per 1 MiB slab). SlabArena::allocate()
+/// takes them first, so the next re-chunk and the next writes reuse their pages
+/// instead of faulting fresh ones -- at 128 threads on Grace a fault costs ~4x
+/// what it does at 64. Cost: those slabs stay in the RSS until reused.
+inline const bool g_rechunk_keep_recycled = []() noexcept
+{
+    const char* env = std::getenv("CHUNK_RECHUNK_KEEP_RECYCLED");
+    const bool  on  = env != nullptr && env[0] != '\0' && env[0] != '0';
+    if (on)
+    {
+        std::fprintf(stderr, "[env] CHUNK_RECHUNK_KEEP_RECYCLED=1: the refill's leftover recycled slabs "
+                             "stay resident\n");
+    }
+    return on;
+}();
+
 /// CHUNK_RECHUNK_TRACE_MEM (read once, set = on): the MEMORY side of the trace --
 /// [RECHUNK-RSS] (exact RSS, a page-table walk per read), the new geometry's
 /// occupancy, the allocator census. Kept apart from CHUNK_RECHUNK_TRACE so the
@@ -1385,7 +1404,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         {
             // The last boundary's recycled slabs the last slice did not take:
             // back to the kernel, as the sweep would have done.
-            if (internal::g_rechunk_recycle && n_slices > 1)
+            // CHUNK_RECHUNK_KEEP_RECYCLED: leave them on the recycled lists, resident,
+            // for the next allocations (SlabArena::allocate() takes them first).
+            if (internal::g_rechunk_recycle && n_slices > 1 && !internal::g_rechunk_keep_recycled)
             {
                 const auto a0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
