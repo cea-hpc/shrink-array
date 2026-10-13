@@ -57,6 +57,7 @@
 // ============================================================================
 
 #include <algorithm> // std::sort, std::unique, std::upper_bound
+#include <atomic>    // std::atomic_ref (the per-thread counts merged)
 #include <bit>       // std::bit_width, std::countr_zero
 #include <cmath>     // std::lround (the extrapolated materialised count)
 #include <cstddef>   // std::size_t
@@ -460,8 +461,10 @@ struct ChunkSizeAdvisor
                 {
                     if (inside_loc[static_cast<std::size_t>(ci)] != 0)
                     {
-#pragma omp atomic
-                        inside[static_cast<std::size_t>(ci)] += inside_loc[static_cast<std::size_t>(ci)];
+                        // Relaxed, as `omp atomic` was: the barrier below
+                        // publishes the sums.
+                        std::atomic_ref<int64_t>(inside[static_cast<std::size_t>(ci)])
+                            .fetch_add(inside_loc[static_cast<std::size_t>(ci)], std::memory_order_relaxed);
                     }
                 }
             }
@@ -719,8 +722,10 @@ struct ChunkSizeAdvisor
                 {
                     if (found_loc[static_cast<std::size_t>(ci)] != 0)
                     {
-#pragma omp atomic
-                        found[static_cast<std::size_t>(ci)] += found_loc[static_cast<std::size_t>(ci)];
+                        // Relaxed, as `omp atomic` was: the end of the
+                        // region publishes the sums.
+                        std::atomic_ref<int64_t>(found[static_cast<std::size_t>(ci)])
+                            .fetch_add(found_loc[static_cast<std::size_t>(ci)], std::memory_order_relaxed);
                     }
                 }
             }

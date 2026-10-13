@@ -20,6 +20,7 @@
 // this file at its end.
 
 #include <cstddef>     // std::size_t
+#include <mutex>       // std::scoped_lock (ladder_mutex)
 #include <tuple>       // std::get (dependent calls, in with_bucket)
 #include <type_traits> // std::is_void_v
 #include <utility>     // std::index_sequence
@@ -80,10 +81,8 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
         void* vv = nullptr;
         if (FAST_ALLOC_PMP_IN_PARALLEL_REGION)
         {
-#pragma omp critical(fast_alloc_ladder)
-            {
-                vv = getBlockAllocInt(sz);
-            }
+            const std::scoped_lock lock(ladder_mutex());
+            vv = getBlockAllocInt(sz);
         }
         else
         {
@@ -116,7 +115,7 @@ inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
 /**
  * @details Outside a parallel region the block goes straight back to its
  *          bucket. Inside one it is batched instead, and the batch is flushed
- *          under a single critical section when it fills -- which is also the
+ *          under a single hold of ladder_mutex() when it fills -- which is also the
  *          only moment @p ptr itself is released, since a full batch refuses it.
  */
 inline bool StaticConstArray::freeBlock(int sz, void* ptr)
@@ -139,10 +138,10 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
 
             // A rank the batches were not sized for (the team grew after
             // they were built, before main): there is no batch to index, so
-            // free at once, under the critical section the full path takes.
+            // free at once, under the lock the full path takes.
             if (thr_rank >= tab_info_free_elt().nb_thr) [[unlikely]]
             {
-#pragma omp critical(fast_alloc_ladder)
+                const std::scoped_lock lock(ladder_mutex());
                 freeBlockWithInt(sz, ptr);
                 return true;
             }
@@ -151,8 +150,8 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
 
             if (is_full)
             {
-#pragma omp critical(fast_alloc_ladder)
                 {
+                    const std::scoped_lock lock(ladder_mutex());
                     freeBlockWithInt(sz, ptr);
 
                     clearInfoFreeElt(thr_rank);

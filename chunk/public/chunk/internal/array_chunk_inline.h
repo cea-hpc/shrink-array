@@ -17,6 +17,7 @@
 #pragma once
 
 #include <iostream> // std::cerr
+#include <mutex>    // std::scoped_lock (the residual report)
 #include <vector>   // std::vector
 
 #include "chunk/all_type_chunk.h"                       // ensure_manager, from create
@@ -33,6 +34,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/in_t.h"                        // in_t<T>
+#include "chunk/internal/diag_mutex.h"                  // diag_print_mutex (the residual report)
 
 namespace shrink_array
 {
@@ -354,8 +356,8 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
     // Printed only when `verbose`.
     if (nb != 0 && verbose)
     {
-#pragma omp critical
         {
+            const std::scoped_lock diag_lock(::shrink_array::internal::diag_print_mutex());
             std::cerr << "[compress-residual chunk] " << nb
                       << " chunk(s) constant at zero, still materialised "
                          "(awaiting the next compression pass)\n";

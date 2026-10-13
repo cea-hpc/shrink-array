@@ -20,6 +20,7 @@
 #include <atomic>    // std::memory_order
 #include <cstddef>   // std::size_t
 #include <iostream>  // std::cerr
+#include <mutex>     // std::scoped_lock (the self-heal and residual reports)
 #include <ostream>   // print_compression_stats(std::ostream&)
 #include <string>    // the healed-chunk report
 #include <vector>    // std::vector
@@ -39,6 +40,7 @@
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
+#include "chunk/internal/diag_mutex.h"                  // diag_print_mutex (the reports)
 // Explicit includes for symbols used by clear_core() below, so this TU does not
 // depend on the transitive include chain.
 #include "chunk/internal/manager_chunk.h"     // ManagerChunk: per-size free lists, candidate filter
@@ -1006,8 +1008,8 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 }
                 return out;
             };
-#pragma omp critical
             {
+                const std::scoped_lock diag_lock(::shrink_array::internal::diag_print_mutex());
                 std::cerr << "[compress_int self-heal] ArrayChunk2<" << type_name<T>() << ", " << type_name<ind_type>()
                           << ">: " << healed1 << " chunk(s) at first_value [" << healed_indices(keep1_scanned, tab_nb1)
                           << " ], " << healed2 << " at second_value [" << healed_indices(keep2_scanned, tab_nb2)
@@ -1023,8 +1025,8 @@ void ArrayChunk2<T, ind_type>::compress_int()
 
     if (nb1 != 0)
     {
-#pragma omp critical
         {
+            const std::scoped_lock diag_lock(::shrink_array::internal::diag_print_mutex());
             std::cerr << "Should not have compress (0) values\n";
             std::cerr << "Number of compress block : " << nb1 << "\n";
             std::cerr << "ArrayChunk2 type: ArrayChunk2<" << type_name<T>() << ", " << type_name<ind_type>() << ">"
@@ -1065,8 +1067,8 @@ void ArrayChunk2<T, ind_type>::compress_int()
     const auto nb2 = static_cast<int>(tab_nb2.size());
     if (nb2 != 0)
     {
-#pragma omp critical
         {
+            const std::scoped_lock diag_lock(::shrink_array::internal::diag_print_mutex());
             std::cerr << "Should not have compress of second values ( ";
             if constexpr (is_not_bool)
             {

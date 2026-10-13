@@ -54,7 +54,12 @@ gets an adaptor, `shrink_array::tbb::parallel_for(range, body)`, that calls
 
 1. **This plan** and the inventory (this file).
 2. **D**: `omp critical` -> `std::mutex`, `omp atomic` -> `std::atomic`. No
-   backend involved; the OpenMP build behaves the same.
+   backend involved; the OpenMP build behaves the same. *Done*: the six
+   unnamed criticals (reports) hold `internal::diag_print_mutex()`
+   (`diag_mutex.h`), the three `fast_alloc_ladder` ones
+   `StaticConstArray::ladder_mutex()`, the advisor's two `omp atomic` are
+   relaxed `std::atomic_ref::fetch_add`. Left for step 5: the ladder takes its
+   lock only when `FAST_ALLOC_PMP_IN_PARALLEL_REGION`, an OpenMP query.
 3. **B**: `pmp::parallel_for` / `pmp::parallel_reduce` in `PMP_CHUNK.h`,
    OpenMP implementation (same `schedule`, same `if` thresholds), the B sites
    converted. `fast_allocators` gets the same through `pmp_alloc.h`.

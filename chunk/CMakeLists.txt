@@ -312,6 +312,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/deferred_lifecycle_check.h
         public/chunk/internal/deferred_op_pool.h
         public/chunk/internal/deferred_ops_storage.h
+        public/chunk/internal/diag_mutex.h
         public/chunk/internal/for_each_type.h
         public/chunk/internal/freepath_counters.h
         public/chunk/internal/func_p2.h

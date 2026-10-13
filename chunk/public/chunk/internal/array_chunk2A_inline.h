@@ -21,6 +21,7 @@
 #include <cstdio>      // std::fprintf (check-build trace)
 #include <iomanip>     // std::setw (print_type_name)
 #include <iostream>    // std::cout / std::cerr
+#include <mutex>       // std::scoped_lock (the residual report)
 #include <string>      // the type name in print_type_name
 #include <type_traits> // std::remove_reference_t
 #include <utility>     // std::pair (the clear() summary)
@@ -41,6 +42,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* (check builds)
+#include "chunk/internal/diag_mutex.h"                  // diag_print_mutex (the residual report)
 
 namespace shrink_array
 {
@@ -585,8 +587,8 @@ void ArrayChunk2A<T, ind_type>::compress_int()
 
     if (nb1 != 0)
     {
-#pragma omp critical
         {
+            const std::scoped_lock diag_lock(::shrink_array::internal::diag_print_mutex());
             std::cerr << "[compress-residual chunk2a] " << nb1
                       << " block(s) constant at first_value, still materialised "
                          "(awaiting the next compression pass)\n";
@@ -616,8 +618,8 @@ void ArrayChunk2A<T, ind_type>::compress_int()
 
     if (nb2 != 0)
     {
-#pragma omp critical
         {
+            const std::scoped_lock diag_lock(::shrink_array::internal::diag_print_mutex());
             std::cerr << "[compress-residual chunk2a] " << nb2
                       << " block(s) constant at the second value, still materialised "
                          "(awaiting the next compression pass)\n";
