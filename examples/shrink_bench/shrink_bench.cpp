@@ -867,6 +867,10 @@ int main(int argc, char* argv[])
             {
                 return;
             }
+            // Timed: the pass is sequential, outside the write path, and its
+            // cost (chunks + second-value slots + identifiers handed out) is
+            // what decides how often it can run.
+            const auto  t0    = std::chrono::steady_clock::now();
             std::size_t freed = 0;
             freed += ArrayChunk2A<double, Int>::reclaim_second_values();
             freed += ArrayChunk2A<float, Int>::reclaim_second_values();
@@ -878,8 +882,9 @@ int main(int argc, char* argv[])
             freed += ArrayChunk2A<complex_double, Int>::reclaim_second_values();
             freed += ArrayChunk2A<Point3, Int>::reclaim_second_values();
             freed += ArrayChunk2A<Cell, Int>::reclaim_second_values();
-            std::fprintf(stderr, "[cst2-reclaim @ iter %ld] %zu second value(s) freed\n", static_cast<long>(k_iter),
-                         freed);
+            const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+            std::fprintf(stderr, "[cst2-reclaim @ iter %ld] %zu second value(s) freed in %.3f ms\n",
+                         static_cast<long>(k_iter), freed, ms);
         }
     };
 
