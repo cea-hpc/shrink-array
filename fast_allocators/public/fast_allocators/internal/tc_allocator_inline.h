@@ -121,6 +121,18 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
 
     Log2ElementSize = std::bit_width(static_cast<unsigned int>(ElementSize)) - 1;
 
+    // num_block()'s magic is exact for offsets below 2^32 only. Slabs are a
+    // few MiB; a release check, once per slab, like the one above.
+    if (slab_bytes_for(BlockAllocator_) > (std::uintptr_t{1} << 32)) [[unlikely]]
+    {
+        std::cerr << "[TCAllocator] slab of " << slab_bytes_for(BlockAllocator_)
+                  << " bytes: num_block() indexes offsets below 4 GiB only\n";
+        std::abort();
+    }
+    // Unused (and 0, the +1 wrapping) for an element size of 1: a power of
+    // two, num_block_pow2() takes it.
+    ElementMagic = UINT64_MAX / static_cast<std::uint64_t>(ElementSize) + 1u;
+
     alloc_block();
 }
 

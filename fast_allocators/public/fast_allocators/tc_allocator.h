@@ -275,10 +275,18 @@ class alignas(64) TCSlab
         firstFree = free_list_end;
     }
 
-    /// @brief Index of the element at @p ptr within this slab (division).
+    /// @brief Index of the element at @p ptr within this slab: offset / #ElementSize
+    ///        without a division. One 64x64->128 multiplication by #ElementMagic
+    ///        (Lemire, Kaser & Kurz 2019, exact for every 32-bit dividend and
+    ///        divisor >= 2; init() refuses a slab over 4 GiB).
+    /// @pre #ElementSize >= 2 -- a power of two goes through num_block_pow2().
     [[nodiscard]] int num_block(const void* ptr) const noexcept
     {
-        return static_cast<int>((static_cast<const char*>(ptr) - data) / ElementSize);
+        const auto off = static_cast<std::uint64_t>(static_cast<const char*>(ptr) - data);
+        FAST_ALLOC_DBG_ASSERT(ElementSize >= 2 && off <= UINT32_MAX);
+        FAST_ALLOC_DBG_ASSERT(static_cast<int>((static_cast<unsigned __int128>(ElementMagic) * off) >> 64) ==
+                              static_cast<int>(off / static_cast<std::uint64_t>(ElementSize)));
+        return static_cast<int>((static_cast<unsigned __int128>(ElementMagic) * off) >> 64);
     }
 
     /// @brief num_block() by shift. Valid only if #ElementSize is a power of two.
@@ -419,6 +427,9 @@ class alignas(64) TCSlab
     inline void alloc_block();
 
     int Log2ElementSize = 0; ///< log2(#ElementSize), for num_block_pow2().
+
+    /// @brief num_block()'s multiplier: floor((2^64 - 1) / #ElementSize) + 1.
+    std::uint64_t ElementMagic = 0;
 
     /// @brief Free-list links, one per element, with side links. Kept out of
     ///        the payload, so an emptied slab's pages can be dropped without
@@ -858,7 +869,8 @@ class TCSlabPool
     void free_elt_pow2(const ElementType* ptr, Slab* slab) noexcept
     {
         // The shift when this slab's element size is a power of two, the
-        // division otherwise (e.g. 192 doubles, a 24-byte struct, a 40-byte op).
+        // magic multiplication otherwise (e.g. 192 doubles, a 24-byte struct,
+        // a 40-byte op).
         // Tested on the slab, not deduced from sizeof(ElementType): the element
         // COUNT need not be a power of two. One well-predicted branch.
         const auto size = static_cast<unsigned int>(slab->ElementSize);
