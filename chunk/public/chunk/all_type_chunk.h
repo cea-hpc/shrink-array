@@ -88,7 +88,7 @@ class AllTypeChunkParallelInterface<Derived, true>
     /**
      * @brief Applies the pending deferred write ops of every type.
      *
-     * Clears `__global_need_flush_deferred` for the duration of the pass, then
+     * Clears `g_need_flush_deferred` for the duration of the pass, then
      * sets it again on exit. When at least one manager actually flushed and the
      * call is not in-region, destroy_after_flush(false) is chained here so the
      * released buffers are reclaimed immediately.

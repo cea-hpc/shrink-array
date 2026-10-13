@@ -554,7 +554,9 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 }
             }
         }
-        struct OwnReplayExclGuard
+        // An aggregate, brace-initialised below: declaring the copy/move
+        // operations would make it a non-aggregate.
+        struct OwnReplayExclGuard // NOLINT(cppcoreguidelines-special-member-functions)
         {
             ~OwnReplayExclGuard()
             {

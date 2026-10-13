@@ -16,8 +16,8 @@
 
 #pragma once
 
-// Compile-time chunk geometry: constexpr, so `i >> __decalage_chunk` and
-// `i & __modulo_chunk` fold into immediate shifts/masks on the hot path.
+// Compile-time chunk geometry: constexpr, so `i >> static_chunk_shift` and
+// `i & static_chunk_mask` fold into immediate shifts/masks on the hot path.
 //
 // Override at build time:  cmake -DCHUNK_SIZE=128  (a power of two or a multiple of 64).
 
@@ -31,13 +31,13 @@ namespace shrink_array
     #define CHUNK_SIZE 64
 #endif
 
-inline constexpr unsigned int __chunk_size = static_cast<unsigned int>(CHUNK_SIZE);
+inline constexpr unsigned int static_chunk_size = static_cast<unsigned int>(CHUNK_SIZE);
 // log2(CHUNK_SIZE): the index shift of a power-of-two size, meaningless otherwise.
-inline constexpr unsigned int __decalage_chunk = static_cast<unsigned int>(log2int(CHUNK_SIZE));
-inline constexpr unsigned int __modulo_chunk   = static_cast<unsigned int>(CHUNK_SIZE) - 1u;
+inline constexpr unsigned int static_chunk_shift = static_cast<unsigned int>(log2int(CHUNK_SIZE));
+inline constexpr unsigned int static_chunk_mask  = static_cast<unsigned int>(CHUNK_SIZE) - 1u;
 
 static_assert(CHUNK_SIZE >= 1, "CHUNK_SIZE must be positive");
-static_assert(std::has_single_bit(__chunk_size) || CHUNK_SIZE % 64 == 0,
+static_assert(std::has_single_bit(static_chunk_size) || CHUNK_SIZE % 64 == 0,
               "CHUNK_SIZE must be a power of two or a multiple of 64");
 
 } // namespace shrink_array

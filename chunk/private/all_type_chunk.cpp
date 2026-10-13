@@ -99,7 +99,7 @@ namespace shrink_array
     namespace
     {
         // Cross-thread exclusion of the SERIAL deferred flush. Deliberately SEPARATE
-        // from __global_need_flush_deferred, which is a re-entrancy guard with a
+        // from g_need_flush_deferred, which is a re-entrancy guard with a
         // sequential per-type toggle: turning THAT flag into a take-or-give-up lock
         // would make an inner per-type flush give up whenever an outer level held it,
         // silently dropping deferred writes. Value-initialised to clear (C++20).
@@ -377,7 +377,7 @@ namespace shrink_array
 
         if (toggle_flag)
         {
-            __global_need_flush_deferred.store(false, std::memory_order_relaxed);
+            g_need_flush_deferred.store(false, std::memory_order_relaxed);
         }
 
         // #pragma omp barrier // dead lock with ompt ?
@@ -391,7 +391,7 @@ namespace shrink_array
 
         if (toggle_flag)
         {
-            __global_need_flush_deferred.store(true, std::memory_order_release);
+            g_need_flush_deferred.store(true, std::memory_order_release);
         }
 
         return have_flushed;

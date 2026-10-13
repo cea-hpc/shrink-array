@@ -45,7 +45,7 @@
 #include <sys/resource.h> // getrusage
 
 #include "chunk/param_chunk.h"                // ParamChunk
-#include "chunk/internal/chunk_size_config.h" // __chunk_size
+#include "chunk/internal/chunk_size_config.h" // static_chunk_size
 
 #include "config.h"       // multi_mat::max_threads, embedded_compression
 #include "MultiMatAlgo.h" // MultiMatAlgo
@@ -135,7 +135,7 @@ int main()
               << (multi_mat::embedded_compression ? "OMPT callbacks (manage_ompt.cpp)" : "phase calls from the program")
               << "\n\n";
 
-    constexpr int chunk_size = static_cast<int>(shrink_array::__chunk_size);
+    constexpr int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
 
     if constexpr (chunk_size == 0)
     {

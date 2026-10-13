@@ -184,7 +184,7 @@ class ChunkCounterPolicy
     /// @brief Is every element of the chunk zero?
     /// @param size the chunk's element count
     /// @return true when the count has reached @p size -- the compression trigger
-    [[nodiscard]] bool is_full_zero(unsigned int size = __chunk_size) const noexcept
+    [[nodiscard]] bool is_full_zero(unsigned int size = static_chunk_size) const noexcept
     {
         return nb_val_eq_zero == size;
     }
@@ -467,6 +467,9 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
  *       guard against by carrying it -- see TChunk.h.
  */
 template <typename T>
+// no move operations on purpose -- a move falls back to
+// the copy, which carries the per-chunk state the way the copy constructor documents.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_counter>,
               public ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>
 {

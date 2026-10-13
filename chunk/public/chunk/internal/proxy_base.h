@@ -402,6 +402,9 @@ class AcquireValuesRef
  * The postfix ++/-- return the old value as a T.
  */
 template <typename Derived, typename T, typename ChunkType>
+// copy rebinds to the same element; the derived proxies
+// define what assignment means, so no assignment or move is declared here.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class ProxyBase : public ProxyOperators<Derived, T>,
                   public ProxyBaseFastCompPolicy<Derived, T, ChunkType, chunk_config::use_fast_block_compression>
 
@@ -786,6 +789,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @note Leaves #ptr_on_array, #num_chunk and #num_tab unset --
     ///       set_this_and_num_chunk() and set_num_tab() finish the job, and the
     ///       compression paths need them.
+    // ptr_on_array and num_chunk are set before use (see the @note); left
+    // unset here on purpose, this constructor runs on every element access.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
     explicit ProxyBase(atomic_ptr_ref_t values_, int num_, ChunkType& chunk_) noexcept
         : values(values_), num(num_), chunk(chunk_)
     {

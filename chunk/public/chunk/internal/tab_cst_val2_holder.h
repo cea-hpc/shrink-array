@@ -430,6 +430,8 @@ class GlobalVecHolder
         }
         LookupGuard(const LookupGuard&)            = delete;
         LookupGuard& operator=(const LookupGuard&) = delete;
+        LookupGuard(LookupGuard&&)                 = delete;
+        LookupGuard& operator=(LookupGuard&&)      = delete;
     };
 
     /// @brief Brackets a whole reclaim, mark included. No-op in release.
@@ -453,6 +455,8 @@ class GlobalVecHolder
         }
         ReclaimScope(const ReclaimScope&)            = delete;
         ReclaimScope& operator=(const ReclaimScope&) = delete;
+        ReclaimScope(ReclaimScope&&)                 = delete;
+        ReclaimScope& operator=(ReclaimScope&&)      = delete;
 
         /// @brief Fail if a lookup or registration is in flight.
         static void check_no_lookup(const char* when) noexcept

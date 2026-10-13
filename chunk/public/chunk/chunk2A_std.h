@@ -521,6 +521,9 @@ class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 ///        TabCstVal2Holder registry (see the class description above Chunk2AConcurrentOps).
 /// @tparam T Element type.
 template <typename T>
+// no move operations on purpose -- a move falls back to
+// the copy, which carries the per-chunk state the way the copy constructor documents.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                 public TabCstVal2Holder<T>,
                 public Chunk2AStateQueries<T, Chunk2A<T>>
@@ -761,8 +764,8 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
 
     // Chunk geometry is PER ENTRY in dynamic builds: every queued tuple carries the owning
     // array's chunk size (field <3>, from push_to_compress_list). The scan bounds come from
-    // that field. Do not add a `= __chunk_size` default: it would scan only the first
-    // __chunk_size values of a wider chunk, declare it constant and destroy the rest.
+    // that field. Do not add a `= static_chunk_size` default: it would scan only the first
+    // static_chunk_size values of a wider chunk, declare it constant and destroy the rest.
     static void fill_list_chunk_to_compress_in_par(int                       thr,
                                                    vec_tuple_chunkA2p_int2&  ll_compt1,
                                                    vec_tuple_chunkA2p_Tint2& ll_compt2,

@@ -269,7 +269,7 @@ void parallel_end_chunk_work()
     // flushing those half-applied ops here corrupts grow regions spanning several
     // old chunks (rechunk_to flushes them afterwards, at a quiescent point).
     const bool in_rebuild = shrink_array::g_in_rechunk_rebuild.load(std::memory_order_acquire);
-    if (shrink_array::__global_need_flush_deferred && !in_rebuild)
+    if (shrink_array::g_need_flush_deferred && !in_rebuild)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -392,7 +392,7 @@ void on_barrier_end(ompt_sync_region_t    kind,
     // Same suppression as on_parallel_end (see parallel_end_chunk_work): the
     // rebuild's own parallel region ends with an implicit barrier too.
     const bool in_rebuild = shrink_array::g_in_rechunk_rebuild.load(std::memory_order_acquire);
-    if (shrink_array::__global_need_flush_deferred && !in_rebuild)
+    if (shrink_array::g_need_flush_deferred && !in_rebuild)
     {
         if (slot) [[unlikely]]
         {

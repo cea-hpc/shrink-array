@@ -157,12 +157,12 @@ class ElementRef
 
     // ----------------------------------------------------------- assignment
     /// @brief `a[i] = b[j]`: the proxy-to-proxy assignment (gated read of b[j]).
-    CHUNK_FORCE_INLINE decltype(auto) operator=(ElementRef&& from) &&
+    CHUNK_FORCE_INLINE decltype(auto) operator=(ElementRef&& from) && noexcept
     {
         return wrap(p_ = from.p_);
     }
     /// @brief Refused: assignment to a named element proxy.
-    ElementRef& operator=(ElementRef&& /*from*/) &
+    ElementRef& operator=(ElementRef&& /*from*/) & noexcept
     {
         static_assert(element_ref_detail::misuse<P>, CHUNK_ELEMENT_REF_MISUSE);
         return *this;

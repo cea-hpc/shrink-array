@@ -129,7 +129,8 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 ///        object type, found by AllocatorRegistry).
 struct FastAllocatorBase
 {
-    FastAllocatorBase()          = default;
+    /// @param block_size_ bytes per block
+    explicit FastAllocatorBase(size_t block_size_) noexcept : block_size(block_size_) {}
     virtual ~FastAllocatorBase() = default;
 
     // Polymorphic, held by unique_ptr in the registry: never copied or moved.
@@ -220,9 +221,8 @@ class FastAllocatorConcrete : public FastAllocatorBase
     using ByteAlloc = fast_alloc::TCTypeAllocator<std::byte>;
 
     /// @brief Set block_size to sizeof(T) and, under fast-alloc, create this thread's allocator.
-    FastAllocatorConcrete()
+    FastAllocatorConcrete() : FastAllocatorBase(sizeof(T))
     {
-        block_size = sizeof(T);
         if constexpr (build_config::use_fast_alloc)
         {
             (void)allocator();

@@ -26,7 +26,7 @@
 #include <vector>      // std::vector
 #include <cstring>     // std::memset (the Bit second constant)
 
-#include "chunk/internal/chunk_size_config.h"           // __chunk_size
+#include "chunk/internal/chunk_size_config.h"           // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"           // ChunkElems, DynamicChunkSize
 #include "chunk/internal/dependent_false.h"             // dependent_false_v (wrong-type branches)
 #include "chunk/internal/in_t.h"                        // in_t
@@ -279,7 +279,7 @@ class Chunk2CounterPolicy
     /// @param size Chunk geometry; defaults to the compile-time size (callers that know the
     ///             runtime geometry, e.g. under DynamicChunkSize, pass it).
     /// @return true if nb_val_eq_second_value == size.
-    [[nodiscard]] bool is_full_second_value(unsigned int size = __chunk_size) const noexcept
+    [[nodiscard]] bool is_full_second_value(unsigned int size = static_chunk_size) const noexcept
     {
         return nb_val_eq_second_value == size;
     }
@@ -329,7 +329,7 @@ class Chunk2CounterPolicy
     ///        constant (the chunk is a candidate for type-1 compression).
     /// @param size Chunk geometry; see is_full_second_value().
     /// @return true if nb_val_eq_first_value == size.
-    [[nodiscard]] bool is_full_first_value(unsigned int size = __chunk_size) const noexcept
+    [[nodiscard]] bool is_full_first_value(unsigned int size = static_chunk_size) const noexcept
     {
         return nb_val_eq_first_value == size;
     }
@@ -988,6 +988,9 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
  * \brief Block compression class (power of 2) 2 values automatic detection
  */
 template <typename T>
+// no move operations on purpose -- a move falls back to
+// the copy, which carries the per-chunk state the way the copy constructor documents.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_counter>,
                public Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>
 {
