@@ -1,5 +1,9 @@
 # shrink-array : des tableaux compressés pour C++
 
+*Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ est
+`shrink_array`, et le paquet CMake installé est `chunk` (`find_package(chunk)`,
+cibles `chunk::…`).*
+
 > English version: [README.md](README.md).
 
 shrink-array fournit des tableaux qui s'utilisent comme un `std::vector` et prennent moins de

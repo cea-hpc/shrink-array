@@ -40,8 +40,9 @@
 
 Le programme ne les règle pas : elles viennent avec la cible de bibliothèque qu'il lie
 (`chunk::chunk_v2a_256`, `chunk::chunk_v1_dyn`, ...), qui porte les macros
-`CHUNK_VARIANT_V1` / `CHUNK_VARIANT_V2` / `CHUNK_VARIANT_V2A`, et `CHUNK_DYNAMIC` avec
-`DYN_CHUNK_SIZE=<n>` pour une géométrie dynamique. Voir [getting_started_fr.md](getting_started_fr.md).
+`CHUNK_VARIANT_V1` / `CHUNK_VARIANT_V2` / `CHUNK_VARIANT_V2A`, et `CHUNK_DYNAMIC` pour une
+géométrie dynamique (taille choisie à l'exécution, tableau par tableau ; `DYN_CHUNK_SIZE`
+est une macro du bench, pas de la bibliothèque). Voir [getting_started_fr.md](getting_started_fr.md).
 
 Les options communes à toutes les bibliothèques d'un build (§2) sont consignées par CMake dans les
 en-têtes générés `chunk/build_options.h` et `fast_allocators/build_options.h`, installés avec les

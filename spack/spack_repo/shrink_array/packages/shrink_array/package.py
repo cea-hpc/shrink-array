@@ -34,9 +34,11 @@ class ShrinkArray(CMakePackage):
     variant(
         "sizes",
         default="256,1024",
-        values=("64", "128", "256", "512", "1024", "2048", "4096", "8192", "16384", "32768"),
+        # What the library accepts (is_valid_chunk_size): a power of two or a multiple of 64.
+        values=lambda x: x.isdigit() and int(x) > 0 and (int(x) % 64 == 0 or int(x) & (int(x) - 1) == 0),
         multi=True,
-        description="Static chunk sizes: one library per variant and size (chunk::chunk_v2a_256, ...); "
+        description="Static chunk sizes, each a power of two or a multiple of 64: one library per variant "
+        "and size (chunk::chunk_v2a_256, ...); "
         "the smallest is the one of the bare chunk::chunk_v<x> targets",
     )
     variant(

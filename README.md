@@ -1,5 +1,9 @@
 # shrink-array: compressed arrays for C++
 
+*The project is `shrink-array` (repository, Spack package); the C++ namespace is
+`shrink_array`, and the installed CMake package is `chunk` (`find_package(chunk)`,
+targets `chunk::…`).*
+
 > Version française : [README_fr.md](README_fr.md).
 
 shrink-array provides arrays that are used like a `std::vector` and take less memory when large
