@@ -27,7 +27,8 @@
 // check build without OMPT, a write deferred by a thread that did not begin
 // the phase fails the phase protocol. Each result is compared element by
 // element with a std::vector, before and after a compression pass. The same
-// operations on a small array inside a region run on the calling thread.
+// operations on a small array inside a region run on the calling thread, one
+// thread at a time (array creation is not thread-safe).
 //
 // Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
 // ============================================================================
@@ -217,26 +218,30 @@ int run_type(const char* type, long N)
     fails += check(type, "resize-grow-again", a, ref_grow);
 
     // Inside a region: each thread its own small array, on the calling thread.
+    // One thread at a time (critical): creating, resizing or destroying arrays
+    // from several threads at once is outside the library's contract --
+    // create_common() takes no lock and the Chunk2A registry
+    // (PointerMapChunk2A) is not thread-safe (see region_storage_validation).
     int region_fails = 0;
     parallel_phase(
         [&]
         {
-            const int      n = 3000;
-            std::vector<T> r(static_cast<std::size_t>(n));
-            Array<T>       s(n);
-            for (int i = 0; i < n; ++i)
+#pragma omp critical(bulk_write_team_in_region)
             {
-                r[static_cast<std::size_t>(i)] = value_at<T>(i);
-                s[i]                           = value_at<T>(i);
-            }
-            Array<T> t(s);
-            int      f = compare(type, "in-region-copy", t, r);
-            t.assign(n, static_cast<T>(4));
-            f += compare(type, "in-region-assign", t, std::vector<T>(static_cast<std::size_t>(n), static_cast<T>(4)));
-            if (f)
-            {
-#pragma omp atomic
-                region_fails += f;
+                const int      n = 3000;
+                std::vector<T> r(static_cast<std::size_t>(n));
+                Array<T>       s(n);
+                for (int i = 0; i < n; ++i)
+                {
+                    r[static_cast<std::size_t>(i)] = value_at<T>(i);
+                    s[i]                           = value_at<T>(i);
+                }
+                Array<T> t(s);
+                int      f = compare(type, "in-region-copy", t, r);
+                t.assign(n, static_cast<T>(4));
+                f += compare(type, "in-region-assign", t,
+                             std::vector<T>(static_cast<std::size_t>(n), static_cast<T>(4)));
+                region_fails += f; // under the critical
             }
         });
     fails += region_fails;
