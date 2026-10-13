@@ -292,8 +292,10 @@ void parallel_end_chunk_work()
         return;
     }
 
-    #pragma omp barrier
-
+    // No `omp barrier` here: at an outermost parallel_end the team has
+    // already joined (the region's implicit barrier made its writes visible),
+    // so one would bind to a team of one and do nothing; at a nested region's
+    // end it would bind to the ENCLOSING team, which only this thread reaches.
     ens_type_chunk.compress_chunk_to_compress_potentially(true);
 }
 
