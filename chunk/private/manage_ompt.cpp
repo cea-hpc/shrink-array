@@ -39,6 +39,7 @@
 #include <cstdio>    // CHUNK_OMPT_STATS report
 #include <cstdlib>   // std::getenv, std::abort (CHUNK_REQUIRE_OMPT)
 #include <cstring>   // std::strlen (the refused callbacks' list)
+#include <format>    // std::format_to_n (the same list)
 
 #include "chunk/config.h"      // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
 #include "chunk/singleton.h"   // SingletonChk
@@ -447,9 +448,11 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
         {
             if (ompt_set_callback(which, cb) < ompt_set_sometimes)
             {
-                all_set = false;
-                std::snprintf(g_ompt_refused + std::strlen(g_ompt_refused),
-                              sizeof g_ompt_refused - std::strlen(g_ompt_refused), " %s", name);
+                all_set                = false;
+                const std::size_t used = std::strlen(g_ompt_refused);
+                const auto        written =
+                    std::format_to_n(g_ompt_refused + used, sizeof g_ompt_refused - used - 1, " {}", name);
+                *written.out = '\0';
             }
         };
         set(ompt_callback_parallel_end, (ompt_callback_t)on_parallel_end, "parallel_end");
@@ -460,7 +463,9 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
     }
     else
     {
-        std::snprintf(g_ompt_refused, sizeof g_ompt_refused, " (ompt_set_callback is null)");
+        const auto written =
+            std::format_to_n(g_ompt_refused, sizeof g_ompt_refused - 1, " (ompt_set_callback is null)");
+        *written.out = '\0';
         g_ompt_tool_state.store(2, std::memory_order_release);
         std::fprintf(stderr, "[OMPT] ompt_set_callback is null: the chunk library's callbacks are not installed\n");
     }

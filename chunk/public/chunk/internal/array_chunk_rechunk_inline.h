@@ -29,6 +29,7 @@
 #include <ratio>       // std::milli (the same timers)
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
+#include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstring>     // std::memcpy / std::memcmp (refill bulk read)
 #include <cstdlib>     // std::getenv (CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SCHEDULE)
 #include <optional>    // the affinity scope around tmp
@@ -174,14 +175,16 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         {
             return parsed;
         }
-        std::array<char, 16> kind{};
-        int                  chunk   = 0;
-        const int            nfields = std::sscanf(env, "%15[a-z],%d", kind.data(), &chunk);
-        chunk_pmp_sched      k       = chunk_pmp_sched::sched_static;
-        bool                 ok      = nfields >= 1 && chunk >= 0;
+        // "kind" or "kind,chunk": the chunk, when given, must be ALL of what
+        // follows the comma (parse_number: std::from_chars, no trailing text).
+        const std::string_view spec(env);
+        const std::size_t      comma = spec.find(',');
+        const std::string_view kv    = spec.substr(0, comma);
+        int                    chunk = 0;
+        chunk_pmp_sched        k     = chunk_pmp_sched::sched_static;
+        bool ok = comma == std::string_view::npos || (parse_number(env + comma + 1, chunk) && chunk >= 0);
         if (ok)
         {
-            const std::string_view kv(kind.data());
             if (kv == "static")
             {
                 k = chunk_pmp_sched::sched_static;
@@ -211,8 +214,9 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
                          env);
             return parsed;
         }
-        parsed.schedule = {k, chunk}; // chunk 0: the runtime's default for this kind
-        std::snprintf(parsed.text.data(), parsed.text.size(), "%s,%d", kind.data(), chunk);
+        parsed.schedule    = {k, chunk}; // chunk 0: the runtime's default for this kind
+        const auto written = std::format_to_n(parsed.text.data(), parsed.text.size() - 1, "{},{}", kv, chunk);
+        *written.out       = '\0';
         return parsed;
     }();
     return schedule;
@@ -1274,7 +1278,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                     recycle_held.assign(n_ranks, 0);
                                     recycle_scratch.resize(n_ranks);
                                 }
-                                std::fill(recycle_held.begin(), recycle_held.end(), static_cast<unsigned char>(0));
+                                std::ranges::fill(recycle_held, static_cast<unsigned char>(0));
                                 // The previous boundary's slabs this slice did
                                 // not take wait for the end of the refill (one
                                 // pass, below the slice loop): they hold memory

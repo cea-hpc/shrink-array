@@ -20,10 +20,12 @@
 // includes this file after the class). Only the one-liners stay in the class.
 
 #include <algorithm> // std::max
+#include <array>     // std::array (CHUNK_ADVISOR_TABLE title)
 #include <cstddef>   // std::size_t
-#include <cstdio>    // std::fprintf, std::fflush, std::snprintf
+#include <cstdio>    // std::fprintf, std::fflush
 #include <cstdlib>   // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks
 #include <cstring>   // std::strcmp (CHUNK_ADVISOR_TABLE)
+#include <format>    // std::format_to_n (CHUNK_ADVISOR_TABLE title)
 #include <string>    // std::string
 
 #include "chunk/rechunk_decider.h"             // the declarations these bodies belong to
@@ -506,9 +508,11 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             if (table_env != nullptr && table_env[0] != '\0' && table_env[0] != '0' &&
                 (std::strcmp(table_env, "1") == 0 || std::strcmp(table_env, name) == 0))
             {
-                char title[96];
-                std::snprintf(title, sizeof title, "%s tick %d iter %d", name, tick, iter);
-                ChunkSizeAdvisor<T>::print(rep, title);
+                std::array<char, 96> title{};
+                const auto           written =
+                    std::format_to_n(title.data(), title.size() - 1, "{} tick {} iter {}", name, tick, iter);
+                *written.out = '\0';
+                ChunkSizeAdvisor<T>::print(rep, title.data());
                 std::fflush(stdout);
             }
         }
