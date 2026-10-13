@@ -46,21 +46,6 @@ namespace shrink_array
 {
 
 template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk2A<T, ind_type>::create(ind_type sz)
-{
-    // The first array of this element type registers its manager; every
-    // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<ManagerChunk<Chunk2A, T>>();
-
-    Base::create_common();
-
-    // Geometry-dependent allocation only, so rechunk_to can call it on an
-    // already-registered, just torn-down array WITHOUT re-running create_common
-    // (which would re-register it under a fresh num_tab via pre_create_hook).
-    rebuild_storage(sz);
-}
-
-template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
 {
     if (sz)

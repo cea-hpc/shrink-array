@@ -535,6 +535,22 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     void reserve(ind_type new_capacity);
 
     /**
+     * @brief resize(), then @p val written to the NEW elements only
+     *        ([old size, newsz) -- std::vector's semantics; assign() fills all).
+     * @details The derived arrays' resize(newsz) does the resizing (they name
+     *          this overload back with a using-declaration).
+     */
+    void resize(ind_type newsz, in_t<T> val)
+    {
+        const ind_type old_size = m_size;
+        derived().resize(newsz);
+
+        // A team of its own outside a region (the library's threshold, the
+        // phase bracketed), the calling thread inside one.
+        write_range_by_chunks(old_size, newsz, [&val](ind_type) { return static_cast<T>(val); });
+    }
+
+    /**
      * @brief Append one element, growing the container by one.
      * @param val value to store at the new last position
      * @note Within the capacity: one increment and the write proxy, so the
@@ -1101,6 +1117,18 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          for this array's identity.
      */
     void create_common();
+
+    /**
+     * @brief Claim this array's identity and build its storage for @p sz
+     *        elements: the constructors' body of ArrayChunk and ArrayChunk2A
+     *        (ArrayChunk2 has its own). Registers the element type's manager on
+     *        the way (AllTypeChunk::ensure_manager), runs create_common(), then
+     *        the variant's rebuild_storage() -- the geometry-dependent
+     *        allocation alone, which rechunk_to also calls on an already
+     *        registered, just torn-down array WITHOUT re-running create_common()
+     *        (that would re-register it under a fresh num_tab via pre_create_hook).
+     */
+    void create(ind_type sz);
 
     /**
      * @brief The deep copy the derived arrays' copy constructor and

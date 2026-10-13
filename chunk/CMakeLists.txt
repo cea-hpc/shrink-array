@@ -263,8 +263,6 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/array_chunk2A_inline.h
         public/chunk/internal/array_chunk2A_parallel.h
         public/chunk/internal/array_chunk2A_parallel_inline.h
-        public/chunk/internal/array_chunk2A_rechunk_hooks.h
-        public/chunk/internal/array_chunk2A_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk2_base.h
         public/chunk/internal/array_chunk2_inline.h
         public/chunk/internal/array_chunk2_parallel.h

@@ -530,36 +530,11 @@ void Chunk2A<T>::compress_sweep_rank(int thr, bool apply)
 template <typename T>
 void Chunk2A<T>::compress_chunk_to_compress(bool apply)
 {
-    chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
-
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        // Inside a region: this rank's own list only. Do not open the region below from
-        // inside one: every thread would run the pass and sweep every rank's list at once.
-        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
-    }
-    else
-    {
-        int team = 0;
-#pragma omp parallel
-        {
-            const int thr = CHUNK_PMP_THREAD_RANK;
-            if (thr == 0)
-            {
-                team = CHUNK_PMP_NUM_THREADS;
-            }
-            compress_sweep_rank(thr, apply);
-        }
-        if (compress_sweep_mops_up(apply))
-        {
-            for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
-            {
-                compress_sweep_rank(thr, apply);
-            }
-        }
-    }
-
-    chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
+    // Inside a region the calling rank runs compress_chunk_to_compress_in_par; outside,
+    // compress_sweep_rank, and the ranks beyond the team only when
+    // compress_sweep_mops_up (see ChunkBase::sweep_every_rank).
+    Base::sweep_every_rank([apply](int thr) { compress_chunk_to_compress_in_par(thr, apply); },
+                           [apply](int thr) { compress_sweep_rank(thr, apply); }, compress_sweep_mops_up(apply));
 }
 
 /**

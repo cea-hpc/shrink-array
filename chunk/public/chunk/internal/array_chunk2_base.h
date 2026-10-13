@@ -160,18 +160,6 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // here; idempotent for one that already has a key.
         this->assign_alloc_key();
     }
-
-    /// @brief resize(), then @p val written to the NEW elements only
-    ///        ([old size, newsz) -- std::vector's semantics; assign() fills all).
-    void resize(ind_type newsz, in_t<T> val)
-    {
-        const ind_type old_size = m_size;
-        derived().resize(newsz); // calls derived resize(sz)
-
-        // A team of its own outside a region (the library's threshold, the
-        // phase bracketed), the calling thread inside one.
-        this->write_range_by_chunks(old_size, newsz, [&val](ind_type) { return static_cast<T>(val); });
-    }
 };
 
 } // namespace shrink_array

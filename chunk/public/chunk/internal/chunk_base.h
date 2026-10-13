@@ -1596,6 +1596,57 @@ class ChunkBase : public CRTPSupport<Derived>,
     alignas(bits::word_t) static inline constinit cst_val1_type m_ptr_cst_val1{};
 
   protected:
+    /**
+     * @brief The rank sweep of the compression passes (compress_chunk_to_compress
+     *        of every chunk type): each rank drains ITS OWN candidate list.
+     *
+     * @details Inside a parallel region: @p in_region(rank) for the calling rank
+     *          only -- opening the region below from inside one would make every
+     *          thread sweep every rank's list at once. Outside: one region where
+     *          each rank runs @p sweep(rank), then, when @p mop_up, @p sweep for
+     *          the ranks [team size, CHUNK_PMP_RANK_BOUND) serially -- the lists
+     *          are sized by the thread capacity, and a team smaller than an
+     *          earlier one leaves the upper ranks' lists (and their candidate
+     *          flags) behind otherwise; empty lists are cheap. The OMPT callbacks
+     *          are disarmed for the duration, so nothing re-enters the
+     *          compression machinery underneath.
+     * @param in_region the calling rank's pass inside a region (int rank)
+     * @param sweep     one rank's pass outside a region (int rank)
+     * @param mop_up    sweep the ranks beyond the team too
+     */
+    template <typename InRegion, typename Sweep>
+    static void sweep_every_rank(InRegion&& in_region, Sweep&& sweep, bool mop_up = true)
+    {
+        chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
+
+        if (CHUNK_PMP_IN_PARALLEL_REGION)
+        {
+            in_region(CHUNK_PMP_THREAD_RANK);
+        }
+        else
+        {
+            int team = 0;
+#pragma omp parallel
+            {
+                const int thr = CHUNK_PMP_THREAD_RANK;
+                if (thr == 0) // one writer; `master` is deprecated since OpenMP 5.1
+                {
+                    team = CHUNK_PMP_NUM_THREADS;
+                }
+                sweep(thr);
+            }
+            if (mop_up)
+            {
+                for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+                {
+                    sweep(thr);
+                }
+            }
+        }
+
+        chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
+    }
+
     // Type traits
     // bool and Bit (bit.h) share chunk2's bool path: one second value, true.
     static constexpr bool is_bool     = is_bool_like_v<T>;

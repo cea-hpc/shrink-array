@@ -38,18 +38,6 @@ namespace shrink_array
 {
 
 template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::create(ind_type sz)
-{
-    // The first array of this element type registers its manager; every
-    // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<ManagerChunk<Chunk, T>>();
-
-    Base::create_common();
-
-    rebuild_storage(sz);
-}
-
-template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
 {
     if (sz)
@@ -515,18 +503,6 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
             (*this)[i] = T{};
         }
     }
-}
-
-template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::resize(ind_type newsz, in_t<T> val)
-{
-    const ind_type old_size = m_size;
-
-    resize(newsz);
-
-    // A team of its own outside a region (the library's threshold, the phase
-    // bracketed), the calling thread inside one.
-    this->write_range_by_chunks(old_size, newsz, [&val](ind_type) { return static_cast<T>(val); });
 }
 
 } // namespace shrink_array

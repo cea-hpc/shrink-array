@@ -31,7 +31,7 @@
 
 #include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2A_parallel.h"      // ParallelSupport2A — OpenMP-only mixin
-#include "chunk/internal/array_chunk2A_rechunk_hooks.h" // RechunkHooks2A — CHUNK_DYNAMIC-only mixin
+#include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for use_openmp, g_in_rechunk_rebuild
@@ -67,14 +67,14 @@ class ManagerChunk;
 template <ArrayChunkElement T, typename ind_type>
 class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                      public ParallelSupport2A<ArrayChunk2A<T, ind_type>>,
-                     public RechunkHooks2A<ArrayChunk2A<T, ind_type>>
+                     public RechunkHooks<ArrayChunk2A<T, ind_type>>
 {
   public:
     using manager_chunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as manager_type.
 
     using Base2   = ArrayChunk2Base<ArrayChunk2A>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
     using Base    = ArrayChunkBase<ArrayChunk2A>;  ///< Base shared by every variant.
-    using Hooks2A = RechunkHooks2A<ArrayChunk2A>;  ///< Re-chunk hooks (dynamic geometry).
+    using Hooks2A = RechunkHooks<ArrayChunk2A>;    ///< Re-chunk hooks (dynamic geometry).
 
     friend Base2;                                     ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; ///< For swap_identity().
@@ -116,7 +116,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
             WriteCompressSyncPolicy<Proxy2A<T>>::ensure_initialized();
         }
 
-        create(sz);
+        this->create(sz);
     }
 
     // ── The copy family: deep, element by element ────────────────────────────
@@ -460,12 +460,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     }
 
     /**
-     * @brief Register the array and allocate its storage.
-     * @param sz element count
-     */
-    void create(ind_type sz);
-
-    /**
      * @brief (Re)allocate storage at the current active geometry.
      *
      * @details create()'s allocation WITHOUT identity/registration. Used by create(), and
@@ -572,5 +566,5 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
 // Bodies of the two mode-specific mixins. After array_chunk2A_inline.h, so their
 // CRTP self() sees a complete ArrayChunk2A.
-#include "chunk/internal/array_chunk2A_parallel_inline.h"      // ParallelSupport2A's bodies
-#include "chunk/internal/array_chunk2A_rechunk_hooks_inline.h" // RechunkHooks2A's bodies
+#include "chunk/internal/array_chunk2A_parallel_inline.h"    // ParallelSupport2A's bodies
+#include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

@@ -16,10 +16,10 @@
 
 #pragma once
 
-// Out-of-line bodies of v1's re-chunk hooks (RechunkHooks<Derived, true>).
-// Included at the end of array_chunk.h, after the class, so the CRTP self()
-// down-cast sees a complete Derived and so the manager include stays out of the
-// container declaration itself.
+// Out-of-line bodies of the re-chunk hooks of ArrayChunk and ArrayChunk2A
+// (RechunkHooks<Derived, true>). Included at the end of array_chunk.h and of
+// array_chunk2A.h, after the class, so the CRTP self() down-cast sees a complete
+// Derived and so the manager include stays out of the container declaration itself.
 #include <tuple>   // std::get on candidate tuples
 #include <utility> // std::swap
 
@@ -36,15 +36,27 @@ namespace shrink_array
 template <typename Derived>
 void RechunkHooks<Derived, true>::rechunk_drop_candidates()
 {
-    // COMPRESS them first -- see RechunkHooks2A: a candidate dropped here
-    // would stay materialised through the rebuild and never be re-queued.
-    // v1's compress() guards the already-compressed chunk (the zero sentinel).
+    // COMPRESS them first: a candidate dropped here would stay materialised
+    // through the rebuild and never be re-queued. compress() is guarded against
+    // an already-compressed chunk (v1: the zero sentinel); each entry carries its
+    // own element count. See RechunkSupport::rechunk_to for why the drop happens
+    // at the owning geometry.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        // Bypasses CompressionManager::start(): see check_no_flush_outside_start.
-        check_no_flush_outside_start<proxy_type>("RechunkHooks::rechunk_drop_candidates");
-        const int num_tab = proxy_type::share_info_array->get_num_tab(self().registry_key());
-        const int thr     = get_thr_rank_fast();
+        int num_tab = 0;
+        if constexpr (is_chunk2a)
+        {
+            num_tab = self().num_tab; // 2A keys its candidates by the num_tab MEMBER
+        }
+        else
+        {
+            // v1 only: this pass bypasses CompressionManager::start(), and v1's
+            // replay bodies rely on no compressor changing `values` during a flush
+            // drain (see check_no_flush_outside_start, proxy_inline.h).
+            check_no_flush_outside_start<proxy_type>("RechunkHooks::rechunk_drop_candidates");
+            num_tab = proxy_type::share_info_array->get_num_tab(self().registry_key());
+        }
+        const int thr = get_thr_rank_fast();
         shrink_array::set_thread_chunk_size(self().size_policy_.size());
         const auto compress_list = [&](auto& list)
         {
@@ -52,22 +64,29 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
             {
                 if (std::get<2>(tup) == num_tab)
                 {
-                    std::get<0>(tup)->compress(thr, std::get<3>(tup).count());
+                    if constexpr (is_chunk2a)
+                    {
+                        std::get<0>(tup)->compress(thr, std::get<1>(tup), num_tab, /*apply=*/true, std::get<3>(tup));
+                    }
+                    else
+                    {
+                        std::get<0>(tup)->compress(thr, std::get<3>(tup).count());
+                    }
                 }
             }
         };
         if constexpr (build_config::use_openmp)
         {
-            for (auto& list : manager_type::chunk_to_compress_potentially_thr)
+            for (auto& list : candidate_lists_thr())
             {
                 compress_list(list);
             }
         }
         else
         {
-            compress_list(manager_type::chunk_to_compress_potentially);
+            compress_list(candidate_list());
         }
-        manager_type::remove_from_compress_list_chunk_by_num_tab(num_tab);
+        remove_candidates_of_tab(num_tab);
     }
 }
 
@@ -80,8 +99,9 @@ void RechunkHooks<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size
 template <typename Derived>
 bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
-    // v1 sets num_tab in pre_create_hook and reads it in create()/rebuild_storage,
-    // so swap the member (kept consistent with the registry swap_keys below).
+    // num_tab is set in pre_create_hook and indexes the per-array metadata, so
+    // swap the member AND make the registry agree (get_num_tab(registry_key())
+    // -> the new row).
     using std::swap;
     swap(self().num_tab, tmp.num_tab);
     return proxy_type::share_info_array->swap_keys(self().registry_key(), tmp.registry_key());
