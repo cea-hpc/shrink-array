@@ -37,6 +37,7 @@
  * @see chunk_size_policy.h for the geometry policy (static vs dynamic)
  */
 
+#include <array>    // std::array (the bulk-read buffer)
 #include <concepts> // std::invocable (for_each_span's run overload)
 #include <cstddef>  // std::size_t (size_type)
 #include <span>     // std::span (for_each_span)
@@ -670,14 +671,14 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         if constexpr (kBulkFast)
         {
-            T buf[kBulkBlock];
+            std::array<T, kBulkBlock> buf;
             for_each_chunk_span(first, last,
                                 [&](const chunk_type& ch, int num_chunk, int lo, int hi)
                                 {
                                     for (int j = lo; j < hi; j += kBulkBlock)
                                     {
                                         const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
-                                        ch.read_block(j, n, buf);
+                                        ch.read_block(j, n, buf.data());
                                         check_no_write_during_bulk_read(ch, num_chunk, j);
                                         for (int k = 0; k < n; ++k)
                                         {
@@ -736,7 +737,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     template <typename F>
     void for_each_span(ind_type first, ind_type last, F&& f) const
     {
-        T buf[kBulkBlock];
+        std::array<T, kBulkBlock> buf;
         if constexpr (kBulkFast)
         {
             for_each_chunk_span(first, last,
@@ -750,7 +751,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                                             // A compressed chunk stays so for the rest of the
                                             // call (no writer): the constant covers [j, hi).
                                             T cst{};
-                                            if (ch.read_block_or_constant(j, n, buf, cst))
+                                            if (ch.read_block_or_constant(j, n, buf.data(), cst))
                                             {
                                                 check_no_write_during_bulk_read(ch, num_chunk, j);
                                                 f(std::as_const(cst), static_cast<std::size_t>(hi - j));
@@ -759,10 +760,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                                         }
                                         else
                                         {
-                                            ch.read_block(j, n, buf);
+                                            ch.read_block(j, n, buf.data());
                                         }
                                         check_no_write_during_bulk_read(ch, num_chunk, j);
-                                        f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                                        f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
                                     }
                                 });
         }
@@ -775,13 +776,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                                buf[n++] = x;
                                if (n == kBulkBlock)
                                {
-                                   f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                                   f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
                                    n = 0;
                                }
                            });
             if (n > 0)
             {
-                f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
             }
         }
     }

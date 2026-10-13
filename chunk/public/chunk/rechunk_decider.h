@@ -36,6 +36,7 @@
 // Thresholds are fields on Policy. The rebuild's cost is weighed in the gain gates
 // (rechunk_cost_model.h); hysteresis here is about avoiding OSCILLATION.
 
+#include <array>         // std::array (Hist's visited ring)
 #include <cstddef>       // std::size_t
 #include <cstdio>        // std::FILE, stdout
 #include <string>        // std::string
@@ -168,10 +169,14 @@ class RechunkDecider
         // the tick it left them. Blocks re-chunking BACK to any of them within
         // anti_reversal_ticks (last_from_size alone misses multi-step oscillations).
         // kVisited covers the geometry ladder (16..1024 = 7 rungs) with headroom.
-        unsigned visited_size[kVisited] = {0, 0, 0, 0, 0, 0, 0, 0};
-        int      visited_tick[kVisited] = {-1000000000, -1000000000, -1000000000, -1000000000,
-                                           -1000000000, -1000000000, -1000000000, -1000000000};
-        int      visited_head           = 0; // next write slot (ring)
+        std::array<unsigned, kVisited> visited_size{};
+        std::array<int, kVisited>      visited_tick = []
+        {
+            std::array<int, kVisited> ticks{};
+            ticks.fill(-1000000000);
+            return ticks;
+        }();
+        int visited_head = 0; // next write slot (ring)
         // CHUNK_RECHUNK_CHURN: the previous tick's counters (the baseline is
         // reset when the key changes, i.e. after a re-chunk of this array).
         unsigned churn_key     = 0;

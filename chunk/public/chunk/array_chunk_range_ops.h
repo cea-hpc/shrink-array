@@ -50,6 +50,7 @@
  *          already carry.
  */
 
+#include <array>       // std::array (the shared edge offsets)
 #include <algorithm>   // std::min (the range clamps)
 #include <cstddef>     // std::size_t, std::ptrdiff_t
 #include <type_traits> // std::is_same_v, std::conditional_t
@@ -230,8 +231,8 @@ void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::si
 {
     // Ascending for S >= 4; for a smaller S the out-of-order or duplicate
     // entries are skipped by `s < o`, and S - 2 wrapping for S == 1 by `s >= o_hi`.
-    const std::size_t shared[] = {0, 1, S / 2, S - 2, S - 1};
-    std::size_t       o        = o_lo;
+    const std::array<std::size_t, 5> shared = {0, 1, S / 2, S - 2, S - 1};
+    std::size_t                      o      = o_lo;
     for (const std::size_t s : shared)
     {
         if (s < o)
@@ -724,8 +725,8 @@ namespace internal
 template <typename T, typename At>
 void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t S, At&& at) noexcept
 {
-    const std::size_t shared[] = {0, 1, S / 2, S - 2, S - 1};
-    std::size_t       o        = o_lo;
+    const std::array<std::size_t, 5> shared = {0, 1, S / 2, S - 2, S - 1};
+    std::size_t                      o      = o_lo;
     for (const std::size_t s : shared)
     {
         if (s < o)
