@@ -24,7 +24,7 @@
 #include <stdexcept> // std::out_of_range (at())
 
 #include "chunk/internal/array_chunk_base.h"      // ArrayChunkBase, the class these bodies belong to
-#include "chunk/all_type_chunk.h"                 // AllTypeChunk::ensure_manager, from create
+#include "chunk/internal/all_type_chunk_decl.h"  // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
 #include "chunk/config.h"                         // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h"     // register_runtime_chunk_size / set_thread_chunk_size
 #include "chunk/internal/process_verbs.h"         // compress_now_and_trim_pools -- shrink_to_fit()

@@ -258,6 +258,7 @@ install(TARGETS chunk_warnings EXPORT chunk-targets)
 # --- Shared file lists ---------------------------------------------------
 set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/TChunk.h
+        public/chunk/internal/all_type_chunk_decl.h
         public/chunk/internal/all_type_chunk_inline.h
         public/chunk/internal/arithmetic_context.h
         public/chunk/internal/array_chunk2A_inline.h
