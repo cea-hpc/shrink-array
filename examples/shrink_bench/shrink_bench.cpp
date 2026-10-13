@@ -859,7 +859,9 @@ int main(int argc, char* argv[])
         }
         return 0;
     }();
-    const auto cst2_reclaim_tick = [cst2_reclaim_period](Int k_iter)
+    // [&], not [cst2_reclaim_period]: clang warns that the explicit capture is
+    // not needed (-Wunused-lambda-capture) where the branch below is discarded.
+    const auto cst2_reclaim_tick = [&](Int k_iter)
     {
         if constexpr (chunk_config::use_chunk2a)
         {
