@@ -298,7 +298,6 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/chunk_stats.h
         public/chunk/internal/chunk_stats_printer.h
         public/chunk/internal/chunk_std_inline.h
-        public/chunk/internal/common_types.h
         public/chunk/internal/complex_less.h
         public/chunk/internal/compression_manager.h
         public/chunk/internal/compression_manager_inline.h
