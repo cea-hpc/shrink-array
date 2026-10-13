@@ -37,6 +37,7 @@
  * @see chunk_size_policy.h for the geometry policy (static vs dynamic)
  */
 
+#include <compare>  // std::strong_ordering (const_iterator's operator<=>)
 #include <array>    // std::array (the bulk-read buffer)
 #include <concepts> // std::invocable (for_each_span's run overload)
 #include <cstddef>  // std::size_t (size_type)
@@ -221,13 +222,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             return lhs.lin_ == rhs.lin_;
         }
 
-        /** @brief Negation of operator==. */
-        [[nodiscard]] friend bool operator!=(const const_iterator& lhs, const const_iterator& rhs) noexcept
-        {
-            check_same_owner(lhs, rhs);
-            return lhs.lin_ != rhs.lin_;
-        }
-
         // ── Random access: every jump is a seek() on lin_ ───────────────────
 
         /** @brief Jump @p n elements (negative: backwards). O(1), one chunk sync. */
@@ -282,32 +276,15 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             return *(*this + n);
         }
 
-        /** @brief Orderings: by absolute index, like operator==. */
-        [[nodiscard]] friend bool operator<(const const_iterator& lhs, const const_iterator& rhs) noexcept
+        /**
+         * @brief Ordering by absolute index, like operator==. The compiler
+         *        rewrites <, >, <= and >= from it (and != from operator==).
+         */
+        [[nodiscard]] friend std::strong_ordering operator<=>(const const_iterator& lhs,
+                                                              const const_iterator& rhs) noexcept
         {
             check_same_owner(lhs, rhs);
-            return lhs.lin_ < rhs.lin_;
-        }
-
-        /** @brief Ordering by absolute index. */
-        [[nodiscard]] friend bool operator>(const const_iterator& lhs, const const_iterator& rhs) noexcept
-        {
-            check_same_owner(lhs, rhs);
-            return lhs.lin_ > rhs.lin_;
-        }
-
-        /** @brief Ordering by absolute index. */
-        [[nodiscard]] friend bool operator<=(const const_iterator& lhs, const const_iterator& rhs) noexcept
-        {
-            check_same_owner(lhs, rhs);
-            return lhs.lin_ <= rhs.lin_;
-        }
-
-        /** @brief Ordering by absolute index. */
-        [[nodiscard]] friend bool operator>=(const const_iterator& lhs, const const_iterator& rhs) noexcept
-        {
-            check_same_owner(lhs, rhs);
-            return lhs.lin_ >= rhs.lin_;
+            return lhs.lin_ <=> rhs.lin_;
         }
 
         friend class ArrayChunkBase;
