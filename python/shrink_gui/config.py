@@ -102,6 +102,25 @@ PROGRAMS = {
         "own_outputs": ["bench_output.log", "bench_errors.log", "failed_cases.jsonl", "bench_summary.csv",
                         "run_logs", "runs"],
     },
+    "omp_speedup.py": {
+        "time_s": 14400,  # default -T (4 h); then remembered per program
+        "script": "python/omp_speedup.py", "cwd": "python",
+        "interp": "python3", "scan": "argparse",
+        # On a compute node only (it measures it): batch, or this machine.
+        "msub_only": True,
+        # "Choisir…" beside these fields, as compile_all.sh's.
+        "pickers": {"target": "configs", "execs": "execs"},
+        # Its own output directory per run (under <work>/omp_speedup/).
+        "out_re": r"Outputs in (\S+)",
+        "out_files": ["summary.csv", "results.csv", "errors.log", "plot.gp", "speedup.png", "meta.json"],
+        # Progress, Erreurs column, first-error notice: its events.jsonl.
+        "progress_re": None, "eta_re": None,
+        "summary": "csv", "summary_file": "summary.csv",
+        "chart": "speedup",
+        "errors_files": ["errors.log"],
+        "builds_opt": {"root": "build_root", "builds": "target"},
+        "own_outputs": "dir",
+    },
     "compile_all.sh": {
         "time_s": 5400,  # default -T (short); then remembered per program
         "script": "scripts/compile_all.sh", "cwd": "scripts",

@@ -544,3 +544,60 @@ def test_bench_chart_and_comparison(gui, site):
     assert _wait_status(w, pump, m, "fini")
     w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == m))
     assert pump(lambda: w.pt_stack.currentIndex() == 0 and len(w.pt_view.points) == 6, 10)
+
+
+def _fake_speedup_build(site):
+    """A build root with fake shrink_bench binaries: vector and chunk2a@dyn
+    scale, chunk@dyn always fails (an error line, rc 1)."""
+    import platform
+    d = site.home / "br" / "cmake-build-omp-llvm" / f"Linux__{platform.machine()}" / "examples" / "shrink_bench"
+    d.mkdir(parents=True)
+    body = ('#!/bin/bash\nm=1; while [ $# -gt 0 ]; do [ "$1" = --multiply ] && m=$2; shift; done\n'
+            'python3 -c "print(\'Memory consumption (peak): 10.0 Mo\'); '
+            'print(\'Elapsed time computation : %%.4fs\' %% (%s * $m / $OMP_NUM_THREADS))"\n')
+    for name, base in (("shrink_bench_vector_perf", 2.0), ("shrink_bench_chunk2a_dyn", 1.5)):
+        (d / name).write_text(body % base)
+        (d / name).chmod(0o755)
+    (d / "shrink_bench_chunk_dyn").write_text("#!/bin/bash\necho 'error: no chunk today' >&2\nexit 1\n")
+    (d / "shrink_bench_chunk_dyn").chmod(0o755)
+    return site.home / "br"
+
+
+def test_omp_speedup_submitted_from_the_window(gui, site):
+    w, pump = gui
+    br = _fake_speedup_build(site)
+    w.program.setCurrentText("omp_speedup.py")
+    assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
+    from PySide6.QtWidgets import QPushButton
+    assert w.findChild(QPushButton, "pick_execs") is not None and w.findChild(QPushButton, "pick_target")
+    vals = {"target": "omp-llvm", "execs": "vector,chunk2a@dyn", "min_threads": "1", "max_threads": "2",
+            "reps": "2", "build_root": str(br)}
+    a = _submit(w, pump, vals, len(w.runs))
+    assert _wait_status(w, pump, a, "fini")
+    run = next(r for r in w.runs if r["id"] == a)
+    assert run["code"] == 0 and run["errors"] == [0, None] and run["progress"][:2] == [8, 8]
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == a))
+    assert pump(lambda: "Outputs in " in w.log.toPlainText(), 10)
+    w.tabs.setCurrentIndex(w.TAB_SUMMARY)
+    assert pump(lambda: w.sum_view.count() == 2, 10)              # Phases (events.jsonl), summary.csv
+    assert w.sum_table.item(0, 0).text() == "speedup" and w.sum_table.item(0, 1).text() == "ok"
+    w.sum_view.setCurrentIndex(1)
+    assert w.sum_table.rowCount() == 4                             # 2 execs x 2 thread counts
+    w.tabs.setCurrentIndex(w.TAB_CHART)
+    assert pump(lambda: w.pt_stack.currentIndex() == 2 and len(w.sc_view.points) == 4, 10)
+    assert w.sc_note.text().startswith("4 point(s)")
+    # B: the same at --multiply 2, plus an executable that fails
+    b = _submit(w, pump, dict(vals, execs="vector,chunk2a@dyn,chunk@dyn", multiply="2"), len(w.runs))
+    assert _wait_status(w, pump, b, "fini")
+    run = next(r for r in w.runs if r["id"] == b)
+    assert run["code"] == 1 and run["errors"][0] == 4 and run["errors"][1].startswith("RUN_FAIL: shrink_bench_chunk_dyn")
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == a))
+    w.sc_cmp.setCurrentIndex(w.sc_cmp.findData(b))
+    assert pump(lambda: "B / A : ×1.000" in w.sc_note.text(), 10)  # the speedups match
+    assert "tailles ou modes différents" in w.sc_note.text()
+    w.sc_metric.setCurrentIndex(w.sc_metric.findData("temps"))
+    assert "B / A : ×2.000" in w.sc_note.text()                     # twice the work
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == b))
+    w.tabs.setCurrentIndex(w.TAB_ERRORS)
+    assert pump(lambda: "error: no chunk today" in w.err_view.toPlainText(), 10)
+    assert w.err_note.text().startswith("4 erreur(s)")

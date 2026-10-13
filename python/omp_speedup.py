@@ -19,7 +19,9 @@ Time measured: "Elapsed time computation" printed by shrink_bench (--metric
 compute, the default: the parallel loops, without the array creation and the
 fill), or the wall time of the process (--metric wall).
 
-Output, in --out (default speedup_<target>_<host>_<date>/):
+Output, in --out (default $CCCWORKDIR/omp_speedup/
+speedup_<target>_<host>_<date>/ when that work area exists, else
+~/omp_speedup/speedup_<target>_<host>_<date>/):
   results.csv   one row per run: target, exe, threads, rep, wall_s, compute_s,
                 mem_mo, rc
   summary.csv   one row per (exe, threads): best and median times, speedup,
@@ -28,6 +30,7 @@ Output, in --out (default speedup_<target>_<host>_<date>/):
                 executable, the ideal line;  gnuplot plot.gp  ->  speedup.png
   speedup.png   the same, drawn here when matplotlib is installed
   meta.json     the command, host, CPU model, arguments
+  errors.log    one entry per failed run (what shrink_gui's Erreurs tab shows)
   logs/         the full output of every run
 
 Examples (from python/, on a compute node):
@@ -99,6 +102,23 @@ def exe_name(spec, mode="perf"):
     return "shrink_bench_" + spec
 
 
+def glob_execs(root, target, pattern):
+    """[(name, path)] of the executables of the target matching glob @p pattern
+    (shrink_gui's "Choisir..." gives some), for this machine."""
+    import fnmatch
+    cfg = target if target.startswith("cmake-build-") else "cmake-build-" + target
+    arch = platform.machine()
+    out = {}
+    for d in sorted(glob.glob(os.path.join(root, cfg, "*", EXE_SUBPATH))):
+        if not os.path.basename(os.path.dirname(os.path.dirname(d))).endswith(arch):
+            continue
+        for f in sorted(os.listdir(d)):
+            p = os.path.join(d, f)
+            if fnmatch.fnmatchcase(f, pattern) and os.path.isfile(p) and os.access(p, os.X_OK):
+                out.setdefault(f, p)
+    return sorted(out.items())
+
+
 def all_execs(root, target, a):
     """--all-exec: the executables the target has for this machine, vector
     first, then each variant in each size (--size), 32-bit or --int64."""
@@ -113,6 +133,14 @@ def all_execs(root, target, a):
         if exe:
             out.append((name, exe))
     return out
+
+
+def default_out_base():
+    """Where the output directories go without --out: the CCC work area when
+    there is one, else ~/omp_speedup -- never the source tree (shrink_gui runs
+    it from python/)."""
+    work = os.path.join("/ccc/work/contXXX/project", os.environ.get("USER", ""))
+    return os.path.join(work if os.path.isdir(work) else os.path.expanduser("~"), "omp_speedup")
 
 
 def default_oracle_dir(target):
@@ -210,6 +238,26 @@ def why(rc):
     except ValueError:
         name = "signal %d" % -rc
     return name + (" (out of memory? see the log)" if rc == -9 else "")
+
+
+class Events:
+    """bench_runner/events.py's records, in $CHUNK_BENCH_EVENTS when set (run by
+    shrink_gui): its progress, its Erreurs column and first-error notice, the
+    Phases of its Résumé tab. Best effort, never raises."""
+
+    def __init__(self):
+        self.path = os.environ.get("CHUNK_BENCH_EVENTS") or None
+
+    def emit(self, kind, **fields):
+        if not self.path:
+            return
+        rec = {"t": round(time.time(), 3), "kind": kind}
+        rec.update(fields)
+        try:
+            with open(self.path, "a") as f:
+                f.write(json.dumps(rec, default=str) + "\n")
+        except (OSError, TypeError, ValueError):
+            pass
 
 
 def fmt_hms(s):
@@ -373,8 +421,9 @@ def parse_args(argv=None):
                    help="build target (compile_all.sh config): omp-llvm, omp-gnu, omp-oneapi... "
                         "or cmake-build-omp-llvm")
     p.add_argument("--exec", dest="execs", nargs="+", metavar="EXE",
-                   help="executables: full name (shrink_bench_chunk2a_dyn), base@size (chunk2a@dyn), "
-                        "vector (shrink_bench_vector_perf), or a path")
+                   help="executables, space- or comma-separated: full name (shrink_bench_chunk2a_dyn), "
+                        "base@size (chunk2a@dyn), vector (shrink_bench_vector_perf), a glob pattern "
+                        "(shrink_bench_chunk2a_*), or a path")
     p.add_argument("--all-exec", action="store_true",
                    help="every executable the target has here: vector, then chunk / chunk2 / chunk2a in "
                         "each size (with --exec: added to them)")
@@ -406,7 +455,7 @@ def parse_args(argv=None):
     p.add_argument("--build-root", default=None,
                    help="holds cmake-build-<target>/ (default $CHUNK_BUILD_ROOT, $CHUNK_BUILD_REP, "
                         "the repository)")
-    p.add_argument("--out", default=None, help="output directory (default speedup_<target>_<host>_<date>)")
+    p.add_argument("--out", default=None, help="output directory (default <CCC work or ~>/omp_speedup/speedup_<target>_<host>_<date>)")
     p.add_argument("--allow-oversubscribe", action="store_true",
                    help="keep the thread counts above the usable cores (dropped by default)")
     p.add_argument("--dry-run", action="store_true", help="print the runs and exit")
@@ -418,6 +467,7 @@ def parse_args(argv=None):
     a = p.parse_args(argv)
     a.extra = extra
     a.metric = a.metric + "_s"
+    a.execs = [x for e in a.execs or [] for x in e.split(",") if x]
     if not a.execs and not a.all_exec:
         p.error("give --exec EXE [EXE ...] and/or --all-exec")
     if a.mode == "check":
@@ -444,6 +494,12 @@ def main(argv=None):
     a.target = target
     execs, missing = [], []
     for spec in a.execs or []:
+        if any(c in spec for c in "*?[") and os.sep not in spec:
+            hits = glob_execs(root, target, spec)
+            execs += [h for h in hits if h[0] not in dict(execs)]
+            if not hits:
+                missing.append(spec)
+            continue
         name = exe_name(spec, a.mode)
         exe = find_exe(root, target, name)
         (execs.append((name if os.sep not in name else os.path.basename(name), exe)) if exe
@@ -480,7 +536,8 @@ def main(argv=None):
                      "bench_and_test.py --configs cmake-build-%s (or --regen-ref), or give --oracle-dir"
                      % (a.workdir, ORACLE_MARKER, target))
     host = socket.gethostname().split(".")[0]
-    outdir = a.out or "speedup_%s_%s_%s" % (target, host, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
+    outdir = os.path.abspath(a.out or os.path.join(
+        default_out_base(), "speedup_%s_%s_%s" % (target, host, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))))
     plan = [(r, t, name, exe) for r in range(1, a.reps + 1) for t in ts for name, exe in execs]
     print("%s on %s (%s, %d usable cores): %d run(s) -- threads %s, %s"
           % (target, host, cpu_model(), cores, len(plan), ts, " ".join(n for n, _ in execs)))
@@ -491,6 +548,12 @@ def main(argv=None):
         return 0
     logs = os.path.join(outdir, "logs")
     os.makedirs(logs, exist_ok=True)
+    print("📁 Outputs in %s" % outdir, flush=True)       # what shrink_gui reads (out_re)
+    ev = Events()
+    ev.emit("start", total_runs=len(plan), target=target, execs=[n for n, _ in execs], threads=ts)
+    ev.emit("phase_start", phase="speedup")
+    errors_log = os.path.join(outdir, "errors.log")
+    open(errors_log, "w").close()
     if a.workdir is None:
         a.workdir = outdir      # the binaries write memory_mo.txt and friends in their cwd
     with open(os.path.join(outdir, "meta.json"), "w") as f:
@@ -503,6 +566,7 @@ def main(argv=None):
                    "slurm_job": os.environ.get("SLURM_JOB_ID"),
                    "date": datetime.datetime.now().isoformat(timespec="seconds")}, f, indent=1)
     rows, t_start, n_fail = [], time.time(), 0
+    interrupted = False
     try:
         for i, (rep, t, name, exe) in enumerate(plan, 1):
             log = os.path.join(logs, "%s__omp%d__r%d.log" % (name, t, rep))
@@ -517,12 +581,23 @@ def main(argv=None):
                 n_fail += 1
                 if r["error"]:
                     status += "  -- " + r["error"][:200]
-            print("[%d/%d] rep %d %4d th  %-28s %s%s   ETA %s"
+                head = "RUN_FAIL: %s @ %dth rep=%d rc=%s %s" % (name, t, rep, r["rc"],
+                                                               why(r["rc"]) if isinstance(r["rc"], int) else "")
+                with open(errors_log, "a") as f:
+                    f.write(head.rstrip() + "\n" + ("  " + r["error"] + "\n" if r["error"] else "")
+                            + "  full output: %s\n" % log)
+                ev.emit("error", phase="speedup", error_kind="RUN_FAIL", summary=head.rstrip()[:300])
+            ev.emit("progress", phase="speedup", done=i, total=len(plan))
+            print("[%d/%d] rep %d %4d th  %-28s %s%s   ETA %s (%d s)"
                   % (i, len(plan), rep, t, name.replace("shrink_bench_", ""), status,
-                     "  %.0f Mo" % r["mem_mo"] if r["mem_mo"] else "", fmt_hms(eta)), flush=True)
+                     "  %.0f Mo" % r["mem_mo"] if r["mem_mo"] else "", fmt_hms(eta), eta), flush=True)
             write_csvs(outdir, a, rows, summarize(rows, a.metric, ts[0]))   # usable even if stopped
     except KeyboardInterrupt:
+        interrupted = True
         print("\ninterrupted: the CSVs hold the runs done so far")
+    ev.emit("phase_end", phase="speedup", status="interrupted" if interrupted else ("errors" if n_fail else "ok"),
+            errors=n_fail, seconds=round(time.time() - t_start, 1))
+    ev.emit("end", errors=n_fail, interrupted=interrupted, minutes=round((time.time() - t_start) / 60, 2))
     summary = summarize(rows, a.metric, ts[0])
     write_csvs(outdir, a, rows, summary)
     write_gnuplot(outdir, a, [n for n, _ in execs], ts[0], ts[-1])
