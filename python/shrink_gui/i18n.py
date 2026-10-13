@@ -62,6 +62,20 @@ EN = {
     "Erreurs": "Errors", "Rafraîchir les erreurs": "Refresh errors",
     "rechercher dans les erreurs (Entrée : suivant)": "search the errors (Enter: next)",
     "(vide)": "(empty)",
+    "Relancer les échecs…": "Rerun failures…", "Relancer les échecs": "Rerun failures",
+    "Répétitions": "Repetitions", "log d'erreurs": "error log",
+    "pas de sortie complète enregistrée pour cet échec (une comparaison ou un garde, un bench_and_test.py "
+    "plus ancien, ou --no-full-log)":
+        "no complete output recorded for this failure (a comparison or a guard, an older bench_and_test.py, "
+        "or --no-full-log)",
+    "pas de sortie complète enregistrée pour cet échec": "no complete output recorded for this failure",
+    "non rejouable par --rerun-failed : il faut un run complet": "not replayable by --rerun-failed: it takes a full run",
+    "sortie complète d'une exécution en échec, trouvée dans le dossier des logs (écrite pendant ce run)":
+        "complete output of a failed execution, found in the logs directory (written during this run)",
+    "Chaque échec est rejoué jusqu'à N fois, arrêt au premier échec : pour un échec intermittent "
+    "(--rerun-repeat).":
+        "Each failure is replayed up to N times, stopping at the first failure: for an intermittent "
+        "failure (--rerun-repeat).",
     "Le log d'erreurs du run, lu dans son dossier de sortie : bench_errors.log pour "
     "bench_and_test.py (une entrée par échec, écrite dès qu'il survient, avec la fin "
     "de sa sortie d'erreur ; la sortie complète de chaque exécution est dans run_logs/), "
@@ -450,6 +464,22 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^attention : (\S+), plus récent ou actif, écrit aussi dans ce dossier : ces fichiers sont peut-être "
      r"les siens$", r"warning: \1, newer or active, also writes in this directory: these files may be its own"),
     (r"^les (\d+) plus récents sur (\d+) fichiers$", r"the \1 newest of \2 files"),
+    (r"^══ (.+) : introuvable ══$", r"══ \1: not found ══"),
+    (r"^relance des échecs de (\S+) : la liste ne garde que ce qui échoue encore, bench_errors\.log est "
+     r"celui du run rejoué$",
+     r"rerun of the failures of \1: the list keeps only what still fails, bench_errors.log is the replayed run's"),
+    (r"^Soumet un nouveau run qui rejoue les (\d+) échec\(s\) rejouable\(s\) de ce run \(--rerun-failed\), "
+     r"mêmes partition et options\. Désactivé tant que le run tourne\.$",
+     r"Submits a new run replaying the \1 replayable failure(s) of this run (--rerun-failed), same partition "
+     r"and options. Disabled while the run is running."),
+    (r"^Rejouer les (\d+) échec\(s\) rejouable\(s\) de (\S+) \(bench_and_test\.py --rerun-failed\), sur la "
+     r"même partition, avec les mêmes options\.", r"Replay the \1 replayable failure(s) of \2 "
+     r"(bench_and_test.py --rerun-failed), on the same partition, with the same options."),
+    (r"\n(\d+) autre\(s\) \(une comparaison, un garde\) demandent un run complet\.",
+     r"\n\1 other(s) (a comparison, a guard) need a full run."),
+    (r"\n\nAttention : (\S+), plus récent ou actif, écrit aussi dans ce dossier : failed_cases\.jsonl est "
+     r"peut-être le sien\.", r"\n\nWarning: \1, newer or active, also writes in this directory: "
+     r"failed_cases.jsonl may be its own."),
     (r"^\[gui\] … les (.+) du début ne sont pas affichés \(« Récupérer les résultats » copie le fichier "
      r"complet\)$", r'[gui] … the first \1 are not shown ("Fetch results" copies the whole file)'),
     (r"« (.*) » absent des erreurs", r'"\1" not found in the errors'),

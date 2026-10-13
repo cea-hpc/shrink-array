@@ -18,12 +18,27 @@ from .state import _numa
 from .term import bold, cyan, dim, green, red
 
 
-def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text):
+def _text(v):
+    """TimeoutExpired.stdout/stderr: bytes even with text=True, or None."""
+    if isinstance(v, bytes):
+        return v.decode("utf-8", "replace")
+    return v or ""
+
+
+def _take_full_log():
+    """The full log the last run of this thread wrote, forgotten once read."""
+    p = getattr(state._LAST_FULL_LOG, "path", None)
+    state._LAST_FULL_LOG.path = None
+    return p
+
+
+def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text, status=None):
     """When --full-log-dir is set, dump one child run's COMPLETE stdout+stderr to
     its own file. The name encodes binary, OMP thread count, a global run counter
     and the status, so each execution is identifiable (chunk2 vs chunk2a, which run
     re-chunked / crashed). No-op when off. Never raises: logging must not break the
-    bench."""
+    bench. The path is kept for _note_run (_take_full_log)."""
+    state._LAST_FULL_LOG.path = None
     if not state._FULL_LOG_DIR:
         return
     try:
@@ -32,7 +47,7 @@ def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text):
         with state._FULL_LOG_LOCK:
             state._FULL_LOG_COUNTER += 1
             idx = state._FULL_LOG_COUNTER
-        status = "ok" if returncode == 0 else f"rc{returncode}"
+        status = status or ("ok" if returncode == 0 else f"rc{returncode}")
         path = os.path.join(state._FULL_LOG_DIR, f"{binary}__omp{omp}__{idx:05d}__{status}.log")
         with open(path, "w") as fh:
             fh.write(f"# cmd: {' '.join(map(str, cmd))}\n")
@@ -43,6 +58,7 @@ def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text):
                 fh.write("\n")
             fh.write("# ===== STDERR =====\n")
             fh.write(stderr_text or "")
+        state._LAST_FULL_LOG.path = path
     except Exception:
         pass  # logging must never break the run
 
@@ -129,7 +145,9 @@ def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, 
                             "--- output tail ---\n"
                             + "\n".join(combined.splitlines()[-30:]))
         return success, time.perf_counter() - start, res.returncode, err_tail, mem_mo
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        # What the run printed before the kill: often where it hung.
+        _write_full_log(cmd, child_env, -9, _text(e.stdout), _text(e.stderr), status="timeout")
         return False, float(timeout), -9, f"TIMEOUT after {timeout}s", None
     except FileNotFoundError as e:
         # The binary vanished between resolution and launch — almost always a
@@ -163,6 +181,7 @@ def _note_run(executor, ok, cmd, env_vars, timeout, extra_ld_library_path, cwd, 
            "timeout": timeout, "ld": extra_ld_library_path, "cwd": cwd, "must_contain": must_contain}
     if numa_mode:
         rec["numa"] = numa_mode
+    log = _take_full_log()
     if ok:
         k = _run_key(rec)
         state._PENDING_FAILED_RUNS[:] = [r for r in state._PENDING_FAILED_RUNS if _run_key(r) != k]
@@ -176,6 +195,8 @@ def _note_run(executor, ok, cmd, env_vars, timeout, extra_ld_library_path, cwd, 
             rec["cmd"] = [rec["cmd"][0], "-R", "^(" + "|".join(_re2.escape(n) for n in names) + ")$",
                           "--output-on-failure"]
             rec["ctest_tests"] = names
+    if log:
+        rec["log"] = log      # its complete output (shrink_gui opens it from the failure)
     state._PENDING_FAILED_RUNS.append(rec)
 
 
@@ -342,6 +363,8 @@ def _run_capture_stdout_streaming_impl(cmd, env_vars, timeout, on_line, on_tick,
                 break
             if ln:
                 out_lines.append(ln)
+        t_err.join(timeout=5)
+        _write_full_log(cmd, child_env, -9, "".join(out_lines), "".join(err_parts), status="timeout")
         return False, float(timeout), -9, "".join(out_lines), f"TIMEOUT after {timeout}s"
 
     t_out.join(timeout=5)
@@ -422,18 +445,23 @@ def run_rerun_failed(args):
                         r["cmd"], r.get("env") or {}, r.get("timeout"),
                         extra_ld_library_path=r.get("ld"), cwd=r.get("cwd"),
                         must_contain=r.get("must_contain"), numa_mode=r.get("numa"))
+                log = _take_full_log()
                 if not ok:
-                    case_fail = (rep + 1, code, tail)
+                    if log:
+                        r["log"] = log      # the list kept below points to the newest output
+                    case_fail = (rep + 1, code, tail, log)
                     break
             if case_fail:
                 break
         if case_fail:
             n_fail += 1
             still.append(case)
-            rep, code, tail = case_fail
+            rep, code, tail, log = case_fail
             print(red(f"  ✗ still fails (repeat {rep}/{reps}, code {code}): {head}"))
             for tl in (tail or "").splitlines()[-8:]:
                 print(dim("      " + tl))
+            if log:
+                print(dim(f"      full output: {log}"))
         else:
             n_ok += 1
             print(green(f"  ✓ passes x{reps}: {head}"))
@@ -519,7 +547,8 @@ def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None,
         _write_full_log(cmd, child_env, res.returncode, res.stdout, res.stderr)
         text = (res.stdout or "") + ("\n" + res.stderr if merge_stderr and res.stderr else "")
         return (res.returncode == 0, time.perf_counter() - start, res.returncode, text, err_tail)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        _write_full_log(cmd, child_env, -9, _text(e.stdout), _text(e.stderr), status="timeout")
         return False, float(timeout), -9, "", f"TIMEOUT after {timeout}s"
     except FileNotFoundError as e:
         return False, 0.0, -2, "", f"FileNotFoundError: {e}"

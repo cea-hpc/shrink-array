@@ -449,3 +449,44 @@ def test_local_machine_in_english(gui, site, qapp):
     assert pump(lambda: "this machine —" in w.conn.text(), 20), w.conn.text()
     assert w.repo_label.text() == "Repository (this machine)" and w.preset.itemText(0).startswith("this machine")
     assert _french_left(w) == []
+
+
+def test_errors_tab_failures_and_rerun(gui, site, monkeypatch):
+    w, pump = gui
+    w.program.setCurrentText("fake_bench.py")
+    assert pump(lambda: w.form.schema is not None and w.form.schema["description"] == "fake bench")
+    rid = _submit(w, pump, {}, len(w.runs))
+    assert _wait_status(w, pump, rid, "fini")
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == rid))
+    w.tabs.setCurrentIndex(w.TAB_ERRORS)
+    assert pump(lambda: w.err_list.count() == 3, 10)        # the log + 2 failures
+    assert "Segmentation fault" in w.err_view.toPlainText()
+    assert w.err_rerun.isVisible() and w.err_rerun.isEnabled()
+    w.err_list.setCurrentRow(1)                            # its complete output
+    assert pump(lambda: "Segmentation fault at chunk 17" in w.err_view.toPlainText(), 10)
+    assert "__rc-11.log" in w.err_view.toPlainText()
+    seen = {}
+
+    def dialog(run, replayable, other, newer):
+        seen.update(replayable=replayable, other=other)
+        return 2, 1800
+    monkeypatch.setattr(w, "rerun_dialog", dialog)
+    n = len(w.runs)
+    time.sleep(1.05)                                       # run ids are per second
+    w.rerun_failed()
+    assert seen == {"replayable": 1, "other": 1}
+    assert pump(lambda: len(w.runs) == n + 1, 20)
+    again = w.runs[0]
+    assert again["meta"]["rerun_of"] == rid and again["meta"]["time_s"] == 1800
+    assert re.search(r"--rerun-failed --rerun-repeat 2 --full-log-dir run_logs/rerun-\d{8}-\d{6}$",
+                     again["meta"]["command"])
+    assert w.extra.text() == "" and w.time_s.value() != 1800      # the form is left as it was
+    assert _wait_status(w, pump, again["id"], "fini")
+    w.table.selectRow(0)
+    assert pump(lambda: "rerun 2" in w.log.toPlainText(), 10)
+    w.tabs.setCurrentIndex(0)
+    w.tabs.setCurrentIndex(w.TAB_ERRORS)
+    assert pump(lambda: "relance des échecs de " + rid in w.err_note.text(), 10)
+    assert pump(lambda: w.err_list.count() == 2, 10)
+    w.err_list.setCurrentRow(1)
+    assert pump(lambda: "still crashing" in w.err_view.toPlainText(), 10)

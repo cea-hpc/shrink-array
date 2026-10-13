@@ -89,6 +89,11 @@ PROGRAMS = {
         # The Erreurs tab: one entry per failure, written as it happens (the
         # full output of each run is in run_logs/).
         "errors_files": ["bench_errors.log"],
+        # Its failures one by one (failed_cases.jsonl: the complete output of
+        # each, under run_logs/), and "Relancer les échecs" (--rerun-failed).
+        "failed_cases": "failed_cases.jsonl", "full_logs": "run_logs",
+        "rerun": {"opt": "--rerun-failed", "repeat": "--rerun-repeat", "log_dir": "--full-log-dir",
+                  "drop": ["--no-full-log"]},
         "builds_opt": {"root": "build_root", "builds": "configs"},
         # bench_results/<arch> is shared by every run of the architecture and
         # holds the oracles (oracle/): only what each run rewrites goes.

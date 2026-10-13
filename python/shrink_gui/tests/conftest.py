@@ -51,6 +51,19 @@ FAKE_PROGRAM = {
     "errors_files": ["error_*.txt"],
 }
 
+# A stand-in for bench_and_test.py (data/fake_bench.py): the Erreurs tab's
+# failures and "Relancer les échecs".
+FAKE_BENCH = {
+    "script": "python/shrink_gui/tests/data/fake_bench.py", "cwd": "python/shrink_gui/tests/data",
+    "interp": "python3", "scan": "argparse",
+    "out_re": r"Run outputs \S+ (\S+)",
+    "out_files": ["bench_errors.log", "failed_cases.jsonl"],
+    "progress_re": None, "eta_re": None, "summary": None, "summary_file": None,
+    "errors_files": ["bench_errors.log"], "failed_cases": "failed_cases.jsonl", "full_logs": "run_logs",
+    "rerun": {"opt": "--rerun-failed", "repeat": "--rerun-repeat", "log_dir": "--full-log-dir",
+              "drop": ["--no-full-log"]},
+}
+
 
 class Site:
     """The fake inti: paths, environment, and the helper run "remotely"."""
@@ -132,6 +145,7 @@ def gui(qapp, site, monkeypatch):
     QSettings(config.APP, config.APP).clear()
     monkeypatch.setattr(remote, "SSH", str(site.bin / "ssh"))
     monkeypatch.setitem(config.PROGRAMS, "fake_stress.py", FAKE_PROGRAM)
+    monkeypatch.setitem(config.PROGRAMS, "fake_bench.py", FAKE_BENCH)
     monkeypatch.setitem(config.DEFAULTS, "local_dir", str(site.local))
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     i18n.set_lang("fr")

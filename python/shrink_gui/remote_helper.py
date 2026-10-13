@@ -930,7 +930,112 @@ def act_errors(a):
            "newer": newer_writer(base, rid, meta, od)}
     if not paths:
         out["note"] = "aucun fichier %s dans %s" % (", ".join(pats), od)
+    if opts.get("cases"):
+        out["cases"] = failed_cases(od, opts["cases"])
+    if opts.get("full_logs"):
+        out["logs"] = failure_logs(base, rid, d, meta, od, opts["full_logs"])
     print(json.dumps(out))
+
+def inside(od, rel):
+    """os.path.join(od, rel) when it stays inside the output directory @p od
+    (a name read in a file, or sent by the window), else None."""
+    if not rel:
+        return None
+    p = os.path.realpath(os.path.join(od, rel))
+    root = os.path.realpath(od)
+    return p if p.startswith(root + os.sep) else None
+
+def failed_cases(od, name):
+    """The failures failed_cases.jsonl records (bench_runner/runs.py), one per
+    entry of bench_errors.log: its first line, whether --rerun-failed can
+    replay it, and the complete output of its failed runs (relative to od)."""
+    out = []
+    p = inside(od, name)
+    if not p or not os.path.isfile(p):
+        return out
+    with text_open(p) as f:
+        for ln in f:
+            try:
+                c = json.loads(ln)
+            except ValueError:
+                continue
+            runs = c.get("runs") or []
+            logs = []
+            for r in runs:
+                lp = inside(od, r.get("log"))        # absolute as bench_runner writes it
+                if lp:
+                    logs.append(os.path.relpath(lp, os.path.realpath(od)))
+            out.append({"kind": c.get("kind", ""), "summary": c.get("summary", ""),
+                        "replayable": bool(runs), "logs": logs})
+    return out
+
+def run_started(d):
+    """When run dir @p d started, by the cluster's clock: its "start" event,
+    else None."""
+    for e in read_events(d):
+        if e.get("kind") == "start":
+            return e.get("t")
+    return None
+
+def failure_logs(base, rid, d, meta, od, sub):
+    """The full logs of FAILED executions (bench_runner names them
+    <binary>__omp<N>__<idx>__<status>.log, status ok / rc<code> / timeout) in
+    od/@p sub written during this run: after its launch, before a newer run
+    sharing od started. For the runs whose failed_cases.jsonl does not point
+    to them (bench_runner before that), newest first."""
+    ld = inside(od, sub)
+    if not ld or not os.path.isdir(ld):
+        return []
+    try:
+        t0 = os.path.getmtime(os.path.join(d, "meta.json"))
+    except OSError:
+        return []
+    t1 = None
+    for _other, od2, _m2 in runs_sharing(base, rid, od):
+        t = run_started(od2)
+        if t is not None and t > t0 and (t1 is None or t < t1):
+            t1 = t
+    out = []
+    for p in glob.glob(os.path.join(ld, "*.log")):
+        if p.endswith("__ok.log"):
+            continue
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if st.st_mtime >= t0 and (t1 is None or st.st_mtime < t1):
+            out.append((st.st_mtime, os.path.relpath(p, od)))
+    return [name for _t, name in sorted(out, reverse=True)[:ERR_FILES_MAX]]
+
+def act_errfile(a):
+    """Some files of the run's output directory, as act_errors sends them:
+    a[2], base64 JSON {"paths": [relative to the directory]} -- the complete
+    output of a failure. Nothing outside the directory is read."""
+    base, rid = rdir(a[0]), a[1]
+    d = os.path.join(base, rid)
+    meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
+    opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
+    od = out_dir(d, meta)
+    if not od:
+        print(json.dumps({"error": "pas de dossier de sortie annoncé dans le log de %s" % rid}))
+        return
+    od = os.path.expanduser(od)
+    files, budget = [], ERR_TOTAL_MAX
+    for rel in opts.get("paths") or []:
+        p = inside(od, rel)
+        if not p or not os.path.isfile(p):
+            files.append({"name": rel, "size": 0, "mtime": 0, "data": "", "skipped": 0, "missing": True})
+            continue
+        size, n = os.path.getsize(p), min(ERR_FILE_MAX * 2, budget)
+        data = tail_text(p, n)
+        skipped = max(0, size - n)
+        if skipped:
+            nl = data.find("\n")
+            data = data[nl + 1:] if nl >= 0 else data
+        budget -= len(data.encode("utf-8", "replace"))
+        files.append({"name": rel, "size": size, "mtime": os.path.getmtime(p), "data": data,
+                      "skipped": skipped})
+    print(json.dumps({"dir": od, "files": files}))
 
 BUILD_NAME_RE = re.compile(r'cmake-build-([^/"\s]*)')
 EXE_RULE_RE = re.compile(rb"CXX_EXECUTABLE_LINKER__(\w+)")
@@ -977,6 +1082,7 @@ def act_build_targets(a):
 ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": act_git_pull,
            "git_branches": act_git_branches, "git_switch": act_git_switch, "options": act_options, "launch": act_launch, "list": act_list,
            "tail": act_tail, "stop": act_stop, "pack": act_pack, "summary": act_summary,
-           "points": act_points, "delete": act_delete, "errors": act_errors}
+           "points": act_points, "delete": act_delete, "errors": act_errors,
+           "errfile": act_errfile}
 if __name__ == "__main__":
     ACTIONS[sys.argv[1]](sys.argv[2:])

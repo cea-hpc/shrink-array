@@ -413,3 +413,44 @@ def test_errors_tail_patterns_and_no_dir(site):
     (d / "meta.json").write_text(json.dumps({"out_re": r"Run outputs \S+ (\S+)"}))
     assert "pas encore de dossier" in site.helper("errors", "~/shrink_runs", "m2",
                                                   _files("bench_errors.log"))["note"]
+
+
+def test_errors_failures_and_their_logs(site):
+    od = site.home / "bench_results" / "aarch64"
+    logs = od / "run_logs"
+    logs.mkdir(parents=True)
+    _bench_run(site, "f1", "2026-10-13 10:00:00", od)
+    crash = logs / "shrink_bench_chunk2a__omp4__00003__ok.log"     # a sanitizer hit exits 0
+    crash.write_text("ERROR: AddressSanitizer\n")
+    (logs / "shrink_bench_chunk__omp4__00001__ok.log").write_text("fine\n")
+    (od / "failed_cases.jsonl").write_text(
+        json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: chunk2a", "runs": [{"log": str(crash)}]}) + "\n"
+        + json.dumps({"kind": "MEM_GUARD", "summary": "MEM_GUARD: x", "runs": []}) + "\n"
+        + json.dumps({"kind": "X", "summary": "outside", "runs": [{"log": "/etc/passwd"}]}) + "\n{partial")
+    opts = base64.b64encode(json.dumps({"files": ["bench_errors.log"], "cases": "failed_cases.jsonl",
+                                        "full_logs": "run_logs"}).encode()).decode()
+    r = site.helper("errors", "~/shrink_runs", "f1", opts)
+    assert [(c["kind"], c["replayable"], c["logs"]) for c in r["cases"]] == [
+        ("CHECK_FAIL", True, ["run_logs/shrink_bench_chunk2a__omp4__00003__ok.log"]),
+        ("MEM_GUARD", False, []), ("X", True, [])]
+    # the failed executions of the run, for an older bench_runner: never __ok
+    (logs / "shrink_bench_chunk2__omp8__00002__timeout.log").write_text("hung\n")
+    assert site.helper("errors", "~/shrink_runs", "f1", opts)["logs"] == [
+        "run_logs/shrink_bench_chunk2__omp8__00002__timeout.log"]
+    f = site.helper("errfile", "~/shrink_runs", "f1", base64.b64encode(json.dumps(
+        {"paths": r["cases"][0]["logs"] + ["../../../../etc/passwd"]}).encode()).decode())["files"]
+    assert "AddressSanitizer" in f[0]["data"] and f[1].get("missing") and f[1]["data"] == ""
+
+
+def test_rerun_command():
+    from shrink_gui.config import PROGRAMS
+    from shrink_gui.runscripts import rerun_command
+    spec = PROGRAMS["bench_and_test.py"]["rerun"]
+    cmd = 'python3 bench_and_test.py --mode fast --output-dir "/ccc/work/$USER/b" --no-full-log'
+    once = rerun_command(cmd, spec, 3, "run_logs/rerun-1")
+    assert once == ('python3 bench_and_test.py --mode fast --output-dir "/ccc/work/$USER/b" '
+                    "--rerun-failed --rerun-repeat 3 --full-log-dir run_logs/rerun-1")
+    # a replay of a replay: the options are replaced, not repeated
+    assert rerun_command(once, spec, 1, "run_logs/rerun-2").endswith(
+        '"/ccc/work/$USER/b" --rerun-failed --rerun-repeat 1 --full-log-dir run_logs/rerun-2')
+    assert rerun_command("", spec, 1, "d") == "--rerun-failed --rerun-repeat 1 --full-log-dir d"
