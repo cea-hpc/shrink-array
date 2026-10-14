@@ -1361,9 +1361,14 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
     ///          drain), never on the hot path. Several instances (every rank,
     ///          several keys) may feed ONE sweep, so adjacent runs merge across
     ///          them. EmptySlabSweep's preconditions hold until its flush.
+    /// @param keep_empty Empty slabs this instance keeps resident (the first
+    ///        ones found), for its next allocations: a sweep between two
+    ///        phases that keeps a few does not give back, then fault in again,
+    ///        the slabs the next phase allocates.
     /// @return Number of slabs handed over. The CHUNK_RECLAIM_MIN_SLABS floor
     ///         is applied by the sweep, to all instances together.
-    std::size_t collect_empty_slabs([[maybe_unused]] empty_slab_sweep& sweep) noexcept
+    std::size_t collect_empty_slabs([[maybe_unused]] empty_slab_sweep& sweep,
+                                    [[maybe_unused]] std::size_t       keep_empty = 0) noexcept
     {
         if constexpr (alloc_config::use_std_alloc || !alloc_config::reclaim_empty_slabs)
         {
@@ -1381,6 +1386,11 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
                     // Whole slab, trailing page included: see fast_alloc::EmptySlabSweep.
                     if (p->nn_ref == 0)
                     {
+                        if (keep_empty > 0)
+                        {
+                            --keep_empty;
+                            continue;
+                        }
                         sweep.add(p);
                         ++collected;
                     }

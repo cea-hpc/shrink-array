@@ -39,6 +39,9 @@
 | `CHUNK_RECHUNK_KEEP_RECYCLED` | off | `1`: the same, with no cap (the RSS keeps every leftover until reused) |
 | `CHUNK_RECHUNK_REUSE_LIST` | on | a rechunk reuses the previous rechunk's chunk list buffer (pages already resident); `0`: a new one each time. *Removal planned: 2026-12-31.* |
 | `CHUNK_THP` | 0 | unset: the kernel's THP mode decides. `never`: no transparent huge pages on the slab arenas (`MADV_NOHUGEPAGE`) -- under the mode `always` a slab otherwise becomes resident whole at its first touch; compare the two with the RSS and AnonHugePages of `smaps_rollup`. Experimental: `1` requests them (`MADV_HUGEPAGE`) on the slab arenas and the cst2 region. Ignored, with a message, when the huge page is larger than 2 MiB (kernel with 64 KiB pages: 512 MiB). Cost: a slab that has been started becomes fully resident. *Removal planned: 2026-12-31.* |
+| `CHUNK_REUSE_SHARE_DIV` | 50 | fast allocator: a rank keeps parked for reuse up to chunks / (this × threads) freed buffers per element type (per array for an array with its own allocators); the chunks counted include the compressed ones |
+| `CHUNK_REUSE_FLOOR_KB` | unset | floor of that budget in KiB per rank, converted to buffers at the chunk size; unset: 500 buffers (100 for an array with its own allocators), whatever their size; `0`: no floor |
+| `CHUNK_RECLAIM_PHASE_KEEP` | unset | `K`: after every compression pass, give the empty slabs back to the system (`madvise`), keeping `K` per allocator instance; unset: only at a re-chunk, a destruction, `shrink_to_fit()` |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 
 ## 2. Traces and diagnostics
@@ -83,6 +86,7 @@
 | `CHUNK_BENCH_ULONG_BANDS` | number of distinct second values of the `unsigned long` array (4,096; 0 = no limit) |
 | `CHUNK_MALLOC_ARENAS` | number of glibc `malloc` arenas (0 = unchanged) |
 | `SHRINK_BENCH_MALLOC_TRIM` | `1`: `malloc_trim` at each memory line, and not only at the checkpoints ("after init", "end"); distorts the curve and costs time in the timed loop |
+| `SHRINK_BENCH_KEEP_POOLS` | `1`: no `trim_reuse_pools` at the checkpoints (the parked buffers, and with the fast allocator the emptied slabs, stay resident) |
 | `BENCH_SCHED_BLOCK` | size of the scheduling blocks of the benchmark phases (64; 0 = contiguous slices) |
 | `NO_IO`, `COMPRESS` | equivalents of `--no_io` and `--compress` |
 | `--no_mask`, `--mask_scale <x>` | without `tab_mask`; or its size, `x × sz` (default 1/32) |

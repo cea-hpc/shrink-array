@@ -41,6 +41,9 @@
 | `CHUNK_RECHUNK_KEEP_RECYCLED` | inactif | `1` : idem, sans plafond (le RSS garde chaque reliquat jusqu'à sa réutilisation) |
 | `CHUNK_RECHUNK_REUSE_LIST` | actif | un rechunk réutilise le tampon de la liste de chunks du rechunk précédent (pages déjà résidentes) ; `0` : un nouveau à chaque fois. *Retrait prévu : 31/12/2026.* |
 | `CHUNK_THP` | 0 | non défini : le mode THP du noyau décide. `never` : pas de huge pages transparentes sur les arènes de slabs (`MADV_NOHUGEPAGE`) -- en mode `always`, un slab devient sinon résident en entier dès qu'il est touché ; comparer les deux avec le RSS et AnonHugePages de `smaps_rollup`. Expérimental : `1` les demande (`MADV_HUGEPAGE`) sur les arènes de slabs et la région cst2. Ignoré, avec un message, quand la huge page dépasse 2 Mio (noyau à pages de 64 Kio : 512 Mio). Coût : un slab entamé devient résident en entier. *Retrait prévu : 31/12/2026.* |
+| `CHUNK_REUSE_SHARE_DIV` | 50 | allocateur rapide : un rang garde de côté jusqu'à chunks / (ce nombre × threads) tampons libérés par type d'élément (par tableau pour un tableau qui a ses propres allocateurs) ; les chunks comptés incluent les compressés |
+| `CHUNK_REUSE_FLOOR_KB` | non défini | plancher de ce budget en Kio par rang, converti en tampons selon la taille de chunk ; non défini : 500 tampons (100 pour un tableau qui a ses propres allocateurs), quelle que soit leur taille ; `0` : pas de plancher |
+| `CHUNK_RECLAIM_PHASE_KEEP` | non défini | `K` : après chaque passe de compression, rendre au système (`madvise`) les slabs vides, en gardant `K` par instance d'allocateur ; non défini : seulement au rechunk, à la destruction, à `shrink_to_fit()` |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | taille des slabs des pools d'écritures différées, en Kio (les slabs d'opérations ne sont jamais rendus : plus gros, moins d'appels à l'allocateur mais plus de mémoire résidente) |
 
 ## 2. Traces et diagnostics
@@ -85,6 +88,7 @@
 | `CHUNK_BENCH_ULONG_BANDS` | nombre de secondes valeurs distinctes du tableau `unsigned long` (4 096 ; 0 = sans limite) |
 | `CHUNK_MALLOC_ARENAS` | nombre d'arènes `malloc` de la glibc (0 = inchangé) |
 | `SHRINK_BENCH_MALLOC_TRIM` | `1` : `malloc_trim` à chaque ligne de mémoire, et pas seulement aux points de contrôle (« after init », « end ») ; déforme la courbe et coûte dans la boucle chronométrée |
+| `SHRINK_BENCH_KEEP_POOLS` | `1` : pas de `trim_reuse_pools` aux points de contrôle (les tampons parqués et, avec l'allocateur rapide, les slabs vidés restent résidents) |
 | `BENCH_SCHED_BLOCK` | taille des blocs d'ordonnancement des phases du banc (64 ; 0 = tranches contiguës) |
 | `NO_IO`, `COMPRESS` | équivalents de `--no_io` et `--compress` |
 | `--no_mask`, `--mask_scale <x>` | sans `tab_mask` ; ou sa taille, `x × sz` (défaut 1/32) |

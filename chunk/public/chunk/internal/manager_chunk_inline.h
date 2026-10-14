@@ -1206,7 +1206,7 @@ bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int 
         register_free_list_key(key, size, capacity);
         // The array's own share per rank, where the global budget uses the
         // process-wide somme_chunk_create.
-        set_size_buffer_reuse(key, nb_chunk / (Chunk2ADef::factor_div_somme_chunk_buffer_resuse * max_thr));
+        set_size_buffer_reuse(key, static_cast<int>(nb_chunk / (reuse_share_div() * max_thr)), size);
         if (std::getenv("CHUNK_AFFINITY_TRACE") != nullptr)
         {
             std::fprintf(stderr, "[AFFINITY] key=%u size=%u nb_chunk=%d budget=%d threads=%d\n", key, size, nb_chunk,
@@ -1227,11 +1227,11 @@ bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int 
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunk<CHUNK_T, T>::compute_size_buffer_reuse()
 {
-    // Chunk2ADef's reuse constants serve every variant (chunk2A_def.h).
+    // Chunk2ADef's reuse constants serve every variant (chunk2A_def.h);
+    // CHUNK_REUSE_SHARE_DIV / CHUNK_REUSE_FLOOR_KB override them.
+    size_buffer_reuse = static_cast<int>(somme_chunk_create / (reuse_share_div() * CHUNK_PMP_MAX_THREADS));
     size_buffer_reuse =
-        static_cast<int>(somme_chunk_create /
-                         (static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse) * CHUNK_PMP_MAX_THREADS));
-    size_buffer_reuse = std::max(size_buffer_reuse, Chunk2ADef::size_min_buffer_reuse);
+        std::max(size_buffer_reuse, reuse_floor_buffers(alloc_chunk_count(), Chunk2ADef::size_min_buffer_reuse));
 }
 
 // compute_size_max_number_of_chunk_to_check_compress (documented in
