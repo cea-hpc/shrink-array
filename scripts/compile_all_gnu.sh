@@ -188,7 +188,7 @@ if skip_release; then
     echo "[debug-only] skipping gnu openmp std allocator"
 else
     compile_with_cmake "$build_rep/cmake-build-omp-gnu-std-alloc${ICF_SUFFIX}/$arch" \
-      "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+      "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT" \
       "gnu openmp std allocator"
 fi
 
