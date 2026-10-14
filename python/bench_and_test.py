@@ -54,14 +54,19 @@ along with this file, and numa_launch.py for --numa-interleave.
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
 try:
     from bench_runner.cli import main  # noqa: E402
-except ImportError as exc:
-    if getattr(exc, "name", None) not in ("bench_runner", "bench_runner.cli"):
+except ImportError:
+    # Only a missing package gets the message below. Anything else -- a module
+    # of the package missing or broken (`cannot import name 'killinfo'`) --
+    # goes out as is: hiding it behind "not next to this script" sent the
+    # search to the wrong place.
+    if os.path.isfile(os.path.join(_HERE, "bench_runner", "cli.py")):
         raise
     sys.exit(f"{os.path.basename(__file__)}: the bench_runner package is not next to this script "
-             f"({os.path.dirname(os.path.abspath(__file__))}). Run it from python/, or copy "
+             f"({_HERE}). Run it from python/, or copy "
              "python/bench_runner/ along with it.")
 
 if __name__ == "__main__":

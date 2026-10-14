@@ -59,6 +59,11 @@
  * The begin check is a check-build one (`active`, build_config::any_check):
  * alone, a forgotten begin leaves the values right. shrink_array::
  * parallel_phase() (manage_ompt.h) makes both calls for the program.
+ *
+ * One top-level team at a time: the generation is global, so with two
+ * teams started by different host threads one team's phase end makes the
+ * other's threads stale (check_write fails) and can hide its forgotten
+ * finalize. Such a program is outside the protocol anyway (manage_ompt.h).
  */
 
 #include <atomic> // std::atomic, std::memory_order_relaxed

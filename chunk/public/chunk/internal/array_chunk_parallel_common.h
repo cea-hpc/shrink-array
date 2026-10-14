@@ -95,7 +95,7 @@ template <typename Derived>
 struct ParallelSupportCommonSerial
 {
     /** @brief No-op: nothing is deferred without OpenMP. */
-    void flush_pending_deferred_ops(bool = false) noexcept {}
+    void flush_pending_deferred_ops(bool /*force*/ = false) noexcept {}
 };
 
 } // namespace shrink_array

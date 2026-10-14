@@ -39,17 +39,17 @@
  *          Each case checks every element. A hang shows as the ctest timeout.
  */
 
-#include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 
-#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"   // ArrayChunk
-#include "chunk/array_chunk2.h"  // ArrayChunk2
-#include "chunk/array_chunk2A.h" // ArrayChunk2A
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/config.h"        // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_MAX_THREADS
+#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"    // ArrayChunk
+#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/config.h"         // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/print.h" // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -148,10 +148,10 @@ long life_of_one_array(Arrays& arr, int n)
 
 int report(const char* what, int n, long bad)
 {
-    printf("[%s/region-storage] %-22s n=%7d : %s\n", variant_name(), what, n, bad ? "FAIL" : "ok");
+    println("[{}/region-storage] {:<22} n={:7} : {}", variant_name(), what, n, bad ? "FAIL" : "ok");
     if (bad)
     {
-        printf("  %ld wrong element(s) or count(s)\n", bad);
+        println("  {} wrong element(s) or count(s)", bad);
     }
     return bad ? 1 : 0;
 }
@@ -161,7 +161,7 @@ int report(const char* what, int n, long bad)
 int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
-    printf("=== region_storage_validation [variant = %s]  threads=%d ===\n", variant_name(), CHUNK_PMP_MAX_THREADS);
+    println("=== region_storage_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     // Below and above the 500-chunk threshold of the init loops, at any
@@ -196,7 +196,7 @@ int run(int /*argc*/, char** /*argv*/)
         fails += report("omp masked", n, bad_masked);
     }
 
-    printf("%s\n", fails ? "region_storage_validation: FAILED" : "region_storage_validation: OK");
+    println("{}", fails ? "region_storage_validation: FAILED" : "region_storage_validation: OK");
     return fails ? 1 : 0;
 }
 

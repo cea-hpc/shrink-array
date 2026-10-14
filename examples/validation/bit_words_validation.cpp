@@ -33,13 +33,15 @@
 
 #include <algorithm> // std::min
 #include <cstddef>   // std::size_t
-#include <cstdio>    // std::printf
 #include <random>    // std::mt19937_64, std::uniform_int_distribution
 #include <thread>    // std::thread
 #include <utility>   // std::pair
 #include <vector>    // std::vector
 
 #include "chunk/internal/bit_words.h" // bits::word_t, bits::fill_bits, bits::get_bit, bits::scan_words
+#include "chunk/internal/print.h"     // shrink_array::println
+
+using shrink_array::println;
 
 namespace bits = shrink_array::bits;
 
@@ -53,7 +55,7 @@ void check(bool ok, const char* what, std::size_t n)
     if (!ok)
     {
         ++g_fails;
-        std::printf("FAIL %s (n=%zu)\n", what, n);
+        println("FAIL {} (n={})", what, n);
     }
 }
 
@@ -313,7 +315,7 @@ int main()
 
     if (g_fails == 0)
     {
-        std::printf("bit_words_validation: all checks passed\n");
+        println("bit_words_validation: all checks passed");
     }
     return g_fails == 0 ? 0 : 1;
 }

@@ -37,13 +37,14 @@
 // (ArrayChunkCore::size_policy_, [[no_unique_address]]), never per chunk. The
 // shared constant buffers are sized by cst_buffer_size (below).
 
+#include <bit>         // std::has_single_bit
 #include <cstddef>     // std::size_t (func_p2.h uses size_t unqualified)
 #include <cstdint>     // std::uint64_t (DynamicChunkSize's divider)
 #include <type_traits> // std::conditional_t, std::make_unsigned_t
 
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
 #include "chunk/internal/func_p2.h"           // log2int (constexpr, also usable at run time)
-#include "chunk/internal/chunk_size_config.h" // __chunk_size / __decalage_chunk / __modulo_chunk
+#include "chunk/internal/chunk_size_config.h" // static_chunk_size / static_chunk_shift / static_chunk_mask
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED (an invalid geometry)
 
 namespace shrink_array
@@ -59,7 +60,7 @@ namespace shrink_array
 //     allocation goes to the allocator of the right size.
 //
 // Frees need neither: a slab block stores a back-pointer to its allocator.
-inline unsigned int              g_active_chunk_size = __chunk_size;
+inline unsigned int              g_active_chunk_size = static_chunk_size;
 inline thread_local unsigned int t_active_chunk_size = 0; // 0 = "unset, use global"
 // Set around rechunk_to()'s temporary, which the refill needs born at exactly
 // the active size: an array of packed bits is otherwise born larger
@@ -89,7 +90,7 @@ void register_runtime_chunk_size(unsigned int size);
  */
 [[nodiscard]] constexpr bool is_valid_chunk_size(unsigned int size) noexcept
 {
-    return size != 0u && ((size & (size - 1u)) == 0u || size % 64u == 0u);
+    return std::has_single_bit(size) || (size != 0u && size % 64u == 0u);
 }
 
 /// @brief Set the process-wide active chunk size and register it with register_runtime_chunk_size().
@@ -144,7 +145,7 @@ inline void set_thread_alloc_key(unsigned int k) noexcept
     return t_active_chunk_size != 0u ? t_active_chunk_size : g_active_chunk_size;
 }
 
-// Element count of a chunk's value buffer: the thread's size, or __chunk_size (static).
+// Element count of a chunk's value buffer: the thread's size, or static_chunk_size (static).
 [[nodiscard]] inline unsigned int alloc_chunk_count() noexcept
 {
     if constexpr (build_config::chunk_dynamic)
@@ -153,7 +154,7 @@ inline void set_thread_alloc_key(unsigned int k) noexcept
     }
     else
     {
-        return __chunk_size;
+        return static_chunk_size;
     }
 }
 
@@ -194,7 +195,7 @@ class DynChunkSizeGuard
 ///        compression pipeline.
 /// @details A plain `unsigned int` next to `int num_chunk` / `int num_tab`
 ///          lets positional mix-ups and stray defaults compile (a
-///          `= __chunk_size` default under-scans runtime-sized chunks). No
+///          `= static_chunk_size` default under-scans runtime-sized chunks). No
 ///          default constructor, explicit conversion: every count is visible.
 class ChunkElems
 {
@@ -222,17 +223,17 @@ struct StaticChunkSize
     /// @brief Elements per chunk (the compile-time constant).
     static constexpr unsigned int size() noexcept
     {
-        return __chunk_size;
+        return static_chunk_size;
     }
     /// @brief log2(size()): the shift that turns an element index into a chunk index.
     static constexpr unsigned int decalage() noexcept
     {
-        return __decalage_chunk;
+        return static_chunk_shift;
     }
     /// @brief size() - 1: the mask that turns an element index into an offset in its chunk.
     static constexpr unsigned int modulo() noexcept
     {
-        return __modulo_chunk;
+        return static_chunk_mask;
     }
 
     /// @brief The chunk of element @p i (>= 0): i / size(). Unsigned: a signed
@@ -251,7 +252,7 @@ struct StaticChunkSize
     }
 
     /// @brief No-op, so generic code compiles under both policies.
-    static constexpr void set_size(unsigned int) noexcept {}
+    static constexpr void set_size(unsigned int /*size*/) noexcept {}
 };
 
 /// @brief Run-time geometry, settable during execution (CHUNK_DYNAMIC builds).
@@ -305,7 +306,7 @@ class DynamicChunkSize
         else
         {
             const auto          n = static_cast<std::uint64_t>(static_cast<std::make_unsigned_t<I>>(i));
-            const std::uint64_t t = static_cast<std::uint64_t>((static_cast<unsigned __int128>(magic_) * n) >> 64);
+            const auto          t = static_cast<std::uint64_t>((static_cast<unsigned __int128>(magic_) * n) >> 64);
             return static_cast<I>((t + ((n - t) >> 1)) >> magic_shift_);
         }
     }
@@ -326,7 +327,7 @@ class DynamicChunkSize
         }
         else
         {
-            return static_cast<I>(i - chunk_of(i) * static_cast<I>(size_));
+            return static_cast<I>(i - (chunk_of(i) * static_cast<I>(size_)));
         }
     }
 
@@ -345,22 +346,22 @@ class DynamicChunkSize
                                        size);
             }
         }
-        size_               = size;
-        decalage_           = static_cast<unsigned int>(log2int(static_cast<std::size_t>(size)));
-        modulo_             = size - 1u;
+        size_     = size;
+        decalage_ = static_cast<unsigned int>(log2int(static_cast<std::size_t>(size)));
+        modulo_   = size - 1u;
         set_divider(size);
         g_active_chunk_size = size; // keep the allocator-facing runtime size in sync
     }
 
   private:
-    // A new array adopts the process-wide active size (default __chunk_size).
-    unsigned int size_     = g_active_chunk_size;
-    unsigned int decalage_ = static_cast<unsigned int>(log2int(static_cast<std::size_t>(g_active_chunk_size)));
-    unsigned int modulo_   = g_active_chunk_size - 1u;
+    // A new array adopts the process-wide active size (default static_chunk_size).
+    unsigned int  size_        = g_active_chunk_size;
+    unsigned int  decalage_    = static_cast<unsigned int>(log2int(static_cast<std::size_t>(g_active_chunk_size)));
+    unsigned int  modulo_      = g_active_chunk_size - 1u;
     bool          pow2_        = true; ///< size() is a power of two: chunk_of / offset_of shift and mask
-    std::uint64_t m32_         = 0; ///< chunk_of's multiplier, 32-bit index (set_divider)
-    std::uint64_t magic_       = 0; ///< chunk_of's multiplier, 64-bit index (set_divider)
-    unsigned int  magic_shift_ = 0; ///< chunk_of's final shift, 64-bit index: ceil(log2(size)) - 1
+    std::uint64_t m32_         = 0;    ///< chunk_of's multiplier, 32-bit index (set_divider)
+    std::uint64_t magic_       = 0;    ///< chunk_of's multiplier, 64-bit index (set_divider)
+    unsigned int  magic_shift_ = 0;    ///< chunk_of's final shift, 64-bit index: ceil(log2(size)) - 1
 
     /// @brief chunk_of's magic numbers for @p size (>= 2). 32-bit index:
     ///        m32 = floor((2^64 - 1) / size) + 1. 64-bit index: with
@@ -368,8 +369,8 @@ class DynamicChunkSize
     ///        and a final shift of l - 1.
     void set_divider(unsigned int size) noexcept
     {
-        pow2_ = (size & (size - 1u)) == 0u; // NOT is_valid_chunk_size: a multiple of 64 is valid too
-        m32_  = UINT64_MAX / size + 1u;
+        pow2_          = std::has_single_bit(size); // NOT is_valid_chunk_size: a multiple of 64 is valid too
+        m32_           = UINT64_MAX / size + 1u;
         unsigned int l = 0;
         while ((1ull << l) < size)
         {
@@ -378,7 +379,6 @@ class DynamicChunkSize
         magic_ = static_cast<std::uint64_t>((static_cast<unsigned __int128>((1ull << l) - size) << 64) / size) + 1u;
         magic_shift_ = l - 1u;
     }
-
 };
 
 
@@ -399,11 +399,10 @@ inline constexpr unsigned int chunk_dyn_max_size = 4096u;
 inline constexpr unsigned int chunk_dyn_max_size = static_cast<unsigned int>(CHUNK_DYN_MAX_SIZE);
 #endif
 
-inline constexpr unsigned int cst_buffer_size = ActiveSizePolicy::is_dynamic ? chunk_dyn_max_size : __chunk_size;
+inline constexpr unsigned int cst_buffer_size = ActiveSizePolicy::is_dynamic ? chunk_dyn_max_size : static_chunk_size;
 
-static_assert(chunk_dyn_max_size != 0u && (chunk_dyn_max_size & (chunk_dyn_max_size - 1u)) == 0u,
-              "CHUNK_DYN_MAX_SIZE must be a power of two");
-static_assert(!ActiveSizePolicy::is_dynamic || chunk_dyn_max_size >= __chunk_size,
+static_assert(std::has_single_bit(chunk_dyn_max_size), "CHUNK_DYN_MAX_SIZE must be a power of two");
+static_assert(!ActiveSizePolicy::is_dynamic || chunk_dyn_max_size >= static_chunk_size,
               "CHUNK_DYN_MAX_SIZE must be at least the starting chunk size: the shared constant buffers are read "
               "up to the chunk size");
 

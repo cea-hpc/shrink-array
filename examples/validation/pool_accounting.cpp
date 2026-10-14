@@ -48,7 +48,6 @@
 //
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every count matches.
 
-#include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
 
 #include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
@@ -65,6 +64,7 @@
 #include "chunk/chunk2_def.h"                 // Chunk2Def
 #include "chunk/chunk2A_def.h"                // Chunk2ADef
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
+#include "chunk/internal/print.h"             // shrink_array::println
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -134,11 +134,11 @@ static void expect(bool ok, const char* what, long got, long want)
 {
     if (ok)
     {
-        printf("[%s] OK   %-58s %ld\n", variant_name(), what, got);
+        println("[{}] OK   {:<58} {}", variant_name(), what, got);
     }
     else
     {
-        printf("[%s] FAIL %-58s got=%ld expected=%ld\n", variant_name(), what, got, want);
+        println("[{}] FAIL {:<58} got={} expected={}", variant_name(), what, got, want);
         ++g_fails;
     }
 }
@@ -164,7 +164,7 @@ int run(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    printf("=== pool_accounting [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N, CHUNK_PMP_MAX_THREADS);
+    println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), N, CHUNK_PMP_MAX_THREADS);
 
     const long base = Manager::get_somme_chunk_create();
     expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long)Manager::reuse_pool_blocks(), 0);
@@ -259,8 +259,8 @@ int run(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    printf("\n[%s] %s\n", variant_name(),
-           g_fails == 0 ? "=== POOL ACCOUNTING OK, TEARDOWN OK ===" : "=== POOL ACCOUNTING FAILURES ===");
+    println("\n[{}] {}", variant_name(),
+            g_fails == 0 ? "=== POOL ACCOUNTING OK, TEARDOWN OK ===" : "=== POOL ACCOUNTING FAILURES ===");
     return g_fails;
 }
 

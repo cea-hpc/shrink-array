@@ -288,6 +288,10 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list() const
                 }
 
                 push_to_compress_list(vec, &chunk, num_chunk, num_tab, ChunkElems{this->chunk_size()});
+                if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+                {
+                    Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
+                }
             }
         }
     }
@@ -416,6 +420,10 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
         }();
 
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, self.chunk_size());
+        if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+        {
+            Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
+        }
     }
 }
 #else
@@ -459,6 +467,10 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
         }();
 
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, derived().chunk_size());
+        if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+        {
+            Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
+        }
     }
 }
 #endif
@@ -554,7 +566,9 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 }
             }
         }
-        struct OwnReplayExclGuard
+        // An aggregate, brace-initialised below: declaring the copy/move
+        // operations would make it a non-aggregate.
+        struct OwnReplayExclGuard // NOLINT(cppcoreguidelines-special-member-functions)
         {
             ~OwnReplayExclGuard()
             {

@@ -10,7 +10,7 @@ import threading
 import time
 import json
 
-from . import events, state
+from . import events, killinfo, state
 from .builds import resolve_exe
 from .parsing import detect_compression_collapse, detect_nonfinite_checksum, parse_peak_memory_mo
 from .settings import SANITIZER_HIT_MARKERS
@@ -30,6 +30,26 @@ def _take_full_log():
     p = getattr(state._LAST_FULL_LOG, "path", None)
     state._LAST_FULL_LOG.path = None
     return p
+
+
+def _why_failed(returncode, oom_before, stdout_text, err_tail):
+    """The err_tail of a FAILED run, made readable: why it died when a signal
+    killed it (killinfo: an OOM kill is told from the rest), the end of its
+    stdout when stderr said nothing, and where its complete output is."""
+    parts = []
+    if returncode is not None and returncode < 0:
+        why = killinfo.explain(returncode, oom_before, killinfo.oom_counts())
+        if why:
+            parts.append(why)
+    if (err_tail or "").strip():
+        parts.append(err_tail)
+    else:
+        out = [ln for ln in (stdout_text or "").splitlines() if ln.strip()][-8:]
+        parts.append("(stderr empty)" + ("\n--- stdout tail ---\n" + "\n".join(out) if out else ""))
+    log = getattr(state._LAST_FULL_LOG, "path", None)
+    if log:
+        parts.append(f"full output: {log}")
+    return "\n".join(parts)
 
 
 def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text, status=None):
@@ -91,6 +111,7 @@ def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, 
         )
     cmd = _numa.interleave_prefix(child_env, numa_mode or state._NUMA_MODE) + list(cmd)  # --numa-interleave
     try:
+        oom0 = killinfo.oom_counts()
         res = subprocess.run(
             cmd, env=child_env, cwd=cwd,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -144,6 +165,8 @@ def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, 
                 err_tail = ("COMPRESSION COLLAPSE: " + cc_bad + "\n"
                             "--- output tail ---\n"
                             + "\n".join(combined.splitlines()[-30:]))
+        if not success:
+            err_tail = _why_failed(res.returncode, oom0, res.stdout, err_tail)
         return success, time.perf_counter() - start, res.returncode, err_tail, mem_mo
     except subprocess.TimeoutExpired as e:
         # What the run printed before the kill: often where it hung.
@@ -282,6 +305,7 @@ def _run_capture_stdout_streaming_impl(cmd, env_vars, timeout, on_line, on_tick,
         # Own process group: on a timeout the whole tree goes (ctest AND the
         # tests it started). Killing ctest alone leaves the tests running and
         # holding the stdout pipe open.
+        oom0 = killinfo.oom_counts()
         proc = subprocess.Popen(cmd, env=child_env, cwd=cwd, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, bufsize=1,
                                 start_new_session=True)
@@ -373,6 +397,8 @@ def _run_capture_stdout_streaming_impl(cmd, env_vars, timeout, on_line, on_tick,
     err_text = "".join(err_parts)
     err_tail = "\n".join(err_text.splitlines()[-30:]) if err_text else ""
     _write_full_log(cmd, child_env, proc.returncode, out_text, err_text)
+    if proc.returncode != 0:
+        err_tail = _why_failed(proc.returncode, oom0, out_text, err_tail)
     return proc.returncode == 0, time.perf_counter() - start, proc.returncode, out_text, err_tail
 
 
@@ -542,6 +568,7 @@ def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None,
         )
     cmd = _numa.interleave_prefix(child_env, state._NUMA_MODE) + list(cmd)  # --numa-interleave
     try:
+        oom0 = killinfo.oom_counts()
         res = subprocess.run(
             cmd, env=child_env, cwd=cwd,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -550,6 +577,8 @@ def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None,
         err_tail = "\n".join(res.stderr.splitlines()[-30:]) if res.stderr else ""
         _write_full_log(cmd, child_env, res.returncode, res.stdout, res.stderr)
         text = (res.stdout or "") + ("\n" + res.stderr if merge_stderr and res.stderr else "")
+        if res.returncode != 0:
+            err_tail = _why_failed(res.returncode, oom0, res.stdout, err_tail)
         return (res.returncode == 0, time.perf_counter() - start, res.returncode, text, err_tail)
     except subprocess.TimeoutExpired as e:
         _write_full_log(cmd, child_env, -9, _text(e.stdout), _text(e.stderr), status="timeout")

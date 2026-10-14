@@ -99,7 +99,7 @@ class PointerMapLinear
                 pb = &item.second;
             }
         }
-        if (!pa || !pb)
+        if (pa == nullptr || pb == nullptr)
         {
             return false;
         }

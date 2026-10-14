@@ -129,6 +129,9 @@ endif()
 # Chunk2 against Chunk2A on one workload (per-operation cost, compression)
 add_subdirectory(variant_compare)
 
+# The cost of an element access against a std::vector, in the same binary
+add_subdirectory(access_cost)
+
 # Multi-dimensional array example
 add_subdirectory(multi-mat)
 

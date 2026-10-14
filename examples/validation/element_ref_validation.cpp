@@ -32,19 +32,20 @@
 //
 // Run by ctest; the variant comes from the CHUNK_VARIANT_* macro of the target.
 
-#include <complex>  // std::complex<double>
-#include <cstdio>   // std::printf
-#include <sstream>  // std::ostringstream (os << a[i])
+#include <complex>     // std::complex<double>
+#include <cstdio>      // std::printf
+#include <sstream>     // std::ostringstream (os << a[i])
 #include <type_traits> // std::conditional_t, std::is_same_v
-#include <utility>  // std::move
-#include <vector>   // std::vector (push_back / emplace_back)
+#include <utility>     // std::move
+#include <vector>      // std::vector (push_back / emplace_back)
 
-#include "chunk/array_chunk.h"   // ArrayChunk
-#include "chunk/array_chunk2.h"  // ArrayChunk2
-#include "chunk/array_chunk2A.h" // ArrayChunk2A
-#include "chunk/config.h"        // chunk_config::use_chunk2*, build_config::strict_element_ref
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
+#include "chunk/array_chunk.h"    // ArrayChunk
+#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/config.h"         // chunk_config::use_chunk2*, build_config::strict_element_ref
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/print.h" // shrink_array::println
 
 using namespace shrink_array;
 
@@ -61,7 +62,7 @@ void expect(const char* what, const T& got, const T& want)
 {
     if (!(got == want))
     {
-        std::printf("[element_ref] FAIL: %s\n", what);
+        println("[element_ref] FAIL: {}", what);
         ++fails;
     }
 }
@@ -148,7 +149,7 @@ int usage()
 
     if (fails == 0)
     {
-        std::printf("[element_ref] OK: every std::vector-style use of a[i] compiles and holds\n");
+        println("[element_ref] OK: every std::vector-style use of a[i] compiles and holds");
     }
     return fails != 0 ? 1 : 0;
 }
@@ -166,32 +167,32 @@ void misuse()
     v      = 3.0;
 #elif ELEMENT_REF_CASE == 3
     auto v = a[0]; // arithmetic
-    std::printf("%g\n", v + 1.0);
-#elif ELEMENT_REF_CASE == 4
+    println("{:g}", v + 1.0);
+    #elif ELEMENT_REF_CASE == 4
     auto   v = (a[0] += 1.0); // a compound result kept
     double d = v;
     (void)d;
-#elif ELEMENT_REF_CASE == 5
+    #elif ELEMENT_REF_CASE == 5
     auto v = a[0]; // as the right-hand side of an assignment
     a[1]   = v;
-#elif ELEMENT_REF_CASE == 6
+    #elif ELEMENT_REF_CASE == 6
     auto v = a.at(0); // at() too
     ++v;
-#elif ELEMENT_REF_CASE == 7
+    #elif ELEMENT_REF_CASE == 7
     auto v = a[0]; // comparison
     if (v == 1.0)
     {
-        std::printf("1\n");
+        println("1");
     }
-#elif ELEMENT_REF_CASE == 8
+    #elif ELEMENT_REF_CASE == 8
     auto v = a[0]; // a copy
     auto w = v;
     (void)w;
-#elif ELEMENT_REF_CASE == 9
+    #elif ELEMENT_REF_CASE == 9
     std::printf("%f\n", a[0]); // the proxy through `...`, not the value (GCC: -Werror=conditionally-supported)
-#else
-#error "ELEMENT_REF_CASE: 1..9"
-#endif
+    #else
+        #error "ELEMENT_REF_CASE: 1..9"
+    #endif
 }
 #endif
 } // namespace

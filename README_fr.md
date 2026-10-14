@@ -1,5 +1,9 @@
 # shrink-array : des tableaux compressés pour C++
 
+*Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ est
+`shrink_array`, et le paquet CMake installé est `chunk` (`find_package(chunk)`,
+cibles `chunk::…`).*
+
 > English version: [README.md](README.md).
 
 shrink-array fournit des tableaux qui s'utilisent comme un `std::vector` et prennent moins de
@@ -67,7 +71,7 @@ structures économisent la mémoire sur d'autres données, et y sont le meilleur
 
 | alternative | ce qu'elle fait | la préférer quand |
 |---|---|---|
-| formats creux (CSR / COO, `SparseMatrix` d'Eigen, `Mat` de PETSc) | stocke les entrées non nulles et leurs indices ; seul zéro est implicite | les données sont très creuses et le calcul est de l'algèbre linéaire creuse (SpMV, solveurs) ; la structure change rarement, car écrire hors d'elle oblige à la reconstruire |
+| formats creux (CSR / COO, SparseMatrix d'Eigen, `Mat` de PETSc) | stocke les entrées non nulles et leurs indices ; seul zéro est implicite | les données sont très creuses et le calcul est de l'algèbre linéaire creuse (SpMV, solveurs) ; la structure change rarement, car écrire hors d'elle oblige à la reconstruire |
 | tables de hachage (`std::unordered_map`, tables à adressage ouvert) | une clé et une valeur par entrée stockée, quelques dizaines d'octets chacune, dispersées en mémoire | les entrées sont extrêmement peu nombreuses, sans structure spatiale, et leur étendue n'est pas connue à l'avance ; sous threads, il faut une table concurrente |
 | compresseurs avec accès tableau : tableaux compressés de [zfp](https://github.com/LLNL/zfp), [Blosc2](https://www.blosc.org/) | compressent des blocs de données quelconques, valeurs variées comprises ; les tableaux à débit fixe de zfp sont avec perte et offrent `[]` à travers un cache de blocs ; Blosc2 est sans perte par défaut, par chunk et par bloc | les valeurs sont variées mais compressibles, ou une perte contrôlée est acceptable (zfp, SZ), ou le tableau est surtout écrit une fois puis lu, ou stocké (E/S, points de reprise) : une écriture au milieu décompresse puis recompresse un bloc |
 | grilles 3D creuses : [OpenVDB](https://www.openvdb.org/) / NanoVDB, SPGrid, bibliothèques d'AMR | une hiérarchie de tuiles sur un domaine 3D, avec une valeur de fond et des tuiles constantes | les données sont un champ 3D manipulé comme une géométrie (bandes étroites, level sets, voisinages, opérations de topologie) plutôt que comme un tableau indexé par les boucles du code |
@@ -299,6 +303,10 @@ après passage si un rechunk en vaut la peine. Voir
 - [examples/advisor_demo](examples/advisor_demo) et
   [examples/variant_compare](examples/variant_compare) : l'advisor de taille de chunk face à de
   vraies tailles, et Chunk2 face à Chunk2A sur une même charge.
+- [examples/access_cost](examples/access_cost) : le temps par élément de six motifs d'accès
+  (lectures séquentielle, aléatoire et d'un tableau constant, réécriture, première écriture,
+  lecture-modification-écriture) sur un `std::vector` et sur le tableau, dans le même binaire ;
+  `python/access_cost.py` le lance sur plusieurs tours et nombres de threads.
 - [python/shrink_gui](python/shrink_gui) : une fenêtre sur le portable pour soumettre la
   compilation, les tests et le banc sur le calculateur et les suivre
   ([docs/shrink_gui_fr.md](docs/shrink_gui_fr.md)).

@@ -39,8 +39,9 @@
 
 They are not set by the program: they come with the library target it links
 (`chunk::chunk_v2a_256`, `chunk::chunk_v1_dyn`, ...), which carries the macros
-`CHUNK_VARIANT_V1` / `CHUNK_VARIANT_V2` / `CHUNK_VARIANT_V2A`, and `CHUNK_DYNAMIC` with
-`DYN_CHUNK_SIZE=<n>` for a dynamic geometry. See [getting_started.md](getting_started.md).
+`CHUNK_VARIANT_V1` / `CHUNK_VARIANT_V2` / `CHUNK_VARIANT_V2A`, and `CHUNK_DYNAMIC` for a
+dynamic geometry (the size is chosen at run time, per array; `DYN_CHUNK_SIZE` is the
+benchmark's own macro, not the library's). See [getting_started.md](getting_started.md).
 
 The options shared by every library of a build (§2) are recorded by CMake in the generated
 `chunk/build_options.h` and `fast_allocators/build_options.h`, installed with the libraries; the

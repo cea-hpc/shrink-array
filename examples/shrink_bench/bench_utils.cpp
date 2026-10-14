@@ -159,6 +159,18 @@ void memory_consumption(const std::string& msg)
         static const bool trim_every_line = shrink_array::env_flag("SHRINK_BENCH_MALLOC_TRIM");
         if (checkpoint || trim_every_line)
         {
+            // The library's own pools first, the same trim for both allocators:
+            // the parked buffers go back (std: to malloc; fast: to their slabs,
+            // and the emptied slabs to the system). SHRINK_BENCH_KEEP_POOLS=1
+            // leaves them, as before.
+            if constexpr (chunk_config::is_shrink_enabled)
+            {
+                static const bool keep_pools = shrink_array::env_flag("SHRINK_BENCH_KEEP_POOLS");
+                if (!keep_pools)
+                {
+                    (void)shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef().trim_reuse_pools(0);
+                }
+            }
             malloc_trim(0);
         }
 

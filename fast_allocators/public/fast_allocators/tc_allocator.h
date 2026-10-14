@@ -124,7 +124,7 @@ inline void* map_anonymous(size_t size)
 {
     // MAP_ANONYMOUS: not backed by any file; the contents are zero (mmap(2)).
     // MAP_ANON, its older BSD spelling, where it is the only one.
-#if defined(MAP_ANONYMOUS)
+#ifdef MAP_ANONYMOUS
     void* const tmp = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #else
     void* const tmp = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -167,7 +167,7 @@ inline void* map_anonymous(size_t size)
 
 
 /// @brief Where a slab keeps the links of its free list.
-enum class FreeLinks
+enum class FreeLinks : std::uint8_t
 {
     /// In the freed elements themselves: a freed element's first bytes hold
     /// the index of the next free one. No extra memory, but an element must be
@@ -334,7 +334,8 @@ class alignas(64) TCSlab
     ///        mask down to the slab base, read the back-pointer in its last word.
     [[nodiscard]] static TCSlab* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
     {
-        const char* base = reinterpret_cast<const char*>(reinterpret_cast<uintptr_t>(ptr) & (~(slab_bytes - 1)));
+        // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
+        const char* base = static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & (slab_bytes - 1));
         return *reinterpret_cast<TCSlab* const*>(base + slab_bytes - sizeof(void*));
     }
 
@@ -698,10 +699,10 @@ struct VTCTypeAllocator
 };
 
 /// @brief Enrol an allocator in the registry the memory report walks.
-void add_TCTypeAllocator_inst(VTCTypeAllocator*);
+void add_TCTypeAllocator_inst(VTCTypeAllocator* /*inst*/);
 
 /// @brief Withdraw it. Called from the destructor.
-void remove_TCTypeAllocator_inst(VTCTypeAllocator*);
+void remove_TCTypeAllocator_inst(VTCTypeAllocator* /*inst*/);
 
 /**
  * @brief Owns every slab serving one element size: the machinery common to
@@ -1012,8 +1013,9 @@ class TCSlabPool
 
     /// @brief Give back the pages of the recycled slabs nobody took, in this
     ///        instance's arena (fast_alloc::SlabArena::advise_recycled).
+    /// @param keep_bytes Bytes of them to leave resident (SlabArena::advise_recycled).
     /// @return Number of slabs advised.
-    std::size_t advise_recycled_slabs() const noexcept
+    std::size_t advise_recycled_slabs(std::size_t keep_bytes = 0) const noexcept
     {
         if constexpr (!alloc_config::use_slabs)
         {
@@ -1021,7 +1023,7 @@ class TCSlabPool
         }
         else
         {
-            return fast_alloc::arena_for(arena_kind).advise_recycled();
+            return fast_alloc::arena_for(arena_kind).advise_recycled(keep_bytes);
         }
     }
 
@@ -1072,10 +1074,13 @@ class TCSlabPool
     Slab* block_full{nullptr}; ///< Slabs with no room left.
     Slab* block{nullptr};      ///< Slabs with room. Null until the first slab.
 
-  protected:
+  private:
+    friend Derived; // CRTP: only the derived pool constructs this base
+
     /// @brief Empty and unusable until init(); its slabs will draw from @p arena.
     explicit TCSlabPool(fast_alloc::ArenaKind arena) noexcept : arena_kind(arena) {}
 
+  protected:
     /// @brief Frees every slab.
     ~TCSlabPool()
     {
@@ -1356,9 +1361,14 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
     ///          drain), never on the hot path. Several instances (every rank,
     ///          several keys) may feed ONE sweep, so adjacent runs merge across
     ///          them. EmptySlabSweep's preconditions hold until its flush.
+    /// @param keep_empty Empty slabs this instance keeps resident (the first
+    ///        ones found), for its next allocations: a sweep between two
+    ///        phases that keeps a few does not give back, then fault in again,
+    ///        the slabs the next phase allocates.
     /// @return Number of slabs handed over. The CHUNK_RECLAIM_MIN_SLABS floor
     ///         is applied by the sweep, to all instances together.
-    std::size_t collect_empty_slabs([[maybe_unused]] empty_slab_sweep& sweep) noexcept
+    std::size_t collect_empty_slabs([[maybe_unused]] empty_slab_sweep& sweep,
+                                    [[maybe_unused]] std::size_t       keep_empty = 0) noexcept
     {
         if constexpr (alloc_config::use_std_alloc || !alloc_config::reclaim_empty_slabs)
         {
@@ -1376,6 +1386,11 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
                     // Whole slab, trailing page included: see fast_alloc::EmptySlabSweep.
                     if (p->nn_ref == 0)
                     {
+                        if (keep_empty > 0)
+                        {
+                            --keep_empty;
+                            continue;
+                        }
                         sweep.add(p);
                         ++collected;
                     }
@@ -1554,8 +1569,9 @@ class TCAllocatorEB
     static TCAllocatorEB* addr_to_block(const void* ptr) noexcept
     {
         // this pointer stored at the end of the block
-        return *reinterpret_cast<TCAllocatorEB**>(
-            reinterpret_cast<char*>(reinterpret_cast<uintptr_t>(ptr) & size_t(BlockAddrMask)) + UsedBlockSize);
+        // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
+        const char* base = static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & ~size_t(BlockAddrMask));
+        return *reinterpret_cast<TCAllocatorEB* const*>(base + UsedBlockSize);
     }
 
     char* data = nullptr; ///< The block itself, aligned on #BlockSizePOT.
@@ -1597,7 +1613,7 @@ class TCAllocatorEB
 
             char* mapping = static_cast<char*>(fast_alloc::map_anonymous(2 * BlockSize));
 
-            data = reinterpret_cast<char*>((reinterpret_cast<uintptr_t>(mapping) + (block_bytes - 1)) & -block_bytes);
+            data = mapping + ((0 - reinterpret_cast<uintptr_t>(mapping)) & (block_bytes - 1)); // align up
 
             const uintptr_t lng = reinterpret_cast<uintptr_t>(data) - reinterpret_cast<uintptr_t>(mapping);
             if (lng != 0 && munmap(mapping, lng) == -1)
@@ -1684,7 +1700,7 @@ class TCTypeAllocatorEBC
      */
     void* alloc()
     {
-        if (!block)
+        if (block == nullptr)
         {
             if (nb_block_empty > 0)
             {

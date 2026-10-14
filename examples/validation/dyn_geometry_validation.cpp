@@ -50,7 +50,6 @@
 //
 // Compile OMP or non-OMP, dyn, check. Exit 0 = every size round-trips.
 
-#include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
 
@@ -62,6 +61,7 @@
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_chunk*
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
+#include "chunk/internal/print.h"             // shrink_array::println
 
 using namespace shrink_array;
 
@@ -138,7 +138,7 @@ static int round_trip_at(unsigned int csz, long N)
 
     if (arr.chunk_size() != csz)
     {
-        printf("[%s/size=%u] FAIL: array built at chunk_size=%u\n", variant_name(), csz, arr.chunk_size());
+        println("[{}/size={}] FAIL: array built at chunk_size={}", variant_name(), csz, arr.chunk_size());
         return 1;
     }
 
@@ -168,14 +168,14 @@ static int round_trip_at(unsigned int csz, long N)
     {
         // The offset of the first mismatch is the useful number: it is the width
         // the buffer actually had, which names the geometry the allocator used.
-        printf("[%s/size=%u] FAIL: %ld/%ld mismatches, first at i=%ld "
-               "(chunk #%ld, offset %ld) got=%g expected=%g\n",
-               variant_name(), csz, bad, N, first, first / (long)csz, first % (long)csz, (double)arr[first],
-               ref[first]);
+        println("[{}/size={}] FAIL: {}/{} mismatches, first at i={} "
+                "(chunk #{}, offset {}) got={:g} expected={:g}",
+                variant_name(), csz, bad, N, first, first / (long)csz, first % (long)csz, (double)arr[first],
+                ref[first]);
         return 1;
     }
 
-    printf("[%s/size=%u] OK: %ld elements round-trip\n", variant_name(), csz, N);
+    println("[{}/size={}] OK: {} elements round-trip", variant_name(), csz, N);
     return 0;
 }
 
@@ -185,7 +185,7 @@ static int run_body(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    printf("=== dyn_geometry_validation [variant = %s]  N=%ld ===\n", variant_name(), N);
+    println("=== dyn_geometry_validation [variant = {}]  N={} ===", variant_name(), N);
 
     int fails = 0;
 
@@ -197,8 +197,8 @@ static int run_body(int argc, char** argv)
         fails += round_trip_at(csz, N);
     }
 
-    printf("\n[%s] %s\n", variant_name(),
-           fails == 0 ? "=== ALL GEOMETRIES ROUND-TRIP ===" : "=== GEOMETRY FAILURES ===");
+    println("\n[{}] {}", variant_name(),
+            fails == 0 ? "=== ALL GEOMETRIES ROUND-TRIP ===" : "=== GEOMETRY FAILURES ===");
     return fails;
 }
 

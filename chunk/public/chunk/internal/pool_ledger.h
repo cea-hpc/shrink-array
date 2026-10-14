@@ -39,6 +39,7 @@
 #include <cstdio>  // std::fprintf
 #include <cstdlib> // std::abort
 #include <mutex>   // std::mutex, std::scoped_lock
+#include <utility> // std::cmp_equal
 
 #include "chunk/config.h"                   // build_config::any_check
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
@@ -110,7 +111,7 @@ inline int current_rank() noexcept
 //   -DCHUNK_NO_LEDGER    : force OFF everywhere, whatever the build mode.
 //
 // Either way, every other any_check invariant/assert stays active.
-#if defined(CHUNK_NO_LEDGER)
+#ifdef CHUNK_NO_LEDGER
 inline constexpr bool pool_ledger_enabled = false;
 #elif CHUNK_OPT_FORCE_LEDGER
 inline constexpr bool pool_ledger_enabled = build_config::any_check;
@@ -331,11 +332,11 @@ inline void report_live_blocks() noexcept
             }
             if (i == n_rows)
             {
-                if (n_rows == static_cast<int>(rows.size()))
+                if (std::cmp_equal(n_rows, rows.size()))
                 {
                     continue; // table full: still counted in the totals above
                 }
-                rows[n_rows++] = Row{static_cast<int>(rec.state), rec.last_site, 0};
+                rows[n_rows++] = Row{.state = static_cast<int>(rec.state), .site = rec.last_site, .count = 0};
             }
             ++rows[i].count;
         }

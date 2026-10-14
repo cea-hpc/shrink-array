@@ -72,7 +72,7 @@
 
 #include <chrono>      // std::chrono::steady_clock
 #include <cstdint>     // std::uint64_t
-#include <cstdio>      // std::printf, std::fprintf
+#include <cstdio>      // std::fprintf, stderr
 #include <string>      // std::string
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
@@ -87,6 +87,7 @@
 #include "chunk/manage_ompt.h"        // shrink_array::begin_parallel_phase, finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
 #include "chunk/internal/exact_rss.h" // exact_rss_kib (smaps_rollup)
+#include "chunk/internal/print.h"     // shrink_array::println
 
 
 using namespace shrink_array;
@@ -223,9 +224,8 @@ int main(int argc, char** argv)
     N                  = (N + S - 1) / S * S;
     const long nchunks = N / S;
 
-    std::printf(
-        "=== variant_compare [%s]  n=%ld  chunk_size=%ld  chunks=%ld  iters=%d  constants=%d  threads=%d%s ===\n",
-        variant_name(), N, S, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
+    println("=== variant_compare [{}]  n={}  chunk_size={}  chunks={}  iters={}  constants={}  threads={}{} ===",
+            variant_name(), N, S, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
 
     Array<double> a(static_cast<int>(N));
     maybe_declare_second_value(a, kSecond[0]);
@@ -346,13 +346,13 @@ int main(int argc, char** argv)
     }
 
     const double total = t_const + t_plain + t_read + t_rmw;
-    std::printf("time (s)    const %8.3f | plain %8.3f | read %8.3f | rmw %8.3f | total %8.3f\n", t_const, t_plain,
-                t_read, t_rmw, total);
-    std::printf("compressed  %ld / %ld chunks (%.2f %%)\n", compressed, nchunks,
-                100. * static_cast<double>(compressed) / static_cast<double>(nchunks));
-    std::printf("memory      RSS %ld MiB at the end | peak %ld MiB over the iteration ends (exact)\n",
-                shrink_array::exact_rss_kib() >> 10, rss_peak_kib >> 10);
-    std::printf("checksum    %.1f\n", checksum);
+    println("time (s)    const {:8.3f} | plain {:8.3f} | read {:8.3f} | rmw {:8.3f} | total {:8.3f}", t_const, t_plain,
+            t_read, t_rmw, total);
+    println("compressed  {} / {} chunks ({:.2f} %)", compressed, nchunks,
+            100. * static_cast<double>(compressed) / static_cast<double>(nchunks));
+    println("memory      RSS {} MiB at the end | peak {} MiB over the iteration ends (exact)",
+            shrink_array::exact_rss_kib() >> 10, rss_peak_kib >> 10);
+    println("checksum    {:.1f}", checksum);
 
     int bad = 0;
     if (verify)
@@ -364,14 +364,14 @@ int main(int argc, char** argv)
             {
                 if (nbad < 3)
                 {
-                    std::printf("  MISMATCH a[%ld] = %g, expected %g\n", i,
-                                static_cast<double>(std::as_const(a)[static_cast<int>(i)]),
-                                ref[static_cast<std::size_t>(i)]);
+                    println("  MISMATCH a[{}] = {:g}, expected {:g}", i,
+                            static_cast<double>(std::as_const(a)[static_cast<int>(i)]),
+                            ref[static_cast<std::size_t>(i)]);
                 }
                 ++nbad;
             }
         }
-        std::printf("verify      %s (%ld mismatch(es))\n", nbad ? "FAILED" : "OK", nbad);
+        println("verify      {} ({} mismatch(es))", nbad ? "FAILED" : "OK", nbad);
         bad = nbad ? 1 : 0;
     }
     a.clear();

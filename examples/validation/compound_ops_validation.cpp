@@ -31,7 +31,7 @@
  *     invariant failure. Each in a child, which re-runs this executable.
  */
 
-#include <cstdio>      // printf, fopen
+#include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
 #include <cstdlib>     // std::system, std::atoi
 #include <limits>      // std::numeric_limits
 #include <string>      // std::string
@@ -41,12 +41,13 @@
 #include <utility>     // std::as_const
 #include <vector>      // the reference
 
-#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"   // ArrayChunk
-#include "chunk/array_chunk2.h"  // ArrayChunk2
-#include "chunk/array_chunk2A.h" // ArrayChunk2A
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/config.h"        // chunk_config::use_chunk*, build_config::any_check
+#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"    // ArrayChunk
+#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/config.h"         // chunk_config::use_chunk*, build_config::any_check
+#include "chunk/internal/print.h" // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -92,10 +93,10 @@ long mismatches(const Arr<T>& a, const std::vector<T>& ref)
 
 int report(const char* what, long bad)
 {
-    std::printf("[%s/compound-ops] %-34s %s\n", variant_name(), what, bad ? "FAIL" : "ok");
+    println("[{}/compound-ops] {:<34} {}", variant_name(), what, bad ? "FAIL" : "ok");
     if (bad)
     {
-        std::printf("  %ld wrong element(s)\n", bad);
+        println("  {} wrong element(s)", bad);
     }
     return bad ? 1 : 0;
 }
@@ -189,7 +190,7 @@ int run_child(int k)
     {
         a[5] %= static_cast<int>(zero);
     }
-    std::printf("value %d\n", static_cast<int>(std::as_const(a)[5]));
+    println("value {}", static_cast<int>(std::as_const(a)[5]));
     return 0;
 }
 
@@ -215,7 +216,7 @@ int check_stops(const char* self, int k)
     const bool pass    = !ran_ok && message;
     if (!pass)
     {
-        std::printf("---- child output ----\n%s----------------------\n", out.c_str());
+        println("---- child output ----\n{}----------------------", out.c_str());
     }
     return report(what, pass ? 0 : 1);
 }
@@ -230,7 +231,7 @@ int run(int argc, char** argv)
         return run_child(std::atoi(argv[2]));
     }
     ParamChunk::init_indexes(true);
-    std::printf("=== compound_ops_validation [variant = %s] ===\n", variant_name());
+    println("=== compound_ops_validation [variant = {}] ===", variant_name());
 
     int fails = integer_ops() + float_div_by_zero() + second_value_zero();
     if constexpr (build_config::any_check)
@@ -239,9 +240,9 @@ int run(int argc, char** argv)
     }
     else
     {
-        std::printf("[%s/compound-ops] not a check build: the divisor check is compiled out\n", variant_name());
+        println("[{}/compound-ops] not a check build: the divisor check is compiled out", variant_name());
     }
-    std::printf("%s\n", fails ? "compound_ops_validation: FAILED" : "compound_ops_validation: OK");
+    println("{}", fails ? "compound_ops_validation: FAILED" : "compound_ops_validation: OK");
     return fails ? 1 : 0;
 }
 

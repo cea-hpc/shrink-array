@@ -26,7 +26,7 @@
 #include "chunk/ring_log_debug.h"    // ring_log, get_tid
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
-#if defined(__linux__)
+#ifdef __linux__
     #include <sys/syscall.h> // SYS_membarrier
     #include <unistd.h>      // syscall
 #endif

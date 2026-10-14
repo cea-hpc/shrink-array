@@ -62,7 +62,6 @@
 #include <cmath>     // std::lround (the extrapolated materialised count)
 #include <cstddef>   // std::size_t
 #include <cstdint>   // int64_t, uint32_t
-#include <cstdio>    // std::printf (print)
 #include <vector>    // std::vector
 
 #include "chunk/internal/in_t.h"               // in_t<T>: the element snapshots
@@ -74,6 +73,7 @@
 #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 #include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
+#include "chunk/internal/print.h"              // shrink_array::println
 
 namespace shrink_array
 {
@@ -789,20 +789,19 @@ struct ChunkSizeAdvisor
     /// @brief Print @p rep as a table on stdout, headed by @p name.
     static void print(const ChunkSizeReport& rep, const char* name)
     {
-        std::printf("── ChunkSizeAdvisor [%s] current S=%u, meta=%.1f B/chunk ──\n", name, rep.current_size,
-                    rep.meta_bytes);
+        println("── ChunkSizeAdvisor [{}] current S={}, meta={:.1f} B/chunk ──", name, rep.current_size,
+                rep.meta_bytes);
         for (std::size_t i = 0; i < rep.table.size(); ++i)
         {
             const auto& row = rep.table[i];
-            std::printf("   S=%5u : chunks=%9lld  mat=%9lld (%5.1f%%)  mem=%9.2f Mo %s%s%s\n", row.size,
-                        static_cast<long long>(row.n_chunks), static_cast<long long>(row.mat),
-                        row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks)
-                                          : 0.,
-                        row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~",
-                        static_cast<int>(i) == rep.cur ? " <- current" : "",
-                        static_cast<int>(i) == rep.best ? "  ** BEST **" : "");
+            println("   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size,
+                    static_cast<long long>(row.n_chunks), static_cast<long long>(row.mat),
+                    row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
+                    row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~",
+                    static_cast<int>(i) == rep.cur ? " <- current" : "",
+                    static_cast<int>(i) == rep.best ? "  ** BEST **" : "");
         }
-        std::printf("   estimated gain best vs current : %.2f Mo\n", rep.best_gain_bytes() / (1024. * 1024.));
+        println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
 
         // Re-chunk cost, when best != current: gain (bytes) and cost (ms) are
         // shown side by side. The constants are hardware specific
@@ -816,7 +815,7 @@ struct ChunkSizeAdvisor
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.
             const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, std::size_t{1} << 20U, 50.0);
-            std::printf("   estimated re-chunk cost       : %.3f ms  (%s)\n", cost_ms, worth ? "worth it" : "marginal");
+            println("   estimated re-chunk cost       : {:.3f} ms  ({})", cost_ms, worth ? "worth it" : "marginal");
         }
     }
 };

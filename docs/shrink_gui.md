@@ -3,7 +3,7 @@
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
 > October 2026, `shrink_gui` 0.13 (prototype). A window on the laptop to submit
-> `compile_all.sh`, `bench_and_test.py` and `multi_launch_stress.py` on the cluster, or to
+> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `omp_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
 > docstring of `python/shrink_gui/__init__.py`.
@@ -80,6 +80,14 @@ replaces this program's defaults on this architecture. "Command" shows exactly w
 `compile_all.sh` only runs as a batch job, never on the login node. Its `--target` and
 `--exec` fields have a "Choose…" button listing the configurations and executables found on
 the cluster.
+
+`omp_speedup.py` (OpenMP speedup curves of shrink_bench executables on one target: `--target`,
+`--exec` or `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) likewise runs as a
+batch job only, with the same "Choose…" buttons. Its progress and errors show as
+`bench_and_test.py`'s do; the Summary gives its `summary.csv`, and the Chart its curves
+(speedup with the ideal line, efficiency or time; colour = the variant, shape = the size).
+"Compare with" overlays another run (another compiler, another commit) and gives the B / A
+ratio. Its outputs go to `$CCCWORKDIR/omp_speedup/` (else `~/omp_speedup/`).
 
 ### The runs
 

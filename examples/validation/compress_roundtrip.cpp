@@ -68,7 +68,6 @@
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every element
 // round-trips and the teardown returned.
 
-#include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
 
 #include "chunk/chunk_traits.h"       // forward decls + default ind_type = int
@@ -81,6 +80,7 @@
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
+#include "chunk/internal/print.h"     // shrink_array::println
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -253,15 +253,15 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     const long csz = static_cast<long>(arr.chunk_size());
     if (bad)
     {
-        printf("[%s/%s] FAIL: %ld/%ld mismatches, first at i=%ld (chunk #%ld, offset %ld, run %ld) "
-               "got=%g expected=%g\n",
-               variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3, (double)got_first,
-               (double)exp_first);
+        println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {}) "
+                "got={:g} expected={:g}",
+                variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3, (double)got_first,
+                (double)exp_first);
     }
     else
     {
-        printf("[%s/%s] OK: %ld elements round-trip through compress() at chunk_size=%ld\n", variant_name(), label, N,
-               csz);
+        println("[{}/{}] OK: {} elements round-trip through compress() at chunk_size={}", variant_name(), label, N,
+                csz);
     }
 
     arr.clear();
@@ -274,7 +274,7 @@ int run(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    printf("=== compress_roundtrip [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N, CHUNK_PMP_MAX_THREADS);
+    println("=== compress_roundtrip [variant = {}]  N={}  threads={} ===", variant_name(), N, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -296,8 +296,8 @@ int run(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    printf("\n[%s] %s\n", variant_name(),
-           fails == 0 ? "=== ROUND-TRIP OK, TEARDOWN OK ===" : "=== ROUND-TRIP FAILURES ===");
+    println("\n[{}] {}", variant_name(),
+            fails == 0 ? "=== ROUND-TRIP OK, TEARDOWN OK ===" : "=== ROUND-TRIP FAILURES ===");
     return fails;
 }
 

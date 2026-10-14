@@ -41,13 +41,22 @@
 // Exit 0 = every check holds.
 
 #include <cstdint> // std::uintptr_t
-#include <cstdio>  // std::printf
+#include <format>  // std::format
+#include <string>  // std::string
 
 #include "fast_allocators/tc_allocator.h" // TCTypeCAllocator, TCCAllocator
+#include "chunk/internal/print.h"         // shrink_array::println
 
+using shrink_array::println;
 
 namespace
 {
+
+/// What printf's %p printed (glibc): "(nil)" for a null pointer, 0x... otherwise.
+static std::string ptr_text(const void* p)
+{
+    return p ? std::format("{}", p) : std::string("(nil)");
+}
 
 int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
 {
@@ -66,17 +75,17 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
         const bool                ok    = own != nullptr && seen == own && own->owner == static_cast<const void*>(a);
         if (!ok)
         {
-            std::printf("FAIL budget %zu: %d-byte block, slab %p from its allocator, %p through the %d-byte one\n",
-                        static_cast<std::size_t>(budget), a == &a_small ? small_bytes : large_bytes,
-                        static_cast<void*>(own), static_cast<void*>(seen), a == &a_small ? large_bytes : small_bytes);
+            println("FAIL budget {}: {}-byte block, slab {} from its allocator, {} through the {}-byte one",
+                    static_cast<std::size_t>(budget), a == &a_small ? small_bytes : large_bytes, ptr_text(own),
+                    ptr_text(seen), a == &a_small ? large_bytes : small_bytes);
             ++bad;
         }
         a->free_elt_pow2(p);
     }
     if (!bad)
     {
-        std::printf("OK: %d- and %d-byte elements in a %zu-byte budget share one slab geometry\n", small_bytes,
-                    large_bytes, static_cast<std::size_t>(budget));
+        println("OK: {}- and {}-byte elements in a {}-byte budget share one slab geometry", small_bytes, large_bytes,
+                static_cast<std::size_t>(budget));
     }
     return bad;
 }
@@ -85,7 +94,7 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
 
 int main()
 {
-    std::printf("=== slab_geometry_validation ===\n");
+    println("=== slab_geometry_validation ===");
     int fails = 0;
     // 1.875 MiB per rank (15 MiB / 8, one thread) -> 2 MiB slabs: 64 and 128
     // bools as bits (8 and 16 bytes), and as bytes (64 and 128).
@@ -94,6 +103,6 @@ int main()
     // The 240 KiB floor of a large team.
     fails += check_pair(8, 16, std::uintptr_t{240} * 1024);
 
-    std::printf("\n%s\n", fails ? "=== SLAB GEOMETRY FAILED ===" : "=== SLAB GEOMETRY OK ===");
+    println("\n{}", fails ? "=== SLAB GEOMETRY FAILED ===" : "=== SLAB GEOMETRY OK ===");
     return fails ? 1 : 0;
 }

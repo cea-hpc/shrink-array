@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#include <algorithm> // std::find (the registered sizes), std::copy_n (the registry table)
+#include <algorithm> // std::ranges::find (the registered sizes), std::copy_n (the registry table),
+                     // std::ranges::any_of (the manager fan-outs)
 #include <cstddef>   // std::size_t (the reuse-pool byte counts)
 #include <mutex>     // std::mutex, std::scoped_lock
 #include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
@@ -31,6 +32,7 @@
 #include "chunk/internal/churn_counters.h"   // churn::note_phase_end
 #include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, g_fast_omp_rank, pmp::team
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
+#include "chunk/internal/env_parse.h"        // env_number (CHUNK_RECLAIM_PHASE_KEEP)
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
 #include "chunk/param_chunk.h"               // ParamChunk::init_indexes (ensure_ready)
@@ -98,7 +100,7 @@ namespace shrink_array
     namespace
     {
         // Cross-thread exclusion of the SERIAL deferred flush. Deliberately SEPARATE
-        // from __global_need_flush_deferred, which is a re-entrancy guard with a
+        // from g_need_flush_deferred, which is a re-entrancy guard with a
         // sequential per-type toggle: turning THAT flag into a take-or-give-up lock
         // would make an inner per-type flush give up whenever an outer level held it,
         // silently dropping deferred writes. Value-initialised to clear (C++20).
@@ -173,7 +175,7 @@ namespace shrink_array
         }
         if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
         {
-            auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
             ens_type_chunk.destroy_after_flush(false);
 
             reset_all();
@@ -326,20 +328,28 @@ namespace shrink_array
             }
         }
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
+
+        // CHUNK_RECLAIM_PHASE_KEEP=K (unset: off): the pass's freed buffers
+        // went back to their slabs, which stay resident until a sweep. Give
+        // the empty ones back now, keeping K per allocator instance for the
+        // next phase's materialisations (fewer madvise / fault-in round
+        // trips). Serial and quiescent here: the pass's region has joined.
+        static const long phase_keep = env_number<long>("CHUNK_RECLAIM_PHASE_KEEP", -1L);
+        if (phase_keep >= 0)
+        {
+            for (auto* elm : work)
+            {
+                (void)elm->sweep_empty_slabs_int(static_cast<std::size_t>(phase_keep));
+            }
+        }
     }
 
     bool AllTypeChunk::have_chunk_to_compress_potentially() const
     {
         const int max_thr = CHUNK_PMP_RANK_BOUND;
 
-        for (const auto& elm : getListTypeChunk())
-        {
-            if (elm->have_chunk_to_compress_potentially(max_thr))
-            {
-                return true;
-            }
-        }
-        return false;
+        return std::ranges::any_of(getListTypeChunk(), [max_thr](const auto* elm)
+                                   { return elm->have_chunk_to_compress_potentially(max_thr); });
     }
 
 
@@ -383,7 +393,7 @@ namespace shrink_array
 
         if (toggle_flag)
         {
-            __global_need_flush_deferred.store(false, std::memory_order_relaxed);
+            g_need_flush_deferred.store(false, std::memory_order_relaxed);
         }
 
         // #pragma omp barrier // dead lock with ompt ?
@@ -397,7 +407,7 @@ namespace shrink_array
 
         if (toggle_flag)
         {
-            __global_need_flush_deferred.store(true, std::memory_order_release);
+            g_need_flush_deferred.store(true, std::memory_order_release);
         }
 
         return have_flushed;
@@ -463,7 +473,7 @@ namespace shrink_array
             freed += elm->trim_reuse_pools_int(keep_per_thread);
         }
 
-#if defined(__GLIBC__)
+#ifdef __GLIBC__
         // Give the pages back to the KERNEL, not just to malloc: free() alone leaves
         // the resident size unchanged, the memory only moves from our pool to malloc's.
         if (freed != 0)
@@ -568,7 +578,8 @@ namespace shrink_array
     }
 
     template <typename Derived>
-    void AllTypeChunkParallelInterface<Derived, false>::init_manager(ManagerChunkInt& manager, int block_size) const
+    void AllTypeChunkParallelInterface<Derived, false>::init_manager(const ManagerChunkInt& manager,
+                                                                     int                    block_size) const
     {
         // std-alloc: the manager's init_allocator() is a no-op. Through Derived's
         // alias so that the call stays dependent (see the OpenMP body).
@@ -597,7 +608,7 @@ namespace shrink_array
         // registering on another thread.
         auto& reg = static_cast<Derived&>(*this);
         const std::scoped_lock lock(reg.registry_mutex_);
-        if (std::find(reg.registered_sizes_.begin(), reg.registered_sizes_.end(), size) == reg.registered_sizes_.end())
+        if (std::ranges::find(reg.registered_sizes_, size) == reg.registered_sizes_.end())
         {
             reg.registered_sizes_.push_back(size);
         }
@@ -619,7 +630,7 @@ namespace shrink_array
 
     bool set_max_malloc_arenas(int max_arenas)
     {
-#if defined(__GLIBC__)
+#ifdef __GLIBC__
         if (max_arenas <= 0)
         {
             return false;

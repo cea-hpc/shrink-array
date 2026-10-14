@@ -49,7 +49,7 @@
  *          Usage: cst2_reclaim_validation [chunks]
  */
 
-#include <cstdio>     // std::printf, std::snprintf, std::remove
+#include <cstdio>     // std::snprintf, std::remove, std::getline
 #include <cstdlib>    // std::system
 #include <fstream>    // the --rounds child's log
 #include <string>     // std::string, std::to_string, std::getline
@@ -63,6 +63,7 @@
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"     // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -137,7 +138,7 @@ static void expect_values(const char* where, const Arr& a, long nch, long S, dou
     }
     if (bad != 0)
     {
-        std::printf("  %-48s %ld element(s) read back wrong  <-- WRONG\n", where, bad);
+        println("  {:<48} {} element(s) read back wrong  <-- WRONG", where, bad);
         ++fails;
     }
 }
@@ -145,7 +146,7 @@ static void expect_values(const char* where, const Arr& a, long nch, long S, dou
 /// @brief One count against its expected value, printed either way.
 static void expect_eq(const char* where, long got, long want)
 {
-    std::printf("  %-48s %ld (expect %ld)%s\n", where, got, want, got == want ? "" : "  <-- WRONG");
+    println("  {:<48} {} (expect {}){}", where, got, want, got == want ? "" : "  <-- WRONG");
     if (got != want)
     {
         ++fails;
@@ -155,7 +156,7 @@ static void expect_eq(const char* where, long got, long want)
 /// @brief One count against a bound, printed either way.
 static void expect_le(const char* where, long got, long bound)
 {
-    std::printf("  %-48s %ld (expect <= %ld)%s\n", where, got, bound, got <= bound ? "" : "  <-- WRONG");
+    println("  {:<48} {} (expect <= {}){}", where, got, bound, got <= bound ? "" : "  <-- WRONG");
     if (got > bound)
     {
         ++fails;
@@ -189,7 +190,7 @@ static int run_rounds_child(long nch, long rounds)
     }
     expect_values("child: last round", a, nch, S, 1.0e6 + 1000. * static_cast<double>(rounds - 1),
                   1.0e6 + 1000. * static_cast<double>(rounds - 1));
-    std::printf("[rounds] %ld distinct second values, reclaimed each round: RAN TO THE END\n", nch * rounds);
+    println("[rounds] {} distinct second values, reclaimed each round: RAN TO THE END", nch * rounds);
     return fails ? 1 : 0;
 }
 
@@ -214,8 +215,8 @@ static void check_rounds_under_limit(const char* self, long nch)
         }
     }
     std::remove(log.c_str());
-    std::printf("F  limit %ld identifiers, %ld distinct values        %s%s\n", limit, 12 * nch,
-                (ok && said) ? "ran to the end" : "STOPPED", (ok && said) ? "" : "  <-- WRONG");
+    println("F  limit {} identifiers, {} distinct values        {}{}", limit, 12 * nch,
+            (ok && said) ? "ran to the end" : "STOPPED", (ok && said) ? "" : "  <-- WRONG");
     if (!ok || !said)
     {
         ++fails;
@@ -236,13 +237,12 @@ int run(int argc, char** argv)
     const long nch = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
     const long S   = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
 
-    std::printf("=== cst2_reclaim_validation  chunks=%ld  chunk_size=%ld  threads=%d ===\n", nch, S,
-                CHUNK_PMP_MAX_THREADS);
+    println("=== cst2_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, S, CHUNK_PMP_MAX_THREADS);
     {
         Arr a(static_cast<int>(nch * S));
 
         // A: rounds at new constants.
-        std::printf("A  rounds at new constants\n");
+        println("A  rounds at new constants");
         for (int r = 0; r < 4; ++r)
         {
             const double base = 1000. * (r + 1);
@@ -261,7 +261,7 @@ int run(int argc, char** argv)
         }
 
         // B: half the chunks rewritten.
-        std::printf("B  even chunks rewritten\n");
+        println("B  even chunks rewritten");
         fill(a, nch, S, 5000.);
         (void)reclaim();
         fill(a, nch, S, 6000., true);
@@ -270,7 +270,7 @@ int run(int argc, char** argv)
         expect_values("values", a, nch, S, 6000., 5000.);
 
         // C: a chunk materialised again keeps its second value.
-        std::printf("C  materialised chunk\n");
+        println("C  materialised chunk");
         fill(a, nch, S, 7000.);
         (void)reclaim();
 #pragma omp parallel
@@ -283,7 +283,7 @@ int run(int argc, char** argv)
         (void)reclaim();
         if (a[1] != 1.5)
         {
-            std::printf("  %-48s reads %g  <-- WRONG\n", "the changed element", static_cast<double>(a[1]));
+            println("  {:<48} reads {:g}  <-- WRONG", "the changed element", static_cast<double>(a[1]));
             ++fails;
         }
 #pragma omp parallel
@@ -297,7 +297,7 @@ int run(int argc, char** argv)
         expect_values("values", a, nch, S, 7000., 7000.);
 
         // D: a copy outlives the original.
-        std::printf("D  copy\n");
+        println("D  copy");
         fill(a, nch, S, 8000.);
         (void)reclaim();
         {
@@ -313,7 +313,7 @@ int run(int argc, char** argv)
         // E: refused inside a parallel region.
         if constexpr (build_config::use_openmp)
         {
-            std::printf("E  inside a parallel region\n");
+            println("E  inside a parallel region");
             fill(a, nch, S, 10000.);
             long in_region = -1;
             int  team      = 0;
@@ -339,7 +339,7 @@ int run(int argc, char** argv)
     // F: under a lowered identifier limit, reclaiming rounds run to the end.
     check_rounds_under_limit(argv[0], nch);
 
-    std::printf("=== %s ===\n", fails ? "CST2_RECLAIM FAILED" : "CST2_RECLAIM OK");
+    println("=== {} ===", fails ? "CST2_RECLAIM FAILED" : "CST2_RECLAIM OK");
     return fails ? 1 : 0;
 }
 

@@ -84,6 +84,9 @@ option(CHUNK_SECOND_VALUE_INDEXED "Chunk2A: store second values as 4-byte identi
 # builds it so they keep compiling.
 option(CHUNK_MM_PROTECT "Read-only (mprotect) constant buffers: a stray write to a compressed chunk faults" OFF)
 
+# CHUNK_STATS: compression statistics (chunk_stats.h), printed by ParamChunk::ChunkStats().
+option(CHUNK_STATS "Collect compression statistics (ParamChunk::ChunkStats())" OFF)
+
 # ── Sanitizer option ──────────────────────────────────────────────────────────
 set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, token")
 set_property(CACHE SANITIZER PROPERTY STRINGS none thread address token)
@@ -790,6 +793,12 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_headers
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_headers.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_headers PROPERTY LABELS validation)
+    # Every file the sources name -- an #include, a relative Python import, a
+    # CMake source, a harness, a Markdown link -- is tracked by git: a file
+    # never `git add`ed builds only where it was written (scripts/check_tracked.py).
+    add_test(NAME check_tracked
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_tracked.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_tracked PROPERTY LABELS validation)
     # The documentation matches the code, and the English and French versions
     # each other (scripts/check_docs.py).
     add_test(NAME check_docs
@@ -802,5 +811,7 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
                  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_doxygen.py
                          ${PROJECT_SOURCE_DIR} ${DOXYGEN_EXECUTABLE})
         set_property(TEST check_doxygen PROPERTY LABELS docs)
+        # 77: a Doxygen older than 1.9, which misreads the sources (the script says so).
+        set_property(TEST check_doxygen PROPERTY SKIP_RETURN_CODE 77)
     endif()
 endif()

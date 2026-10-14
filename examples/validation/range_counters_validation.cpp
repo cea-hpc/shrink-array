@@ -43,7 +43,6 @@
 // Exit 0 = every check holds. Any thread count.
 
 #include <cstddef>     // std::size_t
-#include <cstdio>      // std::printf
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
@@ -57,6 +56,7 @@
 #include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_chunk2*, use_compression_with_counter
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"        // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -195,15 +195,15 @@ int run_case(Case c)
         {
             if (bad < 5)
             {
-                std::printf("[%s/%s] FAIL [%ld] = %g, expected %g\n", variant_name(), case_name(c), i, got, want);
+                println("[{}/{}] FAIL [{}] = {:g}, expected {:g}", variant_name(), case_name(c), i, got, want);
             }
             ++bad;
         }
     }
     if (!bad)
     {
-        std::printf("[%s/%s] OK: raw span of %ld plain values + one %s value, compressed, read back\n", variant_name(),
-                    case_name(c), S, c == Case::second ? "second" : "first");
+        println("[{}/{}] OK: raw span of {} plain values + one {} value, compressed, read back", variant_name(),
+                case_name(c), S, c == Case::second ? "second" : "first");
     }
     return bad ? 1 : 0;
 }
@@ -244,14 +244,14 @@ int run_mul_zero_case()
         {
             if (bad < 5)
             {
-                std::printf("[%s/mul_zero] FAIL [%ld] = %g, expected %g\n", variant_name(), i, got, want);
+                println("[{}/mul_zero] FAIL [{}] = {:g}, expected {:g}", variant_name(), i, got, want);
             }
             ++bad;
         }
     }
     if (!bad)
     {
-        std::printf("[%s/mul_zero] OK: second * 0, then the rest of the chunk to the second value\n", variant_name());
+        println("[{}/mul_zero] OK: second * 0, then the rest of the chunk to the second value", variant_name());
     }
     return bad ? 1 : 0;
 }
@@ -337,8 +337,8 @@ int run_compound_case(Op o)
     const bool after2 = std::as_const(a).written(k);
     if (check && (after1 || after2))
     {
-        std::printf("[%s/0 %s] FAIL: chunk #1 still materialised %s\n", variant_name(), op_name(o),
-                    after1 ? "after the operator (a zero result)" : "after 9 then 0 (the zero count drifted)");
+        println("[{}/0 {}] FAIL: chunk #1 still materialised {}", variant_name(), op_name(o),
+                after1 ? "after the operator (a zero result)" : "after 9 then 0 (the zero count drifted)");
         ++bad;
     }
     for (long i = 0; i < 3 * S; ++i)
@@ -347,16 +347,16 @@ int run_compound_case(Op o)
         {
             if (bad < 5)
             {
-                std::printf("[%s/0 %s] FAIL [%ld] = %lld, expected 0\n", variant_name(), op_name(o), i,
-                            static_cast<long long>(std::as_const(a)[static_cast<int>(i)]));
+                println("[{}/0 {}] FAIL [{}] = {}, expected 0", variant_name(), op_name(o), i,
+                        static_cast<long long>(std::as_const(a)[static_cast<int>(i)]));
             }
             ++bad;
         }
     }
     if (!bad)
     {
-        std::printf("[%s/0 %s] OK%s\n", variant_name(), op_name(o),
-                    check ? ": chunk compressed after the operator and after 9 then 0" : " (values only)");
+        println("[{}/0 {}] OK{}", variant_name(), op_name(o),
+                check ? ": chunk compressed after the operator and after 9 then 0" : " (values only)");
     }
     return bad ? 1 : 0;
 }
@@ -367,8 +367,8 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    std::printf("=== range_counters_validation [variant = %s]  counters=%s ===\n", variant_name(),
-                chunk_config::use_compression_with_counter ? "on" : "off (nothing to check)");
+    println("=== range_counters_validation [variant = {}]  counters={} ===", variant_name(),
+            chunk_config::use_compression_with_counter ? "on" : "off (nothing to check)");
 
     int fails = 0;
     fails += run_case(Case::first);
@@ -383,7 +383,7 @@ int run(int /*argc*/, char** /*argv*/)
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::printf("\n[%s] %s\n", variant_name(), fails ? "=== RANGE COUNTERS FAILED ===" : "=== RANGE COUNTERS OK ===");
+    println("\n[{}] {}", variant_name(), fails ? "=== RANGE COUNTERS FAILED ===" : "=== RANGE COUNTERS OK ===");
     return fails ? 1 : 0;
 }
 

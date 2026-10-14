@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-#include <atomic> // std::atomic (__global_need_flush_deferred)
+#include <atomic> // std::atomic (g_need_flush_deferred)
 
-#include "chunk/internal/manager_chunk.h" // extern __global_need_flush_deferred (manager_chunk_inline.h)
+#include "chunk/internal/manager_chunk.h" // extern g_need_flush_deferred (manager_chunk_inline.h)
 
 namespace shrink_array
 {
 
-std::atomic<bool> __global_need_flush_deferred{true};
+std::atomic<bool> g_need_flush_deferred{true};
 
 // This TU holds only the non-template global state. Method bodies are in
 // chunk/internal/manager_chunk_inline.h; there is no explicit instantiation: each

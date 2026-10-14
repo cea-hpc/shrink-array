@@ -45,16 +45,36 @@ class Chunk2ADef
 
   public:
     /// Floor of the per-thread "to compress" list threshold (entries), by CHUNK2A_COMPRESS_LEVEL.
-    constexpr static int size_min_list_chunk_to_check_compress = (compress_level == 1)   ? 2
-                                                                 : (compress_level == 2) ? 1000
-                                                                 : (compress_level == 3) ? 2000
-                                                                                         : 500;
+    constexpr static int size_min_list_chunk_to_check_compress = []
+    {
+        switch (compress_level)
+        {
+            case 1:
+                return 2;
+            case 2:
+                return 1000;
+            case 3:
+                return 2000;
+            default:
+                return 500;
+        }
+    }();
 
     /// List threshold = chunks created / (this * max threads), floored by size_min_list_chunk_to_check_compress.
-    constexpr static int factor_div_nb_chunk_for_compress = (compress_level == 1)   ? 2000
-                                                            : (compress_level == 2) ? 35
-                                                            : (compress_level == 3) ? 20
-                                                                                    : 50;
+    constexpr static int factor_div_nb_chunk_for_compress = []
+    {
+        switch (compress_level)
+        {
+            case 1:
+                return 2000;
+            case 2:
+                return 35;
+            case 3:
+                return 20;
+            default:
+                return 50;
+        }
+    }();
 
     /// Floor of the global (unsized) free-list reuse budget, in buffers per thread.
     constexpr static int size_min_buffer_reuse = 500;

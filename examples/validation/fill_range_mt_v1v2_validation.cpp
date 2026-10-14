@@ -52,7 +52,6 @@
  *          Usage: fill_range_mt_v1v2_validation [chunks]
  */
 
-#include <cstdio> // std::printf
 
 #include "chunk/array_chunk.h"           // ArrayChunk
 #include "chunk/array_chunk2.h"          // ArrayChunk2
@@ -62,6 +61,7 @@
 #include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"        // shrink_array::println
 
 
 /// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT
@@ -145,7 +145,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
         {
             if (bad < 3)
             {
-                std::printf("  [%s] arr[%ld] = %g, expected %g\n", name, i, got, v);
+                println("  [{}] arr[{}] = {:g}, expected {:g}", name, i, got, v);
             }
             ++bad;
         }
@@ -153,11 +153,11 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
     const long after = materialised(arr, nchunks);
 
     const bool counts_ok = expect_materialised < 0 || after == expect_materialised;
-    std::printf("%-44s materialised %4ld -> %4ld / %ld%s%s\n", name, before, after, nchunks,
-                expect_materialised < 0 ? "  (not asserted)" : "", counts_ok ? "" : "  <-- WRONG");
+    println("{:<44} materialised {:4} -> {:4} / {}{}{}", name, before, after, nchunks,
+            expect_materialised < 0 ? "  (not asserted)" : "", counts_ok ? "" : "  <-- WRONG");
     if (before != nchunks)
     {
-        std::printf("  [%s] setup: %ld chunk(s) not materialised by the plain content\n", name, nchunks - before);
+        println("  [{}] setup: {} chunk(s) not materialised by the plain content", name, nchunks - before);
     }
     return (bad != 0 || !counts_ok || before != nchunks) ? 1 : 0;
 }
@@ -168,8 +168,8 @@ int main(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     constexpr bool omp = build_config::use_openmp;
-    std::printf("=== fill_range_mt_v1v2_validation  chunks=%ld  threads=%d  (%s) ===\n", nchunks, CHUNK_PMP_MAX_THREADS,
-                omp ? "OpenMP: counts asserted" : "serial: values only");
+    println("=== fill_range_mt_v1v2_validation  chunks={}  threads={}  ({}) ===", nchunks, CHUNK_PMP_MAX_THREADS,
+            omp ? "OpenMP: counts asserted" : "serial: values only");
 
     // One array per case: every case starts from fresh chunks.
     int fails = 0;
@@ -207,6 +207,6 @@ int main(int argc, char** argv)
         a.clear();
     }
 
-    std::printf("=== %s ===\n", fails ? "FILL_RANGE_MT_V1V2 FAILED" : "FILL_RANGE_MT_V1V2 OK");
+    println("=== {} ===", fails ? "FILL_RANGE_MT_V1V2 FAILED" : "FILL_RANGE_MT_V1V2 OK");
     return fails ? 1 : 0;
 }

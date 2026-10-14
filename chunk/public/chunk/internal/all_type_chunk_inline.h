@@ -23,7 +23,7 @@
 #include <memory>  // std::make_unique
 #include <mutex>   // std::scoped_lock (registry_mutex_)
 
-#include "chunk/all_type_chunk.h"         // the declarations these bodies belong to
+#include "chunk/internal/all_type_chunk_decl.h" // the declarations these bodies belong to
 #include "chunk/config.h"                 // build_config::chunk_dynamic, chunk_config::use_chunk*
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/for_each_type.h" // for_each_type

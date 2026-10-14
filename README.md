@@ -1,5 +1,9 @@
 # shrink-array: compressed arrays for C++
 
+*The project is `shrink-array` (repository, Spack package); the C++ namespace is
+`shrink_array`, and the installed CMake package is `chunk` (`find_package(chunk)`,
+targets `chunk::…`).*
+
 > Version française : [README_fr.md](README_fr.md).
 
 shrink-array provides arrays that are used like a `std::vector` and take less memory when large
@@ -63,7 +67,7 @@ other data, and are the better choice there:
 
 | alternative | what it does | prefer it when |
 |---|---|---|
-| sparse formats (CSR / COO, Eigen `SparseMatrix`, PETSc `Mat`) | stores the non-zero entries and their indices; only zero is implicit | the data is very sparse and the computation is sparse linear algebra (SpMV, solvers); the structure changes rarely, since writing outside it means rebuilding it |
+| sparse formats (CSR / COO, Eigen SparseMatrix, PETSc `Mat`) | stores the non-zero entries and their indices; only zero is implicit | the data is very sparse and the computation is sparse linear algebra (SpMV, solvers); the structure changes rarely, since writing outside it means rebuilding it |
 | hash tables (`std::unordered_map`, open-addressing maps) | a key and a value per stored entry, tens of bytes each, scattered in memory | the entries are extremely few, without spatial structure, and their range is not known in advance; under threads it needs a concurrent table |
 | compressors with array access: [zfp](https://github.com/LLNL/zfp) compressed arrays, [Blosc2](https://www.blosc.org/) | compress blocks of any data, varied values included; zfp's fixed-rate arrays are lossy and offer `[]` through a block cache; Blosc2 is lossless by default, by chunk and block | the values are varied but compressible, or a controlled loss is acceptable (zfp, SZ), or the array is mostly written once and read, or stored (I/O, checkpoints): a write in the middle decompresses and recompresses a block |
 | sparse 3D grids: [OpenVDB](https://www.openvdb.org/) / NanoVDB, SPGrid, AMR libraries | a hierarchy of tiles over a 3D domain, with a background value and constant tiles | the data is a 3D field handled as geometry (narrow bands, level sets, neighbourhoods, topology operations) rather than as an array indexed by the code's own loops |
@@ -286,6 +290,10 @@ See [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md).
 - [examples/advisor_demo](examples/advisor_demo) and
   [examples/variant_compare](examples/variant_compare): the chunk-size advisor against real sizes,
   and Chunk2 against Chunk2A on one workload.
+- [examples/access_cost](examples/access_cost): the time per element of six access patterns
+  (sequential, random and constant reads, overwrites, first writes, read-modify-write) on a
+  `std::vector` and on the array, in the same binary; `python/access_cost.py` runs it over rounds
+  and thread counts.
 - [python/shrink_gui](python/shrink_gui): a window on the laptop to submit the build, the tests
   and the benchmark on the cluster and follow them ([docs/shrink_gui.md](docs/shrink_gui.md)).
 

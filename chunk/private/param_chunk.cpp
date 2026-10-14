@@ -38,7 +38,7 @@
 
 #include "chunk/config.h"                              // build_config::chunk_dynamic, use_openmp
 #include "chunk/singleton.h"                           // SingletonChk
-#include "chunk/internal/chunk_size_config.h"          // __chunk_size
+#include "chunk/internal/chunk_size_config.h"          // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"          // active_chunk_size
 #include "chunk/internal/chunk_stats.h"                // per-variant stats reduce/print
 #include "chunk/param_chunk.h"                         // the declarations defined here
@@ -107,7 +107,7 @@ void ParamChunk::init_indexes(bool big_chunk_block)
 
     set_block_size(sz);
 
-    if (std::cmp_greater(__chunk_size, sz))
+    if (std::cmp_greater(static_chunk_size, sz))
     {
         std::cerr << "Caution: chunk sizes can't be larger than one page.\n";
     }

@@ -29,7 +29,7 @@ find_package(Threads REQUIRED)
 option(CHUNK_STD_ALLOC "Use standard allocator for chunk." OFF)
 
 # --- Multi-size declinations --------------------------------------------
-# The compile-time chunk size (__chunk_size) is frozen per library by
+# The compile-time chunk size (static_chunk_size) is frozen per library by
 # -DCHUNK_SIZE. To benchmark several fixed sizes we therefore build ONE lib
 # per (variant, size). CHUNK_STATIC_SIZES is the list of static sizes; each
 # yields chunk_v<x>_<size>. CHUNK_BUILD_DYN adds a runtime-size (CHUNK_DYNAMIC)
@@ -258,13 +258,12 @@ install(TARGETS chunk_warnings EXPORT chunk-targets)
 # --- Shared file lists ---------------------------------------------------
 set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/TChunk.h
+        public/chunk/internal/all_type_chunk_decl.h
         public/chunk/internal/all_type_chunk_inline.h
         public/chunk/internal/arithmetic_context.h
         public/chunk/internal/array_chunk2A_inline.h
         public/chunk/internal/array_chunk2A_parallel.h
         public/chunk/internal/array_chunk2A_parallel_inline.h
-        public/chunk/internal/array_chunk2A_rechunk_hooks.h
-        public/chunk/internal/array_chunk2A_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk2_base.h
         public/chunk/internal/array_chunk2_inline.h
         public/chunk/internal/array_chunk2_parallel.h
@@ -578,7 +577,7 @@ endforeach()
 chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1" ${CHUNK_DEFAULT_SIZE} FALSE NO_OMPT_TOOL)
 
 # A REAL default library (not just an ALIAS), so the include directories reach the executables.
-# Default library: no variant define, default compile-time size (__chunk_size=64), static.
+# Default library: no variant define, default compile-time size (static_chunk_size=64), static.
 chunk_add_variant(chunk "" "" FALSE)
 
 # --- Install: every variant library, under the chunk:: namespace ---------

@@ -24,6 +24,7 @@
 #include <cstdint>  // std::uintptr_t
 #include <cstdlib>  // std::abort on an arena failure
 #include <iostream> // std::cerr on an arena failure
+#include <utility>  // std::cmp_less (the element-size check)
 #include <vector>   // std::vector
 
 #include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
@@ -65,25 +66,13 @@ inline void TCSlab<Links>::alloc_block()
     // and the op, ctx and value arenas are disjoint, so a freed op slab's address can never
     // be reobtained by the value pool. owner_rank (set before init()): a slab the rank
     // recycled comes back to it first (SlabArena::allocate).
-    bool fresh = false;
-    data       = static_cast<char*>(
-        fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator, owner_rank, &fresh));
+    data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator, owner_rank));
 
     if (data == nullptr) [[unlikely]]
     {
         std::cerr << "Fatal Error: slab arena (kind " << static_cast<int>(arena_kind) << ") failed to allocate "
                   << BlockAllocator << " bytes\n";
         std::abort();
-    }
-
-    // CHUNK_POPULATE_SLABS: one madvise(MADV_POPULATE_WRITE) for the whole slab
-    // instead of one fault per page (alloc_config::populate_slabs_mode). Value
-    // slabs only, fresh ones only (a recycled slab is resident), and here, outside
-    // the arena mutex: every thread of a refill populates its own at once. Before
-    // the back-pointer store below, which would fault the last page alone.
-    if (fresh && arena_kind == fast_alloc::ArenaKind::Value)
-    {
-        fast_alloc::alloc_config::populate_fresh_slab(data, BlockAllocator);
     }
 
     // NOTE: no memset, fresh slab or recycled. The pool makes no promise about element
@@ -118,8 +107,7 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
         // The free list is threaded THROUGH freed elements (free_block() writes the next
         // index, an int, into the element's first bytes): an element must hold an aligned int.
         // ElementSize is a run-time value, so this is a release check, once per slab.
-        if (ElementSize_ < static_cast<int>(sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0)
-            [[unlikely]]
+        if (std::cmp_less(ElementSize_, sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0) [[unlikely]]
         {
             std::cerr << "[TCAllocator] element size " << ElementSize_
                       << " bytes cannot hold the free-list index (an int: " << sizeof(int) << " bytes, aligned on "

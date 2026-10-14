@@ -21,13 +21,14 @@ from shrink_gui.run_actions import RunActions
 from shrink_gui.tab_bench_chart import BenchChart
 from shrink_gui.tab_chart import ChartTab
 from shrink_gui.tab_errors import ErrorsTab
+from shrink_gui.tab_speedup_chart import SpeedupChart
 from shrink_gui.tab_summary import SummaryTab
 from shrink_gui.tooltips import Tooltips
 from shrink_gui.widgets import DurationBox, LogView, OptionsForm, TLabel
 
 
 class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab, BenchChart, ErrorsTab,
-           Tooltips, QMainWindow):
+           SpeedupChart, Tooltips, QMainWindow):
     COLS = ["Run", "Programme", "Partition", "Commit", "Job", "Statut", "Avancement", "Erreurs",
             "Dernière ligne"]
     COL_STATUS = 5

@@ -3,7 +3,7 @@
 > English version: [shrink_gui.md](shrink_gui.md).
 
 > Octobre 2026, `shrink_gui` 0.13 (prototype). Une fenêtre sur le portable pour soumettre
-> `compile_all.sh`, `bench_and_test.py` et `multi_launch_stress.py` sur le calculateur, ou
+> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `omp_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
 > docstring de `python/shrink_gui/__init__.py`.
@@ -81,6 +81,15 @@ cette architecture. « Commande » montre exactement ce qui sera exécuté.
 `compile_all.sh` ne se lance qu'en batch, jamais sur le nœud de login. Ses champs `--target`
 et `--exec` ont un bouton « Choisir… » qui liste les configurations et les exécutables
 trouvés sur le calculateur.
+
+`omp_speedup.py` (courbes de speedup OpenMP d'exécutables shrink_bench sur une cible :
+`--target`, `--exec` ou `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) se lance
+de même en batch seulement, avec les mêmes boutons « Choisir… ». Son avancement et ses erreurs
+s'affichent comme ceux de `bench_and_test.py` ; le Résumé donne son `summary.csv`, et le
+Graphique ses courbes (speedup avec la droite idéale, efficacité ou temps ; couleur = la
+variante, forme = la taille). « Comparer avec » superpose un autre run (un autre compilateur,
+un autre commit) et donne le rapport B / A. Ses sorties vont dans
+`$CCCWORKDIR/omp_speedup/` (sinon `~/omp_speedup/`).
 
 ### Les runs
 

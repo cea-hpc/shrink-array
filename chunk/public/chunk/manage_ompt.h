@@ -43,6 +43,11 @@
  * parallel_phase() (at the end) places begin_parallel_phase() and
  * finalize_parallel_phase() itself: nothing left to forget.
  *
+ * One top-level OpenMP team at a time. The deferred-op queues are indexed
+ * by the rank IN the team: two teams started concurrently by different
+ * host threads would share ranks 0..n-1, hence queues, and one team's
+ * phase end would replay the other's writes in the middle of its region.
+ *
  * @see all_type_chunk.cpp for the definitions.
  */
 

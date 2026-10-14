@@ -65,6 +65,18 @@ EN = {
     "Pas de décompte d'erreurs pour ce run.": "No error count for this run.",
     "temps": "time", "mémoire": "memory", "speedup": "speedup", "Config": "Config", "Mesure": "Measure",
     "Échelle log": "Log scale",
+    "efficacité": "efficiency", "idéal": "ideal",
+    "speedup vs le premier nombre de threads": "speedup vs the first thread count",
+    "efficacité (speedup × min / threads)": "efficiency (speedup × min / threads)",
+    "meilleur temps (s)": "best time (s)",
+    "Superpose un autre run de omp_speedup.py de la même architecture (en pointillés) -- un autre "
+    "compilateur, un autre commit -- et donne le rapport B / A sur leurs points communs":
+        "Overlays another omp_speedup.py run of the same architecture (dashed) -- another compiler, another "
+        "commit -- and gives the B / A ratio over their common points",
+    "tailles ou modes différents : comparer les speedups, pas les temps":
+        "different sizes or modes: compare the speedups, not the times",
+    "couleur : la variante (vector en gris) · forme : la taille (rond dyn, carré 1024, triangle 256, losange 64)":
+        "colour: the variant (vector in grey) · shape: the size (dot dyn, square 1024, triangle 256, diamond 64)",
     "Superpose un autre run de bench_and_test.py de la même architecture (en pointillés) et donne le "
     "rapport B / A sur leurs points communs":
         "Overlays another bench_and_test.py run of the same architecture (dashed) and gives the "
@@ -479,6 +491,15 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^les (\d+) plus récents sur (\d+) fichiers$", r"the \1 newest of \2 files"),
     (r"^══ (.+) : introuvable ══$", r"══ \1: not found ══"),
     (r"^Comparaison — ", "Comparison — "),
+    (r"^(?:Comparison — )?(speedup vs le premier nombre de threads|efficacité \(speedup × min / threads\)|"
+     r"meilleur temps \(s\)) — ",
+     lambda m: m.group(0).replace("speedup vs le premier nombre de threads", "speedup vs the first thread count")
+     .replace("efficacité (speedup × min / threads)", "efficiency (speedup × min / threads)")
+     .replace("meilleur temps (s)", "best time (s)")),
+    (r"^A : (.+), traits pleins — B : (.+), pointillés$", r"A: \1, solid — B: \2, dashed"),
+    (r"  —  B / A : ×([\d.]+), moyenne géométrique sur (\d+) point\(s\) communs$",
+     r"  —  B / A: ×\1, geometric mean over \2 common point(s)"),
+    (r"^pas encore de summary\.csv$", "no summary.csv yet"),
     (r"^A : (\S+) \(traits pleins, ronds\) — B : (\S+) \(pointillés, triangles\)$",
      r"A: \1 (solid, dots) — B: \2 (dashed, triangles)"),
     (r"^(?:Comparison — )?(temps moyen \(s\)|mémoire pic \(Mo\)|speedup vs la variante de référence) selon "
@@ -531,6 +552,8 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"graphique disponible pour multi_launch_stress\.py seulement", "chart available for multi_launch_stress.py only"),
     (r"graphique disponible pour multi_launch_stress\.py et bench_and_test\.py seulement",
      "chart available for multi_launch_stress.py and bench_and_test.py only"),
+    (r"graphique disponible pour multi_launch_stress\.py, bench_and_test\.py et omp_speedup\.py seulement",
+     "chart available for multi_launch_stress.py, bench_and_test.py and omp_speedup.py only"),
     (r"^pas encore de (\S+) \(écrit à la fin du run\)$", r"no \1 yet (written at the end of the run)"),
     (r"— (\d+) ligne\(s\), les 1000 dernières", r"— \1 row(s), the last 1000"),
     (r"— (\d+) ligne\(s\)", r"— \1 row(s)"),

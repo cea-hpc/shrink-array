@@ -319,7 +319,12 @@ inline bool defer_release(void (*release)(void*, int, void*) noexcept, void* chu
     {
         if (std::vector<Deferred>* b = t_batch; b != nullptr) [[unlikely]]
         {
-            b->push_back(Deferred{release, chunk, block, thr, t_active_chunk_size, t_alloc_key});
+            b->push_back(Deferred{.release    = release,
+                                  .chunk      = chunk,
+                                  .block      = block,
+                                  .thr        = thr,
+                                  .chunk_size = t_active_chunk_size,
+                                  .alloc_key  = t_alloc_key});
             return true;
         }
     }

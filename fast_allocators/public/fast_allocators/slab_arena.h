@@ -52,6 +52,7 @@
 #include <cstdio>     // std::fprintf, std::fflush
 #include <cstdlib>    // std::abort, std::getenv
 #include <functional> // std::less (the sweep orders slab pointers)
+#include <utility>    // std::cmp_less
 #include <vector>     // std::vector
 #include <mutex>      // std::mutex, std::scoped_lock
 #include <atomic>     // std::atomic, std::memory_order_relaxed
@@ -475,8 +476,7 @@ class EmptySlabSweep
             // Extend the run while the next slab starts exactly where this one's
             // advisable bytes end.
             std::size_t last = first;
-            while (last + 1 < items_.size() &&
-                   items_[last].begin + items_[last].len == items_[last + 1].begin)
+            while (last + 1 < items_.size() && items_[last].begin + items_[last].len == items_[last + 1].begin)
             {
                 ++last;
             }
@@ -588,10 +588,6 @@ class SlabArena
      * @param rank Rank asking (TCSlab::owner_rank), -1 if none: a slab a
      *        re-chunk recycled (recycle_batch) is taken first from this rank's
      *        list, then from the others', before the free list and the cursor.
-     * @param fresh If not null, set to true when the slab comes from the free
-     *        list or the cursor (pages possibly not resident: the caller may
-     *        pre-fault it, alloc_config::populate_fresh_slab), false for a
-     *        recycled one (resident pages).
      * @return Never null: a failed mmap aborts.
      * @details Prefers an exactly-@p size slab from the free list, falls back to
      *          bumping the cursor, and grows the reservation if that does not
@@ -600,13 +596,9 @@ class SlabArena
      *          slab recycled with blocks in it). Unconditional and fatal on
      *          purpose: cheap here, and silent recovery would hide the bug.
      */
-    void* allocate(std::size_t size, std::size_t align, int rank = -1, bool* fresh = nullptr)
+    void* allocate(std::size_t size, std::size_t align, int rank = -1)
     {
         const std::scoped_lock lk(mtx_);
-        if (fresh != nullptr)
-        {
-            *fresh = true; // free list and cursor; the recycled path below clears it
-        }
 
         // A slab a re-chunk gave back (recycle_batch), this rank's first: its
         // pages are resident, and were first touched by this rank.
@@ -624,10 +616,6 @@ class SlabArena
             bytes_live_ += size;
             bytes_high_ = std::max(bytes_high_, bytes_live_);
             ++alloc_calls_;
-            if (fresh != nullptr)
-            {
-                *fresh = false; // resident pages: nothing to pre-fault
-            }
             return block;
         }
 
@@ -747,7 +735,7 @@ class SlabArena
             bytes_live_ -= size;
             ++dealloc_calls_;
             dealloc_bytes_ += size;
-            mine.push_back(Recycled{block, false});
+            mine.push_back(Recycled{.block = block, .advised = false});
             ++lists.count;
             ++recycled_in_;
         }
@@ -756,6 +744,12 @@ class SlabArena
     /**
      * @brief Give back the pages of every recycled slab nobody took and that
      *        was not advised yet: one madvise per run of adjacent slabs.
+     * @param keep_bytes Leave up to this many bytes of not-yet-advised slabs
+     *        resident, split evenly over the ranks (0 = advise them all).
+     *        Each rank keeps its newest ones -- the end of its list, which
+     *        allocate() takes first -- and its resident slabs are moved
+     *        behind its advised ones, so they are handed out first.
+     *        CHUNK_RECHUNK_KEEP_RECYCLED_MB sets it for the re-chunk.
      * @return Number of slabs advised.
      * @details The slabs stay on their rank's list, without pages (a later
      *          allocate() still takes them first). Each slab is advised once.
@@ -766,7 +760,7 @@ class SlabArena
      * @pre Meant for a quiescent point (the re-chunk calls it between slices,
      *      for the previous boundary's surplus, and after the last one).
      */
-    std::size_t advise_recycled() noexcept
+    std::size_t advise_recycled(std::size_t keep_bytes = 0) noexcept
     {
         const std::scoped_lock lk(mtx_);
         const std::size_t      page = detail::reclaim_page_size();
@@ -781,15 +775,43 @@ class SlabArena
         };
         std::vector<Span> spans;
         std::size_t       slabs = 0;
+        // keep_bytes: an even share per rank, of the slabs not advised yet.
+        std::size_t n_ranks = 0;
+        for (const auto& [size, lists] : recycled_)
+        {
+            n_ranks = std::max(n_ranks, lists.by_rank.size());
+        }
+        const std::size_t        per_rank = n_ranks != 0 ? keep_bytes / n_ranks : 0;
+        std::vector<std::size_t> kept;
+        if (per_rank != 0)
+        {
+            try
+            {
+                kept.assign(n_ranks, 0);
+            }
+            catch (...)
+            {
+                // no room for the counters: advise them all, as with keep_bytes = 0
+            }
+        }
         for (auto& [size, lists] : recycled_)
         {
             const std::size_t adv = (size / page) * page;
-            for (auto& v : lists.by_rank)
+            for (std::size_t r = 0; r < lists.by_rank.size(); ++r)
             {
-                for (Recycled& e : v)
+                auto& v = lists.by_rank[r];
+                // Newest last: pop_recycled() takes from the back, so a rank
+                // keeps from the back.
+                for (auto rit = v.rbegin(); rit != v.rend(); ++rit)
                 {
+                    Recycled& e = *rit;
                     if (e.advised)
                     {
+                        continue;
+                    }
+                    if (!kept.empty() && kept[r] + size <= per_rank)
+                    {
+                        kept[r] += size; // stays resident, for the next allocate()
                         continue;
                     }
                     const auto b = reinterpret_cast<std::uintptr_t>(e.block);
@@ -800,7 +822,7 @@ class SlabArena
                     }
                     try
                     {
-                        spans.push_back(Span{b, adv});
+                        spans.push_back(Span{.begin = b, .len = adv});
                     }
                     catch (...)
                     {
@@ -811,12 +833,18 @@ class SlabArena
                     e.advised = true;
                     ++slabs;
                 }
+                if (!kept.empty())
+                {
+                    // Resident slabs behind the advised ones: pop_recycled()
+                    // hands out the back first, pages already there.
+                    std::stable_partition(v.begin(), v.end(), [](const Recycled& e) { return e.advised; });
+                }
             }
         }
-        std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.begin < b.begin; });
+        std::ranges::sort(spans, [](const Span& a, const Span& b) { return a.begin < b.begin; });
         // Coalesced in place: spans[0, runs) become the runs.
-        std::size_t runs     = 0;
-        std::size_t bytes    = 0;
+        std::size_t runs  = 0;
+        std::size_t bytes = 0;
         for (std::size_t first = 0; first < spans.size();)
         {
             std::size_t last = first;
@@ -826,7 +854,7 @@ class SlabArena
             }
             const std::uintptr_t begin = spans[first].begin;
             const std::size_t    len   = spans[last].begin + spans[last].len - begin;
-            spans[runs++]              = Span{begin, len};
+            spans[runs++]              = Span{.begin = begin, .len = len};
             bytes += len;
             first = last + 1;
         }
@@ -887,7 +915,7 @@ class SlabArena
             }
             for (const unsigned char v : vec)
             {
-                res += (v & 1u) ? psz : 0;
+                res += (v & 1u) != 0u ? psz : 0;
             }
         }
         return res;
@@ -975,7 +1003,7 @@ class SlabArena
         }
         auto&             lists = it->second.by_rank;
         const std::size_t n     = lists.size();
-        const bool        known = rank >= 0 && static_cast<std::size_t>(rank) < n;
+        const bool        known = rank >= 0 && std::cmp_less(rank, n);
         const std::size_t start = known ? static_cast<std::size_t>(rank) : 0;
         for (std::size_t i = 0; i < n; ++i)
         {

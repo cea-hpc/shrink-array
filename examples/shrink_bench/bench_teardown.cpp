@@ -142,7 +142,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
         delete_chunk_allocator();
     }
 
-    // __global_need_flush_deferred is deliberately NOT cleared here any more.
+    // g_need_flush_deferred is deliberately NOT cleared here any more.
     // Its only readers are on_parallel_end / on_barrier_end (manage_ompt.cpp),
     // and this store was the last statement of the last function main() calls:
     // measured under gdb on an OMPT build (clang, -DHAVE_OMPT, both callbacks

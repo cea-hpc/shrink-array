@@ -859,7 +859,9 @@ int main(int argc, char* argv[])
         }
         return 0;
     }();
-    const auto cst2_reclaim_tick = [cst2_reclaim_period](Int k_iter)
+    // [&], not [cst2_reclaim_period]: clang warns that the explicit capture is
+    // not needed (-Wunused-lambda-capture) where the branch below is discarded.
+    const auto cst2_reclaim_tick = [&](Int k_iter)
     {
         if constexpr (chunk_config::use_chunk2a)
         {
@@ -983,7 +985,7 @@ int main(int argc, char* argv[])
         //     CAS / Dekker paths that stay mostly idle under the default
         //     static schedule.
         //     Grain sizing (cs = EFFECTIVE chunk size — active_chunk_size():
-        //     the runtime geometry in dynamic builds, == __chunk_size in
+        //     the runtime geometry in dynamic builds, == static_chunk_size in
         //     static builds where the seed is never changed):
         //       — grain = 1        → OMP dispatch dominates
         //       — grain = cs       → 1 task per chunk, no intra-chunk
@@ -995,7 +997,7 @@ int main(int argc, char* argv[])
         {
             const Int beg_s = std::max<Int>(start0 / 2, 0);
             const Int end_s = std::min(beg_s + (interval / 4), sz);
-            // NOT __chunk_size: in dynamic builds that is the compile-time
+            // NOT static_chunk_size: in dynamic builds that is the compile-time
             // default (64), while arrays run at chunk_dyn_size (512) — grain
             // would be 16, i.e. 32 tasks per 512-chunk instead of the 4
             // documented above.

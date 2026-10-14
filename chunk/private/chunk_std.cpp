@@ -17,15 +17,15 @@
 #include <array>   // __chunk_stats (CHUNK_STATS only)
 #include <cstddef> // std::size_t
 
-#include "chunk/all_type_chunk.h"         // AllTypeChunk
-#include "chunk/chunk_std.h"              // the declarations defined here (ChunkPoolParallelInterface)
-#include "chunk/config.h"                 // build_config::use_openmp, use_fast_alloc
-#include "chunk/internal/chunk_stats.h"   // ChunkStatsThr (CHUNK_STATS only)
+#include "chunk/all_type_chunk.h"           // AllTypeChunk
+#include "chunk/chunk_std.h"                // the declarations defined here (ChunkPoolParallelInterface)
+#include "chunk/config.h"                   // build_config::use_openmp, use_fast_alloc
+#include "chunk/internal/chunk_stats.h"     // ChunkStatsThr (CHUNK_STATS only)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (teardown_outside_region)
-#include "chunk/internal/live_arrays.h"   // live_array_count: the teardown waits for the last array
-#include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools, defined here
-#include "chunk/singleton.h"              // SingletonChk
-#include "chunk/PMP_CHUNK.h"              // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/live_arrays.h"     // live_array_count: the teardown waits for the last array
+#include "chunk/internal/process_verbs.h"   // compress_now_and_trim_pools, defined here
+#include "chunk/singleton.h"                // SingletonChk
+#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
 
 namespace shrink_array
 {
@@ -185,7 +185,7 @@ void release_chunk_pools()
 /// @copydoc shrink_array::compress_now_and_trim_pools
 std::size_t compress_now_and_trim_pools()
 {
-    auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+    const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
     if constexpr (chunk_config::use_fast_block_compression)
     {
         ens_type_chunk.force_chunk_to_compress();

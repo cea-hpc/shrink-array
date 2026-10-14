@@ -108,7 +108,7 @@ struct DeferredOperationBase
 struct DeferredOpDeleter
 {
     /// @brief No-op: the operation is not destroyed or freed here.
-    void operator()(DeferredOperationBase* op) const noexcept
+    void operator()(const DeferredOperationBase* op) const noexcept
     {
         (void)op;
     }
@@ -129,7 +129,8 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 ///        object type, found by AllocatorRegistry).
 struct FastAllocatorBase
 {
-    FastAllocatorBase()          = default;
+    /// @param block_size_ bytes per block
+    explicit FastAllocatorBase(size_t block_size_) noexcept : block_size(block_size_) {}
     virtual ~FastAllocatorBase() = default;
 
     // Polymorphic, held by unique_ptr in the registry: never copied or moved.
@@ -220,9 +221,8 @@ class FastAllocatorConcrete : public FastAllocatorBase
     using ByteAlloc = fast_alloc::TCTypeAllocator<std::byte>;
 
     /// @brief Set block_size to sizeof(T) and, under fast-alloc, create this thread's allocator.
-    FastAllocatorConcrete()
+    FastAllocatorConcrete() : FastAllocatorBase(sizeof(T))
     {
-        block_size = sizeof(T);
         if constexpr (build_config::use_fast_alloc)
         {
             (void)allocator();
@@ -319,8 +319,8 @@ class FastAllocatorConcrete : public FastAllocatorBase
                     // Expected, not an anomaly: report the first, then on a
                     // doubling schedule with the running total (~log2(N) lines
                     // per thread). CHUNK_RECYCLE_TRACE=1 prints one line per block.
-                    static const bool               trace     = env_flag("CHUNK_RECYCLE_TRACE");
-                    static thread_local std::size_t n_foreign = 0;
+                    static const bool        trace     = env_flag("CHUNK_RECYCLE_TRACE");
+                    thread_local std::size_t n_foreign = 0;
                     ++n_foreign;
                     if (trace || std::has_single_bit(n_foreign))
                     {
@@ -353,7 +353,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
         static const uintptr_t bytes = []
         {
             constexpr std::size_t def_kb = build_config::deferred_pool_granularity / 1024;
-            const std::size_t     kb     = shrink_array::env_number<std::size_t>("CHUNK_DEFERRED_POOL_KB", def_kb);
+            const auto            kb     = shrink_array::env_number<std::size_t>("CHUNK_DEFERRED_POOL_KB", def_kb);
             return static_cast<uintptr_t>(kb == 0 ? def_kb : kb) * 1024;
         }();
         return bytes;

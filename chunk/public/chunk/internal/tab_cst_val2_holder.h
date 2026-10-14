@@ -196,6 +196,9 @@ struct SecondValueRef
     /// @brief Record the value of a slot the caller already has.
     void set_from_array(const T* src) const noexcept
     {
+        // bool has no registry (TabCstVal2Holder<bool>): value_of_ptr would index
+        // value_by_id with an address-sized id. Never called for bool today.
+        static_assert(!std::is_same_v<T, bool>, "SecondValueRef<bool>::set_from_array: bool has no registry");
         if constexpr (SecondValueTraits<T>::indexed)
         {
             *slot = TabCstVal2Holder<T>::id_of_ptr(src);
@@ -427,6 +430,8 @@ class GlobalVecHolder
         }
         LookupGuard(const LookupGuard&)            = delete;
         LookupGuard& operator=(const LookupGuard&) = delete;
+        LookupGuard(LookupGuard&&)                 = delete;
+        LookupGuard& operator=(LookupGuard&&)      = delete;
     };
 
     /// @brief Brackets a whole reclaim, mark included. No-op in release.
@@ -450,6 +455,8 @@ class GlobalVecHolder
         }
         ReclaimScope(const ReclaimScope&)            = delete;
         ReclaimScope& operator=(const ReclaimScope&) = delete;
+        ReclaimScope(ReclaimScope&&)                 = delete;
+        ReclaimScope& operator=(ReclaimScope&&)      = delete;
 
         /// @brief Fail if a lookup or registration is in flight.
         static void check_no_lookup(const char* when) noexcept
@@ -567,7 +574,7 @@ class GlobalVecHolder
         const std::uint32_t id = free_ids.back();
         free_ids.pop_back();
         return reinterpret_cast<T*>(region_begin.load(std::memory_order_relaxed) +
-                                    (static_cast<std::size_t>(id) - 1u) * region_stride);
+                                    ((static_cast<std::size_t>(id) - 1u) * region_stride));
     }
 
     /// @brief Is @p ptr a second-value slot of this type?
@@ -721,8 +728,15 @@ class GlobalVecHolder
         }
         // Still exhausted: a registered value may now be unfindable by
         // index_lookup, so the cold path must re-enable its authoritative O(N)
-        // segment scan. Sticky flag (never reset until index_clear).
-        index_degraded.store(true, std::memory_order_relaxed);
+        // segment scan. Sticky flag (never reset until index_clear). Said once:
+        // from here on reclaim_second_values() is refused, so the identifiers
+        // only grow, and the exhaustion abort alone would not name the cause.
+        if (!index_degraded.exchange(true, std::memory_order_relaxed))
+        {
+            std::cerr << "[cst_val2] second-value index degraded (probe budget exhausted after a regrowth): "
+                         "lookups fall back to the O(N) chain scan, and reclaim_second_values() is refused "
+                         "until the last array of this type is destroyed -- the identifiers can only grow.\n";
+        }
     }
 
     /**
@@ -962,7 +976,7 @@ class GlobalVecHolder
             region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
         {
             region_end           = static_cast<char*>(raw) + kRegionUsable;
-            const std::size_t lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
+            const auto lim        = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
             id_limit              = (lim >= 1 && lim < kMaxIds) ? lim : kMaxIds; // lowers only
         }
         else

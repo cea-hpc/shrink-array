@@ -49,7 +49,7 @@
  *          Usage: cst2_registry_validation [chunks]
  */
 
-#include <cstdio>     // std::printf, std::snprintf, std::remove
+#include <cstdio>     // std::snprintf, std::remove, std::getline
 #include <cstdlib>    // std::system
 #include <fstream>    // the --id-limit child's log
 #include <string>     // std::string, std::to_string, std::getline
@@ -63,6 +63,7 @@
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"     // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -134,8 +135,8 @@ static void expect(const char* where, int users, long min_entries)
     const long e    = static_cast<long>(Registry::count_entries());
     const bool ok_u = (u == users);
     const bool ok_e = (min_entries < 0) ? (e == 0) : (e >= min_entries);
-    std::printf("  %-44s users %d (expect %d)  entries %ld (expect %s%ld)%s\n", where, u, users, e,
-                min_entries < 0 ? "" : ">= ", min_entries < 0 ? 0L : min_entries, (ok_u && ok_e) ? "" : "  <-- WRONG");
+    println("  {:<44} users {} (expect {})  entries {} (expect {}{}){}", where, u, users, e,
+            min_entries < 0 ? "" : ">= ", min_entries < 0 ? 0L : min_entries, (ok_u && ok_e) ? "" : "  <-- WRONG");
     if (!ok_u || !ok_e)
     {
         ++fails;
@@ -147,7 +148,7 @@ static void expect_values(const char* where, const Arr& a, long n, double v)
     const long bad = mismatches(a, n, v);
     if (bad)
     {
-        std::printf("  %-44s %ld element(s) do not read %g back  <-- WRONG\n", where, bad, v);
+        println("  {:<44} {} element(s) do not read {:g} back  <-- WRONG", where, bad, v);
         ++fails;
     }
 }
@@ -170,7 +171,7 @@ static int run_id_limit_child()
         }
     }
     end_phase();
-    std::printf("[id-limit] 40 distinct second values registered under a limit of 16: RAN ON\n");
+    println("[id-limit] 40 distinct second values registered under a limit of 16: RAN ON");
     return 0;
 }
 
@@ -194,8 +195,8 @@ static void check_id_limit(const char* self)
         }
     }
     std::remove(log.c_str());
-    std::printf("D  identifier limit (16, 40 distinct values)       %s, %s%s\n", stopped ? "stopped" : "RAN ON",
-                said ? "with the message" : "no message", (stopped && said) ? "" : "  <-- WRONG");
+    println("D  identifier limit (16, 40 distinct values)       {}, {}{}", stopped ? "stopped" : "RAN ON",
+            said ? "with the message" : "no message", (stopped && said) ? "" : "  <-- WRONG");
     if (!stopped || !said)
     {
         ++fails;
@@ -216,12 +217,12 @@ int run(int argc, char** argv)
     const long S       = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
     const long N       = nchunks * S;
 
-    std::printf("=== cst2_registry_validation  chunks=%ld  chunk_size=%ld  threads=%d ===\n", nchunks, S,
-                CHUNK_PMP_MAX_THREADS);
+    println("=== cst2_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, S,
+            CHUNK_PMP_MAX_THREADS);
     expect("start", 0, -1);
 
     // A: three generations, one after the other.
-    std::printf("A  successive generations\n");
+    println("A  successive generations");
     for (int g = 0; g < 3; ++g)
     {
         const double v = 7. + g;
@@ -239,7 +240,7 @@ int run(int argc, char** argv)
     }
 
     // B: an outer array alive across an inner one's life.
-    std::printf("B  overlapping lifetimes\n");
+    println("B  overlapping lifetimes");
     {
         Arr outer(static_cast<int>(N));
         fill(outer, N, 21.);
@@ -258,7 +259,7 @@ int run(int argc, char** argv)
     expect("outer destroyed", 0, -1);
 
     // C: the reinstalled registry works.
-    std::printf("C  after the extinctions\n");
+    println("C  after the extinctions");
     {
         Arr a(static_cast<int>(N));
         fill(a, N, 31.);
@@ -270,7 +271,7 @@ int run(int argc, char** argv)
     // D: the identifier limit stops the run (a child process).
     check_id_limit(argv[0]);
 
-    std::printf("=== %s ===\n", fails ? "CST2_REGISTRY FAILED" : "CST2_REGISTRY OK");
+    println("=== {} ===", fails ? "CST2_REGISTRY FAILED" : "CST2_REGISTRY OK");
     return fails ? 1 : 0;
 }
 

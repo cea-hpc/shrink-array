@@ -44,14 +44,14 @@ inline const TermColor tc = []() noexcept
 {
     const bool i = isatty(STDOUT_FILENO) != 0;
     return TermColor{
-        /*RESET  */ i ? "\033[0m" : "",
-        /*BOLD   */ i ? "\033[1m" : "",
-        /*RED    */ i ? "\033[31m" : "",
-        /*GREEN  */ i ? "\033[32m" : "",
-        /*YELLOW */ i ? "\033[33m" : "",
-        /*CYAN   */ i ? "\033[36m" : "",
-        /*WHITE  */ i ? "\033[37m" : "",
-        /*MAGENTA*/ i ? "\033[35m" : "",
+        .RESET   = i ? "\033[0m" : "",
+        .BOLD    = i ? "\033[1m" : "",
+        .RED     = i ? "\033[31m" : "",
+        .GREEN   = i ? "\033[32m" : "",
+        .YELLOW  = i ? "\033[33m" : "",
+        .CYAN    = i ? "\033[36m" : "",
+        .WHITE   = i ? "\033[37m" : "",
+        .MAGENTA = i ? "\033[35m" : "",
     };
 }();
 

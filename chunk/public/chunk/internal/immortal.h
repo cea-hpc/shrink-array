@@ -62,6 +62,8 @@ union Immortal
 
     Immortal(const Immortal&)            = delete;
     Immortal& operator=(const Immortal&) = delete;
+    Immortal(Immortal&&)                 = delete;
+    Immortal& operator=(Immortal&&)      = delete;
 
     T value; ///< The object.
 };
@@ -73,9 +75,12 @@ class LazyImmortal
 {
   public:
     constexpr LazyImmortal() noexcept = default;
+    ~LazyImmortal()                   = default; // never destroys the T (see the top of this file)
 
     LazyImmortal(const LazyImmortal&)            = delete;
     LazyImmortal& operator=(const LazyImmortal&) = delete;
+    LazyImmortal(LazyImmortal&&)                 = delete;
+    LazyImmortal& operator=(LazyImmortal&&)      = delete;
 
     /// @return The object, built now if this is the first access.
     [[nodiscard]] T& get()
@@ -112,7 +117,7 @@ class LazyImmortal
         return *object();
     }
 
-    alignas(T) unsigned char storage_[sizeof(T)]{}; // NOLINT(cppcoreguidelines-avoid-c-arrays)
+    alignas(T) unsigned char storage_[sizeof(T)]{}; // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
     std::atomic<bool> ready_{false};
     std::mutex        mutex_;
 };

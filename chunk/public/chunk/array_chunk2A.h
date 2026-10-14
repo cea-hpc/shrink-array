@@ -31,7 +31,7 @@
 
 #include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2A_parallel.h"      // ParallelSupport2A — OpenMP-only mixin
-#include "chunk/internal/array_chunk2A_rechunk_hooks.h" // RechunkHooks2A — CHUNK_DYNAMIC-only mixin
+#include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for use_openmp, g_in_rechunk_rebuild
@@ -67,14 +67,14 @@ class ManagerChunk;
 template <ArrayChunkElement T, typename ind_type>
 class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                      public ParallelSupport2A<ArrayChunk2A<T, ind_type>>,
-                     public RechunkHooks2A<ArrayChunk2A<T, ind_type>>
+                     public RechunkHooks<ArrayChunk2A<T, ind_type>>
 {
   public:
     using manager_chunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as manager_type.
 
     using Base2   = ArrayChunk2Base<ArrayChunk2A>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
     using Base    = ArrayChunkBase<ArrayChunk2A>;  ///< Base shared by every variant.
-    using Hooks2A = RechunkHooks2A<ArrayChunk2A>;  ///< Re-chunk hooks (dynamic geometry).
+    using Hooks2A = RechunkHooks<ArrayChunk2A>;    ///< Re-chunk hooks (dynamic geometry).
 
     friend Base2;                                     ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; ///< For swap_identity().
@@ -116,7 +116,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
             WriteCompressSyncPolicy<Proxy2A<T>>::ensure_initialized();
         }
 
-        create(sz);
+        this->create(sz);
     }
 
     // ── The copy family: deep, element by element ────────────────────────────
@@ -260,7 +260,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         {
             return true;
         }
-        const long long   csz = static_cast<long long>(this->chunk_size());
+        const auto        csz = static_cast<long long>(this->chunk_size());
         std::atomic<bool> differ{false};
         parallel_storage_init::for_each_chunk(
             this->chunk_index_of(m_size - 1) + 1,
@@ -346,6 +346,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *         value unfindable by value).
      *
      * @warning Sequential point: no thread may write to or compress an ArrayChunk2A<T>.
+     *          The parallel-region refusal sees the CALLING thread only: a team
+     *          started by another host thread is not detected.
      *          Nor may one hold the result of a second-value lookup it has not
      *          recorded yet: the mark misses that slot and frees it. Not guarded
      *          beyond the refusals above (no epoch); check builds fail an
@@ -360,9 +362,21 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         else
         {
             using gvh = GlobalVecHolder<T>;
-            if (CHUNK_PMP_IN_PARALLEL_REGION || g_in_rechunk_rebuild.load(std::memory_order_acquire) ||
-                gvh::index_degraded.load(std::memory_order_relaxed))
+            if (CHUNK_PMP_IN_PARALLEL_REGION || g_in_rechunk_rebuild.load(std::memory_order_acquire))
             {
+                return 0;
+            }
+            if (gvh::index_degraded.load(std::memory_order_relaxed))
+            {
+                // Sticky until the last array of the type goes: say it once, the
+                // run will otherwise end on the identifier exhaustion with no cause.
+                static std::atomic<bool> warned{false};
+                if (!warned.exchange(true, std::memory_order_relaxed))
+                {
+                    std::cerr << "[cst_val2] reclaim_second_values() refused: the second-value index is "
+                                 "degraded, a value unfindable by value could be freed. Nothing is reclaimed "
+                                 "for this type until its last array is destroyed.\n";
+                }
                 return 0;
             }
             // Check builds: no lookup or registration in flight from here to the
@@ -453,12 +467,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         num_tab = nb_tab;
         ++nb_tab;
     }
-
-    /**
-     * @brief Register the array and allocate its storage.
-     * @param sz element count
-     */
-    void create(ind_type sz);
 
     /**
      * @brief (Re)allocate storage at the current active geometry.
@@ -567,5 +575,5 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
 // Bodies of the two mode-specific mixins. After array_chunk2A_inline.h, so their
 // CRTP self() sees a complete ArrayChunk2A.
-#include "chunk/internal/array_chunk2A_parallel_inline.h"      // ParallelSupport2A's bodies
-#include "chunk/internal/array_chunk2A_rechunk_hooks_inline.h" // RechunkHooks2A's bodies
+#include "chunk/internal/array_chunk2A_parallel_inline.h"    // ParallelSupport2A's bodies
+#include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

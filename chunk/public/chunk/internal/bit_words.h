@@ -265,7 +265,7 @@ inline void store_bit_range_atomic(word_t* w, std::size_t lo, std::size_t hi, Ge
 }
 
 /// @brief What a scan of a buffer found.
-enum class Uniform
+enum class Uniform : std::uint8_t
 {
     all_false, ///< every bit 0 -- the first constant
     all_true,  ///< every bit 1 -- the second constant
@@ -345,7 +345,7 @@ enum class Uniform
     {
         return 0;
     }
-    std::size_t c = static_cast<std::size_t>(std::popcount(w[nw - 1] & tail_mask(n)));
+    auto c = static_cast<std::size_t>(std::popcount(w[nw - 1] & tail_mask(n)));
     for (std::size_t k = 0; k + 1 < nw; ++k)
     {
         c += static_cast<std::size_t>(std::popcount(w[k]));

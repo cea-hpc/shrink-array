@@ -22,7 +22,7 @@
 // When available, a CRTP method body may take an explicit object parameter
 // (this auto& self) instead of calling derived(); gate it with
 // #if CHUNK_CRTP_USE_DEDUCING_THIS. The class keeps its Derived parameter and CRTPSupport base.
-#if defined(CHUNK_CRTP_FORCE_DEDUCING_THIS)
+#ifdef CHUNK_CRTP_FORCE_DEDUCING_THIS
     #define CHUNK_CRTP_USE_DEDUCING_THIS CHUNK_CRTP_FORCE_DEDUCING_THIS
 #elif defined(__cpp_explicit_this_parameter) && __cpp_explicit_this_parameter >= 202110L
     #define CHUNK_CRTP_USE_DEDUCING_THIS 1

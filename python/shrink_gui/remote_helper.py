@@ -813,6 +813,51 @@ def summary_row(g, statistics):
     return [str(g["n"]), str(g["fail"]), "%.2f" % statistics.mean(w), "%.2f" % statistics.median(w),
             "%.2f" % max(w), "%d–%d" % (min(g["th"]), max(g["th"]))]
 
+def is_speedup_chart(meta):
+    """The run is drawn as omp_speedup.py's (meta "chart", from PROGRAMS)."""
+    return meta.get("chart") == "speedup" or meta.get("program") == "omp_speedup.py"
+
+def speedup_points(d, meta):
+    """The Graphique tab of omp_speedup.py: its summary.csv, in the output
+    directory of its own the log announces. {"execs", "rows": [exe, threads,
+    best s, speedup or None, efficiency or None, peak Mo or None, ok runs],
+    "info": its meta.json (target, multiply, mode, metric...)}."""
+    import csv
+    od = out_dir(d, meta)
+    if not od:
+        return {"note": "pas encore de dossier de sortie annoncé dans le log"}
+    od = os.path.expanduser(od)
+    path = os.path.join(od, meta.get("summary_file") or "summary.csv")
+    if not os.path.isfile(path):
+        return {"note": "pas encore de summary.csv"}
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    execs, rows = [], []
+    with text_open(path) as f:
+        rd = csv.reader(f)
+        col = {h: i for i, h in enumerate(next(rd, []))}
+        for r in rd:
+            try:
+                e, th = r[col["exe"]], int(r[col["threads"]])
+            except (KeyError, ValueError, IndexError):
+                continue
+            get = lambda k: num(r[col[k]]) if k in col and len(r) > col[k] else None
+            if e not in execs:
+                execs.append(e)
+            rows.append([e, th, get("best_s"), get("speedup"), get("efficiency"), get("peak_mem_mo"),
+                         int(get("ok_runs") or 0)])
+    info = {}
+    try:
+        info = json.loads(read(os.path.join(od, "meta.json"), "{}") or "{}")
+    except ValueError:
+        pass
+    return {"kind": "speedup", "execs": execs, "rows": rows,
+            "info": {k: info.get(k) for k in ("target", "multiply", "mode", "metric", "host", "cpu",
+                                               "threads", "reps")}}
+
 def is_bench_chart(meta):
     """The run is drawn as bench_and_test.py's (meta "chart", set from
     PROGRAMS; the runs submitted before it by the program's name)."""
@@ -865,11 +910,14 @@ def act_points(a):
     import csv
     d = rdir(a[0], a[1])
     meta = json.loads(read(os.path.join(d, "meta.json"), "{}"))
+    if is_speedup_chart(meta):
+        print(json.dumps(speedup_points(d, meta)))
+        return
     if is_bench_chart(meta):
         print(json.dumps(bench_points(d, meta)))
         return
     if meta.get("summary") != "multi_launch":
-        print(json.dumps({"note": "graphique disponible pour multi_launch_stress.py et bench_and_test.py seulement"}))
+        print(json.dumps({"note": "graphique disponible pour multi_launch_stress.py, bench_and_test.py et omp_speedup.py seulement"}))
         return
     od = out_dir(d, meta)
     path = os.path.join(od, meta["summary_file"]) if od else None

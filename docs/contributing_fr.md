@@ -62,6 +62,7 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 | `check_includes` | chaque `#include` dit pourquoi il est là ; les en-têtes système et ceux du projet ne sont pas mélangés dans un même bloc |
 | `check_headers` | chaque fichier C++ commence par l'en-tête de licence Apache (années à jour) et ne porte pas de tampon `Created by` de l'IDE ; les scripts et fichiers de build (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) portent `# Copyright ... CEA` et `# SPDX-License-Identifier: Apache-2.0` ; les en-têtes vendorés, la ligne SPDX de leur licence d'origine ; `scripts/check_headers.py --fix` corrige |
 | `check_raw_reads` | chaque lecture brute d'un tampon de chunk dans la bibliothèque dit pourquoi elle est sûre |
+| `check_tracked` | chaque fichier cité par les sources (un `#include` entre guillemets, un import Python relatif, une source ou un harnais CMake, un lien Markdown) est suivi par git, pas seulement présent sur le disque |
 | `check_docs` | liens, noms de code cités dans les documents, paires anglais/français, pas de marqueurs d'historique dans les commentaires, les fichiers cités dans les commentaires existent |
 
 ## 3. Règles de code
