@@ -143,9 +143,12 @@ long regions(Bracket how)
     helper_sum = 0;
     for (int r = 0; r < kRegions; ++r)
     {
-        const int cs   = sched(r);
-        auto      body = [&]
+        auto body = [&]
         {
+            // A local of the lambda, not a capture: clang crashes generating an
+            // orphaned omp for whose schedule chunk names a captured variable
+            // (CGOpenMPInlinedRegionInfo::getContextValue; GCC accepts it).
+            const int cs = sched(r);
 #pragma omp for schedule(static, cs) reduction(+ : helper_sum)
             for (int i = 0; i < kN; ++i)
             {

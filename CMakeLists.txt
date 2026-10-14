@@ -806,6 +806,12 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_headers
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_headers.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_headers PROPERTY LABELS validation)
+    # Every file the sources name -- an #include, a relative Python import, a
+    # CMake source, a harness, a Markdown link -- is tracked by git: a file
+    # never `git add`ed builds only where it was written (scripts/check_tracked.py).
+    add_test(NAME check_tracked
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_tracked.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_tracked PROPERTY LABELS validation)
     # The documentation matches the code, and the English and French versions
     # each other (scripts/check_docs.py).
     add_test(NAME check_docs
