@@ -418,6 +418,7 @@ class ScatterView(QChartView):
         self.setMouseTracking(True)
         self.points = []      # (threads, seconds, tooltip html) of what is drawn
         self.log_y = False
+        self.log_x = False
         self._last = None
 
     def mouseMoveEvent(self, ev):
@@ -435,9 +436,14 @@ class ScatterView(QChartView):
         x0, x1, y0, y1 = ax.min(), ax.max(), ay.min(), ay.max()
         if x1 <= x0 or y1 <= y0:
             return
-        sx = area.width() / (x1 - x0)
+        import math
+        if self.log_x:
+            lx0, lx1 = math.log10(x0), math.log10(x1)
+            tx = lambda x: area.left() + (math.log10(x) - lx0) / (lx1 - lx0) * area.width()
+        else:
+            sx = area.width() / (x1 - x0)
+            tx = lambda x: area.left() + (x - x0) * sx
         if self.log_y:
-            import math
             ly0, ly1 = math.log10(y0), math.log10(y1)
             ty = lambda y: area.bottom() - (math.log10(y) - ly0) / (ly1 - ly0) * area.height()
         else:
@@ -447,9 +453,9 @@ class ScatterView(QChartView):
         cp = chart.mapFromScene(sp)
         best, bd = None, self.HIT_PX ** 2
         for p in self.points:
-            if p[1] <= 0 and self.log_y:
+            if (p[1] <= 0 and self.log_y) or (p[0] <= 0 and self.log_x):
                 continue
-            dx = area.left() + (p[0] - x0) * sx - cp.x()
+            dx = tx(p[0]) - cp.x()
             if dx * dx > bd:
                 continue
             dy = ty(p[1]) - cp.y()

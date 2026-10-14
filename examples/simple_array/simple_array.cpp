@@ -39,7 +39,7 @@
 #include "chunk/chunk_def.h"                  // ChunkDef
 #include "chunk/chunk_std.h"                  // destroy_block_chunk
 #include "chunk/config.h"                     // chunk_config::use_chunk*, stats
-#include "chunk/internal/chunk_size_config.h" // __chunk_size
+#include "chunk/internal/chunk_size_config.h" // static_chunk_size
 
 
 /// @brief splitmix64's finaliser: a bijection on 64 bits that spreads every
@@ -185,7 +185,7 @@ int main()
 {
     if constexpr (use_chunk_array)
     {
-        constexpr int chunk_size = static_cast<int>(shrink_array::__chunk_size);
+        constexpr int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
 
         assert(chunk_size <= ChunkDef::size_max);
 

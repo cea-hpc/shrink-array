@@ -87,8 +87,8 @@ class InfoFreeElt
     int* somme_sz{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
 
   public:
-    using IntMaxFreeElt  = std::array<int, max_free_elt>; ///< One rank's batched sizes.
-    using VoidMaxFreeElt = void* [max_free_elt];          ///< One rank's batched blocks.
+    using IntMaxFreeElt  = std::array<int, max_free_elt>;   ///< One rank's batched sizes.
+    using VoidMaxFreeElt = std::array<void*, max_free_elt>; ///< One rank's batched blocks.
 
     /// @brief Allocates the four per-thread arrays, sized by FAST_ALLOC_PMP_MAX_THREADS.
     ///        A serial build allocates nothing (pointers stay null, never reached).
@@ -326,7 +326,7 @@ struct BlkAllocator : public StaticConstArray
             // would become 64).
             void* ptr = size <= max_const_block_size ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
 
-            if (!ptr)
+            if (ptr == nullptr)
             {
                 ptr = int_alloc(size);
             }
@@ -384,7 +384,7 @@ struct BlkAllocator : public StaticConstArray
         auto* ptr = static_cast<std::size_t*>(
             total <= max_const_block_size ? getBlockAlloc(static_cast<unsigned int>(total)) : nullptr);
 
-        if (!ptr)
+        if (ptr == nullptr)
         {
             ptr = static_cast<std::size_t*>(int_alloc_align(total));
         }
@@ -440,7 +440,7 @@ class FixedSizeAllocator : private StaticConstArray
         {
             void* ptr = getBlockAlloc(static_cast<unsigned int>(sizeof(ElemT)));
 
-            if (!ptr)
+            if (ptr == nullptr)
             {
                 return int_alloc(sizeof(ElemT));
             }

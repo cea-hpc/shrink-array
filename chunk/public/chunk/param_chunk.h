@@ -23,7 +23,7 @@
 #include <utility>  // std::cmp_not_equal
 
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_dynamic
-#include "chunk/internal/chunk_size_config.h" // __chunk_size, __decalage_chunk, __modulo_chunk
+#include "chunk/internal/chunk_size_config.h" // static_chunk_size, static_chunk_shift, static_chunk_mask
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size
 #include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
 #include "chunk/singleton.h"                  // SingletonChk
@@ -46,7 +46,7 @@ namespace shrink_array
  *
  *          The geometry accessors are compatibility shims: the chunk size is a
  *          compile-time constant (see chunk_size_config.h) so that `i >>
- *          __decalage_chunk` and `i & __modulo_chunk` fold into immediate
+ *          static_chunk_shift` and `i & static_chunk_mask` fold into immediate
  *          shifts/masks on the hot path. The setters change nothing (they warn
  *          on a mismatch); the getters return the constants. Dynamic builds
  *          (CHUNK_DYNAMIC) add a separate, per-array runtime geometry on top;
@@ -182,7 +182,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     /**
      * @brief Upper sanity bound for a configured CHUNK_SIZE.
      *
-     * @details This is NOT the chunk geometry — use shrink_array::__chunk_size for
+     * @details This is NOT the chunk geometry — use shrink_array::static_chunk_size for
      *          that; it only validates a size coming from an example or a config.
      *          The real hard limit is the per-chunk counter capacity (unsigned
      *          short), enforced by a static_assert in conditional_counter.h, hence
@@ -217,9 +217,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @brief Print the chunk geometry (size, shift, mask) on stdout.
      *
      * @details In a dynamic build the active runtime geometry may differ from the
-     *          compile-time __chunk_size, so the active size is reported instead —
+     *          compile-time static_chunk_size, so the active size is reported instead —
      *          printing the constant there would be misleading. In a static build
-     *          active_chunk_size() == __chunk_size, and both branches agree.
+     *          active_chunk_size() == static_chunk_size, and both branches agree.
      */
     static void print_info_chunk()
     {
@@ -233,9 +233,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
         }
         else
         {
-            std::cout << "chunk size     : " << __chunk_size << "\n";
-            std::cout << "decalage chunk : " << __decalage_chunk << "\n";
-            std::cout << "modulo chunk   : " << __modulo_chunk << "\n";
+            std::cout << "chunk size     : " << static_chunk_size << "\n";
+            std::cout << "decalage chunk : " << static_chunk_shift << "\n";
+            std::cout << "modulo chunk   : " << static_chunk_mask << "\n";
         }
     }
 
@@ -343,7 +343,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     /**
      * @brief No-op compatibility shim for the former runtime chunk-size setter.
      *
-     * @details __chunk_size is a compile-time constant. Warns when asked for a size
+     * @details static_chunk_size is a compile-time constant. Warns when asked for a size
      *          the binary was not built with, rather than ignoring it silently.
      *
      * @param v the chunk size the caller wanted; only compared, never applied
@@ -352,31 +352,31 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      */
     static void set_chunk_size(int v)
     {
-        if (std::cmp_not_equal(v, __chunk_size))
+        if (std::cmp_not_equal(v, static_chunk_size))
         {
             std::println(stderr,
                          "Warning: set_chunk_size({}) ignored; built with CHUNK_SIZE={} (rebuild with -DCHUNK_SIZE={})",
-                         v, __chunk_size, v);
+                         v, static_chunk_size, v);
         }
     }
 
     /**
      * @brief Number of elements per chunk, as fixed at build time.
-     * @return shrink_array::__chunk_size (CHUNK_SIZE, default 64)
+     * @return shrink_array::static_chunk_size (CHUNK_SIZE, default 64)
      * @note In a CHUNK_DYNAMIC build an individual array may have been re-chunked
      *       to another size; this still returns the compile-time value. Use
      *       shrink_array::active_chunk_size() for the geometry currently in effect.
      */
     static constexpr unsigned int get_chunk_size() noexcept
     {
-        return __chunk_size;
+        return static_chunk_size;
     }
 
     /**
      * @brief No-op compatibility shim: the shift is derived from CHUNK_SIZE.
      *
      * @details Kept so existing call sites keep compiling; the value is
-     *          log2(__chunk_size), computed at compile time.
+     *          log2(static_chunk_size), computed at compile time.
      *
      * @param v the shift the caller wanted; only compared, never applied
      * @warning Warns when asked for a shift the binary was not built with, as
@@ -384,21 +384,21 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      */
     static void set_decalage_chunk(unsigned int v)
     {
-        if (v != __decalage_chunk)
+        if (v != static_chunk_shift)
         {
             std::println(stderr, "Warning: set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", v,
-                         __chunk_size, __decalage_chunk);
+                         static_chunk_size, static_chunk_shift);
         }
     }
 
     /**
-     * @brief log2(__chunk_size): the index shift of a power-of-two size,
-     *        meaningless otherwise (chunk = i / __chunk_size).
+     * @brief log2(static_chunk_size): the index shift of a power-of-two size,
+     *        meaningless otherwise (chunk = i / static_chunk_size).
      */
-    [[deprecated("chunk sizes may be multiples of 64: use i / __chunk_size")]] static constexpr unsigned int
+    [[deprecated("chunk sizes may be multiples of 64: use i / static_chunk_size")]] static constexpr unsigned int
     get_decalage_chunk() noexcept
     {
-        return __decalage_chunk;
+        return static_chunk_shift;
     }
 
     /**
@@ -409,20 +409,20 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      */
     static void set_modulo_chunk(int v)
     {
-        if (std::cmp_not_equal(v, __modulo_chunk))
+        if (std::cmp_not_equal(v, static_chunk_mask))
         {
             std::println(stderr, "Warning: set_modulo_chunk({}) ignored; built with CHUNK_SIZE={} (mask {})", v,
-                         __chunk_size, __modulo_chunk);
+                         static_chunk_size, static_chunk_mask);
         }
     }
 
     /**
      * @brief Mask extracting the offset of an element inside its chunk.
-     * @return __chunk_size - 1; `offset = i & get_modulo_chunk()`
+     * @return static_chunk_size - 1; `offset = i & get_modulo_chunk()`
      */
     static constexpr unsigned int get_modulo_chunk() noexcept
     {
-        return __modulo_chunk;
+        return static_chunk_mask;
     }
 
     /**

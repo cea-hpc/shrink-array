@@ -96,7 +96,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
     // rank-thr shard, so an unlocked .empty() is a data race. Checked under the lock below.
 
     auto* arr = ChunkType::get_deferred_ops();
-    if (!arr)
+    if (arr == nullptr)
     {
         return false;
     }
@@ -289,7 +289,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
                                                                                bool       self_only) noexcept
 {
     auto* arr = ChunkType::get_deferred_ops();
-    if (!arr)
+    if (arr == nullptr)
     {
         return false;
     }
@@ -460,7 +460,7 @@ template <typename T, typename ChunkType, bool Enabled>
 void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int thr, ChunkType* chunk, int num) noexcept
 {
     auto* arr = ChunkType::get_deferred_ops();
-    if (!arr)
+    if (arr == nullptr)
     {
         return;
     }

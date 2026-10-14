@@ -10,7 +10,7 @@ import threading
 import time
 import json
 
-from . import state
+from . import events, killinfo, state
 from .builds import resolve_exe
 from .parsing import detect_compression_collapse, detect_nonfinite_checksum, parse_peak_memory_mo
 from .settings import SANITIZER_HIT_MARKERS
@@ -18,12 +18,47 @@ from .state import _numa
 from .term import bold, cyan, dim, green, red
 
 
-def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text):
+def _text(v):
+    """TimeoutExpired.stdout/stderr: bytes even with text=True, or None."""
+    if isinstance(v, bytes):
+        return v.decode("utf-8", "replace")
+    return v or ""
+
+
+def _take_full_log():
+    """The full log the last run of this thread wrote, forgotten once read."""
+    p = getattr(state._LAST_FULL_LOG, "path", None)
+    state._LAST_FULL_LOG.path = None
+    return p
+
+
+def _why_failed(returncode, oom_before, stdout_text, err_tail):
+    """The err_tail of a FAILED run, made readable: why it died when a signal
+    killed it (killinfo: an OOM kill is told from the rest), the end of its
+    stdout when stderr said nothing, and where its complete output is."""
+    parts = []
+    if returncode is not None and returncode < 0:
+        why = killinfo.explain(returncode, oom_before, killinfo.oom_counts())
+        if why:
+            parts.append(why)
+    if (err_tail or "").strip():
+        parts.append(err_tail)
+    else:
+        out = [ln for ln in (stdout_text or "").splitlines() if ln.strip()][-8:]
+        parts.append("(stderr empty)" + ("\n--- stdout tail ---\n" + "\n".join(out) if out else ""))
+    log = getattr(state._LAST_FULL_LOG, "path", None)
+    if log:
+        parts.append(f"full output: {log}")
+    return "\n".join(parts)
+
+
+def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text, status=None):
     """When --full-log-dir is set, dump one child run's COMPLETE stdout+stderr to
     its own file. The name encodes binary, OMP thread count, a global run counter
     and the status, so each execution is identifiable (chunk2 vs chunk2a, which run
     re-chunked / crashed). No-op when off. Never raises: logging must not break the
-    bench."""
+    bench. The path is kept for _note_run (_take_full_log)."""
+    state._LAST_FULL_LOG.path = None
     if not state._FULL_LOG_DIR:
         return
     try:
@@ -32,7 +67,7 @@ def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text):
         with state._FULL_LOG_LOCK:
             state._FULL_LOG_COUNTER += 1
             idx = state._FULL_LOG_COUNTER
-        status = "ok" if returncode == 0 else f"rc{returncode}"
+        status = status or ("ok" if returncode == 0 else f"rc{returncode}")
         path = os.path.join(state._FULL_LOG_DIR, f"{binary}__omp{omp}__{idx:05d}__{status}.log")
         with open(path, "w") as fh:
             fh.write(f"# cmd: {' '.join(map(str, cmd))}\n")
@@ -43,6 +78,7 @@ def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text):
                 fh.write("\n")
             fh.write("# ===== STDERR =====\n")
             fh.write(stderr_text or "")
+        state._LAST_FULL_LOG.path = path
     except Exception:
         pass  # logging must never break the run
 
@@ -75,6 +111,7 @@ def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, 
         )
     cmd = _numa.interleave_prefix(child_env, numa_mode or state._NUMA_MODE) + list(cmd)  # --numa-interleave
     try:
+        oom0 = killinfo.oom_counts()
         res = subprocess.run(
             cmd, env=child_env, cwd=cwd,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -128,8 +165,12 @@ def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, 
                 err_tail = ("COMPRESSION COLLAPSE: " + cc_bad + "\n"
                             "--- output tail ---\n"
                             + "\n".join(combined.splitlines()[-30:]))
+        if not success:
+            err_tail = _why_failed(res.returncode, oom0, res.stdout, err_tail)
         return success, time.perf_counter() - start, res.returncode, err_tail, mem_mo
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        # What the run printed before the kill: often where it hung.
+        _write_full_log(cmd, child_env, -9, _text(e.stdout), _text(e.stderr), status="timeout")
         return False, float(timeout), -9, f"TIMEOUT after {timeout}s", None
     except FileNotFoundError as e:
         # The binary vanished between resolution and launch — almost always a
@@ -163,6 +204,7 @@ def _note_run(executor, ok, cmd, env_vars, timeout, extra_ld_library_path, cwd, 
            "timeout": timeout, "ld": extra_ld_library_path, "cwd": cwd, "must_contain": must_contain}
     if numa_mode:
         rec["numa"] = numa_mode
+    log = _take_full_log()
     if ok:
         k = _run_key(rec)
         state._PENDING_FAILED_RUNS[:] = [r for r in state._PENDING_FAILED_RUNS if _run_key(r) != k]
@@ -176,6 +218,8 @@ def _note_run(executor, ok, cmd, env_vars, timeout, extra_ld_library_path, cwd, 
             rec["cmd"] = [rec["cmd"][0], "-R", "^(" + "|".join(_re2.escape(n) for n in names) + ")$",
                           "--output-on-failure"]
             rec["ctest_tests"] = names
+    if log:
+        rec["log"] = log      # its complete output (shrink_gui opens it from the failure)
     state._PENDING_FAILED_RUNS.append(rec)
 
 
@@ -261,6 +305,7 @@ def _run_capture_stdout_streaming_impl(cmd, env_vars, timeout, on_line, on_tick,
         # Own process group: on a timeout the whole tree goes (ctest AND the
         # tests it started). Killing ctest alone leaves the tests running and
         # holding the stdout pipe open.
+        oom0 = killinfo.oom_counts()
         proc = subprocess.Popen(cmd, env=child_env, cwd=cwd, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, text=True, bufsize=1,
                                 start_new_session=True)
@@ -342,6 +387,8 @@ def _run_capture_stdout_streaming_impl(cmd, env_vars, timeout, on_line, on_tick,
                 break
             if ln:
                 out_lines.append(ln)
+        t_err.join(timeout=5)
+        _write_full_log(cmd, child_env, -9, "".join(out_lines), "".join(err_parts), status="timeout")
         return False, float(timeout), -9, "".join(out_lines), f"TIMEOUT after {timeout}s"
 
     t_out.join(timeout=5)
@@ -350,6 +397,8 @@ def _run_capture_stdout_streaming_impl(cmd, env_vars, timeout, on_line, on_tick,
     err_text = "".join(err_parts)
     err_tail = "\n".join(err_text.splitlines()[-30:]) if err_text else ""
     _write_full_log(cmd, child_env, proc.returncode, out_text, err_text)
+    if proc.returncode != 0:
+        err_tail = _why_failed(proc.returncode, oom0, out_text, err_tail)
     return proc.returncode == 0, time.perf_counter() - start, proc.returncode, out_text, err_tail
 
 
@@ -372,8 +421,12 @@ def _append_error_now(errors_log, entry):
             f.write(entry.rstrip("\n") + "\n")
     except OSError:
         pass
+    first = entry.strip().splitlines()[0] if entry.strip() else ""
+    # Live: shrink_gui counts the errors of a running phase and tells about
+    # the first one (phase_end only says how many, once the phase is over).
+    events.emit("error", phase=events.current_phase(), error_kind=first.split(":", 1)[0],
+                summary=first[:300])
     try:
-        first = entry.strip().splitlines()[0] if entry.strip() else ""
         case = {"kind": first.split(":", 1)[0], "summary": first[:300],
                 "runs": list(state._PENDING_FAILED_RUNS)}
         state._PENDING_FAILED_RUNS.clear()
@@ -422,18 +475,23 @@ def run_rerun_failed(args):
                         r["cmd"], r.get("env") or {}, r.get("timeout"),
                         extra_ld_library_path=r.get("ld"), cwd=r.get("cwd"),
                         must_contain=r.get("must_contain"), numa_mode=r.get("numa"))
+                log = _take_full_log()
                 if not ok:
-                    case_fail = (rep + 1, code, tail)
+                    if log:
+                        r["log"] = log      # the list kept below points to the newest output
+                    case_fail = (rep + 1, code, tail, log)
                     break
             if case_fail:
                 break
         if case_fail:
             n_fail += 1
             still.append(case)
-            rep, code, tail = case_fail
+            rep, code, tail, log = case_fail
             print(red(f"  ✗ still fails (repeat {rep}/{reps}, code {code}): {head}"))
             for tl in (tail or "").splitlines()[-8:]:
                 print(dim("      " + tl))
+            if log:
+                print(dim(f"      full output: {log}"))
         else:
             n_ok += 1
             print(green(f"  ✓ passes x{reps}: {head}"))
@@ -510,6 +568,7 @@ def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None,
         )
     cmd = _numa.interleave_prefix(child_env, state._NUMA_MODE) + list(cmd)  # --numa-interleave
     try:
+        oom0 = killinfo.oom_counts()
         res = subprocess.run(
             cmd, env=child_env, cwd=cwd,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -518,8 +577,11 @@ def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None,
         err_tail = "\n".join(res.stderr.splitlines()[-30:]) if res.stderr else ""
         _write_full_log(cmd, child_env, res.returncode, res.stdout, res.stderr)
         text = (res.stdout or "") + ("\n" + res.stderr if merge_stderr and res.stderr else "")
+        if res.returncode != 0:
+            err_tail = _why_failed(res.returncode, oom0, res.stdout, err_tail)
         return (res.returncode == 0, time.perf_counter() - start, res.returncode, text, err_tail)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        _write_full_log(cmd, child_env, -9, _text(e.stdout), _text(e.stderr), status="timeout")
         return False, float(timeout), -9, "", f"TIMEOUT after {timeout}s"
     except FileNotFoundError as e:
         return False, 0.0, -2, "", f"FileNotFoundError: {e}"

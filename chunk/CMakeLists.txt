@@ -29,7 +29,7 @@ find_package(Threads REQUIRED)
 option(CHUNK_STD_ALLOC "Use standard allocator for chunk." OFF)
 
 # --- Multi-size declinations --------------------------------------------
-# The compile-time chunk size (__chunk_size) is frozen per library by
+# The compile-time chunk size (static_chunk_size) is frozen per library by
 # -DCHUNK_SIZE. To benchmark several fixed sizes we therefore build ONE lib
 # per (variant, size). CHUNK_STATIC_SIZES is the list of static sizes; each
 # yields chunk_v<x>_<size>. CHUNK_BUILD_DYN adds a runtime-size (CHUNK_DYNAMIC)
@@ -312,13 +312,12 @@ install(TARGETS chunk_stacktrace EXPORT chunk-targets)
 # --- Shared file lists ---------------------------------------------------
 set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/TChunk.h
+        public/chunk/internal/all_type_chunk_decl.h
         public/chunk/internal/all_type_chunk_inline.h
         public/chunk/internal/arithmetic_context.h
         public/chunk/internal/array_chunk2A_inline.h
         public/chunk/internal/array_chunk2A_parallel.h
         public/chunk/internal/array_chunk2A_parallel_inline.h
-        public/chunk/internal/array_chunk2A_rechunk_hooks.h
-        public/chunk/internal/array_chunk2A_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk2_base.h
         public/chunk/internal/array_chunk2_inline.h
         public/chunk/internal/array_chunk2_parallel.h
@@ -352,7 +351,6 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/chunk_stats.h
         public/chunk/internal/chunk_stats_printer.h
         public/chunk/internal/chunk_std_inline.h
-        public/chunk/internal/common_types.h
         public/chunk/internal/complex_less.h
         public/chunk/internal/compression_manager.h
         public/chunk/internal/compression_manager_inline.h
@@ -631,7 +629,7 @@ endforeach()
 chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1" ${CHUNK_DEFAULT_SIZE} FALSE NO_OMPT_TOOL)
 
 # A REAL default library (not just an ALIAS), so the include directories reach the executables.
-# Default library: no variant define, default compile-time size (__chunk_size=64), static.
+# Default library: no variant define, default compile-time size (static_chunk_size=64), static.
 chunk_add_variant(chunk "" "" FALSE)
 
 # --- Install: every variant library, under the chunk:: namespace ---------
@@ -663,7 +661,7 @@ endforeach()
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).
 # fast_allocators/CMakeLists.txt, configured after this file, checks it against
 # its own ALLOCATORS_VERSION through this global property.
-set(CHUNK_FAST_ALLOCATORS_VERSION 2.1.8)
+set(CHUNK_FAST_ALLOCATORS_VERSION 2.1.9)
 set_property(GLOBAL PROPERTY CHUNK_FAST_ALLOCATORS_VERSION ${CHUNK_FAST_ALLOCATORS_VERSION})
 
 install(TARGETS ${_chunk_install_targets}

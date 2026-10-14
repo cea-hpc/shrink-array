@@ -58,6 +58,9 @@ PROGRAMS = {
         "progress_re": r"Run (\d+)/(\d+) on build",
         "eta_re": r"Estimated Time Left: ([\d.]+)s",
         "summary": "multi_launch", "summary_file": "timings_summary.csv",
+        # The Erreurs tab: these files of the output directory (names or glob
+        # patterns), newest first. One error_*.txt per failed run.
+        "errors_files": ["error_*.txt"],
         # The build check before the command ("Builds à jour"): the option
         # naming the build root, the one naming the builds (a list, or a file
         # of names one per line, relative to cwd).
@@ -83,11 +86,40 @@ PROGRAMS = {
         "out_files": ["bench_summary.csv", "bench_errors.log", "failed_cases.jsonl"],
         "progress_re": None, "eta_re": None,
         "summary": "csv", "summary_file": "bench_summary.csv",
+        # The Graphique tab: bench_summary.csv per config, variant and threads.
+        "chart": "bench",
+        # The Erreurs tab: one entry per failure, written as it happens (the
+        # full output of each run is in run_logs/).
+        "errors_files": ["bench_errors.log"],
+        # Its failures one by one (failed_cases.jsonl: the complete output of
+        # each, under run_logs/), and "Relancer les échecs" (--rerun-failed).
+        "failed_cases": "failed_cases.jsonl", "full_logs": "run_logs",
+        "rerun": {"opt": "--rerun-failed", "repeat": "--rerun-repeat", "log_dir": "--full-log-dir",
+                  "drop": ["--no-full-log"]},
         "builds_opt": {"root": "build_root", "builds": "configs"},
         # bench_results/<arch> is shared by every run of the architecture and
         # holds the oracles (oracle/): only what each run rewrites goes.
         "own_outputs": ["bench_output.log", "bench_errors.log", "failed_cases.jsonl", "bench_summary.csv",
                         "run_logs", "runs"],
+    },
+    "omp_speedup.py": {
+        "time_s": 14400,  # default -T (4 h); then remembered per program
+        "script": "python/omp_speedup.py", "cwd": "python",
+        "interp": "python3", "scan": "argparse",
+        # On a compute node only (it measures it): batch, or this machine.
+        "msub_only": True,
+        # "Choisir…" beside these fields, as compile_all.sh's.
+        "pickers": {"target": "configs", "execs": "execs"},
+        # Its own output directory per run (under <work>/omp_speedup/).
+        "out_re": r"Outputs in (\S+)",
+        "out_files": ["summary.csv", "results.csv", "errors.log", "plot.gp", "speedup.png", "meta.json"],
+        # Progress, Erreurs column, first-error notice: its events.jsonl.
+        "progress_re": None, "eta_re": None,
+        "summary": "csv", "summary_file": "summary.csv",
+        "chart": "speedup",
+        "errors_files": ["errors.log"],
+        "builds_opt": {"root": "build_root", "builds": "target"},
+        "own_outputs": "dir",
     },
     "compile_all.sh": {
         "time_s": 5400,  # default -T (short); then remembered per program
@@ -101,6 +133,7 @@ PROGRAMS = {
         "out_re": None, "out_files": [],
         "progress_re": None, "eta_re": None,
         "summary": None, "summary_file": None,
+        "errors_files": [],
     },
 }
 

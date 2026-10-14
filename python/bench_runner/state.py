@@ -29,6 +29,11 @@ _FULL_LOG_DIR = None
 _FULL_LOG_LOCK = threading.Lock()
 _FULL_LOG_COUNTER = 0
 
+# The full log the last run of this thread wrote (_write_full_log), for
+# _note_run to record beside a failed run: the window opens it from the
+# failure, whatever the file's name says (a sanitizer hit exits 0).
+_LAST_FULL_LOG = threading.local()
+
 def _set_full_log_dir(path):
     global _FULL_LOG_DIR
     _FULL_LOG_DIR = path

@@ -521,10 +521,12 @@ def progress_from_events(ev):
         phase = prog["phase"]
     return [done, total, eta, phase]
 
-def progress_of(path, meta):
+def progress_of(path, meta, ev=None):
     """(done, total, eta_s[, phase]): bench_and_test.py's events.jsonl when
-    there is one, else the log with the program's own regexes."""
-    ev = read_events(os.path.dirname(path))
+    there is one (@p ev, already read), else the log with the program's own
+    regexes."""
+    if ev is None:
+        ev = read_events(os.path.dirname(path))
     if ev:
         return progress_from_events(ev)
     if not meta.get("progress_re"):
@@ -541,6 +543,71 @@ def progress_of(path, meta):
             eta = float(e.group(1))
     return [int(m.group(1)), int(m.group(2)), eta]
 
+def errors_from_events(ev):
+    """[count, last error's first line] of a bench_and_test.py run: its end
+    record once there, else the errors logged so far (an "error" record each,
+    or phase_end counts before bench_runner wrote them), or None."""
+    if not ev:
+        return None
+    last = None
+    n_ev = n_phase = 0
+    for e in ev:
+        k = e.get("kind")
+        if k == "error":
+            n_ev += 1
+            last = e.get("summary") or e.get("kind")
+        elif k == "phase_end":
+            n_phase += e.get("errors", 0) or 0
+        elif k == "end":
+            return [e.get("errors", 0) or 0, last]
+    return [max(n_ev, n_phase), last]
+
+def errors_from_csv(d, meta):
+    """[failed runs, None] of multi_launch_stress.py (returncode != 0 in its
+    summary CSV), or None."""
+    import csv
+    od = out_dir(d, meta)
+    p = os.path.join(od, meta.get("summary_file") or "") if od else None
+    if not p or not os.path.isfile(p):
+        return None
+    n = 0
+    try:
+        with text_open(p) as f:
+            rows = csv.reader(f)
+            head = next(rows, [])
+            if "returncode" not in head:
+                return None
+            i = head.index("returncode")
+            for r in rows:
+                n += len(r) > i and r[i].strip() not in ("0", "")
+    except (IOError, OSError):
+        return None
+    return [n, None]
+
+def errors_of(d, meta, st, ev):
+    """The Erreurs column: errors_from_events, else (multi_launch_stress.py)
+    errors_from_csv -- kept in the run directory once the run is over, the
+    CSV no longer changes."""
+    r = errors_from_events(ev)
+    if r is not None or meta.get("summary") != "multi_launch":
+        return r
+    cache = os.path.join(d, "errors_count.json")
+    final = st not in ("en cours", "en attente", "démarrage") and not st.startswith("en attente")
+    if final:
+        c = read(cache)
+        if c:
+            try:
+                return json.loads(c)
+            except ValueError:
+                pass
+    r = errors_from_csv(d, meta)
+    if final and r is not None:
+        try:
+            write(cache, json.dumps(r))
+        except (IOError, OSError):
+            pass
+    return r
+
 def act_list(a):
     base = rdir(a[0])
     runs = []
@@ -553,9 +620,11 @@ def act_list(a):
                 continue
             st, code = status(d, q)
             meta = json.loads(meta)
+            ev = read_events(d)
             runs.append({"id": rid, "meta": meta, "status": st, "code": code,
+                         "errors": errors_of(d, meta, st, ev),
                          "jobid": (read(os.path.join(d, "jobid")) or "").strip(),
-                         "progress": progress_of(os.path.join(d, "out.log"), meta),
+                         "progress": progress_of(os.path.join(d, "out.log"), meta, ev),
                          "git_start": (read(os.path.join(d, "git_start")) or "").strip(),
                          "last": last_line(os.path.join(d, "out.log"))})
     print(json.dumps({"host": socket.gethostname(), "runs": runs}))
@@ -634,6 +703,15 @@ def act_pack(a):
                         t.add(p, arcname="outputs/" + os.path.basename(p))
     sys.stdout.write(base64.b64encode(buf.getvalue()).decode())
 
+def own_copy(d, name):
+    """The run's own copy of output file @p name, kept in its directory when
+    it ended (bench_and_test.py: $CHUNK_BENCH_KEEP_DIR, report.py), or None.
+    It wins over the shared output directory, which later runs rewrite."""
+    if not name or os.sep in name or name in (".", ".."):
+        return None
+    p = os.path.join(d, name)
+    return p if os.path.isfile(p) else None
+
 def out_dir(d, meta):
     if not meta.get("out_re"):
         return None
@@ -655,7 +733,7 @@ def act_summary(a):
             print(json.dumps({"note": "pas de résumé pour ce programme"}))
         return
     od = out_dir(d, meta)
-    path = os.path.join(od, name) if od else None
+    path = own_copy(d, name) or (os.path.join(od, name) if od else None)
     if not path or not os.path.isfile(path):
         if phases:
             print(json.dumps({"sections": [phases, {"title": name, "note": "pas encore de %s" % name,
@@ -735,15 +813,111 @@ def summary_row(g, statistics):
     return [str(g["n"]), str(g["fail"]), "%.2f" % statistics.mean(w), "%.2f" % statistics.median(w),
             "%.2f" % max(w), "%d–%d" % (min(g["th"]), max(g["th"]))]
 
+def is_speedup_chart(meta):
+    """The run is drawn as omp_speedup.py's (meta "chart", from PROGRAMS)."""
+    return meta.get("chart") == "speedup" or meta.get("program") == "omp_speedup.py"
+
+def speedup_points(d, meta):
+    """The Graphique tab of omp_speedup.py: its summary.csv, in the output
+    directory of its own the log announces. {"execs", "rows": [exe, threads,
+    best s, speedup or None, efficiency or None, peak Mo or None, ok runs],
+    "info": its meta.json (target, multiply, mode, metric...)}."""
+    import csv
+    od = out_dir(d, meta)
+    if not od:
+        return {"note": "pas encore de dossier de sortie annoncé dans le log"}
+    od = os.path.expanduser(od)
+    path = os.path.join(od, meta.get("summary_file") or "summary.csv")
+    if not os.path.isfile(path):
+        return {"note": "pas encore de summary.csv"}
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    execs, rows = [], []
+    with text_open(path) as f:
+        rd = csv.reader(f)
+        col = {h: i for i, h in enumerate(next(rd, []))}
+        for r in rd:
+            try:
+                e, th = r[col["exe"]], int(r[col["threads"]])
+            except (KeyError, ValueError, IndexError):
+                continue
+            get = lambda k: num(r[col[k]]) if k in col and len(r) > col[k] else None
+            if e not in execs:
+                execs.append(e)
+            rows.append([e, th, get("best_s"), get("speedup"), get("efficiency"), get("peak_mem_mo"),
+                         int(get("ok_runs") or 0)])
+    info = {}
+    try:
+        info = json.loads(read(os.path.join(od, "meta.json"), "{}") or "{}")
+    except ValueError:
+        pass
+    return {"kind": "speedup", "execs": execs, "rows": rows,
+            "info": {k: info.get(k) for k in ("target", "multiply", "mode", "metric", "host", "cpu",
+                                               "threads", "reps")}}
+
+def is_bench_chart(meta):
+    """The run is drawn as bench_and_test.py's (meta "chart", set from
+    PROGRAMS; the runs submitted before it by the program's name)."""
+    return meta.get("chart") == "bench" or meta.get("program") == "bench_and_test.py"
+
+def bench_points(d, meta):
+    """The Graphique tab of bench_and_test.py: bench_summary.csv, the run's
+    own copy (kept when it ended) or, before that, the shared one -- "own"
+    says which. {"configs", "variants", "rows": [config, variant, threads,
+    avg s, peak Mo or None, speedup or None]}."""
+    import csv
+    name = meta.get("summary_file") or "bench_summary.csv"
+    path = own_copy(d, name)
+    own = path is not None
+    if not own:
+        od = out_dir(d, meta)
+        path = os.path.join(os.path.expanduser(od), name) if od else None
+    if not path or not os.path.isfile(path):
+        return {"note": "pas encore de %s (écrit à la fin du run)" % name}
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    configs, variants, rows = [], [], []
+    with text_open(path) as f:
+        rd = csv.reader(f)
+        head = next(rd, [])
+        col = {h: i for i, h in enumerate(head)}
+        for r in rd:
+            try:
+                c, v, th, avg = r[col["Config"]], r[col["Variant"]], int(r[col["Threads"]]), float(r[col["AvgTime_s"]])
+            except (KeyError, ValueError, IndexError):
+                continue
+            mem = num(r[col["PeakMem_Mo"]]) if "PeakMem_Mo" in col and len(r) > col["PeakMem_Mo"] else None
+            sp = (num(r[col["Speedup_vs_baseline"]])
+                  if "Speedup_vs_baseline" in col and len(r) > col["Speedup_vs_baseline"] else None)
+            if c not in configs:
+                configs.append(c)
+            if v not in variants:
+                variants.append(v)
+            rows.append([c, v, th, avg, mem, sp])
+    return {"kind": "bench", "configs": configs, "variants": variants, "rows": rows, "own": own,
+            "mtime": os.path.getmtime(path)}
+
 def act_points(a):
     """The Graphique tab: one point per run of timings_summary.csv (the last
     30000), names factored out: {"builds", "exes", "rows": [run, b, e, threads,
-    seconds, returncode]}."""
+    seconds, returncode]}; bench_and_test.py: bench_points."""
     import csv
     d = rdir(a[0], a[1])
     meta = json.loads(read(os.path.join(d, "meta.json"), "{}"))
+    if is_speedup_chart(meta):
+        print(json.dumps(speedup_points(d, meta)))
+        return
+    if is_bench_chart(meta):
+        print(json.dumps(bench_points(d, meta)))
+        return
     if meta.get("summary") != "multi_launch":
-        print(json.dumps({"note": "graphique disponible pour multi_launch_stress.py seulement"}))
+        print(json.dumps({"note": "graphique disponible pour multi_launch_stress.py, bench_and_test.py et omp_speedup.py seulement"}))
         return
     od = out_dir(d, meta)
     path = os.path.join(od, meta["summary_file"]) if od else None
@@ -773,6 +947,32 @@ def _same_dir(a, b):
     except (TypeError, ValueError):
         return False
 
+def runs_sharing(base, rid, od):
+    """(id, dir, meta) of every other run of @p base whose log announces the
+    output directory @p od."""
+    for other in sorted(os.listdir(base)):
+        od2 = os.path.join(base, other)
+        m2 = read(os.path.join(od2, "meta.json"))
+        if other == rid or m2 is None:
+            continue
+        m2 = json.loads(m2)
+        if _same_dir(out_dir(od2, m2) or "", od):
+            yield other, od2, m2
+
+def newer_writer(base, rid, meta, od):
+    """The first other run announcing @p od that is still active or newer
+    than run @p rid (the shared files are then its own, rewritten after
+    ours), or None."""
+    q = None
+    for other, od2, m2 in runs_sharing(base, rid, od):
+        if q is None:
+            q = queue_states()
+        st = status(od2, q)[0]
+        if st in ("en cours", "en attente", "démarrage") or st.startswith("en attente") \
+                or m2.get("created", "") > meta.get("created", ""):
+            return other
+    return None
+
 def outputs_to_delete(base, rid, d, meta, own):
     """(paths to remove, error): the program outputs of run @p rid, as
     @p own says ("dir": the output directory its log announces; a list: those
@@ -790,33 +990,49 @@ def outputs_to_delete(base, rid, d, meta, own):
         return None, "dossier de sortie refusé : %s" % od
     if not os.path.isdir(od):
         return [], None                        # already gone: nothing to do
-    q = None
-    for other in sorted(os.listdir(base)):
-        od2 = os.path.join(base, other)
-        m2 = read(os.path.join(od2, "meta.json"))
-        if other == rid or m2 is None:
-            continue
-        m2 = json.loads(m2)
-        if not _same_dir(out_dir(od2, m2) or "", od):
-            continue
-        if own == "dir":
+    if own == "dir":
+        for other, _, _ in runs_sharing(base, rid, od):
             return None, "%s utilise aussi %s : rien supprimé" % (other, od)
-        if q is None:
-            q = queue_states()
-        st = status(od2, q)[0]
-        if st in ("en cours", "en attente", "démarrage") or st.startswith("en attente") \
-                or m2.get("created", "") > meta.get("created", ""):
+    else:
+        other = newer_writer(base, rid, meta, od)
+        if other:
             return None, "%s, plus récent ou actif, écrit aussi dans %s : rien supprimé" % (other, od)
     if own == "dir":
         return [od], None
+    # A shared directory: what this run wrote, i.e. after it was submitted
+    # (meta.json) -- run_logs/ also holds the older runs' logs, kept.
+    try:
+        t0 = os.path.getmtime(os.path.join(d, "meta.json"))
+    except OSError:
+        return None, "date de soumission de %s illisible : rien supprimé" % rid
     out = []
     for name in own:
         if os.sep in name or name in ("", ".", ".."):
             continue
         p = os.path.join(od, name)
-        if os.path.lexists(p):
+        if os.path.isdir(p) and not os.path.islink(p):
+            for top, _dirs, files in os.walk(p):
+                for f in files:
+                    fp = os.path.join(top, f)
+                    if written_since(fp, t0):
+                        out.append(fp)
+        elif os.path.lexists(p) and written_since(p, t0):
             out.append(p)
     return out, None
+
+def written_since(p, t0):
+    try:
+        return os.lstat(p).st_mtime >= t0
+    except OSError:
+        return False
+
+def prune_empty(root):
+    """Remove the empty directories under @p root, @p root included."""
+    for top, _dirs, _files in os.walk(root, topdown=False):
+        try:
+            os.rmdir(top)
+        except OSError:
+            pass
 
 def act_delete(a):
     """Remove one run directory and, when a[2] asks for it ({"own": ...},
@@ -849,8 +1065,191 @@ def act_delete(a):
             except OSError:
                 continue
         removed.append(p)
+    if isinstance(opts.get("own"), list):
+        od = out_dir(d, meta)
+        for name in opts["own"]:
+            sub = os.path.join(os.path.expanduser(od), name) if od and os.sep not in name else None
+            if sub and os.path.isdir(sub) and not os.path.islink(sub):
+                prune_empty(sub)      # emptied by this run's files only
     shutil.rmtree(d)
     print(json.dumps({"ok": True, "removed": removed}))
+
+ERR_FILE_MAX = 1024 * 1024          # per file: its end only
+ERR_TOTAL_MAX = 4 * 1024 * 1024     # per call, every file together
+ERR_FILES_MAX = 100                 # the newest ones (multi_launch_stress: one error_*.txt per failure)
+# An entry of bench_errors.log: "CHECK_FAIL: ...", "BASELINE_REF_FAIL: ...",
+# its details indented below.
+ERR_ENTRY_RE = re.compile(r"^[A-Z][A-Z0-9_]*:", re.M)
+
+def act_errors(a):
+    """The Erreurs tab: the error files the program writes in the output
+    directory its log announces -- a[2], base64 JSON {"files": [names or
+    glob patterns]}, comes from the window's PROGRAMS (an older run gets
+    them too). Newest first, each one's end only. "newer": another run,
+    active or newer, announcing the same directory (bench_results/<arch> is
+    shared and bench_errors.log rewritten by each run): the files may be its."""
+    base, rid = rdir(a[0]), a[1]
+    d = os.path.join(base, rid)
+    meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
+    opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
+    pats = [p for p in opts.get("files") or [] if p and os.sep not in p and p not in (".", "..")]
+    if not pats:
+        print(json.dumps({"note": "pas de log d'erreurs pour ce programme", "files": []}))
+        return
+    od = out_dir(d, meta)
+    if not od:
+        print(json.dumps({"note": "pas encore de dossier de sortie annoncé dans le log", "files": []}))
+        return
+    od = os.path.expanduser(od)
+    found = {}
+    for pat in pats:
+        mine = own_copy(d, pat)
+        if mine:                 # the copy the run kept when it ended
+            found[mine] = False
+            continue
+        for p in glob.glob(os.path.join(od, pat)):
+            if os.path.isfile(p):
+                found[p] = bool(re.search(r"[*?[]", pat))
+    def mtime(p):
+        try:
+            return os.path.getmtime(p)
+        except OSError:
+            return 0
+    paths = sorted(found, key=lambda p: (-mtime(p), p))
+    files, budget, count = [], ERR_TOTAL_MAX, 0
+    for p in paths[:ERR_FILES_MAX]:
+        try:
+            size = os.path.getsize(p)
+        except OSError:
+            continue
+        n = min(ERR_FILE_MAX, budget)
+        if n <= 0:
+            break
+        data = tail_text(p, n)
+        skipped = max(0, size - n)
+        if skipped:
+            nl = data.find("\n")
+            data = data[nl + 1:] if nl >= 0 else data
+        budget -= len(data.encode("utf-8", "replace"))
+        if data.strip():
+            # A file per failure (a pattern): one each; a log: its entries.
+            count += 1 if found[p] else max(1, len(ERR_ENTRY_RE.findall(data)))
+        files.append({"name": os.path.basename(p), "size": size, "mtime": mtime(p),
+                      "data": data, "skipped": skipped})
+    shared = [p for p in paths if os.path.dirname(p) != d]
+    if opts.get("cases") and not own_copy(d, opts["cases"]):
+        shared.append(opts["cases"])
+    out = {"dir": od if shared or not paths else d, "files": files, "count": count,
+           "total_files": len(paths),
+           "newer": newer_writer(base, rid, meta, od) if shared else None}
+    if not paths:
+        out["note"] = "aucun fichier %s dans %s" % (", ".join(pats), od)
+    if opts.get("cases"):
+        out["cases"] = failed_cases(od, opts["cases"], d)
+    if opts.get("full_logs"):
+        out["logs"] = failure_logs(base, rid, d, meta, od, opts["full_logs"])
+    print(json.dumps(out))
+
+def inside(od, rel):
+    """os.path.join(od, rel) when it stays inside the output directory @p od
+    (a name read in a file, or sent by the window), else None."""
+    if not rel:
+        return None
+    p = os.path.realpath(os.path.join(od, rel))
+    root = os.path.realpath(od)
+    return p if p.startswith(root + os.sep) else None
+
+def failed_cases(od, name, d=None):
+    """The failures failed_cases.jsonl records (bench_runner/runs.py), one per
+    entry of bench_errors.log: its first line, whether --rerun-failed can
+    replay it, and the complete output of its failed runs (relative to od)."""
+    out = []
+    p = own_copy(d, name) or inside(od, name)
+    if not p or not os.path.isfile(p):
+        return out
+    with text_open(p) as f:
+        for ln in f:
+            try:
+                c = json.loads(ln)
+            except ValueError:
+                continue
+            runs = c.get("runs") or []
+            logs = []
+            for r in runs:
+                lp = inside(od, r.get("log"))        # absolute as bench_runner writes it
+                if lp:
+                    logs.append(os.path.relpath(lp, os.path.realpath(od)))
+            out.append({"kind": c.get("kind", ""), "summary": c.get("summary", ""),
+                        "replayable": bool(runs), "logs": logs})
+    return out
+
+def run_started(d):
+    """When run dir @p d started, by the cluster's clock: its "start" event,
+    else None."""
+    for e in read_events(d):
+        if e.get("kind") == "start":
+            return e.get("t")
+    return None
+
+def failure_logs(base, rid, d, meta, od, sub):
+    """The full logs of FAILED executions (bench_runner names them
+    <binary>__omp<N>__<idx>__<status>.log, status ok / rc<code> / timeout) in
+    od/@p sub written during this run: after its launch, before a newer run
+    sharing od started. For the runs whose failed_cases.jsonl does not point
+    to them (bench_runner before that), newest first."""
+    ld = inside(od, sub)
+    if not ld or not os.path.isdir(ld):
+        return []
+    try:
+        t0 = os.path.getmtime(os.path.join(d, "meta.json"))
+    except OSError:
+        return []
+    t1 = None
+    for _other, od2, _m2 in runs_sharing(base, rid, od):
+        t = run_started(od2)
+        if t is not None and t > t0 and (t1 is None or t < t1):
+            t1 = t
+    out = []
+    for p in glob.glob(os.path.join(ld, "*.log")):
+        if p.endswith("__ok.log"):
+            continue
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        if st.st_mtime >= t0 and (t1 is None or st.st_mtime < t1):
+            out.append((st.st_mtime, os.path.relpath(p, od)))
+    return [name for _t, name in sorted(out, reverse=True)[:ERR_FILES_MAX]]
+
+def act_errfile(a):
+    """Some files of the run's output directory, as act_errors sends them:
+    a[2], base64 JSON {"paths": [relative to the directory]} -- the complete
+    output of a failure. Nothing outside the directory is read."""
+    base, rid = rdir(a[0]), a[1]
+    d = os.path.join(base, rid)
+    meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
+    opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
+    od = out_dir(d, meta)
+    if not od:
+        print(json.dumps({"error": "pas de dossier de sortie annoncé dans le log de %s" % rid}))
+        return
+    od = os.path.expanduser(od)
+    files, budget = [], ERR_TOTAL_MAX
+    for rel in opts.get("paths") or []:
+        p = inside(od, rel)
+        if not p or not os.path.isfile(p):
+            files.append({"name": rel, "size": 0, "mtime": 0, "data": "", "skipped": 0, "missing": True})
+            continue
+        size, n = os.path.getsize(p), min(ERR_FILE_MAX * 2, budget)
+        data = tail_text(p, n)
+        skipped = max(0, size - n)
+        if skipped:
+            nl = data.find("\n")
+            data = data[nl + 1:] if nl >= 0 else data
+        budget -= len(data.encode("utf-8", "replace"))
+        files.append({"name": rel, "size": size, "mtime": os.path.getmtime(p), "data": data,
+                      "skipped": skipped})
+    print(json.dumps({"dir": od, "files": files}))
 
 BUILD_NAME_RE = re.compile(r'cmake-build-([^/"\s]*)')
 EXE_RULE_RE = re.compile(rb"CXX_EXECUTABLE_LINKER__(\w+)")
@@ -897,6 +1296,7 @@ def act_build_targets(a):
 ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": act_git_pull,
            "git_branches": act_git_branches, "git_switch": act_git_switch, "options": act_options, "launch": act_launch, "list": act_list,
            "tail": act_tail, "stop": act_stop, "pack": act_pack, "summary": act_summary,
-           "points": act_points, "delete": act_delete}
+           "points": act_points, "delete": act_delete, "errors": act_errors,
+           "errfile": act_errfile}
 if __name__ == "__main__":
     ACTIONS[sys.argv[1]](sys.argv[2:])

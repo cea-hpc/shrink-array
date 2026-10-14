@@ -59,6 +59,57 @@ EN = {
     "Rafraîchir": "Refresh", "Arrêter": "Stop", "Récupérer les résultats": "Fetch results",
     "Reprendre ses options": "Reuse its options", "Supprimer": "Delete",
     "Log": "Log", "Résumé": "Summary", "Graphique": "Chart",
+    "Erreurs": "Errors", "Rafraîchir les erreurs": "Refresh errors",
+    "rechercher dans les erreurs (Entrée : suivant)": "search the errors (Enter: next)",
+    "(vide)": "(empty)",
+    "Pas de décompte d'erreurs pour ce run.": "No error count for this run.",
+    "temps": "time", "mémoire": "memory", "speedup": "speedup", "Config": "Config", "Mesure": "Measure",
+    "Échelle log": "Log scale",
+    "efficacité": "efficiency", "idéal": "ideal",
+    "speedup vs le premier nombre de threads": "speedup vs the first thread count",
+    "efficacité (speedup × min / threads)": "efficiency (speedup × min / threads)",
+    "meilleur temps (s)": "best time (s)",
+    "Superpose un autre run de omp_speedup.py de la même architecture (en pointillés) -- un autre "
+    "compilateur, un autre commit -- et donne le rapport B / A sur leurs points communs":
+        "Overlays another omp_speedup.py run of the same architecture (dashed) -- another compiler, another "
+        "commit -- and gives the B / A ratio over their common points",
+    "tailles ou modes différents : comparer les speedups, pas les temps":
+        "different sizes or modes: compare the speedups, not the times",
+    "couleur : la variante (vector en gris) · forme : la taille (rond dyn, carré 1024, triangle 256, losange 64)":
+        "colour: the variant (vector in grey) · shape: the size (dot dyn, square 1024, triangle 256, diamond 64)",
+    "Superpose un autre run de bench_and_test.py de la même architecture (en pointillés) et donne le "
+    "rapport B / A sur leurs points communs":
+        "Overlays another bench_and_test.py run of the same architecture (dashed) and gives the "
+        "B / A ratio over their common points",
+    "temps moyen (s)": "mean time (s)", "mémoire pic (Mo)": "peak memory (MB)",
+    "speedup vs la variante de référence": "speedup vs the baseline variant",
+    "speedup : la variante de référence n'a pas de point (1 par définition)":
+        "speedup: the baseline variant has no point (1 by definition)",
+    "Relancer les échecs…": "Rerun failures…", "Relancer les échecs": "Rerun failures",
+    "Répétitions": "Repetitions", "log d'erreurs": "error log",
+    "pas de sortie complète enregistrée pour cet échec (une comparaison ou un garde, un bench_and_test.py "
+    "plus ancien, ou --no-full-log)":
+        "no complete output recorded for this failure (a comparison or a guard, an older bench_and_test.py, "
+        "or --no-full-log)",
+    "pas de sortie complète enregistrée pour cet échec": "no complete output recorded for this failure",
+    "non rejouable par --rerun-failed : il faut un run complet": "not replayable by --rerun-failed: it takes a full run",
+    "sortie complète d'une exécution en échec, trouvée dans le dossier des logs (écrite pendant ce run)":
+        "complete output of a failed execution, found in the logs directory (written during this run)",
+    "Chaque échec est rejoué jusqu'à N fois, arrêt au premier échec : pour un échec intermittent "
+    "(--rerun-repeat).":
+        "Each failure is replayed up to N times, stopping at the first failure: for an intermittent "
+        "failure (--rerun-repeat).",
+    "Le log d'erreurs du run, lu dans son dossier de sortie : bench_errors.log pour "
+    "bench_and_test.py (une entrée par échec, écrite dès qu'il survient, avec la fin "
+    "de sa sortie d'erreur ; la sortie complète de chaque exécution est dans run_logs/), "
+    "les error_*.txt des runs en échec pour multi_launch_stress.py. Le plus récent "
+    "d'abord, la fin de chaque fichier seulement.\n\nL'onglet passe en rouge "
+    "quand il y a des erreurs.":
+        "The run's error log, read in its output directory: bench_errors.log for bench_and_test.py "
+        "(one entry per failure, written as soon as it happens, with the end of its error output; "
+        "the full output of every execution is in run_logs/), the error_*.txt of the failed runs for "
+        "multi_launch_stress.py. Newest first, the end of each file only.\n\nThe tab turns red "
+        "when there are errors.",
     "rechercher dans le log (Entrée : suivant)": "search the log (Enter: next)",
     "Suivre la fin": "Follow the end", "Rafraîchir le résumé": "Refresh the summary",
     # chart controls
@@ -409,8 +460,10 @@ EN_RE = [(re.compile(a), b) for a, b in (
      + (" (+ local copy)" if m.group(4) else "")),
     (r"^Supprimer le run (\S+) \?\n\nSur inti, son dossier \(log, scripts, code de retour\)\.$",
      r"Delete run \1?\n\nOn inti, its directory (log, scripts, exit code)."),
-    (r"^aussi ses logs dans le dossier de sortie partagé \((.+) ; jamais oracle/\)$",
-     r"also its logs in the shared output directory (\1; never oracle/)"),
+    (r"^aussi ce qu'il a écrit dans le dossier de sortie partagé \((.+) ; les fichiers des autres runs et "
+     r"oracle/ restent\)$",
+     r"also what it wrote in the shared output directory (\1; the other runs' files and oracle/ stay)"),
+    (r"date de soumission de (\S+) illisible : rien supprimé", r"submission date of \1 unreadable: nothing deleted"),
     (r"^aussi la copie locale (.+)$", r"also the local copy \1"),
     (r"^pas de dossier de sortie annoncé dans le log de (\S+)$", r"no output directory announced in the log of \1"),
     (r"^dossier de sortie refusé : (.+)$", r"output directory refused: \1"),
@@ -429,7 +482,79 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"aucune option reconnue dans (\S+) --help", r"no option recognised in \1 --help"),
     (r"^pas encore de (\S+)$", r"no \1 yet"), (r"(\S+) est vide", r"\1 is empty"),
     (r"pas de résumé pour ce programme", "no summary for this program"),
+    (r"pas de log d'erreurs pour ce programme", "no error log for this program"),
+    (r"pas encore de dossier de sortie annoncé dans le log", "no output directory announced in the log yet"),
+    (r"^aucun fichier (.+) dans (\S+)$", r"no \1 file in \2"),
+    (r"^(\d+) erreur\(s\) — ", r"\1 error(s) — "), (r"^aucune erreur — ", "no error — "),
+    (r"^attention : (\S+), plus récent ou actif, écrit aussi dans ce dossier : ces fichiers sont peut-être "
+     r"les siens$", r"warning: \1, newer or active, also writes in this directory: these files may be its own"),
+    (r"^les (\d+) plus récents sur (\d+) fichiers$", r"the \1 newest of \2 files"),
+    (r"^══ (.+) : introuvable ══$", r"══ \1: not found ══"),
+    (r"^Comparaison — ", "Comparison — "),
+    (r"^(?:Comparison — )?(speedup vs le premier nombre de threads|efficacité \(speedup × min / threads\)|"
+     r"meilleur temps \(s\)) — ",
+     lambda m: m.group(0).replace("speedup vs le premier nombre de threads", "speedup vs the first thread count")
+     .replace("efficacité (speedup × min / threads)", "efficiency (speedup × min / threads)")
+     .replace("meilleur temps (s)", "best time (s)")),
+    (r"^A : (.+), traits pleins — B : (.+), pointillés$", r"A: \1, solid — B: \2, dashed"),
+    (r"  —  B / A : ×([\d.]+), moyenne géométrique sur (\d+) point\(s\) communs$",
+     r"  —  B / A: ×\1, geometric mean over \2 common point(s)"),
+    (r"^pas encore de summary\.csv$", "no summary.csv yet"),
+    (r"^A : (\S+) \(traits pleins, ronds\) — B : (\S+) \(pointillés, triangles\)$",
+     r"A: \1 (solid, dots) — B: \2 (dashed, triangles)"),
+    (r"^(?:Comparison — )?(temps moyen \(s\)|mémoire pic \(Mo\)|speedup vs la variante de référence) selon "
+     r"le nombre de threads — ",
+     lambda m: m.group(0).replace("temps moyen (s)", "mean time (s)").replace("mémoire pic (Mo)", "peak memory (MB)")
+     .replace("speedup vs la variante de référence", "speedup vs the baseline variant")
+     .replace(" selon le nombre de threads — ", " against the thread count — ")),
+    (r"^(\d+) point\(s\)", r"\1 point(s)"),
+    (r"  —  (\S+) / (\S+) : ×", r"  —  \1 / \2: ×"),
+    (r" % plus lent\)", " % slower)"), (r" % plus rapide\)", " % faster)"),
+    (r" % de mémoire en plus\)", " % more memory)"), (r" % de mémoire en moins\)", " % less memory)"),
+    (r" % de speedup en plus\)", " % more speedup)"), (r" % de speedup en moins\)", " % less speedup)"),
+    (r", moyenne géométrique sur (\d+) point\(s\) communs \(toutes configs\)",
+     r", geometric mean over \1 common point(s) (all configs)"),
+    (r" ; le pire : ×", "; the worst: ×"),
+    (r"(×[\d.]+ \([\d.]+ % [a-z ]+\)) sur (\S+)", r"\1 on \2"),
+    (r"(\(all configs\)) ; ×", r"\1; ×"),
+    (r"  —  aucun point commun aux deux runs", "  —  no point common to both runs"),
+    (r"^les deux runs lisent le même bench_summary\.csv partagé \(lancés avant que chaque run en garde une "
+     r"copie\) : la comparaison n'a pas de sens$",
+     "both runs read the same shared bench_summary.csv (submitted before each run kept a copy): "
+     "the comparison means nothing"),
+    (r"^(\S+) : bench_summary\.csv partagé de l'architecture, peut-être réécrit par un run plus récent$",
+     r"\1: the architecture's shared bench_summary.csv, maybe rewritten by a newer run"),
+    (r"^(\d+) run\(s\) en échec \(timings_summary\.csv\)\. Le détail : onglet Erreurs\.$",
+     r"\1 failed run(s) (timings_summary.csv). The details: Errors tab."),
+    (r"^(\d+) erreur\(s\) \(events\.jsonl\)\. Le détail : onglet Erreurs\.", r"\1 error(s) (events.jsonl). "
+     r"The details: Errors tab."),
+    (r"\n\nDernière : ", "\n\nLast: "),
+    (r" ?: première erreur, le run continue$", ": first error, the run goes on"),
+    (r"^(\S+) : première erreur$", r"\1: first error"),
+    (r"^relance des échecs de (\S+) : la liste ne garde que ce qui échoue encore, bench_errors\.log est "
+     r"celui du run rejoué$",
+     r"rerun of the failures of \1: the list keeps only what still fails, bench_errors.log is the replayed run's"),
+    (r"^Soumet un nouveau run qui rejoue les (\d+) échec\(s\) rejouable\(s\) de ce run \(--rerun-failed\), "
+     r"mêmes partition et options\. Désactivé tant que le run tourne\.$",
+     r"Submits a new run replaying the \1 replayable failure(s) of this run (--rerun-failed), same partition "
+     r"and options. Disabled while the run is running."),
+    (r"^Rejouer les (\d+) échec\(s\) rejouable\(s\) de (\S+) \(bench_and_test\.py --rerun-failed\), sur la "
+     r"même partition, avec les mêmes options\.", r"Replay the \1 replayable failure(s) of \2 "
+     r"(bench_and_test.py --rerun-failed), on the same partition, with the same options."),
+    (r"\n(\d+) autre\(s\) \(une comparaison, un garde\) demandent un run complet\.",
+     r"\n\1 other(s) (a comparison, a guard) need a full run."),
+    (r"\n\nAttention : (\S+), plus récent ou actif, écrit aussi dans ce dossier : failed_cases\.jsonl est "
+     r"peut-être le sien\.", r"\n\nWarning: \1, newer or active, also writes in this directory: "
+     r"failed_cases.jsonl may be its own."),
+    (r"^\[gui\] … les (.+) du début ne sont pas affichés \(« Récupérer les résultats » copie le fichier "
+     r"complet\)$", r'[gui] … the first \1 are not shown ("Fetch results" copies the whole file)'),
+    (r"« (.*) » absent des erreurs", r'"\1" not found in the errors'),
     (r"graphique disponible pour multi_launch_stress\.py seulement", "chart available for multi_launch_stress.py only"),
+    (r"graphique disponible pour multi_launch_stress\.py et bench_and_test\.py seulement",
+     "chart available for multi_launch_stress.py and bench_and_test.py only"),
+    (r"graphique disponible pour multi_launch_stress\.py, bench_and_test\.py et omp_speedup\.py seulement",
+     "chart available for multi_launch_stress.py, bench_and_test.py and omp_speedup.py only"),
+    (r"^pas encore de (\S+) \(écrit à la fin du run\)$", r"no \1 yet (written at the end of the run)"),
     (r"— (\d+) ligne\(s\), les 1000 dernières", r"— \1 row(s), the last 1000"),
     (r"— (\d+) ligne\(s\)", r"— \1 row(s)"),
     (r"nom de run invalide", "invalid run name"), (r"n'est pas un run", "is not a run"),

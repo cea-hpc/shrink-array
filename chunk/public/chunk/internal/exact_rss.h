@@ -29,11 +29,15 @@
  * periodic hot path.
  */
 
-#include <atomic>   // std::atomic, std::memory_order
-#include <chrono>   // std::chrono::milliseconds
-#include <cstdio>   // std::FILE, std::fopen, std::fclose
-#include <thread>   // std::thread, std::this_thread::sleep_for
-#include <unistd.h> // sysconf(_SC_PAGESIZE)
+#include <array>        // std::array (the smaps_rollup line buffer)
+#include <atomic>       // std::atomic, std::memory_order
+#include <charconv>     // std::from_chars (the "Rss:" value)
+#include <chrono>       // std::chrono::milliseconds
+#include <cstdio>       // std::FILE, std::fopen, std::fclose
+#include <string_view>  // std::string_view (the "Rss:" line)
+#include <system_error> // std::errc
+#include <thread>       // std::thread, std::this_thread::sleep_for
+#include <unistd.h>     // sysconf(_SC_PAGESIZE)
 
 namespace shrink_array
 {
@@ -44,12 +48,24 @@ inline long exact_rss_kib() noexcept
 {
     if (std::FILE* f = std::fopen("/proc/self/smaps_rollup", "r"))
     {
-        char line[256];
-        long kib = -1;
-        while (std::fgets(line, sizeof line, f) != nullptr)
+        std::array<char, 256> line{};
+        long                  kib = -1;
+        while (std::fgets(line.data(), static_cast<int>(line.size()), f) != nullptr)
         {
-            if (std::sscanf(line, "Rss: %ld kB", &kib) == 1)
+            // "Rss:   <n> kB": the key, blanks, then the number.
+            constexpr std::string_view key = "Rss:";
+            std::string_view           sv(line.data());
+            if (!sv.starts_with(key))
             {
+                continue;
+            }
+            sv.remove_prefix(key.size());
+            const std::size_t first = sv.find_first_not_of(" \t");
+            sv.remove_prefix(first == std::string_view::npos ? sv.size() : first);
+            long v = 0;
+            if (const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), v); ec == std::errc{})
+            {
+                kib = v;
                 break;
             }
         }

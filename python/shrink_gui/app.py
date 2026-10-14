@@ -1,39 +1,40 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """The main window."""
-import ast
-import base64
-import html
-import io
-import json
-import os
-import platform
-import re
 import sys
-import tarfile
-import time
 
-from PySide6.QtCharts import (QChart, QLegend, QLineSeries, QLogValueAxis, QScatterSeries, QValueAxis)
-from PySide6.QtCore import QPointF, QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QKeySequence, QPen, QTextCursor
+from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCursor
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
-                               QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
-                               QPushButton, QScrollArea, QSplitter, QStyle, QSystemTrayIcon,
-                               QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+                               QHeaderView, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QPushButton,
+                               QScrollArea, QSplitter, QStyle, QSystemTrayIcon, QTableWidget,
+                               QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from shrink_gui import i18n, qos
-from shrink_gui.config import (APP, ARCH_DEFAULTS, BATCH, BUILD_REP, COLOR_BY, DEFAULTS, DETACHED, LOCAL,
-                               LOCAL_DEFAULTS, PRESETS, PROGRAMS, QOS_FALLBACK, SITE, VIZ, exe_parts)
+from shrink_gui.config import APP, DEFAULTS, LOCAL, PROGRAMS, QOS_FALLBACK
+from shrink_gui.git_panel import GitPanel
 from shrink_gui.i18n import T, status_text, tip
+from shrink_gui.launch_form import LaunchForm
+from shrink_gui.machine_panel import MachinePanel
 from shrink_gui.remote import Remote
-from shrink_gui.runscripts import make_launch_sh, make_local_launch_sh, make_run_sh
-from shrink_gui.widgets import (DurationBox, LogView, NumItem, OptionsForm, PickerDialog, ScatterView, TLabel,
-                                ask, families, split_list, unique_globs)
+from shrink_gui.run_actions import RunActions
+from shrink_gui.tab_bench_chart import BenchChart
+from shrink_gui.tab_chart import ChartTab
+from shrink_gui.tab_errors import ErrorsTab
+from shrink_gui.tab_speedup_chart import SpeedupChart
+from shrink_gui.tab_summary import SummaryTab
+from shrink_gui.tooltips import Tooltips
+from shrink_gui.widgets import DurationBox, LogView, OptionsForm, TLabel
 
 
-class Main(QMainWindow):
-    COLS = ["Run", "Programme", "Partition", "Commit", "Job", "Statut", "Avancement", "Dernière ligne"]
+class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab, BenchChart, ErrorsTab,
+           SpeedupChart, Tooltips, QMainWindow):
+    COLS = ["Run", "Programme", "Partition", "Commit", "Job", "Statut", "Avancement", "Erreurs",
+            "Dernière ligne"]
     COL_STATUS = 5
+    COL_ERRORS = 7
+    # the tabs under the runs table, in this order
+    TAB_LOG, TAB_SUMMARY, TAB_CHART, TAB_ERRORS = range(4)
     ACTIVE = ("en cours", "en attente", "démarrage")
 
     def __init__(self):
@@ -47,6 +48,7 @@ class Main(QMainWindow):
         self.tail_busy = False
         self.list_busy = False
         self.prev_status = None  # id -> status at the previous refresh (notifications)
+        self.prev_errors = {}    # id -> errors at the previous refresh (first-error notice)
         self.build_info = {}     # arch suffix -> act_build_targets (the "Choisir…" lists)
         self.local_info = None   # this machine, from the check: machine, cpus, mem_gb
         self.rescan = False      # read the options again at the next check (machine changed)
@@ -286,87 +288,18 @@ class Main(QMainWindow):
         lgl.addWidget(self.log, 1)
         find_act = QAction(self)
         find_act.setShortcut(QKeySequence.Find)
-        find_act.triggered.connect(lambda: (self.tabs.setCurrentIndex(0), self.find.setFocus(),
-                                            self.find.selectAll()))
+        find_act.triggered.connect(self.focus_find)
         self.addAction(find_act)
 
-        # summary tab
-        self.sum_note = TLabel("")
-        self.sum_table = QTableWidget(0, 0)
-        self.sum_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.sum_table.verticalHeader().setVisible(False)
-        self.sum_table.setSortingEnabled(True)
-        bsum = QPushButton("Rafraîchir le résumé")
-        bsum.clicked.connect(self.load_summary)
-        self.sum_view = QComboBox()
-        self.sum_view.setVisible(False)
-        self.sum_view.currentIndexChanged.connect(self.show_section)
-        srow = QHBoxLayout()
-        srow.addWidget(self.sum_view)
-        srow.addWidget(self.sum_note, 1)
-        srow.addWidget(bsum)
-        sumw = QWidget()
-        sl = QVBoxLayout(sumw)
-        sl.setContentsMargins(0, 0, 0, 0)
-        sl.addLayout(srow)
-        sl.addWidget(self.sum_table, 1)
-
-        # chart tab: seconds per run against threads (multi_launch_stress.py)
-        self.pt_data = None
-        self.pt_data_b = None
-        self.pt_build = QComboBox()
-        self.pt_build.currentIndexChanged.connect(self.draw_points)
-        self.pt_variant = QComboBox()
-        for v in ("toutes", "chunk", "chunk2", "chunk2a"):
-            self.pt_variant.addItem(T(v), v)
-        self.pt_variant.currentIndexChanged.connect(self.draw_points)
-        self.pt_cmp = QComboBox()
-        self.pt_cmp.setMinimumContentsLength(24)
-        self.pt_cmp.setToolTip("Superpose un autre run de multi_launch_stress.py : "
-                               "même build et même variante de part et d'autre")
-        self.pt_cmp.currentIndexChanged.connect(self.load_points)
-        self.pt_color = QComboBox()
-        for k in COLOR_BY:
-            self.pt_color.addItem(T(k), k)
-        self.pt_color.currentIndexChanged.connect(self.draw_points)
-        self.pt_log = QCheckBox("Temps en échelle log")
-        self.pt_log.toggled.connect(self.draw_points)
-        self.pt_median = QCheckBox("Médiane par tranche de threads")
-        self.pt_median.setChecked(True)
-        self.pt_median.toggled.connect(self.draw_points)
-        self.pt_ok_only = QCheckBox("Masquer les échecs")
-        self.pt_ok_only.toggled.connect(self.draw_points)
-        bpts = QPushButton("Rafraîchir")
-        bpts.clicked.connect(self.load_points)
-        prow2 = QHBoxLayout()
-        prow2.addWidget(QLabel("Build"))
-        prow2.addWidget(self.pt_build)
-        prow2.addWidget(QLabel("Variante"))
-        prow2.addWidget(self.pt_variant)
-        prow2.addWidget(QLabel("Couleur"))
-        prow2.addWidget(self.pt_color)
-        prow2.addWidget(QLabel("Comparer avec"))
-        prow2.addWidget(self.pt_cmp, 1)
-        prow2.addWidget(bpts)
-        prow3 = QHBoxLayout()
-        prow3.addWidget(self.pt_log)
-        prow3.addWidget(self.pt_median)
-        prow3.addWidget(self.pt_ok_only)
-        prow3.addStretch(1)
-        self.pt_note = TLabel("")
-        self.pt_view = ScatterView()
-        ptw = QWidget()
-        ptl = QVBoxLayout(ptw)
-        ptl.setContentsMargins(0, 0, 0, 0)
-        ptl.addLayout(prow2)
-        ptl.addLayout(prow3)
-        ptl.addWidget(self.pt_note)
-        ptl.addWidget(self.pt_view, 1)
+        sumw = self.build_summary_tab()
+        ptw = self.build_chart_tab()
+        errw = self.build_errors_tab()
 
         self.tabs = QTabWidget()
         self.tabs.addTab(logw, "Log")
         self.tabs.addTab(sumw, "Résumé")
         self.tabs.addTab(ptw, "Graphique")
+        self.tabs.addTab(errw, "Erreurs")
         self.tabs.currentChanged.connect(self.tab_changed)
 
         # end-of-run notification: the tray when there is one
@@ -462,259 +395,8 @@ class Main(QMainWindow):
             for i in range(c.count()):
                 c.setItemText(i, T(c.itemText(i)))
 
-    # ------------------------------------------------------------- tooltips
-    TIPS = {
-        "host": "Nom d'hôte ssh du calculateur (tel qu'il figure dans ~/.ssh/config).\n\n"
-                "Tout passe par la connexion maître que vous ouvrez vous-même : ssh -fNM inti.",
-        "preset": "La partition où le run est soumis. Elle fixe aussi l'architecture (ARM ou x86), "
-                  "donc les valeurs par défaut des options.",
-        "mode": "ccc_msub : job batch, indépendant de cette fenêtre et du nœud de login "
-                "(recommandé).\n\nccc_mprun détaché : lancé depuis le nœud de login ; il dépend de ce "
-                "nœud tant qu'il tourne.\n\nEn arrière-plan sur cette machine : sans gestionnaire de "
-                "jobs, indépendant de cette fenêtre ; la durée max est appliquée par timeout (code 124).",
-        "local_cb": "Lancer les runs sur cette machine plutôt que sur le calculateur : pas de ssh ni de "
-                    "gestionnaire de jobs, le run tourne en arrière-plan ici (sous Windows, dans WSL). "
-                    "Dépôt et dossier des runs sont mémorisés à part.",
-        "time_s": "Durée maximale du job (-T). Au-delà, le job est tué par le gestionnaire et finit "
-                  "« terminé sans code ». Se tape « 1 h 30 », « 90 min », « 2 j » ou « 1-00:00:00 ».\n\n"
-                  "Mémorisée par programme : compile_all.sh court, bench_and_test.py quelques heures, "
-                  "multi_launch_stress.py long.",
-        "qos": "La QoS du job, dont dépend la durée maximale : la liste a les QoS de la partition, "
-               "avec leurs limites (ccc_mqinfo).\n\n« auto » prend la plus prioritaire qui accepte la "
-               "durée, puis la plus courte. Une QoS écrite dans les directives l'emporte.\n\nLes limites "
-               "sont relues sur inti à chaque vérification de la connexion.",
-        "after": "Démarrer après la fin d'une compilation (run compile_all.sh pas encore fini).\n\n"
-                 "ccc_msub : dépendance Slurm (le job attend dans la file sans prendre de nœud). "
-                 "ccc_mprun détaché : le lancement attend le code de retour de ce run.\n\n"
-                 "« si elle réussit » : une compilation en échec, et le run ne démarre jamais "
-                 "(en batch il reste en attente : à arrêter).",
-        "delay_on": "Ne pas démarrer avant ce délai, compté depuis la soumission "
-                    "(ccc_msub : --begin de Slurm ; ccc_mprun détaché : une attente avant le lancement).",
-        "check_builds": "Avant la commande, sur le nœud : ninja -n sur les exécutables déjà construits "
-                        "de chaque build que le programme utilisera (--configs de bench_and_test.py, "
-                        "--builds de multi_launch_stress.py, sous --build-root). Un build dont une "
-                        "source, un en-tête ou la configuration a changé depuis sa compilation n'est "
-                        "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.",
-        "directives": "Lignes #MSUB du script batch (ou options ccc_mprun en mode détaché). Propres à "
-                      "la partition, mémorisées.\n\n-T, -r, -o et -e sont ajoutés d'après le formulaire.",
-        "repo": "Le dépôt shrink-array SUR INTI. Les options sont lues dans ces scripts-là, et c'est "
-                "là que le job s'exécute.",
-        "runs_dir": "Où l'interface range ses runs sur inti : un dossier par run (log, scripts, "
-                    "code de retour, numéro de job).",
-        "local_dir": "Où « Récupérer les résultats » copie les fichiers sur ce portable.",
-        "local_repo": "Votre clone du dépôt sur ce portable (facultatif). La ligne de connexion compare "
-                      "alors son commit à celui du dépôt d'inti : un écart veut dire qu'un push ou un "
-                      "git pull manque.",
-        "program": "Le script à lancer. Ses options sont lues dans le script lui-même sur inti.",
-        "opt_filter": "Ne montre que les options dont le nom ou l'aide contient ce texte.",
-        "extra": "Arguments ajoutés tels quels à la fin de la commande : pour une option que le "
-                 "formulaire ne connaît pas (--no-gnu de compile_all.sh, par exemple).",
-        "preview": "La commande exacte qui sera exécutée sur le nœud. Seules les options modifiées "
-                   "(en gras) y figurent : les autres gardent le défaut du script.",
-        "table": "Les runs du dossier « Runs (inti) », du plus récent au plus ancien. Cliquez sur un "
-                 "run pour voir son log, son résumé et son graphique.\n\nRafraîchi toutes les 15 s.",
-        "find": "Recherche dans le log (Ctrl+F). Entrée : occurrence suivante, avec retour au début.",
-        "follow": "Fait défiler le log jusqu'à la fin à chaque nouvelle ligne. Décochée, le log "
-                  "reste où vous êtes.",
-        "pt_build": "Ne montre que les runs de ce build.",
-        "pt_variant": "Ne montre que les runs de cette variante (chunk, chunk2, chunk2a).",
-        "pt_color": "Ce que la couleur distingue : la variante, la taille de chunk, ou rien. Trois "
-                    "couleurs au plus ; le reste est groupé en gris « autres ».",
-        "pt_log": "Axe du temps en échelle logarithmique : utile quand les temps s'étalent sur "
-                  "plusieurs ordres de grandeur.",
-        "pt_median": "Médiane du temps par tranche de threads (au moins 3 runs par tranche) : la "
-                     "tendance malgré la dispersion.",
-        "pt_ok_only": "Retire les runs en échec (triangles) du graphique.",
-        "sum_view": "bench_and_test.py : ses phases (durée, erreurs, d'après events.jsonl) ou son "
-                    "bench_summary.csv.",
-    }
-    BUTTON_TIPS = {
-        "Vérifier la connexion": "Vérifie la connexion maître ssh et le python3 d'inti, puis "
-                                 "rafraîchit la liste des runs.",
-        "Lire les options": "Relit les options du script sur inti : à faire après avoir modifié ou "
-                            "mis à jour le script.",
-        "Défauts de l'architecture": "Remet les options aux valeurs par défaut de l'architecture "
-                                     "de la partition (ARM ou x86).",
-        "Enregistrer comme défauts": "Enregistre les options actuelles comme valeurs par défaut "
-                                     "de ce programme sur cette architecture.",
-        "Soumettre": "Crée le dossier du run sur inti et soumet le job.",
-        "Rafraîchir": "Relit maintenant (sinon automatique).",
-        "Arrêter": "Annule le job du run sélectionné (ccc_mdel), ou arrête ccc_mprun en mode détaché.",
-        "Récupérer les résultats": "Copie sur ce portable le dossier du run et les fichiers de "
-                                   "résultats du programme (CSV, log, erreurs ; jamais les output_*).",
-        "Reprendre ses options": "Remet dans le formulaire le programme, la partition et les options "
-                                 "du run sélectionné, pour le relancer ou le modifier.",
-        "Supprimer": "Supprime le dossier du run sur inti ; au choix, aussi les sorties du "
-                     "programme propres à ce run et la copie locale. Seulement pour un run terminé.",
-        "Rafraîchir le résumé": "Relit le fichier résumé du run sélectionné.",
-        "git pull": "git pull dans le dépôt d'inti (fusion si les branches ont divergé). "
-                    "Un conflit annule le pull : le dépôt reste tel qu'il était.",
-        "git pull --rebase": "git pull --rebase dans le dépôt d'inti : vos commits locaux "
-                             "d'inti sont rejoués au-dessus de la branche distante. Un conflit "
-                             "annule le rebase : le dépôt reste tel qu'il était.",
-        "Changer de branche": "Extrait dans le dépôt d'inti la branche choisie dans la liste. Une "
-                              "branche distante (origin/x) sans branche locale donne une branche "
-                              "locale x qui la suit. Refusé si le dépôt a des modifications non "
-                              "commitées. git pull agit ensuite sur cette branche.",
-        "Relire les branches": "git fetch dans le dépôt d'inti, puis relit la liste des branches.",
-    }
-
-    def set_tooltips(self):
-        for name, text in self.TIPS.items():
-            w = getattr(self, name, None)
-            if w is not None:
-                w.setToolTip(tip(text))
-        for b in self.findChildren(QPushButton):
-            if b.text() in self.BUTTON_TIPS and not b.toolTip():
-                b.setToolTip(tip(self.BUTTON_TIPS[b.text()]))
-            elif b.toolTip() and not b.toolTip().startswith("<qt>"):
-                b.setToolTip(tip(b.toolTip()))
-        if self.launcher.toolTip() and not self.launcher.toolTip().startswith("<qt>"):
-            self.launcher.setToolTip(tip(self.launcher.toolTip()))
-        if self.pt_cmp.toolTip() and not self.pt_cmp.toolTip().startswith("<qt>"):
-            self.pt_cmp.setToolTip(tip(self.pt_cmp.toolTip()))
-        # the entries of the drop-down lists
-        for i in range(self.preset.count()):
-            p = PRESETS[self.preset.itemData(i)]
-            self.preset.setItemData(i, tip(f"{p['label']}\n\n" + p["msub"].strip()
-                                           + (f"\nlanceur : {p['launcher']}" if p.get("launcher") else "")),
-                                    Qt.ToolTipRole)
-        prog_tips = {
-            "multi_launch_stress.py": "Stress : les binaires de check, en boucle, à un nombre de "
-                                      "threads tiré au hasard. Résumé et graphique disponibles.",
-            "bench_and_test.py": "Bench et tests : validations ctest, checks, sanitizers, comparaison "
-                                 "seq/omp et mesures de performance.",
-            "compile_all.sh": "Compilation de toutes les configurations, en job batch (ccc_msub) ou sur cette "
-                              "machine, jamais depuis le nœud de login. Options lues dans le texte de son "
-                              "usage(), sans l'exécuter.",
-        }
-        for i in range(self.program.count()):
-            t = prog_tips.get(self.program.itemText(i))
-            if t:
-                self.program.setItemData(i, tip(t), Qt.ToolTipRole)
-        mode_tips = {"msub": self.TIPS["mode"].split("\n\n")[0],
-                     "mprun": self.TIPS["mode"].split("\n\n")[1],
-                     "local": self.TIPS["mode"].split("\n\n")[2]}
-        for i in range(self.mode.count()):
-            self.mode.setItemData(i, tip(mode_tips[self.mode.itemData(i)]), Qt.ToolTipRole)
-        tab_tips = ["Le log du run sélectionné, suivi en direct.",
-                    "Le résumé du run : par build pour multi_launch_stress.py (runs, échecs, temps), "
-                    "le CSV tel quel pour bench_and_test.py.",
-                    "Temps de chaque run selon le nombre de threads (multi_launch_stress.py). "
-                    "Survolez un point pour le détail ; « Comparer avec » superpose un autre run."]
-        for i, t in enumerate(tab_tips):
-            self.tabs.setTabToolTip(i, tip(t))
-
-    # ---------------------------------------------------------------- utils
-    @staticmethod
-    def mqinfo_key():
-        """The settings key of the QoS table last read: the CEA site keeps the
-        historical key, another site its own."""
-        return "mqinfo" if SITE.name == "inti" else f"mqinfo/{SITE.name}"
-
-    @staticmethod
-    def batch_arg():
-        """The site's batch table, as the helper's check and stop take it."""
-        return base64.b64encode(json.dumps(BATCH).encode()).decode()
-
     def _get(self, key):
         return self.settings.value(key, DEFAULTS[key])
-
-    # ------------------------------------------------------------- machine
-    def is_local(self):
-        """The runs go on this machine ("cette machine"), not on the cluster."""
-        return self.local_cb.isChecked()
-
-    def machine(self):
-        """The host the helper runs on: LOCAL, or the ssh host name."""
-        return LOCAL if self.is_local() else self.host.text().strip()
-
-    def machine_name(self):
-        """The machine, as the labels name it."""
-        return "cette machine" if self.is_local() else (self.host.text().strip() or "?")
-
-    def _mkey(self, key, local=None):
-        """The settings key of a field kept per machine (repository, runs
-        directory): the cluster keeps the historical keys."""
-        local = self.is_local() if local is None else local
-        return f"local/{key}" if local else key
-
-    def _mget(self, key):
-        if self.is_local():
-            return self.settings.value(self._mkey(key), LOCAL_DEFAULTS[key])
-        return self._get(key)
-
-    def fill_machine_lists(self):
-        """The partitions and submission modes of the machine: the cluster's,
-        or this machine's single one (no scheduler: in the background)."""
-        local = self.is_local()
-        for c in (self.preset, self.mode):
-            c.blockSignals(True)
-            c.clear()
-        for key, p in PRESETS.items():
-            if bool(p.get("local")) == local:
-                self.preset.addItem(T(self.local_label()) if local else T(p["label"]), key)
-        if local:
-            self.mode.addItem(T("en arrière-plan sur cette machine"), "local")
-        else:
-            self.mode.addItem(T(BATCH["label"]), "msub")
-            if DETACHED:
-                self.mode.addItem(T(DETACHED["label"]), "mprun")
-            self.preset.setCurrentIndex(max(0, self.preset.findData(self._get("preset"))))
-            self.mode.setCurrentIndex(max(0, self.mode.findData(self._get("mode"))))
-        for c in (self.preset, self.mode):
-            c.blockSignals(False)
-
-    def local_label(self):
-        """This machine's "partition": what the check found there."""
-        r = self.local_info or {}
-        bits = [b for b in (r.get("machine"), f"{r['cpus']} cœurs" if r.get("cpus") else "",
-                            f"{r['mem_gb']:g} Gio" if r.get("mem_gb") else "") if b]
-        return "cette machine" + (" — " + ", ".join(bits) if bits else "")
-
-    def update_machine_labels(self):
-        name = self.machine_name()
-        self.setWindowTitle(T(f"shrink-array — runs sur {name} (prototype)"))
-        self.repo_label.setText(T(f"Dépôt ({name})"))
-        self.git_label.setText(T(f"Git ({name})"))
-        self.branch_label.setText(T(f"Branche ({name})"))
-        self.runs_label.setText(T(f"Runs ({name})"))
-        local = self.is_local()
-        self.host.setEnabled(not local)
-        for w in (self.qos_row, self.directives):    # the scheduler's QoS and directive lines
-            self.where.setRowVisible(w, not local and (w is not self.qos_row or bool(BATCH["qos"])))
-
-    def machine_changed(self, *_):
-        """Cluster <-> this machine: each keeps its repository, runs directory,
-        partition and mode; the run list and the options are read again."""
-        was_local = not self.is_local()
-        for key, w in (("repo", self.repo), ("runs_dir", self.runs_dir)):
-            self.settings.setValue(self._mkey(key, was_local), w.text())
-        if not was_local:
-            self.settings.setValue("preset", self.preset.currentData())
-            self.settings.setValue("mode", self.mode.currentData())
-        self.settings.setValue("machine", LOCAL if self.is_local() else "")
-        self.repo.setText(self._mget("repo"))
-        self.runs_dir.setText(self._mget("runs_dir"))
-        self.fill_machine_lists()
-        self.preset_changed()
-        self.update_machine_labels()
-        self.runs, self.prev_status, self.current = [], None, None
-        self.table.setRowCount(0)
-        self.log.clear()
-        self.inti_git = None
-        self.show_git_state()
-        self.build_info.clear()
-        self.fill_after()
-        self.set_tooltips()
-        self.rescan = True
-        self.check()
-
-    def arch(self):
-        return PRESETS[self.preset.currentData()]["arch"]
-
-    def _directives_key(self, preset=None, mode=None):
-        return f"directives2/{preset or self.preset.currentData()}/{mode or self.mode.currentData()}"
 
     def save(self):
         for key, w in (("host", self.host), ("local_dir", self.local_dir), ("local_repo", self.local_repo)):
@@ -758,434 +440,6 @@ class Main(QMainWindow):
     def info(self, msg):
         self.statusBar().showMessage(T(msg), 10000)
 
-    # ------------------------------------------------- partition / program
-    def preset_changed(self, *_):
-        if self._preset_key:   # keep what was typed for the previous one
-            self.settings.setValue(self._preset_key, self.directives.toPlainText())
-            self.settings.setValue(self._launcher_key, self.launcher.text())
-        p = PRESETS[self.preset.currentData()]
-        builtin = p["msub"] if self.mode.currentData() == "msub" else p["mprun"]
-        self._preset_key = self._directives_key()
-        self.directives.setPlainText(self.settings.value(self._preset_key, builtin))
-        self._launcher_key = f"launcher/{self.preset.currentData()}"
-        self.launcher.setText(self.settings.value(self._launcher_key, p.get("launcher", "")))
-        # the launcher: of run.sh in the batch job, or on this machine
-        has_launcher = self.mode.currentData() in ("msub", "local")
-        self.launcher.setVisible(has_launcher)
-        self.launcher_row_label.setVisible(has_launcher)
-        self.launcher.setPlaceholderText(T(
-            "vide : run.sh directement ; pour plafonner la mémoire : systemd-run --user --scope -q "
-            "-p MemoryMax=16G -p MemorySwapMax=0" if self.mode.currentData() == "local"
-            else "vide : la commande tourne directement dans le job"))
-        self.apply_arch_defaults()
-        if hasattr(self, "qos_note"):
-            self.update_qos()
-
-    def program_changed(self, *_):
-        prog = self.program.currentText()
-        self.time_s.setValue(int(self.settings.value(f"time_s/{prog}",
-                                                     PROGRAMS[prog].get("time_s", DEFAULTS["time_s"]))))
-        cached = self.settings.value(f"schema/{self.program.currentText()}")
-        self.form.pickers = {d: self.pick for d in PROGRAMS[prog].get("pickers", {})}
-        self.check_builds.setEnabled("builds_opt" in PROGRAMS[prog])
-        self.form.build(json.loads(cached) if cached else None)
-        self.form.filter(self.opt_filter.text())
-        self.apply_arch_defaults()
-        if not cached:
-            QTimer.singleShot(0, self.scan)
-
-    def scan(self):
-        prog = self.program.currentText()
-        self.build_info.clear()      # re-read too, with the options
-        self.info(f"lecture des options de {prog}…")
-        self.last_error = None
-
-        def done(r):
-            if r is None:
-                if prog == self.program.currentText() and not self.form.schema:
-                    self.form.build(None, self.last_error or "erreur inconnue (voir la barre d'état)")
-                return
-            keep = self.form.values() if self.form.schema else None
-            self.settings.setValue(f"schema/{prog}", json.dumps(r))
-            if prog == self.program.currentText():
-                self.form.build(r)
-                if keep is not None:
-                    self.form.set_values(keep)
-                else:
-                    self.apply_arch_defaults()
-            self.form.filter(self.opt_filter.text())
-            via = f" (python {r['python']} sur {self.machine_name()})" if r.get("python") else ""
-            self.info(f"{prog} : {len(r['actions'])} options lues{via}")
-
-        spec = PROGRAMS[prog]
-        self.remote.helper("options", [self.repo.text().strip(), spec["script"], spec["scan"],
-                                       spec["interp"]], done)
-
-    def arch_defaults(self):
-        prog = self.program.currentText()
-        saved = self.settings.value(f"defaults/{prog}/{self.arch()}")
-        return json.loads(saved) if saved else dict(ARCH_DEFAULTS.get((prog, self.arch()), {}))
-
-    def apply_arch_defaults(self):
-        if hasattr(self, "form"):
-            self.form.set_values(self.arch_defaults())
-
-    def save_arch_defaults(self):
-        prog = self.program.currentText()
-        self.settings.setValue(f"defaults/{prog}/{self.arch()}", json.dumps(self.form.values()))
-        self.info(f"défauts enregistrés pour {prog} sur {self.arch()}")
-
-    # ------------------------------------------------- start conditions
-    def fill_after(self):
-        """What a submission can wait for: the compile_all.sh runs not
-        finished yet (a finished one needs no waiting)."""
-        keep = self.after.currentData() if self.after.count() else ""
-        self.after.blockSignals(True)
-        self.after.clear()
-        self.after.addItem(T("dès la soumission"), "")
-        for r in self.runs:
-            if (r["meta"].get("program") == "compile_all.sh"
-                    and (r["status"] in self.ACTIVE or r["status"].startswith("en attente"))):
-                self.after.addItem(T(f"après {r['id']}"), r["id"])
-        self.after.setCurrentIndex(max(0, self.after.findData(keep)))
-        self.after.blockSignals(False)
-        self.after_cond.setEnabled(bool(self.after.currentData()))
-
-    def form_value(self, dest):
-        """The value option @p dest will have: the form's, else the script's
-        default (a list default arrives as its repr)."""
-        v = self.form.values().get(dest)
-        if v not in (None, ""):
-            return v
-        for ac in (self.form.schema or {}).get("actions", []):
-            if ac["dest"] == dest:
-                d = ac["default"]
-                if isinstance(d, str) and d[:1] in "[(":
-                    try:
-                        return list(ast.literal_eval(d))
-                    except (ValueError, SyntaxError):
-                        return d
-                return d
-        return None
-
-    def build_check(self):
-        """The build check run.sh makes before the command
-        (runscripts.check_builds_call), or None: the builds the program will
-        use, read from its own options."""
-        opt = PROGRAMS[self.program.currentText()].get("builds_opt")
-        mode = self.check_builds.currentData()
-        if not opt or mode == "off" or not self.form.schema:
-            return None
-        builds = self.form_value(opt["builds"])
-        if not builds:
-            return None
-        root = self.form_value(opt["root"])
-        check = {"mode": mode, "root": root if isinstance(root, str) and root else "$CHUNK_BUILD_ROOT"}
-        if isinstance(builds, str):
-            parts = [x for x in re.split(r"[,\s]+", builds) if x]
-            if len(parts) == 1:          # a file of names (as multi_launch_stress --builds), or one name
-                check["builds_file"] = parts[0]
-                return check
-            builds = parts
-        check["builds"] = [str(b) for b in builds]
-        return check
-
-    def command(self):
-        prog = self.program.currentText()
-        parts = [PROGRAMS[prog]["interp"], os.path.basename(PROGRAMS[prog]["script"])] + self.form.args()
-        if self.extra.text().strip():
-            parts.append(self.extra.text().strip())
-        return " ".join(parts)
-
-    def update_preview(self, *_):
-        self.apply_time_by_mode()
-        if hasattr(self, "preview"):
-            self.preview.setPlainText(self.command())
-
-    def time_by_mode(self):
-        """The -T the program's "time_by_mode" gives for the chosen mode and
-        this partition's architecture, or None (no such entry, this machine)."""
-        spec = PROGRAMS[self.program.currentText()].get("time_by_mode")
-        if not spec or not hasattr(self, "form") or self.is_local():
-            return None
-        mode = self.form.values().get(spec["dest"]) or spec["default"]
-        secs = spec["seconds"].get(mode)
-        if secs is None:
-            return None
-        return int(round(secs * spec.get("arch_factor", {}).get(self.arch(), 1.0)))
-
-    def apply_time_by_mode(self):
-        """Set -T from time_by_mode() when the (program, mode, partition)
-        changed since the last time: a duration typed by hand stays until then."""
-        if not hasattr(self, "time_s") or not hasattr(self, "preset"):
-            return
-        t = self.time_by_mode()
-        if t is None:
-            self._time_mode_key = None
-            return
-        prog = self.program.currentText()
-        spec = PROGRAMS[prog]["time_by_mode"]
-        key = (prog, self.form.values().get(spec["dest"]) or spec["default"], self.preset.currentData())
-        if key != getattr(self, "_time_mode_key", None):
-            self._time_mode_key = key
-            if self.time_s.value() != t:
-                self.time_s.setValue(t)
-
-    # ---------------------------------------------- --target / --exec pickers
-    def arch_suffix(self):
-        """The <arch> component of compile_all.sh's build dirs ends with uname -m."""
-        if self.is_local():
-            return (self.local_info or {}).get("machine") or platform.machine()
-        return "aarch64" if self.arch() == "arm" else "x86_64"
-
-    def pick(self, dest):
-        """"Choisir…" of --target / --exec: what compile_all.sh can build on
-        this partition's architecture, read on inti (cached until "Lire les
-        options")."""
-        sfx = self.arch_suffix()
-        info = self.build_info.get(sfx)
-        if info is None:
-            self.info(f"lecture des builds de {sfx} sur {self.machine_name()}…")
-
-            def done(r):
-                if r is not None:
-                    self.build_info[sfx] = r
-                    self.info(f"{len(r['configs'])} configurations, {len(r['dirs'])} build(s) {sfx} "
-                              f"dans {r['build_rep']}")
-                    self.pick(dest)
-            # this machine: the builds are where site_env.sh puts them (the repository)
-            build_rep = "" if self.is_local() else BUILD_REP
-            self.remote.helper("build_targets", [self.repo.text().strip(), build_rep, sfx], done)
-            return
-        ac, w, _lab = self.form.widgets[dest]
-        multi = "comma" in (ac.get("help") or "").lower()
-        kind = PROGRAMS[self.program.currentText()]["pickers"][dest]
-        dlg = (self.target_dialog if kind == "configs" else self.exec_dialog)(info, w.text(), multi, sfx)
-        if dlg.exec():
-            w.setText(dlg.value())
-
-    def target_dialog(self, info, value, multi, sfx):
-        dirs = {d["name"]: d for d in info["dirs"]}
-        names = sorted(set(info["configs"]) | set(dirs))
-        items = []
-        for n in names:
-            d = dirs.get(n)
-            if d and d["configured"]:
-                when = time.strftime("%Y-%m-%d", time.localtime(d["mtime"]))
-                note = f"configurée, {len(d['execs'])} exécutable(s), {when}"
-            elif d:
-                note = "dossier sans build.ninja"
-            else:
-                note = ""
-            items.append((n, note))
-        pats = {g: c for g, c in families(names, "-").items()}
-        for kw in ("sanitizer", "debug", "check", "stats", "ledger", "cs"):
-            hits = [n for n in names if kw in n]
-            if 2 <= len(hits) < len(names):
-                pats[f"*{kw}*"] = len(hits)
-        order = sorted(pats.items(), key=lambda kv: (not (kv[0].startswith("*") and kv[0].endswith("*")),
-                                                     -kv[1], kv[0]))
-        patterns = [(g, f"motif : {c} configurations") for g, c in unique_globs(order, names)[:24]]
-        intro = (f"Configurations de compile_all.sh (cmake-build-<nom>). « configurée » : son build "
-                 f"existe déjà pour {sfx} dans {info['build_rep']}.")
-        return PickerDialog(self, "--target : configurations", intro, items, patterns, value, multi)
-
-    def exec_dialog(self, info, value, multi, sfx):
-        target = self.form.widgets["target"][1].text() if "target" in self.form.widgets else ""
-        import fnmatch
-        dirs = [d for d in info["dirs"] if d["configured"]
-                and (not split_list(target) or any(fnmatch.fnmatchcase(d["name"], g) for g in split_list(target)))]
-        count = {}
-        for d in dirs:
-            for e in d["execs"]:
-                count[e] = count.get(e, 0) + 1
-        items = [(e, f"dans {c}/{len(dirs)} build(s)") for e, c in sorted(count.items())]
-        patterns = [(g, f"motif : {c} exécutables")
-                    for g, c in unique_globs(families(sorted(count), "_").items(), sorted(count))[:24]]
-        if dirs:
-            scope = f"des {len(dirs)} build(s) {sfx} configurés" + (f" retenus par --target={target}" if target else "")
-            intro = (f"Exécutables {scope}. Ninja construit aussi leurs dépendances (bibliothèques chunk), "
-                     f"pas les autres exécutables.")
-        else:
-            intro = (f"Aucun build {sfx} configuré" + (f" pour --target={target}" if target else "")
-                     + f" dans {info['build_rep']} : rien à lister. Lancez d'abord compile_all.sh sans "
-                       "--exec (ou tapez le nom à la main).")
-        return PickerDialog(self, "--exec : exécutables", intro, items, patterns, value, multi)
-
-    # ------------------------------------------------------------------ QoS
-    def fill_qos(self, keep):
-        self.qos.blockSignals(True)
-        self.qos.clear()
-        self.qos.addItem(T("auto (selon la durée)"), "auto")
-        for name in qos.names(self.qos_rows):
-            self.qos.addItem(name, name)
-        self.qos.setCurrentIndex(max(0, self.qos.findData(keep)))
-        self.qos.blockSignals(False)
-
-    def time_changed(self, v):
-        """The duration is remembered per program (compile_all.sh is short,
-        multi_launch_stress.py long)."""
-        self.settings.setValue(f"time_s/{self.program.currentText()}", v)
-        self.update_qos()
-
-    def qos_choice(self):
-        """(qos to add with -Q or None, its row, error or None). A -Q already in
-        the directives wins over the list: it is only checked."""
-        directives = self.directives.toPlainText()
-        if not BATCH["qos"] or not self.qos_rows:    # no QoS known: the scheduler's default
-            return None, None, None
-        fixed = qos.explicit_qos(directives)
-        wanted = fixed or self.qos.currentData() or "auto"
-        name, row, err = qos.choose(self.qos_rows, self.preset.currentData(), qos.job_cpus(directives),
-                                    self.time_s.value(), wanted)
-        return (None if fixed else name), row, err
-
-    def update_qos(self, *_):
-        name, row, err = self.qos_choice()
-        if err:
-            self.qos_note.setText(f"<span style='color:#c0392b'>{html.escape(T(err), quote=False)}</span>")
-            return
-        if row is None:
-            self.qos_note.setText("")
-            return
-        name = name or qos.explicit_qos(self.directives.toPlainText())
-        bits = [T(f"max {qos.fmt(row['max_time'], i18n.LANG)}")]
-        if row["priority"] > min(r["priority"] for r in self.qos_rows):
-            bits.append(T("prioritaire"))
-        if row["max_sub"] and row["max_sub"] <= 10:     # test: 2; normal/long: 100, not worth a word
-            bits.append(T(f"{row['max_sub']} job(s) soumis au plus"))
-        fixed = T(" (fixée dans les directives)") if qos.explicit_qos(self.directives.toPlainText()) else ""
-        self.qos_note.setText(f"→ <b>{html.escape(name)}</b>{fixed} : " + ", ".join(bits)
-                              if i18n.LANG == "fr" else
-                              f"→ <b>{html.escape(name)}</b>{fixed}: " + ", ".join(bits))
-
-    # ----------------------------------------------------------- connection
-    def check(self):
-        host = self.host.text().strip()
-        self.conn.setText("vérification…")
-
-        def master(ok):
-            if not ok:
-                self.conn.setText(f"<span style='color:#c0392b'>pas de connexion maître : "
-                                  f"lancez <b>ssh -fNM {host}</b> dans un terminal</span>")
-                return
-            self.remote.helper("check", [self.repo.text().strip(), self.batch_arg()], helper_ok)
-
-        def helper_ok(r):
-            if r is None:
-                self.conn.setText("<span style='color:#c0392b'>python3 en échec sur cette machine "
-                                  "(voir la barre d'état)</span>" if self.is_local() else
-                                  "<span style='color:#c0392b'>connexion maître OK, mais python3 "
-                                  "distant en échec (voir la barre d'état)</span>")
-                return
-            if self.is_local():
-                self.local_info = r
-                self.preset.setItemText(0, T(self.local_label()))
-                self.inti_git = r.get("git")
-                self.show_git_state()
-                self.conn.setText(f"<span style='color:#1e8449'>cette machine — {r['host']}, "
-                                  f"python {r['python']}</span>{self.git_line()}")
-                self.refresh()
-                if self.rescan or not self.form.schema:
-                    self.rescan = False
-                    self.scan()
-                return
-            warn = "" if r.get("msub") else " — <b>ccc_msub introuvable</b>"
-            rows = qos.parse_mqinfo(r.get("mqinfo") or "")
-            if rows:
-                self.settings.setValue(self.mqinfo_key(), r["mqinfo"])
-                self.qos_rows = rows
-                self.fill_qos(self.qos.currentData())
-                self.update_qos()
-            self.inti_git = r.get("git")
-            self.show_git_state()
-            if self.inti_git:
-                self.load_branches()
-            self.conn.setText(f"<span style='color:#1e8449'>connecté — {r['host']}, "
-                              f"python {r['python']}</span>{warn}{self.git_line()}")
-            self.refresh()
-            if self.rescan or not self.form.schema:
-                self.rescan = False
-                self.scan()
-
-        self.remote.check_master(master)
-
-    # --------------------------------------------------------------- launch
-    def launch(self):
-        self.save()
-        prog = self.program.currentText()
-        if not self.form.schema and ask(
-                self, "Options non lues",
-                "Les options du script n'ont pas été lues : seuls les arguments en plus seront "
-                "passés.\n\nSoumettre quand même ?") != QMessageBox.Yes:
-            return
-        pkey = self.preset.currentData()
-        mode = self.mode.currentData()
-        if PROGRAMS[prog].get("msub_only") and mode == "mprun":
-            self.error(f"{prog} se soumet par ccc_msub seulement (il ne doit pas tourner depuis le nœud "
-                       f"de login) : choisissez « {BATCH['label']} »")
-            return
-        qname, qerr = None, None
-        if mode != "local":          # no scheduler, no QoS on this machine
-            qname, _row, qerr = self.qos_choice()
-        if qerr:
-            self.error(qerr)
-            return
-        busy = [r["id"] for r in self.runs
-                if r["status"] in ("en cours", "en attente", "démarrage")
-                and r["meta"].get("partition") == pkey and r["meta"].get("program") == prog]
-        if busy and ask(
-                self, "Run déjà actif",
-                f"{prog} a déjà un run actif sur {pkey} ({', '.join(busy)}).\n"
-                "Deux runs simultanés de même architecture peuvent écrire le même répertoire "
-                "(oracles, résumé).\n\nSoumettre quand même ?") != QMessageBox.Yes:
-            return
-        cmd = self.command()
-        after_id = self.after.currentData() or ""
-        after = {"run": after_id, "cond": self.after_cond.currentData()} if after_id else None
-        delay_s = self.delay.value() if self.delay_on.isChecked() else 0
-        check = self.build_check()
-        rid = time.strftime("%Y%m%d-%H%M%S") + "-" + prog.split(".")[0].split("_")[0] + "-" + pkey
-        spec = {
-            "mode": mode,
-            "run.sh": make_run_sh(self.repo.text().strip(), PROGRAMS[prog]["cwd"], cmd, check),
-            "msub": self.directives.toPlainText() if mode == "msub" else "",
-            "launcher": self.launcher.text().strip() if mode == "msub" else "",
-            "launch.sh": make_launch_sh(SITE.detached_options(self.directives.toPlainText(),
-                                                              self.time_s.value(), qname),
-                                        after, delay_s, command=DETACHED["command"])
-                         if mode == "mprun" else
-                         make_local_launch_sh(self.launcher.text().strip(), self.time_s.value(), after, delay_s)
-                         if mode == "local" else "",
-            "qos": qname or "",
-            "batch": BATCH,
-            "after": after, "delay_s": delay_s,
-            "name": re.sub(r"[^A-Za-z0-9_.-]", "_", f"{prog.split('.')[0]}_{pkey}")[:40],
-            "time_s": self.time_s.value(),
-            "meta": {"program": prog, "partition": pkey, "arch": self.arch(), "mode": mode,
-                     "launcher": self.launcher.text().strip() if mode in ("msub", "local") else "",
-                     "command": cmd, "values": self.form.values(), "extra": self.extra.text(),
-                     "repo": self.repo.text().strip(), "time_s": self.time_s.value(),
-                     "qos": "" if mode == "local" else qname or qos.explicit_qos(self.directives.toPlainText()) or "",
-                     "qos_wanted": self.qos.currentData(),
-                     "after": after, "delay_s": delay_s,
-                     "check_builds": check["mode"] if check else "off",
-                     "created": time.strftime("%F %T"),
-                     **{k: PROGRAMS[prog][k] for k in ("out_re", "out_files", "progress_re",
-                                                       "eta_re", "summary", "summary_file")}},
-        }
-        blob = base64.b64encode(json.dumps(spec).encode()).decode()
-
-        def done(r):
-            if r is None:
-                return
-            self.info(f"soumis : job {r['jobid']}" if "jobid" in r else f"lancé : {r['run_dir']}")
-            self.current, self.offset = rid, -1     # -1: the end of the log first (act_tail)
-            self.log.clear()
-            self.refresh(select=rid)
-
-        self.remote.helper("launch", [self.runs_dir.text().strip(), rid, blob], done)
-
     # ----------------------------------------------------------------- runs
     def refresh(self, select=None):
         if self.list_busy:
@@ -1209,10 +463,7 @@ class Main(QMainWindow):
             self.fill_compare()
             cur = next((x for x in self.runs if x["id"] == self.current), None)
             if cur and cur["status"] in self.ACTIVE:
-                if self.tabs.currentIndex() == 1:
-                    self.load_summary()
-                elif self.tabs.currentIndex() == 2:
-                    self.load_points()
+                self.tab_changed(self.tabs.currentIndex())
             keep = select or self.current
             self.table.blockSignals(True)
             self.table.setRowCount(len(self.runs))
@@ -1220,7 +471,7 @@ class Main(QMainWindow):
                 commit, commit_tip = self.commit_text(run)
                 vals = [run["id"], run["meta"].get("program", ""), run["meta"].get("partition", ""),
                         commit, run.get("jobid", ""), status_text(run), T(self.progress_text(run)),
-                        run["last"]]
+                        self.errors_text(run), run["last"]]
                 for j, v in enumerate(vals):
                     it = QTableWidgetItem(str(v))
                     if j == 3:
@@ -1233,6 +484,16 @@ class Main(QMainWindow):
                                  "#2471a3" if s in ("en cours", "démarrage") else
                                  "#7d3c98" if s == "en attente" else "#b9770e")
                         it.setForeground(QColor(color))
+                    if j == self.COL_ERRORS and (run.get("errors") or [0])[0]:
+                        it.setForeground(QColor("#c0392b"))
+                        f = it.font()
+                        f.setBold(True)
+                        it.setFont(f)
+                    if j == self.COL_ERRORS:
+                        it.setTextAlignment(Qt.AlignCenter)
+                        it.setToolTip(tip(self.errors_tip(run)))
+                        self.table.setItem(i, j, it)
+                        continue
                     it.setToolTip(commit_tip if j == 3 else
                                   run["meta"].get("command", "") if j < 2 else str(v))
                     self.table.setItem(i, j, it)
@@ -1257,6 +518,7 @@ class Main(QMainWindow):
         if rid and rid != self.current:
             self.current, self.offset = rid, -1     # -1: the end of the log first (act_tail)
             self.log.clear()
+            self.clear_errors()
             self.poll_tail()
             self.pt_data = None
             self.fill_compare()
@@ -1285,46 +547,6 @@ class Main(QMainWindow):
 
         self.remote.helper("tail", [self.runs_dir.text().strip(), rid, self.offset], done)
 
-    def reuse(self):
-        run = self.selected_run()
-        if not run:
-            return
-        m = run["meta"]
-        if m.get("program") in PROGRAMS:
-            self.program.setCurrentText(m["program"])
-        i = self.preset.findData(m.get("partition"))
-        if i >= 0:
-            self.preset.setCurrentIndex(i)
-        i = self.mode.findData(m.get("mode"))
-        if i >= 0:
-            self.mode.setCurrentIndex(i)
-        if m.get("time_s"):
-            self.time_s.setValue(int(m["time_s"]))
-        if m.get("qos_wanted"):
-            self.qos.setCurrentIndex(max(0, self.qos.findData(m["qos_wanted"])))
-        self.form.set_values(m.get("values", {}))
-        self.extra.setText(m.get("extra", ""))
-        if m.get("check_builds") and self.check_builds.isEnabled():
-            self.check_builds.setCurrentIndex(max(0, self.check_builds.findData(m["check_builds"])))
-        self.info(f"options de {run['id']} reprises")
-
-    def stop(self):
-        run = self.selected_run()
-        if not run:
-            return
-        what = (f"le job {run['jobid']} (ccc_mdel)" if run.get("jobid") else
-                "son groupe de processus (SIGTERM)" if run["meta"].get("mode") == "local" else
-                "ccc_mprun (SIGTERM)")
-        if ask(self, "Arrêter", f"Arrêter le run {run['id']} ?\n{what}") != QMessageBox.Yes:
-            return
-
-        def done(r):
-            if r is not None:
-                self.info(f"{run['id']} : arrêt demandé")
-            QTimer.singleShot(2000, self.refresh)
-
-        self.remote.helper("stop", [self.runs_dir.text().strip(), run["id"], self.batch_arg()], done)
-
     @staticmethod
     def commit_text(run):
         """("1a2b3c4d*", tooltip) of the run's code; * = uncommitted changes,
@@ -1344,6 +566,23 @@ class Main(QMainWindow):
         return txt, tip("\n".join(lines))
 
     @staticmethod
+    def errors_text(run):
+        """The Erreurs column: how many so far (bench_and_test.py's events,
+        multi_launch_stress.py's failed runs), empty when unknown."""
+        e = run.get("errors")
+        return "" if e is None else str(e[0])
+
+    @staticmethod
+    def errors_tip(run):
+        e = run.get("errors")
+        if e is None:
+            return "Pas de décompte d'erreurs pour ce run."
+        if run["meta"].get("summary") == "multi_launch":
+            return f"{e[0]} run(s) en échec (timings_summary.csv). Le détail : onglet Erreurs."
+        last = f"\n\nDernière : {e[1]}" if e[1] else ""
+        return f"{e[0]} erreur(s) (events.jsonl). Le détail : onglet Erreurs.{last}"
+
+    @staticmethod
     def progress_text(run):
         p = run.get("progress")
         if not p:
@@ -1359,191 +598,25 @@ class Main(QMainWindow):
                     f" · reste ~{m} min" if m else " · reste < 1 min")
         return txt
 
-    def local_git(self):
-        """{commit, branch} of the local clone ("Dépôt local"), or None."""
-        path = os.path.expanduser(self.local_repo.text().strip())
-        if not path:
-            return None
-        import subprocess
-        try:
-            c = subprocess.run(["git", "-C", path, "rev-parse", "HEAD"], capture_output=True,
-                               text=True, timeout=5).stdout.strip()
-            b = subprocess.run(["git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD"],
-                               capture_output=True, text=True, timeout=5).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            return None
-        return {"commit": c, "branch": b} if c else None
-
-    def show_git_state(self):
-        """The "Git (inti)" row: branch, commit, changes, upstream, ahead/behind."""
-        g = getattr(self, "inti_git", None)
-        if not g:
-            self.git_state.setText("pas de dépôt git (ou pas encore de connexion)")
-            for b in (self.bpull, self.bpull_rebase, self.bswitch, self.bbranches):
-                b.setEnabled(False)
-            return
-        self.bbranches.setEnabled(True)
-        chosen = self.branch.currentData()
-        self.bswitch.setEnabled(bool(chosen) and chosen != g["branch"])
-        txt = f"branche <b>{html.escape(g['branch'])}</b> @ {g['commit'][:8]}"
-        if g.get("dirty"):
-            txt += " · <span style='color:#b9770e'>modifications locales</span>"
-        up = g.get("upstream")
-        if not up:
-            txt += " · pas de branche suivie"
-        else:
-            txt += f" · suit {html.escape(up)}"
-            ahead, behind = g.get("ahead", 0), g.get("behind", 0)
-            if behind:
-                txt += f" · <span style='color:#b9770e'><b>{behind}</b> en retard</span>"
-            if ahead:
-                txt += f" · <b>{ahead}</b> en avance"
-            if not ahead and not behind:
-                txt += " · à jour au dernier fetch"
-        self.git_state.setText(txt)
-        for b in (self.bpull, self.bpull_rebase):
-            b.setEnabled(bool(up))
-        if getattr(self, "git_busy", 0):
-            # One git command at a time in the repository: a pull or a switch
-            # started while load_branches' fetch runs would fail on git's locks.
-            for b in (self.bpull, self.bpull_rebase, self.bswitch, self.bbranches):
-                b.setEnabled(False)
-
-    def git_pull(self, rebase):
-        """git pull [--rebase] in inti's repository, after a confirmation."""
-        g = getattr(self, "inti_git", None)
-        if not g:
-            self.error(f"pas de dépôt git sur {self.machine_name()} : vérifiez la connexion")
-            return
-        what = "git pull --rebase" if rebase else "git pull"
-        active = [r for r in self.runs if r["status"] in self.ACTIVE]
-        text = T(f"{what} dans {self.repo.text().strip()} (branche {g['branch']}) ?")
-        if active:
-            text += "\n\n" + T(f"{len(active)} run(s) encore actif(s) : un build ou un bench en cours "
-                                 f"peut lire des sources modifiées en cours de route.")
-        if ask(self, "Git", text) != QMessageBox.Yes:
-            return
-        if getattr(self, "git_busy", 0):
-            return
-        self.git_busy = getattr(self, "git_busy", 0) + 1
-        self.show_git_state()
-        self.info(f"{what} sur {self.machine_name()}…")
-
-        def done(r):
-            self.git_busy -= 1
-            if r is None:  # the error is already in the status bar
-                self.show_git_state()
-                return
-            self.inti_git = r.get("git") or self.inti_git
-            self.show_git_state()
-            if r["ok"]:
-                moved = r.get("git") and r["git"]["commit"] != r.get("before")
-                self.info(f"{what} : " + (f"{r['before'][:8]} → {r['git']['commit'][:8]}" if moved
-                                          else "déjà à jour"))
-                if moved:
-                    self.check()   # the connection line, then the script options again
-                    self.scan()
-            else:
-                head = T(f"{what} a échoué")
-                if r.get("aborted"):
-                    head += T(f" ; {r['aborted']} annulé, le dépôt est revenu à son état d'avant")
-                QMessageBox.warning(self, "Git", head + "\n\n" + r.get("output", "")[-3000:])
-
-        self.remote.helper("git_pull", [self.repo.text().strip(), "rebase" if rebase else "merge"], done)
-
-    def load_branches(self):
-        """git fetch on inti, then the "Branche (inti)" list: the local branches,
-        then the remote ones without a local branch; the current one selected."""
-        if not getattr(self, "inti_git", None) or getattr(self, "git_busy", 0):
-            return
-        self.git_busy = getattr(self, "git_busy", 0) + 1
-        self.show_git_state()
-
-        def done(r):
-            self.git_busy -= 1
-            if r is None:  # the error is already in the status bar
-                self.show_git_state()
-                return
-            if r.get("git"):
-                self.inti_git = r["git"]
-            cur = self.inti_git["branch"]
-            self.branch.blockSignals(True)
-            self.branch.clear()
-            for b in r.get("local", []):
-                self.branch.addItem(b + (T(" (actuelle)") if b == cur else ""), b)
-            if r.get("remote"):
-                self.branch.insertSeparator(self.branch.count())
-                for b in r["remote"]:
-                    self.branch.addItem(b, b)
-            i = self.branch.findData(cur)
-            if i >= 0:
-                self.branch.setCurrentIndex(i)
-            self.branch.blockSignals(False)
-            self.show_git_state()
-            if r.get("fetch_error"):
-                self.info(T("git fetch a échoué sur inti : la liste est celle du dernier fetch"))
-
-        self.remote.helper("git_branches", [self.repo.text().strip()], done)
-
-    def git_switch(self):
-        """Check out, in inti's repository, the branch chosen in the list."""
-        g = getattr(self, "inti_git", None)
-        target = self.branch.currentData()
-        if not g or not target or target == g["branch"]:
-            return
-        active = [r for r in self.runs if r["status"] in self.ACTIVE]
-        text = T(f"Changer de branche dans {self.repo.text().strip()} : {g['branch']} → {target} ?")
-        if "/" in target:
-            text += "\n\n" + T(f"Une branche locale {target.split('/', 1)[1]} suivant {target} est utilisée, "
-                                 f"ou créée si elle n'existe pas.")
-        if active:
-            text += "\n\n" + T(f"{len(active)} run(s) encore actif(s) : un build ou un bench en cours "
-                                 f"peut lire des sources modifiées en cours de route.")
-        if ask(self, "Git", text) != QMessageBox.Yes:
-            return
-        if getattr(self, "git_busy", 0):
-            return
-        self.git_busy = getattr(self, "git_busy", 0) + 1
-        self.show_git_state()
-        self.info(T(f"changement de branche sur inti : {target}…"))
-
-        def done(r):
-            self.git_busy -= 1
-            if r is None:
-                self.show_git_state()
-                return
-            self.inti_git = r.get("git") or self.inti_git
-            self.show_git_state()
-            if r["ok"]:
-                self.info(T(f"branche : {r.get('before', '')} → {self.inti_git['branch']}"))
-                self.check()   # the connection line and the branch list, then the script options
-                self.scan()
-            else:
-                QMessageBox.warning(self, "Git", T("changement de branche refusé ou en échec") + "\n\n"
-                                    + T(r.get("output", ""))[-3000:])
-                self.load_branches()
-
-        self.remote.helper("git_switch", [self.repo.text().strip(), target], done)
-
-    def git_line(self):
-        """ — inti : 1a2b3c4d (branch) · local : … ≠, for the connection line."""
-        g = getattr(self, "inti_git", None)
-        if not g:
-            return ""
-        name = self.machine_name()
-        txt = f" — {name} : <b>{g['commit'][:8]}</b>{'*' if g.get('dirty') else ''} ({html.escape(g['branch'])})"
-        loc = self.local_git()
-        if loc:
-            if loc["commit"] == g["commit"]:
-                txt += " · local : identique"
-            else:
-                txt += (f" · <span style='color:#b9770e'>local : <b>{loc['commit'][:8]}</b> "
-                        f"({html.escape(loc['branch'])}) ≠ {name}</span>")
-        return txt
-
     def notify_changes(self):
-        """A run that leaves the active states since the previous refresh."""
+        """A run that leaves the active states since the previous refresh, and
+        the first error of an active one (a long run is worth stopping or
+        looking at before it ends)."""
         now = {r["id"]: r["status"] for r in self.runs}
+        errs = {r["id"]: (r.get("errors") or [0])[0] for r in self.runs}
+        if self.prev_status is not None:
+            for r in self.runs:
+                if (r["status"] in self.ACTIVE and errs[r["id"]] > 0
+                        and self.prev_errors.get(r["id"], 0) == 0 and r["id"] in self.prev_status):
+                    last = (r.get("errors") or [0, None])[1]
+                    msg = T(f"{r['meta'].get('program', '')} sur {r['meta'].get('partition', '')} : "
+                            f"première erreur, le run continue") + (f"\n{last}" if last else "")
+                    self.statusBar().showMessage(T(f"{r['id']} : première erreur") + (f" — {last}" if last else ""),
+                                                 15000)
+                    if self.tray:
+                        self.tray.showMessage(f"Run {r['id']}", msg, QSystemTrayIcon.Warning, 15000)
+                    QApplication.alert(self)
+        self.prev_errors = errs
         if self.prev_status is not None:
             for r in self.runs:
                 before = self.prev_status.get(r["id"])
@@ -1569,426 +642,14 @@ class Main(QMainWindow):
                 return
         self.follow.setChecked(False)                    # stay on the match
 
-    def load_summary(self):
-        rid = self.current
-        if not rid:
-            return
-        self.sum_note.setText("chargement…")
-
-        def done(r):
-            if r is None or rid != self.current:
-                return
-            secs = r.get("sections") or [r]
-            self.sum_sections = secs
-            keep = self.sum_view.currentText()
-            self.sum_view.blockSignals(True)
-            self.sum_view.clear()
-            for s_ in secs:
-                self.sum_view.addItem(T(s_.get("title", "")) or "—")
-            if keep and self.sum_view.findText(keep) >= 0:
-                self.sum_view.setCurrentIndex(self.sum_view.findText(keep))
-            self.sum_view.blockSignals(False)
-            self.sum_view.setVisible(len(secs) > 1)
-            self.show_section()
-
-        self.remote.helper("summary", [self.runs_dir.text().strip(), rid], done)
-
-    def show_section(self, *_):
-        secs = getattr(self, "sum_sections", None)
-        if not secs:
-            return
-        r = secs[max(0, min(self.sum_view.currentIndex(), len(secs) - 1))]
-        if True:
-            self.sum_note.setText(r.get("note", ""))
-            cols, rows = r.get("columns", []), r.get("rows", [])
-            self.sum_table.setSortingEnabled(False)
-            self.sum_table.clear()
-            self.sum_table.setColumnCount(len(cols))
-            self.sum_table.setHorizontalHeaderLabels([T(c) for c in cols])
-            self.sum_table.setRowCount(len(rows))
-            fails = set(r.get("fail_rows", []))
-            for i, row in enumerate(rows):
-                for j, v in enumerate(row):
-                    it = NumItem(T(v) if r.get("title") == "Phases" and j == 1 else v)
-                    if i in fails:
-                        it.setForeground(QColor("#c0392b"))
-                    if row and row[0] == "TOTAL":
-                        f = it.font()
-                        f.setBold(True)
-                        it.setFont(f)
-                    self.sum_table.setItem(i, j, it)
-            self.sum_table.resizeColumnsToContents()
-            self.sum_table.setSortingEnabled(True)
-
     def tab_changed(self, i):
-        if i == 1:
+        """Load the tab shown (the log has its own 2 s polling)."""
+        if i == self.TAB_SUMMARY:
             self.load_summary()
-        elif i == 2:
+        elif i == self.TAB_CHART:
             self.load_points()
-
-    def fill_compare(self):
-        """The runs the current one can be compared with: the other
-        multi_launch_stress.py runs, newest first."""
-        if not hasattr(self, "pt_cmp"):
-            return
-        keep = self.pt_cmp.currentData()
-        self.pt_cmp.blockSignals(True)
-        self.pt_cmp.clear()
-        self.pt_cmp.addItem(T("(aucun)"), None)
-        for r in self.runs:
-            if r["id"] != self.current and r["meta"].get("summary") == "multi_launch":
-                self.pt_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
-        i = self.pt_cmp.findData(keep) if keep else 0
-        self.pt_cmp.setCurrentIndex(max(0, i))
-        self.pt_cmp.blockSignals(False)
-
-    def load_points(self, *_):
-        rid = self.current
-        if not rid:
-            return
-        rid_b = self.pt_cmp.currentData()
-        pending = {"a": None, "b": None}
-        need = {"a", "b"} if rid_b else {"a"}
-
-        def finish():
-            if rid != self.current or rid_b != self.pt_cmp.currentData():
-                return
-            if any(pending[k] is None for k in need):
-                return
-            r = pending["a"]
-            if "rows" not in r:
-                self.pt_data = None
-                self.pt_note.setText(r.get("note", ""))
-                self.pt_view.setChart(QChart())
-                self.pt_view.points = []
-                return
-            rb = pending["b"] if rid_b and "rows" in pending["b"] else None
-            if rid_b and rb is None:
-                self.error(f"{rid_b} : {pending['b'].get('note', 'pas de données')}")
-            r["id"] = rid
-            if rb:
-                rb["id"] = rid_b
-            first = self.pt_data is None
-            self.pt_data, self.pt_data_b = r, rb
-            builds = list(dict.fromkeys(r["builds"] + (rb["builds"] if rb else [])))
-            keep = self.pt_build.currentData()
-            self.pt_build.blockSignals(True)
-            self.pt_build.clear()
-            self.pt_build.addItem(T("tous"), "tous")
-            for b in builds:
-                self.pt_build.addItem(b, b)
-            if not first and keep in builds:
-                self.pt_build.setCurrentIndex(self.pt_build.findData(keep))
-            self.pt_build.blockSignals(False)
-            self.draw_points()
-
-        def got(key):
-            def done(r):
-                pending[key] = r if r is not None else {"note": "erreur de lecture"}
-                finish()
-            return done
-
-        self.remote.helper("points", [self.runs_dir.text().strip(), rid], got("a"))
-        if rid_b:
-            self.remote.helper("points", [self.runs_dir.text().strip(), rid_b], got("b"))
-
-    def commits_note(self, rid_a, rid_b):
-        """ — commits A → B, or a warning when they are the same code."""
-        def c(rid):
-            run = next((x for x in self.runs if x["id"] == rid), None)
-            g = run and run["meta"].get("git")
-            return (g["commit"][:8] + ("*" if g.get("dirty") else "")) if g else "?"
-        ca, cb = c(rid_a), c(rid_b)
-        if "?" in (ca, cb):
-            return ""
-        if ca == cb and "*" not in ca:
-            return f" — même commit {ca} des deux côtés"
-        return f" — commits {ca} → {cb}"
-
-    def _select(self, r, log_y):
-        """(ok, failed) points of one dataset after the Build / Variante
-        filters; a point is (threads, seconds, tooltip, exe)."""
-        build_sel = self.pt_build.currentData()
-        var_sel = self.pt_variant.currentData()
-        ok, fails = [], []
-        label = f"<br><i>{html.escape(r['id'])}</i>" if self.pt_data_b else ""
-        for run, b, e, th, sec, rc in r["rows"]:
-            build, exe = r["builds"][b], r["exes"][e]
-            if build_sel != "tous" and build != build_sel:
-                continue
-            if var_sel != "toutes" and exe_parts(exe)[0] != var_sel:
-                continue
-            if log_y and sec <= 0:
-                continue
-            tip = (f"<b>{sec:.3f} s</b> · {th} threads<br>"
-                   f"{html.escape(build)} · {html.escape(exe)}<br>"
-                   f"run {run}" + (f" · <b>code {rc}</b>" if rc else "") + label)
-            (fails if rc else ok).append((th, sec, tip, exe))
-        return ok, fails
-
-    @staticmethod
-    def _bins(pts, lo, width):
-        """{bin: median seconds} of the bins holding at least 3 runs."""
-        import statistics
-        bins = {}
-        for p in pts:
-            bins.setdefault(int((p[0] - lo) // width), []).append(p[1])
-        return {k: statistics.median(v) for k, v in bins.items() if len(v) >= 3}
-
-    def draw_points(self, *_):
-        r = self.pt_data
-        if not r:
-            return
-        rb = self.pt_data_b
-        dark = self.palette().window().color().lightness() < 128
-        V = VIZ["dark" if dark else "light"]
-        log_y = self.pt_log.isChecked()
-        show_fail = not self.pt_ok_only.isChecked()
-
-        chart = QChart()
-        chart.setBackgroundBrush(QBrush(QColor(V["surface"])))
-        chart.setBackgroundRoundness(0)
-        what = self.pt_build.currentData()
-        what = "tous les builds" if what in ("tous", None) else what
-        if self.pt_variant.currentData() != "toutes":
-            what += " · " + self.pt_variant.currentData()
-        chart.setTitle(("Comparaison — " if rb else "") + "temps par run selon le nombre de threads — " + what)
-        chart.setTitleBrush(QBrush(QColor(V["ink"])))
-        chart.legend().setLabelColor(QColor(V["ink2"]))
-        chart.legend().setAlignment(Qt.AlignTop)
-        chart.legend().setMarkerShape(QLegend.MarkerShapeFromSeries)   # dot, triangle, line
-
-        def scatter(name, pts, color, size, shape, alpha=170, ring=True):
-            sr = QScatterSeries()
-            sr.setName(name)
-            sr.setMarkerShape(shape)
-            sr.setMarkerSize(size)
-            c = QColor(color)
-            c.setAlpha(alpha)
-            sr.setColor(c)
-            sr.setBorderColor(QColor(V["surface"]) if ring else c)
-            sr.setPen(QPen(QColor(V["surface"]) if ring else c, 1))
-            sr.append([QPointF(p[0], p[1]) for p in pts])
-            chart.addSeries(sr)
-
-        def median_line(name, med, lo, width, color):
-            pts = [QPointF(lo + (k + 0.5) * width, med[k]) for k in sorted(med)]
-            if len(pts) < 2:
-                return
-            # A surface-coloured halo under the line: it stays readable on top
-            # of a dense cloud of its own colour. The halo has no legend entry.
-            halo = QLineSeries()
-            halo.setPen(QPen(QColor(V["surface"]), 6))
-            halo.append(pts)
-            chart.addSeries(halo)
-            for m in chart.legend().markers(halo):
-                m.setVisible(False)
-            ln = QLineSeries()
-            ln.setName(name)
-            ln.setPen(QPen(QColor(color), 2.5))
-            ln.append(pts)
-            chart.addSeries(ln)
-
-        ok_a, fail_a = self._select(r, log_y)
-        drawn, note_extra = [], ""
-        if rb is None:
-            key_of, slots = COLOR_BY[self.pt_color.currentData()]
-            groups = {}
-            for p in ok_a:
-                cat = key_of(p[3])
-                groups.setdefault(cat if cat in slots else "autres", []).append(p)
-            for i, cat in enumerate(slots):
-                if groups.get(cat):
-                    scatter(f"{cat} ({len(groups[cat])})", groups[cat], V["series"][i], 7,
-                            QScatterSeries.MarkerShapeCircle)
-                    drawn += groups[cat]
-            if groups.get("autres"):
-                scatter(f"autres ({len(groups['autres'])})", groups["autres"], V["muted"], 7,
-                        QScatterSeries.MarkerShapeCircle)
-                drawn += groups["autres"]
-            fail_pts = fail_a if show_fail else []
-            if self.pt_median.isChecked() and len(ok_a) >= 5:
-                lo = min(p[0] for p in ok_a)
-                hi = max(p[0] for p in ok_a)
-                width = max(1, round((hi - lo) / 15)) if hi > lo else 1
-                median_line("médiane", self._bins(ok_a, lo, width), lo, width, V["ink2"])
-        else:
-            # Two runs: colour = the run (slots 1 and 2), each with its median.
-            ok_b, fail_b = self._select(rb, log_y)
-            short = lambda rid: rid[:15]
-            for (ok, fails, rid), col in zip(((ok_a, fail_a, r["id"]), (ok_b, fail_b, rb["id"])),
-                                             V["series"][:2]):
-                if ok:
-                    scatter(f"{short(rid)} ({len(ok)})", ok, col, 7, QScatterSeries.MarkerShapeCircle)
-                    drawn += ok
-            fail_pts = (fail_a + fail_b) if show_fail else []
-            if len(ok_a) >= 5 and len(ok_b) >= 5:
-                both = ok_a + ok_b
-                lo = min(p[0] for p in both)
-                hi = max(p[0] for p in both)
-                width = max(1, round((hi - lo) / 15)) if hi > lo else 1
-                med_a, med_b = self._bins(ok_a, lo, width), self._bins(ok_b, lo, width)
-                if self.pt_median.isChecked():
-                    median_line(f"médiane {short(r['id'])}", med_a, lo, width, V["series"][0])
-                    median_line(f"médiane {short(rb['id'])}", med_b, lo, width, V["series"][1])
-                common = [k for k in med_a if k in med_b and med_a[k] > 0]
-                if common:
-                    import math
-                    g = math.exp(sum(math.log(med_b[k] / med_a[k]) for k in common) / len(common))
-                    pct = (g - 1) * 100
-                    sens = "plus lent" if pct > 0 else "plus rapide"
-                    note_extra = (f"  —  {short(rb['id'])} / {short(r['id'])} : ×{g:.3f} "
-                                  f"({abs(pct):.1f} % {sens}), moyenne géométrique des médianes "
-                                  f"sur {len(common)} tranche(s) de {width} thread(s) communes"
-                                  + self.commits_note(r["id"], rb["id"]))
-                else:
-                    note_extra = "  —  aucune tranche de threads commune aux deux runs"
-
-        if fail_pts:
-            # Failures last, on top of everything: a shape in ink, named in the
-            # legend -- not a status red, which the colour-vision checks cannot
-            # tell from the orange slot.
-            scatter(f"échec ({len(fail_pts)})", fail_pts, V["ink"], 12,
-                    QScatterSeries.MarkerShapeTriangle, alpha=255, ring=False)
-            drawn += fail_pts
-
-        ax = QValueAxis()
-        ax.setTitleText("threads")
-        ax.setLabelFormat("%d")
-        ay = QLogValueAxis() if log_y else QValueAxis()
-        ay.setTitleText("temps par run (s)")
-        ay.setLabelFormat("%.3g" if log_y else "%.1f")
-        if log_y:
-            ay.setMinorTickCount(-1)
-        for axis in (ax, ay):
-            axis.setLabelsColor(QColor(V["muted"]))
-            axis.setTitleBrush(QBrush(QColor(V["ink2"])))
-            axis.setGridLineColor(QColor(V["grid"]))
-            axis.setLinePenColor(QColor(V["axis"]))
-            axis.setMinorGridLineVisible(False)
-        chart.addAxis(ax, Qt.AlignBottom)
-        chart.addAxis(ay, Qt.AlignLeft)
-        for sr in chart.series():
-            sr.attachAxis(ax)
-            sr.attachAxis(ay)
-        if drawn:
-            xs = [p[0] for p in drawn]
-            ys = [p[1] for p in drawn]
-            pad = max(1, (max(xs) - min(xs)) * 0.03)
-            ax.setRange(min(xs) - pad, max(xs) + pad)
-            if log_y:
-                lo_y, hi_y = min(ys) / 1.15, max(ys) * 1.15
-                # Qt labels only the powers of the base: base 2 when the data
-                # spans less than a decade, or the axis has no label at all.
-                ay.setBase(10.0 if hi_y / lo_y >= 20 else 2.0)
-                ay.setRange(lo_y, hi_y)
-            else:
-                ay.setRange(0, max(ys) * 1.08)
-                ay.applyNiceNumbers()
-            ax.applyNiceNumbers()
-        chart.setTitle(T(chart.title()))
-        for sr in chart.series():
-            if sr.name():
-                sr.setName(T(sr.name()))
-        for a_ in chart.axes():
-            a_.setTitleText(T(a_.titleText()))
-        self.pt_view.setChart(chart)
-        self.pt_view.points = [p[:3] for p in drawn]
-        self.pt_view.log_y = log_y
-        more = ""
-        for d in (r, rb):
-            if d and d["total"] > len(d["rows"]):
-                more = " (les 30000 derniers runs de chaque fichier)"
-        self.pt_note.setText(f"{len(drawn)} run(s) affiché(s){more}{note_extra}")
-
-    def delete_dialog(self, run, own, local):
-        """Confirmation of "Supprimer": (ok, also the program outputs on inti,
-        also the local copy). The two boxes are remembered."""
-        from PySide6.QtWidgets import QDialog, QDialogButtonBox
-        dlg = QDialog(self)
-        dlg.setWindowTitle(T("Supprimer"))
-        lay = QVBoxLayout(dlg)
-        lay.addWidget(QLabel(T(f"Supprimer le run {run['id']} ?\n\nSur inti, son dossier (log, scripts, "
-                               "code de retour).")))
-        c_out = QCheckBox(T("aussi le dossier de sortie du programme, propre à ce run" if own == "dir" else
-                            "aussi ses logs dans le dossier de sortie partagé (" + ", ".join(own or []) +
-                            " ; jamais oracle/)" if own else "pas de sorties propres à ce programme"))
-        c_out.setEnabled(bool(own))
-        c_out.setChecked(bool(own) and self.settings.value("delete_outputs", "false") == "true")
-        c_loc = QCheckBox(T(f"aussi la copie locale {local}") if local else T("pas de copie locale"))
-        c_loc.setEnabled(bool(local))
-        c_loc.setChecked(bool(local) and self.settings.value("delete_local", "false") == "true")
-        lay.addWidget(c_out)
-        lay.addWidget(c_loc)
-        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bb.accepted.connect(dlg.accept)
-        bb.rejected.connect(dlg.reject)
-        lay.addWidget(bb)
-        if dlg.exec() != QDialog.Accepted:
-            return False, False, False
-        if own:
-            self.settings.setValue("delete_outputs", "true" if c_out.isChecked() else "false")
-        if local:
-            self.settings.setValue("delete_local", "true" if c_loc.isChecked() else "false")
-        return True, c_out.isChecked() and bool(own), c_loc.isChecked() and bool(local)
-
-    def delete(self):
-        run = self.selected_run()
-        if not run:
-            return
-        if run["status"] in self.ACTIVE or run["status"].startswith("en attente"):
-            self.error("arrêtez d'abord ce run (il est encore actif)")
-            return
-        own = PROGRAMS.get(run["meta"].get("program"), {}).get("own_outputs")
-        local = os.path.join(os.path.expanduser(self.local_dir.text().strip()), run["id"])
-        local = local if os.path.isdir(local) else None
-        ok, with_out, with_local = self.delete_dialog(run, own, local)
-        if not ok:
-            return
-
-        def done(r):
-            if r is None:
-                return
-            if self.current == run["id"]:
-                self.current = None
-                self.log.clear()
-            if with_local:
-                import shutil
-                shutil.rmtree(local, ignore_errors=True)
-            n = len(r.get("removed", []))
-            self.info(f"{run['id']} supprimé" + (f" (+ {n} sortie(s) sur inti)" if n else "")
-                      + (" (+ copie locale)" if with_local else ""))
-            self.refresh()
-
-        opts = base64.b64encode(json.dumps({"own": own} if with_out else {}).encode()).decode()
-        self.remote.helper("delete", [self.runs_dir.text().strip(), run["id"], opts], done)
-
-    def fetch(self):
-        rid = self.selected()
-        if not rid:
-            return
-        dest = os.path.join(os.path.expanduser(self.local_dir.text().strip()), rid)
-
-        def done(blob):
-            if blob is None:
-                return
-            try:
-                data = base64.b64decode(blob)
-                os.makedirs(dest, exist_ok=True)
-                with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as t:
-                    members = [m for m in t.getmembers()
-                               if m.isfile() and not os.path.isabs(m.name) and ".." not in m.name.split("/")]
-                    if sys.version_info >= (3, 12):
-                        t.extractall(dest, members=members, filter="data")
-                    else:
-                        t.extractall(dest, members=members)
-            except (ValueError, tarfile.TarError, OSError) as e:
-                self.error(f"récupération : {e}")
-                return
-            self.info(f"{len(members)} fichier(s) → {dest}")
-
-        self.info(f"récupération de {rid}…")
-        self.remote.helper("pack", [self.runs_dir.text().strip(), rid], done, binary=True)
+        elif i == self.TAB_ERRORS:
+            self.load_errors()
 
 
 def main():

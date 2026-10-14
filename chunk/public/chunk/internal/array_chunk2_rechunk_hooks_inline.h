@@ -35,7 +35,7 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates(this Derived& self)
 {
     // num_tab from the registry, never the member. The drop happens at the
     // owning geometry (see RechunkSupport::rechunk_to). COMPRESS the candidates
-    // first (see RechunkHooks2A): a dropped one would stay materialised and never
+    // first (see RechunkHooks): a dropped one would stay materialised and never
     // be re-queued. bool has no second value and is only dropped.
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -68,7 +68,7 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates(this Derived& self)
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_drain_reuse_list(this Derived& /*self*/, unsigned int new_size)
+void RechunkHooks2<Derived, true>::rechunk_drain_reuse_list(this const Derived& /*self*/, unsigned int new_size)
 {
     manager_type::drain_reuse_list_for_size(new_size);
 }

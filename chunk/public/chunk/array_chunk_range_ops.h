@@ -50,6 +50,7 @@
  *          already carry.
  */
 
+#include <array>       // std::array (the shared edge offsets)
 #include <algorithm>   // std::min (the range clamps)
 #include <cstddef>     // std::size_t, std::ptrdiff_t
 #include <type_traits> // std::is_same_v, std::conditional_t
@@ -230,8 +231,8 @@ void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::si
 {
     // Ascending for S >= 4; for a smaller S the out-of-order or duplicate
     // entries are skipped by `s < o`, and S - 2 wrapping for S == 1 by `s >= o_hi`.
-    const std::size_t shared[] = {0, 1, S / 2, S - 2, S - 1};
-    std::size_t       o        = o_lo;
+    const std::array<std::size_t, 5> shared = {0, 1, S / 2, S - 2, S - 1};
+    std::size_t                      o      = o_lo;
     for (const std::size_t s : shared)
     {
         if (s < o)
@@ -282,7 +283,7 @@ template <typename Arr>
  *          is bool-only (false for every other T), so it is asked with @p ind2.
  */
 template <typename Arr, typename Chunk>
-[[nodiscard]] bool materialised(const Arr&, const Chunk& ch, [[maybe_unused]] int ind2) noexcept
+[[nodiscard]] bool materialised(const Arr& /*arr*/, const Chunk& ch, [[maybe_unused]] int ind2) noexcept
 {
     if constexpr (has_second_value_v<Arr>)
     {
@@ -322,22 +323,19 @@ void queue_for_compression(Arr& arr, std::size_t i)
             }
         }
         auto proxy = arr.element_proxy(static_cast<decltype(arr.size())>(i));
-        // Chunk2 FIRST: Proxy2 also has set_num_tab_ptr_is_inside_chunk() (from
-        // the shared base), but it does not load the second value -- the key of
-        // Chunk2's candidate list -- and the chunk would land in the list of
+        // Not for Proxy2: it also has set_num_tab_ptr_is_inside_chunk() (from
+        // the shared base), but that does not load the second value -- the key
+        // of Chunk2's candidate list -- and the chunk would land in the list of
         // T{}, which no pass drains. set_info_on_chunk() loads (second_value,
         // ind, num_tab) and the flag pointer.
-        if constexpr (std::is_same_v<typename Arr::proxy_type, Proxy2<typename Arr::value_type>>)
-        {
-            proxy.set_info_on_chunk(); // Proxy2
-        }
-        else if constexpr (requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
+        constexpr bool is_proxy2 = std::is_same_v<typename Arr::proxy_type, Proxy2<typename Arr::value_type>>;
+        if constexpr (!is_proxy2 && requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
         {
             proxy.set_num_tab_ptr_is_inside_chunk(); // Proxy2A
         }
         else
         {
-            proxy.set_info_on_chunk(); // Proxy (v1)
+            proxy.set_info_on_chunk(); // Proxy2, Proxy (v1)
         }
         proxy.add_to_compression_list();
     }
@@ -694,7 +692,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
 /// @brief fill_range() on an array whose deferred queue the caller has already
 ///        drained (the assume_drained tag): no flush first.
 template <internal::ChunkedArray Arr, typename U>
-void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assume_drained_t)
+void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assume_drained_t /*tag*/)
 {
     fill_range(arr, first, last, v, /*drain=*/false);
 }
@@ -702,7 +700,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assum
 /// @brief copy_range() on an array whose deferred queue the caller has already
 ///        drained (the assume_drained tag): no flush first.
 template <internal::ChunkedArray Arr, typename It>
-void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, assume_drained_t)
+void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, assume_drained_t /*tag*/)
 {
     copy_range(arr, first, last, src_first, /*drain=*/false);
 }
@@ -724,8 +722,8 @@ namespace internal
 template <typename T, typename At>
 void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t S, At&& at) noexcept
 {
-    const std::size_t shared[] = {0, 1, S / 2, S - 2, S - 1};
-    std::size_t       o        = o_lo;
+    const std::array<std::size_t, 5> shared = {0, 1, S / 2, S - 2, S - 1};
+    std::size_t                      o      = o_lo;
     for (const std::size_t s : shared)
     {
         if (s < o)

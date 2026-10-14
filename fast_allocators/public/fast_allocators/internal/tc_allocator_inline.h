@@ -25,6 +25,7 @@
 #include <cstdio>  // stderr
 #include <cstdlib> // std::abort on an arena failure
 #include <print>   // std::println on an arena failure
+#include <utility> // std::cmp_less (the element-size check)
 #include <vector>  // std::vector
 
 #include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
@@ -108,8 +109,7 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
         // The free list is threaded THROUGH freed elements (free_block() writes the next
         // index, an int, into the element's first bytes): an element must hold an aligned int.
         // ElementSize is a run-time value, so this is a release check, once per slab.
-        if (ElementSize_ < static_cast<int>(sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0)
-            [[unlikely]]
+        if (std::cmp_less(ElementSize_, sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0) [[unlikely]]
         {
             std::println(stderr,
                          "[TCAllocator] element size {} bytes cannot hold the free-list index (an int: {} bytes, "
@@ -123,6 +123,18 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
     BlockAllocator = BlockAllocator_;
 
     Log2ElementSize = std::bit_width(static_cast<unsigned int>(ElementSize)) - 1;
+
+    // num_block()'s magic is exact for offsets below 2^32 only. Slabs are a
+    // few MiB; a release check, once per slab, like the one above.
+    if (slab_bytes_for(BlockAllocator_) > (std::uintptr_t{1} << 32)) [[unlikely]]
+    {
+        std::println(stderr, "[TCAllocator] slab of {} bytes: num_block() indexes offsets below 4 GiB only",
+                     slab_bytes_for(BlockAllocator_));
+        std::abort();
+    }
+    // Unused (and 0, the +1 wrapping) for an element size of 1: a power of
+    // two, num_block_pow2() takes it.
+    ElementMagic = UINT64_MAX / static_cast<std::uint64_t>(ElementSize) + 1u;
 
     alloc_block();
 }

@@ -28,7 +28,9 @@ inline thread_local int g_fast_omp_rank = -1;
 
 /// @brief The loop schedules a `schedule(runtime)` loop can be given -- the
 ///        values of omp_sched_t (OpenMP 5.x: static 1, dynamic 2, guided 3,
-///        auto 4), in a type that exists in a serial build too.
+///        auto 4), in a type that exists in a serial build too. `int` like
+///        omp_sched_t, which it is cast to and from.
+// NOLINTNEXTLINE(performance-enum-size)
 enum class chunk_pmp_sched : int
 {
     sched_static  = 1,
@@ -46,7 +48,6 @@ struct chunk_pmp_schedule
 } // namespace shrink_array
 
 #ifdef _OPENMP
-    #include <algorithm> // std::max, std::min
     #include <atomic>    // std::atomic
 
     #include <omp.h> // omp_get_thread_num, omp_get_max_threads, omp_in_parallel
@@ -163,7 +164,7 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
     omp_get_schedule(&kind, &chunk);
     // As is, modifier bits included (omp_sched_monotonic): the enum's int
     // holds them, so a get / set round trip restores the caller's exactly.
-    return {static_cast<chunk_pmp_sched>(kind), chunk};
+    return {.kind = static_cast<chunk_pmp_sched>(kind), .chunk = chunk};
 }
 
 /// @brief Set the calling task's run-sched-var (omp_set_schedule): the

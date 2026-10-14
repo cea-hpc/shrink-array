@@ -26,7 +26,7 @@
 #include <vector>      // std::vector
 #include <cstring>     // std::memset (the Bit second constant)
 
-#include "chunk/internal/chunk_size_config.h"           // __chunk_size
+#include "chunk/internal/chunk_size_config.h"           // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"           // ChunkElems, DynamicChunkSize
 #include "chunk/internal/in_t.h"                        // in_t
 #include "chunk/internal/element_access.h"              // Bit buffers: words of bits
@@ -278,7 +278,7 @@ class Chunk2CounterPolicy
     /// @param size Chunk geometry; defaults to the compile-time size (callers that know the
     ///             runtime geometry, e.g. under DynamicChunkSize, pass it).
     /// @return true if nb_val_eq_second_value == size.
-    [[nodiscard]] bool is_full_second_value(unsigned int size = __chunk_size) const noexcept
+    [[nodiscard]] bool is_full_second_value(unsigned int size = static_chunk_size) const noexcept
     {
         return nb_val_eq_second_value == size;
     }
@@ -328,7 +328,7 @@ class Chunk2CounterPolicy
     ///        constant (the chunk is a candidate for type-1 compression).
     /// @param size Chunk geometry; see is_full_second_value().
     /// @return true if nb_val_eq_first_value == size.
-    [[nodiscard]] bool is_full_first_value(unsigned int size = __chunk_size) const noexcept
+    [[nodiscard]] bool is_full_first_value(unsigned int size = static_chunk_size) const noexcept
     {
         return nb_val_eq_first_value == size;
     }
@@ -578,7 +578,7 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param num_compress_value 0 for the first constant, non-zero for the second.
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      */
-    void block_clear(this Derived& self, int num_compress_value, int ind, int);
+    void block_clear(this Derived& self, int num_compress_value, int ind, int /*thr_rank*/);
 
   private:
     /**
@@ -957,20 +957,20 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
     /// @name No-op counterparts of the true specialization's queries and passes
     ///       (same pattern as ChunkFastCompPolicy<T, Derived, false>)
     /// @{
-    static bool have_chunk_to_compress(T, int)
+    static bool have_chunk_to_compress(T /*second_value*/, int /*max_thr*/)
     {
         return false;
     }
-    static bool have_chunk_to_compress_bool(int)
+    static bool have_chunk_to_compress_bool(int /*max_thr*/)
     {
         return false;
     }
 
-    static void make_block_compression(int, const inf_array_t&, Proxy2<T>*) {}
+    static void make_block_compression(int /*thr_rank*/, const inf_array_t& /*inf_array*/, Proxy2<T>* /*proxy2*/) {}
 
-    static void make_block_compression_bool(int, Proxy2<T>*) {}
+    static void make_block_compression_bool(int /*thr_rank*/, Proxy2<T>* /*proxy2*/) {}
 
-    static void make_block_compression(int) {}
+    static void make_block_compression(int /*thr_rank*/) {}
     /// @}
 
   private:
@@ -985,7 +985,7 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
     /// @name No-op compression passes
     /// @{
     template <typename FillFunc, typename ClearFunc>
-    static void make_block_compression_impl(int, T, Proxy2<T>*, FillFunc&&, ClearFunc&&)
+    static void make_block_compression_impl(int /*thr_rank*/, T /*second_value*/, Proxy2<T>* /*proxy2*/, FillFunc&& /*fill_func*/, ClearFunc&& /*clear_func*/)
     {
     }
 
@@ -996,6 +996,9 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
  * \brief Block compression class (power of 2) 2 values automatic detection
  */
 template <typename T>
+// no move operations on purpose -- a move falls back to
+// the copy, which carries the per-chunk state the way the copy constructor documents.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_counter>,
                public Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>
 {

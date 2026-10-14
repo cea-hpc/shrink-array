@@ -92,7 +92,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Base::size_policy_;
     using Base2::m_size;
     using Base2::nb_chunk;
-    using Base2::resize; // Import resize(sz, val)
+    using Base2::resize; // resize(sz, val), ArrayChunkBase's
 
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
     using inf_array_t = SecondValueInfo<T>;
@@ -311,8 +311,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @details Drains the compression candidates and deferred ops first: both
      *          hold `&chunk_list[j]` pointers a reallocation would dangle.
      * @param newsz new element count
-     * @note Allocation is GROWTH-only: shrinking updates the sizes but releases
-     *       no chunk, so the storage never gets smaller.
+     * @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
+     *       freed serially, parked in the geometry's reuse list under OpenMP);
+     *       chunk_list keeps its capacity.
      */
     void resize(ind_type newsz);
 

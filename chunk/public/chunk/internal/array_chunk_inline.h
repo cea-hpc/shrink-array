@@ -41,18 +41,6 @@ namespace shrink_array
 {
 
 template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::create(ind_type sz)
-{
-    // The first array of this element type registers its manager; every
-    // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<ManagerChunk<Chunk, T>>();
-
-    Base::create_common();
-
-    rebuild_storage(sz);
-}
-
-template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
 {
     if (sz)
@@ -398,27 +386,34 @@ void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
 
     if constexpr (build_config::use_openmp)
     {
-        const int          thr_rank = CHUNK_PMP_THREAD_RANK;
-        const unsigned int my_sz    = this->size_policy_.size();
-        auto&              lbf      = Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(thr_rank, my_sz);
-        for (int j = first; j < last; ++j)
-        {
-            if (chunk_list[j].written())
+        // A large shrink takes a team of its own, as clear_core()'s release
+        // does: each thread zeroes and parks into ITS rank's reuse list of this
+        // array's geometry. Inside a region, or for a few chunks, the calling
+        // thread.
+        const unsigned int my_sz = this->size_policy_.size();
+        parallel_storage_init::for_each_chunk_in(
+            first, last,
+            [my_sz]() -> auto& {
+                return Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz);
+            },
+            [this, my_sz](int j, auto& lbf)
             {
-                if constexpr (chunk_config::stats)
+                if (chunk_list[j].written())
                 {
-                    increm_chunk_teardown_clear<Chunk<T>>();
-                    add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                    if constexpr (chunk_config::stats)
+                    {
+                        increm_chunk_teardown_clear<Chunk<T>>();
+                        add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                    }
+                    // As clear_core(): v1's reuse lists hold zeroed buffers.
+                    T*          values_loc = chunk_list[j].values;
+                    constexpr T zero{};
+                    std::uninitialized_fill_n(values_loc, my_sz, zero);
+                    CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
+                    lbf.push_back(values_loc);
+                    chunk_list[j].init_values_cst_val();
                 }
-                // As clear_core(): v1's reuse lists hold zeroed buffers.
-                T*          values_loc = chunk_list[j].values;
-                constexpr T zero{};
-                std::uninitialized_fill_n(values_loc, my_sz, zero);
-                CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
-                lbf.push_back(values_loc);
-                chunk_list[j].init_values_cst_val();
-            }
-        }
+            });
     }
     else
     {
@@ -509,32 +504,6 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
         for (ind_type i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};
-        }
-    }
-}
-
-template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::resize(ind_type newsz, in_t<T> val)
-{
-    const ind_type old_size = m_size;
-
-    resize(newsz);
-
-    // A team of its own outside a region; the calling thread inside one (an
-    // orphaned `omp for` would write only 1/N of the new range).
-    if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-    {
-#pragma omp parallel for schedule(static)
-        for (ind_type i = old_size; i < newsz; ++i)
-        {
-            (*this)[i] = val;
-        }
-    }
-    else
-    {
-        for (ind_type i = old_size; i < newsz; ++i)
-        {
-            (*this)[i] = val;
         }
     }
 }

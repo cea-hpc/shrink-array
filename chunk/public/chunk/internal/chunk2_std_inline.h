@@ -339,40 +339,13 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool(this Derived&     
 template <typename T, typename Derived, bool Enabled>
 void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const inf_array_t& inf_array, bool apply)
 {
-    chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
-
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, inf_array, apply);
-    }
-    else
-    {
-        // Same shape as Chunk2A::compress_chunk_to_compress(): one region, each
-        // rank sweeps ITS OWN list. Everything the per-rank body touches is
-        // rank-local -- map_chunk2_to_compress_potentially_thr[thr_rank], the
-        // freed buffer goes to thr_rank's pool (clear_int_st), and the
-        // candidate flag reset is an atomic store -- so the ranks are
-        // independent (a serial loop leaves the team idle during a re-chunk).
-        int team = 0;
-#pragma omp parallel
-        {
-            const int thr = CHUNK_PMP_THREAD_RANK;
-            if (thr == 0) // one writer; `master` is deprecated since OpenMP 5.1
-            {
-                team = CHUNK_PMP_NUM_THREADS;
-            }
-            compress_chunk_to_compress_in_par(thr, inf_array, apply);
-        }
-        // Lists are sized by the thread capacity; a team smaller than the
-        // ranks seen leaves the upper ranks unswept. Serial mop-up up to
-        // CHUNK_PMP_RANK_BOUND, empty lists are cheap.
-        for (int thr_rank = team; thr_rank < CHUNK_PMP_RANK_BOUND; ++thr_rank)
-        {
-            compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);
-        }
-    }
-
-    chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
+    // Everything the per-rank body touches is rank-local --
+    // map_chunk2_to_compress_potentially_thr[thr_rank], the freed buffer goes to
+    // thr_rank's pool (clear_int_st), and the candidate flag reset is an atomic
+    // store -- so the ranks are independent (a serial loop leaves the team idle
+    // during a re-chunk).
+    const auto sweep = [&inf_array, apply](int thr) { compress_chunk_to_compress_in_par(thr, inf_array, apply); };
+    Base::sweep_every_rank(sweep, sweep);
 }
 
 /**
@@ -383,31 +356,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
 {
     if constexpr (is_bool)
     {
-        chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
-
-        if (CHUNK_PMP_IN_PARALLEL_REGION)
-        {
-            compress_chunk_to_compress_bool_in_par(CHUNK_PMP_THREAD_RANK, apply);
-        }
-        else
-        {
-            // Same as compress_chunk_to_compress(): one region, rank-local sweeps.
-            int team = 0;
-#pragma omp parallel
-            {
-                const int thr = CHUNK_PMP_THREAD_RANK;
-                if (thr == 0)
-                {
-                    team = CHUNK_PMP_NUM_THREADS;
-                }
-                compress_chunk_to_compress_bool_in_par(thr, apply);
-            }
-            for (int thr_rank = team; thr_rank < CHUNK_PMP_RANK_BOUND; ++thr_rank)
-            {
-                compress_chunk_to_compress_bool_in_par(thr_rank, apply);
-            }
-        }
-        chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
+        // Same as compress_chunk_to_compress(): rank-local sweeps.
+        const auto sweep = [apply](int thr) { compress_chunk_to_compress_bool_in_par(thr, apply); };
+        Base::sweep_every_rank(sweep, sweep);
     }
 }
 
@@ -1196,7 +1147,7 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(this Derived&        self
 /// pool, and resets the per-chunk element counters. The rank argument is
 /// unused (documented with the declaration).
 template <typename T, typename Derived>
-void Chunk2OmpPolicy<T, Derived, false>::block_clear(this Derived& self, int num_compress_value, int ind, int)
+void Chunk2OmpPolicy<T, Derived, false>::block_clear(this Derived& self, int num_compress_value, int ind, int /*thr_rank*/)
 {
     // CHUNK_STATS: as the OpenMP block_clear above.
     increm_chunk_compress<Derived>();

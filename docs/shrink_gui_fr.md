@@ -3,7 +3,7 @@
 > English version: [shrink_gui.md](shrink_gui.md).
 
 > Octobre 2026, `shrink_gui` 0.13 (prototype). Une fenêtre sur le portable pour soumettre
-> `compile_all.sh`, `bench_and_test.py` et `multi_launch_stress.py` sur le calculateur, ou
+> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `omp_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
 > docstring de `python/shrink_gui/__init__.py`.
@@ -82,24 +82,36 @@ cette architecture. « Commande » montre exactement ce qui sera exécuté.
 et `--exec` ont un bouton « Choisir… » qui liste les configurations et les exécutables
 trouvés sur le calculateur.
 
+`omp_speedup.py` (courbes de speedup OpenMP d'exécutables shrink_bench sur une cible :
+`--target`, `--exec` ou `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) se lance
+de même en batch seulement, avec les mêmes boutons « Choisir… ». Son avancement et ses erreurs
+s'affichent comme ceux de `bench_and_test.py` ; le Résumé donne son `summary.csv`, et le
+Graphique ses courbes (speedup avec la droite idéale, efficacité ou temps ; couleur = la
+variante, forme = la taille). « Comparer avec » superpose un autre run (un autre compilateur,
+un autre commit) et donne le rapport B / A. Ses sorties vont dans
+`$CCCWORKDIR/omp_speedup/` (sinon `~/omp_speedup/`).
+
 ### Les runs
 
 Le tableau liste les runs du dossier des runs, rafraîchi toutes les 15 s : programme,
 partition, commit, job, statut, avancement (k/N et temps restant quand le programme les
-donne), dernière ligne du log. Une notification signale un run qui se termine.
+donne), erreurs (en direct pour `bench_and_test.py`, runs en échec pour
+`multi_launch_stress.py`), dernière ligne du log. Une notification signale un run qui se
+termine, et la première erreur d'un run en cours.
 
 | onglet | contenu |
 |---|---|
 | Log | le log du run sélectionné, suivi en direct ; recherche avec Ctrl+F |
 | Résumé | `multi_launch_stress.py` : par build (runs, échecs, temps) ; `bench_and_test.py` : ses phases (durée, erreurs) ou son `bench_summary.csv` |
-| Graphique | `multi_launch_stress.py` : le temps de chaque run selon le nombre de threads, filtrable par build et par variante ; « Comparer avec » superpose un autre run |
+| Graphique | `multi_launch_stress.py` : le temps de chaque run selon le nombre de threads, filtrable par build et par variante ; « Comparer avec » superpose un autre run. `bench_and_test.py` : son `bench_summary.csv`, une courbe par variante selon le nombre de threads pour une config (temps, mémoire pic ou speedup) ; « Comparer avec » superpose un autre run de la même architecture en pointillés et donne le rapport B / A (moyenne géométrique sur les points communs, et le pire point) |
+| Erreurs | le log d'erreurs lu dans le dossier de sortie : `bench_errors.log` pour `bench_and_test.py` (une entrée par échec, dès qu'il survient), les `error_*.txt` des runs en échec pour `multi_launch_stress.py` ; l'onglet passe en rouge s'il y a des erreurs. Pour `bench_and_test.py`, la liste à gauche donne chaque échec (`failed_cases.jsonl`) ; un clic affiche sa sortie complète (`run_logs/`). « Relancer les échecs… » soumet un run `--rerun-failed --rerun-repeat N` du run affiché, même partition et mêmes options, ses logs à part dans `run_logs/rerun-<date>` |
 
 | bouton | effet |
 |---|---|
 | Arrêter | `ccc_mdel` du job, ou arrêt de `ccc_mprun` en mode détaché |
 | Récupérer les résultats | copie dans « Résultats (local) » le dossier du run et les fichiers de résumé du programme (CSV, log, erreurs ; jamais les `output_*`) |
 | Reprendre ses options | remet dans le formulaire le programme, la partition et les options du run |
-| Supprimer | supprime le dossier du run (run terminé seulement) ; au choix, aussi les sorties propres à ce run et la copie locale |
+| Supprimer | supprime le dossier du run (run terminé seulement) ; au choix, aussi les sorties propres à ce run (dans un dossier de sortie partagé, `bench_results/<arch>` : les fichiers qu'il a écrits, jamais ceux des runs plus anciens ni `oracle/`) et la copie locale |
 
 ### Cette machine
 

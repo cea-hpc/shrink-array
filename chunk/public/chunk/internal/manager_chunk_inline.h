@@ -103,7 +103,7 @@ namespace shrink_array
 /// @brief Re-entrancy guard of the deferred flush (see flush_all_deferred).
 // Defined (once) in manager_chunk.cpp; flush_all_deferred's body lives in this
 // header, so every TU that instantiates it needs the declaration.
-extern std::atomic<bool> __global_need_flush_deferred;
+extern std::atomic<bool> g_need_flush_deferred;
 /**
  * @brief Compress every compressible chunk of this type, ignoring the candidate lists.
  *
@@ -449,7 +449,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
 /**
  * @brief Apply this type's pending deferred write ops.
  *
- * Clears `__global_need_flush_deferred` for the duration and restores it on
+ * Clears `g_need_flush_deferred` for the duration and restores it on
  * exit, so a writer that runs meanwhile does not queue work this pass will miss.
  *
  * In-region, each thread drains its own rank and returns. Out of region it
@@ -483,7 +483,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
     const bool toggle_flag = !in_parallel;
     if (toggle_flag)
     {
-        __global_need_flush_deferred.store(false, std::memory_order_relaxed);
+        g_need_flush_deferred.store(false, std::memory_order_relaxed);
     }
     if (in_parallel)
     {
@@ -592,7 +592,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
 
     if (toggle_flag)
     {
-        __global_need_flush_deferred.store(true, std::memory_order_release);
+        g_need_flush_deferred.store(true, std::memory_order_release);
     }
 }
 
@@ -1207,7 +1207,7 @@ bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int 
         // The array's own share per rank, where the global budget uses the
         // process-wide somme_chunk_create.
         set_size_buffer_reuse(key, nb_chunk / (Chunk2ADef::factor_div_somme_chunk_buffer_resuse * max_thr));
-        if (std::getenv("CHUNK_AFFINITY_TRACE"))
+        if (std::getenv("CHUNK_AFFINITY_TRACE") != nullptr)
         {
             std::fprintf(stderr, "[AFFINITY] key=%u size=%u nb_chunk=%d budget=%d threads=%d\n", key, size, nb_chunk,
                          get_size_buffer_reuse(key), max_thr);

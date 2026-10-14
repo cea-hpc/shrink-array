@@ -150,7 +150,7 @@ void copy_range(C& container, std::size_t first, std::size_t last, It src_first)
 ///        accepted so the tag form of the call is the same on every container.
 template <typename C, typename U>
     requires(!internal::ChunkedArray<C>)
-void fill_range(C& container, std::size_t first, std::size_t last, const U& v, assume_drained_t)
+void fill_range(C& container, std::size_t first, std::size_t last, const U& v, assume_drained_t /*tag*/)
 {
     fill_range(container, first, last, v);
 }
@@ -159,7 +159,7 @@ void fill_range(C& container, std::size_t first, std::size_t last, const U& v, a
 ///        overload.
 template <typename C, typename It>
     requires(!internal::ChunkedArray<C>)
-void copy_range(C& container, std::size_t first, std::size_t last, It src_first, assume_drained_t)
+void copy_range(C& container, std::size_t first, std::size_t last, It src_first, assume_drained_t /*tag*/)
 {
     copy_range(container, first, last, src_first);
 }

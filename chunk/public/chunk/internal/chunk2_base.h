@@ -83,8 +83,12 @@ class Chunk2Base : public ChunkBase<T, Derived>
     using Base::values_load;
     using Base::values_store;
 
-    Chunk2Base()  = default;
-    ~Chunk2Base() = default;
+    Chunk2Base()                             = default;
+    ~Chunk2Base()                            = default;
+    Chunk2Base(const Chunk2Base&)            = default;
+    Chunk2Base& operator=(const Chunk2Base&) = default;
+    Chunk2Base(Chunk2Base&&)                 = default;
+    Chunk2Base& operator=(Chunk2Base&&)      = default;
 
   protected:
     // ========================================================================

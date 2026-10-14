@@ -30,7 +30,7 @@ concept ComplexType = requires { typename T::value_type; } && std::is_same_v<T, 
 struct ChunkDef
 {
     /// Upper bound on CHUNK_SIZE, a sanity bound for config validation, NOT the
-    /// geometry (shrink_array::__chunk_size). The hard limit is the per-chunk
+    /// geometry (shrink_array::static_chunk_size). The hard limit is the per-chunk
     /// counter capacity (unsigned short, static_assert in conditional_counter.h).
     constexpr static int size_max = 65535;
 

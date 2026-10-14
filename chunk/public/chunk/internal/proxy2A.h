@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <algorithm>   // std::min, std::copy_n, std::fill (the resize copy)
+#include <algorithm>   // std::min, std::copy_n, std::ranges::fill (the resize copy)
 #include <atomic>      // std::memory_order_relaxed
 #include <cstdlib>     // std::abort (debug stubs)
 #include <exception>   // std::exception (PointerMapChunk2A::erase)
@@ -511,7 +511,8 @@ class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool
         // realloc_unique leaves the new tail indeterminate: fill it here.
         if (nb_chunk > nb_chunk_old)
         {
-            std::fill(tab_second_value[nb_tab].get() + nb_chunk_old, tab_second_value[nb_tab].get() + nb_chunk, false);
+            std::ranges::fill(tab_second_value[nb_tab].get() + nb_chunk_old, tab_second_value[nb_tab].get() + nb_chunk,
+                              false);
         }
     }
 
@@ -624,6 +625,9 @@ class Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<T
 /// @brief Proxy to one element of a Chunk2A<T> chunk (see the class description above).
 /// @tparam T Element type.
 template <typename T>
+// no move assignment on purpose -- assigning a proxy
+// WRITES the element (see its operator=); a defaulted move would rebind it instead.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_config::use_fast_block_compression>
 {
   public:

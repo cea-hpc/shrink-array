@@ -31,14 +31,14 @@
 #include <chrono>    // steady_clock, the gate rates (CHUNK_STATS report only)
 #include <cstddef>   // std::size_t (CHUNK_STATS report only: the retention)
 #include <cstdio>    // stderr
-#include <mutex>     // std::lock_guard (CHUNK_STATS report only: the size distribution)
+#include <mutex>     // std::scoped_lock (CHUNK_STATS report only: the size distribution)
 #include <print>     // std::println (the CHUNK_STATS report)
 #include <utility>   // std::cmp_greater
 #include <unistd.h>  // sysconf(_SC_PAGESIZE): page-aware slab floor
 
 #include "chunk/config.h"                              // build_config::chunk_dynamic, use_openmp
 #include "chunk/singleton.h"                           // SingletonChk
-#include "chunk/internal/chunk_size_config.h"          // __chunk_size
+#include "chunk/internal/chunk_size_config.h"          // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"          // active_chunk_size
 #include "chunk/internal/chunk_stats.h"                // per-variant stats reduce/print
 #include "chunk/param_chunk.h"                         // the declarations defined here
@@ -107,7 +107,7 @@ void ParamChunk::init_indexes(bool big_chunk_block)
 
     set_block_size(sz);
 
-    if (std::cmp_greater(__chunk_size, sz))
+    if (std::cmp_greater(static_chunk_size, sz))
     {
         std::println(stderr, "Caution: chunk sizes can't be larger than one page.");
     }
@@ -428,8 +428,8 @@ void ParamChunk::ChunkStats()
 
             // Chunk size of each array at its own teardown (record_chunk_size_at_exit).
             {
-                std::lock_guard<std::mutex> lock(shrink_array::__chunk_size_dist_mutex[v]);
-                const auto&                 dist = shrink_array::__chunk_size_dist[v];
+                const std::scoped_lock lock(shrink_array::__chunk_size_dist_mutex[v]);
+                const auto&            dist = shrink_array::__chunk_size_dist[v];
                 if (!dist.empty())
                 {
                     std::println("  size dist      arrays at each chunk size, at their own teardown:");

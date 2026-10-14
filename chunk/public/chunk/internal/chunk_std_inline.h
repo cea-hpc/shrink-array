@@ -176,35 +176,10 @@ void Chunk<T>::compress_sweep_rank(int thr)
 template <typename T>
 void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 {
-    chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
-
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        // Inside a region: this rank's own list only (as Chunk2A): the mop-up below, run by
-        // every thread, would sweep the other ranks' lists concurrently.
-        compress_sweep_rank(CHUNK_PMP_THREAD_RANK);
-    }
-    else
-    {
-        int team = 0;
-#pragma omp parallel
-        {
-            const int thr = CHUNK_PMP_THREAD_RANK;
-            if (thr == 0)
-            {
-                team = CHUNK_PMP_NUM_THREADS;
-            }
-            compress_sweep_rank(thr);
-        }
-        // Ranks this team does not have (an earlier team larger than this one): sweep their
-        // lists too, or their flags stay at 1 and those chunks are never queued again.
-        for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
-        {
-            compress_sweep_rank(thr);
-        }
-    }
-
-    chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
+    // Each rank its own list, the ranks beyond the team too: a flag left at 1 is a
+    // chunk never queued again (see ChunkBase::sweep_every_rank).
+    const auto sweep = [](int thr) { compress_sweep_rank(thr); };
+    Base::sweep_every_rank(sweep, sweep);
 }
 
 

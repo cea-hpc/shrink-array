@@ -39,6 +39,7 @@
 #include <cstdio>  // std::fprintf
 #include <cstdlib> // std::abort
 #include <mutex>   // std::mutex, std::scoped_lock
+#include <utility> // std::cmp_equal
 
 #include "chunk/config.h"                   // build_config::any_check
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
@@ -331,11 +332,11 @@ inline void report_live_blocks() noexcept
             }
             if (i == n_rows)
             {
-                if (n_rows == static_cast<int>(rows.size()))
+                if (std::cmp_equal(n_rows, rows.size()))
                 {
                     continue; // table full: still counted in the totals above
                 }
-                rows[n_rows++] = Row{rec.state, rec.last_site, 0};
+                rows[n_rows++] = Row{.state = rec.state, .site = rec.last_site, .count = 0};
             }
             ++rows[i].count;
         }

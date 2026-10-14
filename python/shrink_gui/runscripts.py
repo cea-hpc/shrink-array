@@ -94,6 +94,9 @@ else
 fi
 # bench_and_test.py writes its structured progress here (bench_runner/events.py).
 export CHUNK_BENCH_EVENTS="$RUN_DIR/events.jsonl"
+# ... and, once over, a copy of its CSV / errors log / failure list (the output
+# directory is shared by the runs of an architecture, each rewrites them).
+export CHUNK_BENCH_KEEP_DIR="$RUN_DIR"
 # A batch job's shell may not have Environment Modules set up (compile_all.sh
 # needs `module`): take the login profile then.
 type module >/dev/null 2>&1 || source /etc/profile >/dev/null 2>&1
@@ -197,3 +200,20 @@ while kill -0 $m 2>/dev/null; do wait $m; code=$?; done
 echo "$code" > "$D/exit_code"
 echo "[gui] end $(date '+%F %T')  exit code $code"
 """
+
+
+def rerun_command(cmd, spec, repeat, log_dir):
+    """@p cmd (a bench_and_test.py command line, as the window wrote it) made
+    to replay the failures its last run recorded: spec["opt"] (--rerun-failed)
+    with spec["repeat"] N and its full logs in @p log_dir (relative to the
+    output directory, so the first run's logs are never overwritten). The
+    same options of an earlier replay are replaced; the rest is kept as
+    written ($VAR expansion included)."""
+    s = " " + cmd
+    s = re.sub(r"\s%s(?:=\S*|\s+(?!-)\S+)?(?=\s|$)" % re.escape(spec["opt"]), "", s)
+    for flag in (spec["repeat"], spec["log_dir"]):
+        s = re.sub(r"\s%s(?:=|\s+)\S+" % re.escape(flag), "", s)
+    for flag in spec.get("drop", []):
+        s = re.sub(r"\s%s(?=\s|$)" % re.escape(flag), "", s)
+    tail = f"{spec['opt']} {spec['repeat']} {int(repeat)} {spec['log_dir']} {shq(log_dir)}"
+    return (s.strip() + " " + tail).strip()

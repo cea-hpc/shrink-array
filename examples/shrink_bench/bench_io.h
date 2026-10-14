@@ -21,7 +21,7 @@
 // NOTE (dynamic builds): every chunk-geometry computation in the diagnostic
 // paths below MUST come from the array under inspection (data_check.chunk_size():
 // k / chunk_size(), k % chunk_size()), never from the compile-time globals
-// (__chunk_size, ParamChunk::get_decalage_chunk()...). In CHUNK_DYNAMIC runs the
+// (static_chunk_size, ParamChunk::get_decalage_chunk()...). In CHUNK_DYNAMIC runs the
 // effective size (chunk_dyn_size, e.g. 512) differs from the compile-time
 // default (64): the static shift over-indexes getChunkList() (libstdc++ assert
 // in the mismatch report) and the static loop bounds only scan the first 64

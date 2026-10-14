@@ -73,7 +73,18 @@ Modules:
   remote.py         the ssh calls (QProcess)
   i18n.py           French / English
   widgets.py        log, options form, chart, cells
-  app.py            the window
+  app.py            the window (Main): its construction, the runs table, the Log tab
+  Mixins of Main, one file per part of the window:
+    machine_panel.py    this machine or the cluster, connection, partition, QoS
+    launch_form.py      program, options form, start conditions, pickers, submission
+    run_actions.py      stop, reuse the options, delete, fetch the results
+    git_panel.py        the Git (inti) rows
+    tab_summary.py      the Résumé tab
+    tab_chart.py        the Graphique tab (multi_launch_stress.py)
+    tab_bench_chart.py  ... its bench_and_test.py page
+    tab_speedup_chart.py ... its omp_speedup.py page
+    tab_errors.py       the Erreurs tab, the replay of failures
+    tooltips.py         the tooltip texts
 """
 
 __version__ = "0.13"

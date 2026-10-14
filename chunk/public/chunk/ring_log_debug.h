@@ -121,22 +121,22 @@ inline uint32_t get_tid()
 }
 
 /// @brief Ring log disabled: no-op.
-inline void ring_log(uint32_t, EventCode, uint32_t = 0) {}
+inline void ring_log(uint32_t /*tid*/, EventCode /*ev*/, uint32_t /*info*/ = 0) {}
 
 /// @brief Ring log disabled: no-op.
-inline void ring_log_end(uint32_t, EventCode, uint32_t = 0) {}
+inline void ring_log_end(uint32_t /*tid*/, EventCode /*ev*/, uint32_t /*info*/ = 0) {}
 
 /// @brief Ring log disabled: no-op.
-inline void ring_log_start(uint32_t, EventCode, uint32_t = 0) {}
+inline void ring_log_start(uint32_t /*tid*/, EventCode /*ev*/, uint32_t /*info*/ = 0) {}
 
 /// @brief Ring log disabled: no-op.
-inline void ring_log_op(uint32_t, EventCode, uint32_t, const void*) {}
+inline void ring_log_op(uint32_t /*tid*/, EventCode /*ev*/, uint32_t /*num*/, const void* /*addr*/) {}
 
 /// @brief Ring log disabled: no-op.
 inline void dump_ring() {}
 
 /// @brief Ring log disabled: no-op.
-inline void dump_ring_for_addr(const void*) {}
+inline void dump_ring_for_addr(const void* /*target*/) {}
 
 // No-op counterparts too, so `if constexpr (chunk_config::ring_log_debug)`
 // compiles and links in every build without an #ifdef at the call site.

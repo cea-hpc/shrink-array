@@ -24,7 +24,7 @@
 #include "bench_phases.h" // bench_init_library (defined here)
 
 // As in shrink_bench.cpp, where this body comes from: it names ParamChunk,
-// ChunkDef and __chunk_size unqualified. In a .cpp the directive stays
+// ChunkDef and static_chunk_size unqualified. In a .cpp the directive stays
 // contained -- it would have no place in a header.
 using namespace shrink_array;
 
@@ -32,7 +32,7 @@ void bench_init_library()
 {
     if constexpr (chunk_config::is_shrink_enabled)
     {
-        constexpr Int chunk_size = static_cast<Int>(__chunk_size);
+        constexpr Int chunk_size = static_cast<Int>(static_chunk_size);
 
         static_assert(chunk_size <= ChunkDef::size_max);
 
@@ -55,7 +55,7 @@ void bench_init_library()
             std::abort();
         }
 
-        // The checks above only validate __chunk_size — the COMPILE-TIME default.
+        // The checks above only validate static_chunk_size — the COMPILE-TIME default.
         // In dynamic builds the effective geometry is chunk_dyn_size (seeded just
         // below), now overridable via -DDYN_CHUNK_SIZE: validate it with the same
         // rules. chunk_dyn_size is constexpr, so this is free and fires at compile

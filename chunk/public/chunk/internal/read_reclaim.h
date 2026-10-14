@@ -58,6 +58,7 @@
  *          whenever any of it is touched.
  */
 
+#include <array>     // std::array (g_slots)
 #include <algorithm> // std::min
 #include <atomic>    // std::atomic, std::atomic_thread_fence, std::memory_order
 #include <cstdint>   // std::uint64_t
@@ -88,8 +89,8 @@ struct alignas(64) ReaderSlot
     std::atomic<std::uint64_t> seq{0}; ///< Odd while a read is in flight.
 };
 
-inline ReaderSlot       g_slots[kSlots]; ///< The reader slots, claimed in order.
-inline std::atomic<int> g_nslots{0};     ///< Slots claimed so far (may exceed kSlots).
+inline std::array<ReaderSlot, kSlots> g_slots;     ///< The reader slots, claimed in order.
+inline std::atomic<int>               g_nslots{0}; ///< Slots claimed so far (may exceed kSlots).
 /// @brief Readers past kSlots: counted in one shared RMW (seq_cst), slow but
 ///        correct. A program with more reader threads than kSlots raises
 ///        CHUNK_READ_RECLAIM_SLOTS.
@@ -318,7 +319,12 @@ inline bool defer_release(void (*release)(void*, int, void*) noexcept, void* chu
     {
         if (std::vector<Deferred>* b = t_batch; b != nullptr) [[unlikely]]
         {
-            b->push_back(Deferred{release, chunk, block, thr, t_active_chunk_size, t_alloc_key});
+            b->push_back(Deferred{.release    = release,
+                                  .chunk      = chunk,
+                                  .block      = block,
+                                  .thr        = thr,
+                                  .chunk_size = t_active_chunk_size,
+                                  .alloc_key  = t_alloc_key});
             return true;
         }
     }

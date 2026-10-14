@@ -360,3 +360,144 @@ def test_git_pull_without_repository(site):
     res = subprocess.run([str(site.bin / "ssh"), "inti", "python3 - git_pull ~/nothing merge"],
                          input=HELPER.encode(), env=site.env, capture_output=True, timeout=60)
     assert "error" in json.loads(res.stdout)
+
+
+def _bench_run(site, rid, created, od):
+    """A bench_and_test.py run whose log announces @p od."""
+    d = site.runs / rid
+    d.mkdir(parents=True)
+    (d / "meta.json").write_text(json.dumps({"program": "bench_and_test.py", "created": created,
+                                             "out_re": r"Run outputs \S+ (\S+)", "summary": "csv",
+                                             "summary_file": "bench_summary.csv"}))
+    (d / "out.log").write_text("📁 Run outputs → %s  (arch: aarch64)\n" % od)
+    (d / "exit_code").write_text("1")
+
+
+def _files(*names):
+    return base64.b64encode(json.dumps({"files": list(names)}).encode()).decode()
+
+
+def test_errors_log(site):
+    od = site.home / "bench_results" / "aarch64"
+    od.mkdir(parents=True)
+    _bench_run(site, "b1", "2026-10-13 10:00:00", od)
+    r = site.helper("errors", "~/shrink_runs", "b1", _files("bench_errors.log"))
+    assert r["files"] == [] and r["note"].startswith("aucun fichier bench_errors.log")
+    (od / "bench_errors.log").write_text(
+        "CHECK_FAIL: chunk2a t=4 code=-11\n  stderr_tail:\n    Segmentation fault\n"
+        "PERF_FAIL: chunk t=8 timeout\n  stderr_tail:\n    \n")
+    r = site.helper("errors", "~/shrink_runs", "b1", _files("bench_errors.log"))
+    assert r["count"] == 2 and r["newer"] is None
+    assert r["files"][0]["name"] == "bench_errors.log" and "Segmentation fault" in r["files"][0]["data"]
+    # bench_results/<arch> is shared: a newer run rewrites the file
+    _bench_run(site, "b2", "2026-10-13 11:00:00", od)
+    assert site.helper("errors", "~/shrink_runs", "b1", _files("bench_errors.log"))["newer"] == "b2"
+    assert site.helper("errors", "~/shrink_runs", "b2", _files("bench_errors.log"))["newer"] is None
+
+
+def test_errors_tail_patterns_and_no_dir(site):
+    od = site.home / "out"
+    od.mkdir()
+    _bench_run(site, "m1", "2026-10-13 10:00:00", od)
+    (od / "error_1_a.txt").write_text("x" * 10 + "\n" + "y" * (2 * 1024 * 1024) + "\nEND\n")
+    (od / "error_2_a.txt").write_text("")
+    (od / "output_1_a.txt").write_text("not an error")
+    r = site.helper("errors", "~/shrink_runs", "m1", _files("error_*.txt", "../etc"))
+    assert sorted(f["name"] for f in r["files"]) == ["error_1_a.txt", "error_2_a.txt"]
+    big = next(f for f in r["files"] if f["name"] == "error_1_a.txt")
+    assert big["skipped"] > 0 and big["data"].endswith("END\n") and not big["data"].startswith("x")
+    assert r["count"] == 1                        # the empty file is no error
+    assert site.helper("errors", "~/shrink_runs", "m1", _files())["note"] == \
+        "pas de log d'erreurs pour ce programme"
+    d = site.runs / "m2"
+    d.mkdir()
+    (d / "meta.json").write_text(json.dumps({"out_re": r"Run outputs \S+ (\S+)"}))
+    assert "pas encore de dossier" in site.helper("errors", "~/shrink_runs", "m2",
+                                                  _files("bench_errors.log"))["note"]
+
+
+def test_errors_failures_and_their_logs(site):
+    od = site.home / "bench_results" / "aarch64"
+    logs = od / "run_logs"
+    logs.mkdir(parents=True)
+    _bench_run(site, "f1", "2026-10-13 10:00:00", od)
+    crash = logs / "shrink_bench_chunk2a__omp4__00003__ok.log"     # a sanitizer hit exits 0
+    crash.write_text("ERROR: AddressSanitizer\n")
+    (logs / "shrink_bench_chunk__omp4__00001__ok.log").write_text("fine\n")
+    (od / "failed_cases.jsonl").write_text(
+        json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: chunk2a", "runs": [{"log": str(crash)}]}) + "\n"
+        + json.dumps({"kind": "MEM_GUARD", "summary": "MEM_GUARD: x", "runs": []}) + "\n"
+        + json.dumps({"kind": "X", "summary": "outside", "runs": [{"log": "/etc/passwd"}]}) + "\n{partial")
+    opts = base64.b64encode(json.dumps({"files": ["bench_errors.log"], "cases": "failed_cases.jsonl",
+                                        "full_logs": "run_logs"}).encode()).decode()
+    r = site.helper("errors", "~/shrink_runs", "f1", opts)
+    assert [(c["kind"], c["replayable"], c["logs"]) for c in r["cases"]] == [
+        ("CHECK_FAIL", True, ["run_logs/shrink_bench_chunk2a__omp4__00003__ok.log"]),
+        ("MEM_GUARD", False, []), ("X", True, [])]
+    # the failed executions of the run, for an older bench_runner: never __ok
+    (logs / "shrink_bench_chunk2__omp8__00002__timeout.log").write_text("hung\n")
+    assert site.helper("errors", "~/shrink_runs", "f1", opts)["logs"] == [
+        "run_logs/shrink_bench_chunk2__omp8__00002__timeout.log"]
+    f = site.helper("errfile", "~/shrink_runs", "f1", base64.b64encode(json.dumps(
+        {"paths": r["cases"][0]["logs"] + ["../../../../etc/passwd"]}).encode()).decode())["files"]
+    assert "AddressSanitizer" in f[0]["data"] and f[1].get("missing") and f[1]["data"] == ""
+
+
+def test_rerun_command():
+    from shrink_gui.config import PROGRAMS
+    from shrink_gui.runscripts import rerun_command
+    spec = PROGRAMS["bench_and_test.py"]["rerun"]
+    cmd = 'python3 bench_and_test.py --mode fast --output-dir "/ccc/work/$USER/b" --no-full-log'
+    once = rerun_command(cmd, spec, 3, "run_logs/rerun-1")
+    assert once == ('python3 bench_and_test.py --mode fast --output-dir "/ccc/work/$USER/b" '
+                    "--rerun-failed --rerun-repeat 3 --full-log-dir run_logs/rerun-1")
+    # a replay of a replay: the options are replaced, not repeated
+    assert rerun_command(once, spec, 1, "run_logs/rerun-2").endswith(
+        '"/ccc/work/$USER/b" --rerun-failed --rerun-repeat 1 --full-log-dir run_logs/rerun-2')
+    assert rerun_command("", spec, 1, "d") == "--rerun-failed --rerun-repeat 1 --full-log-dir d"
+
+
+def test_errors_column(site):
+    # bench_and_test.py: the "error" records while a phase runs, the end record once over
+    d = site.runs / "e1"
+    d.mkdir(parents=True)
+    (d / "meta.json").write_text(json.dumps({"program": "bench_and_test.py", "summary": "csv"}))
+    ev = [{"t": 1, "kind": "start"}, {"t": 2, "kind": "phase_start", "phase": "ctest"},
+          {"t": 3, "kind": "phase_end", "phase": "ctest", "errors": 1},
+          {"t": 4, "kind": "phase_start", "phase": "check"},
+          {"t": 5, "kind": "error", "phase": "check", "summary": "CHECK_FAIL: a"},
+          {"t": 6, "kind": "error", "phase": "check", "summary": "CHECK_FAIL: b"}]
+    (d / "events.jsonl").write_text("\n".join(json.dumps(e) for e in ev) + "\n")
+    assert _status(site, "e1")["errors"] == [2, "CHECK_FAIL: b"]
+    with open(d / "events.jsonl", "a") as f:
+        f.write(json.dumps({"t": 9, "kind": "end", "errors": 4}) + "\n")
+    assert _status(site, "e1")["errors"] == [4, "CHECK_FAIL: b"]       # + the memory guards
+    # multi_launch_stress.py: its failed runs, kept once the run is over
+    _launch(site, "m1", "python3 fake_stress.py --runs 6 --fail_every 3")
+    assert site.wait(lambda: _status(site, "m1")["status"] == "fini")
+    assert _status(site, "m1")["errors"] == [2, None]
+    assert json.loads((site.runs / "m1" / "errors_count.json").read_text()) == [2, None]
+    assert _status(site, "b0") is None
+
+
+def test_own_copies_win_over_the_shared_directory(site):
+    od = site.home / "bench_results" / "aarch64"
+    od.mkdir(parents=True)
+    head = "Config,Variant,Threads,AvgTime_s,PeakMem_Mo,Speedup_vs_baseline\n"
+    (od / "bench_summary.csv").write_text(head + "omp-gnu,chunk,4,9.0,100,\n")      # a later run's
+    (od / "bench_errors.log").write_text("CHECK_FAIL: later\n")
+    _bench_run(site, "k1", "2026-10-13 10:00:00", od)
+    _bench_run(site, "k2", "2026-10-13 11:00:00", od)
+    p = site.helper("points", "~/shrink_runs", "k1")
+    assert p["own"] is False and p["rows"] == [["omp-gnu", "chunk", 4, 9.0, 100.0, None]]
+    d = site.runs / "k1"
+    (d / "bench_summary.csv").write_text(head + "omp-gnu,chunk,4,2.0,100,\nomp-gnu,chunk2a,4,1.0,,2.000\n")
+    (d / "bench_errors.log").write_text("CHECK_FAIL: mine\n")
+    p = site.helper("points", "~/shrink_runs", "k1")
+    assert p["own"] is True and p["configs"] == ["omp-gnu"] and p["variants"] == ["chunk", "chunk2a"]
+    assert p["rows"][1] == ["omp-gnu", "chunk2a", 4, 1.0, None, 2.0]
+    s = site.helper("summary", "~/shrink_runs", "k1")
+    assert [r[3] for r in s["rows"]] == ["2.0", "1.0"]
+    e = site.helper("errors", "~/shrink_runs", "k1", _files("bench_errors.log"))
+    assert "mine" in e["files"][0]["data"] and e["newer"] is None      # k2 cannot have rewritten it
+    assert e["newer"] is None and e["dir"] == str(d)

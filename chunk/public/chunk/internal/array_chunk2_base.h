@@ -159,32 +159,6 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // here; idempotent for one that already has a key.
         self.assign_alloc_key();
     }
-
-    /// @brief resize(), then @p val written to the NEW elements only
-    ///        ([old size, newsz) -- std::vector's semantics; assign() fills all).
-    void resize(this Derived& self, ind_type newsz, in_t<T> val)
-    {
-        const ind_type old_size = self.m_size;
-        self.resize(newsz); // calls derived resize(sz)
-
-        // A team of its own outside a region; the calling thread inside one (an orphaned
-        // `omp for` there would write only 1/N of the range).
-        if (!CHUNK_PMP_IN_PARALLEL_REGION && self.nb_chunk > 500)
-        {
-#pragma omp parallel for schedule(static)
-            for (ind_type i = old_size; i < newsz; ++i)
-            {
-                self[i] = val;
-            }
-        }
-        else
-        {
-            for (ind_type i = old_size; i < newsz; ++i)
-            {
-                self[i] = val;
-            }
-        }
-    }
 };
 
 } // namespace shrink_array

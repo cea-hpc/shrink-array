@@ -129,25 +129,30 @@ enum class Bracket
     no_begin,     ///< finalize, never begin
 };
 
+/// The helper's reduction. At namespace scope, not a local of regions():
+/// the body lambda would capture it, and clang refuses a reduction on a
+/// captured variable ("reduction variable must be shared"; GCC accepts it).
+long helper_sum = 0;
+
 /// The regions of a case; the elements that do not read back as a
 /// std::vector does.
 long regions(Bracket how)
 {
     Array<int>       a(kN);
     std::vector<int> ref(kN, 0);
-    long             sum = 0; // the helper's reduction
+    helper_sum = 0;
     for (int r = 0; r < kRegions; ++r)
     {
         const int cs   = sched(r);
         auto      body = [&]
         {
-#pragma omp for schedule(static, cs) reduction(+ : sum)
+#pragma omp for schedule(static, cs) reduction(+ : helper_sum)
             for (int i = 0; i < kN; ++i)
             {
                 const int v = value(r, i);
                 a[i]        = v;
                 ref[i]      = v;
-                sum += v;
+                helper_sum += v;
             }
         };
         if (how == Bracket::helper)
@@ -203,9 +208,9 @@ long regions(Bracket how)
                 want += value(r, i);
             }
         }
-        if (sum != want)
+        if (helper_sum != want)
         {
-            std::println("  reduction: {}, expected {}", sum, want);
+            std::println("  reduction: {}, expected {}", helper_sum, want);
             ++bad;
         }
     }

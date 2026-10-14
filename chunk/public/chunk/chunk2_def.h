@@ -32,16 +32,33 @@ struct Chunk2Def
     // one keeps threads x floor materialised candidates alive until a rank compresses, and
     // their slabs stay resident (a few hundred MiB more RSS).
     /// Floor of the per-thread "to compress" list threshold (entries), by chunk_config::tuning_level.
-    constexpr static int size_min_list_chunk_to_check_compress = (chunk_config::tuning_level == 1)   ? 2
-                                                                 : (chunk_config::tuning_level == 3) ? 500
-                                                                                                     : 100;
+    constexpr static int size_min_list_chunk_to_check_compress = []
+    {
+        switch (chunk_config::tuning_level)
+        {
+            case 1:
+                return 2;
+            case 3:
+                return 500;
+            default:
+                return 100;
+        }
+    }();
 
     // Level 1: Divisor 2000 -> Threshold will be very low even for huge arrays
     /// List threshold = chunks created / (this * max threads), floored by size_min_list_chunk_to_check_compress.
-    constexpr static int factor_div_nb_chunk_for_compress = (chunk_config::tuning_level == 1) ? 2000
-                                                            : (chunk_config::tuning_level == 3)
-                                                                ? 50 // Chunk2A's
-                                                                : 100;
+    constexpr static int factor_div_nb_chunk_for_compress = []
+    {
+        switch (chunk_config::tuning_level)
+        {
+            case 1:
+                return 2000;
+            case 3:
+                return 50; // Chunk2A's
+            default:
+                return 100;
+        }
+    }();
 };
 
 } // namespace shrink_array

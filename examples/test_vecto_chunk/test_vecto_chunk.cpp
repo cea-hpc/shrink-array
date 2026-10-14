@@ -40,7 +40,7 @@
 #include "chunk/chunk_def.h"                  // ChunkDef
 #include "chunk/chunk_std.h"                  // destroy_block_chunk
 #include "chunk/config.h"                     // chunk_config::stats
-#include "chunk/internal/chunk_size_config.h" // __chunk_size
+#include "chunk/internal/chunk_size_config.h" // static_chunk_size
 
 
 using namespace shrink_array;
@@ -196,7 +196,7 @@ void calculate1(double                     val,
 
 int main()
 {
-    const int chunk_size = static_cast<int>(shrink_array::__chunk_size);
+    const int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
 
     assert(chunk_size <= ChunkDef::size_max);
 

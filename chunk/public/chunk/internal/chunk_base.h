@@ -148,10 +148,14 @@ enum class DeferReadGate : std::uint8_t
     Precise
 };
 
-inline constexpr DeferReadGate defer_read_gate_mode = !build_config::use_openmp ? DeferReadGate::None
-                                                      : !chunk_config::use_precise_pending_gate
-                                                          ? DeferReadGate::Coarse
-                                                          : DeferReadGate::Precise;
+inline constexpr DeferReadGate defer_read_gate_mode = []
+{
+    if (!build_config::use_openmp)
+    {
+        return DeferReadGate::None;
+    }
+    return chunk_config::use_precise_pending_gate ? DeferReadGate::Precise : DeferReadGate::Coarse;
+}();
 
 template <typename Derived, DeferReadGate Mode = defer_read_gate_mode>
 class DeferredReadGate; // primary left undefined: only the 3 specializations exist
@@ -214,7 +218,7 @@ class DeferredReadGate<Derived, DeferReadGate::None>
 
     /// @brief Always false: nothing can ever be pending in a serial build.
     /// @return Always false.
-    [[nodiscard]] bool pending_any() const noexcept
+    [[nodiscard]] static bool pending_any() noexcept
     {
         return false;
     }
@@ -223,7 +227,7 @@ class DeferredReadGate<Derived, DeferReadGate::None>
     /// @param thr Calling thread's rank; unused.
     /// @param i Element offset; unused.
     /// @return Always false.
-    [[nodiscard]] bool foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) const noexcept
+    [[nodiscard]] bool static foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) noexcept
     {
         return false;
     }
@@ -241,16 +245,16 @@ class DeferredReadGate<Derived, DeferReadGate::Coarse>
     // so counter-only logic gated on it folds away.
     /// @brief No-op: this build has no per-chunk pending counter.
     /// @param thr Calling thread's rank; unused.
-    void pending_publish([[maybe_unused]] int thr) noexcept {}
+    static void pending_publish([[maybe_unused]] int thr) noexcept {}
 
     /// @brief No-op: this build has no per-chunk pending counter.
     /// @param count Number of operations retired; unused.
-    void pending_retire([[maybe_unused]] int32_t count) noexcept {}
+    static void pending_retire([[maybe_unused]] int32_t count) noexcept {}
 
     /// @brief Always false: this build has no per-chunk pending counter to
     ///        report on.
     /// @return Always false.
-    [[nodiscard]] bool pending_any() const noexcept
+    [[nodiscard]] static bool pending_any() noexcept
     {
         return false;
     }
@@ -318,7 +322,7 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
                 // stick and the drains run hyperactive.
                 const int32_t  cnt      = sign_extend_count(cur);
                 const uint32_t own      = cur >> kCountBits;
-                const uint32_t nown     = (cnt <= 0) ? me : (own == me ? own : kOwnerMulti);
+                const uint32_t nown     = (cnt <= 0 || own == me) ? me : kOwnerMulti;
                 const uint32_t ncnt     = static_cast<uint32_t>(cnt + 1) & kCountMask;
                 const uint32_t nw       = (nown << kCountBits) | ncnt;
                 auto           expected = static_cast<int32_t>(cur);
@@ -691,7 +695,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     /// @brief Reclaim a memory block to the thread-local free list
     /// @param values_loc Pointer to the block to reclaim
     /// @param thr_rank Thread rank/ID
-    void recup_value(T* values_loc, int thr_rank)
+    void recup_value(T* values_loc, int thr_rank) const
     {
         const auto& self = static_cast<const Derived&>(*this);
         // Ledger: LIVE -> PARKED. This block was just allocated by create_value
@@ -962,20 +966,20 @@ class ChunkBase : public DeferredReadGate<Derived>,
     struct NullValueAllocator
     {
         /// @brief No pool to set up.
-        void init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
+        static void init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
         /// @brief No pool to tear down.
-        void destroy() noexcept {}
+        static void destroy() noexcept {}
         /// @brief Never allocates: std-alloc buffers come from svalloc.
-        [[nodiscard]] T* alloc() noexcept
+        [[nodiscard]] static T* alloc() noexcept
         {
             return nullptr;
         }
         /// @brief Nothing to return to a pool.
-        void free_elt_pow2(const T* /*ptr*/) noexcept {}
+        static void free_elt_pow2(const T* /*ptr*/) noexcept {}
         /// @brief No-op counterpart to TCTypeAllocator::set_arena, so call
         ///        sites that set the arena unconditionally (before init())
         ///        compile in std-alloc builds too.
-        void set_arena(fast_alloc::ArenaKind) noexcept {}
+        static void set_arena(fast_alloc::ArenaKind /*k*/) noexcept {}
     };
 
     using AllocatorType = std::conditional_t<
@@ -992,8 +996,12 @@ class ChunkBase : public DeferredReadGate<Derived>,
 
     using cst_val1_type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
 
-    ChunkBase()  = default;
-    ~ChunkBase() = default;
+    ChunkBase()                            = default;
+    ~ChunkBase()                           = default;
+    ChunkBase(const ChunkBase&)            = default;
+    ChunkBase& operator=(const ChunkBase&) = default;
+    ChunkBase(ChunkBase&&)                 = default;
+    ChunkBase& operator=(ChunkBase&&)      = default;
 
     // ========================================================================
     // Atomic / Non-atomic pointer management
@@ -1592,6 +1600,57 @@ class ChunkBase : public DeferredReadGate<Derived>,
     alignas(bits::word_t) static inline constinit cst_val1_type m_ptr_cst_val1{};
 
   protected:
+    /**
+     * @brief The rank sweep of the compression passes (compress_chunk_to_compress
+     *        of every chunk type): each rank drains ITS OWN candidate list.
+     *
+     * @details Inside a parallel region: @p in_region(rank) for the calling rank
+     *          only -- opening the region below from inside one would make every
+     *          thread sweep every rank's list at once. Outside: one region where
+     *          each rank runs @p sweep(rank), then, when @p mop_up, @p sweep for
+     *          the ranks [team size, CHUNK_PMP_RANK_BOUND) serially -- the lists
+     *          are sized by the thread capacity, and a team smaller than an
+     *          earlier one leaves the upper ranks' lists (and their candidate
+     *          flags) behind otherwise; empty lists are cheap. The OMPT callbacks
+     *          are disarmed for the duration, so nothing re-enters the
+     *          compression machinery underneath.
+     * @param in_region the calling rank's pass inside a region (int rank)
+     * @param sweep     one rank's pass outside a region (int rank)
+     * @param mop_up    sweep the ranks beyond the team too
+     */
+    template <typename InRegion, typename Sweep>
+    static void sweep_every_rank(InRegion&& in_region, Sweep&& sweep, bool mop_up = true)
+    {
+        chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
+
+        if (CHUNK_PMP_IN_PARALLEL_REGION)
+        {
+            in_region(CHUNK_PMP_THREAD_RANK);
+        }
+        else
+        {
+            int team = 0;
+#pragma omp parallel
+            {
+                const int thr = CHUNK_PMP_THREAD_RANK;
+                if (thr == 0) // one writer; `master` is deprecated since OpenMP 5.1
+                {
+                    team = CHUNK_PMP_NUM_THREADS;
+                }
+                sweep(thr);
+            }
+            if (mop_up)
+            {
+                for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+                {
+                    sweep(thr);
+                }
+            }
+        }
+
+        chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
+    }
+
     // Type traits
     // bool and Bit (bit.h) share chunk2's bool path: one second value, true.
     static constexpr bool is_bool     = is_bool_like_v<T>;
@@ -1908,7 +1967,8 @@ class ChunkBase : public DeferredReadGate<Derived>,
             mine.free_elt_pow2(ptr);
             return;
         }
-        auto* owner = static_cast<std::remove_reference_t<decltype(mine)>*>(const_cast<void*>(slab->owner));
+        using AllocT = std::remove_reference_t<decltype(mine)>;
+        auto* owner  = const_cast<AllocT*>(static_cast<const AllocT*>(slab->owner));
         if (slab->owner_rank < 0 || slab->owner_rank == thr_rank || !CHUNK_PMP_IN_PARALLEL_REGION)
         {
             CHUNK_FREEPATH_INC(freed);

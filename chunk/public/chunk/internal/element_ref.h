@@ -158,12 +158,12 @@ class ElementRef
 
     // ----------------------------------------------------------- assignment
     /// @brief `a[i] = b[j]`: the proxy-to-proxy assignment (gated read of b[j]).
-    CHUNK_FORCE_INLINE decltype(auto) operator=(ElementRef&& from) &&
+    CHUNK_FORCE_INLINE decltype(auto) operator=(ElementRef&& from) && noexcept
     {
         return wrap(p_ = from.p_);
     }
     /// @brief Refused: assignment to a named element proxy.
-    ElementRef& operator=(ElementRef&& /*from*/) &
+    ElementRef& operator=(ElementRef&& /*from*/) & noexcept
     {
         static_assert(element_ref_detail::misuse<P>, CHUNK_ELEMENT_REF_MISUSE);
         return *this;
@@ -200,6 +200,8 @@ class ElementRef
     }
 
 // The compound assignments: forwarded to the proxy where it has them.
+// OP is an operator token (+=, ...), which cannot be parenthesized.
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define CHUNK_ELEMENT_REF_COMPOUND(OP)                                                          \
     template <typename U>                                                                       \
         requires requires(P& p, U&& u) { p OP element_ref_detail::unwrap(std::forward<U>(u)); } \
@@ -214,6 +216,7 @@ class ElementRef
         static_assert(element_ref_detail::misuse<U>, CHUNK_ELEMENT_REF_MISUSE);                 \
         return *this;                                                                           \
     }
+    // NOLINTEND(bugprone-macro-parentheses)
 
     CHUNK_ELEMENT_REF_COMPOUND(+=)
     CHUNK_ELEMENT_REF_COMPOUND(-=)

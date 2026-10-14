@@ -20,6 +20,7 @@
 // includes this file after the class). Only the one-liners stay in the class.
 
 #include <algorithm> // std::max
+#include <array>     // std::array (CHUNK_ADVISOR_TABLE title)
 #include <cstddef>   // std::size_t
 #include <cstdio>    // std::fprintf, std::fflush
 #include <cstdlib>   // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks

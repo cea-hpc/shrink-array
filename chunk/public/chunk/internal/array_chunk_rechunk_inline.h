@@ -23,11 +23,13 @@
 // container declaration itself.
 
 #include <algorithm>   // std::min / std::max (CHUNK_RECHUNK_SLICES)
+#include <array>       // std::array (CHUNK_RECHUNK_SCHEDULE text buffers)
 #include <atomic>      // std::atomic<long> n_folded (CHUNK_RECHUNK_TRACE)
 #include <chrono>      // CHUNK_RECHUNK_TRACE phase timers
 #include <ratio>       // std::milli (the same timers)
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
+#include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstring>     // std::memcpy / std::memcmp (refill bulk read)
 #include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstdlib>     // std::getenv (CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SCHEDULE)
@@ -68,6 +70,42 @@ inline const bool g_rechunk_recycle = []() noexcept
 {
     const char* env = std::getenv("CHUNK_RECHUNK_RECYCLE");
     return env == nullptr || env[0] == '\0' || env[0] != '0';
+}();
+
+/// CHUNK_RECHUNK_KEEP_RECYCLED (default off; 1 = on): at the end of the v1
+/// refill, KEEP the recycled slabs no slice took on the arena's recycled lists,
+/// resident, instead of advising them away (SlabArena::advise_recycled: one
+/// MADV_DONTNEED per run, in practice per 1 MiB slab). SlabArena::allocate()
+/// takes them first, so the next re-chunk and the next writes reuse their pages
+/// instead of faulting fresh ones -- at 128 threads on Grace a fault costs ~4x
+/// what it does at 64. Cost: those slabs stay in the RSS until reused.
+inline const bool g_rechunk_keep_recycled = []() noexcept
+{
+    const char* env = std::getenv("CHUNK_RECHUNK_KEEP_RECYCLED");
+    const bool  on  = env != nullptr && env[0] != '\0' && env[0] != '0';
+    if (on)
+    {
+        std::fprintf(stderr, "[env] CHUNK_RECHUNK_KEEP_RECYCLED=1: the refill's leftover recycled slabs "
+                             "stay resident\n");
+    }
+    return on;
+}();
+
+/// CHUNK_RECHUNK_KEEP_RECYCLED_MB (default 0; MiB): the bounded form of
+/// CHUNK_RECHUNK_KEEP_RECYCLED -- at the end of the v1 refill, leave up to this
+/// much of the leftover recycled slabs resident per arena, split evenly over the
+/// ranks, and advise the rest away as before (SlabArena::advise_recycled).
+/// 0 = advise them all. Ignored when CHUNK_RECHUNK_KEEP_RECYCLED=1 (keep all).
+inline const std::size_t g_rechunk_keep_recycled_bytes = []() noexcept
+{
+    const auto mb = env_number<std::size_t>("CHUNK_RECHUNK_KEEP_RECYCLED_MB", 0);
+    if (mb != 0)
+    {
+        std::fprintf(stderr, "[env] CHUNK_RECHUNK_KEEP_RECYCLED_MB=%zu: up to %zu MiB of the refill's leftover "
+                             "recycled slabs stay resident per arena\n",
+                     mb, mb);
+    }
+    return mb << 20U;
 }();
 
 /// CHUNK_RECHUNK_TRACE_MEM (read once, set = on): the MEMORY side of the trace --
@@ -122,8 +160,8 @@ inline long rss_mib_now() noexcept
 ///        Serial builds parse it too; chunk_pmp_set_schedule() is then a no-op.
 struct RebuildSchedule
 {
-    chunk_pmp_schedule schedule{chunk_pmp_sched::sched_guided, 16};
-    char               text[32]{"guided,16"};
+    chunk_pmp_schedule   schedule{.kind = chunk_pmp_sched::sched_guided, .chunk = 16};
+    std::array<char, 32> text{"guided,16"};
 };
 
 /// @brief The rebuild loop's schedule, parsed once from CHUNK_RECHUNK_SCHEDULE ("kind[,chunk]").
@@ -138,14 +176,22 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         {
             return parsed;
         }
-        char            kind[16] = {};
-        int             chunk    = 0;
-        const int       nfields  = std::sscanf(env, "%15[a-z],%d", kind, &chunk);
-        chunk_pmp_sched k        = chunk_pmp_sched::sched_static;
-        bool            ok       = nfields >= 1 && chunk >= 0;
+        // "kind" or "kind,chunk": the chunk, when given, must be ALL of what
+        // follows the comma (parse_number: std::from_chars, no trailing text).
+        const std::string_view spec(env);
+        const std::size_t      comma = spec.find(',');
+        const std::string_view kv    = spec.substr(0, comma);
+        int                    chunk = 0;
+        chunk_pmp_sched        k     = chunk_pmp_sched::sched_static;
+        bool ok = true;
+        if (comma != std::string_view::npos)
+        {
+            const auto parsed_chunk = parse_number<int>(env + comma + 1);
+            ok                      = parsed_chunk.has_value() && *parsed_chunk >= 0;
+            chunk                   = ok ? *parsed_chunk : 0;
+        }
         if (ok)
         {
-            const std::string_view kv(kind);
             if (kv == "static")
             {
                 k = chunk_pmp_sched::sched_static;
@@ -175,8 +221,9 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
                          env);
             return parsed;
         }
-        parsed.schedule = {k, chunk}; // chunk 0: the runtime's default for this kind
-        *std::format_to_n(parsed.text, sizeof parsed.text - 1, "{},{}", kind, chunk).out = '\0';
+        parsed.schedule    = {.kind = k, .chunk = chunk}; // chunk 0: the runtime's default for this kind
+        const auto written = std::format_to_n(parsed.text.data(), parsed.text.size() - 1, "{},{}", kv, chunk);
+        *written.out       = '\0';
         return parsed;
     }();
     return schedule;
@@ -638,7 +685,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // v1, OpenMP: how many new chunks have finished with each old chunk --
         // see the release below. Not needed when the new size is a multiple
         // of the old one: every old chunk then lies inside one new chunk.
-        [[maybe_unused]] const bool aligned_coarsening = new_size % old_size == 0;
+        [[maybe_unused]] const bool                    aligned_coarsening = new_size % old_size == 0;
         [[maybe_unused]] std::vector<std::atomic<int>> old_done;
         if constexpr (chunk_config::use_chunk && build_config::use_openmp)
         {
@@ -896,9 +943,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                         // elements [oc_base, min(oc_end, total)). Release it with
                         // the last of them to finish, whoever that is.
                         const ind_type last_elem = (oc_end < total ? oc_end : total) - 1;
-                        const auto     readers =
-                            static_cast<int>(last_elem / static_cast<ind_type>(new_size) -
-                                             oc_base / static_cast<ind_type>(new_size) + 1);
+                        const auto     readers   = static_cast<int>((last_elem / static_cast<ind_type>(new_size)) -
+                                                                    (oc_base / static_cast<ind_type>(new_size)) + 1);
                         if (old_done[static_cast<std::size_t>(oc)].fetch_add(1, std::memory_order_acq_rel) + 1 !=
                             readers)
                         {
@@ -1082,7 +1128,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             chunk_pmp_set_schedule(rs.schedule);
             if (internal::g_rechunk_trace)
             {
-                std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text);
+                std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text.data());
             }
         }
         g_in_rechunk_rebuild.store(true, std::memory_order_release);
@@ -1239,7 +1285,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                                     recycle_held.assign(n_ranks, 0);
                                     recycle_scratch.resize(n_ranks);
                                 }
-                                std::fill(recycle_held.begin(), recycle_held.end(), static_cast<unsigned char>(0));
+                                std::ranges::fill(recycle_held, static_cast<unsigned char>(0));
                                 // The previous boundary's slabs this slice did
                                 // not take wait for the end of the refill (one
                                 // pass, below the slice loop): they hold memory
@@ -1378,11 +1424,14 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         {
             // The last boundary's recycled slabs the last slice did not take:
             // back to the kernel, as the sweep would have done.
-            if (internal::g_rechunk_recycle && n_slices > 1)
+            // CHUNK_RECHUNK_KEEP_RECYCLED: leave them on the recycled lists, resident,
+            // for the next allocations (SlabArena::allocate() takes them first).
+            if (internal::g_rechunk_recycle && n_slices > 1 && !internal::g_rechunk_keep_recycled)
             {
                 const auto a0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                chunk_type::get_chunk_allocator(0, old_key_refill).advise_recycled_slabs();
+                chunk_type::get_chunk_allocator(0, old_key_refill)
+                    .advise_recycled_slabs(internal::g_rechunk_keep_recycled_bytes);
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (internal::g_rechunk_trace)
                 {

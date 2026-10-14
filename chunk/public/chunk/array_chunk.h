@@ -76,11 +76,6 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         ++nb_tab;
     }
 
-    /// @brief Claim this array's identity and build its storage for @p sz
-    ///        elements (the constructors' body; registers the element type's
-    ///        manager on the way, see AllTypeChunk::ensure_manager).
-    void create(ind_type sz);
-
     /// @brief Storage (re)allocation at the current active geometry, WITHOUT
     ///        the identity work create_common() does. Used by create() and by
     ///        rechunk_to().
@@ -150,7 +145,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
             WriteCompressSyncPolicy<Proxy<T>>::ensure_initialized();
         }
 
-        create(sz);
+        this->create(sz);
     }
 
     // ── The copy family: deep, element by element ────────────────────────────
@@ -262,6 +257,9 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// @brief Resize to @p newsz elements; new elements read the first
     ///        constant. A sequential point: the rank's candidates are
     ///        compressed and the deferred ops drained first.
+    /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
+    ///       freed serially, parked in the geometry's reuse list under OpenMP);
+    ///       chunk_list keeps its capacity.
     void resize(ind_type newsz);
 
   private:
@@ -273,9 +271,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     void release_chunk_range(int first, int last);
 
   public:
-    /// @brief resize(), then @p val written to the NEW elements only
-    ///        ([old size, newsz) -- std::vector's semantics; assign() fills all).
-    void resize(ind_type newsz, in_t<T> val);
+    using Base::resize; // resize(newsz, val), ArrayChunkBase's
 
     /// @brief Release the storage and report this array's end-of-life stats.
     void clear();

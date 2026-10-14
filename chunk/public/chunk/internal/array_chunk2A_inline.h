@@ -47,21 +47,6 @@ namespace shrink_array
 {
 
 template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk2A<T, ind_type>::create(ind_type sz)
-{
-    // The first array of this element type registers its manager; every
-    // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<ManagerChunk<Chunk2A, T>>();
-
-    Base::create_common();
-
-    // Geometry-dependent allocation only, so rechunk_to can call it on an
-    // already-registered, just torn-down array WITHOUT re-running create_common
-    // (which would re-register it under a fresh num_tab via pre_create_hook).
-    rebuild_storage(sz);
-}
-
-template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
 {
     if (sz)
@@ -686,26 +671,34 @@ void ArrayChunk2A<T, ind_type>::release_chunk_range(int first, int last)
     }
     else
     {
-        const int          thr_rank = CHUNK_PMP_THREAD_RANK;
-        const unsigned int my_sz    = this->size_policy_.size();
-        auto&              lbf      = manager_chunk2A::get_list_block_free_thr_for_size(thr_rank, my_sz);
-        for (int j = first; j < last; ++j)
-        {
-            if (chunk_list[j].written_test())
+        // A large shrink takes a team of its own, as clear_core()'s release
+        // does: each thread parks into ITS rank's reuse list of this array's
+        // geometry. Inside a region, or for a few chunks, the calling thread.
+        const unsigned int my_sz = this->size_policy_.size();
+        parallel_storage_init::for_each_chunk_in(
+            first, last,
+            [my_sz]() -> auto& {
+                return manager_chunk2A::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz);
+            },
+            [this](int j, auto& lbf)
             {
-                if constexpr (chunk_config::stats)
+                if (chunk_list[j].written_test())
                 {
-                    increm_chunk_teardown_clear<Chunk2A<T>>();
-                    add_chunk_released<Chunk2A<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                    if constexpr (chunk_config::stats)
+                    {
+                        increm_chunk_teardown_clear<Chunk2A<T>>();
+                        // The size read here, not captured: stats builds only use it.
+                        add_chunk_released<Chunk2A<T>>(1, static_cast<long>(sizeof(T)) *
+                                                          static_cast<long>(this->size_policy_.size()));
+                    }
+                    T* values_loc = chunk_list[j].values;
+                    CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
+                    lbf.push_back(values_loc);
+                    // Neutralise, as clear_core(): the buffer belongs to the
+                    // reuse list now.
+                    chunk_list[j].values_store(ChunkBase<T, Chunk2A<T>>::get_cst_val1());
                 }
-                T* values_loc = chunk_list[j].values;
-                CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
-                lbf.push_back(values_loc);
-                // Neutralise, as clear_core(): the buffer belongs to the reuse
-                // list now.
-                chunk_list[j].values_store(ChunkBase<T, Chunk2A<T>>::get_cst_val1());
-            }
-        }
+            });
     }
 }
 

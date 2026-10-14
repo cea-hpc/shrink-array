@@ -404,6 +404,9 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
  */
 
 template <typename T>
+// no move assignment on purpose -- assigning a proxy
+// WRITES the element (see its operator=); a defaulted move would rebind it instead.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_block_compression>
 {
   public:

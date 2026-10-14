@@ -687,7 +687,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                     {
                         // Catch an out-of-range index BEFORE it writes. Compare against
                         // proxy.chunk_size() (frozen at enqueue), NOT the static
-                        // __chunk_size, which is only the default in a dynamic build.
+                        // static_chunk_size, which is only the default in a dynamic build.
                         const unsigned int csz_guard = proxy.chunk_size();
                         if (std::cmp_greater_equal(num, csz_guard))
                         {

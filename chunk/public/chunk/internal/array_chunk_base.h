@@ -37,6 +37,8 @@
  * @see chunk_size_policy.h for the geometry policy (static vs dynamic)
  */
 
+#include <compare>  // std::strong_ordering (const_iterator's operator<=>)
+#include <array>    // std::array (the bulk-read buffer)
 #include <concepts> // std::invocable (for_each_span's run overload)
 #include <cstddef>  // std::size_t (size_type)
 #include <span>     // std::span (for_each_span)
@@ -232,13 +234,6 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             return lhs.lin_ == rhs.lin_;
         }
 
-        /** @brief Negation of operator==. */
-        [[nodiscard]] friend bool operator!=(const const_iterator& lhs, const const_iterator& rhs) noexcept
-        {
-            check_same_owner(lhs, rhs);
-            return lhs.lin_ != rhs.lin_;
-        }
-
         // ── Random access: every jump is a seek() on lin_ ───────────────────
 
         /** @brief Jump @p n elements (negative: backwards). O(1), one chunk sync. */
@@ -293,32 +288,15 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             return *(*this + n);
         }
 
-        /** @brief Orderings: by absolute index, like operator==. */
-        [[nodiscard]] friend bool operator<(const const_iterator& lhs, const const_iterator& rhs) noexcept
+        /**
+         * @brief Ordering by absolute index, like operator==. The compiler
+         *        rewrites <, >, <= and >= from it (and != from operator==).
+         */
+        [[nodiscard]] friend std::strong_ordering operator<=>(const const_iterator& lhs,
+                                                              const const_iterator& rhs) noexcept
         {
             check_same_owner(lhs, rhs);
-            return lhs.lin_ < rhs.lin_;
-        }
-
-        /** @brief Ordering by absolute index. */
-        [[nodiscard]] friend bool operator>(const const_iterator& lhs, const const_iterator& rhs) noexcept
-        {
-            check_same_owner(lhs, rhs);
-            return lhs.lin_ > rhs.lin_;
-        }
-
-        /** @brief Ordering by absolute index. */
-        [[nodiscard]] friend bool operator<=(const const_iterator& lhs, const const_iterator& rhs) noexcept
-        {
-            check_same_owner(lhs, rhs);
-            return lhs.lin_ <= rhs.lin_;
-        }
-
-        /** @brief Ordering by absolute index. */
-        [[nodiscard]] friend bool operator>=(const const_iterator& lhs, const const_iterator& rhs) noexcept
-        {
-            check_same_owner(lhs, rhs);
-            return lhs.lin_ >= rhs.lin_;
+            return lhs.lin_ <=> rhs.lin_;
         }
 
         friend class ArrayChunkBase;
@@ -569,6 +547,22 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     void reserve(this Derived& self, ind_type new_capacity);
 
     /**
+     * @brief resize(), then @p val written to the NEW elements only
+     *        ([old size, newsz) -- std::vector's semantics; assign() fills all).
+     * @details The derived arrays' resize(newsz) does the resizing (they name
+     *          this overload back with a using-declaration).
+     */
+    void resize(this Derived& self, ind_type newsz, in_t<T> val)
+    {
+        const ind_type old_size = self.m_size;
+        self.resize(newsz);
+
+        // A team of its own outside a region (the library's threshold, the
+        // phase bracketed), the calling thread inside one.
+        self.write_range_by_chunks(old_size, newsz, [&val](ind_type) { return static_cast<T>(val); });
+    }
+
+    /**
      * @brief Append one element, growing the container by one.
      * @param val value to store at the new last position
      * @note Within the capacity: one increment and the write proxy, so the
@@ -682,14 +676,14 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     {
         if constexpr (kBulkFast)
         {
-            T buf[kBulkBlock];
+            std::array<T, kBulkBlock> buf;
             for_each_chunk_span(first, last,
                                 [&](const chunk_type& ch, int num_chunk, int lo, int hi)
                                 {
                                     for (int j = lo; j < hi; j += kBulkBlock)
                                     {
                                         const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
-                                        ch.read_block(j, n, buf);
+                                        ch.read_block(j, n, buf.data());
                                         check_no_write_during_bulk_read(ch, num_chunk, j);
                                         for (int k = 0; k < n; ++k)
                                         {
@@ -748,7 +742,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     template <typename F>
     void for_each_span(ind_type first, ind_type last, F&& f) const
     {
-        T buf[kBulkBlock];
+        std::array<T, kBulkBlock> buf;
         if constexpr (kBulkFast)
         {
             for_each_chunk_span(first, last,
@@ -762,7 +756,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                                             // A compressed chunk stays so for the rest of the
                                             // call (no writer): the constant covers [j, hi).
                                             T cst{};
-                                            if (ch.read_block_or_constant(j, n, buf, cst))
+                                            if (ch.read_block_or_constant(j, n, buf.data(), cst))
                                             {
                                                 check_no_write_during_bulk_read(ch, num_chunk, j);
                                                 f(std::as_const(cst), static_cast<std::size_t>(hi - j));
@@ -771,10 +765,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                                         }
                                         else
                                         {
-                                            ch.read_block(j, n, buf);
+                                            ch.read_block(j, n, buf.data());
                                         }
                                         check_no_write_during_bulk_read(ch, num_chunk, j);
-                                        f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                                        f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
                                     }
                                 });
         }
@@ -787,13 +781,13 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                                buf[n++] = x;
                                if (n == kBulkBlock)
                                {
-                                   f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                                   f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
                                    n = 0;
                                }
                            });
             if (n > 0)
             {
-                f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
             }
         }
     }
@@ -902,7 +896,9 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /**
      * @brief assign(count, val): std::vector semantics.
      *
-     * @details resize + operator[], serial; use the bulk init for a parallel fill.
+     * @details resize, then operator[] chunk by chunk: a team of its own for a
+     *          large array outside a region (write_range_by_chunks), the
+     *          calling thread otherwise.
      *
      * @param count new element count
      * @param val value written to every position
@@ -912,7 +908,9 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /**
      * @brief assign(): the elements of [first, last), in order.
      * @details Sized once (std::distance, so a forward iterator at least),
-     *          then one proxied write per element. Sequential.
+     *          then one proxied write per element: chunk by chunk on a team of
+     *          its own for a random-access source (write_range_by_chunks), in
+     *          order on the calling thread for a forward one.
      */
     template <std::forward_iterator It>
     void assign(this Derived& self, It first, It last);
@@ -1133,6 +1131,18 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     void create_common(this Derived& self);
 
     /**
+     * @brief Claim this array's identity and build its storage for @p sz
+     *        elements: the constructors' body of ArrayChunk and ArrayChunk2A
+     *        (ArrayChunk2 has its own). Registers the element type's manager on
+     *        the way (AllTypeChunk::ensure_manager), runs create_common(), then
+     *        the variant's rebuild_storage() -- the geometry-dependent
+     *        allocation alone, which rechunk_to also calls on an already
+     *        registered, just torn-down array WITHOUT re-running create_common()
+     *        (that would re-register it under a fresh num_tab via pre_create_hook).
+     */
+    void create(this Derived& self, ind_type sz);
+
+    /**
      * @brief The deep copy the derived arrays' copy constructor and
      *        copy-assignment are built on: sized to @p from, then every
      *        element read from @p from (a const read, through its gate) and
@@ -1141,11 +1151,32 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @details Element by element on purpose, like rechunk_refill: correct for
      *          every variant, any geometry pair, and a non-empty destination.
      *          Repeated values are written materialised and folded back by the
-     *          next compression pass. Sequential context (resize() is a
-     *          sequential point). chunk2's second value is re-declared first by
-     *          the derived copy hooks.
+     *          next compression pass. Called at a sequential point (resize() is
+     *          one); the writes go chunk by chunk on a team of its own for a
+     *          large array (write_range_by_chunks). chunk2's second value is
+     *          re-declared first by the derived copy hooks.
      */
     void copy_from(this Derived& self, const Derived& from);
+
+    /**
+     * @brief Elements [@p first, @p last) set to @p value_at(i), through the
+     *        proxy, chunk by chunk.
+     *
+     * @details A team of its own when parallel_storage_init::use_own_team()
+     *          accepts the chunk count (outside a region, from
+     *          kParallelInitMinChunks chunks), each chunk written by one
+     *          thread; the calling thread otherwise -- inside a region an
+     *          orphaned `omp for` would write 1/N of the range. The team goes
+     *          through parallel_phase(): without OMPT its threads begin the
+     *          phase before writing and the deferred writes are flushed after
+     *          it, as for any region that writes.
+     * @param first    first index, inclusive
+     * @param last     last index, exclusive (<= size())
+     * @param value_at called as value_at(i); independent iterations, may run
+     *                 on any thread of the team
+     */
+    template <typename ValueAt>
+    void write_range_by_chunks(this Derived& self, ind_type first, ind_type last, ValueAt&& value_at);
 
     /**
      * @brief The exchange behind swap() and the derived move-assignments:

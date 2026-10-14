@@ -35,11 +35,12 @@
  */
 
 // All of these serve the CHUNK_STATS half of the file only.
-#include <array>    // std::array
-#include <chrono>   // __chunk_stats_t0, the rates ParamChunk::ChunkStats() prints
-#include <map>      // std::map
-#include <mutex>    // std::mutex, std::lock_guard
-#include <concepts> // ChunkStatsZeroComparable
+#include <array>       // std::array
+#include <chrono>      // __chunk_stats_t0, the rates ParamChunk::ChunkStats() prints
+#include <map>         // std::map
+#include <mutex>       // std::mutex, std::scoped_lock
+#include <concepts>    // ChunkStatsZeroComparable
+#include <string_view> // chunk_variant_name
 
 #include "chunk/PMP_CHUNK.h" // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
 #include "chunk/config.h"    // build_config::chunk_dynamic
@@ -58,7 +59,8 @@ inline constexpr int CHUNK_STATS_N_VARIANT = 3;
 #endif
 
 /// @brief Display name for each variant, indexed by stat_variant.
-inline constexpr const char* chunk_variant_name[CHUNK_STATS_N_VARIANT] = {"chunk", "chunk2", "chunk2a"};
+inline constexpr std::array<std::string_view, CHUNK_STATS_N_VARIANT> chunk_variant_name = {"chunk", "chunk2",
+                                                                                           "chunk2a"};
 
 #if CHUNK_OPT_STATS
 
@@ -445,7 +447,7 @@ inline void record_chunk_size_at_exit(unsigned int size) noexcept
 {
     if constexpr (build_config::chunk_dynamic && chunk_config::stats)
     {
-        std::lock_guard<std::mutex> lock(__chunk_size_dist_mutex[C::stat_variant]);
+        const std::scoped_lock lock(__chunk_size_dist_mutex[C::stat_variant]);
         ++__chunk_size_dist[C::stat_variant][size];
     }
 }
@@ -544,15 +546,15 @@ void increm_chunk_list() noexcept
 {
 }
 template <typename C>
-void add_chunk_bytes_alloc(long) noexcept
+void add_chunk_bytes_alloc(long /*bytes*/) noexcept
 {
 }
 template <typename C>
-void add_chunk_bytes_reused(long) noexcept
+void add_chunk_bytes_reused(long /*bytes*/) noexcept
 {
 }
 template <typename C>
-void add_chunk_bytes_freed(long) noexcept
+void add_chunk_bytes_freed(long /*bytes*/) noexcept
 {
 }
 template <typename C>
@@ -560,11 +562,11 @@ void increm_chunk_teardown_clear() noexcept
 {
 }
 template <typename C>
-void add_chunk_released(long, long) noexcept
+void add_chunk_released(long /*n*/, long /*bytes*/) noexcept
 {
 }
 template <typename C>
-void add_chunk_still_compressed_at_exit(long) noexcept
+void add_chunk_still_compressed_at_exit(long /*nb*/) noexcept
 {
 }
 template <typename C>
@@ -628,11 +630,11 @@ void increm_chunk_gate_deferred() noexcept
 {
 }
 template <typename C>
-void increm_chunk_gate_wait(int, bool) noexcept
+void increm_chunk_gate_wait(int /*yields*/, bool /*mark_hit*/) noexcept
 {
 }
 template <typename C>
-void add_chunk_scan_read(long) noexcept
+void add_chunk_scan_read(long /*count*/) noexcept
 {
 }
 template <typename C>
@@ -652,7 +654,7 @@ void increm_chunk_write() noexcept
 {
 }
 template <typename C, typename V>
-void increm_chunk_write(V) noexcept
+void increm_chunk_write(V /*v*/) noexcept
 {
 }
 inline void init_all_stats() noexcept {}

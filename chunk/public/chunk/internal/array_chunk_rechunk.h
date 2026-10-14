@@ -150,20 +150,20 @@ class RechunkSupport<Derived, true>
      * @{
      */
     /** @brief Forget this array's compression candidates before the swap (default: none to drop). */
-    void rechunk_drop_candidates(this Derived&) {}
+    static void rechunk_drop_candidates() {}
     /** @brief Drain the reuse free-list of the target geometry (default: nothing to drain). */
-    void rechunk_drain_reuse_list(this Derived&, unsigned int /*new_size*/) {}
+    static void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
     /** @brief Capture the variant state to carry across a re-chunk (default: none). */
-    [[nodiscard]] T rechunk_capture_state(this const Derived&)
+    [[nodiscard]] static T rechunk_capture_state() noexcept
     {
         return T{};
     }
     /** @brief Apply the captured state to the fresh array (default: no-op). */
-    void rechunk_seed_fresh(this Derived&, in_t<T> /*state*/) {}
+    static void rechunk_seed_fresh(in_t<T> /*state*/) {}
     /** @brief Post-swap fixup so the dying temporary does not take state with it (default: no-op). */
-    void rechunk_reown_after_swap(this Derived&, Derived& /*tmp*/, in_t<T> /*state*/) {}
+    static void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
     /** @brief Swap registry identity with the temporary (default: nothing to swap, succeeds). */
-    bool rechunk_swap_identity(this Derived&, Derived& /*tmp*/)
+    static bool rechunk_swap_identity(Derived& /*tmp*/)
     {
         return true;
     }
@@ -223,29 +223,29 @@ class RechunkSupport<Derived, false>
 
   protected:
     /** @brief No-op: the geometry is fixed at compile time. */
-    void rechunk_to(unsigned int /*new_size*/) noexcept {}
+    static void rechunk_to(unsigned int /*new_size*/) noexcept {}
     /** @brief No-op: never reached, since rechunk_to() does nothing. */
-    void rechunk_refill(Derived& /*tmp*/, unsigned int /*old_size*/, unsigned int /*new_size*/) noexcept {}
+    static void rechunk_refill(Derived& /*tmp*/, unsigned int /*old_size*/, unsigned int /*new_size*/) noexcept {}
 
     /**
      * @name Re-chunk hooks (base defaults) — same no-ops as the dynamic specialisation's.
      * @{
      */
     /** @brief Nothing to drop. */
-    void rechunk_drop_candidates() {}
+    static void rechunk_drop_candidates() {}
     /** @brief Nothing to drain. */
-    void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
+    static void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
     /** @brief No state to carry. */
-    [[nodiscard]] T rechunk_capture_state() const
+    [[nodiscard]] static T rechunk_capture_state() noexcept
     {
         return T{};
     }
     /** @brief No state to apply. */
-    void rechunk_seed_fresh(in_t<T> /*state*/) {}
+    static void rechunk_seed_fresh(in_t<T> /*state*/) {}
     /** @brief Nothing to re-own. */
-    void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
+    static void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
     /** @brief Nothing to swap; succeeds. */
-    bool rechunk_swap_identity(Derived& /*tmp*/)
+    static bool rechunk_swap_identity(Derived& /*tmp*/)
     {
         return true;
     }

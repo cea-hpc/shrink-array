@@ -40,5 +40,8 @@ for i in range(a.runs):
     time.sleep(a.step)
     with open("timings_summary.csv", "a", newline="") as f:
         csv.writer(f).writerow([i + 1, b, e, th, "%.6f" % wall, rc, "", ""])
+    if rc:                         # as multi_launch_stress.py: an error_*.txt per failed run
+        with open("error_%d_%s_%s.txt" % (i + 1, b, e), "w") as f:
+            f.write("run %d failed: code %d\n" % (i + 1, rc))
 open("multi_launch_output.log", "w").write("log\n")
 sys.exit(a.rc)

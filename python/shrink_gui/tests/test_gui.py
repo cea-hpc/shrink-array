@@ -56,6 +56,10 @@ def test_submit_follow_summary_fetch(gui, site):
     assert pump(lambda: w.sum_table.rowCount() == 4, 10)        # 3 builds + TOTAL
     w.tabs.setCurrentIndex(2)
     assert pump(lambda: len(w.pt_view.points) == 30, 10)
+    w.tabs.setCurrentIndex(w.TAB_ERRORS)                         # runs 11 and 22 failed
+    assert pump(lambda: w.err_note.text().startswith("2 erreur(s)"), 10)
+    assert "run 22 failed: code 1" in w.err_view.toPlainText()
+    assert w.tabs.tabBar().tabTextColor(w.TAB_ERRORS).name() == "#c0392b"
     w.fetch()
     assert pump(lambda: (site.local / rid / "outputs" / "timings_summary.csv").exists(), 10)
 
@@ -193,9 +197,11 @@ def qos_max(w, name, part):
 def test_target_and_exec_pickers(gui, site, monkeypatch):
     from PySide6.QtCore import Qt
     from shrink_gui import app as app_mod
+    from shrink_gui import widgets as widgets_mod
     from test_remote_helper import _fake_build_rep
     _fake_build_rep(site)
-    monkeypatch.setattr(app_mod, "BUILD_REP", "~/br")
+    from shrink_gui import launch_form
+    monkeypatch.setattr(launch_form, "BUILD_REP", "~/br")       # read where the pickers are
     w, pump = gui
     w.program.setCurrentText("compile_all.sh")
     assert pump(lambda: w.form.schema is not None and "exec" in w.form.widgets)
@@ -209,14 +215,14 @@ def test_target_and_exec_pickers(gui, site, monkeypatch):
             items[t].setCheckState(Qt.Checked)
         return 1
 
-    monkeypatch.setattr(app_mod.PickerDialog, "exec", lambda dlg: fake_exec(dlg, ["omp-llvm", "omp-gnu-debug"]))
+    monkeypatch.setattr(widgets_mod.PickerDialog, "exec", lambda dlg: fake_exec(dlg, ["omp-llvm", "omp-gnu-debug"]))
     w.pick("target")
     assert pump(lambda: w.form.widgets["target"][1].text() != "", 20)
     multi = "comma" in w.form.widgets["target"][0]["help"].lower()
     got = w.form.widgets["target"][1].text().split(",")
     assert sorted(got) == (["omp-gnu-debug", "omp-llvm"] if multi else ["omp-gnu-debug"])   # one glob: the last ticked
     w.form.widgets["target"][1].setText("omp-llvm")
-    monkeypatch.setattr(app_mod.PickerDialog, "exec",
+    monkeypatch.setattr(widgets_mod.PickerDialog, "exec",
                         lambda dlg: fake_exec(dlg, ["shrink_bench_chunk_64", "shrink_bench_chunk_dyn"]))
     w.pick("exec")
     exes = seen["--exec : exécutables"]
@@ -445,3 +451,153 @@ def test_local_machine_in_english(gui, site, qapp):
     assert pump(lambda: "this machine —" in w.conn.text(), 20), w.conn.text()
     assert w.repo_label.text() == "Repository (this machine)" and w.preset.itemText(0).startswith("this machine")
     assert _french_left(w) == []
+
+
+def test_errors_tab_failures_and_rerun(gui, site, monkeypatch):
+    w, pump = gui
+    w.program.setCurrentText("fake_bench.py")
+    assert pump(lambda: w.form.schema is not None and w.form.schema["description"] == "fake bench")
+    rid = _submit(w, pump, {}, len(w.runs))
+    assert _wait_status(w, pump, rid, "fini")
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == rid))
+    w.tabs.setCurrentIndex(w.TAB_ERRORS)
+    assert pump(lambda: w.err_list.count() == 3, 10)        # the log + 2 failures
+    assert "Segmentation fault" in w.err_view.toPlainText()
+    assert w.err_rerun.isVisible() and w.err_rerun.isEnabled()
+    w.err_list.setCurrentRow(1)                            # its complete output
+    assert pump(lambda: "Segmentation fault at chunk 17" in w.err_view.toPlainText(), 10)
+    assert "__rc-11.log" in w.err_view.toPlainText()
+    seen = {}
+
+    def dialog(run, replayable, other, newer):
+        seen.update(replayable=replayable, other=other)
+        return 2, 1800
+    monkeypatch.setattr(w, "rerun_dialog", dialog)
+    n = len(w.runs)
+    time.sleep(1.05)                                       # run ids are per second
+    w.rerun_failed()
+    assert seen == {"replayable": 1, "other": 1}
+    assert pump(lambda: len(w.runs) == n + 1, 20)
+    again = w.runs[0]
+    assert again["meta"]["rerun_of"] == rid and again["meta"]["time_s"] == 1800
+    assert re.search(r"--rerun-failed --rerun-repeat 2 --full-log-dir run_logs/rerun-\d{8}-\d{6}$",
+                     again["meta"]["command"])
+    assert w.extra.text() == "" and w.time_s.value() != 1800      # the form is left as it was
+    assert _wait_status(w, pump, again["id"], "fini")
+    w.table.selectRow(0)
+    assert pump(lambda: "rerun 2" in w.log.toPlainText(), 10)
+    w.tabs.setCurrentIndex(0)
+    w.tabs.setCurrentIndex(w.TAB_ERRORS)
+    assert pump(lambda: "relance des échecs de " + rid in w.err_note.text(), 10)
+    assert pump(lambda: w.err_list.count() == 2, 10)
+    w.err_list.setCurrentRow(1)
+    assert pump(lambda: "still crashing" in w.err_view.toPlainText(), 10)
+
+
+def test_errors_column_and_first_error_notice(gui, site):
+    w, pump = gui
+    _choose_fake(w, pump)
+    rid = _submit(w, pump, {"runs": "6", "fail_every": "3", "step": "0.01"}, len(w.runs))
+    assert _wait_status(w, pump, rid, "fini")
+    row = next(i for i, r in enumerate(w.runs) if r["id"] == rid)
+    assert pump(lambda: w.table.item(row, w.COL_ERRORS) is not None
+                and w.table.item(row, w.COL_ERRORS).text() == "2", 10)
+    assert w.table.item(row, w.COL_ERRORS).font().bold()
+    # the first error of an active run: once, not again for the next ones
+    run = {"id": "r9", "status": "en cours", "code": None, "meta": {"program": "bench_and_test.py",
+                                                                    "partition": "gh200-bxi"}}
+    w.runs = [dict(run, errors=[0, None])]
+    w.prev_status = None
+    w.notify_changes()
+    w.notify_changes()
+    w.statusBar().clearMessage()
+    w.runs = [dict(run, errors=[1, "CHECK_FAIL: chunk2a t=4"])]
+    w.notify_changes()
+    assert w.statusBar().currentMessage() == "r9 : première erreur — CHECK_FAIL: chunk2a t=4"
+    w.statusBar().clearMessage()
+    w.runs = [dict(run, errors=[3, "CHECK_FAIL: x"])]
+    w.notify_changes()
+    assert w.statusBar().currentMessage() == ""
+
+
+def test_bench_chart_and_comparison(gui, site):
+    w, pump = gui
+    w.program.setCurrentText("fake_bench.py")
+    assert pump(lambda: w.form.schema is not None and w.form.schema["description"] == "fake bench")
+    a = _submit(w, pump, {}, len(w.runs))
+    b = _submit(w, pump, {"speed": "1.1"}, len(w.runs))
+    assert _wait_status(w, pump, a, "fini") and _wait_status(w, pump, b, "fini")
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == a))
+    w.tabs.setCurrentIndex(w.TAB_CHART)
+    assert pump(lambda: len(w.bc_view.points) == 12, 10)              # 3 variants x 4 thread counts
+    assert w.pt_stack.currentIndex() == 1 and w.bc_config.count() == 2
+    assert w.bc_note.text().startswith("12 point(s)")
+    w.bc_cmp.setCurrentIndex(w.bc_cmp.findData(b))
+    assert pump(lambda: "×1.100 (10.0 % plus lent)" in w.bc_note.text(), 10)
+    assert "24 point(s) communs (toutes configs)" in w.bc_note.text()
+    assert len(w.bc_view.points) == 24
+    w.bc_metric.setCurrentIndex(w.bc_metric.findData("speedup"))
+    assert len(w.bc_view.points) == 16 and "×1.000" in w.bc_note.text()
+    # a multi_launch_stress.py run: back to its own page
+    _choose_fake(w, pump)
+    m = _submit(w, pump, {"runs": "6", "step": "0.01"}, len(w.runs))
+    assert _wait_status(w, pump, m, "fini")
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == m))
+    assert pump(lambda: w.pt_stack.currentIndex() == 0 and len(w.pt_view.points) == 6, 10)
+
+
+def _fake_speedup_build(site):
+    """A build root with fake shrink_bench binaries: vector and chunk2a@dyn
+    scale, chunk@dyn always fails (an error line, rc 1)."""
+    import platform
+    d = site.home / "br" / "cmake-build-omp-llvm" / f"Linux__{platform.machine()}" / "examples" / "shrink_bench"
+    d.mkdir(parents=True)
+    body = ('#!/bin/bash\nm=1; while [ $# -gt 0 ]; do [ "$1" = --multiply ] && m=$2; shift; done\n'
+            'python3 -c "print(\'Memory consumption (peak): 10.0 Mo\'); '
+            'print(\'Elapsed time computation : %%.4fs\' %% (%s * $m / $OMP_NUM_THREADS))"\n')
+    for name, base in (("shrink_bench_vector_perf", 2.0), ("shrink_bench_chunk2a_dyn", 1.5)):
+        (d / name).write_text(body % base)
+        (d / name).chmod(0o755)
+    (d / "shrink_bench_chunk_dyn").write_text("#!/bin/bash\necho 'error: no chunk today' >&2\nexit 1\n")
+    (d / "shrink_bench_chunk_dyn").chmod(0o755)
+    return site.home / "br"
+
+
+def test_omp_speedup_submitted_from_the_window(gui, site):
+    w, pump = gui
+    br = _fake_speedup_build(site)
+    w.program.setCurrentText("omp_speedup.py")
+    assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
+    from PySide6.QtWidgets import QPushButton
+    assert w.findChild(QPushButton, "pick_execs") is not None and w.findChild(QPushButton, "pick_target")
+    vals = {"target": "omp-llvm", "execs": "vector,chunk2a@dyn", "min_threads": "1", "max_threads": "2",
+            "reps": "2", "build_root": str(br)}
+    a = _submit(w, pump, vals, len(w.runs))
+    assert _wait_status(w, pump, a, "fini")
+    run = next(r for r in w.runs if r["id"] == a)
+    assert run["code"] == 0 and run["errors"] == [0, None] and run["progress"][:2] == [8, 8]
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == a))
+    assert pump(lambda: "Outputs in " in w.log.toPlainText(), 10)
+    w.tabs.setCurrentIndex(w.TAB_SUMMARY)
+    assert pump(lambda: w.sum_view.count() == 2, 10)              # Phases (events.jsonl), summary.csv
+    assert w.sum_table.item(0, 0).text() == "speedup" and w.sum_table.item(0, 1).text() == "ok"
+    w.sum_view.setCurrentIndex(1)
+    assert w.sum_table.rowCount() == 4                             # 2 execs x 2 thread counts
+    w.tabs.setCurrentIndex(w.TAB_CHART)
+    assert pump(lambda: w.pt_stack.currentIndex() == 2 and len(w.sc_view.points) == 4, 10)
+    assert w.sc_note.text().startswith("4 point(s)")
+    # B: the same at --multiply 2, plus an executable that fails
+    b = _submit(w, pump, dict(vals, execs="vector,chunk2a@dyn,chunk@dyn", multiply="2"), len(w.runs))
+    assert _wait_status(w, pump, b, "fini")
+    run = next(r for r in w.runs if r["id"] == b)
+    assert run["code"] == 1 and run["errors"][0] == 4 and run["errors"][1].startswith("RUN_FAIL: shrink_bench_chunk_dyn")
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == a))
+    w.sc_cmp.setCurrentIndex(w.sc_cmp.findData(b))
+    assert pump(lambda: "B / A : ×1.000" in w.sc_note.text(), 10)  # the speedups match
+    assert "tailles ou modes différents" in w.sc_note.text()
+    w.sc_metric.setCurrentIndex(w.sc_metric.findData("temps"))
+    assert "B / A : ×2.000" in w.sc_note.text()                     # twice the work
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == b))
+    w.tabs.setCurrentIndex(w.TAB_ERRORS)
+    assert pump(lambda: "error: no chunk today" in w.err_view.toPlainText(), 10)
+    assert w.err_note.text().startswith("4 erreur(s)")

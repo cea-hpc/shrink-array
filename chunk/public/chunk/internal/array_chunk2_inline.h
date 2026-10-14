@@ -1166,33 +1166,41 @@ void ArrayChunk2<T, ind_type>::release_chunk_range(int first, int last)
     }
     else
     {
-        const int          thr_rank = CHUNK_PMP_THREAD_RANK;
-        const unsigned int my_sz    = this->size_policy_.size();
-        auto&              lbf      = manager_chunk2::get_list_block_free_thr_for_size(thr_rank, my_sz);
-        for (int j = first; j < last; ++j)
-        {
-            if (chunk_list[j].owns_live_buffer())
+        // A large shrink takes a team of its own, as clear_core()'s release
+        // does: each thread parks into ITS rank's reuse list of this array's
+        // geometry. Inside a region, or for a few chunks, the calling thread.
+        const unsigned int my_sz = this->size_policy_.size();
+        parallel_storage_init::for_each_chunk_in(
+            first, last,
+            [my_sz]() -> auto& {
+                return manager_chunk2::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz);
+            },
+            [this](int j, auto& lbf)
             {
-                if constexpr (chunk_config::stats)
+                if (chunk_list[j].owns_live_buffer())
                 {
-                    increm_chunk_teardown_clear<Chunk2<T>>();
-                    add_chunk_released<Chunk2<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                    if constexpr (chunk_config::stats)
+                    {
+                        increm_chunk_teardown_clear<Chunk2<T>>();
+                        // The size read here, not captured: stats builds only use it.
+                        add_chunk_released<Chunk2<T>>(1, static_cast<long>(sizeof(T)) *
+                                                          static_cast<long>(this->size_policy_.size()));
+                    }
+                    T* values_loc = chunk_list[j].values;
+                    CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
+                    lbf.push_back(values_loc);
+                    // Neutralise, as clear_core(): the buffer belongs to the
+                    // reuse list now.
+                    if constexpr (is_not_bool)
+                    {
+                        chunk_list[j].init_values_cst_val1();
+                    }
+                    else
+                    {
+                        chunk_list[j].init_values_cst_val_bool(0);
+                    }
                 }
-                T* values_loc = chunk_list[j].values;
-                CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
-                lbf.push_back(values_loc);
-                // Neutralise, as clear_core(): the buffer belongs to the reuse
-                // list now.
-                if constexpr (is_not_bool)
-                {
-                    chunk_list[j].init_values_cst_val1();
-                }
-                else
-                {
-                    chunk_list[j].init_values_cst_val_bool(0);
-                }
-            }
-        }
+            });
     }
 }
 

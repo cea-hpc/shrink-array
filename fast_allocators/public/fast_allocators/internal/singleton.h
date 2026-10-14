@@ -19,7 +19,7 @@
 #include <atomic> // std::atomic, std::memory_order
 #include <mutex>  // std::mutex, std::scoped_lock
 
-#if defined(__has_feature)
+#ifdef __has_feature
     #if __has_feature(address_sanitizer) || __has_feature(leak_sanitizer)
         #include <sanitizer/lsan_interface.h> // __lsan_ignore_object
         #define FAST_ALLOC_LSAN_IGNORE(p) __lsan_ignore_object(p)

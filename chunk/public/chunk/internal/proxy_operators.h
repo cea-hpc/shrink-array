@@ -276,8 +276,12 @@ class ProxyOperators
 
   protected:
     // Base class only.
-    constexpr ProxyOperators() noexcept  = default;
-    constexpr ~ProxyOperators() noexcept = default;
+    constexpr ProxyOperators() noexcept                                 = default;
+    constexpr ~ProxyOperators() noexcept                                = default;
+    constexpr ProxyOperators(const ProxyOperators&) noexcept            = default;
+    constexpr ProxyOperators& operator=(const ProxyOperators&) noexcept = default;
+    constexpr ProxyOperators(ProxyOperators&&) noexcept                 = default;
+    constexpr ProxyOperators& operator=(ProxyOperators&&) noexcept      = default;
 };
 
 } // namespace shrink_array

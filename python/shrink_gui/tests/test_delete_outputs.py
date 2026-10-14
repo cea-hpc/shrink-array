@@ -66,13 +66,25 @@ def _bench_dir(site):
 
 
 def test_shared_bench_dir_keeps_the_oracle(site):
+    import os
     od = _bench_dir(site)
-    _fake_run(site, "b1", f"📁 Run outputs → {od}  (arch: aarch64)", "2026-10-08 10:00:00", "bench_and_test.py")
+    old = os.path.getmtime(od / "run_logs" / "f") - 3600
+    for p in od.rglob("*"):                 # all written before b1 was submitted: the older runs'
+        os.utime(p, (old, old))
+    b1 = _fake_run(site, "b1", f"📁 Run outputs → {od}  (arch: aarch64)", "2026-10-08 10:00:00", "bench_and_test.py")
     _fake_run(site, "b0", f"📁 Run outputs → {od}  (arch: aarch64)", "2026-10-08 09:00:00", "bench_and_test.py")   # older
+    os.utime(b1 / "meta.json", (old + 60, old + 60))
+    # what b1 wrote: the files it rewrites, its logs, its replay's logs
+    for f in ("bench_output.log", "bench_errors.log", "failed_cases.jsonl", "bench_summary.csv",
+              "run_logs/x__omp4__00001__rc1.log", "run_logs/rerun-1/y.log", "runs/a/b/g"):
+        (od / f).parent.mkdir(parents=True, exist_ok=True)
+        (od / f).write_text("mine")
     r = _delete(site, "b1", BENCH)
-    assert r["ok"] and len(r["removed"]) == 6
-    assert sorted(p.name for p in od.iterdir()) == ["oracle"]
-    assert (od / "oracle" / "cmake-build-omp-gnu" / "f").exists()
+    assert r["ok"] and len(r["removed"]) == 7
+    assert sorted(p.name for p in od.iterdir()) == ["oracle", "run_logs", "runs"]
+    assert sorted(str(p.relative_to(od)) for p in od.rglob("*") if p.is_file()) == [
+        "oracle/cmake-build-omp-gnu/f", "run_logs/f", "runs/a/b/f"]     # the older runs' logs stay
+    assert not (od / "run_logs" / "rerun-1").exists()                   # emptied: pruned
 
 
 def test_shared_bench_dir_newer_run_is_refused(site):

@@ -78,7 +78,7 @@ inline void print_backtrace()
             }
         }
 
-        if (mangled_name && offset_begin && offset_end && mangled_name < offset_begin)
+        if (mangled_name != nullptr && offset_begin != nullptr && offset_end != nullptr && mangled_name < offset_begin)
         {
             *offset_begin = '\0';
             *offset_end   = '\0';
@@ -86,7 +86,7 @@ inline void print_backtrace()
             int   status    = -1;
             char* real_name = abi::__cxa_demangle(mangled_name, nullptr, nullptr, &status);
 
-            if (status == 0 && real_name)
+            if (status == 0 && real_name != nullptr)
             {
                 std::println(stderr, "{} : {}+{}", symbols[i], real_name, offset_begin + 1);
                 std::free(real_name);

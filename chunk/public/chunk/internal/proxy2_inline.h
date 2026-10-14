@@ -206,7 +206,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
 
     const auto* vec_tuple_p = manager_chunk2::compress_candidates(thr_rank, self.second_value);
 
-    if (!vec_tuple_p)
+    if (vec_tuple_p == nullptr)
     {
         return;
     }

@@ -35,9 +35,10 @@ matter. [variants.md](variants.md) compares them on a real workload.
 
 ## 2. Install
 
-Spack recipe: to come (`spack install shrink-array`). Meanwhile, from the sources, with a
-C++20 compiler (tested with GCC 13 and 14 and Clang 18; the build scripts also cover
-oneAPI, AOCC and NVHPC) and CMake ≥ 3.20:
+With Spack, the recipe is in the repository: see [the README](../README.md#with-spack)
+(`spack install shrink-array`). From the sources, with a C++20 compiler (tested with GCC 13
+and 14 and Clang 18; the build scripts also cover oneAPI, AOCC and NVHPC; the `cpp23`
+branch needs C++23, GCC 14 or later) and CMake ≥ 3.20:
 
 ```sh
 cmake -S shrink-array -B build -G Ninja \

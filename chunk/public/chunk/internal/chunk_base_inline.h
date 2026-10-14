@@ -81,8 +81,8 @@ void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unuse
                 // where it came from instead of parking it for the drain.
                 CHUNK_FREEPATH_INC(freed);
                 CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.free_to_owner");
-                static_cast<std::remove_reference_t<decltype(allocator)>*>(const_cast<void*>(slab->owner))
-                    ->free_elt_pow2(val, slab);
+                using AllocT = std::remove_reference_t<decltype(allocator)>;
+                const_cast<AllocT*>(static_cast<const AllocT*>(slab->owner))->free_elt_pow2(val, slab);
             }
             else
             {

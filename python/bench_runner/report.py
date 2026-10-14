@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """End-of-run summary: CSV, error log, memory guards."""
 import csv
+import os
+import shutil
 
 from .builds import _variant_base, short_config_label
 from .settings import DEFAULT_BASELINE
@@ -144,3 +146,21 @@ def flush_summary(results, errors, summary_csv, errors_log, elapsed_min,
             w.writerow([short_config_label(cfg), var, tc, f"{avg:.6f}", mem_str,
                         speedup_str, mem_ratio_str, mem_saved_str])
     print(f"📄 Summary written to {summary_csv}")
+    keep_run_outputs(summary_csv, errors_log)
+
+
+def keep_run_outputs(summary_csv, errors_log):
+    """Copy this run's CSV, errors log and failure list to $CHUNK_BENCH_KEEP_DIR
+    (shrink_gui: the run's own directory). The output directory is shared by
+    every run of an architecture and each one rewrites these files: the copy
+    is what lets the window show, or compare, a run after the next one."""
+    keep = os.environ.get("CHUNK_BENCH_KEEP_DIR")
+    if not keep:
+        return
+    cases = os.path.join(os.path.dirname(os.path.abspath(errors_log)), "failed_cases.jsonl")
+    for p in (summary_csv, errors_log, cases):
+        try:
+            if os.path.isfile(p):
+                shutil.copy2(p, os.path.join(keep, os.path.basename(p)))
+        except OSError:
+            pass

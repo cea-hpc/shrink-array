@@ -3,7 +3,7 @@
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
 > October 2026, `shrink_gui` 0.13 (prototype). A window on the laptop to submit
-> `compile_all.sh`, `bench_and_test.py` and `multi_launch_stress.py` on the cluster, or to
+> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `omp_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
 > docstring of `python/shrink_gui/__init__.py`.
@@ -81,24 +81,34 @@ replaces this program's defaults on this architecture. "Command" shows exactly w
 `--exec` fields have a "Choose…" button listing the configurations and executables found on
 the cluster.
 
+`omp_speedup.py` (OpenMP speedup curves of shrink_bench executables on one target: `--target`,
+`--exec` or `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) likewise runs as a
+batch job only, with the same "Choose…" buttons. Its progress and errors show as
+`bench_and_test.py`'s do; the Summary gives its `summary.csv`, and the Chart its curves
+(speedup with the ideal line, efficiency or time; colour = the variant, shape = the size).
+"Compare with" overlays another run (another compiler, another commit) and gives the B / A
+ratio. Its outputs go to `$CCCWORKDIR/omp_speedup/` (else `~/omp_speedup/`).
+
 ### The runs
 
 The table lists the runs of the runs directory, refreshed every 15 s: program, partition,
-commit, job, status, progress (k/N and time left when the program reports them), last line of
-the log. A notification announces a run that ends.
+commit, job, status, progress (k/N and time left when the program reports them), errors (live
+for `bench_and_test.py`, failed runs for `multi_launch_stress.py`), last line of the log. A
+notification announces a run that ends, and the first error of a running one.
 
 | tab | contents |
 |---|---|
 | Log | the selected run's log, followed live; search with Ctrl+F |
 | Summary | `multi_launch_stress.py`: per build (runs, failures, times); `bench_and_test.py`: its phases (duration, errors) or its `bench_summary.csv` |
-| Chart | `multi_launch_stress.py`: each run's time against the thread count, filtered by build and variant; "Compare with" overlays another run |
+| Chart | `multi_launch_stress.py`: each run's time against the thread count, filtered by build and variant; "Compare with" overlays another run. `bench_and_test.py`: its `bench_summary.csv`, one line per variant against the thread count for one config (time, peak memory or speedup); "Compare with" overlays another run of the same architecture, dashed, and gives the B / A ratio (geometric mean over the common points, and the worst point) |
+| Errors | the error log read in the output directory: `bench_errors.log` for `bench_and_test.py` (one entry per failure, as soon as it happens), the failed runs' `error_*.txt` for `multi_launch_stress.py`; the tab turns red when there are errors. For `bench_and_test.py`, the list on the left gives each failure (`failed_cases.jsonl`); a click shows its complete output (`run_logs/`). "Rerun failures…" submits a `--rerun-failed --rerun-repeat N` run of the run shown, same partition and options, its logs apart in `run_logs/rerun-<date>` |
 
 | button | effect |
 |---|---|
 | Stop | `ccc_mdel` of the job, or stops `ccc_mprun` in detached mode |
 | Fetch results | copies to "Results (local)" the run directory and the program's summary files (CSV, log, errors; never the `output_*`) |
 | Reuse its options | puts the run's program, partition and options back in the form |
-| Delete | deletes the run directory (finished runs only); optionally also the outputs that are this run's own, and the local copy |
+| Delete | deletes the run directory (finished runs only); optionally also the outputs that are this run's own (in a shared output directory, `bench_results/<arch>`: the files it wrote, never the older runs' ones nor `oracle/`), and the local copy |
 
 ### This machine
 

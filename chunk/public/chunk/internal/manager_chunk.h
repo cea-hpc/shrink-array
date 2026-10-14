@@ -1152,7 +1152,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 CHUNK_FREEPATH_INC(freed);
                 CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse.owner");
                 auto* slab  = geometry->slab_of(b);
-                auto* owner = static_cast<Alloc*>(const_cast<void*>(slab->owner));
+                auto* owner = const_cast<Alloc*>(static_cast<const Alloc*>(slab->owner));
                 owner->free_elt_pow2(b, slab);
             }
             cell.clear();
