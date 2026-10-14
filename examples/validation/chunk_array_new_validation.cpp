@@ -50,16 +50,16 @@
 //
 // EXIT STATUS: 0 when every chunk of every case is at the first constant.
 
-#include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"   // Chunk<T> complete (chunk_std.h): its operator new[]
-#include "chunk/array_chunk2.h"  // Chunk2<T> complete (chunk2_std.h): its operator new[]
-#include "chunk/array_chunk2A.h" // Chunk2A<T> complete (chunk2A_std.h): its operator new[]
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/config.h"        // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_MAX_THREADS
+#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"    // Chunk<T> complete (chunk_std.h): its operator new[]
+#include "chunk/array_chunk2.h"   // Chunk2<T> complete (chunk2_std.h): its operator new[]
+#include "chunk/array_chunk2A.h"  // Chunk2A<T> complete (chunk2A_std.h): its operator new[]
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/config.h"         // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/print.h" // shrink_array::println
 
 // The *OmpPolicy serial specialisations declare no array-new, so there is
 // nothing to test without OpenMP; CMake builds this target under OMP alone.
@@ -140,11 +140,11 @@ int one_case(std::size_t n, bool in_region)
 
     const auto* v   = static_cast<Ch*>(p);
     const int   bad = materialised(v, n);
-    printf("[%s/array-new] %-6s n=%5zu : %s\n", variant_name(), in_region ? "region" : "serial", n,
-           bad ? "FAIL" : "ok, every chunk at the first constant");
+    shrink_array::println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", n,
+                          bad ? "FAIL" : "ok, every chunk at the first constant");
     if (bad)
     {
-        printf("  %d of %zu chunk(s) not initialised\n", bad, n);
+        shrink_array::println("  {} of {} chunk(s) not initialised", bad, n);
     }
     Ch::operator delete[](p);
     return bad ? 1 : 0;
@@ -158,8 +158,8 @@ int placement_case(std::size_t n)
     const auto* v = static_cast<Ch*>(p);
 
     const int bad = materialised(v, n);
-    printf("[%s/array-new] placement n=%5zu : %s\n", variant_name(), n,
-           bad ? "FAIL" : "ok, every chunk at the first constant");
+    shrink_array::println("[{}/array-new] placement n={:5} : {}", variant_name(), n,
+                          bad ? "FAIL" : "ok, every chunk at the first constant");
     Ch::operator delete[](p);
     return bad ? 1 : 0;
 }
@@ -170,7 +170,8 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    printf("=== chunk_array_new_validation [variant = %s]  threads=%d ===\n", variant_name(), CHUNK_PMP_MAX_THREADS);
+    shrink_array::println("=== chunk_array_new_validation [variant = {}]  threads={} ===", variant_name(),
+                          CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     // 1 and 5000 are the plain cases; 499 / 500 / 501 bracket the threshold.
@@ -182,7 +183,8 @@ int run(int /*argc*/, char** /*argv*/)
     }
     fails += placement_case(1000);
 
-    printf("\n[%s] %s\n", variant_name(), fails == 0 ? "=== ARRAY-NEW OK ===" : "=== ARRAY-NEW FAILURES ===");
+    shrink_array::println("\n[{}] {}", variant_name(),
+                          fails == 0 ? "=== ARRAY-NEW OK ===" : "=== ARRAY-NEW FAILURES ===");
     return fails ? 1 : 0;
 }
 

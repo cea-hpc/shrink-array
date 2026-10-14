@@ -61,7 +61,6 @@
 
 #include <array>       // std::array
 #include <cstdint>     // std::int16_t
-#include <cstdio>      // printf
 #include <cstdlib>     // std::strtol
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
@@ -77,6 +76,7 @@
 #include "chunk/config.h"                     // chunk_config::use_chunk2*, build_config::chunk_dynamic / has_not_ompt
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"             // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -283,13 +283,13 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
     const long csz = static_cast<long>(arr.chunk_size());
     if (bad)
     {
-        printf("[%s/%s] FAIL: %ld/%ld mismatches, first at i=%ld (chunk #%ld, offset %ld, run %ld)\n", variant_name(),
-               label, bad, N, first, first / csz, first % csz, (first / kRun) % 3);
+        shrink_array::println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {})",
+                              variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3);
     }
     else
     {
-        printf("[%s/%s] OK: %ld elements of %zu bytes round-trip at chunk_size=%ld\n", variant_name(), label, N,
-               sizeof(T), csz);
+        shrink_array::println("[{}/{}] OK: {} elements of {} bytes round-trip at chunk_size={}", variant_name(), label,
+                              N, sizeof(T), csz);
     }
 
     arr.clear();
@@ -304,8 +304,8 @@ int run(int argc, char** argv)
     // construction (AllTypeChunk::ensure_manager). The process-wide setup alone.
     ParamChunk::init_indexes(true);
 
-    printf("=== open_types_validation [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N,
-           CHUNK_PMP_MAX_THREADS);
+    shrink_array::println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), N,
+                          CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -319,7 +319,7 @@ int run(int argc, char** argv)
         warm += 1;
     }
     end_phase();
-    printf("team of %ld before the first array\n", warm);
+    shrink_array::println("team of {} before the first array", warm);
 
     const Scenario<Point3> sp{{1.0, 2.0, 3.0},
                               {-1.0, 0.5, 9.0},
@@ -363,7 +363,7 @@ int run(int argc, char** argv)
             if (!ok)
             {
                 ++bad;
-                printf("[%s/vector-like on structs] FAIL: %s\n", variant_name(), what);
+                shrink_array::println("[{}/vector-like on structs] FAIL: {}", variant_name(), what);
             }
         };
         Array<Point3> pts;
@@ -391,8 +391,8 @@ int run(int argc, char** argv)
         check(rng.size() == 500 && std::as_const(rng)[499] == Pair16{7, 1}, "(first, last) constructor");
         if (!bad)
         {
-            printf("[%s/vector-like on structs] OK: reserve, emplace_back, copy, {...}, (first, last)\n",
-                   variant_name());
+            shrink_array::println("[{}/vector-like on structs] OK: reserve, emplace_back, copy, {{...}}, (first, last)",
+                                  variant_name());
         }
         fails += bad ? 1 : 0;
         pts.clear();
@@ -414,8 +414,8 @@ int run(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    printf("\n[%s] %s\n", variant_name(),
-           fails == 0 ? "=== OPEN TYPES OK, TEARDOWN OK ===" : "=== OPEN TYPES FAILURES ===");
+    shrink_array::println("\n[{}] {}", variant_name(),
+                          fails == 0 ? "=== OPEN TYPES OK, TEARDOWN OK ===" : "=== OPEN TYPES FAILURES ===");
     return fails;
 }
 

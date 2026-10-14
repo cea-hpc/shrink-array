@@ -40,7 +40,7 @@
 // the detection is compiled out and the harness only says so.
 // ============================================================================
 
-#include <cstdio>      // std::printf, std::fopen, std::remove
+#include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
 #include <cstdlib>     // std::system, std::atoi
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
@@ -48,13 +48,14 @@
 #include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
-#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"   // ArrayChunk
-#include "chunk/array_chunk2.h"  // ArrayChunk2
-#include "chunk/array_chunk2A.h" // ArrayChunk2A
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"        // chunk_config::use_chunk2*, build_config::chunk_dynamic / any_check
+#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"    // ArrayChunk
+#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"         // chunk_config::use_chunk2*, build_config::chunk_dynamic / any_check
+#include "chunk/internal/print.h" // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -142,7 +143,7 @@ static int run_case(int k)
                 q      = 2;
                 sink += static_cast<int>(q);
             }
-            std::printf("[child] control done\n");
+            shrink_array::println("[child] control done");
             return 0;
         case 3:
         case 5:
@@ -211,7 +212,7 @@ static int run_case(int k)
         p = 4;
     }
 
-    std::printf("[child] ran to the end (sink %d)\n", sink);
+    shrink_array::println("[child] ran to the end (sink {})", sink);
     return 0;
 }
 
@@ -246,12 +247,12 @@ static int check_case(const char* self, int k)
     const bool ran_ok  = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
     const bool message = out.find("used after the array rebuilt its storage") != std::string::npos;
     const bool pass    = c.must_stop ? (!ran_ok && message) : (ran_ok && !message);
-    std::printf("[%s] %-40s %s%s\n", variant_name(), c.name,
-                c.must_stop ? (ran_ok ? "RAN ON" : "stopped") : (ran_ok ? "ran" : "STOPPED"),
-                pass ? "" : "   <-- FAIL");
+    shrink_array::println("[{}] {:<40} {}{}", variant_name(), c.name,
+                          c.must_stop ? (ran_ok ? "RAN ON" : "stopped") : (ran_ok ? "ran" : "STOPPED"),
+                          pass ? "" : "   <-- FAIL");
     if (!pass)
     {
-        std::printf("---- child output ----\n%s----------------------\n", out.c_str());
+        shrink_array::println("---- child output ----\n{}----------------------", out.c_str());
         return 1;
     }
     return 0;
@@ -264,10 +265,11 @@ int run(int argc, char** argv)
         return run_child(std::atoi(argv[2]));
     }
 
-    std::printf("=== stale_proxy_validation [variant = %s] ===\n", variant_name());
+    shrink_array::println("=== stale_proxy_validation [variant = {}] ===", variant_name());
     if constexpr (!build_config::any_check)
     {
-        std::printf("[%s] not a check build: the stale-proxy check is compiled out, nothing to test\n", variant_name());
+        shrink_array::println("[{}] not a check build: the stale-proxy check is compiled out, nothing to test",
+                              variant_name());
         return 0;
     }
 
@@ -281,7 +283,8 @@ int run(int argc, char** argv)
         fails += check_case(argv[0], k);
     }
 
-    std::printf("\n[%s] %s\n", variant_name(), fails == 0 ? "=== STALE PROXY OK ===" : "=== STALE PROXY FAILURES ===");
+    shrink_array::println("\n[{}] {}", variant_name(),
+                          fails == 0 ? "=== STALE PROXY OK ===" : "=== STALE PROXY FAILURES ===");
     return fails;
 }
 

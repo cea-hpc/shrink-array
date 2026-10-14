@@ -39,7 +39,7 @@
 // OpenMP without OMPT only (the protocol is manual there); 77 = skipped.
 // ============================================================================
 
-#include <cstdio>      // std::printf, std::fopen, std::fread, std::remove
+#include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
 #include <cstdlib>     // std::system, std::atoi
 #include <cstring>     // std::strcmp
 #include <string>      // std::string
@@ -58,6 +58,7 @@
 #include "chunk/internal/test_hooks.h" // test_hooks::force_defer_every
 #include "chunk/manage_ompt.h"         // begin_parallel_phase, finalize_parallel_phase, parallel_phase
 #include "chunk/param_chunk.h"         // ParamChunk::init_indexes
+#include "chunk/internal/print.h"      // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -212,7 +213,7 @@ long regions(Bracket how)
         }
         if (helper_sum != want)
         {
-            std::printf("  reduction: %ld, expected %ld\n", helper_sum, want);
+            shrink_array::println("  reduction: {}, expected {}", helper_sum, want);
             ++bad;
         }
     }
@@ -258,7 +259,7 @@ int child(int k)
     const long bad = regions(c.how);
     if (bad != 0)
     {
-        std::printf("  %ld wrong element(s)\n", bad);
+        shrink_array::println("  {} wrong element(s)", bad);
     }
     return bad == 0 ? 0 : 1;
 }
@@ -286,12 +287,12 @@ int check_case(const char* self, int k)
     const bool must_run = c.must_print == nullptr;
     const bool pass = must_run ? (ran_ok && out.find("[PHASE PROTOCOL]") == std::string::npos)
                                : (!ran_ok && out.find(c.must_print) != std::string::npos);
-    std::printf("[%s/phase-protocol] %-36s %s%s\n", variant_name(), c.name,
-                must_run ? (ran_ok ? "ran" : "STOPPED") : (ran_ok ? "RAN ON" : "stopped"),
-                pass ? "" : "   <-- FAIL");
+    shrink_array::println("[{}/phase-protocol] {:<36} {}{}", variant_name(), c.name,
+                          must_run ? (ran_ok ? "ran" : "STOPPED") : (ran_ok ? "RAN ON" : "stopped"),
+                          pass ? "" : "   <-- FAIL");
     if (!pass)
     {
-        std::printf("---- child output ----\n%s----------------------\n", out.c_str());
+        shrink_array::println("---- child output ----\n{}----------------------", out);
         return 1;
     }
     return 0;
@@ -303,7 +304,7 @@ int run(int argc, char** argv)
 {
     if constexpr (!build_config::use_openmp || !build_config::has_not_ompt || !test_hooks::force_defer_compiled)
     {
-        std::printf("phase_protocol_validation: skipped (OpenMP without OMPT, with the test hooks, only)\n");
+        shrink_array::println("phase_protocol_validation: skipped (OpenMP without OMPT, with the test hooks, only)");
         return 77;
     }
     ParamChunk::init_indexes(true);
@@ -313,19 +314,20 @@ int run(int argc, char** argv)
         return child(std::atoi(argv[2]));
     }
 
-    std::printf("=== phase_protocol_validation [variant = %s]  check build: %s ===\n", variant_name(),
-                build_config::any_check ? "yes" : "no");
+    shrink_array::println("=== phase_protocol_validation [variant = {}]  check build: {} ===", variant_name(),
+                          build_config::any_check ? "yes" : "no");
     int fails = 0;
     for (int k = 0; k < kNbCases; ++k)
     {
         if (kCases[k].check_build_only && !build_config::any_check)
         {
-            std::printf("[%s/phase-protocol] %-36s skipped (check builds only)\n", variant_name(), kCases[k].name);
+            shrink_array::println("[{}/phase-protocol] {:<36} skipped (check builds only)", variant_name(),
+                                  kCases[k].name);
             continue;
         }
         fails += check_case(argv[0], k);
     }
-    std::printf("%s\n", fails ? "phase_protocol_validation: FAILED" : "phase_protocol_validation: OK");
+    shrink_array::println("{}", fails ? "phase_protocol_validation: FAILED" : "phase_protocol_validation: OK");
     return fails ? 1 : 0;
 }
 

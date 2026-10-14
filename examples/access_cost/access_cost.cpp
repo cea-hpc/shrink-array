@@ -65,7 +65,7 @@
 #include <algorithm>   // std::sort, std::min_element
 #include <chrono>      // std::chrono::steady_clock
 #include <cstdint>     // std::uint64_t
-#include <cstdio>      // std::printf, std::fprintf
+#include <cstdio>      // std::fprintf, stderr
 #include <string>      // std::string
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
@@ -80,6 +80,7 @@
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"     // shrink_array::println
 
 using namespace shrink_array;
 
@@ -401,12 +402,12 @@ int main(int argc, char** argv)
     const long S = static_cast<long>(Array<double>(0).chunk_size());
     if (csv)
     {
-        std::printf("variant,chunk_size,threads,n,rep,case,container,seconds,ns_per_elem\n");
+        shrink_array::println("variant,chunk_size,threads,n,rep,case,container,seconds,ns_per_elem");
     }
     else
     {
-        std::printf("=== access_cost [%s]  n=%ld  chunk_size=%ld  threads=%d  reps=%d ===\n", variant_name(), N, S,
-                    CHUNK_PMP_MAX_THREADS, reps);
+        shrink_array::println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={} ===", variant_name(), N,
+                              S, CHUNK_PMP_MAX_THREADS, reps);
     }
 
     const std::vector<int> idx = random_indices(N);
@@ -431,8 +432,8 @@ int main(int argc, char** argv)
         t[c][container].push_back(s);
         if (csv)
         {
-            std::printf("%s,%ld,%d,%ld,%d,%s,%s,%.9f,%.4f\n", variant_name(), S, CHUNK_PMP_MAX_THREADS, N, rep,
-                        kCases[c], container ? "array" : "vector", s, s * 1e9 / static_cast<double>(N));
+            shrink_array::println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), S, CHUNK_PMP_MAX_THREADS, N,
+                                  rep, kCases[c], container ? "array" : "vector", s, s * 1e9 / static_cast<double>(N));
         }
     };
 
@@ -516,17 +517,17 @@ int main(int argc, char** argv)
 
     if (!csv)
     {
-        std::printf("%-14s %14s %14s %14s %14s %8s\n", "case", "vector med ns", "vector min ns", "array med ns",
-                    "array min ns", "ratio");
+        shrink_array::println("{:<14} {:>14} {:>14} {:>14} {:>14} {:>8}", "case", "vector med ns", "vector min ns",
+                              "array med ns", "array min ns", "ratio");
         for (int c = 0; c < kNCases; ++c)
         {
             const double per = 1e9 / static_cast<double>(N);
             const double vm  = median(t[c][0]) * per;
             const double am  = median(t[c][1]) * per;
-            std::printf("%-14s %14.3f %14.3f %14.3f %14.3f %8.2f\n", kCases[c], vm, minimum(t[c][0]) * per, am,
-                        minimum(t[c][1]) * per, vm > 0. ? am / vm : 0.);
+            shrink_array::println("{:<14} {:>14.3f} {:>14.3f} {:>14.3f} {:>14.3f} {:>8.2f}", kCases[c], vm,
+                                  minimum(t[c][0]) * per, am, minimum(t[c][1]) * per, vm > 0. ? am / vm : 0.);
         }
-        std::printf("(ns per element, wall clock / n; ratio = array median / vector median)\n");
+        shrink_array::println("(ns per element, wall clock / n; ratio = array median / vector median)");
     }
 
     if (sum_mismatch || bad_elements)
