@@ -52,7 +52,7 @@
 #include <cstdio>     // std::fprintf, std::fflush
 #include <cstdlib>    // std::abort, std::getenv
 #include <functional> // std::less (the sweep orders slab pointers)
-#include <utility>
+#include <utility>    // std::cmp_less
 #include <vector>     // std::vector
 #include <mutex>      // std::mutex, std::scoped_lock
 #include <atomic>     // std::atomic, std::memory_order_relaxed

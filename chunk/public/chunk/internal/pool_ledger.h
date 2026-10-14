@@ -39,7 +39,7 @@
 #include <cstdio>  // std::fprintf
 #include <cstdlib> // std::abort
 #include <mutex>   // std::mutex, std::scoped_lock
-#include <utility>
+#include <utility> // std::cmp_equal
 
 #include "chunk/config.h"                   // build_config::any_check
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED

@@ -24,7 +24,7 @@
 #include <cstdint>  // std::uintptr_t
 #include <cstdlib>  // std::abort on an arena failure
 #include <iostream> // std::cerr on an arena failure
-#include <utility>
+#include <utility>  // std::cmp_less (the element-size check)
 #include <vector>   // std::vector
 
 #include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
