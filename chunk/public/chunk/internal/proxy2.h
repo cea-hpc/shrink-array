@@ -303,6 +303,21 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     void trigger_compression_if_needed(this Derived& self, int thr_rank) noexcept;
 
     /**
+     * @brief A candidate was just queued on the calling thread's list @p vec
+     *        (ProxyBase's add paths): note it when the list is now past the
+     *        threshold, for trigger_compression_if_needed() to raise the
+     *        rank's flag after this write, as its own test did.
+     * @param vec The candidate list just pushed to.
+     */
+    static void note_candidate_pushed(const auto& vec) noexcept
+    {
+        if (static_cast<int>(vec.size()) > manager_chunk2::get_size_max_number_of_chunk_to_check_compress())
+        {
+            list_over_threshold_ = true;
+        }
+    }
+
+    /**
      * @brief Performs actual block compression for the current thread's candidates.
      */
     void perform_compression(this Derived& self) noexcept;
@@ -318,6 +333,15 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      */
     template <typename LAMBDA>
     void execute_inplace_operation_async(auto* ctx, LAMBDA operation) const;
+
+  private:
+    /// @brief The calling thread pushed a candidate that took its list past
+    ///        the threshold, not yet turned into the rank's dangerous flag
+    ///        (note_candidate_pushed / trigger_compression_if_needed). A
+    ///        thread's lists only grow by its own pushes.
+    static inline thread_local bool list_over_threshold_ = false;
+
+  public:
 
     /**
      * @brief Async-context counterpart of execute_simple_operation():

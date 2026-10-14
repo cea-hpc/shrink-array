@@ -204,26 +204,22 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
         self.second_value = self.make_second_value();
     }
 
-    const auto* vec_tuple_p = manager_chunk2::compress_candidates(thr_rank, self.second_value);
-
-    if (vec_tuple_p == nullptr)
+    // The threshold is tested where a list grows -- the push, which only the
+    // owning thread makes (note_candidate_pushed) -- not here: that cost a
+    // std::map find by second value, a shared_ptr and a size load on EVERY
+    // write (~2 ns of a ~14 ns write, x86; a chain of dependent loads). The
+    // flag is turned into the rank's dangerous flag here, after the write, so
+    // the pass still runs from the rank's next write.
+    if (!list_over_threshold_) [[likely]]
     {
         return;
     }
+    list_over_threshold_ = false;
+    CompressionManagerType::mark_list_dangerous_for_thread(thr_rank);
 
-    const auto& vec_tuple = *vec_tuple_p;
-
-    const int sz  = static_cast<int>(vec_tuple.size());
-    const int szm = manager_chunk2::get_size_max_number_of_chunk_to_check_compress();
-
-    if (Base::should_trigger_compression(sz, szm))
+    if constexpr (chunk_config::verbose)
     {
-        CompressionManagerType::mark_list_dangerous_for_thread(thr_rank);
-
-        if constexpr (chunk_config::verbose)
-        {
-            std::println(stderr, "⚠️ List became dangerous: size={}", sz);
-        }
+        std::println(stderr, "⚠️ List became dangerous (rank {})", thr_rank);
     }
 }
 

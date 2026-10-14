@@ -54,8 +54,7 @@
 // tests run it at 1 and 8).
 
 #include <algorithm>        // std::lower_bound, std::sort, std::ranges::equal_range
-#include <format>           // std::format, std::format_string (Report::fail)
-#include <print>            // std::println
+#include <cstdio>           // std::snprintf
 #include <initializer_list> // std::initializer_list (range-for over a braced list)
 #include <functional>       // std::greater
 #include <iterator>         // std::random_access_iterator, std::iterator_traits, std::distance
@@ -65,6 +64,8 @@
 #include <type_traits>      // std::conditional_t, std::is_same_v
 #include <utility>          // std::forward
 #include <vector>           // std::vector
+#include <format>           // std::format
+#include <utility>          // std::forward
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
 #include "chunk/array_chunk.h"           // ArrayChunk
@@ -76,6 +77,7 @@
 #include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/array_chunk_range_ops.h" // for_each_value / for_each_span / read_range (bulk-reads step)
+#include "chunk/internal/print.h"        // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -222,7 +224,7 @@ struct Report
     {
         if (bad < 8)
         {
-            std::println("[{}/{}] FAIL {}", variant_name(), step, std::format(fmt, std::forward<Args>(args)...));
+            println("[{}/{}] FAIL {}", variant_name(), step, std::format(fmt, std::forward<Args>(args)...));
         }
         ++bad;
     }
@@ -230,11 +232,11 @@ struct Report
     {
         if (!bad)
         {
-            std::println("[{}/{}] OK: {}", variant_name(), step, ok_msg);
+            println("[{}/{}] OK: {}", variant_name(), step, ok_msg);
         }
         else
         {
-            std::println("[{}/{}] {} failure(s)", variant_name(), step, bad);
+            println("[{}/{}] {} failure(s)", variant_name(), step, bad);
         }
         return bad ? 1 : 0;
     }
@@ -742,7 +744,7 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    std::println("=== iterator_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
+    println("=== iterator_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     {
@@ -777,7 +779,7 @@ int run(int /*argc*/, char** /*argv*/)
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::println("\n[{}] {}", variant_name(), fails ? "=== ITERATOR FAILED ===" : "=== ITERATOR OK ===");
+    println("\n[{}] {}", variant_name(), fails ? "=== ITERATOR FAILED ===" : "=== ITERATOR OK ===");
     return fails ? 1 : 0;
 }
 

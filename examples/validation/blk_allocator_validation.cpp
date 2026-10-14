@@ -39,13 +39,14 @@
 // EXIT STATUS: 0 when every check holds, 1 otherwise.
 
 #include <cstdint> // std::uintptr_t
-#include <print>   // std::println
 #include <cstdlib> // std::getenv (BLK_HUGE)
 #include <ranges>  // std::views::enumerate
 #include <vector>  // std::vector
 
 #include "fast_allocators/internal/static_const_array.h" // BlkAllocator, StaticConstArray
+#include "chunk/internal/print.h"                        // shrink_array::println
 
+using shrink_array::println;
 
 namespace
 {
@@ -84,7 +85,7 @@ int fails = 0;
 
 void expect(bool ok, const char* what)
 {
-    std::println("  [{}] {}", ok ? " ok " : "FAIL", what);
+    println("  [{}] {}", ok ? " ok " : "FAIL", what);
     if (!ok)
     {
         ++fails;
@@ -134,7 +135,7 @@ void check_huge()
 {
     if (sizeof(std::size_t) < 8 || std::getenv("BLK_HUGE") == nullptr)
     {
-        std::println("  [skip] sizes past 2 GiB / 4 GiB (set BLK_HUGE=1)");
+        println("  [skip] sizes past 2 GiB / 4 GiB (set BLK_HUGE=1)");
         return;
     }
     constexpr std::size_t kGiB    = 1uz << 30;
@@ -266,13 +267,13 @@ void check_inside_caller_critical()
 
 int main()
 {
-    std::println("=== blk_allocator_validation ===");
+    println("=== blk_allocator_validation ===");
     check_sizes();
     check_huge();
     check_distinct();
     check_parallel();
     check_inside_caller_critical();
     check_distinct(); // the ladder is still sound after the batches went back
-    std::println("\n{}", fails ? "=== BLK ALLOCATOR FAILED ===" : "=== BLK ALLOCATOR OK ===");
+    println("\n{}", fails ? "=== BLK ALLOCATOR FAILED ===" : "=== BLK ALLOCATOR OK ===");
     return fails ? 1 : 0;
 }

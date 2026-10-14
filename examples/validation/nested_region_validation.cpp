@@ -46,23 +46,23 @@
 // entries do), or the per-thread capacity refuses rank 3 -- rightly.
 // ============================================================================
 
-#include <cstdio>      // std::printf, std::fopen, std::remove
+#include <cstdio>      // std::fopen, std::fclose, std::fread, std::fflush, FILE, stdout, std::remove
 #include <cstdlib>     // std::system
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
 #include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
-#include <print>       // std::println
 
-#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"   // ArrayChunk
-#include "chunk/array_chunk2.h"  // ArrayChunk2
-#include "chunk/array_chunk2A.h" // ArrayChunk2A
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/config.h"        // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"     // chunk_pmp_set_max_active_levels
-#include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"    // ArrayChunk
+#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/config.h"         // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"      // chunk_pmp_set_max_active_levels
+#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h" // shrink_array::println
 
 #include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -183,7 +183,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
         {
             if (fails < 5)
             {
-                std::println("  MISMATCH i={}  {} (ref {})", i, v, ref[i]);
+                println("  MISMATCH i={}  {} (ref {})", i, v, ref[i]);
             }
             ++fails;
         }
@@ -212,11 +212,11 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
 
     const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     const bool message = out.contains("nested ACTIVE");
-    std::println("[nested-active] two active levels: {}, {}", stopped ? "stopped" : "RAN ON",
-                 message ? "invariant message printed" : "NO invariant message");
+    println("[nested-active] two active levels: {}, {}", stopped ? "stopped" : "RAN ON",
+            message ? "invariant message printed" : "NO invariant message");
     if (!stopped || !message)
     {
-        std::println("---- child output ----\n{}----------------------", out.c_str());
+        println("---- child output ----\n{}----------------------", out.c_str());
         return 1;
     }
     return 0;
@@ -233,15 +233,15 @@ static int run_body(int argc, char** argv)
     Array<int>       a(N);
     std::vector<int> ref(N, 0);
 
-    std::println("=== nested_region_validation [variant = {}]  outer team 4, nested regions {} ===", variant_name(),
-                 nested_active ? "ACTIVE (--nested-active)" : "serialised");
+    println("=== nested_region_validation [variant = {}]  outer team 4, nested regions {} ===", variant_name(),
+            nested_active ? "ACTIVE (--nested-active)" : "serialised");
     std::fflush(stdout);
 
     long fails = run_nested(a, ref, 3);
 
     if (nested_active)
     {
-        std::println("[nested-active] two active levels ran without an invariant failure");
+        println("[nested-active] two active levels ran without an invariant failure");
         return 1;
     }
 
@@ -252,10 +252,10 @@ static int run_body(int argc, char** argv)
 
     if (fails)
     {
-        std::println("=== NESTED REGION FAILED ({}) ===", fails);
+        println("=== NESTED REGION FAILED ({}) ===", fails);
         return 1;
     }
-    std::println("=== NESTED REGION OK ===");
+    println("=== NESTED REGION OK ===");
     return 0;
 }
 

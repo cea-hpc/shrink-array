@@ -69,20 +69,19 @@
 // EXIT STATUS: 0 when every count matches, 1 otherwise.
 
 #include <cstdint>     // std::uint8_t (the Kind enum's base)
-#include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
-#include <print>       // std::println
 
-#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"   // ArrayChunk
-#include "chunk/array_chunk2.h"  // ArrayChunk2
-#include "chunk/array_chunk2A.h" // ArrayChunk2A
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"        // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"    // ArrayChunk
+#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"         // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h" // shrink_array::println
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -227,11 +226,11 @@ static int check(const char* scenario, const char* step, const Array<double>& ar
     const int exp = expect_after(k);
     if (got != exp)
     {
-        std::println("[{}/{}] FAIL after '{}': {} chunk(s) materialised, expected {}", variant_name(), scenario, step,
-                     got, exp);
+        println("[{}/{}] FAIL after '{}': {} chunk(s) materialised, expected {}", variant_name(), scenario, step, got,
+                exp);
         return 1;
     }
-    std::println("[{}/{}] ok    after '{:<10}': {:3} materialised", variant_name(), scenario, step, got);
+    println("[{}/{}] ok    after '{:<10}': {:3} materialised", variant_name(), scenario, step, got);
     return 0;
 }
 
@@ -243,8 +242,8 @@ int run(int /*argc*/, char** /*argv*/)
     const int S = static_cast<int>(Array<double>(1).chunk_size());
     const int N = kChunks * S;
 
-    std::println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(), S,
-                 kChunks, CHUNK_PMP_MAX_THREADS);
+    println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(), S,
+            kChunks, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -295,7 +294,7 @@ int run(int /*argc*/, char** /*argv*/)
         }
         if (bad)
         {
-            std::println("[{}/C] FAIL: {} element(s) do not read back 0", variant_name(), bad);
+            println("[{}/C] FAIL: {} element(s) do not read back 0", variant_name(), bad);
             ++fails;
         }
         c.clear();
@@ -306,8 +305,8 @@ int run(int /*argc*/, char** /*argv*/)
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::println("\n[{}] {}", variant_name(),
-                 fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");
+    println("\n[{}] {}", variant_name(),
+            fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");
     return fails ? 1 : 0;
 }
 

@@ -213,7 +213,7 @@ is limited to the rebuilds.
   schedule, no slab recycling, no `chunk_list` reuse, lazy affinity; the NUMA
   placement is balanced like the static run's. Most of it was the advisor: its
   analyses went on at every tick once the geometry had settled, and their serial
-  parts kept the other threads waiting (`__kmp_fork_barrier`). With
+  parts kept the other threads waiting (__kmp_fork_barrier). With
   `max_backoff_ticks` (same node, `OMP_PROC_BIND=close`, 4,000 iterations, last
   re-chunk at iteration 1,700): +22% -> **+7%**. What remains is compression
   churn the static run does not have (~15,000 buffers freed per iteration

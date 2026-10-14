@@ -55,16 +55,16 @@
 #include <atomic>  // std::atomic, std::memory_order_relaxed
 #include <chrono>  // std::chrono::steady_clock, std::chrono::duration
 #include <cstdint> // std::uint64_t
-#include <print>   // std::println
 #include <cstdlib> // std::getenv, std::atof
 
-#include "chunk/chunk_traits.h" // forward decls + default ind_type = int
-#include "chunk/array_chunk2.h" // ArrayChunk2
-#include "chunk/param_chunk.h"  // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"       // build_config::has_not_ompt, build_config::use_openmp
-#include "chunk/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
-#include "chunk/manage_ompt.h"  // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"         // build_config::has_not_ompt, build_config::use_openmp
+#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h" // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -143,7 +143,7 @@ int run(int /*argc*/, char** /*argv*/)
 
     if constexpr (!build_config::use_openmp)
     {
-        std::println("[chunk2/foreign-key] SKIP: the passes this is about run inside a parallel region");
+        println("[chunk2/foreign-key] SKIP: the passes this is about run inside a parallel region");
         return 77;
     }
 
@@ -159,9 +159,9 @@ int run(int /*argc*/, char** /*argv*/)
         const Arr& ca   = a;
         const Arr& cb   = b;
         const int  team = CHUNK_PMP_MAX_THREADS;
-        std::println("=== chunk2_foreign_key_validation  chunk_size={}  threads={}  a: {} chunks of {:g} (declares "
-                     "{:g})  b: {} chunks (declares {:g}) ===",
-                     S, team, kChunksA, kValB, kValA, kChunksB, kValB);
+        println("=== chunk2_foreign_key_validation  chunk_size={}  threads={}  a: {} chunks of {:g} (declares "
+                "{:g})  b: {} chunks (declares {:g}) ===",
+                S, team, kChunksA, kValB, kValA, kChunksB, kValB);
 
         // `a` = 2.0 everywhere, `b` = 2.0 everywhere and compressed to it.
 #pragma omp parallel
@@ -225,20 +225,19 @@ int run(int /*argc*/, char** /*argv*/)
 
         const long a_compressed = pointing_at(ca, kChunksA, b_cst);
         const long b_compressed = compressed(cb, kChunksB, S);
-        std::println("[chunk2/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; a: {} "
-                     "of {} chunks on b's constant before the stress, {} after",
-                     toggles.load(), seconds, b_compressed0, kChunksB, b_compressed, a_on_b_cst0, kChunksA,
-                     a_compressed);
+        println("[chunk2/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; a: {} "
+                "of {} chunks on b's constant before the stress, {} after",
+                toggles.load(), seconds, b_compressed0, kChunksB, b_compressed, a_on_b_cst0, kChunksA, a_compressed);
         if (b_compressed0 == 0)
         {
-            std::println("[chunk2/foreign-key] FAIL premise: `b` was not compressed to its second value");
+            println("[chunk2/foreign-key] FAIL premise: `b` was not compressed to its second value");
             ++fails;
         }
         if (a_compressed != 0)
         {
-            std::println("[chunk2/foreign-key] FAIL {} chunk(s) of `a` point at `b`'s constant array: compressed to "
-                         "another array's second value",
-                         a_compressed);
+            println("[chunk2/foreign-key] FAIL {} chunk(s) of `a` point at `b`'s constant array: compressed to "
+                    "another array's second value",
+                    a_compressed);
             ++fails;
         }
 
@@ -260,21 +259,21 @@ int run(int /*argc*/, char** /*argv*/)
         }
         if (bad_b != 0 || bad_a != 0)
         {
-            std::println("[chunk2/foreign-key] FAIL after writing 5.0 into each chunk of `a`: {} element(s) of `b` and "
-                         "{} of `a` read wrong -- the write landed in a shared constant array",
-                         bad_b, bad_a);
+            println("[chunk2/foreign-key] FAIL after writing 5.0 into each chunk of `a`: {} element(s) of `b` and "
+                    "{} of `a` read wrong -- the write landed in a shared constant array",
+                    bad_b, bad_a);
             ++fails;
         }
         else
         {
-            std::println("[chunk2/foreign-key] OK: no chunk of `a` compressed to `b`'s value, writes stay in `a`");
+            println("[chunk2/foreign-key] OK: no chunk of `a` compressed to `b`'s value, writes stay in `a`");
         }
     }
 
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::println("\n[chunk2] {}", fails ? "=== FOREIGN KEY FAILED ===" : "=== FOREIGN KEY OK ===");
+    println("\n[chunk2] {}", fails ? "=== FOREIGN KEY FAILED ===" : "=== FOREIGN KEY OK ===");
     return fails ? 1 : 0;
 }
 

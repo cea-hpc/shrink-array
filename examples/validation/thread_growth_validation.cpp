@@ -42,23 +42,23 @@
 // step 3 is skipped.
 // ============================================================================
 
-#include <cstdio>      // std::printf, std::fopen, std::remove
+#include <cstdio>      // std::fopen, std::fclose, std::fread, std::fflush, FILE, stdout, std::remove
 #include <cstdlib>     // std::system
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
 #include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
-#include <print>       // std::println
 
-#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"   // ArrayChunk
-#include "chunk/array_chunk2.h"  // ArrayChunk2
-#include "chunk/array_chunk2A.h" // ArrayChunk2A
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/config.h"        // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"     // chunk_pmp_set_num_threads, CHUNK_PMP_THREAD_CAPACITY
-#include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"    // ArrayChunk
+#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/config.h"         // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"      // chunk_pmp_set_num_threads, CHUNK_PMP_THREAD_CAPACITY
+#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h" // shrink_array::println
 
 #include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -189,7 +189,7 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
         {
             if (fails < 5)
             {
-                std::println("  MISMATCH i={}  int {} (ref {})  double {:g} (ref {:g})", i, ai, ra[i], di, rd[i]);
+                println("  MISMATCH i={}  int {} (ref {})  double {:g} (ref {:g})", i, ai, ra[i], di, rd[i]);
             }
             ++fails;
         }
@@ -218,11 +218,11 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
 
     const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     const bool message = out.contains("thread capacity");
-    std::println("[beyond] team past the capacity: {}, {}", stopped ? "stopped" : "RAN ON",
-                 message ? "capacity message printed" : "NO capacity message");
+    println("[beyond] team past the capacity: {}, {}", stopped ? "stopped" : "RAN ON",
+            message ? "capacity message printed" : "NO capacity message");
     if (!stopped || !message)
     {
-        std::println("---- child output ----\n{}----------------------", out.c_str());
+        println("---- child output ----\n{}----------------------", out.c_str());
         return 1;
     }
     return 0;
@@ -248,15 +248,15 @@ static int run_body(int argc, char** argv)
     const int capacity = CHUNK_PMP_THREAD_CAPACITY;
     const int grown    = beyond ? capacity + 4 : capacity;
     set_team(grown);
-    std::println("=== thread_growth_validation [variant = {}]  created at 2 threads, now {} (capacity {}){} ===",
-                 variant_name(), grown, capacity, beyond ? "  --beyond" : "");
+    println("=== thread_growth_validation [variant = {}]  created at 2 threads, now {} (capacity {}){} ===",
+            variant_name(), grown, capacity, beyond ? "  --beyond" : "");
     std::fflush(stdout);
 
     fails += run_regions(a, ra, d, rd, 4);
 
     if (beyond)
     {
-        std::println("[beyond] the team ran past the capacity without an invariant failure");
+        println("[beyond] the team ran past the capacity without an invariant failure");
         return 1;
     }
 
@@ -268,10 +268,10 @@ static int run_body(int argc, char** argv)
 
     if (fails)
     {
-        std::println("=== THREAD GROWTH FAILED ({}) ===", fails);
+        println("=== THREAD GROWTH FAILED ({}) ===", fails);
         return 1;
     }
-    std::println("=== THREAD GROWTH OK ===");
+    println("=== THREAD GROWTH OK ===");
     return 0;
 }
 

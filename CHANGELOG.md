@@ -50,6 +50,27 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- Fast allocator: `CHUNK_REUSE_SHARE_DIV` and `CHUNK_REUSE_FLOOR_KB` (developer
+  settings) set the reuse budget -- how many freed buffers a rank keeps parked
+  for its next allocations -- whose default counts every chunk created,
+  compressed ones included, so at 99 % compression it parks about twice the
+  buffers actually materialised. `CHUNK_RECLAIM_PHASE_KEEP=K` gives the empty
+  slabs back to the system after every compression pass, keeping K per
+  allocator instance (off by default: it costs page faults).
+
+### Fixed
+
+- Fast allocator: `trim_reuse_pools` (hence `shrink_to_fit()` and
+  `compress_now_and_trim_pools()`) was a no-op. It now returns the parked
+  buffers to their slabs and gives the emptied slabs back to the system, the
+  fast allocator's `malloc_trim`: the memory a compression frees no longer stays
+  resident until the next re-chunk. shrink_bench calls it at its checkpoints
+  ("after init", "end") with `malloc_trim` (`SHRINK_BENCH_KEEP_POOLS=1`: not).
+  `shrink_bench_chunk2a_int64_1024 --multiply 1`, 16 threads, current RSS after
+  init: 3039 MB -> 567 MB (std allocator: 568 MB).
+
 ## 0.1.1 -- 2026-10-12
 
 ### Added
@@ -255,7 +276,7 @@ were internal.
   constant-initialised, and never destroyed (`chunk/internal/immortal.h`): a global array used
   to read it before its dynamic initialisation and after its destruction.
 - No limit on the number of (chunk template, element type) pairs: the manager registry grows
-  (it aborted past 256). Registering a manager no longer uses RTTI (`dynamic_cast`).
+  (it aborted past 256). Registering a manager no longer uses RTTI (dynamic_cast).
 - **The build options are recorded, not passed as macros.** CMake generates
   `chunk/build_options.h` and `fast_allocators/build_options.h` (`CHUNK_OPT_*`,
   `FAST_ALLOC_OPT_*`), installed with the libraries; the headers read them there, never from the

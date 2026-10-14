@@ -61,8 +61,6 @@
 #include <cmath>     // std::lround (the extrapolated materialised count)
 #include <cstddef>   // std::size_t
 #include <cstdint>   // int64_t, uint32_t
-#include <print>     // std::println (print)
-#include <ranges>    // std::views::enumerate (print)
 #include <vector>    // std::vector
 
 #include "chunk/internal/in_t.h"               // in_t<T>: the element snapshots
@@ -74,6 +72,7 @@
 #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 #include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
+#include "chunk/internal/print.h"              // shrink_array::println
 
 namespace shrink_array
 {
@@ -770,17 +769,17 @@ struct ChunkSizeAdvisor
     /// @brief Print @p rep as a table on stdout, headed by @p name.
     static void print(const ChunkSizeReport& rep, const char* name)
     {
-        std::println("── ChunkSizeAdvisor [{}] current S={}, meta={:.1f} B/chunk ──", name, rep.current_size,
-                     rep.meta_bytes);
+        println("── ChunkSizeAdvisor [{}] current S={}, meta={:.1f} B/chunk ──", name, rep.current_size,
+                rep.meta_bytes);
         for (const auto& [i, row] : std::views::enumerate(rep.table))
         {
-            std::println(
-                "   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size, row.n_chunks, row.mat,
-                row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
-                row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~", i == rep.cur ? " <- current" : "",
-                i == rep.best ? "  ** BEST **" : "");
+            println("   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size, row.n_chunks,
+                    row.mat,
+                    row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
+                    row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~", i == rep.cur ? " <- current" : "",
+                    i == rep.best ? "  ** BEST **" : "");
         }
-        std::println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
+        println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
 
         // Re-chunk cost, when best != current: gain (bytes) and cost (ms) are
         // shown side by side. The constants are hardware specific
@@ -794,8 +793,7 @@ struct ChunkSizeAdvisor
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.
             const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, 1uz << 20U, 50.0);
-            std::println("   estimated re-chunk cost       : {:.3f} ms  ({})", cost_ms,
-                         worth ? "worth it" : "marginal");
+            println("   estimated re-chunk cost       : {:.3f} ms  ({})", cost_ms, worth ? "worth it" : "marginal");
         }
     }
 };

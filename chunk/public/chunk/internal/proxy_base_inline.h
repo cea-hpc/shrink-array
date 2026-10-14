@@ -288,6 +288,10 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
                 }
 
                 push_to_compress_list(vec, &self.chunk, self.num_chunk, self.num_tab, ChunkElems{self.chunk_size()});
+                if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+                {
+                    Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
+                }
             }
         }
     }
@@ -414,6 +418,10 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
         }();
 
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, self.chunk_size());
+        if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+        {
+            Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
+        }
     }
 }
 

@@ -18,15 +18,16 @@
 // parallel, read back, folded, and the library shut down. Exit status 0 when
 // every value reads back as written.
 
-#include <print>   // std::println
 #include <utility> // std::as_const
 
-#include "chunk/array_chunk2A.h" // shrink_array::ArrayChunk2A
-#include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h"   // parallel_phase
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
+#include "chunk/array_chunk2A.h"  // shrink_array::ArrayChunk2A
+#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/internal/print.h" // shrink_array::println
 
 namespace sa = shrink_array;
+using shrink_array::println;
 
 // What element i holds after the write loop below.
 static double expected(int i, int n)
@@ -80,7 +81,7 @@ int main()
         }
 
         a.shrink_to_fit(); // fold every chunk that has become constant (sequential point)
-        std::println("n = {} elements, {} wrong, chunks holding a buffer: {:.1f} %", n, bad, a.stats());
+        println("n = {} elements, {} wrong, chunks holding a buffer: {:.1f} %", n, bad, a.stats());
     } // the array releases its chunks here
 
     sa::release_chunk_pools(); // give the reuse pools back

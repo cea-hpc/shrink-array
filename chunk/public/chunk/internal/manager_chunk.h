@@ -17,6 +17,7 @@
 #pragma once
 
 #include <algorithm>     // std::max
+#include <utility>       // std::pair (sweep_empty_slabs)
 #include <atomic>        // TeamDrainScratch's rank flags
 #include <memory>        // std::unique_ptr (the same flags)
 #include <map>           // std::map
@@ -31,8 +32,10 @@
 
 #include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/chunk_def.h"                  // ChunkDef::size_min_buffer_reuse
+#include "chunk/chunk2A_def.h"                // Chunk2ADef: the reuse budget constants
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // thread_chunk_size, set_thread_chunk_size
+#include "chunk/internal/env_parse.h"         // env_number (CHUNK_REUSE_SHARE_DIV, CHUNK_REUSE_FLOOR_KB)
 #include "chunk/internal/TChunk.h"            // TChunkComp, TChunk2CompMap, TChunk2AComp
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_CAPACITY (max_thr)
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_DISCARD (drain_reuse_list_for_size)
@@ -248,6 +251,9 @@ struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtu
     [[nodiscard]] virtual std::size_t reuse_pool_bytes_int() const = 0;
     /// @brief Return the pools' excess; see ManagerChunk::trim_reuse_pools.
     virtual std::size_t trim_reuse_pools_int(std::size_t keep_per_thread) = 0;
+    /// @brief Give the empty slabs back to the system; see
+    ///        ManagerChunk::sweep_empty_slabs.
+    virtual std::size_t sweep_empty_slabs_int(std::size_t keep_empty) = 0;
     /// @brief Print the pools' breakdown by geometry; see
     ///        ManagerChunk::print_reuse_pool_breakdown.
     virtual void print_reuse_pool_breakdown_int(const char* label) const = 0;
@@ -381,18 +387,52 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         return trim_reuse_pools(keep);
     }
+    std::size_t sweep_empty_slabs_int(std::size_t keep_empty) override
+    {
+        return sweep_empty_slabs(keep_empty);
+    }
     void print_reuse_pool_breakdown_int(const char* label) const override
     {
         print_reuse_pool_breakdown(label);
     }
 
-    /// @brief Per-key reuse budget (sequential: at array creation / rechunk).
-    static void set_size_buffer_reuse(unsigned int key, int budget)
+    /// @brief Per-key reuse budget (sequential: at array creation / rechunk),
+    ///        floored by reuse_floor_buffers() at the key's chunk @p size.
+    static void set_size_buffer_reuse(unsigned int key, int budget, unsigned int size)
     {
         if (key != 0)
         {
-            (*size_buffer_reuse_by_key_)[key] = std::max(budget, ChunkDef::size_min_buffer_reuse);
+            (*size_buffer_reuse_by_key_)[key] =
+                std::max(budget, reuse_floor_buffers(size, ChunkDef::size_min_buffer_reuse));
         }
+    }
+
+    /// @brief Divisor of the proportional reuse budget: a rank parks up to
+    ///        chunks / (this * threads) buffers. CHUNK_REUSE_SHARE_DIV, by
+    ///        default Chunk2ADef::factor_div_somme_chunk_buffer_resuse.
+    /// @details The chunks counted are all the chunks created, compressed
+    ///          ones included: at 99 % compression the default parks about
+    ///          twice the buffers actually materialised.
+    [[nodiscard]] static long reuse_share_div() noexcept
+    {
+        static const long div = std::max(
+            1L, env_number<long>("CHUNK_REUSE_SHARE_DIV",
+                                 static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse)));
+        return div;
+    }
+
+    /// @brief Floor of a reuse budget, in buffers of @p size elements:
+    ///        @p legacy_floor buffers, or CHUNK_REUSE_FLOOR_KB KiB per rank when
+    ///        set (the same memory whatever the chunk size; 0 = no floor).
+    [[nodiscard]] static int reuse_floor_buffers(unsigned int size, int legacy_floor) noexcept
+    {
+        static const long floor_kb = env_number<long>("CHUNK_REUSE_FLOOR_KB", -1L);
+        if (floor_kb < 0)
+        {
+            return legacy_floor;
+        }
+        const long block_bytes = std::max(1L, static_cast<long>(sizeof(T) * CHUNK_T<T>::storage_units(size)));
+        return static_cast<int>(std::min(floor_kb * 1024L / block_bytes, 1L << 30));
     }
 
     /// @brief Size the legacy (unsized) reuse list to @p max_thr threads.
@@ -515,12 +555,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          @p keep_per_thread is a cap per thread AND per geometry, not a
      *          target: a shorter list is left alone, nothing is pre-allocated.
      *
+     *          Fast allocator: the parked buffers go back to their slabs
+     *          (release_parked_buffers()), then every slab left empty is given
+     *          back to the system (sweep_empty_slabs()) -- the fast allocator's
+     *          malloc_trim. Outside a parallel region only (a no-op inside):
+     *          the slab chains are touched with no lock.
+     *
      * @param keep_per_thread buffers to keep in each (geometry, rank) list
      * @return bytes returned to the allocator
-     *
-     * @warning std-alloc only, a no-op otherwise: the fast allocator never
-     *          munmaps a value slab (the -1 at allocator init), so no page would
-     *          be released.
      *
      * @warning Timing is the caller's: trimming too eagerly makes the next
      *          materialisation re-allocate. The natural point is after a
@@ -530,8 +572,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if constexpr (chunk_config::use_fast_alloc)
         {
-            (void)keep_per_thread;
-            return 0;
+            if (CHUNK_PMP_IN_PARALLEL_REGION)
+            {
+                return 0;
+            }
+            const std::size_t freed = release_parked_buffers(keep_per_thread);
+            (void)sweep_empty_slabs(0);
+            return freed;
         }
         else
         {
@@ -573,6 +620,155 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
             return freed;
         }
+    }
+
+    /**
+     * @brief Call @p f(size, lists) for every reuse-list set of this type
+     *        whose geometry is known: the legacy lists in a static build (every
+     *        buffer has the static size), the per-size lists in a dynamic one,
+     *        and the keyed lists. The legacy lists of a dynamic build mix
+     *        geometries and are skipped.
+     */
+    template <typename F>
+    static void for_each_sized_reuse_set(F&& f)
+    {
+        if constexpr (chunk_config::chunk_dynamic)
+        {
+            for (auto& kv : *list_block_free_thr_by_size_)
+            {
+                f(kv.first, kv.second);
+            }
+        }
+        else
+        {
+            f(alloc_chunk_count(), list_block_free_thr);
+        }
+        for (auto& kv : *list_block_free_thr_keyed_)
+        {
+            f(static_cast<unsigned int>(kv.first & 0xffffffffULL), kv.second);
+        }
+    }
+
+    /**
+     * @brief Fast allocator: give each rank's parked buffers past the first
+     *        @p keep_per_thread back to the slab they came from.
+     * @details Each buffer goes to the allocator instance its slab names
+     *          (owner), whatever rank parked it: the drain's routing
+     *          (drain_free_rank), done serially. A buffer no slab claims stays
+     *          parked. Serial, outside any parallel region: the owners' slab
+     *          chains are modified with no lock.
+     * @return The bytes given back.
+     */
+    static std::size_t release_parked_buffers([[maybe_unused]] std::size_t keep_per_thread) noexcept
+    {
+        std::size_t bytes_freed = 0;
+        if constexpr (chunk_config::use_fast_alloc)
+        {
+            using alloc_t               = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
+            const unsigned int saved_sz = thread_chunk_size();
+            for_each_sized_reuse_set(
+                [&](unsigned int size, std::vector<PerThreadFreeList>& per_thr)
+                {
+                    set_thread_chunk_size(size);
+                    // Any instance of this size: slab_of() needs its geometry only.
+                    alloc_t&          geometry    = CHUNK_T<T>::get_chunk_allocator(0, 0u);
+                    const std::size_t block_bytes = CHUNK_T<T>::storage_units(size) * sizeof(T);
+                    for (auto& ptf : per_thr)
+                    {
+                        auto& lst = ptf.list;
+                        if (lst.size() <= keep_per_thread)
+                        {
+                            continue;
+                        }
+                        std::size_t kept = keep_per_thread;
+                        for (std::size_t i = keep_per_thread; i < lst.size(); ++i)
+                        {
+                            T*   block = lst[i];
+                            auto slab  = geometry.slab_of(block);
+                            if (slab && slab->owner)
+                            {
+                                CHUNK_FREEPATH_INC(freed);
+                                CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools.owner");
+                                const_cast<alloc_t*>(static_cast<const alloc_t*>(slab->owner))
+                                    ->free_elt_pow2(block, slab);
+                                bytes_freed += block_bytes;
+                            }
+                            else
+                            {
+                                lst[kept++] = block; // no slab claims it: stays parked
+                            }
+                        }
+                        lst.resize(kept);
+                        lst.shrink_to_fit();
+                    }
+                });
+            set_thread_chunk_size(saved_sz);
+        }
+        return bytes_freed;
+    }
+
+    /**
+     * @brief Fast allocator: give back to the system (madvise) the slabs of
+     *        this type that hold no block, beyond the first @p keep_empty of
+     *        each allocator instance -- every rank, the shared pool (key 0) and
+     *        every keyed set, at every registered geometry, into ONE sweep.
+     * @details Freed buffers return to their slab, and a slab is only given
+     *          back by a sweep: without one, the memory of a compression stays
+     *          resident until the next re-chunk or destruction. Serial, at a
+     *          quiescent point (no allocation or free in flight): an empty slab
+     *          must BE empty (fast_alloc::EmptySlabSweep). A no-op inside a
+     *          parallel region, and in a build without OpenMP.
+     * @return Number of slabs handed to the sweep.
+     */
+    static std::size_t sweep_empty_slabs([[maybe_unused]] std::size_t keep_empty) noexcept
+    {
+        std::size_t collected = 0;
+        // OpenMP builds only, like the re-chunk's sweep: the serial
+        // TCTypeAllocator has no empty_slab_sweep / collect_empty_slabs.
+        if constexpr (chunk_config::use_fast_alloc && build_config::use_openmp)
+        {
+            if (CHUNK_PMP_IN_PARALLEL_REGION)
+            {
+                return 0;
+            }
+            using alloc_t = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
+            // (size, key) of every allocator set: the shared pools first.
+            std::vector<std::pair<unsigned int, unsigned int>> sets;
+            if constexpr (chunk_config::chunk_dynamic)
+            {
+                for (const auto& kv : *list_block_free_thr_by_size_)
+                {
+                    sets.emplace_back(kv.first, 0u);
+                }
+            }
+            else
+            {
+                sets.emplace_back(alloc_chunk_count(), 0u);
+            }
+            for (const auto& kv : *list_block_free_thr_keyed_)
+            {
+                sets.emplace_back(static_cast<unsigned int>(kv.first & 0xffffffffULL),
+                                  static_cast<unsigned int>(kv.first >> 32U));
+            }
+            std::sort(sets.begin(), sets.end());
+            sets.erase(std::unique(sets.begin(), sets.end()), sets.end());
+
+            typename alloc_t::empty_slab_sweep sweep;
+            const unsigned int                 saved_sz = thread_chunk_size();
+            for (const auto& [size, key] : sets)
+            {
+                set_thread_chunk_size(size);
+                for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
+                {
+                    // An unregistered (key, size) routes to key 0: the sweep
+                    // drops the slabs reached twice.
+                    collected += CHUNK_T<T>::get_chunk_allocator(r, key).collect_empty_slabs(sweep, keep_empty);
+                }
+            }
+            sweep.flush();
+            set_thread_chunk_size(saved_sz);
+        }
+        return collected;
     }
 
     /// @brief Set the candidate-list length that triggers a compression pass.

@@ -18,16 +18,16 @@
 // several REAL chunk sizes -- powers of two and multiples of 64 (192, 384,
 // ...) -- then compare the advisor's per-size predictions (each set made from
 // ONE reference size: 256, then 1024) against ground truth at each size.
-#include <format>   // std::format
+#include <cstdio>   // std::snprintf
 #include <iterator> // std::size
 #include <vector>   // std::vector
-#include <print>    // std::println
 
 #include "chunk/array_chunk2A.h"              // ArrayChunk2A
 #include "chunk/chunk2A_std.h"                // Chunk2A
 #include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
+#include "chunk/internal/print.h"             // shrink_array::println
 
 using namespace shrink_array;
 
@@ -92,7 +92,7 @@ static Truth ground_truth(const ArrayChunk2A<double>& tab, double meta)
 
 int main()
 {
-    std::println("=== ChunkSizeAdvisor step-0 validation (N={} doubles) ===", N);
+    println("=== ChunkSizeAdvisor step-0 validation (N={} doubles) ===", N);
 
     // Mandatory library init: the block size and the allocator indexes for
     // the first size. Element types register themselves at their first array.
@@ -154,7 +154,7 @@ int main()
         ChunkSizeAdvisor<double>::print(rep,
                                         std::format("ref S={}, {} scans at most", ref_size, run.max_scans).c_str());
 
-        std::println("\n── prediction (from S={}) vs ground truth ──", ref_size);
+        println("\n── prediction (from S={}) vs ground truth ──", ref_size);
         for (const auto& e : rep.table)
         {
             // find matching real size
@@ -167,7 +167,7 @@ int main()
                 const auto&  t  = truths[k];
                 const double dm = t.mat ? 100. * double(e.mat - t.mat) / double(t.mat) : (e.mat ? 100. : 0.);
                 const bool   ok = e.exact ? (e.mat == t.mat && e.n_chunks == t.chunks) : (dm > -10. && dm < 10.);
-                std::println(
+                println(
                     "   S={:5} : pred mat={:9} {} | real mat={:9} | d={:+6.2f}%  mem pred={:8.2f} real={:8.2f} Mo  {}",
                     e.size, (long long)e.mat, e.exact ? "(exact)" : "(sampl)", t.mat, dm, e.mem_bytes / 1048576.,
                     t.mem / 1048576., ok ? "OK" : "FAIL");
@@ -179,9 +179,9 @@ int main()
     }
     if (grid_rows == 0)
     {
-        std::println("\nFAIL: no prediction at a size that is not a power of two");
+        println("\nFAIL: no prediction at a size that is not a power of two");
         ++fail;
     }
-    std::println("\n=== {} ===", fail ? "ADVISOR VALIDATION FAILED" : "ADVISOR VALIDATED");
+    println("\n=== {} ===", fail ? "ADVISOR VALIDATION FAILED" : "ADVISOR VALIDATED");
     return fail;
 }

@@ -830,5 +830,7 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
                  COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_doxygen.py
                          ${PROJECT_SOURCE_DIR} ${DOXYGEN_EXECUTABLE})
         set_property(TEST check_doxygen PROPERTY LABELS docs)
+        # 77: a Doxygen older than 1.9, which misreads the sources (the script says so).
+        set_property(TEST check_doxygen PROPERTY SKIP_RETURN_CODE 77)
     endif()
 endif()
