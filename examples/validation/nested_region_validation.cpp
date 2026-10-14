@@ -183,7 +183,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
         {
             if (fails < 5)
             {
-                shrink_array::println("  MISMATCH i={}  {} (ref {})", i, v, ref[i]);
+                println("  MISMATCH i={}  {} (ref {})", i, v, ref[i]);
             }
             ++fails;
         }
@@ -212,11 +212,11 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
 
     const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     const bool message = out.find("nested ACTIVE") != std::string::npos;
-    shrink_array::println("[nested-active] two active levels: {}, {}", stopped ? "stopped" : "RAN ON",
-                          message ? "invariant message printed" : "NO invariant message");
+    println("[nested-active] two active levels: {}, {}", stopped ? "stopped" : "RAN ON",
+            message ? "invariant message printed" : "NO invariant message");
     if (!stopped || !message)
     {
-        shrink_array::println("---- child output ----\n{}----------------------", out.c_str());
+        println("---- child output ----\n{}----------------------", out.c_str());
         return 1;
     }
     return 0;
@@ -233,15 +233,15 @@ static int run_body(int argc, char** argv)
     Array<int>       a(N);
     std::vector<int> ref(N, 0);
 
-    shrink_array::println("=== nested_region_validation [variant = {}]  outer team 4, nested regions {} ===",
-                          variant_name(), nested_active ? "ACTIVE (--nested-active)" : "serialised");
+    println("=== nested_region_validation [variant = {}]  outer team 4, nested regions {} ===", variant_name(),
+            nested_active ? "ACTIVE (--nested-active)" : "serialised");
     std::fflush(stdout);
 
     long fails = run_nested(a, ref, 3);
 
     if (nested_active)
     {
-        shrink_array::println("[nested-active] two active levels ran without an invariant failure");
+        println("[nested-active] two active levels ran without an invariant failure");
         return 1;
     }
 
@@ -252,10 +252,10 @@ static int run_body(int argc, char** argv)
 
     if (fails)
     {
-        shrink_array::println("=== NESTED REGION FAILED ({}) ===", fails);
+        println("=== NESTED REGION FAILED ({}) ===", fails);
         return 1;
     }
-    shrink_array::println("=== NESTED REGION OK ===");
+    println("=== NESTED REGION OK ===");
     return 0;
 }
 

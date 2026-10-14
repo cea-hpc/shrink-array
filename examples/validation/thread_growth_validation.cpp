@@ -189,8 +189,7 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
         {
             if (fails < 5)
             {
-                shrink_array::println("  MISMATCH i={}  int {} (ref {})  double {:g} (ref {:g})", i, ai, ra[i], di,
-                                      rd[i]);
+                println("  MISMATCH i={}  int {} (ref {})  double {:g} (ref {:g})", i, ai, ra[i], di, rd[i]);
             }
             ++fails;
         }
@@ -219,11 +218,11 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
 
     const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     const bool message = out.find("thread capacity") != std::string::npos;
-    shrink_array::println("[beyond] team past the capacity: {}, {}", stopped ? "stopped" : "RAN ON",
-                          message ? "capacity message printed" : "NO capacity message");
+    println("[beyond] team past the capacity: {}, {}", stopped ? "stopped" : "RAN ON",
+            message ? "capacity message printed" : "NO capacity message");
     if (!stopped || !message)
     {
-        shrink_array::println("---- child output ----\n{}----------------------", out.c_str());
+        println("---- child output ----\n{}----------------------", out.c_str());
         return 1;
     }
     return 0;
@@ -249,16 +248,15 @@ static int run_body(int argc, char** argv)
     const int capacity = CHUNK_PMP_THREAD_CAPACITY;
     const int grown    = beyond ? capacity + 4 : capacity;
     set_team(grown);
-    shrink_array::println(
-        "=== thread_growth_validation [variant = {}]  created at 2 threads, now {} (capacity {}){} ===", variant_name(),
-        grown, capacity, beyond ? "  --beyond" : "");
+    println("=== thread_growth_validation [variant = {}]  created at 2 threads, now {} (capacity {}){} ===",
+            variant_name(), grown, capacity, beyond ? "  --beyond" : "");
     std::fflush(stdout);
 
     fails += run_regions(a, ra, d, rd, 4);
 
     if (beyond)
     {
-        shrink_array::println("[beyond] the team ran past the capacity without an invariant failure");
+        println("[beyond] the team ran past the capacity without an invariant failure");
         return 1;
     }
 
@@ -270,10 +268,10 @@ static int run_body(int argc, char** argv)
 
     if (fails)
     {
-        shrink_array::println("=== THREAD GROWTH FAILED ({}) ===", fails);
+        println("=== THREAD GROWTH FAILED ({}) ===", fails);
         return 1;
     }
-    shrink_array::println("=== THREAD GROWTH OK ===");
+    println("=== THREAD GROWTH OK ===");
     return 0;
 }
 

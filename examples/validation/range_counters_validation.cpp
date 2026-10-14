@@ -195,16 +195,15 @@ int run_case(Case c)
         {
             if (bad < 5)
             {
-                shrink_array::println("[{}/{}] FAIL [{}] = {:g}, expected {:g}", variant_name(), case_name(c), i, got,
-                                      want);
+                println("[{}/{}] FAIL [{}] = {:g}, expected {:g}", variant_name(), case_name(c), i, got, want);
             }
             ++bad;
         }
     }
     if (!bad)
     {
-        shrink_array::println("[{}/{}] OK: raw span of {} plain values + one {} value, compressed, read back",
-                              variant_name(), case_name(c), S, c == Case::second ? "second" : "first");
+        println("[{}/{}] OK: raw span of {} plain values + one {} value, compressed, read back", variant_name(),
+                case_name(c), S, c == Case::second ? "second" : "first");
     }
     return bad ? 1 : 0;
 }
@@ -245,15 +244,14 @@ int run_mul_zero_case()
         {
             if (bad < 5)
             {
-                shrink_array::println("[{}/mul_zero] FAIL [{}] = {:g}, expected {:g}", variant_name(), i, got, want);
+                println("[{}/mul_zero] FAIL [{}] = {:g}, expected {:g}", variant_name(), i, got, want);
             }
             ++bad;
         }
     }
     if (!bad)
     {
-        shrink_array::println("[{}/mul_zero] OK: second * 0, then the rest of the chunk to the second value",
-                              variant_name());
+        println("[{}/mul_zero] OK: second * 0, then the rest of the chunk to the second value", variant_name());
     }
     return bad ? 1 : 0;
 }
@@ -339,9 +337,8 @@ int run_compound_case(Op o)
     const bool after2 = std::as_const(a).written(k);
     if (check && (after1 || after2))
     {
-        shrink_array::println("[{}/0 {}] FAIL: chunk #1 still materialised {}", variant_name(), op_name(o),
-                              after1 ? "after the operator (a zero result)"
-                                     : "after 9 then 0 (the zero count drifted)");
+        println("[{}/0 {}] FAIL: chunk #1 still materialised {}", variant_name(), op_name(o),
+                after1 ? "after the operator (a zero result)" : "after 9 then 0 (the zero count drifted)");
         ++bad;
     }
     for (long i = 0; i < 3 * S; ++i)
@@ -350,16 +347,16 @@ int run_compound_case(Op o)
         {
             if (bad < 5)
             {
-                shrink_array::println("[{}/0 {}] FAIL [{}] = {}, expected 0", variant_name(), op_name(o), i,
-                                      static_cast<long long>(std::as_const(a)[static_cast<int>(i)]));
+                println("[{}/0 {}] FAIL [{}] = {}, expected 0", variant_name(), op_name(o), i,
+                        static_cast<long long>(std::as_const(a)[static_cast<int>(i)]));
             }
             ++bad;
         }
     }
     if (!bad)
     {
-        shrink_array::println("[{}/0 {}] OK{}", variant_name(), op_name(o),
-                              check ? ": chunk compressed after the operator and after 9 then 0" : " (values only)");
+        println("[{}/0 {}] OK{}", variant_name(), op_name(o),
+                check ? ": chunk compressed after the operator and after 9 then 0" : " (values only)");
     }
     return bad ? 1 : 0;
 }
@@ -370,8 +367,8 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    shrink_array::println("=== range_counters_validation [variant = {}]  counters={} ===", variant_name(),
-                          chunk_config::use_compression_with_counter ? "on" : "off (nothing to check)");
+    println("=== range_counters_validation [variant = {}]  counters={} ===", variant_name(),
+            chunk_config::use_compression_with_counter ? "on" : "off (nothing to check)");
 
     int fails = 0;
     fails += run_case(Case::first);
@@ -386,8 +383,7 @@ int run(int /*argc*/, char** /*argv*/)
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[{}] {}", variant_name(),
-                          fails ? "=== RANGE COUNTERS FAILED ===" : "=== RANGE COUNTERS OK ===");
+    println("\n[{}] {}", variant_name(), fails ? "=== RANGE COUNTERS FAILED ===" : "=== RANGE COUNTERS OK ===");
     return fails ? 1 : 0;
 }
 

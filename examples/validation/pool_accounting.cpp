@@ -134,11 +134,11 @@ static void expect(bool ok, const char* what, long got, long want)
 {
     if (ok)
     {
-        shrink_array::println("[{}] OK   {:<58} {}", variant_name(), what, got);
+        println("[{}] OK   {:<58} {}", variant_name(), what, got);
     }
     else
     {
-        shrink_array::println("[{}] FAIL {:<58} got={} expected={}", variant_name(), what, got, want);
+        println("[{}] FAIL {:<58} got={} expected={}", variant_name(), what, got, want);
         ++g_fails;
     }
 }
@@ -164,8 +164,7 @@ int run(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    shrink_array::println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), N,
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), N, CHUNK_PMP_MAX_THREADS);
 
     const long base = Manager::get_somme_chunk_create();
     expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long)Manager::reuse_pool_blocks(), 0);
@@ -260,9 +259,8 @@ int run(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[{}] {}", variant_name(),
-                          g_fails == 0 ? "=== POOL ACCOUNTING OK, TEARDOWN OK ==="
-                                       : "=== POOL ACCOUNTING FAILURES ===");
+    println("\n[{}] {}", variant_name(),
+            g_fails == 0 ? "=== POOL ACCOUNTING OK, TEARDOWN OK ===" : "=== POOL ACCOUNTING FAILURES ===");
     return g_fails;
 }
 

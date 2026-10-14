@@ -104,8 +104,8 @@ int compare(const char* type, const char* step, const Array<T>& arr, const std::
 {
     if (static_cast<std::size_t>(arr.size()) != ref.size())
     {
-        shrink_array::println("[{}/{}/{}] FAIL: size {}, expected {}", variant_name(), type, step,
-                              static_cast<long>(arr.size()), ref.size());
+        println("[{}/{}/{}] FAIL: size {}, expected {}", variant_name(), type, step, static_cast<long>(arr.size()),
+                ref.size());
         return 1;
     }
     long bad = 0;
@@ -115,14 +115,14 @@ int compare(const char* type, const char* step, const Array<T>& arr, const std::
         {
             if (bad < 3)
             {
-                shrink_array::println("[{}/{}/{}] FAIL: element {} differs", variant_name(), type, step, i);
+                println("[{}/{}/{}] FAIL: element {} differs", variant_name(), type, step, i);
             }
             ++bad;
         }
     }
     if (bad)
     {
-        shrink_array::println("[{}/{}/{}] FAIL: {} element(s) differ", variant_name(), type, step, bad);
+        println("[{}/{}/{}] FAIL: {} element(s) differ", variant_name(), type, step, bad);
     }
     return bad ? 1 : 0;
 }
@@ -167,20 +167,20 @@ int run_type(const char* type, long N)
     {
         if (!(b == a) || !(c == a))
         {
-            shrink_array::println("[{}/{}] FAIL: operator== on equal arrays", variant_name(), type);
+            println("[{}/{}] FAIL: operator== on equal arrays", variant_name(), type);
             ++fails;
         }
         b[static_cast<int>(N - 2)] = static_cast<T>(55);
         if (b == a)
         {
-            shrink_array::println("[{}/{}] FAIL: operator== misses a difference near the end", variant_name(), type);
+            println("[{}/{}] FAIL: operator== misses a difference near the end", variant_name(), type);
             ++fails;
         }
         b[static_cast<int>(N - 2)] = ref[static_cast<std::size_t>(N - 2)];
         c[1]                       = static_cast<T>(55);
         if (c == a)
         {
-            shrink_array::println("[{}/{}] FAIL: operator== misses a difference at the start", variant_name(), type);
+            println("[{}/{}] FAIL: operator== misses a difference at the start", variant_name(), type);
             ++fails;
         }
     }
@@ -248,8 +248,8 @@ int run_type(const char* type, long N)
 
     if (fails == 0)
     {
-        shrink_array::println("[{}/{}] OK: N={} copy, assign, resize(n, val), shrink{}", variant_name(), type, N,
-                              chunk_config::use_chunk2a ? ", operator==" : "");
+        println("[{}/{}] OK: N={} copy, assign, resize(n, val), shrink{}", variant_name(), type, N,
+                chunk_config::use_chunk2a ? ", operator==" : "");
     }
     return fails;
 }
@@ -261,8 +261,7 @@ int run(int argc, char** argv)
     ParamChunk::init_indexes(true);
     const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
-    shrink_array::println("=== bulk_write_team_validation [variant = {}]  threads={} ===", variant_name(),
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== bulk_write_team_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     fails += run_type<double>("double", N);
@@ -271,7 +270,7 @@ int run(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[{}] {}", variant_name(), fails ? "=== BULK WRITES FAILED ===" : "=== BULK WRITES OK ===");
+    println("\n[{}] {}", variant_name(), fails ? "=== BULK WRITES FAILED ===" : "=== BULK WRITES OK ===");
     return fails ? 1 : 0;
 }
 

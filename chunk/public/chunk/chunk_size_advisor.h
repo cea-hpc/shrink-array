@@ -773,20 +773,19 @@ struct ChunkSizeAdvisor
     /// @brief Print @p rep as a table on stdout, headed by @p name.
     static void print(const ChunkSizeReport& rep, const char* name)
     {
-        shrink_array::println("── ChunkSizeAdvisor [{}] current S={}, meta={:.1f} B/chunk ──", name, rep.current_size,
-                              rep.meta_bytes);
+        println("── ChunkSizeAdvisor [{}] current S={}, meta={:.1f} B/chunk ──", name, rep.current_size,
+                rep.meta_bytes);
         for (std::size_t i = 0; i < rep.table.size(); ++i)
         {
             const auto& row = rep.table[i];
-            shrink_array::println(
-                "   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size,
-                static_cast<long long>(row.n_chunks), static_cast<long long>(row.mat),
-                row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
-                row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~",
-                static_cast<int>(i) == rep.cur ? " <- current" : "",
-                static_cast<int>(i) == rep.best ? "  ** BEST **" : "");
+            println("   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size,
+                    static_cast<long long>(row.n_chunks), static_cast<long long>(row.mat),
+                    row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
+                    row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~",
+                    static_cast<int>(i) == rep.cur ? " <- current" : "",
+                    static_cast<int>(i) == rep.best ? "  ** BEST **" : "");
         }
-        shrink_array::println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
+        println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
 
         // Re-chunk cost, when best != current: gain (bytes) and cost (ms) are
         // shown side by side. The constants are hardware specific
@@ -800,8 +799,7 @@ struct ChunkSizeAdvisor
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.
             const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, std::size_t{1} << 20U, 50.0);
-            shrink_array::println("   estimated re-chunk cost       : {:.3f} ms  ({})", cost_ms,
-                                  worth ? "worth it" : "marginal");
+            println("   estimated re-chunk cost       : {:.3f} ms  ({})", cost_ms, worth ? "worth it" : "marginal");
         }
     }
 };

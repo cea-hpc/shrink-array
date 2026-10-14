@@ -145,7 +145,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
         {
             if (bad < 3)
             {
-                shrink_array::println("  [{}] arr[{}] = {:g}, expected {:g}", name, i, got, v);
+                println("  [{}] arr[{}] = {:g}, expected {:g}", name, i, got, v);
             }
             ++bad;
         }
@@ -153,12 +153,11 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
     const long after = materialised(arr, nchunks);
 
     const bool counts_ok = expect_materialised < 0 || after == expect_materialised;
-    shrink_array::println("{:<44} materialised {:4} -> {:4} / {}{}{}", name, before, after, nchunks,
-                          expect_materialised < 0 ? "  (not asserted)" : "", counts_ok ? "" : "  <-- WRONG");
+    println("{:<44} materialised {:4} -> {:4} / {}{}{}", name, before, after, nchunks,
+            expect_materialised < 0 ? "  (not asserted)" : "", counts_ok ? "" : "  <-- WRONG");
     if (before != nchunks)
     {
-        shrink_array::println("  [{}] setup: {} chunk(s) not materialised by the plain content", name,
-                              nchunks - before);
+        println("  [{}] setup: {} chunk(s) not materialised by the plain content", name, nchunks - before);
     }
     return (bad != 0 || !counts_ok || before != nchunks) ? 1 : 0;
 }
@@ -169,8 +168,8 @@ int main(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     constexpr bool omp = build_config::use_openmp;
-    shrink_array::println("=== fill_range_mt_v1v2_validation  chunks={}  threads={}  ({}) ===", nchunks,
-                          CHUNK_PMP_MAX_THREADS, omp ? "OpenMP: counts asserted" : "serial: values only");
+    println("=== fill_range_mt_v1v2_validation  chunks={}  threads={}  ({}) ===", nchunks, CHUNK_PMP_MAX_THREADS,
+            omp ? "OpenMP: counts asserted" : "serial: values only");
 
     // One array per case: every case starts from fresh chunks.
     int fails = 0;
@@ -208,6 +207,6 @@ int main(int argc, char** argv)
         a.clear();
     }
 
-    shrink_array::println("=== {} ===", fails ? "FILL_RANGE_MT_V1V2 FAILED" : "FILL_RANGE_MT_V1V2 OK");
+    println("=== {} ===", fails ? "FILL_RANGE_MT_V1V2 FAILED" : "FILL_RANGE_MT_V1V2 OK");
     return fails ? 1 : 0;
 }

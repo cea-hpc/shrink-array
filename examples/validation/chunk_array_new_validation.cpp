@@ -140,11 +140,11 @@ int one_case(std::size_t n, bool in_region)
 
     const auto* v   = static_cast<Ch*>(p);
     const int   bad = materialised(v, n);
-    shrink_array::println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", n,
-                          bad ? "FAIL" : "ok, every chunk at the first constant");
+    println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", n,
+            bad ? "FAIL" : "ok, every chunk at the first constant");
     if (bad)
     {
-        shrink_array::println("  {} of {} chunk(s) not initialised", bad, n);
+        println("  {} of {} chunk(s) not initialised", bad, n);
     }
     Ch::operator delete[](p);
     return bad ? 1 : 0;
@@ -158,8 +158,8 @@ int placement_case(std::size_t n)
     const auto* v = static_cast<Ch*>(p);
 
     const int bad = materialised(v, n);
-    shrink_array::println("[{}/array-new] placement n={:5} : {}", variant_name(), n,
-                          bad ? "FAIL" : "ok, every chunk at the first constant");
+    println("[{}/array-new] placement n={:5} : {}", variant_name(), n,
+            bad ? "FAIL" : "ok, every chunk at the first constant");
     Ch::operator delete[](p);
     return bad ? 1 : 0;
 }
@@ -170,8 +170,7 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    shrink_array::println("=== chunk_array_new_validation [variant = {}]  threads={} ===", variant_name(),
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== chunk_array_new_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     // 1 and 5000 are the plain cases; 499 / 500 / 501 bracket the threshold.
@@ -183,8 +182,7 @@ int run(int /*argc*/, char** /*argv*/)
     }
     fails += placement_case(1000);
 
-    shrink_array::println("\n[{}] {}", variant_name(),
-                          fails == 0 ? "=== ARRAY-NEW OK ===" : "=== ARRAY-NEW FAILURES ===");
+    println("\n[{}] {}", variant_name(), fails == 0 ? "=== ARRAY-NEW OK ===" : "=== ARRAY-NEW FAILURES ===");
     return fails ? 1 : 0;
 }
 

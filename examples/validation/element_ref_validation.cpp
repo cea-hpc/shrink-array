@@ -62,7 +62,7 @@ void expect(const char* what, const T& got, const T& want)
 {
     if (!(got == want))
     {
-        shrink_array::println("[element_ref] FAIL: {}", what);
+        println("[element_ref] FAIL: {}", what);
         ++fails;
     }
 }
@@ -149,7 +149,7 @@ int usage()
 
     if (fails == 0)
     {
-        shrink_array::println("[element_ref] OK: every std::vector-style use of a[i] compiles and holds");
+        println("[element_ref] OK: every std::vector-style use of a[i] compiles and holds");
     }
     return fails != 0 ? 1 : 0;
 }
@@ -167,7 +167,7 @@ void misuse()
     v      = 3.0;
 #elif ELEMENT_REF_CASE == 3
     auto v = a[0]; // arithmetic
-    shrink_array::println("{:g}", v + 1.0);
+    println("{:g}", v + 1.0);
     #elif ELEMENT_REF_CASE == 4
     auto   v = (a[0] += 1.0); // a compound result kept
     double d = v;
@@ -182,7 +182,7 @@ void misuse()
     auto v = a[0]; // comparison
     if (v == 1.0)
     {
-        shrink_array::println("1");
+        println("1");
     }
     #elif ELEMENT_REF_CASE == 8
     auto v = a[0]; // a copy

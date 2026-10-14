@@ -283,13 +283,13 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
     const long csz = static_cast<long>(arr.chunk_size());
     if (bad)
     {
-        shrink_array::println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {})",
-                              variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3);
+        println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {})", variant_name(), label,
+                bad, N, first, first / csz, first % csz, (first / kRun) % 3);
     }
     else
     {
-        shrink_array::println("[{}/{}] OK: {} elements of {} bytes round-trip at chunk_size={}", variant_name(), label,
-                              N, sizeof(T), csz);
+        println("[{}/{}] OK: {} elements of {} bytes round-trip at chunk_size={}", variant_name(), label, N, sizeof(T),
+                csz);
     }
 
     arr.clear();
@@ -304,8 +304,7 @@ int run(int argc, char** argv)
     // construction (AllTypeChunk::ensure_manager). The process-wide setup alone.
     ParamChunk::init_indexes(true);
 
-    shrink_array::println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), N,
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), N, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -319,7 +318,7 @@ int run(int argc, char** argv)
         warm += 1;
     }
     end_phase();
-    shrink_array::println("team of {} before the first array", warm);
+    println("team of {} before the first array", warm);
 
     const Scenario<Point3> sp{{1.0, 2.0, 3.0},
                               {-1.0, 0.5, 9.0},
@@ -363,7 +362,7 @@ int run(int argc, char** argv)
             if (!ok)
             {
                 ++bad;
-                shrink_array::println("[{}/vector-like on structs] FAIL: {}", variant_name(), what);
+                println("[{}/vector-like on structs] FAIL: {}", variant_name(), what);
             }
         };
         Array<Point3> pts;
@@ -391,8 +390,8 @@ int run(int argc, char** argv)
         check(rng.size() == 500 && std::as_const(rng)[499] == Pair16{7, 1}, "(first, last) constructor");
         if (!bad)
         {
-            shrink_array::println("[{}/vector-like on structs] OK: reserve, emplace_back, copy, {{...}}, (first, last)",
-                                  variant_name());
+            println("[{}/vector-like on structs] OK: reserve, emplace_back, copy, {{...}}, (first, last)",
+                    variant_name());
         }
         fails += bad ? 1 : 0;
         pts.clear();
@@ -414,8 +413,8 @@ int run(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[{}] {}", variant_name(),
-                          fails == 0 ? "=== OPEN TYPES OK, TEARDOWN OK ===" : "=== OPEN TYPES FAILURES ===");
+    println("\n[{}] {}", variant_name(),
+            fails == 0 ? "=== OPEN TYPES OK, TEARDOWN OK ===" : "=== OPEN TYPES FAILURES ===");
     return fails;
 }
 

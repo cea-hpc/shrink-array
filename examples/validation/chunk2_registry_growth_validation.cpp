@@ -141,7 +141,7 @@ long check_all(const char* what, const Arr& arr, double v)
         {
             if (bad < 4)
             {
-                shrink_array::println("[chunk2/registry] FAIL {}[{}] = {:g}, expected {:g}", what, i, got, v);
+                println("[chunk2/registry] FAIL {}[{}] = {:g}, expected {:g}", what, i, got, v);
             }
             ++bad;
         }
@@ -161,15 +161,15 @@ int run(int /*argc*/, char** /*argv*/)
         const long S = static_cast<long>(a.chunk_size());
         a.resize(static_cast<Ind>(kChunks * S));
         a.set_second_value(1.0);
-        shrink_array::println("=== chunk2_registry_growth_validation  chunk_size={}  threads={}  others={} ===", S,
-                              CHUNK_PMP_MAX_THREADS, kOthers);
+        println("=== chunk2_registry_growth_validation  chunk_size={}  threads={}  others={} ===", S,
+                CHUNK_PMP_MAX_THREADS, kOthers);
 
         // 1. `a` compressed to its second value.
         fill_and_compress(a, 1.0);
         if (const int m = materialised(a); m != 0)
         {
-            shrink_array::println(
-                "[chunk2/registry] FAIL premise: {} of {} chunks of `a` still materialised after the pass", m, kChunks);
+            println("[chunk2/registry] FAIL premise: {} of {} chunks of `a` still materialised after the pass", m,
+                    kChunks);
             ++fails;
         }
 
@@ -190,16 +190,15 @@ int run(int /*argc*/, char** /*argv*/)
         }
         if (bad)
         {
-            shrink_array::println(
-                "[chunk2/registry] FAIL {} wrong read(s) after the registry grew -- chunks pointing at "
-                "a constant array that moved",
-                bad);
+            println("[chunk2/registry] FAIL {} wrong read(s) after the registry grew -- chunks pointing at "
+                    "a constant array that moved",
+                    bad);
             ++fails;
         }
         else
         {
-            shrink_array::println("[chunk2/registry] OK: {} arrays, {} second values, every element reads back",
-                                  kOthers + 1, kOthers + 1);
+            println("[chunk2/registry] OK: {} arrays, {} second values, every element reads back", kOthers + 1,
+                    kOthers + 1);
         }
 
         // 4. `a` materialised and compressed again: still recognised.
@@ -210,20 +209,19 @@ int run(int /*argc*/, char** /*argv*/)
         const long bad2 = check_all("a (recompressed)", a, 1.0);
         if (m2 != 0 || bad2 != 0)
         {
-            shrink_array::println(
-                "[chunk2/registry] FAIL after recompression: {} chunk(s) materialised, {} wrong read(s)", m2, bad2);
+            println("[chunk2/registry] FAIL after recompression: {} chunk(s) materialised, {} wrong read(s)", m2, bad2);
             ++fails;
         }
         else
         {
-            shrink_array::println("[chunk2/registry] OK: `a` recompressed to its second value after the growth");
+            println("[chunk2/registry] OK: `a` recompressed to its second value after the growth");
         }
     }
 
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[chunk2] {}", fails ? "=== REGISTRY GROWTH FAILED ===" : "=== REGISTRY GROWTH OK ===");
+    println("\n[chunk2] {}", fails ? "=== REGISTRY GROWTH FAILED ===" : "=== REGISTRY GROWTH OK ===");
     return fails ? 1 : 0;
 }
 

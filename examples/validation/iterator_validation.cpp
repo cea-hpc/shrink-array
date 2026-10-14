@@ -222,8 +222,7 @@ struct Report
     {
         if (bad < 8)
         {
-            shrink_array::println("[{}/{}] FAIL {}", variant_name(), step,
-                                  std::format(fmt, std::forward<Args>(args)...));
+            println("[{}/{}] FAIL {}", variant_name(), step, std::format(fmt, std::forward<Args>(args)...));
         }
         ++bad;
     }
@@ -231,11 +230,11 @@ struct Report
     {
         if (!bad)
         {
-            shrink_array::println("[{}/{}] OK: {}", variant_name(), step, ok_msg);
+            println("[{}/{}] OK: {}", variant_name(), step, ok_msg);
         }
         else
         {
-            shrink_array::println("[{}/{}] {} failure(s)", variant_name(), step, bad);
+            println("[{}/{}] {} failure(s)", variant_name(), step, bad);
         }
         return bad ? 1 : 0;
     }
@@ -751,8 +750,7 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    shrink_array::println("=== iterator_validation [variant = {}]  threads={} ===", variant_name(),
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== iterator_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     {
@@ -787,7 +785,7 @@ int run(int /*argc*/, char** /*argv*/)
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[{}] {}", variant_name(), fails ? "=== ITERATOR FAILED ===" : "=== ITERATOR OK ===");
+    println("\n[{}] {}", variant_name(), fails ? "=== ITERATOR FAILED ===" : "=== ITERATOR OK ===");
     return fails ? 1 : 0;
 }
 

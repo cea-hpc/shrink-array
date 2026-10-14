@@ -138,7 +138,7 @@ static void expect_values(const char* where, const Arr& a, long nch, long S, dou
     }
     if (bad != 0)
     {
-        shrink_array::println("  {:<48} {} element(s) read back wrong  <-- WRONG", where, bad);
+        println("  {:<48} {} element(s) read back wrong  <-- WRONG", where, bad);
         ++fails;
     }
 }
@@ -146,7 +146,7 @@ static void expect_values(const char* where, const Arr& a, long nch, long S, dou
 /// @brief One count against its expected value, printed either way.
 static void expect_eq(const char* where, long got, long want)
 {
-    shrink_array::println("  {:<48} {} (expect {}){}", where, got, want, got == want ? "" : "  <-- WRONG");
+    println("  {:<48} {} (expect {}){}", where, got, want, got == want ? "" : "  <-- WRONG");
     if (got != want)
     {
         ++fails;
@@ -156,7 +156,7 @@ static void expect_eq(const char* where, long got, long want)
 /// @brief One count against a bound, printed either way.
 static void expect_le(const char* where, long got, long bound)
 {
-    shrink_array::println("  {:<48} {} (expect <= {}){}", where, got, bound, got <= bound ? "" : "  <-- WRONG");
+    println("  {:<48} {} (expect <= {}){}", where, got, bound, got <= bound ? "" : "  <-- WRONG");
     if (got > bound)
     {
         ++fails;
@@ -190,7 +190,7 @@ static int run_rounds_child(long nch, long rounds)
     }
     expect_values("child: last round", a, nch, S, 1.0e6 + 1000. * static_cast<double>(rounds - 1),
                   1.0e6 + 1000. * static_cast<double>(rounds - 1));
-    shrink_array::println("[rounds] {} distinct second values, reclaimed each round: RAN TO THE END", nch * rounds);
+    println("[rounds] {} distinct second values, reclaimed each round: RAN TO THE END", nch * rounds);
     return fails ? 1 : 0;
 }
 
@@ -215,8 +215,8 @@ static void check_rounds_under_limit(const char* self, long nch)
         }
     }
     std::remove(log.c_str());
-    shrink_array::println("F  limit {} identifiers, {} distinct values        {}{}", limit, 12 * nch,
-                          (ok && said) ? "ran to the end" : "STOPPED", (ok && said) ? "" : "  <-- WRONG");
+    println("F  limit {} identifiers, {} distinct values        {}{}", limit, 12 * nch,
+            (ok && said) ? "ran to the end" : "STOPPED", (ok && said) ? "" : "  <-- WRONG");
     if (!ok || !said)
     {
         ++fails;
@@ -237,13 +237,12 @@ int run(int argc, char** argv)
     const long nch = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
     const long S   = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
 
-    shrink_array::println("=== cst2_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, S,
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== cst2_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, S, CHUNK_PMP_MAX_THREADS);
     {
         Arr a(static_cast<int>(nch * S));
 
         // A: rounds at new constants.
-        shrink_array::println("A  rounds at new constants");
+        println("A  rounds at new constants");
         for (int r = 0; r < 4; ++r)
         {
             const double base = 1000. * (r + 1);
@@ -262,7 +261,7 @@ int run(int argc, char** argv)
         }
 
         // B: half the chunks rewritten.
-        shrink_array::println("B  even chunks rewritten");
+        println("B  even chunks rewritten");
         fill(a, nch, S, 5000.);
         (void)reclaim();
         fill(a, nch, S, 6000., true);
@@ -271,7 +270,7 @@ int run(int argc, char** argv)
         expect_values("values", a, nch, S, 6000., 5000.);
 
         // C: a chunk materialised again keeps its second value.
-        shrink_array::println("C  materialised chunk");
+        println("C  materialised chunk");
         fill(a, nch, S, 7000.);
         (void)reclaim();
 #pragma omp parallel
@@ -284,7 +283,7 @@ int run(int argc, char** argv)
         (void)reclaim();
         if (a[1] != 1.5)
         {
-            shrink_array::println("  {:<48} reads {:g}  <-- WRONG", "the changed element", static_cast<double>(a[1]));
+            println("  {:<48} reads {:g}  <-- WRONG", "the changed element", static_cast<double>(a[1]));
             ++fails;
         }
 #pragma omp parallel
@@ -298,7 +297,7 @@ int run(int argc, char** argv)
         expect_values("values", a, nch, S, 7000., 7000.);
 
         // D: a copy outlives the original.
-        shrink_array::println("D  copy");
+        println("D  copy");
         fill(a, nch, S, 8000.);
         (void)reclaim();
         {
@@ -314,7 +313,7 @@ int run(int argc, char** argv)
         // E: refused inside a parallel region.
         if constexpr (build_config::use_openmp)
         {
-            shrink_array::println("E  inside a parallel region");
+            println("E  inside a parallel region");
             fill(a, nch, S, 10000.);
             long in_region = -1;
             int  team      = 0;
@@ -340,7 +339,7 @@ int run(int argc, char** argv)
     // F: under a lowered identifier limit, reclaiming rounds run to the end.
     check_rounds_under_limit(argv[0], nch);
 
-    shrink_array::println("=== {} ===", fails ? "CST2_RECLAIM FAILED" : "CST2_RECLAIM OK");
+    println("=== {} ===", fails ? "CST2_RECLAIM FAILED" : "CST2_RECLAIM OK");
     return fails ? 1 : 0;
 }
 

@@ -148,10 +148,10 @@ long life_of_one_array(Arrays& arr, int n)
 
 int report(const char* what, int n, long bad)
 {
-    shrink_array::println("[{}/region-storage] {:<22} n={:7} : {}", variant_name(), what, n, bad ? "FAIL" : "ok");
+    println("[{}/region-storage] {:<22} n={:7} : {}", variant_name(), what, n, bad ? "FAIL" : "ok");
     if (bad)
     {
-        shrink_array::println("  {} wrong element(s) or count(s)", bad);
+        println("  {} wrong element(s) or count(s)", bad);
     }
     return bad ? 1 : 0;
 }
@@ -161,8 +161,7 @@ int report(const char* what, int n, long bad)
 int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
-    shrink_array::println("=== region_storage_validation [variant = {}]  threads={} ===", variant_name(),
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== region_storage_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     // Below and above the 500-chunk threshold of the init loops, at any
@@ -197,7 +196,7 @@ int run(int /*argc*/, char** /*argv*/)
         fails += report("omp masked", n, bad_masked);
     }
 
-    shrink_array::println("{}", fails ? "region_storage_validation: FAILED" : "region_storage_validation: OK");
+    println("{}", fails ? "region_storage_validation: FAILED" : "region_storage_validation: OK");
     return fails ? 1 : 0;
 }
 

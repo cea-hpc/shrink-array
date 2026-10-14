@@ -254,8 +254,8 @@ static int run_validation(long N, int rounds)
             {
                 if (bad < 5)
                 {
-                    shrink_array::println("[{}] FAIL round {} ({}): arr[{}] = {:g}, expected {:g}", variant_name(), r,
-                                          mode_name(mode), i, got, ref[static_cast<std::size_t>(i)]);
+                    println("[{}] FAIL round {} ({}): arr[{}] = {:g}, expected {:g}", variant_name(), r,
+                            mode_name(mode), i, got, ref[static_cast<std::size_t>(i)]);
                 }
                 ++bad;
             }
@@ -265,14 +265,13 @@ static int run_validation(long N, int rounds)
     src_arr.clear();
     if (bad)
     {
-        shrink_array::println("[{}] {} mismatch(es)", variant_name(), bad);
+        println("[{}] {} mismatch(es)", variant_name(), bad);
     }
     else
     {
-        shrink_array::println(
-            "[{}] OK: {} rounds, N={}, fill / copy / transform and element writes interleaved on shared "
-            "chunks",
-            variant_name(), rounds, N);
+        println("[{}] OK: {} rounds, N={}, fill / copy / transform and element writes interleaved on shared "
+                "chunks",
+                variant_name(), rounds, N);
     }
     return bad ? 1 : 0;
 }
@@ -371,10 +370,10 @@ static void run_perf(long N)
             t_cm += std::chrono::duration<double>(t5 - t4).count();
         }
     }
-    shrink_array::println("[{}] perf N={} threads={}: element loop {:.3f} s, fill_range_mt {:.3f} s (x{:.2f})",
-                          variant_name(), N, CHUNK_PMP_MAX_THREADS, t_el, t_mt, t_mt > 0 ? t_el / t_mt : 0.);
-    shrink_array::println("[{}] perf N={} threads={}: copy element loop {:.3f} s, copy_range_mt {:.3f} s (x{:.2f})",
-                          variant_name(), N, CHUNK_PMP_MAX_THREADS, t_ce, t_cm, t_cm > 0 ? t_ce / t_cm : 0.);
+    println("[{}] perf N={} threads={}: element loop {:.3f} s, fill_range_mt {:.3f} s (x{:.2f})", variant_name(), N,
+            CHUNK_PMP_MAX_THREADS, t_el, t_mt, t_mt > 0 ? t_el / t_mt : 0.);
+    println("[{}] perf N={} threads={}: copy element loop {:.3f} s, copy_range_mt {:.3f} s (x{:.2f})", variant_name(),
+            N, CHUNK_PMP_MAX_THREADS, t_ce, t_cm, t_cm > 0 ? t_ce / t_cm : 0.);
     arr.clear();
 }
 
@@ -389,10 +388,10 @@ static int run_body(int argc, char** argv)
         return 0;
     }
     const int rounds = argc > 2 ? shrink_array::arg_number<int>(argv[2], 30, "rounds") : 30;
-    shrink_array::println("=== fill_range_mt_validation [variant = {}]  N={}  threads={} ===", variant_name(), N,
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== fill_range_mt_validation [variant = {}]  N={}  threads={} ===", variant_name(), N,
+            CHUNK_PMP_MAX_THREADS);
     const int fails = run_validation(N, rounds);
-    shrink_array::println("[{}] === {} ===", variant_name(), fails ? "FILL_RANGE_MT FAILED" : "FILL_RANGE_MT OK");
+    println("[{}] === {} ===", variant_name(), fails ? "FILL_RANGE_MT FAILED" : "FILL_RANGE_MT OK");
     return fails;
 }
 

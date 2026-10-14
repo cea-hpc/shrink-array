@@ -27,6 +27,10 @@
  * conversion letter, and the develop (C++20) and cpp23 branches write the
  * same lines -- a merge between them does not stop on every message.
  *
+ * Called unqualified -- `println("{} chunks", n);` -- from the library and from
+ * code under `using namespace shrink_array;`; elsewhere after
+ * `using shrink_array::println;`.
+ *
  * Where <print> provides them (__cpp_lib_print) they ARE std::print and
  * std::println (using-declarations): no second overload set that an
  * unqualified call could find next to the standard one by ADL.

@@ -294,15 +294,14 @@ static int run_returns(const char* label, long N)
     }
     if (bad != 0 || mismatched != 0)
     {
-        shrink_array::println(
-            "[{}/returns-{}] FAIL: {} compound result(s) not the stored value, {}/{} elements off the "
-            "reference",
-            variant_name(), label, bad, mismatched, N);
+        println("[{}/returns-{}] FAIL: {} compound result(s) not the stored value, {}/{} elements off the "
+                "reference",
+                variant_name(), label, bad, mismatched, N);
     }
     else
     {
-        shrink_array::println("[{}/returns-{}] OK: every compound operator returned the stored value ({} elements)",
-                              variant_name(), label, N);
+        println("[{}/returns-{}] OK: every compound operator returned the stored value ({} elements)", variant_name(),
+                label, N);
     }
     arr.clear();
     return (bad != 0 || mismatched != 0) ? 1 : 0;
@@ -433,10 +432,10 @@ static long compare(const char* label, const char* stage, const Array<T>& arr, c
     if (bad)
     {
         const long csz = static_cast<long>(arr.chunk_size());
-        shrink_array::println("[{}/{}] FAIL after {}: {}/{} mismatches, first at i={} (chunk #{}, offset {}) "
-                              "got={:g} expected={:g}",
-                              variant_name(), label, stage, bad, N, first, first / csz, first % csz, (double)got_first,
-                              (double)exp_first);
+        println("[{}/{}] FAIL after {}: {}/{} mismatches, first at i={} (chunk #{}, offset {}) "
+                "got={:g} expected={:g}",
+                variant_name(), label, stage, bad, N, first, first / csz, first % csz, (double)got_first,
+                (double)exp_first);
     }
     return bad;
 }
@@ -717,8 +716,8 @@ static int run(const char* label, long N, const Scenario<T>& sc)
 
     if (!fails)
     {
-        shrink_array::println("[{}/{}] OK: {} elements, chunk_size={}", variant_name(), label, N,
-                              static_cast<long>(arr.chunk_size()));
+        println("[{}/{}] OK: {} elements, chunk_size={}", variant_name(), label, N,
+                static_cast<long>(arr.chunk_size()));
     }
 
     arr.clear();
@@ -761,8 +760,7 @@ static int run_resize(const char* label, long N)
         ref.resize(static_cast<std::size_t>(n), T{});
         if (static_cast<long>(arr.size()) != n)
         {
-            shrink_array::println("[{}/resize] FAIL: size() = {} after resize({})", label,
-                                  static_cast<long>(arr.size()), n);
+            println("[{}/resize] FAIL: size() = {} after resize({})", label, static_cast<long>(arr.size()), n);
             ++fails;
         }
     };
@@ -782,7 +780,7 @@ static int run_resize(const char* label, long N)
     arr.clear();
     if (fails == 0)
     {
-        shrink_array::println("[{}/resize] ok: grow, shrink, grow with deferred ops queued", label);
+        println("[{}/resize] ok: grow, shrink, grow with deferred ops queued", label);
     }
     return fails ? 1 : 0;
 }
@@ -794,13 +792,12 @@ int run(int argc, char** argv)
     test_hooks::force_defer_every = build_config::force_defer_every > 0 ? build_config::force_defer_every : 7U;
     if constexpr (!build_config::use_openmp)
     {
-        shrink_array::println("[deferred_path] note: serial build, no deferred path to force");
+        println("[deferred_path] note: serial build, no deferred path to force");
     }
     else if constexpr (!test_hooks::force_defer_compiled)
     {
-        shrink_array::println(
-            "[deferred_path] note: this build has no test hooks (CHUNK_TEST_HOOKS): no write is forced down "
-            "the deferred path");
+        println("[deferred_path] note: this build has no test hooks (CHUNK_TEST_HOOKS): no write is forced down "
+                "the deferred path");
     }
 
     // 128 Ki elements: some 60 chunks per run at the default geometry, a
@@ -811,9 +808,8 @@ int run(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    shrink_array::println(
-        "=== deferred_path_validation [variant = {}]  N={}  threads={}  force_defer_every={} ===", variant_name(), N,
-        CHUNK_PMP_MAX_THREADS, test_hooks::force_defer_compiled ? test_hooks::force_defer_every : 0U);
+    println("=== deferred_path_validation [variant = {}]  N={}  threads={}  force_defer_every={} ===", variant_name(),
+            N, CHUNK_PMP_MAX_THREADS, test_hooks::force_defer_compiled ? test_hooks::force_defer_every : 0U);
 
     int fails = 0;
 
@@ -841,12 +837,11 @@ int run(int argc, char** argv)
     if (test_hooks::force_defer_compiled && test_hooks::force_defer_every > 0)
     {
         const unsigned long forced = test_hooks::forced_deferrals.load();
-        shrink_array::println("[{}] writes forced down the deferred path: {}", variant_name(), forced);
+        println("[{}] writes forced down the deferred path: {}", variant_name(), forced);
         if (forced == 0)
         {
-            shrink_array::println(
-                "[{}] FAIL: the forced-deferral hook is on and fired 0 times -- the path was not exercised",
-                variant_name());
+            println("[{}] FAIL: the forced-deferral hook is on and fired 0 times -- the path was not exercised",
+                    variant_name());
             ++fails;
         }
     }
@@ -859,11 +854,10 @@ int run(int argc, char** argv)
         {
             deferred += reduce_chunk_stats(v).gate_deferred;
         }
-        shrink_array::println("[{}] writes deferred: {}", variant_name(), deferred);
+        println("[{}] writes deferred: {}", variant_name(), deferred);
         if (deferred == 0)
         {
-            shrink_array::println("[{}] FAIL: the knob is on and nothing was deferred -- the path was not exercised",
-                                  variant_name());
+            println("[{}] FAIL: the knob is on and nothing was deferred -- the path was not exercised", variant_name());
             ++fails;
         }
     }
@@ -872,8 +866,7 @@ int run(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[{}] {}", variant_name(),
-                          fails == 0 ? "=== DEFERRED PATH OK ===" : "=== DEFERRED PATH FAILURES ===");
+    println("\n[{}] {}", variant_name(), fails == 0 ? "=== DEFERRED PATH OK ===" : "=== DEFERRED PATH FAILURES ===");
     return fails;
 }
 

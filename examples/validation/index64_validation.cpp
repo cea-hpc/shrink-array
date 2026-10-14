@@ -151,13 +151,12 @@ int check_past_int_max()
     int bad = 0;
     if (big.size() != N)
     {
-        shrink_array::println("[{}/{}] FAIL: size() = {}, expected {}", variant_name(), label,
-                              static_cast<long>(big.size()), N);
+        println("[{}/{}] FAIL: size() = {}, expected {}", variant_name(), label, static_cast<long>(big.size()), N);
         ++bad;
     }
     if (big.capacity() < static_cast<std::size_t>(N))
     {
-        shrink_array::println("[{}/{}] FAIL: capacity() = {} < {}", variant_name(), label, big.capacity(), N);
+        println("[{}/{}] FAIL: capacity() = {} < {}", variant_name(), label, big.capacity(), N);
         ++bad;
     }
 
@@ -186,9 +185,8 @@ int check_past_int_max()
             {
                 if (nbad < 5)
                 {
-                    shrink_array::println("[{}/{}] FAIL {}: [{}] = {}, at() = {}, expected {}", variant_name(), label,
-                                          step, pos[k], static_cast<int>(got), static_cast<int>(gat),
-                                          static_cast<int>(want));
+                    println("[{}/{}] FAIL {}: [{}] = {}, at() = {}, expected {}", variant_name(), label, step, pos[k],
+                            static_cast<int>(got), static_cast<int>(gat), static_cast<int>(want));
                 }
                 ++nbad;
             }
@@ -208,8 +206,8 @@ int check_past_int_max()
                 {
                     if (nbad < 5)
                     {
-                        shrink_array::println("[{}/{}] FAIL {}: untouched [{}] = {}", variant_name(), label, step, q,
-                                              static_cast<int>(cbig[q]));
+                        println("[{}/{}] FAIL {}: untouched [{}] = {}", variant_name(), label, step, q,
+                                static_cast<int>(cbig[q]));
                     }
                     ++nbad;
                 }
@@ -244,8 +242,8 @@ int check_past_int_max()
 
     if (!bad)
     {
-        shrink_array::println("[{}/{}] OK: N={} (INT_MAX + {}), {} positions across 2^31, chunk_size={}",
-                              variant_name(), label, N, N - I, pos.size(), S);
+        println("[{}/{}] OK: N={} (INT_MAX + {}), {} positions across 2^31, chunk_size={}", variant_name(), label, N,
+                N - I, pos.size(), S);
     }
     return bad ? 1 : 0;
 }
@@ -282,8 +280,8 @@ int verify_mixed(const char* label, const char* step, const Arr& a, int which, l
         {
             if (nbad < 5)
             {
-                shrink_array::println("[{}/{}] FAIL {}: array {} [{}] = {:g}, expected {:g}", variant_name(), label,
-                                      step, which, i, got, want);
+                println("[{}/{}] FAIL {}: array {} [{}] = {:g}, expected {:g}", variant_name(), label, step, which, i,
+                        got, want);
             }
             ++nbad;
         }
@@ -355,8 +353,7 @@ int check_mixed()
         {
             if (got != tgt)
             {
-                shrink_array::println("[{}/{}] FAIL rechunk_all_to: chunk_size {}, expected {}", variant_name(), label,
-                                      got, tgt);
+                println("[{}/{}] FAIL rechunk_all_to: chunk_size {}, expected {}", variant_name(), label, got, tgt);
                 ++bad;
             }
         }
@@ -374,9 +371,8 @@ int check_mixed()
 
     if (!bad)
     {
-        shrink_array::println(
-            "[{}/{}] OK: <double,int> x2 and <double,long> x1, M={}, written in parallel, compressed{}", variant_name(),
-            label, M, build_config::chunk_dynamic ? ", rechunked together" : "");
+        println("[{}/{}] OK: <double,int> x2 and <double,long> x1, M={}, written in parallel, compressed{}",
+                variant_name(), label, M, build_config::chunk_dynamic ? ", rechunked together" : "");
     }
     return bad ? 1 : 0;
 }
@@ -387,8 +383,7 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    shrink_array::println("=== index64_validation [variant = {}]  threads={} ===", variant_name(),
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== index64_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     fails += check_mixed();
@@ -397,7 +392,7 @@ int run(int /*argc*/, char** /*argv*/)
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[{}] {}", variant_name(), fails ? "=== INDEX64 FAILED ===" : "=== INDEX64 OK ===");
+    println("\n[{}] {}", variant_name(), fails ? "=== INDEX64 FAILED ===" : "=== INDEX64 OK ===");
     return fails ? 1 : 0;
 }
 

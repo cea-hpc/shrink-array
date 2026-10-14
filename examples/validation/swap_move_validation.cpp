@@ -170,8 +170,8 @@ int verify(const char* step, const char* name, const Arr& a, const Pattern& p, l
     int bad = 0;
     if (static_cast<long>(a.size()) != n)
     {
-        shrink_array::println("[{}/{}] FAIL {}: size() = {}, expected {}", variant_name(), step, name,
-                              static_cast<long>(a.size()), n);
+        println("[{}/{}] FAIL {}: size() = {}, expected {}", variant_name(), step, name, static_cast<long>(a.size()),
+                n);
         return 1;
     }
     for (long i = 0; i < n; ++i)
@@ -182,8 +182,8 @@ int verify(const char* step, const char* name, const Arr& a, const Pattern& p, l
         {
             if (bad < 5)
             {
-                shrink_array::println("[{}/{}] FAIL {}[{}] = {:g}, expected {:g} (chunk {})", variant_name(), step,
-                                      name, i, got, want, i / p.S);
+                println("[{}/{}] FAIL {}[{}] = {:g}, expected {:g} (chunk {})", variant_name(), step, name, i, got,
+                        want, i / p.S);
             }
             ++bad;
         }
@@ -235,9 +235,8 @@ int check_swap()
 
     if (!bad)
     {
-        shrink_array::println(
-            "[{}/{}] OK: N={}, second values {:g}/{:g} exchanged with the chunks, compressed and rewritten",
-            variant_name(), step, N, pa.sv, pb.sv);
+        println("[{}/{}] OK: N={}, second values {:g}/{:g} exchanged with the chunks, compressed and rewritten",
+                variant_name(), step, N, pa.sv, pb.sv);
     }
     return bad ? 1 : 0;
 }
@@ -269,8 +268,8 @@ int check_move()
     // NOLINTNEXTLINE(bugprone-use-after-move)
     if (!src.empty() || src.chunk_count() != 0)
     {
-        shrink_array::println("[{}/{}] FAIL source after move: size() = {}, chunk_count() = {}, expected 0 and 0",
-                              variant_name(), step, static_cast<long>(src.size()), src.chunk_count());
+        println("[{}/{}] FAIL source after move: size() = {}, chunk_count() = {}, expected 0 and 0", variant_name(),
+                step, static_cast<long>(src.size()), src.chunk_count());
         ++bad;
     }
     compress_in_region(dst);
@@ -287,7 +286,7 @@ int check_move()
 
     if (!bad)
     {
-        shrink_array::println("[{}/{}] OK: N={} moved over M={}, the source reused", variant_name(), step, N, M);
+        println("[{}/{}] OK: N={} moved over M={}, the source reused", variant_name(), step, N, M);
     }
     return bad ? 1 : 0;
 }
@@ -312,8 +311,8 @@ int check_move_construct()
     // NOLINTNEXTLINE(bugprone-use-after-move)
     if (!src.empty() || src.chunk_count() != 0)
     {
-        shrink_array::println("[{}/{}] FAIL source after move: size() = {}, chunk_count() = {}, expected 0 and 0",
-                              variant_name(), step, static_cast<long>(src.size()), src.chunk_count());
+        println("[{}/{}] FAIL source after move: size() = {}, chunk_count() = {}, expected 0 and 0", variant_name(),
+                step, static_cast<long>(src.size()), src.chunk_count());
         ++bad;
     }
     compress_in_region(dst);
@@ -329,7 +328,7 @@ int check_move_construct()
 
     if (!bad)
     {
-        shrink_array::println("[{}/{}] OK: N={} moved into a new array, the source reused", variant_name(), step, N);
+        println("[{}/{}] OK: N={} moved into a new array, the source reused", variant_name(), step, N);
     }
     return bad ? 1 : 0;
 }
@@ -359,8 +358,7 @@ int check_vector_realloc()
     int bad = 0;
     if (v[0].getChunkList().data() != chunks_before)
     {
-        shrink_array::println("[{}/{}] FAIL the reallocation copied the array instead of moving it", variant_name(),
-                              step);
+        println("[{}/{}] FAIL the reallocation copied the array instead of moving it", variant_name(), step);
         ++bad;
     }
     maybe_set_second_value(v[1], p1.sv);
@@ -372,7 +370,7 @@ int check_vector_realloc()
 
     if (!bad)
     {
-        shrink_array::println("[{}/{}] OK: N={} moved by the reallocation, chunk list kept", variant_name(), step, N);
+        println("[{}/{}] OK: N={} moved by the reallocation, chunk list kept", variant_name(), step, N);
     }
     return bad ? 1 : 0;
 }
@@ -383,8 +381,7 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    shrink_array::println("=== swap_move_validation [variant = {}]  threads={} ===", variant_name(),
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== swap_move_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     fails += check_swap();
@@ -395,7 +392,7 @@ int run(int /*argc*/, char** /*argv*/)
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[{}] {}", variant_name(), fails ? "=== SWAP/MOVE FAILED ===" : "=== SWAP/MOVE OK ===");
+    println("\n[{}] {}", variant_name(), fails ? "=== SWAP/MOVE FAILED ===" : "=== SWAP/MOVE OK ===");
     return fails ? 1 : 0;
 }
 

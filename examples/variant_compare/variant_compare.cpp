@@ -224,9 +224,8 @@ int main(int argc, char** argv)
     N                  = (N + S - 1) / S * S;
     const long nchunks = N / S;
 
-    shrink_array::println(
-        "=== variant_compare [{}]  n={}  chunk_size={}  chunks={}  iters={}  constants={}  threads={}{} ===",
-        variant_name(), N, S, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
+    println("=== variant_compare [{}]  n={}  chunk_size={}  chunks={}  iters={}  constants={}  threads={}{} ===",
+            variant_name(), N, S, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
 
     Array<double> a(static_cast<int>(N));
     maybe_declare_second_value(a, kSecond[0]);
@@ -347,13 +346,13 @@ int main(int argc, char** argv)
     }
 
     const double total = t_const + t_plain + t_read + t_rmw;
-    shrink_array::println("time (s)    const {:8.3f} | plain {:8.3f} | read {:8.3f} | rmw {:8.3f} | total {:8.3f}",
-                          t_const, t_plain, t_read, t_rmw, total);
-    shrink_array::println("compressed  {} / {} chunks ({:.2f} %)", compressed, nchunks,
-                          100. * static_cast<double>(compressed) / static_cast<double>(nchunks));
-    shrink_array::println("memory      RSS {} MiB at the end | peak {} MiB over the iteration ends (exact)",
-                          shrink_array::exact_rss_kib() >> 10, rss_peak_kib >> 10);
-    shrink_array::println("checksum    {:.1f}", checksum);
+    println("time (s)    const {:8.3f} | plain {:8.3f} | read {:8.3f} | rmw {:8.3f} | total {:8.3f}", t_const, t_plain,
+            t_read, t_rmw, total);
+    println("compressed  {} / {} chunks ({:.2f} %)", compressed, nchunks,
+            100. * static_cast<double>(compressed) / static_cast<double>(nchunks));
+    println("memory      RSS {} MiB at the end | peak {} MiB over the iteration ends (exact)",
+            shrink_array::exact_rss_kib() >> 10, rss_peak_kib >> 10);
+    println("checksum    {:.1f}", checksum);
 
     int bad = 0;
     if (verify)
@@ -365,14 +364,14 @@ int main(int argc, char** argv)
             {
                 if (nbad < 3)
                 {
-                    shrink_array::println("  MISMATCH a[{}] = {:g}, expected {:g}", i,
-                                          static_cast<double>(std::as_const(a)[static_cast<int>(i)]),
-                                          ref[static_cast<std::size_t>(i)]);
+                    println("  MISMATCH a[{}] = {:g}, expected {:g}", i,
+                            static_cast<double>(std::as_const(a)[static_cast<int>(i)]),
+                            ref[static_cast<std::size_t>(i)]);
                 }
                 ++nbad;
             }
         }
-        shrink_array::println("verify      {} ({} mismatch(es))", nbad ? "FAILED" : "OK", nbad);
+        println("verify      {} ({} mismatch(es))", nbad ? "FAILED" : "OK", nbad);
         bad = nbad ? 1 : 0;
     }
     a.clear();

@@ -135,9 +135,8 @@ static void expect(const char* where, int users, long min_entries)
     const long e    = static_cast<long>(Registry::count_entries());
     const bool ok_u = (u == users);
     const bool ok_e = (min_entries < 0) ? (e == 0) : (e >= min_entries);
-    shrink_array::println("  {:<44} users {} (expect {})  entries {} (expect {}{}){}", where, u, users, e,
-                          min_entries < 0 ? "" : ">= ", min_entries < 0 ? 0L : min_entries,
-                          (ok_u && ok_e) ? "" : "  <-- WRONG");
+    println("  {:<44} users {} (expect {})  entries {} (expect {}{}){}", where, u, users, e,
+            min_entries < 0 ? "" : ">= ", min_entries < 0 ? 0L : min_entries, (ok_u && ok_e) ? "" : "  <-- WRONG");
     if (!ok_u || !ok_e)
     {
         ++fails;
@@ -149,7 +148,7 @@ static void expect_values(const char* where, const Arr& a, long n, double v)
     const long bad = mismatches(a, n, v);
     if (bad)
     {
-        shrink_array::println("  {:<44} {} element(s) do not read {:g} back  <-- WRONG", where, bad, v);
+        println("  {:<44} {} element(s) do not read {:g} back  <-- WRONG", where, bad, v);
         ++fails;
     }
 }
@@ -172,7 +171,7 @@ static int run_id_limit_child()
         }
     }
     end_phase();
-    shrink_array::println("[id-limit] 40 distinct second values registered under a limit of 16: RAN ON");
+    println("[id-limit] 40 distinct second values registered under a limit of 16: RAN ON");
     return 0;
 }
 
@@ -196,8 +195,8 @@ static void check_id_limit(const char* self)
         }
     }
     std::remove(log.c_str());
-    shrink_array::println("D  identifier limit (16, 40 distinct values)       {}, {}{}", stopped ? "stopped" : "RAN ON",
-                          said ? "with the message" : "no message", (stopped && said) ? "" : "  <-- WRONG");
+    println("D  identifier limit (16, 40 distinct values)       {}, {}{}", stopped ? "stopped" : "RAN ON",
+            said ? "with the message" : "no message", (stopped && said) ? "" : "  <-- WRONG");
     if (!stopped || !said)
     {
         ++fails;
@@ -218,12 +217,12 @@ int run(int argc, char** argv)
     const long S       = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
     const long N       = nchunks * S;
 
-    shrink_array::println("=== cst2_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, S,
-                          CHUNK_PMP_MAX_THREADS);
+    println("=== cst2_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, S,
+            CHUNK_PMP_MAX_THREADS);
     expect("start", 0, -1);
 
     // A: three generations, one after the other.
-    shrink_array::println("A  successive generations");
+    println("A  successive generations");
     for (int g = 0; g < 3; ++g)
     {
         const double v = 7. + g;
@@ -241,7 +240,7 @@ int run(int argc, char** argv)
     }
 
     // B: an outer array alive across an inner one's life.
-    shrink_array::println("B  overlapping lifetimes");
+    println("B  overlapping lifetimes");
     {
         Arr outer(static_cast<int>(N));
         fill(outer, N, 21.);
@@ -260,7 +259,7 @@ int run(int argc, char** argv)
     expect("outer destroyed", 0, -1);
 
     // C: the reinstalled registry works.
-    shrink_array::println("C  after the extinctions");
+    println("C  after the extinctions");
     {
         Arr a(static_cast<int>(N));
         fill(a, N, 31.);
@@ -272,7 +271,7 @@ int run(int argc, char** argv)
     // D: the identifier limit stops the run (a child process).
     check_id_limit(argv[0]);
 
-    shrink_array::println("=== {} ===", fails ? "CST2_REGISTRY FAILED" : "CST2_REGISTRY OK");
+    println("=== {} ===", fails ? "CST2_REGISTRY FAILED" : "CST2_REGISTRY OK");
     return fails ? 1 : 0;
 }
 

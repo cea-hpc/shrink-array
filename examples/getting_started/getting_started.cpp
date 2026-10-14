@@ -27,6 +27,7 @@
 #include "chunk/internal/print.h" // shrink_array::println
 
 namespace sa = shrink_array;
+using shrink_array::println;
 
 // What element i holds after the write loop below.
 static double expected(int i, int n)
@@ -80,7 +81,7 @@ int main()
         }
 
         a.shrink_to_fit(); // fold every chunk that has become constant (sequential point)
-        shrink_array::println("n = {} elements, {} wrong, chunks holding a buffer: {:.1f} %", n, bad, a.stats());
+        println("n = {} elements, {} wrong, chunks holding a buffer: {:.1f} %", n, bad, a.stats());
     } // the array releases its chunks here
 
     sa::release_chunk_pools(); // give the reuse pools back

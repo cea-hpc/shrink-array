@@ -226,11 +226,11 @@ static int check(const char* scenario, const char* step, const Array<double>& ar
     const int exp = expect_after(k);
     if (got != exp)
     {
-        shrink_array::println("[{}/{}] FAIL after '{}': {} chunk(s) materialised, expected {}", variant_name(),
-                              scenario, step, got, exp);
+        println("[{}/{}] FAIL after '{}': {} chunk(s) materialised, expected {}", variant_name(), scenario, step, got,
+                exp);
         return 1;
     }
-    shrink_array::println("[{}/{}] ok    after '{:<10}': {:3} materialised", variant_name(), scenario, step, got);
+    println("[{}/{}] ok    after '{:<10}': {:3} materialised", variant_name(), scenario, step, got);
     return 0;
 }
 
@@ -242,8 +242,8 @@ int run(int /*argc*/, char** /*argv*/)
     const int S = static_cast<int>(Array<double>(1).chunk_size());
     const int N = kChunks * S;
 
-    shrink_array::println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===",
-                          variant_name(), S, kChunks, CHUNK_PMP_MAX_THREADS);
+    println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(), S,
+            kChunks, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -294,7 +294,7 @@ int run(int /*argc*/, char** /*argv*/)
         }
         if (bad)
         {
-            shrink_array::println("[{}/C] FAIL: {} element(s) do not read back 0", variant_name(), bad);
+            println("[{}/C] FAIL: {} element(s) do not read back 0", variant_name(), bad);
             ++fails;
         }
         c.clear();
@@ -305,8 +305,8 @@ int run(int /*argc*/, char** /*argv*/)
     release_chunk_pools();
     destroy_block_chunk();
 
-    shrink_array::println("\n[{}] {}", variant_name(),
-                          fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");
+    println("\n[{}] {}", variant_name(),
+            fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");
     return fails ? 1 : 0;
 }
 

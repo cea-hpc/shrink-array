@@ -258,10 +258,10 @@ int check_invariance(const char* label,
     }
     if (pre_bad)
     {
-        shrink_array::println("[{}/{}] PRE-FAIL: {} mismatches BEFORE rechunk (setup/read bug, not rechunk); "
-                              "first at i={} (chunk #{}, offset {}) got={:g} expected={:g}",
-                              variant_name(), label, pre_bad, pre_first, pre_first / (long)old_size,
-                              pre_first % (long)old_size, (double)arr[pre_first], (double)ref[pre_first]);
+        println("[{}/{}] PRE-FAIL: {} mismatches BEFORE rechunk (setup/read bug, not rechunk); "
+                "first at i={} (chunk #{}, offset {}) got={:g} expected={:g}",
+                variant_name(), label, pre_bad, pre_first, pre_first / (long)old_size, pre_first % (long)old_size,
+                (double)arr[pre_first], (double)ref[pre_first]);
         return 1;
     }
 
@@ -270,13 +270,12 @@ int check_invariance(const char* label,
 
     if (got_size != new_size)
     {
-        shrink_array::println("[{}/{}] FAIL: geometry {} -> {} (expected {})", variant_name(), label, old_size,
-                              got_size, new_size);
+        println("[{}/{}] FAIL: geometry {} -> {} (expected {})", variant_name(), label, old_size, got_size, new_size);
         return 1;
     }
     if ((long)arr.size() != N)
     {
-        shrink_array::println("[{}/{}] FAIL: size {} -> {}", variant_name(), label, N, (long)arr.size());
+        println("[{}/{}] FAIL: size {} -> {}", variant_name(), label, N, (long)arr.size());
         return 1;
     }
     const long mismatches = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
@@ -289,16 +288,15 @@ int check_invariance(const char* label,
             {
                 first = i;
             }
-            shrink_array::println("[{}/{}] MISMATCH i={} got={:.17g} exp={:.17g} (new-chunk #{}, offset {})",
-                                  variant_name(), label, i, (double)arr[i], (double)ref[i], i / (long)new_size,
-                                  i % (long)new_size);
+            println("[{}/{}] MISMATCH i={} got={:.17g} exp={:.17g} (new-chunk #{}, offset {})", variant_name(), label,
+                    i, (double)arr[i], (double)ref[i], i / (long)new_size, i % (long)new_size);
             ++shown;
         }
     }
     if (mismatches)
     {
-        shrink_array::println("[{}/{}] FAIL: {}/{} mismatches after rechunk {}->{} (first at i={})", variant_name(),
-                              label, mismatches, N, old_size, new_size, first);
+        println("[{}/{}] FAIL: {}/{} mismatches after rechunk {}->{} (first at i={})", variant_name(), label,
+                mismatches, N, old_size, new_size, first);
         return 1;
     }
     // ── POST-RECHUNK PHASE: rewrite + compress in rounds, mimicking the bench.
@@ -339,15 +337,13 @@ int check_invariance(const char* label,
         }
         if (bad)
         {
-            shrink_array::println(
-                "[{}/{}] POST-FAIL round {}: {}/{} mismatches after compress (first i={}, new-chunk #{} off {})",
-                variant_name(), label, round, bad, N, firstb, firstb / (long)new_size, firstb % (long)new_size);
+            println("[{}/{}] POST-FAIL round {}: {}/{} mismatches after compress (first i={}, new-chunk #{} off {})",
+                    variant_name(), label, round, bad, N, firstb, firstb / (long)new_size, firstb % (long)new_size);
             return 1;
         }
     }
-    shrink_array::println("[{}/{}] OK: {} elements invariant, geometry {}->{} (second_value={:.17g}){}", variant_name(),
-                          label, N, old_size, new_size, (double)sv_value,
-                          post_rounds ? " [+post-rechunk compress rounds]" : "");
+    println("[{}/{}] OK: {} elements invariant, geometry {}->{} (second_value={:.17g}){}", variant_name(), label, N,
+            old_size, new_size, (double)sv_value, post_rounds ? " [+post-rechunk compress rounds]" : "");
     return 0;
 }
 
@@ -412,16 +408,14 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
         const T ef = static_cast<T>((i + r) % 13 ? 0 : (i + r));
         if (!(static_cast<T>(moved[i]) == em) || !(static_cast<T>(fixed[i]) == ef))
         {
-            shrink_array::println("[{}/{}] MISMATCH at {}: moved={:g} exp {:g} | fixed={:g} exp {:g}", variant_name(),
-                                  label, i, (double)static_cast<T>(moved[i]), (double)em,
-                                  (double)static_cast<T>(fixed[i]), (double)ef);
+            println("[{}/{}] MISMATCH at {}: moved={:g} exp {:g} | fixed={:g} exp {:g}", variant_name(), label, i,
+                    (double)static_cast<T>(moved[i]), (double)em, (double)static_cast<T>(fixed[i]), (double)ef);
             ++bad;
         }
     }
     if (!bad)
     {
-        shrink_array::println("[{}/{}] OK: {} elements, geometries {} and ambient coexisting", variant_name(), label, N,
-                              moved_size);
+        println("[{}/{}] OK: {} elements, geometries {} and ambient coexisting", variant_name(), label, N, moved_size);
     }
     return bad ? 1 : 0;
 }
@@ -518,14 +512,13 @@ int check_range_ops(const char* label, long N)
         const T e = static_cast<T>(viaElem[i]);
         if (!(r == e))
         {
-            shrink_array::println("[{}/{}] MISMATCH at {}: range={:g} element={:g}", variant_name(), label, i,
-                                  (double)r, (double)e);
+            println("[{}/{}] MISMATCH at {}: range={:g} element={:g}", variant_name(), label, i, (double)r, (double)e);
             ++bad;
         }
     }
     if (!bad)
     {
-        shrink_array::println("[{}/{}] OK: {} elements, range ops match the element path", variant_name(), label, N);
+        println("[{}/{}] OK: {} elements, range ops match the element path", variant_name(), label, N);
     }
     return bad ? 1 : 0;
 }
@@ -560,16 +553,15 @@ int check_non_pow2_refused(const char* label)
         arr.rechunk_to(s);
         if (arr.chunk_size() != old_size)
         {
-            shrink_array::println("[{}/{}] FAIL: rechunk_to({}) applied: geometry {} -> {}", variant_name(), label, s,
-                                  old_size, arr.chunk_size());
+            println("[{}/{}] FAIL: rechunk_to({}) applied: geometry {} -> {}", variant_name(), label, s, old_size,
+                    arr.chunk_size());
             ++bad;
         }
     }
     const long mism = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
     if (mism)
     {
-        shrink_array::println("[{}/{}] FAIL: {} element(s) changed by the refused re-chunks", variant_name(), label,
-                              mism);
+        println("[{}/{}] FAIL: {} element(s) changed by the refused re-chunks", variant_name(), label, mism);
         ++bad;
     }
 
@@ -579,14 +571,12 @@ int check_non_pow2_refused(const char* label)
     empty.set_chunk_size(96u);
     if (empty.chunk_size() != e0)
     {
-        shrink_array::println("[{}/{}] FAIL: empty array: geometry {} -> {}", variant_name(), label, e0,
-                              empty.chunk_size());
+        println("[{}/{}] FAIL: empty array: geometry {} -> {}", variant_name(), label, e0, empty.chunk_size());
         ++bad;
     }
     if (active_chunk_size() != ambient)
     {
-        shrink_array::println("[{}/{}] FAIL: ambient size {} -> {}", variant_name(), label, ambient,
-                              active_chunk_size());
+        println("[{}/{}] FAIL: ambient size {} -> {}", variant_name(), label, ambient, active_chunk_size());
         ++bad;
     }
 
@@ -595,8 +585,8 @@ int check_non_pow2_refused(const char* label)
     const long after = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
     if (arr.chunk_size() != old_size * 2u || after)
     {
-        shrink_array::println("[{}/{}] FAIL: legal rechunk_to({}) afterwards: geometry {}, {} mismatch(es)",
-                              variant_name(), label, old_size * 2u, arr.chunk_size(), after);
+        println("[{}/{}] FAIL: legal rechunk_to({}) afterwards: geometry {}, {} mismatch(es)", variant_name(), label,
+                old_size * 2u, arr.chunk_size(), after);
         ++bad;
     }
     // Back to the case's start geometry for the next pass.
@@ -605,9 +595,9 @@ int check_non_pow2_refused(const char* label)
 
     if (!bad)
     {
-        shrink_array::println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays), content and geometry kept, "
-                              "{} -> {} still works",
-                              variant_name(), label, old_size + 1u, old_size, old_size * 2u);
+        println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays), content and geometry kept, "
+                "{} -> {} still works",
+                variant_name(), label, old_size + 1u, old_size, old_size * 2u);
     }
     return bad ? 1 : 0;
 }
@@ -643,9 +633,9 @@ int check_index_split(const char* label)
             {
                 if (bad++ < 5)
                 {
-                    shrink_array::println("[{}/{}] FAIL: size {} index {}: chunk {} offset {}", variant_name(), label,
-                                          d, static_cast<long long>(i), static_cast<long long>(p.chunk_of(i)),
-                                          static_cast<long long>(p.offset_of(i)));
+                    println("[{}/{}] FAIL: size {} index {}: chunk {} offset {}", variant_name(), label, d,
+                            static_cast<long long>(i), static_cast<long long>(p.chunk_of(i)),
+                            static_cast<long long>(p.offset_of(i)));
                 }
             }
         };
@@ -665,9 +655,8 @@ int check_index_split(const char* label)
     set_thread_chunk_size(ambient);
     if (!bad)
     {
-        shrink_array::println(
-            "[{}/{}] OK: chunk_of / offset_of == / and % for every valid size up to 4096 ({} indexes)", variant_name(),
-            label, n);
+        println("[{}/{}] OK: chunk_of / offset_of == / and % for every valid size up to 4096 ({} indexes)",
+                variant_name(), label, n);
     }
     return bad ? 1 : 0;
 }
@@ -703,8 +692,8 @@ int check_multiple_of_64_chain(const char* label)
         const long mism = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
         if (arr.chunk_size() != s || mism)
         {
-            shrink_array::println("[{}/{}] FAIL: rechunk_to({}): geometry {}, {} mismatch(es)", variant_name(), label,
-                                  s, arr.chunk_size(), mism);
+            println("[{}/{}] FAIL: rechunk_to({}): geometry {}, {} mismatch(es)", variant_name(), label, s,
+                    arr.chunk_size(), mism);
             ++bad;
         }
     }
@@ -716,8 +705,7 @@ int check_multiple_of_64_chain(const char* label)
     const long after = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
     if (after)
     {
-        shrink_array::println("[{}/{}] FAIL: {} mismatch(es) after writes at {}", variant_name(), label, after,
-                              arr.chunk_size());
+        println("[{}/{}] FAIL: {} mismatch(es) after writes at {}", variant_name(), label, after, arr.chunk_size());
         ++bad;
     }
     set_active_chunk_size(ambient);
@@ -725,8 +713,8 @@ int check_multiple_of_64_chain(const char* label)
 
     if (!bad)
     {
-        shrink_array::println("[{}/{}] OK: 256 -> 384 -> 192 -> 576 -> 320 -> 1024 -> 448 -> 512 -> 256, content kept",
-                              variant_name(), label);
+        println("[{}/{}] OK: 256 -> 384 -> 192 -> 576 -> 320 -> 1024 -> 448 -> 512 -> 256, content kept",
+                variant_name(), label);
     }
     return bad ? 1 : 0;
 }
@@ -790,7 +778,7 @@ static int run_body(int argc, char** argv)
     const bool     run_par = std::strcmp(mode, "serial") != 0;
     if (!run_ser && !run_par)
     {
-        shrink_array::println("unknown --mode '{}' (serial, parallel or both)", mode);
+        println("unknown --mode '{}' (serial, parallel or both)", mode);
         return 2;
     }
 
@@ -902,7 +890,7 @@ static int run_body(int argc, char** argv)
     {
         for (const Case& c : cases)
         {
-            shrink_array::println("{}", c.name);
+            println("{}", c.name);
         }
         return 0;
     }
@@ -915,15 +903,15 @@ static int run_body(int argc, char** argv)
         }
         if (!known)
         {
-            shrink_array::println("unknown --case '{}' (--list gives the names)", only);
+            println("unknown --case '{}' (--list gives the names)", only);
             return 2;
         }
     }
 
     ParamChunk::init_indexes(true);
 
-    shrink_array::println("=== rechunk_validation [variant = {}]  N_scale={}  64->{}  case={}  mode={} ===",
-                          variant_name(), N_scale, tgt, only ? only : "all", mode);
+    println("=== rechunk_validation [variant = {}]  N_scale={}  64->{}  case={}  mode={} ===", variant_name(), N_scale,
+            tgt, only ? only : "all", mode);
 
     int      fails    = 0;
     unsigned geometry = 0;
@@ -950,8 +938,8 @@ static int run_body(int argc, char** argv)
         }
     }
 
-    shrink_array::println("\n[{}] {}", variant_name(),
-                          fails == 0 ? "=== ALL INVARIANCE CHECKS PASSED ===" : "=== INVARIANCE FAILURES ===");
+    println("\n[{}] {}", variant_name(),
+            fails == 0 ? "=== ALL INVARIANCE CHECKS PASSED ===" : "=== INVARIANCE FAILURES ===");
     return fails;
 }
 
