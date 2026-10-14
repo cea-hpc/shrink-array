@@ -7,7 +7,7 @@
 > writers, compressors and readers in [synchronisation_dekker.md](synchronisation_dekker.md),
 > the measurement method in [performance_measurement.md](performance_measurement.md), and the
 > documentation index in [README.md](README.md). This document replaces the old presentation, which described
-> an earlier version (per-element locks, global `__decalage_chunk`, chunk size fixed
+> an earlier version (per-element locks, global __decalage_chunk, chunk size fixed
 > at 64, parallelisation "without a satisfactory solution"). The function and file names
 > cited are those of the current tree; when in doubt, the code is the reference.
 

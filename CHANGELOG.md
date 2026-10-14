@@ -255,7 +255,7 @@ were internal.
   constant-initialised, and never destroyed (`chunk/internal/immortal.h`): a global array used
   to read it before its dynamic initialisation and after its destruction.
 - No limit on the number of (chunk template, element type) pairs: the manager registry grows
-  (it aborted past 256). Registering a manager no longer uses RTTI (`dynamic_cast`).
+  (it aborted past 256). Registering a manager no longer uses RTTI (dynamic_cast).
 - **The build options are recorded, not passed as macros.** CMake generates
   `chunk/build_options.h` and `fast_allocators/build_options.h` (`CHUNK_OPT_*`,
   `FAST_ALLOC_OPT_*`), installed with the libraries; the headers read them there, never from the

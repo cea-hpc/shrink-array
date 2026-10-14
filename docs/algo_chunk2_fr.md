@@ -7,7 +7,7 @@
 > écrivains, compresseurs et lecteurs dans [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md),
 > la méthode de mesure dans [mesures_performance_fr.md](mesures_performance_fr.md), et l'index
 > de la documentation dans [README.md](README.md). Ce document remplace l'ancienne présentation, qui décrivait
-> une version antérieure (verrous par élément, `__decalage_chunk` global, taille de chunk fixée
+> une version antérieure (verrous par élément, __decalage_chunk global, taille de chunk fixée
 > à 64, parallélisation « sans solution satisfaisante »). Les noms de fonctions et de fichiers
 > cités sont ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi.
 
