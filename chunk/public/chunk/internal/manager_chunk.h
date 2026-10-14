@@ -737,13 +737,15 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          resident until the next re-chunk or destruction. Serial, at a
      *          quiescent point (no allocation or free in flight): an empty slab
      *          must BE empty (fast_alloc::EmptySlabSweep). A no-op inside a
-     *          parallel region.
+     *          parallel region, and in a build without OpenMP.
      * @return Number of slabs handed to the sweep.
      */
     static std::size_t sweep_empty_slabs([[maybe_unused]] std::size_t keep_empty) noexcept
     {
         std::size_t collected = 0;
-        if constexpr (chunk_config::use_fast_alloc)
+        // OpenMP builds only, like the re-chunk's sweep: the serial
+        // TCTypeAllocator has no empty_slab_sweep / collect_empty_slabs.
+        if constexpr (chunk_config::use_fast_alloc && build_config::use_openmp)
         {
             if (CHUNK_PMP_IN_PARALLEL_REGION)
             {
