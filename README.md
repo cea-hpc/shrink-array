@@ -290,6 +290,10 @@ See [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md).
 - [examples/advisor_demo](examples/advisor_demo) and
   [examples/variant_compare](examples/variant_compare): the chunk-size advisor against real sizes,
   and Chunk2 against Chunk2A on one workload.
+- [examples/access_cost](examples/access_cost): the time per element of six access patterns
+  (sequential, random and constant reads, overwrites, first writes, read-modify-write) on a
+  `std::vector` and on the array, in the same binary; `python/access_cost.py` runs it over rounds
+  and thread counts.
 - [python/shrink_gui](python/shrink_gui): a window on the laptop to submit the build, the tests
   and the benchmark on the cluster and follow them ([docs/shrink_gui.md](docs/shrink_gui.md)).
 

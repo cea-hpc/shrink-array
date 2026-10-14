@@ -303,6 +303,10 @@ après passage si un rechunk en vaut la peine. Voir
 - [examples/advisor_demo](examples/advisor_demo) et
   [examples/variant_compare](examples/variant_compare) : l'advisor de taille de chunk face à de
   vraies tailles, et Chunk2 face à Chunk2A sur une même charge.
+- [examples/access_cost](examples/access_cost) : le temps par élément de six motifs d'accès
+  (lectures séquentielle, aléatoire et d'un tableau constant, réécriture, première écriture,
+  lecture-modification-écriture) sur un `std::vector` et sur le tableau, dans le même binaire ;
+  `python/access_cost.py` le lance sur plusieurs tours et nombres de threads.
 - [python/shrink_gui](python/shrink_gui) : une fenêtre sur le portable pour soumettre la
   compilation, les tests et le banc sur le calculateur et les suivre
   ([docs/shrink_gui_fr.md](docs/shrink_gui_fr.md)).
