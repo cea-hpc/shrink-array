@@ -41,9 +41,15 @@
 //                 registry: every array, of either index type, must come out
 //                 at the new geometry with its values.
 //
+// --size N (CHUNK_DYNAMIC builds): `mixed` starts at geometry N and re-chunks
+// to 2N, where `past-int-max` then runs. With a size that is not a power of
+// two (the ctest _np2 runs 384, so 384 -> 768), chunk_of / offset_of take the
+// magic-number division rather than the shift, on both sides of 2^31 too.
+//
 // Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
 
 #include <climits>     // INT_MAX
+#include <string_view> // --size
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
@@ -59,6 +65,7 @@
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/internal/env_parse.h"         // arg_number (checked, not atoi)
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -379,11 +386,30 @@ int check_mixed()
 
 } // namespace
 
-int run(int /*argc*/, char** /*argv*/)
+int run(int argc, char** argv)
 {
     ParamChunk::init_indexes(true);
 
-    println("=== index64_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
+    // --size N (CHUNK_DYNAMIC): start at geometry N instead of the build's.
+    // `mixed` re-chunks to 2N and leaves it active for `past-int-max`: from a
+    // size that is not a power of two (384), both run on chunk_of /
+    // offset_of's magic-number division (384, then 768 past 2^31).
+    if (argc > 2 && std::string_view(argv[1]) == "--size")
+    {
+        const auto size = shrink_array::arg_number<unsigned int>(argv[2], 0u, "size");
+        if (!build_config::chunk_dynamic || !is_valid_chunk_size(size) || size > cst_buffer_size / 2)
+        {
+            println("index64_validation: --size {}: a dynamic build and a valid size up to {}", size,
+                    cst_buffer_size / 2);
+            return 1;
+        }
+        set_active_chunk_size(size);
+        set_thread_chunk_size(size);
+        ParamChunk::register_chunk_size(size);
+    }
+
+    println("=== index64_validation [variant = {}]  threads={}  chunk_size={} ===", variant_name(),
+            CHUNK_PMP_MAX_THREADS, active_chunk_size());
 
     int fails = 0;
     fails += check_mixed();

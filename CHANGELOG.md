@@ -88,6 +88,14 @@ the tag's checksum to the recipe.
   `reclaim_second_values()` returns 0 as one with nothing to free does; this
   tells them apart. Relaxed reads, callable at any time. shrink_bench prints it
   per type with `CHUNK_CST2_RECLAIM=N`.
+- Validation coverage: the round-trip harnesses run at every static size
+  built (`CHUNK_STATIC_SIZES`, so 1024 too), not the default one only;
+  `index64_validation_*_dyn_np2` starts at 384, a size that is not a power of
+  two (the magic-number index split, a re-chunk 384 -> 768, past 2^31 at 768);
+  `cst2_reclaim_validation` runs at dyn as well and reclaims across a re-chunk;
+  `compile_all.sh` builds `omp-llvm-check-sv-indexed`
+  (`CHUNK_SECOND_VALUE_INDEXED`, CHECK_OPTIM, so with its harnesses), also in
+  the `multi_launch_stress.py` build lists.
 
 ### Fixed
 

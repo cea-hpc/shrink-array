@@ -47,7 +47,10 @@
  *               and second_value_stats() counts the refusal;
  *            F  under a lowered identifier limit (a child process), rounds
  *               that register four times the limit run to the end when each
- *               round reclaims.
+ *               round reclaims;
+ *            G  (CHUNK_DYNAMIC) a re-chunk to 2S and back: the reclaims around
+ *               it keep exactly what the chunks at the new geometry hold, and
+ *               one during a re-chunk rebuild is refused and counted.
  *
  *          Usage: cst2_reclaim_validation [chunks]
  */
@@ -68,6 +71,7 @@
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
 #include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size (G)
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -362,6 +366,48 @@ int run(int argc, char** argv)
                       static_cast<long>(Arr::second_value_stats().refused_parallel - refused_before), active ? 1 : 0);
             expect_eq("freed after it", reclaim(), active ? nch : 0);
             expect_values("values", a, nch, S, 10000., 10000.);
+        }
+
+        // G: reclaim across a re-chunk (CHUNK_DYNAMIC). The re-chunk rebuilds
+        // every chunk and its second-value slot at the new geometry; a reclaim
+        // after it must keep what the new chunks hold and nothing else.
+        if constexpr (build_config::chunk_dynamic)
+        {
+            println("G  re-chunk");
+            const unsigned ambient = active_chunk_size();
+            const long     S2      = 2 * S;
+            const long     nch2    = nch / 2; // the same elements, half as many chunks
+            fill(a, nch, S, 11000.);
+            (void)reclaim();
+            a.rechunk_to(static_cast<unsigned int>(S2));
+            expect_eq("chunk size after rechunk_to(2S)", static_cast<long>(a.chunk_size()), S2);
+            // Each new chunk spans two old constants: materialised, so the
+            // reclaim may free them all; the values must not change.
+            (void)reclaim();
+            expect_values("values after the re-chunk and a reclaim", a, nch, S, 11000., 11000.);
+            expect_eq("identifiers in use = entries", in_use(), entries());
+            // Constants at the new geometry: one per new chunk survives.
+            fill(a, nch2, S2, 12000.);
+            (void)reclaim();
+            expect_eq("entries after a refill at 2S and a reclaim", entries(), nch2);
+            expect_eq("identifiers in use = entries", in_use(), entries());
+            expect_values("values at 2S", a, nch2, S2, 12000., 12000.);
+            // Back to S, then constants again.
+            a.rechunk_to(static_cast<unsigned int>(S));
+            fill(a, nch, S, 13000.);
+            (void)reclaim();
+            expect_eq("entries back at S", entries(), nch);
+            expect_values("values back at S", a, nch, S, 13000., 13000.);
+            // A reclaim while a re-chunk rebuild runs is refused, and counted.
+            const std::size_t refused_before = Arr::second_value_stats().refused_rechunk;
+            g_in_rechunk_rebuild.store(true, std::memory_order_release);
+            const long during = reclaim();
+            g_in_rechunk_rebuild.store(false, std::memory_order_release);
+            expect_eq("freed during a re-chunk rebuild", during, 0);
+            expect_eq("stats: refused during a re-chunk",
+                      static_cast<long>(Arr::second_value_stats().refused_rechunk - refused_before), 1);
+            set_active_chunk_size(ambient);
+            set_thread_chunk_size(ambient);
         }
     }
     expect_eq("all arrays destroyed: entries", entries(), 0);
