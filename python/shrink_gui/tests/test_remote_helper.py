@@ -509,3 +509,23 @@ def test_status_submission_refused(tmp_path):
     (tmp_path / "submit.log").write_text("error: Batch job submission failed: Invalid qos specification\n")
     assert remote_helper.status(str(tmp_path), {}) == (
         "soumission refusée : error: Batch job submission failed: Invalid qos specification", None)
+
+
+def test_errors_of_failed_builds(tmp_path, capsys):
+    # compile_all.sh has no error file: the Erreurs tab shows the log of each
+    # "[FAIL] ... → <log>" line of the run's output.
+    from shrink_gui import remote_helper
+    from shrink_gui.config import PROGRAMS
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "gnu-stats.log").write_text("FAILED: a.o\nerror: cannot convert\n")
+    run = tmp_path / "runs" / "c1"
+    run.mkdir(parents=True)
+    (run / "out.log").write_text("[ OK ] gnu  10s\n[FAIL] gnu-stats   181s  rc=1  → %s\n"
+                                 "       ── first error (line 1) ──\n" % (logs / "gnu-stats.log"))
+    opts = {"files": [], "fail_re": PROGRAMS["compile_all.sh"]["fail_re"]}
+    blob = base64.b64encode(json.dumps(opts).encode()).decode()
+    remote_helper.act_errors([str(tmp_path / "runs"), "c1", blob])
+    r = json.loads(capsys.readouterr().out)
+    assert [f["name"] for f in r["files"]] == ["gnu-stats.log"] and r["count"] == 1
+    assert "cannot convert" in r["files"][0]["data"]

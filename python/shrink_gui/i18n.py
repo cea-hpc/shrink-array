@@ -484,6 +484,7 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^pas encore de (\S+)$", r"no \1 yet"), (r"(\S+) est vide", r"\1 is empty"),
     (r"pas de résumé pour ce programme", "no summary for this program"),
     (r"pas de log d'erreurs pour ce programme", "no error log for this program"),
+    (r"aucun échec dans le log du run", "no failure in the run's log"),
     (r"pas encore de dossier de sortie annoncé dans le log", "no output directory announced in the log yet"),
     (r"^aucun fichier (.+) dans (\S+)$", r"no \1 file in \2"),
     (r"^(\d+) erreur\(s\) — ", r"\1 error(s) — "), (r"^aucune erreur — ", "no error — "),

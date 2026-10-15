@@ -134,6 +134,9 @@ PROGRAMS = {
         "progress_re": None, "eta_re": None,
         "summary": None, "summary_file": None,
         "errors_files": [],
+        # Erreurs tab: the log of each failed build, named by its line
+        # "[FAIL] <build> <time> rc=<n> → <log>" (functions_for_compile.sh).
+        "fail_re": r"^\[FAIL\] .*→ (\S+)\s*$",
     },
 }
 
