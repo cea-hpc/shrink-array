@@ -501,3 +501,11 @@ def test_own_copies_win_over_the_shared_directory(site):
     e = site.helper("errors", "~/shrink_runs", "k1", _files("bench_errors.log"))
     assert "mine" in e["files"][0]["data"] and e["newer"] is None      # k2 cannot have rewritten it
     assert e["newer"] is None and e["dir"] == str(d)
+
+
+def test_status_submission_refused(tmp_path):
+    # submit.log without a jobid: the batch system refused the job (bad QoS...)
+    from shrink_gui import remote_helper
+    (tmp_path / "submit.log").write_text("error: Batch job submission failed: Invalid qos specification\n")
+    assert remote_helper.status(str(tmp_path), {}) == (
+        "soumission refusée : error: Batch job submission failed: Invalid qos specification", None)

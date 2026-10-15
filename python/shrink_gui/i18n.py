@@ -382,6 +382,7 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^la QoS (\S+) n'est pas ouverte sur (\S+)$", r"QoS \1 is not open on \2"),
     (r"^après (\S+)$", r"after \1"),
     (r"^en attente sans fin \((\S+) a échoué : à arrêter\)$", r"pending for ever (\1 failed: stop it)"),
+    (r"^soumission refusée : ", "submission refused: "),
     (r"^le run (\S+) a échoué \(code (\S+)\) : rien soumis$", r"run \1 failed (code \2): nothing submitted"),
     (r"^le run (\S+) n'existe pas$", r"run \1 does not exist"),
     (r"^le run (\S+) n'a pas de job batch à attendre$", r"run \1 has no batch job to wait for"),

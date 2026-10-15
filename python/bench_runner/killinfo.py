@@ -1,83 +1,138 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""Why a run died: the signal that killed it, and whether it was the OOM killer.
+"""Why a run died, in words, for bench_errors.log.
 
-runs.py reads oom_counts() before a run and, when the run failed,
-explain(returncode, oom_before, oom_counts()) for the first line of its error
-(runs._why_failed). A SIGKILL while an OOM-kill counter rose is told apart from
-any other SIGKILL (a time limit, the batch system, a user).
+A negative return code is a signal. SIGKILL (-9) is the hard one: the bench's
+own timeout reports itself ("TIMEOUT after N s"), so a bare -9 came from
+outside -- most often the out-of-memory killer. The memory cgroup the bench
+runs in (Slurm's task/cgroup: the job's, or its step's) counts every OOM kill
+(cgroup v1 memory.oom_control, v2 memory.events, "oom_kill N"): reading the
+counters before and after a run tells an OOM kill from the rest.
 
-Reconstructed on 2026-10-14 from those call sites: 0b621539 imported this
-module but did not add it. Best effort throughout: an unreadable counter is
-None, and explain() never raises.
-"""
+Best effort, never raises: no cgroup information gives a vaguer sentence."""
 import os
 import signal
 
-# Signals that leave a core-sized hint worth giving.
-_CRASH = {"SIGSEGV": "invalid memory access", "SIGBUS": "bus error", "SIGABRT": "abort() (an assertion, "
-          "an invariant failure or std::terminate)", "SIGFPE": "arithmetic exception", "SIGILL": "illegal instruction"}
+_NO_LIMIT = 1 << 60       # v1 writes "no limit" as a huge number
+
+_HINTS = {
+    signal.SIGSEGV: "invalid memory access: see its full output, or rerun it under gdb / ASan",
+    signal.SIGABRT: "abort(): a failed assert, std::terminate, or a sanitizer report",
+    signal.SIGBUS: "bus error: a misaligned access, or a mapped file / huge page gone",
+    signal.SIGFPE: "arithmetic exception (integer division by zero?)",
+    signal.SIGILL: "illegal instruction: a binary built for another CPU (-march) than this node's?",
+    signal.SIGTERM: "stopped from outside: scancel / ccc_mdel, or the job's time limit",
+}
 
 
-def _counter(path, key):
-    """The value of `key <n>` in @p path (/proc/vmstat, memory.events), or None."""
+def _memory_cgroup_dirs():
+    """This process's memory cgroup directory and its ancestors, innermost
+    first ([] when there is none to read)."""
     try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                name, _, value = line.partition(" ")
-                if name == key:
-                    return int(value)
+        with open("/proc/self/cgroup") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return []
+    v1 = v2 = None
+    for ln in lines:
+        parts = ln.split(":", 2)
+        if len(parts) != 3:
+            continue
+        if "memory" in parts[1].split(","):
+            v1 = parts[2]
+        elif parts[0] == "0" and parts[1] == "":
+            v2 = parts[2]
+    if v1 is not None:
+        root, rel = "/sys/fs/cgroup/memory", v1
+    elif v2 is not None:
+        root = ("/sys/fs/cgroup" if os.path.exists("/sys/fs/cgroup/cgroup.controllers")
+                else "/sys/fs/cgroup/unified")
+        rel = v2
+    else:
+        return []
+    rel = rel.strip("/")
+    dirs = []
+    while True:
+        d = os.path.join(root, rel) if rel else root
+        if os.path.isdir(d):
+            dirs.append(d)
+        if not rel:
+            break
+        rel = os.path.dirname(rel)
+    return dirs
+
+
+def _read_kv(path, key):
+    try:
+        with open(path) as f:
+            for ln in f:
+                k, _, v = ln.partition(" ")
+                if k == key:
+                    return int(v)
     except (OSError, ValueError):
         pass
     return None
 
 
-def _cgroup_events():
-    """This process's cgroup v2 memory.events (a Slurm job's own cgroup), or None."""
-    try:
-        with open("/proc/self/cgroup", encoding="utf-8") as f:
-            for line in f:
-                hier, _, rest = line.rstrip("\n").partition(":")
-                ctrl, _, path = rest.partition(":")
-                if hier == "0" and ctrl == "":
-                    events = os.path.join("/sys/fs/cgroup", path.lstrip("/"), "memory.events")
-                    return events if os.path.exists(events) else None
-    except OSError:
-        pass
+def oom_counts():
+    """{cgroup dir: oom_kill count} for this process's memory cgroups."""
+    out = {}
+    for d in _memory_cgroup_dirs():
+        n = _read_kv(os.path.join(d, "memory.oom_control"), "oom_kill")
+        if n is None:
+            n = _read_kv(os.path.join(d, "memory.events"), "oom_kill")
+        if n is not None:
+            out[d] = n
+    return out
+
+
+def _limit(d):
+    """The memory limit of cgroup @p d in bytes, or None (none / unreadable)."""
+    for name in ("memory.limit_in_bytes", "memory.max"):
+        try:
+            with open(os.path.join(d, name)) as f:
+                v = f.read().strip()
+        except OSError:
+            continue
+        if v == "max":
+            return None
+        try:
+            v = int(v)
+        except ValueError:
+            return None
+        return None if v >= _NO_LIMIT else v
     return None
 
 
-def oom_counts():
-    """The OOM-kill counters now: (system-wide oom_kill from /proc/vmstat,
-    this cgroup's oom_kill from memory.events); None where unreadable."""
-    events = _cgroup_events()
-    return (_counter("/proc/vmstat", "oom_kill"), _counter(events, "oom_kill") if events else None)
+def _gib(n):
+    return f"{n / 2**30:.1f} GiB"
 
 
-def _rose(before, after):
-    """Whether any counter readable at both ends went up."""
-    return any(b is not None and a is not None and a > b for b, a in zip(before or (), after or ()))
-
-
-def explain(returncode, oom_before, oom_after):
-    """One line on why a run with @p returncode died, or "" when no signal killed it.
-
-    @p returncode is a subprocess return code (-N: killed by signal N);
-    @p oom_before / @p oom_after are oom_counts() around the run."""
-    try:
-        if returncode is None or returncode >= 0:
-            return ""
-        signum = -returncode
-        try:
-            name = signal.Signals(signum).name
-        except ValueError:
-            name = f"signal {signum}"
-        if signum == signal.SIGKILL:
-            if _rose(oom_before, oom_after):
-                return ("killed by SIGKILL from the OOM killer (oom_kill rose during the run): "
-                        "it ran out of memory")
-            return "killed by SIGKILL, no OOM kill counted (a time limit, the batch system or a user)"
-        hint = _CRASH.get(name)
-        return f"killed by {name}" + (f": {hint}" if hint else "")
-    except Exception:  # noqa: BLE001 -- a diagnostic must not hide the failure it describes
+def explain(returncode, before, after):
+    """One or two lines saying why a run that ended with @p returncode died,
+    @p before / @p after: oom_counts() around it. "" for a plain exit code."""
+    if returncode is None or returncode >= 0:
         return ""
+    sig = -returncode
+    try:
+        name = signal.Signals(sig).name
+    except ValueError:
+        name = f"signal {sig}"
+    if sig != signal.SIGKILL:
+        hint = _HINTS.get(sig)
+        return f"KILLED BY {name} (signal {sig})" + (f": {hint}" if hint else "")
+    hit = [d for d, n in after.items() if n > before.get(d, n)]
+    if hit:
+        lim = next((x for x in (_limit(d) for d in hit) if x), None)
+        where = hit[0]
+        return (f"KILLED BY THE OUT-OF-MEMORY KILLER (SIGKILL): the memory cgroup counted an OOM kill "
+                f"during this run{f' (limit {_gib(lim)})' if lim else ''} [{where}].\n"
+                "Too much memory for the job: fewer threads or a smaller size, or more memory "
+                "(more cores for the job, or #MSUB -M / --mem).")
+    lims = [x for x in (_limit(d) for d in after) if x]
+    known = (f"no OOM kill counted by its memory cgroup (limit {_gib(min(lims))})" if lims else
+             "no OOM kill counted by its memory cgroup" if after else
+             "no cgroup information to tell an OOM kill")
+    return ("KILLED BY SIGKILL (signal 9) from outside the bench -- its own timeout says TIMEOUT: "
+            f"{known}.\nLikely causes: the node's out-of-memory killer, the job's time limit, "
+            "a scancel / ccc_mdel. Look for 'oom' in the job's log (Log tab).")

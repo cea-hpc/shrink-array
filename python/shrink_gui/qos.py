@@ -136,10 +136,14 @@ def names(rows):
 
 def limits(rows, name, partition):
     """The row of QoS @p name on @p partition (its own row first, then a
-    "*" one), or None: the QoS is not open there."""
+    "*" one), or None: the QoS is not open there. A MaxSub of 0 (not blank)
+    closes it: ccc_mqinfo's "long  *  ... 0" row means long is open only on
+    the partitions it lists, and ccc_msub rejects it elsewhere ("Invalid qos
+    specification")."""
     own = [r for r in rows if r["name"] == name and r["partition"] == partition]
     anyp = [r for r in rows if r["name"] == name and r["partition"] in ("*", "")]
-    return (own or anyp or [None])[0]
+    row = (own or anyp or [None])[0]
+    return None if row is None or row.get("max_sub") == 0 else row
 
 
 # A directive prefix at the start of a line (#MSUB, #SBATCH, #PBS...).

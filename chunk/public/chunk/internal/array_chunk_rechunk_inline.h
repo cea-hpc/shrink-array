@@ -261,16 +261,14 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
     // cst_buffer_size (the dynamic-mode ceiling). A chunk wider than that
     // would read those buffers out of bounds, so refuse the re-chunk.
     // Raise CHUNK_DYN_MAX_SIZE if a legitimate geometry needs to be larger.
+    // Message in every build, as for an invalid size above.
     if (new_size > cst_buffer_size)
     {
-        if constexpr (build_config::any_check)
-        {
-            std::fprintf(stderr,
-                         "[RECHUNK] rechunk_to(%u) refused: exceeds cst_buffer_size=%u "
-                         "(raise CHUNK_DYN_MAX_SIZE)\n",
-                         new_size, shrink_array::cst_buffer_size);
-            std::fflush(stderr);
-        }
+        std::fprintf(stderr,
+                     "[RECHUNK] rechunk_to(%u) refused: exceeds cst_buffer_size=%u "
+                     "(raise CHUNK_DYN_MAX_SIZE)\n",
+                     new_size, shrink_array::cst_buffer_size);
+        std::fflush(stderr);
         return;
     }
 
