@@ -50,6 +50,17 @@ application's threads), collective kept for OpenMP + OMPT. A TBB application
 gets an adaptor, `shrink_array::tbb::parallel_for(range, body)`, that calls
 `tbb::parallel_for` and then `finalize_parallel_phase()`.
 
+*Settled (step 6)*: the serial shape is the contract of every backend --
+`begin_parallel_phase()` on every thread that writes, before its first write,
+then `finalize_parallel_phase()` once, from one thread, after the writers have
+stopped. It already drained every rank's queue itself (the serial flush), so
+nothing changes for an application that uses it. The collective shapes -- the
+split end (`finalize_parallel_phase_only_flush()` in the region,
+`finalize_parallel_phase_after_flush()` after it) and `finalize_barrier_phase()`
+-- need a barrier of the application's team: OpenMP only. OMPT is the automatic
+caller of the contract for OpenMP applications; `parallel_phase()` the manual
+one, on a team of the backend. `manage_ompt.h` states the contract.
+
 ## 3. Steps
 
 1. **This plan** and the inventory (this file).
@@ -131,7 +142,13 @@ gets an adaptor, `shrink_array::tbb::parallel_for(range, body)`, that calls
    _OPENMP` of `tc_allocator.h`, `tc_allocator.cpp` and `chunk_base.h` (the
    serial allocators), which become `FAST_ALLOC_PMP_THREADED`.
 6. **E**: the phase contract (section 2) written down and implemented; OMPT
-   becomes one way of calling it.
+   becomes one way of calling it. *Done*: the contract in section 2 and in
+   `manage_ompt.h`; `parallel_phase()` opens its region with `pmp::team`
+   (`num_threads` 0: the backend's default, OpenMP `omp_get_max_threads()`,
+   where it used a region with no `num_threads` clause), and the barrier of
+   `finalize_parallel_phase_only_flush()` is `pmp::current_team().barrier()`.
+   No `#pragma omp` is left outside `pmp_loops.h`. The TBB adaptor of section 2
+   waits for step 8.
 7. **Pool backend**: `std::jthread` workers, `std::barrier`, static partitioning
    (first touch where the static loops use the data); CMake
    `CHUNK_THREADS=openmp|pool|serial`; a validation harness driving arrays from

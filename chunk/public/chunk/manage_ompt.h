@@ -18,7 +18,8 @@
 
 /**
  * @file manage_ompt.h
- * @brief Parallel-phase transition hooks of the chunk library.
+ * @brief Parallel-phase transition hooks of the chunk library: the phase
+ *        contract (docs/threading_backends.md, section 2).
  *
  * The library defers two kinds of work to well-defined points of the OpenMP
  * lifecycle rather than doing it inline at each write:
@@ -27,14 +28,32 @@
  *  - **deferred compression**: chunks that became compressible are collected
  *    as "candidates" and compressed in bulk between phases.
  *
- * The functions below are those points. They come in two flavours, selected at
- * build time:
+ * The functions below are those points. The contract, whatever runs the
+ * application's threads:
+ *  - a **phase** is the stretch between two serial points, during which the
+ *    application's threads write the arrays concurrently;
+ *  - **begin**: every thread that writes calls begin_parallel_phase() before
+ *    its first write of the phase (it caches the thread's rank);
+ *  - **end**: ONE thread calls finalize_parallel_phase() once every writer has
+ *    stopped (the team has joined): it drains the deferred queues of every
+ *    rank itself, then runs the compression pass on the library's backend. No
+ *    barrier inside the application's threads -- the shape every backend
+ *    supports.
+ *  - Two more shapes need a team barrier in the application's region, so the
+ *    OpenMP backend alone has them: the split end
+ *    (finalize_parallel_phase_only_flush() by every thread inside the region,
+ *    finalize_parallel_phase_after_flush() after it) and the barrier
+ *    transition (finalize_barrier_phase()).
+ *
+ * Who calls them, selected at build time:
  *  - `CHUNK_OPT_OMPT` (an OMPT build): manage_ompt.cpp registers an OMPT
- *    tool and calls them from the runtime callbacks; the application code has
- *    nothing to do (see `build_config::has_ompt`);
+ *    tool and calls them from the runtime callbacks -- the automatic
+ *    implementation of the contract for OpenMP applications; the application
+ *    code has nothing to do (see `build_config::has_ompt`);
  *  - otherwise the application calls them explicitly around its parallel
  *    regions (see the `*_g()` wrappers of examples/shrink_bench, guarded by
- *    `build_config::has_not_ompt` so exactly one of the two paths is active).
+ *    `build_config::has_not_ompt` so exactly one of the two paths is active),
+ *    or lets parallel_phase() do it.
  *
  * All of them are no-ops unless `build_config::use_openmp &&
  * chunk_config::is_shrink_enabled`, so they can be called unconditionally from
@@ -53,7 +72,8 @@
 
 #include <utility> // std::forward
 
-#include "chunk/config.h" // build_config::has_not_ompt
+#include "chunk/config.h"    // build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h" // pmp::team (parallel_phase's region)
 
 namespace shrink_array
 {
@@ -85,9 +105,11 @@ extern void finalize_parallel_phase();
 /**
  * @brief First half of the split phase-end, called from **inside** the parallel region.
  *
- * Emits an `omp barrier` (the `omp for` loops are typically `nowait`: this
- * guarantees every thread has finished enqueueing), then each thread drains its
- * **own** queue, by the rank that is only stable while the region is open.
+ * Meets the team on its barrier (pmp::current_team().barrier(): the `omp for`
+ * loops are typically `nowait`, this guarantees every thread has finished
+ * enqueueing), then each thread drains its **own** queue, by the rank that is
+ * only stable while the region is open. OpenMP backend only: the barrier is
+ * the application's team's.
  *
  * Must be paired with finalize_parallel_phase_after_flush(), called once the
  * region is closed.
@@ -143,7 +165,7 @@ __attribute__((weak)) extern void check_ompt_tool_loaded();
  * @brief A parallel region with the phase protocol already in place:
  *        begin_parallel_phase() by every thread before @p body,
  *        finalize_parallel_phase() once the region is over.
- * @details The same as
+ * @details A team of the backend (pmp::team). With OpenMP, the same as
  *          @code
  *          #pragma omp parallel num_threads(num_threads)
  *          {
@@ -170,21 +192,8 @@ void parallel_phase(int num_threads, Body&& body)
         }
         body();
     };
-#ifdef _OPENMP
-    if (num_threads > 0)
-    {
-    #pragma omp parallel num_threads(num_threads)
-        team_body();
-    }
-    else
-    {
-    #pragma omp parallel
-        team_body();
-    }
-#else
-    (void)num_threads;
-    team_body();
-#endif
+    // num_threads 0 (or less): the backend's default team (OpenMP: omp_get_max_threads()).
+    pmp::team(pmp::options{.num_threads = num_threads}, [&team_body](pmp::Team& /*team*/) { team_body(); });
     if constexpr (build_config::has_not_ompt)
     {
         finalize_parallel_phase();

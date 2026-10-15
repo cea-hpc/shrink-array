@@ -30,7 +30,7 @@
 #include "chunk/internal/manager_chunk.h"    // ManagerChunkInt, ManagerChunkParallelImpl
 #include "chunk/all_type_chunk.h"            // the declarations defined here
 #include "chunk/internal/churn_counters.h"   // churn::note_phase_end
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, g_fast_omp_rank, pmp::team
+#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, g_fast_omp_rank, pmp::team, current_team
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/env_parse.h"        // env_number (CHUNK_RECLAIM_PHASE_KEEP)
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
@@ -149,13 +149,13 @@ namespace shrink_array
         if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
         {
             // Barrier + flush must both happen inside the same enclosing
-            // #pragma omp parallel region:
+            // parallel region (the application's team, hence OpenMP only):
             //  - barrier: all threads finish enqueueing deferred ops before any
             //    thread starts flushing (required because the surrounding
             //    #pragma omp for are typically `nowait`)
             //  - flush: each thread drains its OWN queue using its own rank,
             //    which is stable inside the current parallel region
-#pragma omp barrier
+            pmp::current_team().barrier();
 
             auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
             ens_type_chunk.flush_all_deferred(true);
