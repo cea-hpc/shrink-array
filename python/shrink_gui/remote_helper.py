@@ -1096,15 +1096,28 @@ def act_errors(a):
     meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
     opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
     pats = [p for p in opts.get("files") or [] if p and os.sep not in p and p not in (".", "..")]
-    if not pats:
+    if opts.get("fail_re"):
+        # No error file: the log of each failure, named by the run's own
+        # output (compile_all.sh: "[FAIL] <build> ... → <its log>").
+        logs = []
+        for m in re.finditer(opts["fail_re"], read(os.path.join(d, "out.log"), ""), re.M):
+            p = os.path.expanduser(m.group(1))
+            if os.path.isfile(p) and p not in logs:
+                logs.append(p)
+        if not logs:
+            print(json.dumps({"note": "aucun échec dans le log du run", "files": [], "count": 0}))
+            return
+        found, od, pats = {p: True for p in logs}, os.path.dirname(logs[0]), []
+    elif not pats:
         print(json.dumps({"note": "pas de log d'erreurs pour ce programme", "files": []}))
         return
-    od = out_dir(d, meta)
-    if not od:
-        print(json.dumps({"note": "pas encore de dossier de sortie annoncé dans le log", "files": []}))
-        return
-    od = os.path.expanduser(od)
-    found = {}
+    else:
+        od = out_dir(d, meta)
+        if not od:
+            print(json.dumps({"note": "pas encore de dossier de sortie annoncé dans le log", "files": []}))
+            return
+        od = os.path.expanduser(od)
+        found = {}
     for pat in pats:
         mine = own_copy(d, pat)
         if mine:                 # the copy the run kept when it ended
@@ -1144,7 +1157,7 @@ def act_errors(a):
         shared.append(opts["cases"])
     out = {"dir": od if shared or not paths else d, "files": files, "count": count,
            "total_files": len(paths),
-           "newer": newer_writer(base, rid, meta, od) if shared else None}
+           "newer": newer_writer(base, rid, meta, od) if shared and not opts.get("fail_re") else None}
     if not paths:
         out["note"] = "aucun fichier %s dans %s" % (", ".join(pats), od)
     if opts.get("cases"):
