@@ -706,8 +706,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             {
                 return;
             }
-            const const_iterator e = begin() + last;
-            for (const_iterator it = begin() + first; it != e; ++it)
+            // begin() takes `this const Derived&` (deducing this): not callable on the base.
+            const Derived&       d = static_cast<const Derived&>(*this);
+            const const_iterator e = d.begin() + last;
+            for (const_iterator it = d.begin() + first; it != e; ++it)
             {
                 f(*it);
             }
