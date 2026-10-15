@@ -130,6 +130,7 @@ La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adap
 | nom | signification |
 |---|---|
 | `build_config::use_openmp` | construit avec OpenMP |
+| `build_config::threaded` | la bibliothèque fait tourner des threads (tout backend `CHUNK_THREADS` sauf `serial`) |
 | `build_config::has_ompt`, `build_config::has_not_ompt` | construit avec l'outil OMPT, ou non |
 | `build_config::chunk_dynamic` | géométrie dynamique (bibliothèque `_dyn`) |
 | `chunk_config::use_chunk`, `chunk_config::use_chunk2`, `chunk_config::use_chunk2a` | la variante |

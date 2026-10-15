@@ -62,7 +62,7 @@
  *    different path: no CAS, no rank, and the element counters
  *    (`use_compression_with_counter`) to reset, which the parallel path does not
  *    maintain. The two live on the two specialisations of Chunk2OmpPolicy
- *    (build_config::use_openmp); the queue-driven compression is on
+ *    (build_config::threaded); the queue-driven compression is on
  *    Chunk2FastCompPolicy<..., true>.
  *  - **Geometry comes from the queued entry, never from the ambient size.**
  *    Every candidate tuple carries the chunk count of its owning array

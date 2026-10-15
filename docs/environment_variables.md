@@ -27,6 +27,7 @@
 | option | default | effect |
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp` or `serial` (`pool` to come); empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
 | `CHUNK_STATIC_SIZES` | `256;1024` | static chunk sizes built (targets `_<size>`) |
 | `CHUNK_BUILD_DYN` | `ON` | also build a dynamic-geometry library (`_dyn`) per variant |
 | `CHUNK_STD_ALLOC` | `OFF` | standard allocator for the chunk buffers instead of `fast_allocators` (useful under ASan: each buffer is a real `malloc`) |

@@ -65,7 +65,7 @@
 #include <thread>    // std::this_thread::yield
 #include <vector>    // std::vector
 
-#include "chunk/config.h"                              // build_config::use_openmp
+#include "chunk/config.h"                              // build_config::threaded
 #include "chunk/internal/chunk_size_policy.h"          // t_active_chunk_size / t_alloc_key, restored per released block
 #include "chunk/internal/cpu_pause.h"                  // CHUNK_CPU_PAUSE
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::heavy_barrier / asymmetric_active
@@ -78,7 +78,7 @@ namespace shrink_array::read_reclaim
 {
 
 /// @brief The protocol is compiled in: OpenMP builds only.
-inline constexpr bool enabled = build_config::use_openmp;
+inline constexpr bool enabled = build_config::threaded;
 
 /// @brief Reader slots: one per thread that has ever read, a cache line each.
 inline constexpr int kSlots = CHUNK_READ_RECLAIM_SLOTS;

@@ -25,7 +25,7 @@
 #include <vector>  // std::vector
 
 #include "chunk/internal/chunk_base.h"          // ChunkBase
-#include "chunk/config.h"                       // build_config::use_openmp, chunk_config
+#include "chunk/config.h"                       // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_size_config.h"   // ChunkElems
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write (CHUNK_STATS)
@@ -52,7 +52,7 @@ class AllTypeChunk;
  * @brief The chunk reuse pools' load-balancing and teardown surface, split on
  *        the thread model.
  *
- * @tparam Enabled build_config::use_openmp.
+ * @tparam Enabled build_config::threaded.
  * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING (as on
  *                 ParamChunkParallelInterface, param_chunk.h): it keeps the
  *                 bodies TEMPLATES, so a build instantiates only its own, and
@@ -65,7 +65,7 @@ class AllTypeChunk;
  *       guard; those with nothing to do in a model are no-ops.
  * @see release_chunk_pools(), the verb for "let go of the reuse pools" in any build.
  */
-template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
+template <bool Enabled = build_config::threaded, typename AllT = AllTypeChunk>
 struct ChunkPoolParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the pools are per-rank.
@@ -200,7 +200,7 @@ class ChunkCounterPolicy
  * @brief Chunk's OpenMP-only surface: per-thread allocation, CAS and clearing.
  *
  * @details A serial build has no thread ranks, CAS-stealing window or
- *          per-thread free-lists. Split on build_config::use_openmp (as
+ *          per-thread free-lists. Split on build_config::threaded (as
  *          ChunkDeferredOpsPolicy, CompressionManagerOmpPolicy): each mode
  *          declares the clearing verb it has, clear_st(int) here, clear_st()
  *          serially.
@@ -210,9 +210,9 @@ class ChunkCounterPolicy
  *
  * @tparam T       stored element type
  * @tparam Derived CRTP derived chunk type (Chunk<T>)
- * @tparam Enabled build_config::use_openmp
+ * @tparam Enabled build_config::threaded
  */
-template <typename T, typename Derived, bool Enabled = build_config::use_openmp>
+template <typename T, typename Derived, bool Enabled = build_config::threaded>
 class ChunkOmpPolicy : public ChunkBase<T, Derived>
 {
   public:
@@ -517,7 +517,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
         : ChunkCounterPolicy<chunk_config::use_compression_with_counter>(other)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             values.store(other.values.load());
         }
@@ -539,7 +539,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
         // Same reason as the copy ctor: propagate the zero-counter state.
         ChunkCounterPolicy<chunk_config::use_compression_with_counter>::operator=(other);
 
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             T* loaded_value = other.values.load();
             values.store(loaded_value);
@@ -585,7 +585,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
                 increm_chunk_write<ChunkType>();
             }
 
-            if constexpr (build_config::use_openmp)
+            if constexpr (build_config::threaded)
             {
                 this->create_value(thr_rank);
             }

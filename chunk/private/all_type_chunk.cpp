@@ -25,7 +25,7 @@
 #include <vector>    // for vector
 #include <malloc.h>  // malloc_trim, mallopt
 
-#include "chunk/config.h"                    // build_config::use_openmp, chunk_config
+#include "chunk/config.h"                    // build_config::threaded / use_openmp, chunk_config
 #include "chunk/singleton.h"                 // SingletonChk
 #include "chunk/internal/manager_chunk.h"    // ManagerChunkInt, ManagerChunkParallelImpl
 #include "chunk/all_type_chunk.h"            // the declarations defined here
@@ -130,7 +130,7 @@ namespace shrink_array
 
     void begin_parallel_phase()
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             g_fast_omp_rank = CHUNK_PMP_THREAD_RANK;
         }
@@ -146,6 +146,8 @@ namespace shrink_array
         {
             churn::note_phase_end();
         }
+        // use_openmp, not threaded: the barrier is the application's team's,
+        // which only OpenMP gives the library (the phase contract, manage_ompt.h).
         if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
         {
             // Barrier + flush must both happen inside the same enclosing
@@ -173,6 +175,7 @@ namespace shrink_array
         {
             phase_guard::next_phase();
         }
+        // use_openmp: a shape of the phase contract only OpenMP has (manage_ompt.h).
         if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
         {
             const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
@@ -201,7 +204,7 @@ namespace shrink_array
         {
             phase_guard::next_phase();
         }
-        if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
+        if constexpr (build_config::threaded && chunk_config::is_shrink_enabled)
         {
             auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
             ens_type_chunk.flush_all_deferred(false);
@@ -228,6 +231,7 @@ namespace shrink_array
 
     bool finalize_barrier_phase()
     {
+        // use_openmp: a shape of the phase contract only OpenMP has (manage_ompt.h).
         if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
         {
             // NOT const: flush_all_deferred() mutates the managers it drains.
@@ -645,6 +649,6 @@ namespace shrink_array
     // Instantiate exactly the specialisation this build selected. The other one is
     // never named, so its bodies are never instantiated -- which is what lets the
     // OpenMP versions call manager virtuals that a serial build does not declare.
-    template class AllTypeChunkParallelInterface<AllTypeChunk, build_config::use_openmp>;
+    template class AllTypeChunkParallelInterface<AllTypeChunk, build_config::threaded>;
     template struct AllTypeChunkDynInterface<AllTypeChunk, build_config::chunk_dynamic>;
 } // namespace shrink_array

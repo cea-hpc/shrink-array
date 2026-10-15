@@ -116,7 +116,7 @@ inline constexpr bool pool_ledger_enabled = false;
 #elif CHUNK_OPT_FORCE_LEDGER
 inline constexpr bool pool_ledger_enabled = build_config::any_check;
 #else
-inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::use_openmp;
+inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::threaded;
 #endif
 
 /// @brief Record a ctx block allocation; fails an invariant if @p ptr is already live as ctx or as op.

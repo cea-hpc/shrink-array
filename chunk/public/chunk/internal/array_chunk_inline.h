@@ -202,7 +202,7 @@ void ArrayChunk<T, ind_type>::clear_core()
     manager_chunk::compute_size_buffer_reuse();
     manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         pmp::team(pmp::options{},
                   [&](pmp::Team& team)
@@ -388,7 +388,7 @@ void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
     }
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         // A large shrink takes a team of its own, as clear_core()'s release
         // does: each thread zeroes and parks into ITS rank's reuse list of this

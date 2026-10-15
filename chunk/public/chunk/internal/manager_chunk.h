@@ -31,7 +31,7 @@
 #include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/chunk_def.h"                  // ChunkDef::size_min_buffer_reuse
 #include "chunk/chunk2A_def.h"                // Chunk2ADef: the reuse budget constants
-#include "chunk/config.h"                     // build_config::use_openmp, chunk_config::chunk_dynamic
+#include "chunk/config.h"                     // build_config::threaded, chunk_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // thread_chunk_size, set_thread_chunk_size
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_REUSE_SHARE_DIV, CHUNK_REUSE_FLOOR_KB)
 #include "chunk/internal/TChunk.h"            // TChunkComp, TChunk2CompMap, TChunk2AComp
@@ -106,9 +106,9 @@ struct ManagerChunkDynInterface<false>
  *          reuse lists, deferred ops; serial: one allocator), hence two
  *          specializations rather than one set with no-ops.
  *
- * @tparam UseOpenMP Whether the parallel surface is the one compiled in.
+ * @tparam Threaded Whether the parallel surface is the one compiled in.
  */
-template <bool UseOpenMP = build_config::use_openmp>
+template <bool Threaded = build_config::threaded>
 struct ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: per-thread allocators, reuse lists and deferred ops.
@@ -291,7 +291,7 @@ struct ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynIn
  *          bodies reach ManagerChunk's state through `mgr` (statics) and a CRTP
  *          down-cast (max_thr); ManagerChunk befriends the policies for that.
  */
-template <template <typename> class CHUNK_T, typename T, bool UseOpenMP = build_config::use_openmp>
+template <template <typename> class CHUNK_T, typename T, bool Threaded = build_config::threaded>
 class ManagerChunkParallelImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the per-rank allocator and free-list overrides.
@@ -745,7 +745,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         std::size_t collected = 0;
         // OpenMP builds only, like the re-chunk's sweep: the serial
         // TCTypeAllocator has no empty_slab_sweep / collect_empty_slabs.
-        if constexpr (chunk_config::use_fast_alloc && build_config::use_openmp)
+        if constexpr (chunk_config::use_fast_alloc && build_config::threaded)
         {
             if (CHUNK_PMP_IN_PARALLEL_REGION)
             {
@@ -1416,7 +1416,7 @@ for (int r = 0; r < n_thr; ++r)
                                                [[maybe_unused]] unsigned int      size,
                                                [[maybe_unused]] TeamDrainScratch& s) noexcept
     {
-        if constexpr (chunk_config::chunk_dynamic && chunk_config::use_fast_alloc && build_config::use_openmp)
+        if constexpr (chunk_config::chunk_dynamic && chunk_config::use_fast_alloc && build_config::threaded)
         {
             using alloc_t = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
             team.single(
@@ -1523,7 +1523,7 @@ for (int r = 0; r < n_thr; ++r)
     // a call fail to compile there.
     /// @brief The Chunk2A candidate list (serial builds: a single one).
     static auto& get_chunk2A_to_compress_potentially() noexcept
-        requires(!build_config::use_openmp)
+        requires(!build_config::threaded)
     {
         return chunk2A_to_compress_potentially;
     }
@@ -1531,7 +1531,7 @@ for (int r = 0; r < n_thr; ++r)
     ///        serial build).
     static auto& get_chunk2A_to_compress_potentially([[maybe_unused]] int thr) noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             return chunk2A_to_compress_potentially_thr[thr];
         }
@@ -1544,7 +1544,7 @@ for (int r = 0; r < n_thr; ++r)
     /// @brief Is no Chunk2A chunk queued for compression, on any thread?
     [[nodiscard]] static bool is_chunk2A_to_compress_potentially_empty() noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             return chunk2A_to_compress_potentially_thr.empty();
         }
@@ -1576,7 +1576,7 @@ for (int r = 0; r < n_thr; ++r)
             const void* ptr = static_cast<const void*>(std::get<0>(tup));
             return ptr >= lo && ptr < hi;
         };
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto nthr = static_cast<int>(chunk2A_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
@@ -1599,7 +1599,7 @@ for (int r = 0; r < n_thr; ++r)
      */
     static void remove_from_compress_list_chunk2a_by_num_tab(int num_tab) noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto nthr = static_cast<int>(chunk2A_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
@@ -1626,7 +1626,7 @@ for (int r = 0; r < n_thr; ++r)
      */
     static void remove_from_compress_list_chunk2_by_num_tab([[maybe_unused]] int num_tab) noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto nthr = static_cast<int>(map_chunk2_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
@@ -1650,7 +1650,7 @@ for (int r = 0; r < n_thr; ++r)
     ///          other arrays' intact.
     static void remove_from_compress_list_chunk_by_num_tab(int num_tab) noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto nthr = static_cast<int>(chunk_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)

@@ -55,8 +55,9 @@
  *    `build_config::has_not_ompt` so exactly one of the two paths is active),
  *    or lets parallel_phase() do it.
  *
- * All of them are no-ops unless `build_config::use_openmp &&
- * chunk_config::is_shrink_enabled`, so they can be called unconditionally from
+ * All of them are no-ops unless `build_config::threaded &&
+ * chunk_config::is_shrink_enabled` (`build_config::use_openmp` for the split
+ * end and the barrier transition), so they can be called unconditionally from
  * serial or vector-mode builds.
  *
  * parallel_phase() (at the end) places begin_parallel_phase() and

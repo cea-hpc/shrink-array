@@ -109,9 +109,9 @@ struct FlushReplayState
  *
  * @tparam T         Element type
  * @tparam ChunkType Chunk variant the manager coordinates
- * @tparam Enabled   build_config::use_openmp; false leaves the policy empty
+ * @tparam Enabled   build_config::threaded; false leaves the policy empty
  */
-template <typename T, typename ChunkType, bool Enabled = build_config::use_openmp>
+template <typename T, typename ChunkType, bool Enabled = build_config::threaded>
 class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
 {
   public:
@@ -1003,7 +1003,7 @@ class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState
  * @note Thread safety: All methods are thread-safe
  */
 template <typename T, typename ChunkType>
-struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, build_config::use_openmp>
+struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, build_config::threaded>
 {
     CompressionManager()  = default;
     ~CompressionManager() = default;

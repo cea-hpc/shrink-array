@@ -18,7 +18,7 @@
 
 #include <algorithm> // std::max (get_size_max_tab_omp)
 
-#include "chunk/config.h"                         // build_config::any_check, build_config::use_openmp
+#include "chunk/config.h"                         // build_config::any_check, build_config::threaded
 #include "fast_allocators/internal/pmp_loops.h"   // fast_alloc::pmp: the loops and teams re-exported below
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp: the runtime queries, FAST_ALLOC_PMP_THREADED
 
@@ -45,6 +45,9 @@ using ::fast_alloc::pmp::team_any;
 using ::fast_alloc::pmp::team_sum;
 using ::fast_alloc::pmp::threaded;
 using ::fast_alloc::pmp::wait_mode;
+
+static_assert(build_config::threaded == threaded,
+              "chunk: the build's threading flag (CHUNK_OPT_THREADED) and the backend pmp_runtime.h selects disagree");
 } // namespace shrink_array::pmp
 
 namespace shrink_array
@@ -362,7 +365,7 @@ namespace shrink_array
 ///         otherwise @p nn.
 inline int get_size_max_tab_omp(int nn)
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
         if (nn > max_thr && max_thr > 1)
@@ -381,7 +384,7 @@ inline int get_size_max_tab_omp(int nn)
 ///         exceeds the thread count (>1), otherwise @p nn.
 inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
 

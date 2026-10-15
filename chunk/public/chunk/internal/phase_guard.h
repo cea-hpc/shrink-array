@@ -100,7 +100,7 @@ inline void next_phase() noexcept
 
 /// @brief The protocol is manual in this build (OpenMP without OMPT): the
 ///        generations are kept and the finalize check runs, in every build type.
-inline constexpr bool tracked = build_config::use_openmp && build_config::has_not_ompt;
+inline constexpr bool tracked = build_config::threaded && build_config::has_not_ompt;
 
 /// @brief ... and it is a check build: the begin check (check_write) runs too.
 inline constexpr bool active = tracked && build_config::any_check;

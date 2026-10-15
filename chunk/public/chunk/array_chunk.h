@@ -30,7 +30,7 @@
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
-#include "chunk/config.h"                               // build_config::use_openmp
+#include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
 #include "chunk/internal/in_t.h"                        // in_t<T>: resize's fill value
 #include "chunk/internal/proxy.h"                       // Proxy<T>: the element proxy and its registry
@@ -140,7 +140,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
      */
     explicit ArrayChunk(ind_type sz = 0)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             WriteCompressSyncPolicy<Proxy<T>>::ensure_initialized();
         }

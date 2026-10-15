@@ -1073,7 +1073,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     [[nodiscard]] static bool has_candidate_list(in_t<T> second_val) noexcept
     {
-        if constexpr (build_config::use_openmp && chunk_config::use_fast_block_compression)
+        if constexpr (build_config::threaded && chunk_config::use_fast_block_compression)
         {
             const auto& per_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr;
             const int   thr     = get_thr_rank_fast();

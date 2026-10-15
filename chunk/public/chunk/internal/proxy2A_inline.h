@@ -257,7 +257,7 @@ void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
 {
     const auto& vec_to_compress_potantially = manager_chunk2A::get_chunk2A_to_compress_potentially(thr_rank);
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         const int szm = manager_chunk2A::get_size_max_number_of_chunk_to_check_compress();
 
@@ -303,7 +303,7 @@ void Proxy2A<T>::perform_compression() noexcept
     {
         // Serial builds defer nothing, and flush_deferred exists only in the
         // OpenMP policy specialisation.
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
         }
@@ -321,7 +321,7 @@ void Proxy2A<T>::perform_compression() noexcept
     // Cleared whether or not there was work. Do not move it inside the `if`:
     // a list drained meanwhile would keep the rank on the slow path for every
     // write (see mark_list_dangerous_for_thread). OpenMP only, as the trigger.
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         CompressionManagerType::mark_list_safe_for_thread(thr_rank);
     }
@@ -633,7 +633,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
         need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body_bool);
     }
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if (need_async)
         {

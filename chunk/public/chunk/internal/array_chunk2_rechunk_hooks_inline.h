@@ -22,7 +22,7 @@
 
 #include "chunk/internal/array_chunk2_rechunk_hooks.h" // RechunkHooks2, the class these bodies belong to
 #include "chunk/internal/manager_chunk.h"              // manager_type — candidate store + reuse free-lists
-#include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/config.h"                     // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
 #include "chunk/internal/in_t.h"              // in_t<value_type>: the captured state
@@ -40,7 +40,7 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
     if constexpr (chunk_config::use_fast_block_compression)
     {
         const int num_tab = proxy_type::share_info_array->get_num_tab(self().registry_key());
-        if constexpr (Derived::is_not_bool && build_config::use_openmp)
+        if constexpr (Derived::is_not_bool && build_config::threaded)
         {
             const auto inf = self().get_info_second_value();
             const int  thr = get_thr_rank_fast();

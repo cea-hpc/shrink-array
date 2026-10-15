@@ -174,7 +174,7 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(ind_type first, ind_type las
         }
     };
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if (parallel_storage_init::use_own_team(static_cast<long>(c_last) - c_first))
         {

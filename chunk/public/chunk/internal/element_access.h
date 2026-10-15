@@ -35,7 +35,7 @@
 #include <cstddef> // std::size_t
 
 #include "chunk/bit.h"                // Bit, is_packed_bit_v
-#include "chunk/config.h"             // build_config::use_openmp
+#include "chunk/config.h"             // build_config::threaded
 #include "chunk/internal/bit_words.h" // bits::word_t, bits::get_bit, bits::set_bit_atomic
 
 namespace shrink_array
@@ -63,7 +63,7 @@ template <typename T>
 {
     if constexpr (is_packed_bit_v<T>)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             return T{bits::get_bit_relaxed(internal::as_words(v), i)};
         }
@@ -84,7 +84,7 @@ inline void elem_set(T* v, std::size_t i, T x) noexcept
 {
     if constexpr (is_packed_bit_v<T>)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             bits::set_bit_atomic(internal::as_words(v), i, static_cast<bool>(x));
         }

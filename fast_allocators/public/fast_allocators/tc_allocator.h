@@ -75,7 +75,7 @@
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
-#include "fast_allocators/internal/alloc_config.h"    // alloc_config::use_std_alloc / is_debug / use_openmp
+#include "fast_allocators/internal/alloc_config.h"    // alloc_config::use_std_alloc / is_debug / threaded
 #include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
 

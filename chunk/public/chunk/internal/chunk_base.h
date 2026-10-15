@@ -39,7 +39,7 @@
 #include "chunk/internal/element_access.h"              // elem_get: Bit buffers are words of bits
 #include "chunk/internal/relaxed_element.h"             // element_at<true>: the marking filter's reads
 #include "fast_allocators/internal/svalloc.h"           // svcalloc_align, svfree
-#include "chunk/config.h"                               // build_config::use_openmp, chunk_config::stats
+#include "chunk/config.h"                               // build_config::threaded, chunk_config::stats
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
 #include "chunk/ring_log_debug.h"                       // EV_VALUE_ALLOC/FREE (debug ring log)
 #include "chunk/internal/global_check.h"                // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
@@ -135,9 +135,9 @@ using fast_alloc::TCTypeAllocator;
 // some builds only, and a discarded branch would still phase-1-look-up a
 // missing member. Each specialization names ONLY the members of its config.
 //
-//   None    (serial, !use_openmp)            : nothing can be pending -> no-op
-//   Coarse  (OpenMP + SHRINK_SMALL_CHUNK)     : no counter -> is_not_available()
-//   Precise (OpenMP + per-chunk pending_ops_) : precise pending_ops_ load
+//   None    (serial, !threaded)               : nothing can be pending -> no-op
+//   Coarse  (threaded + SHRINK_SMALL_CHUNK)   : no counter -> is_not_available()
+//   Precise (threaded + per-chunk pending_ops_): precise pending_ops_ load
 // ============================================================================
 enum class DeferReadGate : std::uint8_t
 {
@@ -148,7 +148,7 @@ enum class DeferReadGate : std::uint8_t
 
 inline constexpr DeferReadGate defer_read_gate_mode = []
 {
-    if (!build_config::use_openmp)
+    if (!build_config::threaded)
     {
         return DeferReadGate::None;
     }
@@ -442,13 +442,13 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
 
 // ============================================================================
 // ChunkAllocPolicy: OpenMP vs serial chunk allocation, selected by
-// build_config::use_openmp. A genuine two-implementation split: BOTH modes
+// build_config::threaded. A genuine two-implementation split: BOTH modes
 // allocate, initialise and keep stats/ledger in sync; only OpenMP tries the
 // per-thread free list first. static_cast<Derived&>(*this) rather than a second
 // CRTPSupport<Derived> base, which would make ChunkBase's derived()/self()
 // ambiguous.
 // ----------------------------------------------------------------------------
-template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
+template <typename T, typename Derived, bool Threaded = build_config::threaded>
 struct ChunkAllocPolicy; // primary left undefined: only the 2 specializations exist
 
 // OpenMP: thread-local free-list reuse first, fresh allocation otherwise.
@@ -634,7 +634,7 @@ struct ChunkAllocPolicy<T, Derived, false>
 // static_cast<Derived&>(*this), not CRTPSupport<Derived> (which would make
 // ChunkBase's derived()/self() ambiguous).
 // ----------------------------------------------------------------------------
-template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
+template <typename T, typename Derived, bool Threaded = build_config::threaded>
 class ChunkDeferredOpsPolicy; // primary left undefined: only the 2 specializations exist
 
 template <typename T, typename Derived>
@@ -953,7 +953,7 @@ class ChunkBase : public CRTPSupport<Derived>,
 
   public:
     // Atomic pointer type conditional on OpenMP availability
-    using atomic_ptr_t = std::conditional_t<build_config::use_openmp, std::atomic<T*>, T*>;
+    using atomic_ptr_t = std::conditional_t<build_config::threaded, std::atomic<T*>, T*>;
 
     using ProxyType = ProxyTypeTrait<Derived>::Type;
 
@@ -985,7 +985,7 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     using AllocatorType = std::conditional_t<
         build_config::use_fast_alloc,
-        std::conditional_t<build_config::use_openmp, std::vector<TCTypeCAllocator<T>>, TCTypeAllocator<T>>,
+        std::conditional_t<build_config::threaded, std::vector<TCTypeCAllocator<T>>, TCTypeAllocator<T>>,
         NullValueAllocator>;
 
     /// @brief Outcome of scan_constants(): which hypothesis survived the walk.
@@ -1012,7 +1012,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @return Pointer to the chunk data
     [[nodiscard]] T* values_load() const noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             return values.load(std::memory_order_acquire);
         }
@@ -1027,7 +1027,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     void values_store(T* new_values) noexcept
     {
         CHUNK_CHECK_VALUES_PTR_C(new_values, "values_store", this);
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             values.store(new_values, std::memory_order_release);
         }
@@ -1461,7 +1461,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///          routing (per-size pool vs the single legacy allocator) is
     ///          delegated to Derived::route_omp_dynamic_alloc()/
     ///          route_serial_dynamic_alloc(), selected on
-    ///          build_config::use_openmp.
+    ///          build_config::threaded.
     /// @param thr_rank Calling thread's rank; only meaningful in OpenMP
     ///                 builds (ignored in serial builds).
     /// @return Reference to the allocator to use for this thread/build mode.
@@ -1473,7 +1473,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         if constexpr (build_config::use_fast_alloc)
         {
             // Dynamic-vs-static routing lives on ChunkDynamicAllocPolicy.
-            if constexpr (build_config::use_openmp)
+            if constexpr (build_config::threaded)
             {
                 return Derived::route_omp_dynamic_alloc(thr_rank, key);
             }
@@ -1732,7 +1732,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///
     /// A `#if`, not `if constexpr`: gcc still phase-1-looks-up a member named in
     /// a discarded branch. Its readers live in DeferredReadGate<Precise>, which
-    /// is selected under the same condition (use_openmp &&
+    /// is selected under the same condition (threaded &&
     /// use_precise_pending_gate).
     std::atomic<int32_t> pending_ops_{0};
 

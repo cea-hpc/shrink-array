@@ -366,7 +366,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         }
     }
 
-    if constexpr (build_config::not_use_openmp)
+    if constexpr (build_config::not_threaded)
     {
         for (int j = 0; j < nb_chunk; ++j)
         {
@@ -558,7 +558,7 @@ void ArrayChunk2A<T, ind_type>::compress_int(pmp::Team& team)
     //
     // What matters is its SIZE and TREND: a handful is the normal in-flight
     // residual; a large or growing count means the incremental path is not
-    // keeping up (or, in a use_openmp && !OMPT build, that Chunk2A::compress()
+    // keeping up (or, in a threaded && !OMPT build, that Chunk2A::compress()
     // returns early by design and make_block_compression is the only
     // compressor left -- see its guard in chunk2A_std_inline.h).
     const auto nb1 = static_cast<int>(tab_nb1.size());
@@ -646,7 +646,7 @@ void ArrayChunk2A<T, ind_type>::release_chunk_range(int first, int last)
         shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
     }
 
-    if constexpr (build_config::not_use_openmp)
+    if constexpr (build_config::not_threaded)
     {
         // Before Proxy2A::resize_tab_is_int() truncates the per-chunk type
         // table: clear_st() reads tab_type_cst_val[num_tab][j].

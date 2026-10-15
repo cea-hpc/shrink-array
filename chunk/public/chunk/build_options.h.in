@@ -30,6 +30,7 @@
 
 // clang-format off
 #define CHUNK_OPT_OPENMP                   @CHUNK_OPT_OPENMP@
+#define CHUNK_OPT_THREADED                 @CHUNK_OPT_THREADED@
 #define CHUNK_OPT_STD_ALLOC                @CHUNK_OPT_STD_ALLOC@
 #define CHUNK_OPT_FAST_ALLOC               @CHUNK_OPT_FAST_ALLOC@
 #define CHUNK_OPT_OMPT                     @CHUNK_OPT_OMPT@

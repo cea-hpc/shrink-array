@@ -47,7 +47,7 @@
 #include <atomic> // std::atomic, std::memory_order_relaxed
 #include <chrono> // std::chrono::steady_clock, std::chrono::microseconds
 
-#include "chunk/config.h"             // build_config::force_defer_every, build_config::use_openmp
+#include "chunk/config.h"             // build_config::force_defer_every, build_config::threaded
 #include "chunk/internal/cpu_pause.h" // CHUNK_CPU_PAUSE
 
 #ifndef CHUNK_TEST_READ_DELAY_EVERY
@@ -78,7 +78,7 @@ inline constexpr bool compiled = false;
 /// @brief The forced-deferral hook is compiled in: OpenMP builds only, the
 ///        deferred path does not exist without them.
 inline constexpr bool force_defer_compiled =
-    build_config::use_openmp && (compiled || build_config::force_defer_every > 0);
+    build_config::threaded && (compiled || build_config::force_defer_every > 0);
 
 /// @brief One write in N of every thread takes the deferred path (0 = off).
 ///        Set by the harness before its regions; read on the write path.

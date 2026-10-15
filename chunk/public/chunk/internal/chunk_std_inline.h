@@ -404,7 +404,7 @@ void Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
         increm_chunk_compress<Chunk<T>>();
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             increm_chunk_release_pool<Chunk<T>>();
         }
@@ -414,7 +414,7 @@ void Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
         }
     }
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         Base::free_block_to_pool(thr_rank, values);
     }

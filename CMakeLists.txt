@@ -93,10 +93,42 @@ set_property(CACHE SANITIZER PROPERTY STRINGS none thread address token)
 
 message(STATUS "Sanitizer: ${SANITIZER}")
 
+# ── Threading backend ─────────────────────────────────────────────────────────
+# CHUNK_THREADS picks the backend the library runs its threads on
+# (docs/threading_backends.md): openmp or serial; pool (std::jthread) comes
+# with step 7b. Empty (the default): from OMP, as before -- the scripts pass
+# -DOMP=ON. Set, it wins and sets OMP to match.
+set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, serial (empty: openmp when OMP=ON, serial otherwise)")
+set_property(CACHE CHUNK_THREADS PROPERTY STRINGS "" openmp serial)
+if(NOT CHUNK_THREADS STREQUAL "")
+    if(CHUNK_THREADS STREQUAL "pool")
+        message(FATAL_ERROR "CHUNK_THREADS=pool: the pool backend is not there yet (docs/threading_backends.md, step 7b)")
+    elseif(CHUNK_THREADS STREQUAL "openmp")
+        set(OMP ON CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    elseif(CHUNK_THREADS STREQUAL "serial")
+        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    else()
+        message(FATAL_ERROR "CHUNK_THREADS='${CHUNK_THREADS}': expected openmp or serial")
+    endif()
+endif()
+
 # ── OpenMP ────────────────────────────────────────────────────────────────────
 # Read by every target of the tree; the scripts pass -DOMP=ON. OFF (as an
 # undeclared variable read) builds the serial library.
 option(OMP "Build with OpenMP (the parallel library and examples)" OFF)
+if(OMP)
+    set(CHUNK_THREADS_BACKEND openmp)
+else()
+    set(CHUNK_THREADS_BACKEND serial)
+endif()
+# The library runs threads (build_config::threaded, alloc_config::threaded):
+# every backend but serial.
+if(CHUNK_THREADS_BACKEND STREQUAL "serial")
+    set(CHUNK_THREADED OFF)
+else()
+    set(CHUNK_THREADED ON)
+endif()
+message(STATUS "Threading backend: ${CHUNK_THREADS_BACKEND}")
 if(OMP)
     find_package(OpenMP 4.5 REQUIRED)
     set(CMAKE_LIBRARY_PATH /usr/local/lib/x86_64-unknown-linux-gnu ${CMAKE_LIBRARY_PATH})
@@ -763,6 +795,7 @@ add_subdirectory(chunk)
 
 if(NOT CHUNK_STD_ALLOC)
     set(ALLOCATORS_OMP ${OMP})
+    set(ALLOCATORS_THREADED ${CHUNK_THREADED})
     add_subdirectory(fast_allocators)
 endif()
 

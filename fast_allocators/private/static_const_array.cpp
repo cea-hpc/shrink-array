@@ -36,7 +36,7 @@ InfoFreeElt::InfoFreeElt()
 {
     // Serially there is no batching (freeBlock never enters the batching
     // branch), so the 2 x 10000-entry arrays are not worth allocating.
-    if constexpr (alloc_config::use_openmp)
+    if constexpr (alloc_config::threaded)
     {
         const int max_thr = FAST_ALLOC_PMP_MAX_THREADS;
 
@@ -130,7 +130,7 @@ class ManageTCTypeAllocator
     /// @brief Enrol an allocator. No-op in an OpenMP build.
     void addTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
-        if constexpr (!alloc_config::use_openmp)
+        if constexpr (!alloc_config::threaded)
         {
             set_allocator.insert(ptr_tcallocator); // serial builds only: no concurrent insert
         }
@@ -139,7 +139,7 @@ class ManageTCTypeAllocator
     /// @brief Withdraw one. No-op in an OpenMP build.
     void removeTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
-        if constexpr (!alloc_config::use_openmp)
+        if constexpr (!alloc_config::threaded)
         {
             set_allocator.erase(ptr_tcallocator); // serial builds only: no concurrent erase
         }

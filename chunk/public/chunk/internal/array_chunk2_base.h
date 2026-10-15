@@ -17,7 +17,7 @@
 #pragma once
 
 #include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
-#include "chunk/config.h"                    // build_config::not_use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/config.h"                    // build_config::not_threaded, chunk_config::use_fast_block_compression
 #include "chunk/chunk_traits.h"              // ArrayChunk2A forward declaration
 #include "chunk/internal/in_t.h"             // in_t<T>
 #include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
@@ -121,7 +121,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // nothing, so afterwards every list is empty and every dedup flag 0 -- the
         // precondition of Proxy2A::resize_tab_is_int(num_tab, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
-                      (build_config::not_use_openmp && std::is_same_v<Derived, ArrayChunk2A<T, ind_type>>))
+                      (build_config::not_threaded && std::is_same_v<Derived, ArrayChunk2A<T, ind_type>>))
         {
             derived().make_block_compression();
         }

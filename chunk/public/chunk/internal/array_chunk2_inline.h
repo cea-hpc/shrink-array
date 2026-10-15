@@ -287,7 +287,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
                 inf_array.ind          = ind;
             }
 
-            if constexpr (build_config::use_openmp)
+            if constexpr (build_config::threaded)
             {
                 const int sz = manager_chunk2::chunk2_to_compress_potentially_thr[0].size();
 
@@ -388,7 +388,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
             inf_array.second_value = true;
             inf_array.ind          = 0;
         }
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
@@ -639,7 +639,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
     ManagerChunk<Chunk2, T>::compute_size_buffer_reuse();
     ManagerChunk<Chunk2, T>::compute_size_max_number_of_chunk_to_check_compress();
 
-    if constexpr (build_config::not_use_openmp)
+    if constexpr (build_config::not_threaded)
     {
         if constexpr (is_not_bool)
         {
@@ -906,7 +906,7 @@ void ArrayChunk2<T, ind_type>::compress_int(pmp::Team& team)
                 chunk_list[jj].clear_st(1, ind);
             }
         }
-        else if constexpr (build_config::use_openmp)
+        else if constexpr (build_config::threaded)
         {
             // bool compresses via clear_int_st_bool (not clear_int_st); no clear_st
             // wrapper exists. In non-OMP, bool uses the counter path (manage_full_*
@@ -1130,7 +1130,7 @@ void ArrayChunk2<T, ind_type>::release_chunk_range(int first, int last)
         shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
     }
 
-    if constexpr (build_config::not_use_openmp)
+    if constexpr (build_config::not_threaded)
     {
         for (int j = first; j < last; ++j)
         {

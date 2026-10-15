@@ -34,7 +34,7 @@
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
-#include "chunk/config.h"                               // for use_openmp, g_in_rechunk_rebuild
+#include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
 #include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
@@ -111,7 +111,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     explicit ArrayChunk2A(ind_type sz = 0)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             WriteCompressSyncPolicy<Proxy2A<T>>::ensure_initialized();
         }

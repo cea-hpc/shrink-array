@@ -109,6 +109,7 @@ cmake --install build
 | option | default | effect |
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp` or `serial` (`pool` to come); empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
 | `CHUNK_STATIC_SIZES` | `256;1024` | the compile-time chunk sizes built, one library per size and variant |
 | `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen, and can change, at run time (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |

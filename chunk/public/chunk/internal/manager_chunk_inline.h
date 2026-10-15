@@ -156,7 +156,7 @@ void ManagerChunk<CHUNK_T, T>::resize_chunk_to_compress_potentially() const
     }
 
     // --- Complex types (Chunk2/2A) multi-threading logic ---
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         // Specific to Chunk2: Dual-value compression with static maps
         if constexpr (IsChunk2<CHUNK_T, T>)
@@ -607,7 +607,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::alloc_chunk_allocator_thr()
     const auto& self = static_cast<const mgr&>(*this);
 
     // std-alloc: allocator_data is NullValueAllocator (no per-thread array to build).
-    if constexpr (build_config::use_openmp && build_config::use_fast_alloc)
+    if constexpr (build_config::threaded && build_config::use_fast_alloc)
     {
         // Built whole: an allocator is not movable.
         *CHUNK_T<T>::allocator_data = std::vector<TCTypeCAllocator<T>>(static_cast<std::size_t>(self.max_thr));
@@ -697,7 +697,7 @@ void ManagerChunkDynImpl<CHUNK_T, T, true>::register_chunk_size(unsigned int siz
 
     if constexpr (build_config::use_fast_alloc)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             // Per-thread chunk allocators for `size`.
             CHUNK_T<T>::register_chunk_size(size, this_thr, block_size);
@@ -744,7 +744,7 @@ void ManagerChunk<CHUNK_T, T>::destroy_block_chunk()
 {
     // allocator_data is declared in every build (chunk_base.h) and is a dependent name, so the
     // discarded branch is never instantiated. std-alloc: destroy() is a no-op.
-    if constexpr (build_config::not_use_openmp)
+    if constexpr (build_config::not_threaded)
     {
         CHUNK_T<T>::allocator_data->destroy();
     }
@@ -1187,7 +1187,7 @@ bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int 
                                                   [[maybe_unused]] unsigned int size,
                                                   [[maybe_unused]] int          nb_chunk)
 {
-    if constexpr (build_config::chunk_dynamic && build_config::use_fast_alloc && build_config::use_openmp)
+    if constexpr (build_config::chunk_dynamic && build_config::use_fast_alloc && build_config::threaded)
     {
         // Without a slab budget there is nothing to build the keyed allocator
         // set from. Report the failure: the caller must NOT keep the key, or

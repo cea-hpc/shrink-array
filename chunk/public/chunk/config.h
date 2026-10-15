@@ -66,6 +66,16 @@ inline constexpr bool use_openmp = CHUNK_OPT_OPENMP != 0;
 // For call-site readability.
 inline constexpr bool not_use_openmp = !use_openmp;
 
+/// The library runs threads: every threading backend but serial (CMake
+/// CHUNK_THREADS, docs/threading_backends.md). What the per-rank machinery,
+/// the atomics, the deferred queues and the compression passes test.
+/// use_openmp stays for what only OpenMP gives: the application's team (the
+/// split phase end, the barrier transition), OMPT.
+inline constexpr bool threaded = CHUNK_OPT_THREADED != 0;
+
+// For call-site readability.
+inline constexpr bool not_threaded = !threaded;
+
 // ── Read-side visibility ────────────────────────────────────────────────────
 // The deferred-op visibility toll is at the READ entry points: writes do not flush; pure
 // reads materialise on demand (ChunkBase::reader_sync); a WAW guard discards a superseded
@@ -81,7 +91,7 @@ inline constexpr std::int64_t deferred_drain_threshold = CHUNK_OPT_DEFERRED_DRAI
 // of every thread down that path, alternating the two exits: check #1 (no writer flag
 // raised) and check #2 (flag raised then dropped). A CHUNK_FORCE_DEFER_EVERY=7 build must
 // pass the file cross-check bit for bit. 0 (default) compiles it out; ignored without OpenMP.
-inline constexpr unsigned force_defer_every = use_openmp ? CHUNK_OPT_FORCE_DEFER_EVERY : 0u;
+inline constexpr unsigned force_defer_every = threaded ? CHUNK_OPT_FORCE_DEFER_EVERY : 0u;
 
 inline constexpr bool use_fast_alloc = CHUNK_OPT_FAST_ALLOC != 0;
 inline constexpr bool use_std_alloc  = !use_fast_alloc;
@@ -274,7 +284,7 @@ inline constexpr bool use_precise_pending_gate = true;
  * pending_ops_: without OpenMP or under SHRINK_SMALL_CHUNK neither exists, and every writer
  * is gated on hard_inflight_ for the whole pass.
  */
-inline constexpr bool use_chunk_steal_mark = build_config::use_openmp && use_precise_pending_gate;
+inline constexpr bool use_chunk_steal_mark = build_config::threaded && use_precise_pending_gate;
 
 /**
  * @brief Tuning Levels:
@@ -306,7 +316,7 @@ inline constexpr bool ring_log_op_only = CHUNK_OPT_RING_LOG_OP != 0;
  * @brief Block compression with deferred writes: true under OpenMP, the only mode that
  * needs them. The primary compression-mode flag; the two aliases below derive from it.
  */
-inline constexpr bool use_fast_block_compression = use_openmp;
+inline constexpr bool use_fast_block_compression = threaded;
 
 // A ThreadSanitizer build, whichever compiler spells it. TSan does not model
 // membarrier(), so such a build keeps the symmetric handshake below.

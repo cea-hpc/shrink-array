@@ -35,7 +35,8 @@
 
 #include <sys/mman.h> // madvise, MADV_HUGEPAGE / MADV_NOHUGEPAGE (advise_thp_region)
 
-#include "fast_allocators/build_options.h" // FAST_ALLOC_OPT_*: the options the library was built with
+#include "fast_allocators/build_options.h"        // FAST_ALLOC_OPT_*: the options the library was built with
+#include "fast_allocators/internal/pmp_runtime.h" // pmp::threaded (checked against FAST_ALLOC_OPT_THREADED)
 
 namespace fast_alloc::alloc_config
 {
@@ -54,6 +55,14 @@ inline constexpr bool use_slabs = !use_std_alloc;
 
 /// @brief Built with OpenMP (build_options.h refuses a file compiled otherwise).
 inline constexpr bool use_openmp = FAST_ALLOC_OPT_OPENMP != 0;
+
+/// @brief The library runs threads: every threading backend but serial
+///        (CMake CHUNK_THREADS, docs/threading_backends.md). What the per-rank
+///        machinery, the atomics and the locks test; #use_openmp stays for
+///        what only OpenMP gives.
+inline constexpr bool threaded = FAST_ALLOC_OPT_THREADED != 0;
+static_assert(threaded == pmp::threaded,
+              "fast_allocators: the build's threading flag and the backend pmp_runtime.h selects disagree");
 
 /// @brief Debug build (CMake: CHUNK_DEBUG, on with CMAKE_BUILD_TYPE=Debug).
 inline constexpr bool is_debug = FAST_ALLOC_OPT_DEBUG != 0;

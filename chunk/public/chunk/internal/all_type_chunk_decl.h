@@ -76,9 +76,9 @@ struct ManagerChunkInt;
 /**
  * @brief The threading-dependent half of the registry.
  * @tparam Derived AllTypeChunk (CRTP, for getListTypeChunk()).
- * @tparam Enabled build_config::use_openmp.
+ * @tparam Enabled build_config::threaded.
  */
-template <typename Derived, bool Enabled = build_config::use_openmp>
+template <typename Derived, bool Enabled = build_config::threaded>
 class AllTypeChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: per-thread allocators, per-thread free lists, and a

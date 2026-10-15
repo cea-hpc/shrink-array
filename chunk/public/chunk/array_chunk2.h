@@ -32,7 +32,7 @@
 #include "chunk/internal/array_chunk2_rechunk_hooks.h"  // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
-#include "chunk/config.h"                               // for use_fast_block_compression, use_openmp
+#include "chunk/config.h"                               // for use_fast_block_compression, threaded
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_CAPACITY, pmp::Team
@@ -120,7 +120,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      */
     explicit ArrayChunk2(ind_type sz = 0)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             WriteCompressSyncPolicy<Proxy2<T>>::ensure_initialized();
         }
@@ -456,7 +456,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
                 // still sees it unregistered and builds a real block).
                 sh_inf.insert_map_ind_cst_val2(T{}, chunk_config::no_second_value_index);
             }
-            if constexpr (build_config::use_openmp)
+            if constexpr (build_config::threaded)
             {
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {

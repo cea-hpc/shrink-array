@@ -185,9 +185,9 @@ inline void heavy_barrier() noexcept
  *
  * @tparam PROX    proxy type the policy is instantiated for -- it keys the static
  *                 state, giving one independent handshake per (variant, T)
- * @tparam Enabled build_config::use_openmp; never pass it explicitly
+ * @tparam Enabled build_config::threaded; never pass it explicitly
  */
-template <typename PROX, bool Enabled = build_config::use_openmp>
+template <typename PROX, bool Enabled = build_config::threaded>
 class WriteCompressSyncPolicy
 {
   public:

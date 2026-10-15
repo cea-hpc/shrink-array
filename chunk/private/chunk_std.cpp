@@ -19,7 +19,7 @@
 
 #include "chunk/all_type_chunk.h"           // AllTypeChunk
 #include "chunk/chunk_std.h"                // the declarations defined here (ChunkPoolParallelInterface)
-#include "chunk/config.h"                   // build_config::use_openmp, use_fast_alloc
+#include "chunk/config.h"                   // build_config::threaded, use_fast_alloc
 #include "chunk/internal/chunk_stats.h"     // ChunkStatsThr (CHUNK_STATS only)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (teardown_outside_region)
 #include "chunk/internal/live_arrays.h"     // live_array_count: the teardown waits for the last array
@@ -104,7 +104,7 @@ void ChunkPoolParallelInterface<false, AllT>::release_chunk_pools()
 
 // The one instantiation of the pair: the other thread model's bodies are left
 // uninstantiated rather than #ifdef'd out. Same device as param_chunk.cpp.
-template struct ChunkPoolParallelInterface<build_config::use_openmp, AllTypeChunk>;
+template struct ChunkPoolParallelInterface<build_config::threaded, AllTypeChunk>;
 
 // --- Build-agnostic free functions over the policy -----------------------
 // Thin forwarders, defined in EVERY build, so delete_chunk_allocator() and

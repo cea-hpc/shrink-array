@@ -153,6 +153,23 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    (first touch where the static loops use the data); CMake
    `CHUNK_THREADS=openmp|pool|serial`; a validation harness driving arrays from
    `std::thread`s; the build in `compile_all.sh`.
+   In four parts: 7a the CMake option and `threaded` apart from `use_openmp`
+   (no new backend), 7b the pool backend, 7c the rank registry and
+   `in_parallel()` in it, 7d the `std::thread` harness and `compile_all.sh`.
+   *7a done*: `CHUNK_THREADS` (`openmp` or `serial`; empty: from `OMP`, as
+   before; `pool` refused until 7b), recorded as `CHUNK_OPT_THREADED` /
+   `FAST_ALLOC_OPT_THREADED` in the generated build options
+   (`chunk/public/chunk/build_options.h.in`) and as `chunk_THREADS` in
+   `chunk/chunk-config.cmake.in`; `build_config::threaded` /
+   `not_threaded` and `alloc_config::threaded`, each checked against
+   `pmp::threaded` by a `static_assert`. Every library test of `use_openmp`
+   is now one of `threaded` -- the per-rank machinery, the atomics, the
+   deferred queues, the compression passes, `use_fast_block_compression` --
+   except the three shapes of the phase contract only OpenMP has
+   (`finalize_parallel_phase_only_flush`, `finalize_parallel_phase_after_flush`,
+   `finalize_barrier_phase`), which keep `use_openmp`. The `*OmpPolicy`
+   class names stay. The examples and harnesses, OpenMP programs, are left
+   as they are.
 8. (later, on demand) **TBB backend** for the library's own loops, inside the
    application's arena, `static_partitioner`; the adaptor of section 2.
 

@@ -49,7 +49,7 @@
 #include "chunk/internal/env_parse.h"           // env_number / env_flag (checked, not atoi)
 #include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
 #include "chunk/vector_range_ops.h"             // assume_drained
-#include "chunk/config.h"                       // build_config::use_openmp, chunk_config::use_chunk2a
+#include "chunk/config.h"                       // build_config::threaded, chunk_config::use_chunk2a
 #include "chunk/chunk_traits.h"                 // Proxy2A<T>
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 #include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
@@ -489,7 +489,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // re-chunk, with no concurrent free in flight, so an empty slab is empty.
     // Emptiness is the whole claim -- a key-0 slab mixes several arrays'
     // blocks and no ownership is assumed.
-    if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
+    if constexpr (build_config::use_fast_alloc && build_config::threaded)
     {
         const unsigned int saved_sz = thread_chunk_size();
         set_thread_chunk_size(old_size);
@@ -518,7 +518,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // cannot empty on one array's re-chunk.
         const auto scan = [&](unsigned int key, std::size_t& slabs, std::size_t& live, std::size_t& empty)
         {
-            if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
+            if constexpr (build_config::use_fast_alloc && build_config::threaded)
             {
                 const unsigned int saved = thread_chunk_size();
                 set_thread_chunk_size(old_size);
@@ -680,7 +680,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // of the old one: every old chunk then lies inside one new chunk.
         [[maybe_unused]] const bool                    aligned_coarsening = new_size % old_size == 0;
         [[maybe_unused]] std::vector<std::atomic<int>> old_done;
-        if constexpr (chunk_config::use_chunk && build_config::use_openmp)
+        if constexpr (chunk_config::use_chunk && build_config::threaded)
         {
             if (!aligned_coarsening)
             {
@@ -923,7 +923,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // early would need the matching teardown of that state. Chunk<T>'s
             // clear_st(thr, n_elems) frees the buffer and marks the chunk cst1,
             // which is exactly what "already transcribed" means here.
-            if constexpr (chunk_config::use_chunk && build_config::use_openmp)
+            if constexpr (chunk_config::use_chunk && build_config::threaded)
             {
                 const int thr = get_thr_rank_fast();
                 for (int oc = old_first; oc <= old_last; ++oc)
@@ -1027,7 +1027,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // AND gated on use_fast_block_compression: this four-argument
                 // compress() lives in Chunk2FastCompPolicy<..., Enabled>, which
                 // Chunk2 inherits with Enabled = use_fast_block_compression
-                // (= use_openmp): a SERIAL build has no such overload.
+                // (= threaded): a SERIAL build has no such overload.
                 if constexpr (chunk_config::use_fast_block_compression && Derived::is_not_bool)
                 {
                     if (all_folded)
@@ -1074,7 +1074,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // loop has no business synthesising), so they have nothing to give back
         // between slices and the extra regions would be pure cost.
         int n_slices = 1;
-        if constexpr (chunk_config::use_chunk && build_config::use_fast_alloc && build_config::use_openmp)
+        if constexpr (chunk_config::use_chunk && build_config::use_fast_alloc && build_config::threaded)
         {
             // 16: cuts the peak above the pre-re-chunk level about fourfold;
             // more slices gain little. The remainder is the two geometries
@@ -1115,7 +1115,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // the slices. See internal::rebuild_schedule(). Both calls are
         // no-ops in a serial build (PMP_CHUNK.h).
         const chunk_pmp_schedule caller_schedule = chunk_pmp_get_schedule();
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto& rs = internal::rebuild_schedule();
             chunk_pmp_set_schedule(rs.schedule);
@@ -1235,7 +1235,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                           // its own slabs) and one thread sweeps: master-only boundaries
                           // between two regions add up over a re-chunk. n_slices > 1 only
                           // in these builds (see above).
-                          if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
+                          if constexpr (build_config::use_fast_alloc && build_config::threaded)
                           {
                               if (sl + 1 < n_slices)
                               {
@@ -1419,7 +1419,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d end         rss=%ld MB  (%+ld since start)\n", n_slices,
                          n_slices, rss_mib, rss_mib - rss_start);
         }
-        if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
+        if constexpr (build_config::use_fast_alloc && build_config::threaded)
         {
             // The last boundary's recycled slabs the last slice did not take:
             // back to the kernel, as the sweep would have done.
