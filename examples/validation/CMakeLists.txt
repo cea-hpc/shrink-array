@@ -99,6 +99,11 @@
 #                           keeps its own per-rank structures afterwards; two
 #                           ACTIVE levels stop with an invariant failure
 #                           (re-run with --nested-active).
+#   fill_range_constant_validation  fill_range over whole chunks reads back
+#                           from every starting state (first value, second
+#                           value, materialised, partial range, one value per
+#                           chunk), and on Chunk2A leaves no covered chunk
+#                           materialised: it compresses each at once.
 #   fill_range_mt_v1v2_validation  the range ops in a TWO-variant build
 #                           (chunk_v1v2): an ArrayChunk and an ArrayChunk2 side
 #                           by side, fill_range_mt of each compressible value.
@@ -214,7 +219,8 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
                         nested_region_validation iterator_validation stale_proxy_validation
-                        region_storage_validation compound_ops_validation bulk_write_team_validation)
+                        region_storage_validation compound_ops_validation bulk_write_team_validation
+                        fill_range_constant_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.

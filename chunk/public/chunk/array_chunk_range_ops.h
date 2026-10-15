@@ -415,10 +415,14 @@ void packed_chunk_store(Arr&         arr,
  * @details Per chunk in the range:
  *          - fully covered and @p v is the compressible constant: make the
  *            chunk constant outright. A materialised chunk releases its buffer;
- *            an already-constant one costs nothing. No allocation either way.
+ *            an already-constant one costs nothing. No allocation either way
+ *            (v1; Chunk2A below).
  *          - otherwise: arm the chunk with real proxy writes until it
  *            materialises, then store the remainder straight into its buffer
- *            and restore the zero counter the bulk store bypassed.
+ *            and restore the zero counter the bulk store bypassed. Chunk2A, a
+ *            fully covered chunk (any value): compressed at once, its buffer
+ *            back in the pool before the next chunk is armed -- the fill holds
+ *            one buffer at a time. The others queue the chunk for the pass.
  *
  *          bool (one byte per element, its second-value state in the proxy)
  *          takes the per-element path throughout -- still correct, just
@@ -579,6 +583,23 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             }
             if (compressible_value && internal::may_be_uniform(dst, S))
             {
+                // Chunk2A, whole chunk: compress it now, as the rechunk fold
+                // does (Chunk2A::compress, apply = true: the pass's own scan and
+                // clear_int_st, nothing synthesised). Under the serial contract
+                // no writer can reach the chunk, so the buffer goes straight
+                // back to the pool: the fill holds one buffer at a time, and
+                // no pass has to rescan the chunk. The candidate the
+                // arming write may have queued stays in its list; the pass
+                // finds a constant chunk and skips it.
+                if constexpr (internal::is_v2a_v<Arr>)
+                {
+                    if (whole)
+                    {
+                        ch.compress(get_thr_rank_fast(), static_cast<int>(ci), arr.num_tab, /*apply=*/true,
+                                    ChunkElems{S});
+                        continue;
+                    }
+                }
                 internal::queue_for_compression(arr, c_begin);
             }
         }

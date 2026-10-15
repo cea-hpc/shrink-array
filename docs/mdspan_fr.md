@@ -102,9 +102,10 @@ Le bloc couvre toute la tuile, bourrage compris : boucler jusqu'à `t.extent` l�
 doit pas compter. Une tuile uniforme que `update_tiles` laisse inchangée n'est pas écrite : un noyau
 qui ne touche pas au fond ne le matérialise pas. Une tuile modifiée est écrite par `fill_range()`
 si elle est uniforme, sinon par `copy_range()` (les range ops séquentielles hors région
-parallèle, les `_mt` dedans). Un chunk compressé qui change est matérialisé pour l'écriture et mis
-en file : la fin de la phase, ou la passe de compression suivante, le recompresse. Le gain est le
-nombre d'appels, pas la mémoire transitoire.
+parallèle, les `_mt` dedans). Hors région parallèle, sur Chunk2A, une tuile de chunks entiers qui
+en sort uniforme est compressée aussitôt, un tampon à la fois (`fill_range`). Sinon un chunk
+compressé qui change est matérialisé pour l'écriture et mis en file : la fin de la phase, ou la
+passe de compression suivante, le recompresse.
 
 Dans une région parallèle chaque thread travaille sur ses propres tuiles, dans une phase pour
 `update_tiles`, et une tuile doit être faite de chunks entiers : un nombre d'éléments multiple de

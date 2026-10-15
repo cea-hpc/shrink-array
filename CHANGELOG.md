@@ -100,6 +100,20 @@ the tag's checksum to the recipe.
   built. The libraries, examples, benchmarks, harnesses and tests of a variant
   left out are not built nor registered.
 
+### Changed
+
+- `fill_range` on Chunk2A compresses a chunk it covers whole at once, whatever
+  the value (`Chunk2A::compress`, the pass's own scan and clear, as the rechunk
+  fold does), instead of leaving it materialised and queued for a pass: a fill
+  holds one buffer at a time, not up to a pass threshold's worth (1184 chunks
+  in the probe), and runs about twice as fast (2^25 doubles compressed at 1.0,
+  filled with 2.0: 38-48 ms -> 20 ms). Serial contract unchanged;
+  `fill_range_mt` unchanged (another thread may share the chunk).
+  Harness `fill_range_constant_validation`. md::update_tiles and md::fill_box
+  outside a parallel region inherit it.
+- `md::layout_tiled` computes its offsets in unsigned arithmetic (shifts, not
+  corrected signed divisions): about a tenth of a tiled `f[i, j]` read.
+
 ### Fixed
 
 - Chunk2A: a chunk made uniform at a third value by writes over values that

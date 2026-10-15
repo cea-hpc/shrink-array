@@ -407,9 +407,11 @@ void for_each_tile(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {
  *          written in one go: fill_range() when it comes out uniform, else
  *          copy_range() -- the serial range ops outside a parallel region, the
  *          _mt ones inside (one write session per chunk, the element path's
- *          guarantees). Either way a compressed chunk that changes is
- *          materialised for the write and queued: the end of the phase, or the
- *          next compression pass, compresses it again if it is uniform.
+ *          guarantees). Outside a region, on Chunk2A, fill_range() compresses a
+ *          whole chunk at once (one buffer at a time). Otherwise a compressed
+ *          chunk that changes is materialised for the write and queued: the end
+ *          of the phase, or the next compression pass, compresses it again if
+ *          it is uniform.
  *
  * @param on_block   called as on_block(const tile&, block) where block is an
  *                   mdspan<T, extents<Tile...>> over the tile's buffer, to
@@ -507,11 +509,11 @@ void update_tiles(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {}
  *          whole chunks).
  * @param lo first multi-index of the box, inclusive
  * @param hi last multi-index of the box, exclusive
- * @warning A fill is a write: a compressed chunk that changes is materialised
- *          for the write and compressed again by the end of the phase or the
- *          next pass (see update_tiles()). The gain is the number of calls --
- *          one range op per run of covered tiles instead of one proxy write per
- *          element -- not the transient memory.
+ * @warning A fill is a write. Outside a parallel region on Chunk2A, a covered
+ *          chunk is compressed at once (fill_range(): one buffer at a time).
+ *          Inside a region, a compressed chunk that changes is materialised for
+ *          the write and compressed again by the end of the phase or the next
+ *          pass (see update_tiles()).
  */
 template <tiled_view_of_array View, std::integral I>
     requires(!std::is_const_v<typename View::element_type>)

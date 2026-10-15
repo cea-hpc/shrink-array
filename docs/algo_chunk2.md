@@ -477,7 +477,10 @@ needed, write the rest **directly into the buffer**, then only queue the
 chunks that **may** be uniform (first, middle and last elements equal) **at a
 value that Chunk2 can compress** (the first value or the array's second value).
 They are **sequential**: no concurrent writer or compression on the array.
-The rechunk uses `copy_range` to rebuild the new array.
+The rechunk uses `copy_range` to rebuild the new array. On Chunk2A, a chunk that
+`fill_range` covers whole is **compressed at once** (`Chunk2A::compress`, the pass's own scan
+and clear, as the rechunk fold does): its buffer is back in the pool before the next chunk is
+armed, so a fill holds one buffer, not the materialised chunks a writer's pass would collect.
 
 `fill_range_mt(a, first, last, v)` can be called **by several threads at once**, on
 disjoint indices (a chunk may be shared): it repeats, once per piece of

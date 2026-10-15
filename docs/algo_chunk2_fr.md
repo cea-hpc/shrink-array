@@ -477,7 +477,11 @@ besoin, écrivent le reste **directement dans le tampon**, puis ne mettent en fi
 chunks qui **peuvent** être uniformes (premier, milieu et dernier éléments égaux) **à une
 valeur que Chunk2 sait compresser** (la première valeur ou la seconde valeur du tableau).
 Elles sont **séquentielles** : pas d'écrivain ni de compression concurrents sur le tableau.
-Le rechunk passe par `copy_range` pour reconstruire le nouveau tableau.
+Le rechunk passe par `copy_range` pour reconstruire le nouveau tableau. Sur Chunk2A, un chunk
+que `fill_range` couvre entièrement est **compressé aussitôt** (`Chunk2A::compress`, le balayage
+et l'effacement de la passe elle-même, comme le repli du rechunk) : son tampon revient au pool
+avant que le chunk suivant soit armé, et un remplissage tient un tampon, pas les chunks
+matérialisés qu'une passe d'écrivain ramasserait.
 
 `fill_range_mt(a, first, last, v)` peut être appelée **par plusieurs threads à la fois**, sur
 des indices disjoints (un chunk peut être partagé) : elle reprend, une fois par morceau de

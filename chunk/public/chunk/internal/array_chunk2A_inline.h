@@ -299,20 +299,15 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // chunks (not the candidate list, so never-enqueued blocks are seen) for
         // every block (a) still materialised (written()), (b) never registered as
         // a candidate (tab_is_inside_chunk_list_to_compress == 0), yet (c)
-        // constant. Two different things, told apart by the value:
-        //
-        //   MISSED  constant at first_value, or at the chunk's own second value
-        //           (get_tab_second_value): the pass would have compressed it,
-        //           the write path let it become constant without queueing it.
-        //           A few is benign (a straggler), a recurring/large count means
-        //           the marking path has a hole.
-        //   STUCK   constant at ANOTHER value: chunk2a keeps a chunk's second
-        //           value until the chunk passes through first_value (the clear
-        //           to cst1 resets it), so a chunk compressed to V once and
-        //           uniformly W later is not compressible as it stands -- not by
-        //           the write path, not by compress(). This count is the
-        //           memory that design choice costs on this array -- not a
-        //           marking miss.
+        // constant. The pass would have compressed every one of them -- it
+        // compresses a uniform chunk at whatever value it holds (values[0],
+        // fill_list_to_compress), its former second value or not -- so each is
+        // a block the write path let become constant without queueing it. The
+        // count is split by the value: first_value, the chunk's own second
+        // value (get_tab_second_value), another value (the marking predicate's
+        // "change" clause, Proxy2A::should_mark_for_compression). A few is
+        // benign (a straggler); a recurring/large count means the marking path
+        // has a hole.
         //
         // Non-fatal; O(nb_chunk * chunk_size) once at teardown, check builds only.
         if constexpr (build_config::any_check && !chunk_config::have_aggressive_compression)
@@ -321,7 +316,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
             const auto& inside        = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
             std::size_t missed_first  = 0;
             std::size_t missed_second = 0;
-            std::size_t stuck         = 0;
+            std::size_t missed_other  = 0;
 
             for (int j = 0; j < nb_chunk; ++j)
             {
@@ -352,26 +347,19 @@ void ArrayChunk2A<T, ind_type>::clear_core()
                 }
                 else
                 {
-                    ++stuck;
+                    ++missed_other;
                 }
             }
 
-            if (missed_first + missed_second != 0)
+            if (missed_first + missed_second + missed_other != 0)
             {
                 std::fprintf(stderr,
                              "[COMPRESS-AUDIT] chunk2a tab=%d: %zu constant block(s) never queued for "
-                             "compression (%zu at first_value, %zu at their second value: missed by the "
-                             "marking path). A few is benign; a recurring/large count is not.\n",
-                             num_tab, missed_first + missed_second, missed_first, missed_second);
-                std::fflush(stderr);
-            }
-            if (stuck != 0)
-            {
-                std::fprintf(stderr,
-                             "[COMPRESS-AUDIT] chunk2a tab=%d: %zu block(s) constant at a value other than "
-                             "their second value: stuck, not a marking miss (chunk2a keeps a chunk's "
-                             "second value until it passes through first_value).\n",
-                             num_tab, stuck);
+                             "compression (%zu at first_value, %zu at their second value, %zu at another "
+                             "value: missed by the marking path). A few is benign; a recurring/large count "
+                             "is not.\n",
+                             num_tab, missed_first + missed_second + missed_other, missed_first, missed_second,
+                             missed_other);
                 std::fflush(stderr);
             }
         }

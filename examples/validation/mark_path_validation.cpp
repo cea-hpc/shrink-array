@@ -318,6 +318,19 @@ int run(int /*argc*/, char** /*argv*/)
         fails += check("D", "third", d, Kind::other);
         phase(d, N, [&](int i) { d[i] = 6.0; });
         fails += check("D", "fourth", d, Kind::other);
+
+        // Compressed at a value that is not the chunk's former second value:
+        // every element must read back that value.
+        long bad = 0;
+        for (int i = 0; i < N; ++i)
+        {
+            bad += (std::as_const(d)[i] != 6.0);
+        }
+        if (bad)
+        {
+            println("[{}/D] FAIL: {} element(s) do not read back 6", variant_name(), bad);
+            ++fails;
+        }
         d.clear();
     }
 
