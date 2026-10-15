@@ -34,7 +34,8 @@ one of the library linked (`chunk::chunk_v2a`, ...); `chunk_config::use_chunk`,
 `chunk_config::use_chunk2` and `chunk_config::use_chunk2a` tell which, at compile time.
 
 `chunk/mdspan.h` puts a multidimensional view, `f[i, j]`, on any of them (C++23 `mdspan`,
-row-major or in tiles aligned on the chunks): see [mdspan.md](mdspan.md).
+row-major or in tiles aligned on the chunks), and `chunk/mdspan_tile_ops.h` reads and updates such
+a view tile by tile, a uniform tile in one call: see [mdspan.md](mdspan.md).
 
 ## 3. Container operations
 

@@ -61,6 +61,14 @@ the tag's checksum to the recipe.
   standard library has it, else kokkos/mdspan if on the include path, else
   nothing. Harness `mdspan_validation_<variant>` (skipped without `mdspan`). See
   [docs/mdspan.md](docs/mdspan.md).
+- `chunk/mdspan_tile_ops.h`: `md::for_each_tile` and `md::update_tiles` read and
+  update a tiled view tile by tile -- a block copy into a static-extent
+  `mdspan`, or one call for a uniform tile -- and write a changed tile back in
+  one go (one constant when it came out uniform; an unchanged uniform tile is
+  not written). Range overloads for `#pragma omp for` over the tiles; in a
+  parallel region a tile must be whole chunks (checked). `mdspan_tiles`,
+  2048 x 2048, against `f[i, j]`: the sum x 8 to x 15, `f = 0.5 f + 1` x 15 to
+  x 20. Harness `mdspan_tile_ops_validation_<variant>`.
 - Fast allocator: `CHUNK_REUSE_SHARE_DIV` and `CHUNK_REUSE_FLOOR_KB` (developer
   settings) set the reuse budget -- how many freed buffers a rank keeps parked
   for its next allocations -- whose default counts every chunk created,

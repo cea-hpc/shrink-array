@@ -546,6 +546,34 @@ foreach(_vi RANGE ${_rt_nvar_last})
   endif()
 endforeach()
 
+# --- mdspan_tile_ops_validation_<variant>: md::for_each_tile / md::update_tiles
+# (chunk/mdspan_tile_ops.h) against the element path, at 1 and 8 threads.
+# mdspan_tile_ops_misaligned: tiles smaller than a chunk inside a parallel
+# region must stop the program (OpenMP builds: a region is what is refused);
+# expect_stop.cmake, since ctest counts an abort as a failure.
+foreach(_vi RANGE ${_rt_nvar_last})
+  list(GET _rt_variant_names   ${_vi} _vname)
+  list(GET _rt_variant_libbase ${_vi} _libbase)
+  list(GET _rt_variant_macro   ${_vi} _vmacro)
+  if (TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    set(_tgt mdspan_tile_ops_validation_${_vname})
+    add_executable(${_tgt} mdspan_tile_ops_validation.cpp)
+    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
+    validation_setup_target(${_tgt})
+    validation_add_test(${_tgt} ${_tgt} "" "1;8")
+    foreach(_nthr 1 8)
+      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
+    endforeach()
+    if (OMP AND _vname STREQUAL "chunk2a" AND CHUNK_DEFAULT_SIZE GREATER 64)
+      add_test(NAME mdspan_tile_ops_misaligned
+               COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=misaligned
+                       "-DEXPECT=two threads would share a chunk" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)
+      set_tests_properties(mdspan_tile_ops_misaligned PROPERTIES ENVIRONMENT OMP_NUM_THREADS=4 LABELS validation)
+    endif()
+  endif()
+endforeach()
+
 
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).

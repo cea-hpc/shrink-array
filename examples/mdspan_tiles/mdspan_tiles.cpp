@@ -29,20 +29,30 @@
  *          soon as the square lies inside one material, whatever its width.
  *          Writes go through the view, in a parallel phase over the rows.
  *
+ *          Then two kernels on the tiled field, element by element (f[i, j])
+ *          against tile by tile (md::for_each_tile / md::update_tiles,
+ *          chunk/mdspan_tile_ops.h), in parallel: the sum of the field, and
+ *          f = 0.5 f + 1 on every cell. A uniform tile costs one call; the
+ *          update writes it back as one constant. Prints the times and the
+ *          chunks materialised, and checks both give the same field.
+ *
  *          Usage: mdspan_tiles [n]   (an n x n field, 2048 by default)
  *          Exit 0, 1 when a layout does not read back the field, 77 when
  *          mdspan is not available.
  */
 
-#include <cmath>   // std::sin
-#include <cstdlib> // std::atol
+#include <algorithm> // std::min
+#include <chrono>    // std::chrono::steady_clock (the kernel times)
+#include <cmath>     // std::sin, std::abs
+#include <cstdlib>   // std::atol
 
-#include "chunk/array_chunk2A.h"  // ArrayChunk2A
-#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
-#include "chunk/internal/print.h" // shrink_array::println
-#include "chunk/manage_ompt.h"    // parallel_phase
-#include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/array_chunk2A.h"   // ArrayChunk2A
+#include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/print.h"  // shrink_array::println
+#include "chunk/manage_ompt.h"     // parallel_phase
+#include "chunk/mdspan.h"          // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan_tile_ops.h" // md::for_each_tile, md::update_tiles
+#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
 
@@ -139,6 +149,162 @@ Count run(const char* name, sa::ArrayChunk2A<double>& a, View f, long n, int& ba
                 static_cast<double>(c.materialised) * 256.0 * sizeof(double) / (1024.0 * 1024.0));
     return c;
 }
+double seconds_since(std::chrono::steady_clock::time_point t0)
+{
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+}
+
+// A tiled field, filled and compressed.
+template <std::size_t TH, std::size_t TW>
+void fill_tiled(sa::ArrayChunk2A<double>& t, long n)
+{
+    auto f = sa::md::tiled_view<TH, TW>(t, n, n);
+    sa::parallel_phase(
+        [&]
+        {
+    #pragma omp for schedule(static)
+            for (long i = 0; i < n; ++i)
+            {
+                for (long j = 0; j < n; ++j)
+                {
+                    f[i, j] = cell(i, j, n);
+                }
+            }
+        });
+    sa::ArrayChunk2A<double>::make_block_compression();
+}
+
+// The sum and the update, element by element and tile by tile.
+void kernels(long n, int& bad)
+{
+    constexpr int            reps = 5;
+    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::ArrayChunk2A<double> e(size);
+    sa::ArrayChunk2A<double> t(size);
+    fill_tiled<16, 16>(e, n);
+    fill_tiled<16, 16>(t, n);
+    auto       fe     = sa::md::tiled_view<16, 16>(e, n, n);
+    auto       ft     = sa::md::tiled_view<16, 16>(t, n, n);
+    const auto ce     = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(fe);
+    const auto ct     = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(ft);
+    const long ntiles = sa::md::tile_count(ft);
+
+    // The sum, best of reps.
+    double s_elem = 0;
+    double s_tile = 0;
+    double t_elem = 1e30;
+    double t_tile = 1e30;
+    for (int r = 0; r < reps; ++r)
+    {
+        auto   t0 = std::chrono::steady_clock::now();
+        double s  = 0;
+    #pragma omp parallel for schedule(static) reduction(+ : s)
+        for (long i = 0; i < n; ++i)
+        {
+            for (long j = 0; j < n; ++j)
+            {
+                s += ce[i, j];
+            }
+        }
+        t_elem = std::min(t_elem, seconds_since(t0));
+        s_elem = s;
+
+        t0 = std::chrono::steady_clock::now();
+        s  = 0;
+    #pragma omp parallel for schedule(static) reduction(+ : s)
+        for (long k = 0; k < ntiles; ++k)
+        {
+            sa::md::for_each_tile(
+                ct, k, k + 1,
+                [&](const auto& tl, auto b)
+                {
+                    for (long i = 0; i < tl.extent[0]; ++i)
+                    {
+                        for (long j = 0; j < tl.extent[1]; ++j)
+                        {
+                            s += b[i, j];
+                        }
+                    }
+                },
+                [&](const auto& tl, double v) { s += v * static_cast<double>(tl.extent[0] * tl.extent[1]); });
+        }
+        t_tile = std::min(t_tile, seconds_since(t0));
+        s_tile = s;
+    }
+    // Summation orders differ: equal to a relative 1e-12.
+    if (std::abs(s_elem - s_tile) > 1e-12 * std::abs(s_elem))
+    {
+        sa::println("sum: element {} against tile {}", s_elem, s_tile);
+        ++bad;
+    }
+    sa::println("sum            element {:8.2f} ms   tile {:8.2f} ms   (x {:.1f})", 1e3 * t_elem, 1e3 * t_tile,
+                t_elem / t_tile);
+
+    // The update, once each; then the compression pass.
+    auto t0 = std::chrono::steady_clock::now();
+    sa::parallel_phase(
+        [&]
+        {
+    #pragma omp for schedule(static)
+            for (long i = 0; i < n; ++i)
+            {
+                for (long j = 0; j < n; ++j)
+                {
+                    fe[i, j] = 0.5 * ce[i, j] + 1.0;
+                }
+            }
+        });
+    const double u_elem = seconds_since(t0);
+    const long   m_elem = count(e).materialised;
+    t0                  = std::chrono::steady_clock::now();
+    sa::parallel_phase(
+        [&]
+        {
+    #pragma omp for schedule(static)
+            for (long k = 0; k < ntiles; ++k)
+            {
+                sa::md::update_tiles(
+                    ft, k, k + 1,
+                    [](const auto&, auto b)
+                    {
+                        for (long i = 0; i < 16; ++i)
+                        {
+                            for (long j = 0; j < 16; ++j)
+                            {
+                                b[i, j] = 0.5 * b[i, j] + 1.0;
+                            }
+                        }
+                    },
+                    [](const auto&, double& v)
+                    {
+                        v = 0.5 * v + 1.0;
+                        return true;
+                    });
+            }
+        });
+    const double u_tile = seconds_since(t0);
+    const long   m_tile = count(t).materialised;
+    t0                  = std::chrono::steady_clock::now();
+    sa::ArrayChunk2A<double>::make_block_compression();
+    const double c_both = seconds_since(t0);
+    long         wrong  = 0;
+    for (long i = 0; i < n; ++i)
+    {
+        for (long j = 0; j < n; ++j)
+        {
+            wrong += ce[i, j] != ct[i, j] ? 1 : 0;
+        }
+    }
+    if (wrong != 0)
+    {
+        sa::println("update: {} cells differ between element and tile", wrong);
+        ++bad;
+    }
+    sa::println("update         element {:8.2f} ms   tile {:8.2f} ms   (x {:.1f})", 1e3 * u_elem, 1e3 * u_tile,
+                u_elem / u_tile);
+    sa::println("  materialised before the pass: element {}, tile {}; after it: {} and {} (pass {:.2f} ms)", m_elem,
+                m_tile, count(e).materialised, count(t).materialised, 1e3 * c_both);
+}
 } // namespace
 
 int main(int argc, char** argv)
@@ -156,6 +322,7 @@ int main(int argc, char** argv)
         sa::ArrayChunk2A<double> t(static_cast<long>(sa::md::tiled_size<16, 16>(n, n)));
         run("tiles 16 x 16", t, sa::md::tiled_view<16, 16>(t, n, n), n, bad);
     }
+    kernels(n, bad);
     sa::release_chunk_pools();
     sa::destroy_block_chunk();
     return bad == 0 ? 0 : 1;
