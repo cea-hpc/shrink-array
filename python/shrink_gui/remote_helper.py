@@ -109,6 +109,9 @@ def status(d, q):
         return "terminé sans code (limite de temps ? voir le log)", None
     pid = read(os.path.join(d, "pid"))
     if not pid:
+        # submit.log without a jobid: the batch system refused the job
+        if os.path.exists(os.path.join(d, "submit.log")):
+            return "soumission refusée : %s" % (last_line(os.path.join(d, "submit.log")) or "?"), None
         return "inconnu", None
     host = (read(os.path.join(d, "host")) or "").strip()
     if host != socket.gethostname():
