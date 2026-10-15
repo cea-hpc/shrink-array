@@ -17,7 +17,8 @@ cmake --build build
 ```
 
 `-DCHUNK_STATIC_SIZES=256` construit une seule taille statique au lieu de deux, ce qui économise une bonne part du temps
-de build. Un build Debug, `-DCHECK_OPTIM=ON` ou un sanitizer construit aussi les harnais de validation
+de build ; `-DCHUNK_VARIANTS=chunk2a` construit une seule variante au lieu de trois, avec ses seuls exemples et
+harnais. Un build Debug, `-DCHECK_OPTIM=ON` ou un sanitizer construit aussi les harnais de validation
 (`examples/validation`).
 
 La matrice complète (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistiques, std-alloc...) est

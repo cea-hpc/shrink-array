@@ -285,6 +285,9 @@ foreach(_geom IN LISTS _rt_geometries)
     list(GET _rt_variant_names   ${_vi} _vname)
     list(GET _rt_variant_libbase ${_vi} _libbase)
     list(GET _rt_variant_macro   ${_vi} _vmacro)
+    if (NOT _vname IN_LIST CHUNK_VARIANTS)
+      continue()
+    endif()
 
     # The group: the round-trip harnesses, then the special cases below.
     set(_group "")

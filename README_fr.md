@@ -123,6 +123,7 @@ cmake --install build
 |---|---|---|
 | `OMP` | `OFF` | compiler avec OpenMP |
 | `CHUNK_STATIC_SIZES` | `256;1024` | les tailles de chunk fixées à la compilation, une bibliothèque par taille et par variante |
+| `CHUNK_VARIANTS` | `chunk;chunk2;chunk2a` | les variantes construites (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) ; les exemples, bancs et harnais d'une variante écartée ne sont pas construits |
 | `CHUNK_BUILD_DYN` | `ON` | compiler aussi les bibliothèques dont la taille de chunk est choisie, et peut changer, à l'exécution (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allouer les tampons des chunks avec l'allocateur standard au lieu des `fast_allocators` fournis (utile sous AddressSanitizer) |
 | `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` au premier niveau | les exemples, le banc et les harnais de validation (les harnais dans les builds Debug, `CHECK_OPTIM` ou avec sanitizer, ou avec `-DCHUNK_BUILD_VALIDATION=ON`) |

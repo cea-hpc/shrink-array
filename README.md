@@ -117,6 +117,7 @@ cmake --install build
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP |
 | `CHUNK_STATIC_SIZES` | `256;1024` | the compile-time chunk sizes built, one library per size and variant |
+| `CHUNK_VARIANTS` | `chunk;chunk2;chunk2a` | the variants built (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`); the examples, benchmarks and harnesses of a variant left out are not built |
 | `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen, and can change, at run time (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
 | `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` at the top level | the examples, the benchmark and the validation harnesses (the harnesses in Debug, `CHECK_OPTIM` or sanitizer builds, or with `-DCHUNK_BUILD_VALIDATION=ON`) |
