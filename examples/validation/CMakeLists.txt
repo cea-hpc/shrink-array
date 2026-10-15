@@ -115,8 +115,9 @@
 #                           exactly the second values nothing refers to,
 #                           every element still reads back, and the
 #                           identifiers are reused (a run past the
-#                           identifier limit reaches its end).
-#                           Chunk2A only, default static size.
+#                           identifier limit reaches its end), and across a
+#                           re-chunk (dyn). Chunk2A only, default static
+#                           size and dyn.
 #   iterator_validation     the read-only const_iterator is random access:
 #                           jumps (it + n, it[n], it2 - it1, orderings) on
 #                           and around chunk boundaries, a ++/-- right after
@@ -187,7 +188,16 @@ set(_rt_variant_names   chunk       chunk2      chunk2a)
 set(_rt_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
 set(_rt_variant_macro   CHUNK_VARIANT_V1 CHUNK_VARIANT_V2 CHUNK_VARIANT_V2A)
 
+# Every static size built (CHUNK_STATIC_SIZES: 256;1024 by default), then dyn.
+# A static size other than CHUNK_DEFAULT_SIZE gets the round-trip harnesses
+# only (_rt_harnesses): what changes with the size is the chunk geometry they
+# exercise, not the special cases below, which stay at the default size.
 set(_rt_geometries ${CHUNK_DEFAULT_SIZE})
+foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
+  if (NOT _sz IN_LIST _rt_geometries)
+    list(APPEND _rt_geometries ${_sz})
+  endif()
+endforeach()
 if (CHUNK_BUILD_DYN)
   list(APPEND _rt_geometries dyn)
 endif()
@@ -283,6 +293,7 @@ foreach(_geom IN LISTS _rt_geometries)
         list(APPEND _group ${_h})
       endif()
     endforeach()
+    set(_rt_group ${_group})
     # chunk_array_new_validation: the variant's operator new[] hands back an
     # array whose every chunk is at the first constant. OpenMP builds only: the
     # operators are the *OmpPolicy's, and their serial specialisations declare
@@ -301,9 +312,9 @@ foreach(_geom IN LISTS _rt_geometries)
       list(APPEND _group cst2_registry_validation)
     endif()
     # cst2_reclaim_validation: reclaim_second_values() frees what nothing
-    # refers to and the identifiers are reused. Chunk2A only, default
-    # static size.
-    if (_vname STREQUAL "chunk2a" AND NOT _geom STREQUAL "dyn")
+    # refers to and the identifiers are reused. Chunk2A only, at the default
+    # static size and at dyn (where it reclaims across a re-chunk too).
+    if (_vname STREQUAL "chunk2a")
       list(APPEND _group cst2_reclaim_validation)
     endif()
     # chunk2_registry_growth_validation: Chunk2's second-value registry must
@@ -344,6 +355,10 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_geom STREQUAL "dyn")
       list(APPEND _group rechunk_validation dyn_geometry_validation)
     endif()
+    # Another static size: the round-trip harnesses alone.
+    if (NOT _geom STREQUAL "dyn" AND NOT _geom STREQUAL CHUNK_DEFAULT_SIZE)
+      set(_group ${_rt_group})
+    endif()
 
     if (CHUNK_VALIDATION_UNITY)
       validation_harness_executable(validation_${_vname}_${_geom} ${_libbase} ${_vmacro} ${_geom} ${_group})
@@ -369,6 +384,11 @@ foreach(_geom IN LISTS _rt_geometries)
         endforeach()
       elseif (_h STREQUAL "dyn_geometry_validation")
         validation_add_test(${_base} ${_exe} ${_h} "")
+      elseif (_h STREQUAL "index64_validation" AND _geom STREQUAL "dyn")
+        validation_add_test(${_base} ${_exe} ${_h} "1;8")
+        # _np2: from 384, not a power of two -- the magic-number index split,
+        # a re-chunk 384 -> 768, and past 2^31 at 768.
+        validation_add_test(${_base}_np2 ${_exe} ${_h} "1;8" --size 384)
       elseif (_h STREQUAL "bits_container_validation")
         validation_add_test(bits_container_validation_${_geom} ${_exe} ${_h} "1;8")
       elseif (_h STREQUAL "chunk2_registry_growth_validation")

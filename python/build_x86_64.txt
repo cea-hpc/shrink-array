@@ -18,5 +18,6 @@ omp-llvm-have-aggressive-compression
 omp-llvm-std-alloc
 omp-llvm-stats
 omp-llvm-check
+omp-llvm-check-sv-indexed
 omp-oneapi
 omp-aocc
