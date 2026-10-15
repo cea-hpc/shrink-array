@@ -18,7 +18,9 @@
 /**
  * @file mdspan_tile_ops.h
  * @brief Tile by tile over a tiled mdspan view (chunk/mdspan.h): for_each_tile()
- *        reads, update_tiles() reads and writes back, a uniform tile in O(1).
+ *        reads, update_tiles() reads and writes back, a uniform tile in O(1);
+ *        fill_box() sets a box of a view (tiled or row-major) to one value by
+ *        runs instead of elements.
  *
  * @details f[i, j] pays an operator[] per element. With layout_tiled, a tile is
  *          a run of consecutive elements -- one chunk when the tile has
@@ -60,11 +62,13 @@
 
 #if SHRINK_ARRAY_HAS_MDSPAN
 
-    #include <algorithm>   // std::copy, std::fill, std::equal, std::all_of
+    #include <algorithm>   // std::copy, std::fill, std::equal, std::all_of, std::min, std::max, std::clamp
     #include <array>       // std::array (the tile buffer, the tile coordinates)
-    #include <concepts>    // std::invocable, std::same_as
+    #include <concepts>    // std::invocable, std::same_as, std::integral
     #include <cstddef>     // std::size_t
+    #include <limits>      // std::numeric_limits (the box corners)
     #include <span>        // std::span (the blocks of for_each_span)
+    #include <tuple>       // std::apply (a multi-index into a mapping)
     #include <type_traits> // std::remove_cvref_t, std::is_const_v
     #include <utility>     // std::as_const, std::forward
 
@@ -226,6 +230,110 @@ bool gather(const Array& a, std::size_t lo, std::array<T, N>& buf, T& cst, bool 
 struct no_uniform
 {
 };
+
+/**
+ * @brief The writes of update_tiles() and fill_box(): the serial range ops
+ *        outside a parallel region (the array is quiescent; deferred writes
+ *        drained once, by the first write), the _mt ones inside, which are safe
+ *        against the other writers and the compressor.
+ */
+template <typename Array>
+struct range_writer
+{
+    Array&     a;
+    const bool in_region = CHUNK_PMP_IN_PARALLEL_REGION;
+    bool       drained   = false;
+
+    template <typename T>
+    void fill(std::size_t lo, std::size_t hi, const T& v)
+    {
+        if (in_region)
+        {
+            fill_range_mt(a, lo, hi, v);
+        }
+        else
+        {
+            fill_range(a, lo, hi, v, !drained);
+            drained = true;
+        }
+    }
+
+    template <typename T>
+    void copy(std::size_t lo, std::size_t hi, const T* src)
+    {
+        if (in_region)
+        {
+            copy_range_mt(a, lo, hi, src);
+        }
+        else
+        {
+            copy_range(a, lo, hi, src, !drained);
+            drained = true;
+        }
+    }
+};
+
+/// @brief Consecutive storage runs merged into one fill: one range op per run.
+template <typename Array, typename T>
+struct run_filler
+{
+    range_writer<Array>& out;
+    const T&             v;
+    std::size_t          lo = 0;
+    std::size_t          hi = 0;
+
+    void add(std::size_t a, std::size_t b)
+    {
+        if (a == hi && hi != lo)
+        {
+            hi = b;
+            return;
+        }
+        flush();
+        lo = a;
+        hi = b;
+    }
+    void flush()
+    {
+        if (hi > lo)
+        {
+            out.fill(lo, hi, v);
+        }
+        lo = hi = 0;
+    }
+};
+
+/// @brief A box corner in the view's index type, clamped to its range first
+///        (a corner beyond the extents is clipped by clip_box afterwards).
+template <typename View, typename I>
+std::array<typename View::index_type, View::rank()> clipped_box(const std::array<I, View::rank()>& c)
+{
+    using Index = typename View::index_type;
+    std::array<Index, View::rank()> out{};
+    for (std::size_t r = 0; r < View::rank(); ++r)
+    {
+        const auto x = static_cast<long long>(c[r]);
+        out[r] =
+            static_cast<Index>(std::clamp<long long>(x, 0, static_cast<long long>(std::numeric_limits<Index>::max())));
+    }
+    return out;
+}
+
+/// @brief The box [lo, hi) clipped to the extents of @p f; false when empty.
+template <typename View, typename Box>
+bool clip_box(const View& f, Box& lo, Box& hi)
+{
+    for (std::size_t r = 0; r < View::rank(); ++r)
+    {
+        lo[r] = std::max<typename View::index_type>(lo[r], 0);
+        hi[r] = std::min<typename View::index_type>(hi[r], f.extent(r));
+        if (lo[r] >= hi[r])
+        {
+            return false;
+        }
+    }
+    return true;
+}
 } // namespace detail
 
 /// @brief Number of tiles of tiled view @p f (padding tiles included): the range of the range overloads.
@@ -297,12 +405,11 @@ void for_each_tile(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {
  * @details A uniform tile left unchanged is not written: a kernel that leaves
  *          the background alone does not materialise it. A changed tile is
  *          written in one go: fill_range() when it comes out uniform, else
- *          copy_range(). Outside a parallel region these are the serial range
- *          ops, which set a chunk constant without materialising it (any value
- *          for Chunk2A, T{} for all). Inside, fill_range_mt() / copy_range_mt(),
- *          one write session per chunk with the element path's guarantees; they
- *          never release a chunk: a tile made uniform stays materialised,
- *          queued for the next compression pass.
+ *          copy_range() -- the serial range ops outside a parallel region, the
+ *          _mt ones inside (one write session per chunk, the element path's
+ *          guarantees). Either way a compressed chunk that changes is
+ *          materialised for the write and queued: the end of the phase, or the
+ *          next compression pass, compresses it again if it is uniform.
  *
  * @param on_block   called as on_block(const tile&, block) where block is an
  *                   mdspan<T, extents<Tile...>> over the tile's buffer, to
@@ -330,38 +437,10 @@ void update_tiles(const View&               f,
     detail::check_tile_on_chunks(a, M::tile_elems, "md::update_tiles");
     constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, detail::no_uniform>;
 
-    std::array<T, N> buf;
-    std::array<T, N> before; // a materialised tile as read: written back only if changed
-    T                cst{};
-    // Outside a parallel region the serial range ops (quiescent array): a
-    // uniform result sets the chunk constant without materialising it. Inside,
-    // the _mt ones, safe against the other writers and the compressor.
-    const bool in_region = CHUNK_PMP_IN_PARALLEL_REGION;
-    bool       drained   = false; // serial: deferred writes flushed once, by the first write
-    auto       fill      = [&](std::size_t lo, const T& v)
-    {
-        if (in_region)
-        {
-            fill_range_mt(a, lo, lo + N, v);
-        }
-        else
-        {
-            fill_range(a, lo, lo + N, v, !drained);
-            drained = true;
-        }
-    };
-    auto copy = [&](std::size_t lo)
-    {
-        if (in_region)
-        {
-            copy_range_mt(a, lo, lo + N, buf.data());
-        }
-        else
-        {
-            copy_range(a, lo, lo + N, buf.data(), !drained);
-            drained = true;
-        }
-    };
+    std::array<T, N>                             buf;
+    std::array<T, N>                             before; // a materialised tile as read: written back only if changed
+    T                                            cst{};
+    detail::range_writer<detail::array_of<View>> out{a};
     last = std::min(last, tile_count(f));
     for (auto k = first; k < last; ++k)
     {
@@ -377,7 +456,7 @@ void update_tiles(const View&               f,
                 {
                     if (!(v == cst))
                     {
-                        fill(lo, v);
+                        out.fill(lo, lo + N, v);
                     }
                     continue;
                 }
@@ -397,12 +476,12 @@ void update_tiles(const View&               f,
         {
             if (!(uniform && first_v == cst))
             {
-                fill(lo, first_v);
+                out.fill(lo, lo + N, first_v);
             }
         }
         else if (uniform || !std::equal(buf.begin(), buf.end(), before.begin()))
         {
-            copy(lo);
+            out.copy(lo, lo + N, buf.data());
         }
     }
 }
@@ -414,6 +493,213 @@ void update_tiles(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {}
 {
     update_tiles(f, typename View::index_type{0}, tile_count(f), std::forward<OnBlock>(on_block),
                  std::forward<OnUniform>(on_uniform));
+}
+
+/**
+ * @brief Set the box [@p lo, @p hi) of tiled view @p f to @p v, restricted to
+ *        tiles [@p first, @p last): a tile the box covers is filled whole, with
+ *        its padding (one range op for consecutive covered tiles); a tile it
+ *        crosses is updated as update_tiles() does (left alone when it is
+ *        already uniform at @p v).
+ * @details The box is clipped to the view's extents. The tile range is for a
+ *          `#pragma omp for` over [0, tile_count(f)), each thread on its own
+ *          tiles, in a phase; update_tiles()'s rules then hold (a tile made of
+ *          whole chunks).
+ * @param lo first multi-index of the box, inclusive
+ * @param hi last multi-index of the box, exclusive
+ * @warning A fill is a write: a compressed chunk that changes is materialised
+ *          for the write and compressed again by the end of the phase or the
+ *          next pass (see update_tiles()). The gain is the number of calls --
+ *          one range op per run of covered tiles instead of one proxy write per
+ *          element -- not the transient memory.
+ */
+template <tiled_view_of_array View, std::integral I>
+    requires(!std::is_const_v<typename View::element_type>)
+void fill_box(const View&                        f,
+              const std::array<I, View::rank()>& box_lo,
+              const std::array<I, View::rank()>& box_hi,
+              const detail::value_of<View>&      v,
+              typename View::index_type          first,
+              typename View::index_type          last)
+{
+    using Index       = typename View::index_type;
+    using M           = typename View::mapping_type;
+    constexpr auto R  = View::rank();
+    constexpr auto N  = static_cast<std::size_t>(M::tile_elems);
+    auto           lo = detail::clipped_box<View>(box_lo);
+    auto           hi = detail::clipped_box<View>(box_hi);
+    if (!detail::clip_box(f, lo, hi))
+    {
+        return;
+    }
+    auto&       a    = *f.data_handle();
+    const auto  dims = detail::tiles_per_dim(f);
+    const Index nt   = tile_count(f);
+    last             = std::min(last, nt);
+    if (first >= last)
+    {
+        return;
+    }
+    detail::range_writer<detail::array_of<View>>                       out{a};
+    detail::run_filler<detail::array_of<View>, detail::value_of<View>> runs{out, v};
+
+    // The tiles the box touches, per dimension: [tlo[r], thi[r]).
+    std::array<Index, R> tlo{};
+    std::array<Index, R> thi{};
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        tlo[r] = lo[r] / M::tile[r];
+        thi[r] = (hi[r] - 1) / M::tile[r] + 1;
+    }
+    // Tiles [first, last) are rows of tiles in storage order: only those rows
+    // of the box are walked (a thread given a slice of the tiles skips the rest).
+    Index rest = 1;
+    for (std::size_t r = 1; r < R; ++r)
+    {
+        rest *= dims[r];
+    }
+    tlo[0] = std::max(tlo[0], first / rest);
+    thi[0] = std::min(thi[0], (last - 1) / rest + 1);
+    if (tlo[0] >= thi[0])
+    {
+        return;
+    }
+    std::array<Index, R> c = tlo; // tile coordinates, row-major over the touched ones
+    while (true)
+    {
+        Index k = 0;
+        for (std::size_t r = 0; r < R; ++r)
+        {
+            k = k * dims[r] + c[r];
+        }
+        if (k >= first && k < last)
+        {
+            const auto t     = detail::tile_at(f, dims, k);
+            bool       whole = true;
+            for (std::size_t r = 0; r < R; ++r)
+            {
+                whole = whole && lo[r] <= t.origin[r] && hi[r] >= t.origin[r] + t.extent[r];
+            }
+            if (whole)
+            {
+                runs.add(static_cast<std::size_t>(k) * N, static_cast<std::size_t>(k + 1) * N);
+            }
+            else
+            {
+                runs.flush();
+                update_tiles(
+                    f, k, k + 1,
+                    [&](const auto& tt, auto b)
+                    {
+                        std::array<Index, R> i{};
+                        for (std::size_t r = 0; r < R; ++r)
+                        {
+                            i[r] = std::max(lo[r], tt.origin[r]) - tt.origin[r];
+                        }
+                        const std::array<Index, R> i0 = i;
+                        while (true) // every cell of tile x box
+                        {
+                            b[i]          = v;
+                            std::size_t r = R;
+                            while (r-- > 0)
+                            {
+                                if (++i[r] < std::min(hi[r], tt.origin[r] + tt.extent[r]) - tt.origin[r])
+                                {
+                                    break;
+                                }
+                                i[r] = i0[r];
+                            }
+                            if (r == static_cast<std::size_t>(-1))
+                            {
+                                break;
+                            }
+                        }
+                    },
+                    [&](const auto&, detail::value_of<View>& u) { return u == v; });
+            }
+        }
+        std::size_t r = R;
+        while (r-- > 0)
+        {
+            if (++c[r] < thi[r])
+            {
+                break;
+            }
+            c[r] = tlo[r];
+        }
+        if (r == static_cast<std::size_t>(-1))
+        {
+            break;
+        }
+    }
+    runs.flush();
+}
+
+/// @brief fill_box() over every tile of @p f.
+template <tiled_view_of_array View, std::integral I>
+    requires(!std::is_const_v<typename View::element_type>)
+void fill_box(const View&                        f,
+              const std::array<I, View::rank()>& lo,
+              const std::array<I, View::rank()>& hi,
+              const detail::value_of<View>&      v)
+{
+    fill_box(f, lo, hi, v, typename View::index_type{0}, tile_count(f));
+}
+
+/**
+ * @brief Set the box [@p lo, @p hi) of row-major view @p f (md::view()) to
+ *        @p v: one range op per contiguous run -- a row of the box, or several
+ *        rows when the box spans whole rows.
+ * @details The box is clipped to the view's extents. Callable in a phase,
+ *          each thread on its own box (its own rows): the runs of two threads
+ *          may share a chunk, which fill_range_mt() allows.
+ */
+template <typename View, std::integral I>
+    requires(std::same_as<typename View::layout_type, mdns::layout_right> &&
+             !std::is_const_v<typename View::element_type> &&
+             std::same_as<typename View::accessor_type, accessor<typename View::accessor_type::array_type>>)
+void fill_box(const View&                        f,
+              const std::array<I, View::rank()>& box_lo,
+              const std::array<I, View::rank()>& box_hi,
+              const detail::value_of<View>&      v)
+{
+    using Index       = typename View::index_type;
+    constexpr auto R  = View::rank();
+    auto           lo = detail::clipped_box<View>(box_lo);
+    auto           hi = detail::clipped_box<View>(box_hi);
+    if (!detail::clip_box(f, lo, hi))
+    {
+        return;
+    }
+    detail::range_writer<detail::array_of<View>>                       out{*f.data_handle()};
+    detail::run_filler<detail::array_of<View>, detail::value_of<View>> runs{out, v};
+    std::array<Index, R> i = lo; // the last index is always lo[R - 1]: one run per i
+    while (true)
+    {
+        const auto a = static_cast<std::size_t>(std::apply([&f](auto... x) { return f.mapping()(x...); }, i));
+        runs.add(a, a + static_cast<std::size_t>(hi[R - 1] - lo[R - 1]));
+        if constexpr (R == 1)
+        {
+            break;
+        }
+        else
+        {
+            std::size_t r = R - 1;
+            while (r-- > 0)
+            {
+                if (++i[r] < hi[r])
+                {
+                    break;
+                }
+                i[r] = lo[r];
+            }
+            if (r == static_cast<std::size_t>(-1))
+            {
+                break;
+            }
+        }
+    }
+    runs.flush();
 }
 
 } // namespace shrink_array::md

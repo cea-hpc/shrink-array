@@ -35,7 +35,8 @@ celle de la bibliothèque liée (`chunk::chunk_v2a`, ...) ; `chunk_config::use_c
 
 `chunk/mdspan.h` pose une vue multidimensionnelle, `f[i, j]`, sur chacun d'eux (`mdspan` C++23,
 ligne par ligne ou en tuiles alignées sur les chunks), et `chunk/mdspan_tile_ops.h` lit et met à jour
-une telle vue tuile par tuile, une tuile uniforme en un appel : voir [mdspan_fr.md](mdspan_fr.md).
+une telle vue tuile par tuile, une tuile uniforme en un appel, et en remplit une boîte par suites :
+voir [mdspan_fr.md](mdspan_fr.md).
 
 ## 3. Opérations du conteneur
 

@@ -61,7 +61,7 @@ la passe de compression :
 matériaux. Le chiffre dépend du champ : un champ fait de couches plus larges qu'un chunk ne gagne
 rien aux tuiles, un champ de petites taches y gagne le plus.
 
-## 3. Tuile par tuile : `for_each_tile` et `update_tiles`
+## 3. Tuile par tuile : `for_each_tile`, `update_tiles`, `fill_box`
 
 `f[i, j]` paie un `operator[]` par élément. Dans une vue en tuiles une tuile est une suite
 d'éléments consécutifs -- un chunk quand elle a `chunk_size()` éléments -- : `chunk/mdspan_tile_ops.h`
@@ -94,14 +94,17 @@ sa::md::update_tiles(f,                           // f = 0.5 f + 1
 | `md::for_each_tile(f, on_block, on_uniform)` | `on_block(t, b)` pour une tuile de plusieurs valeurs, `b` un `mdspan<const T, extents<16, 16>>` sur une copie de la tuile ; `on_uniform(t, v)` pour une tuile uniforme. Sans `on_uniform`, `on_block` reçoit toutes les tuiles |
 | `md::update_tiles(f, on_block, on_uniform)` | la même chose, `b` modifiable ; la tuile n'est réécrite que si elle a changé, en une constante si elle en sort uniforme. `on_uniform(t, v)` change `v` et rend true, ou rend false pour recevoir la tuile en bloc rempli de `v` |
 | `md::for_each_tile(f, first, last, ...)`, `md::update_tiles(f, first, last, ...)` | les tuiles `[first, last)` dans l'ordre de stockage, pour une boucle `#pragma omp for` sur `[0, md::tile_count(f))` |
+| `md::fill_box(f, lo, hi, v)` | met la boîte `[lo, hi)`, rognée aux étendues, à `v`. Vue en tuiles : une tuile que la boîte couvre est remplie entière, bourrage compris, une range op par suite de tuiles couvertes consécutives ; une tuile qu'elle coupe est mise à jour comme par `update_tiles` (laissée telle quelle si elle est déjà uniforme à `v`). Vue ligne par ligne (`md::view`) : une range op par suite contiguë, plusieurs lignes d'un coup quand la boîte couvre des lignes entières |
+| `md::fill_box(f, lo, hi, v, first, last)` | vue en tuiles, tuiles `[first, last)` seulement : chaque thread sa tranche de tuiles, dans une phase |
 | `t.number`, `t.origin`, `t.extent` | le rang de la tuile dans l'ordre de stockage, le multi-indice de son premier élément, sa partie dans la vue (plus petite que la tuile sur les bords bourrés) |
 
 Le bloc couvre toute la tuile, bourrage compris : boucler jusqu'à `t.extent` là où le bourrage ne
 doit pas compter. Une tuile uniforme que `update_tiles` laisse inchangée n'est pas écrite : un noyau
 qui ne touche pas au fond ne le matérialise pas. Une tuile modifiée est écrite par `fill_range()`
-si elle est uniforme, sinon par `copy_range()` : les range ops séquentielles hors région
-parallèle, les `_mt` dedans (une session d'écriture par chunk ; elles ne libèrent jamais un chunk,
-donc une tuile rendue uniforme reste matérialisée jusqu'à la passe de compression suivante).
+si elle est uniforme, sinon par `copy_range()` (les range ops séquentielles hors région
+parallèle, les `_mt` dedans). Un chunk compressé qui change est matérialisé pour l'écriture et mis
+en file : la fin de la phase, ou la passe de compression suivante, le recompresse. Le gain est le
+nombre d'appels, pas la mémoire transitoire.
 
 Dans une région parallèle chaque thread travaille sur ses propres tuiles, dans une phase pour
 `update_tiles`, et une tuile doit être faite de chunks entiers : un nombre d'éléments multiple de
@@ -117,8 +120,14 @@ Release, GCC 14, sur un conteneur à 2 cœurs (des ordres de grandeur, pas un ba
 | somme du champ | 2 | 11,4 ms | 1,35 ms | x 8,5 |
 | `f = 0.5 f + 1` | 1 | 125,8 ms | 6,3 ms | x 19,9 |
 | `f = 0.5 f + 1` | 2 | 64,1 ms | 4,4 ms | x 14,7 |
+| 64 rectangles peints, `md::fill_box` | 1 | 103,3 ms | 8,8 ms | x 11,7 |
+| 64 rectangles peints, `md::fill_box` | 2 | 72,0 ms | 7,0 ms | x 10,4 |
 
-Les deux laissent le même champ et les mêmes 2464 chunks matérialisés.
+Chaque paire laisse le même champ. La somme et la mise à jour laissent les mêmes 2464 chunks
+matérialisés. Peindre élément par élément en laisse 6241, contre 3109 avec `fill_box` : 3132
+chunks repeints d'une seule valeur restent matérialisés, et aucune passe de compression ne les
+prend -- les écritures élément par élément ne les ont pas mis en file -- là où `fill_box` les
+écrit en constantes, mises en file.
 
 ## 4. D'où vient `mdspan`
 

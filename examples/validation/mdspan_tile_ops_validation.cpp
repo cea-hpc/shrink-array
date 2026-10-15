@@ -26,15 +26,22 @@
 //     hands a filled block; a tile made uniform reads back uniform.
 //   - parallel: update_tiles over disjoint tiles inside parallel_phase, at the
 //     team size of OMP_NUM_THREADS.
+//   - fill_box: a sequence of boxes (whole tiles, partial, clipped, empty) on
+//     tiled views (tiles of one, a quarter, two chunks) and on row-major views
+//     of rank 2 and 3, against a std::vector filled element by element;
+//     serial, then per tile range / per row slice in a parallel phase.
 //   - `misaligned` argument: tiles of a quarter chunk in a parallel region
 //     must stop the program (ctest: PASS_REGULAR_EXPRESSION on the message).
 //
 // Exit 0, 1 with the first mismatches, 77 (ctest SKIP_RETURN_CODE) without
 // mdspan. Run by ctest; the variant comes from the CHUNK_VARIANT_* macro.
 
+#include <algorithm>   // std::min, std::max (the reference boxes)
+#include <array>       // std::array (the boxes)
 #include <cstddef>     // std::size_t
 #include <string_view> // std::string_view (the argument)
 #include <type_traits> // std::conditional_t
+#include <vector>      // std::vector (the reference of fill_box)
 
 #include "chunk/array_chunk.h"     // ArrayChunk
 #include "chunk/array_chunk2.h"    // ArrayChunk2
@@ -43,7 +50,7 @@
 #include "chunk/config.h"          // chunk_config::use_chunk2*
 #include "chunk/internal/print.h"  // shrink_array::println
 #include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/mdspan_tile_ops.h" // md::for_each_tile, md::update_tiles, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan_tile_ops.h" // md::for_each_tile, md::update_tiles, md::fill_box, SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 using namespace shrink_array;
@@ -334,6 +341,135 @@ void update_tiles_parallel()
     }
 }
 
+// The boxes of fill_box, applied in this order, each with its own value.
+struct Box
+{
+    std::array<long, 2> lo;
+    std::array<long, 2> hi;
+    double              v;
+};
+const Box boxes[] = {
+    {{0, 0}, {nx, ny}, 1.0},     // the whole view
+    {{16, 16}, {48, 64}, 2.0},   // whole tiles of 16 x 16
+    {{5, 7}, {37, 83}, 3.0},     // partial tiles on every side
+    {{90, 80}, {200, 200}, 4.0}, // clipped: the last, padded tiles
+    {{10, 10}, {10, 20}, 5.0},   // empty
+    {{-5, -5}, {3, 3}, 6.0},     // clipped below
+    {{0, 0}, {nx, 16}, 0.0},     // T{}: a column of tiles
+    {{32, 0}, {33, ny}, 7.0},    // one row
+    {{16, 16}, {48, 64}, 8.0},   // the same tiles again, another value
+};
+
+void apply_ref(std::vector<double>& ref, const Box& b)
+{
+    for (long i = std::max(0L, b.lo[0]); i < std::min(nx, b.hi[0]); ++i)
+    {
+        for (long j = std::max(0L, b.lo[1]); j < std::min(ny, b.hi[1]); ++j)
+        {
+            ref[static_cast<std::size_t>(i * ny + j)] = b.v;
+        }
+    }
+}
+
+template <typename View>
+void compare(const View& f, const std::vector<double>& ref, const char* what, int step)
+{
+    for (long i = 0; i < nx; ++i)
+    {
+        for (long j = 0; j < ny; ++j)
+        {
+            const double x = f[i, j];
+            expect(x == ref[static_cast<std::size_t>(i * ny + j)], what, step, i * ny + j);
+        }
+    }
+}
+
+template <std::size_t TH, std::size_t TW>
+void fill_box_tiled(bool parallel)
+{
+    Array<double>       a(static_cast<long>(md::tiled_size<TH, TW>(nx, ny)));
+    auto                f = md::tiled_view<TH, TW>(a, nx, ny);
+    std::vector<double> ref(static_cast<std::size_t>(nx * ny), 0.0);
+    int                 step = 0;
+    for (const Box& b : boxes)
+    {
+        apply_ref(ref, b);
+        if (parallel)
+        {
+            const long n = md::tile_count(f);
+            parallel_phase(
+                [&]
+                {
+    #pragma omp for schedule(static, 1)
+                    for (long k = 0; k < n; ++k)
+                    {
+                        md::fill_box(f, b.lo, b.hi, b.v, k, k + 1);
+                    }
+                });
+        }
+        else
+        {
+            md::fill_box(f, b.lo, b.hi, b.v);
+        }
+        compare(f, ref, parallel ? "fill_box tiled, parallel" : "fill_box tiled", step++);
+    }
+}
+
+void fill_box_row_major(bool parallel)
+{
+    Array<double>       a(nx * ny);
+    auto                f = md::view(a, nx, ny);
+    std::vector<double> ref(static_cast<std::size_t>(nx * ny), 0.0);
+    int                 step = 0;
+    for (const Box& b : boxes)
+    {
+        apply_ref(ref, b);
+        if (parallel)
+        {
+            parallel_phase(
+                [&]
+                {
+    #pragma omp for schedule(static, 3)
+                    for (long i = 0; i < nx; ++i) // each thread its rows of the box
+                    {
+                        md::fill_box(f, std::array<long, 2>{std::max(b.lo[0], i), b.lo[1]},
+                                     std::array<long, 2>{std::min(b.hi[0], i + 1), b.hi[1]}, b.v);
+                    }
+                });
+        }
+        else
+        {
+            md::fill_box(f, b.lo, b.hi, b.v);
+        }
+        compare(f, ref, parallel ? "fill_box row-major, parallel" : "fill_box row-major", step++);
+    }
+
+    // Rank 3: a box spanning whole rows of the last two dimensions is one run.
+    constexpr long n0 = 6;
+    constexpr long n1 = 10;
+    constexpr long n2 = 30;
+    Array<int>     c(n0 * n1 * n2);
+    auto           g = md::view(c, n0, n1, n2);
+    md::fill_box(g, std::array<long, 3>{1, 0, 0}, std::array<long, 3>{3, n1, n2}, 4);
+    md::fill_box(g, std::array<long, 3>{2, 3, 5}, std::array<long, 3>{5, 7, 29}, 9);
+    for (long i = 0; i < n0; ++i)
+    {
+        for (long j = 0; j < n1; ++j)
+        {
+            for (long k = 0; k < n2; ++k)
+            {
+                const int x    = g[i, j, k];
+                int       want = (i >= 1 && i < 3) ? 4 : 0;
+                if (i >= 2 && i < 5 && j >= 3 && j < 7 && k >= 5 && k < 29)
+                {
+                    want = 9;
+                }
+                expect(x == want, "fill_box rank 3", i * n1 * n2 + j * n2 + k, x);
+            }
+        }
+    }
+}
+
 // Tiles of 64 elements on chunks of more: fine serially, refused in a region.
 int misaligned()
 {
@@ -362,6 +498,13 @@ int main(int argc, char** argv)
     read_tiles<16, 32>(); // two chunks per tile at 256
     update_tiles_serial();
     update_tiles_parallel();
+    fill_box_tiled<16, 16>(false);
+    fill_box_tiled<8, 8>(false);
+    fill_box_tiled<16, 32>(false);
+    fill_box_tiled<16, 16>(true);
+    fill_box_tiled<16, 32>(true);
+    fill_box_row_major(false);
+    fill_box_row_major(true);
     release_chunk_pools();
     destroy_block_chunk();
     if (fails != 0)

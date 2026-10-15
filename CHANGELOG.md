@@ -69,6 +69,13 @@ the tag's checksum to the recipe.
   parallel region a tile must be whole chunks (checked). `mdspan_tiles`,
   2048 x 2048, against `f[i, j]`: the sum x 8 to x 15, `f = 0.5 f + 1` x 15 to
   x 20. Harness `mdspan_tile_ops_validation_<variant>`.
+- `md::fill_box` (`chunk/mdspan_tile_ops.h`): set a box of a tiled or a
+  row-major view to one value, one range op per run of covered tiles (tiled)
+  or per contiguous run (row-major), crossed tiles updated as by
+  `update_tiles`; a tile-range overload for a parallel phase. `mdspan_tiles`,
+  64 rectangles on 2048 x 2048 against `f[i, j]`: x 10 to x 12, and 3109
+  chunks left materialised against 6241 (the element writes leave chunks
+  painted over to one value unqueued).
 - Fast allocator: `CHUNK_REUSE_SHARE_DIV` and `CHUNK_REUSE_FLOOR_KB` (developer
   settings) set the reuse budget -- how many freed buffers a rank keeps parked
   for its next allocations -- whose default counts every chunk created,

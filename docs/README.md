@@ -39,7 +39,7 @@
 | [algo_chunk2a.md](algo_chunk2a.md) / [algo_chunk2a_fr.md](algo_chunk2a_fr.md) | Chunk2A: one second value per chunk, second-value registry, its own queueing criteria |
 | [synchronisation_dekker.md](synchronisation_dekker.md) / [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) | Dekker's algorithm, its symmetric and asymmetric (`membarrier`) shapes, and its three uses: writers ↔ compressors, flushes ↔ compressors, readers ↔ buffer reclaim |
 | [adaptive_rechunk.md](adaptive_rechunk.md) / [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) | advisor, decider, rebuild, per-array allocators, results and limits |
-| [mdspan.md](mdspan.md) / [mdspan_fr.md](mdspan_fr.md) | the `mdspan` view: `md::view`, the tiled layout, row-major against tiles on a 2D field, tile by tile (`md::for_each_tile`, `md::update_tiles`), where `mdspan` comes from, limits |
+| [mdspan.md](mdspan.md) / [mdspan_fr.md](mdspan_fr.md) | the `mdspan` view: `md::view`, the tiled layout, row-major against tiles on a 2D field, tile by tile (`md::for_each_tile`, `md::update_tiles`, `md::fill_box`), where `mdspan` comes from, limits |
 | [environment_variables.md](environment_variables.md) / [variables_environnement_fr.md](variables_environnement_fr.md) | the user settings: environment variables, CMake options, variant and geometry |
 | [developer_settings.md](developer_settings.md) / [reglages_developpeur_fr.md](reglages_developpeur_fr.md) | the developers' switches, with their removal dates: tuning, traces, forced rechunks, benchmark, macros, debugging options, build scripts |
 | [performance_measurement.md](performance_measurement.md) / [mesures_performance_fr.md](mesures_performance_fr.md) | measurement traps (`VmRSS`, timing noise), method, recipes |

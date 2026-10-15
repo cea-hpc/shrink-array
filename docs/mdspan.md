@@ -60,7 +60,7 @@ pass:
 materials. The figure depends on the field: a field made of layers wider than a chunk gains
 nothing from tiles, a field of small blobs gains most.
 
-## 3. Tile by tile: `for_each_tile` and `update_tiles`
+## 3. Tile by tile: `for_each_tile`, `update_tiles`, `fill_box`
 
 `f[i, j]` pays an `operator[]` per element. In a tiled view a tile is a run of consecutive
 elements -- one chunk when it has `chunk_size()` elements -- so `chunk/mdspan_tile_ops.h` reads
@@ -93,14 +93,17 @@ sa::md::update_tiles(f,                           // f = 0.5 f + 1
 | `md::for_each_tile(f, on_block, on_uniform)` | `on_block(t, b)` for a tile of several values, `b` an `mdspan<const T, extents<16, 16>>` over a copy of the tile; `on_uniform(t, v)` for a uniform tile. Without `on_uniform`, `on_block` gets every tile |
 | `md::update_tiles(f, on_block, on_uniform)` | the same, `b` writable; the tile is written back only if it changed, as one constant if it came out uniform. `on_uniform(t, v)` changes `v` and returns true, or returns false to get the tile as a block filled with `v` |
 | `md::for_each_tile(f, first, last, ...)`, `md::update_tiles(f, first, last, ...)` | tiles `[first, last)` in storage order, for a loop `#pragma omp for` over `[0, md::tile_count(f))` |
+| `md::fill_box(f, lo, hi, v)` | sets the box `[lo, hi)`, clipped to the extents, to `v`. Tiled view: a tile the box covers is filled whole, padding included, one range op per run of consecutive covered tiles; a tile it crosses is updated as by `update_tiles` (left alone if already uniform at `v`). Row-major view (`md::view`): one range op per contiguous run, several rows at once when the box spans whole rows |
+| `md::fill_box(f, lo, hi, v, first, last)` | tiled view, tiles `[first, last)` only: each thread its own slice of the tiles, in a phase |
 | `t.number`, `t.origin`, `t.extent` | the tile's rank in storage order, the multi-index of its first element, the part of it inside the view (smaller than the tile on the padded edges) |
 
 The block covers the whole tile, padding included: loop to `t.extent` where the padding must not
 count. A uniform tile left unchanged by `update_tiles` is not written, so a kernel that leaves the
 background alone does not materialise it. A changed tile is written with `fill_range()` when it
-is uniform, else `copy_range()`: the serial range ops outside a parallel region, the `_mt` ones
-inside (one write session per chunk; they never release a chunk, so a tile made uniform stays
-materialised until the next compression pass).
+is uniform, else `copy_range()` (the serial range ops outside a parallel region, the `_mt` ones
+inside). A compressed chunk that changes is materialised for the write and queued: the end of the
+phase, or the next compression pass, compresses it again. The gain is the number of calls, not
+the transient memory.
 
 In a parallel region each thread works on its own tiles, inside a phase for `update_tiles`, and a
 tile must be made of whole chunks: tile elements a multiple of `chunk_size()`, checked (a tile
@@ -115,8 +118,13 @@ build, GCC 14, on a 2-core container (orders of magnitude, not a benchmark):
 | sum of the field | 2 | 11.4 ms | 1.35 ms | x 8.5 |
 | `f = 0.5 f + 1` | 1 | 125.8 ms | 6.3 ms | x 19.9 |
 | `f = 0.5 f + 1` | 2 | 64.1 ms | 4.4 ms | x 14.7 |
+| 64 rectangles painted, `md::fill_box` | 1 | 103.3 ms | 8.8 ms | x 11.7 |
+| 64 rectangles painted, `md::fill_box` | 2 | 72.0 ms | 7.0 ms | x 10.4 |
 
-Both leave the same field and the same 2464 materialised chunks.
+Each pair leaves the same field. The sum and the update leave the same 2464 materialised chunks.
+Painting element by element leaves 6241, against 3109 with `fill_box`: 3132 chunks painted over
+to a single value stay materialised, and no compression pass takes them -- the element writes did
+not queue them -- where `fill_box` writes them as constants, queued.
 
 ## 4. Where `mdspan` comes from
 

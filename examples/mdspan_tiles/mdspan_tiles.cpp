@@ -34,7 +34,9 @@
  *          chunk/mdspan_tile_ops.h), in parallel: the sum of the field, and
  *          f = 0.5 f + 1 on every cell. A uniform tile costs one call; the
  *          update writes it back as one constant. Prints the times and the
- *          chunks materialised, and checks both give the same field.
+ *          chunks materialised, and checks both give the same field. Last,
+ *          64 rectangles painted over the field, element by element against
+ *          md::fill_box (each thread on its own slice of the tiles).
  *
  *          Usage: mdspan_tiles [n]   (an n x n field, 2048 by default)
  *          Exit 0, 1 when a layout does not read back the field, 77 when
@@ -42,6 +44,7 @@
  */
 
 #include <algorithm> // std::min
+#include <array>     // std::array (the rectangles)
 #include <chrono>    // std::chrono::steady_clock (the kernel times)
 #include <cmath>     // std::sin, std::abs
 #include <cstdlib>   // std::atol
@@ -51,7 +54,8 @@
 #include "chunk/internal/print.h"  // shrink_array::println
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/mdspan.h"          // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/mdspan_tile_ops.h" // md::for_each_tile, md::update_tiles
+#include "chunk/PMP_CHUNK.h"       // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/mdspan_tile_ops.h" // md::for_each_tile, md::update_tiles, md::fill_box
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
@@ -302,8 +306,106 @@ void kernels(long n, int& bad)
     }
     sa::println("update         element {:8.2f} ms   tile {:8.2f} ms   (x {:.1f})", 1e3 * u_elem, 1e3 * u_tile,
                 u_elem / u_tile);
-    sa::println("  materialised before the pass: element {}, tile {}; after it: {} and {} (pass {:.2f} ms)", m_elem,
-                m_tile, count(e).materialised, count(t).materialised, 1e3 * c_both);
+    // The end of a phase already runs a compression pass: the explicit one
+    // finds what it left.
+    sa::println("  materialised at the end of the phase: element {}, tile {}; after one more pass: {} and {} "
+                "({:.2f} ms)",
+                m_elem, m_tile, count(e).materialised, count(t).materialised, 1e3 * c_both);
+}
+
+// 64 rectangles of one value each, painted in order (the later win).
+void paint(long n, int& bad)
+{
+    struct Rect
+    {
+        std::array<long, 2> lo;
+        std::array<long, 2> hi;
+        double              v;
+    };
+    std::array<Rect, 64> rects{};
+    unsigned long        seed = 12345;
+    auto                 next = [&seed](long m)
+    {
+        seed = seed * 6364136223846793005UL + 1442695040888963407UL;
+        return static_cast<long>((seed >> 33) % static_cast<unsigned long>(m));
+    };
+    for (std::size_t r = 0; r < rects.size(); ++r)
+    {
+        const long h = 8 + next(n / 4);
+        const long w = 8 + next(n / 4);
+        const long i = next(n - h);
+        const long j = next(n - w);
+        rects[r]     = Rect{{i, j}, {i + h, j + w}, 30.0 + static_cast<double>(r)};
+    }
+
+    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::ArrayChunk2A<double> e(size);
+    sa::ArrayChunk2A<double> t(size);
+    fill_tiled<16, 16>(e, n);
+    fill_tiled<16, 16>(t, n);
+    auto fe = sa::md::tiled_view<16, 16>(e, n, n);
+    auto ft = sa::md::tiled_view<16, 16>(t, n, n);
+
+    auto t0 = std::chrono::steady_clock::now();
+    sa::parallel_phase(
+        [&]
+        {
+    #pragma omp for schedule(static)
+            for (long i = 0; i < n; ++i)
+            {
+                for (const Rect& r : rects)
+                {
+                    if (i >= r.lo[0] && i < r.hi[0])
+                    {
+                        for (long j = r.lo[1]; j < r.hi[1]; ++j)
+                        {
+                            fe[i, j] = r.v;
+                        }
+                    }
+                }
+            }
+        });
+    const double p_elem = seconds_since(t0);
+
+    const long ntiles = sa::md::tile_count(ft);
+    t0                = std::chrono::steady_clock::now();
+    sa::parallel_phase(
+        [&]
+        {
+            // Each thread one contiguous slice of the tiles, every rectangle in order.
+            const long nth   = CHUNK_PMP_NUM_THREADS;
+            const long me    = CHUNK_PMP_THREAD_RANK;
+            const long first = ntiles * me / nth;
+            const long last  = ntiles * (me + 1) / nth;
+            for (const Rect& r : rects)
+            {
+                sa::md::fill_box(ft, r.lo, r.hi, r.v, first, last);
+            }
+        });
+    const double p_tile = seconds_since(t0);
+
+    const auto ce    = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(fe);
+    const auto ct    = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(ft);
+    long       wrong = 0;
+    for (long i = 0; i < n; ++i)
+    {
+        for (long j = 0; j < n; ++j)
+        {
+            wrong += ce[i, j] != ct[i, j] ? 1 : 0;
+        }
+    }
+    if (wrong != 0)
+    {
+        sa::println("paint: {} cells differ between element and fill_box", wrong);
+        ++bad;
+    }
+    const long m_elem = count(e).materialised;
+    const long m_tile = count(t).materialised;
+    sa::ArrayChunk2A<double>::make_block_compression();
+    sa::println("paint 64 rect. element {:8.2f} ms   tile {:8.2f} ms   (x {:.1f})", 1e3 * p_elem, 1e3 * p_tile,
+                p_elem / p_tile);
+    sa::println("  materialised at the end of the phase: element {}, tile {}; after one more pass: {} and {}", m_elem,
+                m_tile, count(e).materialised, count(t).materialised);
 }
 } // namespace
 
@@ -323,6 +425,7 @@ int main(int argc, char** argv)
         run("tiles 16 x 16", t, sa::md::tiled_view<16, 16>(t, n, n), n, bad);
     }
     kernels(n, bad);
+    paint(n, bad);
     sa::release_chunk_pools();
     sa::destroy_block_chunk();
     return bad == 0 ? 0 : 1;
