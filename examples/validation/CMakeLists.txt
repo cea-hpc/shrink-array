@@ -490,6 +490,22 @@ chunk_require_cxx20(bit_words_validation PRIVATE)
 add_test(NAME bit_words_validation COMMAND bit_words_validation)
 set_property(TEST bit_words_validation PROPERTY LABELS validation)
 
+# --- rank_registry_validation: the rank registry of the threading backend
+# (fast_allocators/internal/pmp_runtime.h) alone, header only, driven from
+# std::threads: dense, unique, bounded ranks, given back at thread exit and
+# reused; the serial backend's queries are those of one thread. Every build,
+# with OpenMP when on (the backend the build selects).
+add_executable(rank_registry_validation rank_registry_validation.cpp)
+chunk_add_alloc_token_rt(rank_registry_validation)
+target_include_directories(rank_registry_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(rank_registry_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(rank_registry_validation PRIVATE OpenMP::OpenMP_CXX)
+endif ()
+chunk_require_cxx20(rank_registry_validation PRIVATE)
+add_test(NAME rank_registry_validation COMMAND rank_registry_validation)
+set_property(TEST rank_registry_validation PROPERTY LABELS validation)
+
 # --- blk_allocator_validation: fast_allocators' public size-dispatching front
 # end (BlkAllocator) alone. Nothing in the library calls it, so this is what
 # runs it: sizes on, between and past the buckets, many live blocks at once,

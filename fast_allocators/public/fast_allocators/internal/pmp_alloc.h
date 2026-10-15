@@ -23,22 +23,23 @@
 //
 // The data-parallel loops (fast_alloc::pmp::parallel_for, ...) come with it,
 // from pmp_loops.h, which chunk's PMP_CHUNK.h re-exports as shrink_array::pmp.
+// The macros are the runtime queries of pmp_runtime.h (the backend's).
 
-#include "fast_allocators/internal/pmp_loops.h" // fast_alloc::pmp: parallel_for, parallel_for_local, parallel_sum
+#include "fast_allocators/internal/pmp_loops.h"   // fast_alloc::pmp: parallel_for, parallel_for_local, parallel_sum
+#include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp: max_threads, team_rank, in_parallel
 
-#ifdef _OPENMP
-    #include <omp.h> // omp_get_max_threads, omp_get_thread_num, omp_in_parallel
+#if FAST_ALLOC_PMP_THREADED
 
     #ifndef FAST_ALLOC_PMP_MAX_THREADS
-        #define FAST_ALLOC_PMP_MAX_THREADS omp_get_max_threads()
+        #define FAST_ALLOC_PMP_MAX_THREADS ::fast_alloc::pmp::max_threads()
     #endif
 
     #ifndef FAST_ALLOC_PMP_THREAD_RANK
-        #define FAST_ALLOC_PMP_THREAD_RANK omp_get_thread_num()
+        #define FAST_ALLOC_PMP_THREAD_RANK ::fast_alloc::pmp::team_rank()
     #endif
 
     #ifndef FAST_ALLOC_PMP_IN_PARALLEL_REGION
-        #define FAST_ALLOC_PMP_IN_PARALLEL_REGION omp_in_parallel()
+        #define FAST_ALLOC_PMP_IN_PARALLEL_REGION ::fast_alloc::pmp::in_parallel()
     #endif
 
 #else

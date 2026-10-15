@@ -46,7 +46,7 @@
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK, and <omp.h> with it
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK
 
 namespace shrink_array::pool_ledger
 {

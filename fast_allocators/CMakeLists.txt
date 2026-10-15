@@ -36,6 +36,7 @@ set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/next_power_of_2.h
   public/fast_allocators/internal/pmp_alloc.h
   public/fast_allocators/internal/pmp_loops.h
+  public/fast_allocators/internal/pmp_runtime.h
   public/fast_allocators/internal/singleton.h
   public/fast_allocators/internal/static_const_array.h
   public/fast_allocators/internal/static_const_array_inline.h

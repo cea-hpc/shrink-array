@@ -102,7 +102,34 @@ gets an adaptor, `shrink_array::tbb::parallel_for(range, body)`, that calls
    `all_type_chunk.cpp`'s phase end, run by the application's team.
 5. **A**: the queries through the backend; the `thread_local` rank registry for
    non-OpenMP threads (dense, bounded by the configured maximum, reused when a
-   thread exits).
+   thread exits). *Done*: `fast_allocators/internal/pmp_runtime.h` (namespace
+   `fast_alloc::pmp`, included by `pmp_alloc.h` and `PMP_CHUNK.h`), the one
+   file that asks the runtime: `backend` / `threaded` (and
+   `FAST_ALLOC_PMP_THREADED` for the declaration-level switches), `max_threads`,
+   `num_procs`, `team_rank`, `team_size`, `in_parallel`, `level`,
+   `active_level`, `team_size_at`, `ancestor_rank`, `set_num_threads`,
+   `set_max_active_levels`, `get_runtime_schedule` / `set_runtime_schedule`;
+   OpenMP: the `omp_*` call of the same meaning, serial: one thread. The
+   `CHUNK_PMP_*` and `FAST_ALLOC_PMP_*` macros keep their names and route to
+   it, the threaded branch of `PMP_CHUNK.h` (capacity, checked rank, library
+   rank, rank bound, schedule) names no OpenMP call any more, and
+   `slab_arena.h`'s sweeps and `manage_ompt.cpp` use the queries (no
+   `#ifdef _OPENMP` left in `slab_arena.h`). The registry: `RankRegistry`
+   (lowest free rank first, -1 when full, lock-free), the process-wide
+   `thread_rank_registry()` (capacity fixed by
+   `configure_thread_rank_registry` before its first use), `registered_rank()`
+   (taken at the first call, given back by a `thread_local` destructor when
+   the thread exits, or by `release_registered_rank()`); tested alone from
+   `std::thread`s by `rank_registry_validation`. Nothing in the library calls
+   it yet: the OpenMP backend numbers its threads itself, and the serial
+   backend has one rank. Left for step 7: wiring it into the pool backend's
+   rank (a full registry is the invariant failure of a rank past
+   `chunk_thread_capacity()`), the meaning of `in_parallel()` there (the
+   ladder of `static_const_array_inline.h` takes its lock only when it is
+   true: with application threads no runtime sees, it must answer "other
+   threads may be in the library"), and the declaration-level `#ifdef
+   _OPENMP` of `tc_allocator.h`, `tc_allocator.cpp` and `chunk_base.h` (the
+   serial allocators), which become `FAST_ALLOC_PMP_THREADED`.
 6. **E**: the phase contract (section 2) written down and implemented; OMPT
    becomes one way of calling it.
 7. **Pool backend**: `std::jthread` workers, `std::barrier`, static partitioning
