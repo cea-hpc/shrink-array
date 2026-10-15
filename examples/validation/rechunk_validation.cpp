@@ -602,6 +602,43 @@ int check_non_pow2_refused(const char* label)
     return bad ? 1 : 0;
 }
 
+/// @brief set_active_chunk_size() refuses, in every build, a size that is not
+///        a chunk geometry (0: the next DynamicChunkSize divided by 0; 100)
+///        or wider than cst_buffer_size: the active size is kept, and an
+///        array born afterwards has it.
+int check_active_size_refused(const char* label)
+{
+    const std::string lab_s = pass_label(label);
+    label                   = lab_s.c_str();
+    const unsigned ambient  = active_chunk_size();
+
+    int bad = 0;
+    for (const unsigned s : {0u, 100u, 2u * cst_buffer_size})
+    {
+        set_active_chunk_size(s);
+        if (active_chunk_size() != ambient)
+        {
+            println("[{}/{}] FAIL: set_active_chunk_size({}) accepted: active size {}", variant_name(), label, s,
+                    active_chunk_size());
+            ++bad;
+            set_active_chunk_size(ambient);
+        }
+    }
+    Array<double> arr(1000);
+    if (arr.chunk_size() != ambient)
+    {
+        println("[{}/{}] FAIL: array born at {}, not {}", variant_name(), label, arr.chunk_size(), ambient);
+        ++bad;
+    }
+
+    if (!bad)
+    {
+        println("[{}/{}] OK: set_active_chunk_size(0 / 100 / {}) refused, {} kept", variant_name(), label,
+                2u * cst_buffer_size, ambient);
+    }
+    return bad ? 1 : 0;
+}
+
 /// @brief The index split of the run-time geometry (DynamicChunkSize::chunk_of
 ///        / offset_of: a shift and a mask for a power of two, a magic-number
 ///        multiplication otherwise) equals i / S and i % S, for every valid
@@ -850,6 +887,8 @@ static int run_body(int argc, char** argv)
          }},
         // A size that is neither a power of two nor a multiple of 64: refused, nothing changed.
         {"invalid-size-refused", 512, [] { return check_non_pow2_refused("invalid-size-refused"); }},
+        // set_active_chunk_size: 0, 100 and a size over cst_buffer_size refused in every build.
+        {"active-size-refused", 512, [] { return check_active_size_refused("active-size-refused"); }},
         {"multiple-of-64-chain", 256, [] { return check_multiple_of_64_chain("multiple-of-64-chain"); }},
         {"index-split", 256, [] { return check_index_split("index-split"); }},
         // Shrink with val2 (queue never read past S', must pass).

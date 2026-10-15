@@ -40,6 +40,7 @@
 #include <bit>         // std::has_single_bit
 #include <cstddef>     // std::size_t (func_p2.h uses size_t unqualified)
 #include <cstdint>     // std::uint64_t (DynamicChunkSize's divider)
+#include <cstdio>      // std::fprintf, stderr (set_active_chunk_size's refusals)
 #include <type_traits> // std::conditional_t, std::make_unsigned_t
 
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
@@ -84,31 +85,18 @@ void register_runtime_chunk_size(unsigned int size);
  * @brief Whether @p size can be a chunk geometry: a power of two, or a
  *        multiple of 64; not 0.
  * @details A multiple of 64 keeps a buffer whole 64-bit words of packed bits
- *          (and whole cache lines for 8-byte elements). rechunk_to and
- *          set_chunk_size refuse another size; set_size() and
- *          set_active_chunk_size() stop on it in check builds.
+ *          (and whole cache lines for 8-byte elements). rechunk_to,
+ *          set_chunk_size and set_active_chunk_size refuse another size;
+ *          set_size() stops on it in check builds.
  */
 [[nodiscard]] constexpr bool is_valid_chunk_size(unsigned int size) noexcept
 {
     return std::has_single_bit(size) || (size != 0u && size % 64u == 0u);
 }
 
-/// @brief Set the process-wide active chunk size and register it with register_runtime_chunk_size().
-/// @param size Chunk size, in elements: a power of two or a multiple of 64 (stops a check build otherwise).
-inline void set_active_chunk_size(unsigned int size) noexcept
-{
-    if constexpr (build_config::any_check)
-    {
-        if (!is_valid_chunk_size(size)) [[unlikely]]
-        {
-            CHUNK_INVARIANT_FAILED("set_active_chunk_size({}): a chunk size must be a power of two or a "
-                                   "multiple of 64",
-                                   size);
-        }
-    }
-    g_active_chunk_size = size;
-    register_runtime_chunk_size(size);
-}
+// set_active_chunk_size() is at the end of the file: it checks the size
+// against cst_buffer_size, defined below.
+
 /// @brief The process-wide active chunk size.
 [[nodiscard]] inline unsigned int active_chunk_size() noexcept
 {
@@ -405,5 +393,35 @@ static_assert(std::has_single_bit(chunk_dyn_max_size), "CHUNK_DYN_MAX_SIZE must 
 static_assert(!ActiveSizePolicy::is_dynamic || chunk_dyn_max_size >= static_chunk_size,
               "CHUNK_DYN_MAX_SIZE must be at least the starting chunk size: the shared constant buffers are read "
               "up to the chunk size");
+
+/// @brief Set the process-wide active chunk size and register it with register_runtime_chunk_size().
+/// @param size Chunk size, in elements: a power of two or a multiple of 64, at
+///        most cst_buffer_size. Refused otherwise, with a message in EVERY
+///        build, as rechunk_to() does: the next DynamicChunkSize would divide
+///        by 0 (set_divider), and a chunk wider than cst_buffer_size reads the
+///        shared constant buffers out of bounds. Geometry kept.
+inline void set_active_chunk_size(unsigned int size) noexcept
+{
+    if (!is_valid_chunk_size(size)) [[unlikely]]
+    {
+        std::fprintf(stderr,
+                     "[chunk] set_active_chunk_size(%u) refused: a chunk size must be a power of two or a multiple "
+                     "of 64\n",
+                     size);
+        std::fflush(stderr);
+        return;
+    }
+    if (size > cst_buffer_size) [[unlikely]]
+    {
+        std::fprintf(stderr,
+                     "[chunk] set_active_chunk_size(%u) refused: exceeds cst_buffer_size=%u (raise "
+                     "CHUNK_DYN_MAX_SIZE)\n",
+                     size, cst_buffer_size);
+        std::fflush(stderr);
+        return;
+    }
+    g_active_chunk_size = size;
+    register_runtime_chunk_size(size);
+}
 
 } // namespace shrink_array
