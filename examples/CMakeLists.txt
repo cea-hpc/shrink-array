@@ -140,3 +140,6 @@ add_subdirectory(test_vecto_chunk)
 
 # The chunk-size advisor's step-0 check (dyn chunk2A only).
 add_subdirectory(advisor_demo)
+
+# A 2D field through the mdspan view (chunk/mdspan.h), row-major against tiles.
+add_subdirectory(mdspan_tiles)

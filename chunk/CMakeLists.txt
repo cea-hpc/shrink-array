@@ -417,6 +417,7 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/debug.h
         public/chunk/global_stats_chunk_list.h
         public/chunk/manage_ompt.h
+        public/chunk/mdspan.h
         public/chunk/param_chunk.h
         public/chunk/rechunk_decider.h
         public/chunk/ring_log_debug.h

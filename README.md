@@ -310,6 +310,7 @@ node (24 GB for the `std::vector` version of `simple_array`) and is killed on a 
 | choose a variant | [docs/variants.md](docs/variants.md) |
 | understand reads, writes, in-flight compression, deferred writes | [docs/algo_chunk2.md](docs/algo_chunk2.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |
+| index an array in 2D or 3D (`mdspan`), in tiles that compress | [docs/mdspan.md](docs/mdspan.md) |
 | tune the library or the build | [docs/environment_variables.md](docs/environment_variables.md) |
 | measure memory and time reliably | [docs/performance_measurement.md](docs/performance_measurement.md) |
 | submit and follow runs on the cluster from a window | [docs/shrink_gui.md](docs/shrink_gui.md) |

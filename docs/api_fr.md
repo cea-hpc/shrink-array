@@ -33,6 +33,9 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 celle de la bibliothèque liée (`chunk::chunk_v2a`, ...) ; `chunk_config::use_chunk`,
 `chunk_config::use_chunk2` et `chunk_config::use_chunk2a` indiquent laquelle, à la compilation.
 
+`chunk/mdspan.h` pose une vue multidimensionnelle, `f[i, j]`, sur chacun d'eux (`mdspan` C++23,
+ligne par ligne ou en tuiles alignées sur les chunks) : voir [mdspan_fr.md](mdspan_fr.md).
+
 ## 3. Opérations du conteneur
 
 Ce qu'a un `std::vector`, avec les différences qui comptent. **(S)** marque un point séquentiel :

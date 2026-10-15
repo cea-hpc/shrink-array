@@ -527,6 +527,25 @@ if (OMP AND NOT CHUNK_STD_ALLOC)
   set_property(TEST slab_geometry_validation PROPERTY LABELS validation)
 endif()
 
+# --- mdspan_validation_<variant>: the mdspan view of chunk/mdspan.h (row-major
+# and tiled layouts, writes through the view, linear read-back), default static
+# size. Exits 77 -- skipped -- without <mdspan> or kokkos/mdspan.
+foreach(_vi RANGE ${_rt_nvar_last})
+  list(GET _rt_variant_names   ${_vi} _vname)
+  list(GET _rt_variant_libbase ${_vi} _libbase)
+  list(GET _rt_variant_macro   ${_vi} _vmacro)
+  if (TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    set(_tgt mdspan_validation_${_vname})
+    add_executable(${_tgt} mdspan_validation.cpp)
+    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
+    validation_setup_target(${_tgt})
+    add_test(NAME ${_tgt} COMMAND ${_tgt})
+    set_property(TEST ${_tgt} PROPERTY LABELS validation)
+    set_property(TEST ${_tgt} PROPERTY SKIP_RETURN_CODE 77)
+  endif()
+endforeach()
+
 
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).

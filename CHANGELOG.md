@@ -52,6 +52,15 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `chunk/mdspan.h`: a C++23 `mdspan` view over an array, `f[i, j]`, whose accessor
+  goes through the array's `operator[]` (writes through the proxy, compression
+  unchanged). `md::view` is row-major; `md::tiled_view<16, 16>` lays the field out
+  in tiles of one chunk each, so a uniform 2D block is a uniform chunk: on a
+  2048 x 2048 field of materials, 15 % of the chunks stay materialised against
+  45 % row-major (`examples/mdspan_tiles`, chunk2A 256). `std::mdspan` when the
+  standard library has it, else kokkos/mdspan if on the include path, else
+  nothing. Harness `mdspan_validation_<variant>` (skipped without `mdspan`). See
+  [docs/mdspan.md](docs/mdspan.md).
 - Fast allocator: `CHUNK_REUSE_SHARE_DIV` and `CHUNK_REUSE_FLOOR_KB` (developer
   settings) set the reuse budget -- how many freed buffers a rank keeps parked
   for its next allocations -- whose default counts every chunk created,
