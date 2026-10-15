@@ -58,6 +58,13 @@ the arrays cost a little more than a `std::vector`.
 [docs/variants.md](docs/variants.md) explains what each one costs and which one to choose.
 `ArrayChunkBits` stores `bool` one bit per element (Chunk2 builds).
 
+The time of an access, measured by [examples/access_cost](examples/access_cost) in the same
+binary as a `std::vector`, on Grace with 64 threads, with loops that do nothing but access (the
+worst case): a read costs about 1.9 times the vector's (2.6 to 2.9 times at random indices), a
+rewrite 7 times with v1, 12 times with Chunk2A, 16 times with Chunk2. On one thread the read gap
+is about 4 times, mostly because the loop over the vector is vectorised and the one over the
+array is not. In a real code, the computation around the accesses absorbs part of this cost.
+
 ## Alternatives, and when to prefer them
 
 shrink-array is a drop-in replacement for a `std::vector` that the program keeps reading and
