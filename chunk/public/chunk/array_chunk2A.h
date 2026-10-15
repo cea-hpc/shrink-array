@@ -337,13 +337,20 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *         during a re-chunk rebuild, or with a degraded index (the mark could miss a
      *         value unfindable by value).
      *
-     * @warning Sequential point: no thread may write to or compress an ArrayChunk2A<T>.
-     *          The parallel-region refusal sees the CALLING thread only: a team
-     *          started by another host thread is not detected.
-     *          Nor may one hold the result of a second-value lookup it has not
-     *          recorded yet: the mark misses that slot and frees it. Not guarded
-     *          beyond the refusals above (no epoch); check builds fail an
-     *          invariant (GlobalVecHolder::ReclaimScope).
+     * @pre   A sequential point over the whole TYPE, not one array: no thread
+     *        writes to or compresses ANY ArrayChunk2A<T> of the program
+     *        (whatever its index type, whoever owns it) from the call to its
+     *        return, nor holds the result of a second-value lookup it has not
+     *        recorded yet. A hard precondition, guarded by contract only (no
+     *        epoch, no reader count): docs/api.md, section 3.
+     * @warning Out of contract the failure is SILENT: the mark misses a slot a
+     *          chunk is about to adopt, frees it, take_free_slot() hands its
+     *          identifier to another value, and that chunk reads the other
+     *          value. The refusals above see the CALLING thread only: a
+     *          std::thread / TBB pool or a team started by another host thread
+     *          is not detected. Check builds fail an invariant on any lookup or
+     *          registration overlapping the reclaim (GlobalVecHolder's
+     *          LookupGuard / ReclaimScope); release builds check nothing.
      */
     static std::size_t reclaim_second_values()
     {

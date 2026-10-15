@@ -55,11 +55,28 @@ outside any parallel region, and it invalidates the array's proxies.
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
 | compress **(S)** | `compress()` | a full compression pass now (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `ArrayChunk2A<T>` uses any more, so that their identifiers are reused; returns how many (`ArrayChunk2A`) |
+| free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `ArrayChunk2A<T>` uses any more, so that their identifiers are reused; returns how many (`ArrayChunk2A`); a sequential point over **every** array of the type, see below |
 | statistics | `stats()`, `get_nb_chunk_written()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones) |
 
 Chunk2 only: `set_second_value(v)` **(S)**, before the writes, and `get_second_value()`.
+
+**`reclaim_second_values()`: a precondition over the whole type.** The other **(S)** operations
+concern one array; this one is static and frees second values for every `ArrayChunk2A<T>` of the
+program, whatever their index type. While it runs, **no thread may write to or compress any
+`ArrayChunk2A<T>`**, not only the arrays the caller owns: in a code where several modules keep
+their own `ArrayChunk2A<double>`, the sequential point must hold for all of them.
+
+- *Out of contract, the error is silent*: a chunk compressed while the reclaim runs can keep an
+  identifier that the reclaim frees and then hands to another value; that chunk then reads the
+  other value, with no crash and no message.
+- *What is refused, in every build*: a call inside a parallel region of the calling thread,
+  during a re-chunk, or while the second-value index is degraded (it returns 0). Threads the
+  call cannot see are not detected: a `std::thread` or TBB pool, or an OpenMP team started by
+  another host thread.
+- *What detects it*: check builds (Debug, `CHECK_OPTIM`) stop on any second-value lookup or
+  registration that overlaps a reclaim. Run the application once in a check build with its
+  reclaim calls in place; release builds pay nothing and check nothing.
 
 Not there: `data()`, mutable iterators, `insert` / `erase` in the middle, an in-place sort.
 
