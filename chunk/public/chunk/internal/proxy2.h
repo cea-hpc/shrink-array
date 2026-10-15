@@ -154,7 +154,8 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     [[nodiscard]] int armed_num_tab() const
     {
-        if (const inf_array_t* src = armed_inf_array()) [[likely]]
+        // armed_inf_array() takes `this const Derived&`: no implicit downcast from *this
+        if (const inf_array_t* src = static_cast<const Derived&>(*this).armed_inf_array()) [[likely]]
         {
             return src->num_tab;
         }
@@ -279,7 +280,8 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     [[nodiscard]] int armed_num_tab() const
     {
-        if (const inf_array_t* src = armed_inf_array()) [[likely]]
+        // armed_inf_array() takes `this const Derived&`: no implicit downcast from *this
+        if (const inf_array_t* src = static_cast<const Derived&>(*this).armed_inf_array()) [[likely]]
         {
             return src->num_tab;
         }
