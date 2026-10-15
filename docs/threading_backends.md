@@ -170,6 +170,23 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    `finalize_barrier_phase`), which keep `use_openmp`. The `*OmpPolicy`
    class names stay. The examples and harnesses, OpenMP programs, are left
    as they are.
+   *7b done*: `CHUNK_THREADS=pool` (OMP off, `FAST_ALLOC_PMP_POOL=1` PUBLIC on
+   the targets, checked by both generated build options against `CHUNK_OPT_POOL` /
+   `FAST_ALLOC_OPT_POOL`). `pmp_pool.h` implements the API of `pmp_loops.h`
+   with OpenMP's model: a team is the calling thread (rank 0) and workers
+   1..n-1 of one process-wide pool of `std::jthread`s (worker k is always
+   rank k, so successive static loops give a rank the same block: first
+   touch); for_static splits as libgomp does, for_dynamic / single find
+   their shared state by the count of constructs each thread met, barrier is
+   a `std::barrier`, the end of a team a join; a nested team runs as a team
+   of one (max_active_levels 1); one pool team at a time. `pmp_pool_state.h`
+   holds what the queries read: each thread's stack of team frames and the
+   settings (`set_num_threads`, the run-time schedule); the default team
+   size is `CHUNK_NUM_THREADS`, else `OMP_NUM_THREADS`, else the hardware
+   threads. The declaration-level `#ifdef _OPENMP` of `tc_allocator.h`,
+   `tc_allocator.cpp` and `chunk_base.h` are `FAST_ALLOC_PMP_THREADED`. In
+   7b the application drives the arrays from ONE thread; the library's own
+   teams run on the pool. Application threads are 7c.
 8. (later, on demand) **TBB backend** for the library's own loops, inside the
    application's arena, `static_partitioner`; the adaptor of section 2.
 

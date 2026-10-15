@@ -26,21 +26,37 @@
 // go through it. The loops and teams are in pmp_loops.h.
 //
 // Backends: OpenMP (the default when the build compiles with OpenMP: every
-// query is the omp_* call of the same name, inlined) and serial (one thread,
-// rank 0, no region). The pool backend of step 7 adds a third.
+// query is the omp_* call of the same name, inlined), pool (std::jthread
+// workers, FAST_ALLOC_PMP_POOL=1, which the targets of a CHUNK_THREADS=pool
+// build add: the queries read the calling thread's frames, pmp_pool_state.h)
+// and serial (one thread, rank 0, no region).
 
 #include <atomic> // std::atomic (the rank registry)
 #include <memory> // std::unique_ptr (the registry's slots)
 #include <thread> // std::thread::hardware_concurrency (the registry's default capacity)
 
-#ifdef _OPENMP
-    #include <omp.h> // omp_get_thread_num, omp_get_max_threads, omp_in_parallel, omp_get_level, ...
+/// 1 for the pool backend (FAST_ALLOC_PMP_POOL=1 on the command line, which the
+/// CMake targets of a CHUNK_THREADS=pool build add), 0 otherwise.
+#if defined(FAST_ALLOC_PMP_POOL) && FAST_ALLOC_PMP_POOL
+    #define FAST_ALLOC_PMP_BACKEND_POOL 1
+#else
+    #define FAST_ALLOC_PMP_BACKEND_POOL 0
 #endif
 
-/// 1 when the build's backend runs threads (OpenMP today), 0 for the serial
+#if defined(_OPENMP) && FAST_ALLOC_PMP_BACKEND_POOL
+    #error "FAST_ALLOC_PMP_POOL=1 (the pool backend) in a file compiled with OpenMP: one backend per build"
+#endif
+
+#ifdef _OPENMP
+    #include <omp.h> // omp_get_thread_num, omp_get_max_threads, omp_in_parallel, omp_get_level, ...
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    #include "fast_allocators/internal/pmp_pool_state.h" // pool::tls, pool::settings: what the queries read
+#endif
+
+/// 1 when the build's backend runs threads (OpenMP, pool), 0 for the serial
 /// backend: for the declaration-level switches, where an `if constexpr` cannot
 /// sit. Statements test fast_alloc::pmp::threaded instead.
-#ifdef _OPENMP
+#if defined(_OPENMP) || FAST_ALLOC_PMP_BACKEND_POOL
     #define FAST_ALLOC_PMP_THREADED 1
 #else
     #define FAST_ALLOC_PMP_THREADED 0
@@ -53,10 +69,13 @@ enum class backend_kind : int
 {
     serial, ///< One thread: rank 0, no region, no team.
     openmp, ///< OpenMP: the queries are the omp_* calls, the teams OpenMP regions.
+    pool,   ///< std::jthread workers of the library's own (pmp_pool.h).
 };
 
 /// @brief The backend of this build (fixed at compile time).
-inline constexpr backend_kind backend = FAST_ALLOC_PMP_THREADED ? backend_kind::openmp : backend_kind::serial;
+inline constexpr backend_kind backend = FAST_ALLOC_PMP_BACKEND_POOL ? backend_kind::pool
+                                        : FAST_ALLOC_PMP_THREADED   ? backend_kind::openmp
+                                                                    : backend_kind::serial;
 
 /// @brief Whether the backend runs threads: false only for the serial backend.
 inline constexpr bool threaded = backend != backend_kind::serial;
@@ -70,6 +89,8 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 {
 #ifdef _OPENMP
     return omp_get_max_threads();
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    return pool::nthreads_var();
 #else
     return 1;
 #endif
@@ -80,6 +101,9 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 {
 #ifdef _OPENMP
     return omp_get_num_procs();
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    const int n = static_cast<int>(std::thread::hardware_concurrency());
+    return n > 0 ? n : 1;
 #else
     return 1;
 #endif
@@ -90,6 +114,8 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 {
 #ifdef _OPENMP
     return omp_get_thread_num();
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    return pool::tls().innermost().rank;
 #else
     return 0;
 #endif
@@ -100,6 +126,8 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 {
 #ifdef _OPENMP
     return omp_get_num_threads();
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    return pool::tls().innermost().size;
 #else
     return 1;
 #endif
@@ -110,6 +138,8 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 {
 #ifdef _OPENMP
     return omp_in_parallel() != 0;
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    return pool::tls().active_level > 0;
 #else
     return false;
 #endif
@@ -121,6 +151,8 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 {
 #ifdef _OPENMP
     return omp_get_level();
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    return pool::tls().level;
 #else
     return 0;
 #endif
@@ -131,6 +163,8 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 {
 #ifdef _OPENMP
     return omp_get_active_level();
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    return pool::tls().active_level;
 #else
     return 0;
 #endif
@@ -142,6 +176,17 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 {
 #ifdef _OPENMP
     return omp_get_team_size(lvl);
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    const auto& s = pool::tls();
+    if (lvl == 0)
+    {
+        return 1;
+    }
+    if (lvl < 0 || lvl > s.level)
+    {
+        return -1;
+    }
+    return lvl <= pool::kMaxFrames ? s.frames[lvl - 1].size : 1;
 #else
     return lvl == 0 ? 1 : -1;
 #endif
@@ -153,6 +198,17 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 {
 #ifdef _OPENMP
     return omp_get_ancestor_thread_num(lvl);
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    const auto& s = pool::tls();
+    if (lvl == 0)
+    {
+        return 0;
+    }
+    if (lvl < 0 || lvl > s.level)
+    {
+        return -1;
+    }
+    return lvl <= pool::kMaxFrames ? s.frames[lvl - 1].rank : 0;
 #else
     return lvl == 0 ? 0 : -1;
 #endif
@@ -163,6 +219,8 @@ inline void set_num_threads([[maybe_unused]] int n) noexcept
 {
 #ifdef _OPENMP
     omp_set_num_threads(n);
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    pool::settings().nthreads.store(n > 0 ? n : 0, std::memory_order_relaxed);
 #endif
 }
 
@@ -171,6 +229,8 @@ inline void set_max_active_levels([[maybe_unused]] int levels) noexcept
 {
 #ifdef _OPENMP
     omp_set_max_active_levels(levels);
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    pool::settings().max_active_levels.store(levels > 0 ? levels : 0, std::memory_order_relaxed);
 #endif
 }
 
@@ -190,6 +250,9 @@ struct runtime_schedule
     int         chunk = 0;
     omp_get_schedule(&kind, &chunk);
     return {.kind = static_cast<int>(kind), .chunk = chunk};
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    return {.kind  = pool::settings().sched_kind.load(std::memory_order_relaxed),
+            .chunk = pool::settings().sched_chunk.load(std::memory_order_relaxed)};
 #else
     return {};
 #endif
@@ -200,6 +263,9 @@ inline void set_runtime_schedule([[maybe_unused]] runtime_schedule s) noexcept
 {
 #ifdef _OPENMP
     omp_set_schedule(static_cast<omp_sched_t>(s.kind), s.chunk);
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    pool::settings().sched_kind.store(s.kind, std::memory_order_relaxed);
+    pool::settings().sched_chunk.store(s.chunk, std::memory_order_relaxed);
 #endif
 }
 

@@ -31,6 +31,7 @@
 // clang-format off
 #define CHUNK_OPT_OPENMP                   @CHUNK_OPT_OPENMP@
 #define CHUNK_OPT_THREADED                 @CHUNK_OPT_THREADED@
+#define CHUNK_OPT_POOL                     @CHUNK_OPT_POOL@
 #define CHUNK_OPT_STD_ALLOC                @CHUNK_OPT_STD_ALLOC@
 #define CHUNK_OPT_FAST_ALLOC               @CHUNK_OPT_FAST_ALLOC@
 #define CHUNK_OPT_OMPT                     @CHUNK_OPT_OMPT@
@@ -57,4 +58,10 @@
     #error "the chunk library was built with OpenMP: compile this file with OpenMP as well (-fopenmp, -fiopenmp, -mp), or link a library built without it"
 #elif !CHUNK_OPT_OPENMP && defined(_OPENMP)
     #error "the chunk library was built without OpenMP: compile this file without OpenMP, or link a library built with it"
+#endif
+
+#if CHUNK_OPT_POOL && !(defined(FAST_ALLOC_PMP_POOL) && FAST_ALLOC_PMP_POOL)
+    #error "the chunk library was built with the pool backend (CHUNK_THREADS=pool): compile this file with -DFAST_ALLOC_PMP_POOL=1 (the chunk:: targets add it)"
+#elif !CHUNK_OPT_POOL && defined(FAST_ALLOC_PMP_POOL) && FAST_ALLOC_PMP_POOL
+    #error "the chunk library was built without the pool backend: compile this file without FAST_ALLOC_PMP_POOL"
 #endif

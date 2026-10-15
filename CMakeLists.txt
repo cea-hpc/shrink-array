@@ -95,20 +95,21 @@ message(STATUS "Sanitizer: ${SANITIZER}")
 
 # ── Threading backend ─────────────────────────────────────────────────────────
 # CHUNK_THREADS picks the backend the library runs its threads on
-# (docs/threading_backends.md): openmp or serial; pool (std::jthread) comes
-# with step 7b. Empty (the default): from OMP, as before -- the scripts pass
-# -DOMP=ON. Set, it wins and sets OMP to match.
-set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, serial (empty: openmp when OMP=ON, serial otherwise)")
-set_property(CACHE CHUNK_THREADS PROPERTY STRINGS "" openmp serial)
+# (docs/threading_backends.md): openmp, pool (std::jthread workers of the
+# library's own, no OpenMP: OMP is set OFF) or serial. Empty (the default):
+# from OMP, as before -- the scripts pass -DOMP=ON. Set, it wins and sets OMP
+# to match.
+set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, pool, serial (empty: openmp when OMP=ON, serial otherwise)")
+set_property(CACHE CHUNK_THREADS PROPERTY STRINGS "" openmp pool serial)
 if(NOT CHUNK_THREADS STREQUAL "")
     if(CHUNK_THREADS STREQUAL "pool")
-        message(FATAL_ERROR "CHUNK_THREADS=pool: the pool backend is not there yet (docs/threading_backends.md, step 7b)")
+        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
     elseif(CHUNK_THREADS STREQUAL "openmp")
         set(OMP ON CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
     elseif(CHUNK_THREADS STREQUAL "serial")
         set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
     else()
-        message(FATAL_ERROR "CHUNK_THREADS='${CHUNK_THREADS}': expected openmp or serial")
+        message(FATAL_ERROR "CHUNK_THREADS='${CHUNK_THREADS}': expected openmp, pool or serial")
     endif()
 endif()
 
@@ -118,6 +119,8 @@ endif()
 option(OMP "Build with OpenMP (the parallel library and examples)" OFF)
 if(OMP)
     set(CHUNK_THREADS_BACKEND openmp)
+elseif(CHUNK_THREADS STREQUAL "pool")
+    set(CHUNK_THREADS_BACKEND pool)
 else()
     set(CHUNK_THREADS_BACKEND serial)
 endif()
@@ -796,6 +799,7 @@ add_subdirectory(chunk)
 if(NOT CHUNK_STD_ALLOC)
     set(ALLOCATORS_OMP ${OMP})
     set(ALLOCATORS_THREADED ${CHUNK_THREADED})
+    set(ALLOCATORS_THREADS_BACKEND ${CHUNK_THREADS_BACKEND})
     add_subdirectory(fast_allocators)
 endif()
 

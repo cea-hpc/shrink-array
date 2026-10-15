@@ -111,12 +111,12 @@ struct ProxyTypeTrait<Chunk<T>>
 // that one is in fast_alloc, this one is inside `namespace shrink_array`.
 //
 // Load-bearing: in a SERIAL build this incomplete declaration deliberately
-// SHADOWS the real (OpenMP per-rank) fast_alloc::TCTypeCAllocator for the rest
-// of the namespace, so the OpenMP-only allocator pool below (allocator_pool_,
+// SHADOWS the real (threaded, per-rank) fast_alloc::TCTypeCAllocator for the rest
+// of the namespace, so the threaded-only allocator pool below (allocator_pool_,
 // alloc_chunk_allocator_thr) parses against a type that is never completed nor
 // instantiated. Removing the guard or the declaration would bind those uses to
 // the real type; no `if constexpr` can "declare a different type".
-#ifndef _OPENMP
+#if !FAST_ALLOC_PMP_THREADED
 template <typename T>
 class TCTypeCAllocator;
 #else
@@ -1722,7 +1722,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     alignas(std::atomic<T*>) atomic_ptr_t values;
 
   public:
-#if !defined(SHRINK_SMALL_CHUNK) && defined(_OPENMP)
+#if !defined(SHRINK_SMALL_CHUNK) && FAST_ALLOC_PMP_THREADED
     /// Per-chunk count of deferred ops currently pending (enqueued but not yet
     /// drained), plus its owner tag: see DeferredReadGate<Derived, Precise>.
     /// Present only where the deferred-op machinery exists: OpenMP builds, and

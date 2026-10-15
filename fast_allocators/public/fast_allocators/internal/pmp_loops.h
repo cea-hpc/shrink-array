@@ -38,7 +38,7 @@
 // Every thread of a team must meet the same Team calls in the same order (the
 // OpenMP rule for worksharing and barriers).
 //
-// OpenMP backend (the only one so far): each loop is ONE `#pragma omp
+// OpenMP backend: each loop is ONE `#pragma omp
 // parallel for` (parallel_for_local: a `parallel` region holding an `omp
 // for`), each team a `#pragma omp parallel`, and the Team methods the orphaned
 // constructs (`omp for`, `barrier`, `single`, `masked`), so they bind to the
@@ -47,7 +47,11 @@
 // chunk library hangs its phase ends on (parallel_end, the barriers) fire
 // exactly as they did.
 //
-// Without OpenMP everything runs on the calling thread, a team of one.
+// Pool backend (FAST_ALLOC_PMP_POOL=1, CMake CHUNK_THREADS=pool): the same
+// API on std::jthread workers of the library's own, with OpenMP's model
+// (pmp_pool.h).
+//
+// Serial backend: everything runs on the calling thread, a team of one.
 //
 // Standard library and <omp.h> only: chunk's std-alloc build installs this
 // file with svalloc.h and singleton.h (chunk/CMakeLists.txt).
@@ -55,10 +59,13 @@
 #include <array>       // std::array (parallel_sum's result)
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::is_integral_v
+#include <utility>     // std::forward (the pool backend's loops)
 
 #ifdef _OPENMP
     #include <omp.h> // omp_get_max_threads (the default team size), omp_get_thread_num, omp_get_num_threads
 #endif
+
+#include "fast_allocators/internal/pmp_runtime.h" // FAST_ALLOC_PMP_BACKEND_POOL, max_threads (the pool's team size)
 
 namespace fast_alloc::pmp
 {
@@ -95,6 +102,16 @@ struct schedule
     }
 };
 
+/// @brief Whether a worksharing construct ends with a barrier.
+enum class wait_mode : bool
+{
+    wait,   ///< every thread waits at the end (the default)
+    nowait, ///< no barrier at the end: a thread goes on as soon as its share is done
+};
+
+/// @brief Shorthand for wait_mode::nowait.
+inline constexpr wait_mode nowait = wait_mode::nowait;
+
 /// @brief How a loop runs.
 struct options
 {
@@ -112,6 +129,8 @@ namespace detail
 {
 #ifdef _OPENMP
     return opt.num_threads > 0 ? opt.num_threads : omp_get_max_threads();
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    return opt.num_threads > 0 ? opt.num_threads : max_threads();
 #else
     return 1;
 #endif
@@ -123,6 +142,19 @@ namespace detail
     return s.chunk > 0 ? s.chunk : 1;
 }
 } // namespace detail
+} // namespace fast_alloc::pmp
+
+// clang-format off
+// (the OpenMP / serial bodies below keep their directive indentation)
+#if FAST_ALLOC_PMP_BACKEND_POOL
+// The pool backend's loops, Team and teams.
+#define FAST_ALLOC_PMP_LOOPS_TYPES 1
+#include "fast_allocators/internal/pmp_pool.h" // parallel_for ... team_any, Team, current_team on the pool
+#else
+// clang-format on
+
+namespace fast_alloc::pmp
+{
 
 /**
  * @brief Run @p body(i) for every i in [@p first, @p last), on a team.
@@ -294,16 +326,6 @@ template <typename T, std::size_t N, typename Index, typename Body>
     }
     return sums;
 }
-
-/// @brief Whether a worksharing construct ends with a barrier.
-enum class wait_mode : bool
-{
-    wait,   ///< every thread waits at the end (the default)
-    nowait, ///< no barrier at the end: a thread goes on as soon as its share is done
-};
-
-/// @brief Shorthand for wait_mode::nowait.
-inline constexpr wait_mode nowait = wait_mode::nowait;
 
 /**
  * @brief The team a thread runs in, as seen from that thread: its rank, the
@@ -572,3 +594,7 @@ template <typename Body>
 }
 
 } // namespace fast_alloc::pmp
+
+// clang-format off
+#endif // FAST_ALLOC_PMP_BACKEND_POOL
+// clang-format on

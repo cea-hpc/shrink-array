@@ -36,6 +36,8 @@ set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/next_power_of_2.h
   public/fast_allocators/internal/pmp_alloc.h
   public/fast_allocators/internal/pmp_loops.h
+  public/fast_allocators/internal/pmp_pool.h
+  public/fast_allocators/internal/pmp_pool_state.h
   public/fast_allocators/internal/pmp_runtime.h
   public/fast_allocators/internal/singleton.h
   public/fast_allocators/internal/static_const_array.h
@@ -86,7 +88,12 @@ endif()
 if (NOT DEFINED ALLOCATORS_THREADED)
   set(ALLOCATORS_THREADED ${ALLOCATORS_OMP})
 endif()
-foreach(_fa_opt OPENMP:ALLOCATORS_OMP THREADED:ALLOCATORS_THREADED DEBUG:CHUNK_DEBUG CHECK_LISTS:FAST_ALLOC_CHECK_LISTS
+if ("${ALLOCATORS_THREADS_BACKEND}" STREQUAL "pool")
+  set(ALLOCATORS_POOL ON)
+else()
+  set(ALLOCATORS_POOL OFF)
+endif()
+foreach(_fa_opt OPENMP:ALLOCATORS_OMP THREADED:ALLOCATORS_THREADED POOL:ALLOCATORS_POOL DEBUG:CHUNK_DEBUG CHECK_LISTS:FAST_ALLOC_CHECK_LISTS
                 RECLAIM_EMPTY_SLABS:CHUNK_RECLAIM_EMPTY_SLABS)
   string(REPLACE ":" ";" _fa_pair ${_fa_opt})
   list(GET _fa_pair 0 _fa_name)
@@ -108,6 +115,14 @@ target_include_directories(fast_allocators
 
 if (ALLOCATORS_OMP)
   target_link_libraries(fast_allocators PUBLIC OpenMP::OpenMP_CXX)
+endif ()
+# The pool backend (CHUNK_THREADS=pool): selected in the headers by this
+# definition (internal/pmp_runtime.h), PUBLIC as OpenMP is; its workers are
+# std::jthreads.
+if (ALLOCATORS_POOL)
+  target_compile_definitions(fast_allocators PUBLIC FAST_ALLOC_PMP_POOL=1)
+  find_package(Threads REQUIRED)
+  target_link_libraries(fast_allocators PUBLIC Threads::Threads)
 endif ()
 
 include(GNUInstallDirs)

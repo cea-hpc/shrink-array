@@ -114,7 +114,7 @@ cmake --install build
 | option | défaut | effet |
 |---|---|---|
 | `OMP` | `OFF` | compiler avec OpenMP |
-| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp` ou `serial` (`pool` à venir) ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
+| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `pool` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `256;1024` | les tailles de chunk fixées à la compilation, une bibliothèque par taille et par variante |
 | `CHUNK_BUILD_DYN` | `ON` | compiler aussi les bibliothèques dont la taille de chunk est choisie, et peut changer, à l'exécution (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allouer les tampons des chunks avec l'allocateur standard au lieu des `fast_allocators` fournis (utile sous AddressSanitizer) |

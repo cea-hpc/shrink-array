@@ -129,7 +129,7 @@ The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptiv
 | name | meaning |
 |---|---|
 | `build_config::use_openmp` | built with OpenMP |
-| `build_config::threaded` | the library runs threads (every `CHUNK_THREADS` backend but `serial`) |
+| `build_config::threaded` | the library runs threads (`CHUNK_THREADS` `openmp` or `pool`) |
 | `build_config::has_ompt`, `build_config::has_not_ompt` | built with the OMPT tool, or not |
 | `build_config::chunk_dynamic` | dynamic geometry (`_dyn` library) |
 | `chunk_config::use_chunk`, `chunk_config::use_chunk2`, `chunk_config::use_chunk2a` | the variant |
