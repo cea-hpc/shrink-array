@@ -59,6 +59,13 @@ the tag's checksum to the recipe.
   buffers actually materialised. `CHUNK_RECLAIM_PHASE_KEEP=K` gives the empty
   slabs back to the system after every compression pass, keeping K per
   allocator instance (off by default: it costs page faults).
+- `ArrayChunk2A<T>::second_value_stats()`: where the type's second-value
+  identifiers stand -- in use against the capacity (running out stops the run),
+  free, the reclaims run and what they freed, the reclaims refused by cause
+  (parallel region, re-chunk, degraded index), and the degradation. A refused
+  `reclaim_second_values()` returns 0 as one with nothing to free does; this
+  tells them apart. Relaxed reads, callable at any time. shrink_bench prints it
+  per type with `CHUNK_CST2_RECLAIM=N`.
 
 ### Fixed
 

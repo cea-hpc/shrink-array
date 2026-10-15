@@ -74,6 +74,13 @@ les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propre
   recherche ou tout enregistrement de seconde valeur qui chevauche une libération. Faites
   tourner l'application une fois dans un build de contrôle avec ses appels de libération ; les
   builds release ne paient rien et ne vérifient rien.
+- *Surveiller les identifiants* : `ArrayChunk2A<T>::second_value_stats()` (statique, à tout
+  moment, depuis tout thread) renvoie les identifiants en usage face à la capacité -- les épuiser
+  arrête le run --, les libres, les libérations faites et ce qu'elles ont libéré, les libérations
+  refusées par cause (un appel refusé renvoie 0 comme un appel qui n'a rien à libérer) et si
+  l'index est dégradé (toute libération est alors refusée et les identifiants ne font que
+  croître). Échantillonné aux points de contrôle de l'application, `in_use()` / `capacity` est
+  l'alerte précoce.
 
 Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un tri en place.
 

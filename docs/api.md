@@ -72,6 +72,12 @@ their own `ArrayChunk2A<double>`, the sequential point must hold for all of them
 - *What detects it*: check builds (Debug, `CHECK_OPTIM`) stop on any second-value lookup or
   registration that overlaps a reclaim. Run the application once in a check build with its
   reclaim calls in place; release builds pay nothing and check nothing.
+- *Watching the identifiers*: `ArrayChunk2A<T>::second_value_stats()` (static, any time, any
+  thread) returns the identifiers in use against the capacity -- running out stops the run --,
+  the free ones, the reclaims run and what they freed, the reclaims refused by cause (a refused
+  call returns 0 as one with nothing to free does) and whether the index is degraded (then every
+  reclaim is refused and the identifiers only grow). Sampled at the application's checkpoints,
+  `in_use()` / `capacity` is the early warning.
 
 Not there: `data()`, mutable iterators, `insert` / `erase` in the middle, an in-place sort.
 

@@ -247,6 +247,44 @@ struct Sentinel
 };
 
 /**
+ * @brief Where a type's second-value identifiers stand: what
+ *        ArrayChunk2A<T>::second_value_stats() returns.
+ *
+ * @details Running out of identifiers stops the run; this tells it coming.
+ *          in_use() against @c capacity, sampled over time, is the trend; a
+ *          reclaim refused (@c refused_*) frees nothing although it returns 0
+ *          as one with nothing to free does, and a degraded registry refuses
+ *          every reclaim until its last array goes. Every field is read
+ *          relaxed, callable at any time (exact at a sequential point).
+ *          handed_out, free and degraded follow the registry, and start over
+ *          when the last array of the type is destroyed; the reclaim counts
+ *          are for the whole process.
+ */
+struct SecondValueStats
+{
+    std::size_t handed_out       = 0;     ///< Identifiers carved so far (the high-water mark).
+    std::size_t free             = 0;     ///< Of which freed by a reclaim, not handed out again.
+    std::size_t capacity         = 0;     ///< Identifiers the type can hand out; past it the run stops.
+    bool        degraded         = false; ///< Index degraded: reclaims refused, the identifiers only grow.
+    std::size_t reclaims         = 0;     ///< reclaim_second_values() calls that ran (not refused).
+    std::size_t freed            = 0;     ///< Identifiers those calls freed, in total.
+    std::size_t refused_parallel = 0;     ///< Calls refused: inside a parallel region.
+    std::size_t refused_rechunk  = 0;     ///< Calls refused: during a re-chunk rebuild.
+    std::size_t refused_degraded = 0;     ///< Calls refused: the index is degraded.
+
+    /// @brief Identifiers some chunk or slot may still hold.
+    [[nodiscard]] std::size_t in_use() const noexcept
+    {
+        return handed_out - free;
+    }
+    /// @brief Calls refused, every cause.
+    [[nodiscard]] std::size_t refused() const noexcept
+    {
+        return refused_parallel + refused_rechunk + refused_degraded;
+    }
+};
+
+/**
  * @brief The process-wide registry of second-value slots for one type.
  *
  * @tparam T Element type. One instance per type, all members static.
@@ -365,10 +403,43 @@ class GlobalVecHolder
     }
 
     /// @brief Identifiers freed by reclaim_unmarked() and not handed out again.
-    /// @warning Quiescent point only, like count_entries().
+    ///        Callable at any time (#free_ids_count); exact at a quiescent point.
     [[nodiscard]] static std::size_t free_id_count() noexcept
     {
-        return free_ids.size();
+        return free_ids_count.load(std::memory_order_relaxed);
+    }
+
+    /// @brief Identifiers this type can hand out: region_alloc()'s bound
+    ///        (kMaxIds, the region, or CHUNK_CST_VAL2_ID_LIMIT once read).
+    [[nodiscard]] static std::size_t id_capacity() noexcept
+    {
+        const std::size_t region_ids = kRegionUsable / region_stride;
+        return id_limit < region_ids ? id_limit : region_ids;
+    }
+
+    // ── Reclaim counts (ArrayChunk2A::reclaim_second_values), whole process ─
+    static inline std::atomic<std::size_t> reclaim_runs{0};     ///< Calls that ran.
+    static inline std::atomic<std::size_t> reclaim_freed{0};    ///< Identifiers they freed.
+    static inline std::atomic<std::size_t> refused_parallel{0}; ///< Refused: in a parallel region.
+    static inline std::atomic<std::size_t> refused_rechunk{0};  ///< Refused: during a re-chunk rebuild.
+    static inline std::atomic<std::size_t> refused_degraded{0}; ///< Refused: index degraded.
+
+    /// @brief Where this type's identifiers stand. Relaxed reads, any time.
+    [[nodiscard]] static SecondValueStats stats() noexcept
+    {
+        constexpr auto rx = std::memory_order_relaxed;
+        SecondValueStats s;
+        s.handed_out       = ids_handed_out();
+        s.free             = free_id_count();
+        s.free             = s.free < s.handed_out ? s.free : s.handed_out; // two relaxed reads
+        s.capacity         = id_capacity();
+        s.degraded         = index_degraded.load(rx);
+        s.reclaims         = reclaim_runs.load(rx);
+        s.freed            = reclaim_freed.load(rx);
+        s.refused_parallel = refused_parallel.load(rx);
+        s.refused_rechunk  = refused_rechunk.load(rx);
+        s.refused_degraded = refused_degraded.load(rx);
+        return s;
     }
 
     /// @brief Identifier (1-based) of the slot @p ptr.
@@ -517,6 +588,7 @@ class GlobalVecHolder
                 if (id < referenced.size() && referenced[id] == 0)
                 {
                     free_ids.push_back(id);
+                    free_ids_count.fetch_add(1, std::memory_order_relaxed);
                     ++freed;
                 }
                 else
@@ -573,6 +645,7 @@ class GlobalVecHolder
         }
         const std::uint32_t id = free_ids.back();
         free_ids.pop_back();
+        free_ids_count.fetch_sub(1, std::memory_order_relaxed);
         return reinterpret_cast<T*>(region_begin.load(std::memory_order_relaxed) +
                                     ((static_cast<std::size_t>(id) - 1u) * region_stride));
     }
@@ -989,6 +1062,7 @@ class GlobalVecHolder
     static void region_reset() noexcept
     {
         free_ids.clear(); // the identifiers it lists go with the pages
+        free_ids_count.store(0, std::memory_order_relaxed);
         char* base = region_begin.load(std::memory_order_relaxed);
         if (base == nullptr)
         {
@@ -1102,6 +1176,9 @@ class GlobalVecHolder
     ///        static teardown too.
     static inline constinit internal::Immortal<std::vector<std::uint32_t>> free_ids_storage_{};
     static inline std::vector<std::uint32_t>&                              free_ids = free_ids_storage_.value;
+    /// @brief free_ids.size(), readable without the lock (free_id_count());
+    ///        written with free_ids, under #insert_mutex or at the last clear.
+    static inline std::atomic<std::size_t> free_ids_count{0};
 
     /// @brief The live table. Null until the first publish; readers that see
     ///        null miss and take the cold path, which is always correct.
