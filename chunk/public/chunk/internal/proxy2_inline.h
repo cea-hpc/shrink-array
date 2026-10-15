@@ -633,23 +633,20 @@ void Proxy2<T>::execute_simple_operation(LAMBDA operation)
     // shared cst buffer, so v_old / was_* would read the wrong storage and the
     // counter transitions below would desync (driving the chunk to a spurious
     // "full second value" and re-compressing it).
-    const in_t<T> v_old = read_values();
-
     [[maybe_unused]] bool was_second_value = false;
     [[maybe_unused]] bool was_first_value  = false;
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        was_second_value = (v_old == second_value);
-        was_first_value  = (v_old == static_cast<T>(Chunk2<T>::first_value));
+        const in_t<T> v_old = read_values();
+        was_second_value    = (v_old == second_value);
+        was_first_value     = (v_old == static_cast<T>(Chunk2<T>::first_value));
     }
 
+    // Without counters (fast block compression) the body -- arithmetic_assign's,
+    // the only caller -- marks from its own (old, new) pair, read in the same
+    // session: no second read and second marking here.
     operation();
-
-    if constexpr (chunk_config::use_compression_without_counter)
-    {
-        this->mark_for_compression_if_needed_with_value(v_old, read_values());
-    }
 
     if constexpr (chunk_config::use_compression_with_counter)
     {

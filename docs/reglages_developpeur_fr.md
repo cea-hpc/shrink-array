@@ -62,7 +62,7 @@
 | `CHUNK_LEDGER_REPORT` (*définie*) | le rapport du registre des blocs (builds avec registre) |
 | `CHUNK_OMPT_STATS` | statistiques des régions de synchronisation (builds OMPT) |
 | `CHUNK_CST2_PROBE` (*définie*) | Chunk2A : rapport du registre des secondes valeurs à chaque passage (banc) |
-| `CHUNK_CST2_RECLAIM` | Chunk2A, `N` : toutes les N itérations, libère les secondes valeurs qu'aucun chunk n'utilise plus (`reclaim_second_values()`) et affiche leur nombre (banc, tout build) |
+| `CHUNK_CST2_RECLAIM` | Chunk2A, `N` : toutes les N itérations, libère les secondes valeurs qu'aucun chunk n'utilise plus (`reclaim_second_values()`) et affiche leur nombre, puis pour chaque type les identifiants en usage face à la capacité, libres, les libérations et les refus (`second_value_stats()`) (banc, tout build) |
 | `ALLOC_TOKEN_REPORT` | les builds `SANITIZER=token` impriment toujours, à la sortie, les allocations par jeton (les 40 plus grosses) ; elle en fixe le nombre : `0` aucune, `N` les N plus grosses, `all` toutes |
 | `FAST_ALLOC_TRACE` (*définie*) | une ligne `[MUNMAP]` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré (muet par défaut) |
 

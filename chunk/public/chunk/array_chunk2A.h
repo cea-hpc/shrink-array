@@ -335,7 +335,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *
      * @return How many identifiers were freed; 0 when refused: inside a parallel region,
      *         during a re-chunk rebuild, or with a degraded index (the mark could miss a
-     *         value unfindable by value).
+     *         value unfindable by value). A refusal is counted by cause in
+     *         second_value_stats(), which tells it from a call with nothing to free.
      *
      * @pre   A sequential point over the whole TYPE, not one array: no thread
      *        writes to or compresses ANY ArrayChunk2A<T> of the program
@@ -361,12 +362,21 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         else
         {
             using gvh = GlobalVecHolder<T>;
-            if (CHUNK_PMP_IN_PARALLEL_REGION || g_in_rechunk_rebuild.load(std::memory_order_acquire))
+            // Each refusal counted by cause (second_value_stats()): it returns
+            // 0 as a call with nothing to free does.
+            if (CHUNK_PMP_IN_PARALLEL_REGION)
             {
+                gvh::refused_parallel.fetch_add(1, std::memory_order_relaxed);
+                return 0;
+            }
+            if (g_in_rechunk_rebuild.load(std::memory_order_acquire))
+            {
+                gvh::refused_rechunk.fetch_add(1, std::memory_order_relaxed);
                 return 0;
             }
             if (gvh::index_degraded.load(std::memory_order_relaxed))
             {
+                gvh::refused_degraded.fetch_add(1, std::memory_order_relaxed);
                 // Sticky until the last array of the type goes: say it once, the
                 // run will otherwise end on the identifier exhaustion with no cause.
                 static std::atomic<bool> warned{false};
@@ -384,6 +394,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
             // before it and recorded after it would be freed (GlobalVecHolder's
             // "Reclaim contract").
             const typename gvh::ReclaimScope scope;
+            gvh::reclaim_runs.fetch_add(1, std::memory_order_relaxed);
             const std::size_t handed_out = gvh::ids_handed_out();
             if (handed_out == 0)
             {
@@ -434,7 +445,33 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                     }
                 }
             }
-            return gvh::reclaim_unmarked(referenced);
+            const std::size_t freed = gvh::reclaim_unmarked(referenced);
+            gvh::reclaim_freed.fetch_add(freed, std::memory_order_relaxed);
+            return freed;
+        }
+    }
+
+    /**
+     * @brief Where this type's second-value identifiers stand: in use against
+     *        the capacity, the reclaims run and refused, the degradation.
+     *
+     * @details Running out of identifiers stops the run; sampled at the
+     *          application's own checkpoints, in_use() / capacity is the
+     *          early warning, and refused() tells a reclaim that freed
+     *          nothing because it could not run. Covers every ArrayChunk2A<T>,
+     *          whatever its index type, like reclaim_second_values(). Relaxed
+     *          reads, callable at any time, from any thread: exact at a
+     *          sequential point. All zero for bool (no registry).
+     */
+    [[nodiscard]] static SecondValueStats second_value_stats() noexcept
+    {
+        if constexpr (std::is_same_v<T, bool>)
+        {
+            return {};
+        }
+        else
+        {
+            return GlobalVecHolder<T>::stats();
         }
     }
 
