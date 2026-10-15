@@ -1278,9 +1278,14 @@ class ChunkBase : public CRTPSupport<Derived>,
             }
         }
 
-        chunk_config::CheckNaN<chunk_config::do_check>::maybe(element_at(i), static_cast<long>(i));
-
-        return element_at(i);
+        // ONE element_at(): maybe() is a no-op outside check builds, but its
+        // argument is still evaluated -- a whole read section (two sequence
+        // stores, one of them a release, and an acquire load of `values`) whose
+        // ordering the compiler must keep. Every read paid two (perf annotate,
+        // Grace: the release store of the second section held the read).
+        const T v = element_at(i);
+        chunk_config::CheckNaN<chunk_config::do_check>::maybe(v, static_cast<long>(i));
+        return v;
     }
 
     /**
