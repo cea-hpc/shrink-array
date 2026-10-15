@@ -36,7 +36,9 @@
  *          update writes it back as one constant. Prints the times and the
  *          chunks materialised, and checks both give the same field. Last,
  *          64 rectangles painted over the field, element by element against
- *          md::fill_box (each thread on its own slice of the tiles).
+ *          md::fill_box (each thread on its own slice of the tiles); and the
+ *          price of the multi-index alone: a sum through a[k], f[i, j]
+ *          row-major and f[i, j] in tiles.
  *
  *          Usage: mdspan_tiles [n]   (an n x n field, 2048 by default)
  *          Exit 0, 1 when a layout does not read back the field, 77 when
@@ -48,6 +50,7 @@
 #include <chrono>    // std::chrono::steady_clock (the kernel times)
 #include <cmath>     // std::sin, std::abs
 #include <cstdlib>   // std::atol
+#include <utility>   // std::as_const
 
 #include "chunk/array_chunk2A.h"   // ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
@@ -409,6 +412,85 @@ void paint(long n, int& bad)
 }
 } // namespace
 
+// The price of the multi-index: one sum of the same field read as a[k], as
+// f[i, j] row-major and as f[i, j] in tiles, element by element (the const
+// operator[] every time), best of 5. The tiled mapping divides by constant
+// tile extents: shifts and masks, no division.
+void index_cost(long n, int& bad)
+{
+    sa::ArrayChunk2A<double> a(n * n);
+    sa::ArrayChunk2A<double> t(static_cast<long>(sa::md::tiled_size<16, 16>(n, n)));
+    fill_tiled<16, 16>(t, n);
+    sa::parallel_phase(
+        [&]
+        {
+    #pragma omp for schedule(static)
+            for (long i = 0; i < n; ++i)
+            {
+                for (long j = 0; j < n; ++j)
+                {
+                    a[i * n + j] = cell(i, j, n);
+                }
+            }
+        });
+    sa::ArrayChunk2A<double>::make_block_compression();
+    const auto& ca = a;
+    const auto  fr = sa::md::view(ca, n, n);
+    const auto  ft = sa::md::tiled_view<16, 16>(std::as_const(t), n, n);
+
+    double best[3] = {1e30, 1e30, 1e30};
+    double sums[3] = {0, 0, 0};
+    for (int r = 0; r < 5; ++r)
+    {
+        for (int c = 0; c < 3; ++c)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            double     s  = 0;
+            if (c == 0)
+            {
+    #pragma omp parallel for schedule(static) reduction(+ : s)
+                for (long k = 0; k < n * n; ++k)
+                {
+                    s += ca[k];
+                }
+            }
+            else if (c == 1)
+            {
+    #pragma omp parallel for schedule(static) reduction(+ : s)
+                for (long i = 0; i < n; ++i)
+                {
+                    for (long j = 0; j < n; ++j)
+                    {
+                        s += fr[i, j];
+                    }
+                }
+            }
+            else
+            {
+    #pragma omp parallel for schedule(static) reduction(+ : s)
+                for (long i = 0; i < n; ++i)
+                {
+                    for (long j = 0; j < n; ++j)
+                    {
+                        s += ft[i, j];
+                    }
+                }
+            }
+            best[c] = std::min(best[c], seconds_since(t0));
+            sums[c] = s;
+        }
+    }
+    if (std::abs(sums[1] - sums[0]) > 1e-12 * std::abs(sums[0]) ||
+        std::abs(sums[2] - sums[0]) > 1e-12 * std::abs(sums[0]))
+    {
+        sa::println("index cost: sums differ ({}, {}, {})", sums[0], sums[1], sums[2]);
+        ++bad;
+    }
+    const double nn = static_cast<double>(n) * static_cast<double>(n);
+    sa::println("read a[k] {:.2f} ns/elem   f[i, j] row-major {:.2f}   f[i, j] tiles {:.2f}", 1e9 * best[0] / nn,
+                1e9 * best[1] / nn, 1e9 * best[2] / nn);
+}
+
 int main(int argc, char** argv)
 {
     sa::ParamChunk::init_indexes(true);
@@ -426,6 +508,7 @@ int main(int argc, char** argv)
     }
     kernels(n, bad);
     paint(n, bad);
+    index_cost(n, bad);
     sa::release_chunk_pools();
     sa::destroy_block_chunk();
     return bad == 0 ? 0 : 1;

@@ -76,7 +76,7 @@
 
     #include <array>       // std::array (the tile extents)
     #include <cstddef>     // std::size_t
-    #include <type_traits> // std::remove_const_t, std::is_const_v, std::conditional_t
+    #include <type_traits> // std::remove_const_t, std::is_const_v, std::conditional_t, std::make_unsigned_t
     #include <utility>     // std::declval
 
 namespace shrink_array::md
@@ -182,15 +182,21 @@ struct layout_tiled
             requires(sizeof...(Idx) == Extents::rank())
         constexpr index_type operator()(Idx... idx) const noexcept
         {
-            const std::array<index_type, sizeof...(Idx)> i{static_cast<index_type>(idx)...};
-            index_type                                   which = 0; // the tile, row-major over the tiles
-            index_type                                   in    = 0; // the element in its tile, row-major
+            // Unsigned: the indices are non-negative (mdspan's precondition), and
+            // a division of an unsigned by a power of two is a shift -- the signed
+            // one needs a correction for negative values: about a tenth of a
+            // tiled f[i, j] read (mdspan_tiles, index cost).
+            using U = std::make_unsigned_t<index_type>;
+            const std::array<U, sizeof...(Idx)> i{static_cast<U>(idx)...};
+            U                                   which = 0; // the tile, row-major over the tiles
+            U                                   in    = 0; // the element in its tile, row-major
             for (rank_type r = 0; r < Extents::rank(); ++r)
             {
-                which = which * ntiles_[r] + i[r] / tile[r];
-                in    = in * tile[r] + i[r] % tile[r];
+                const auto t = static_cast<U>(tile[r]);
+                which        = which * static_cast<U>(ntiles_[r]) + i[r] / t;
+                in           = in * t + i[r] % t;
             }
-            return which * tile_elems + in;
+            return static_cast<index_type>(which * static_cast<U>(tile_elems) + in);
         }
 
         static constexpr bool is_always_unique() noexcept

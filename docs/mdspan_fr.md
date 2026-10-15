@@ -126,6 +126,11 @@ Release, GCC 14, sur un conteneur à 2 cœurs (des ordres de grandeur, pas un ba
 Chaque paire laisse le même champ et les mêmes chunks matérialisés : 2464 après la somme et la
 mise à jour, 3109 après la peinture.
 
+Le gain vient de ce qu'on évite l'accès élément par élément, pas du multi-indice, qui coûte peu :
+le même champ sommé élément par élément, 1 thread, se lit à 2,8 ns par élément par `a[k]`,
+3,3 ns par `f[i, j]` ligne par ligne et 3,5 ns par `f[i, j]` en tuiles (le mapping en tuiles
+divise par ses étendues de tuile constantes en arithmétique non signée : décalages et masques).
+
 ## 4. D'où vient `mdspan`
 
 | disponible | utilisé |
@@ -162,4 +167,4 @@ compte comme sauté.
 | `examples/validation/mdspan_validation.cpp` | écritures par la vue et relecture linéaire, opérateurs composés, rang 3, vues en lecture seule, le mapping en tuiles (bijection, bourrage), une tuile uniforme est une suite uniforme ; toutes les variantes (un ctest chacune, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocs, étendues des tuiles sur les bords bourrés, tuiles uniformes, la mise à jour contre la formule élément par élément, les tuiles non touchées restent compressées, la mise à jour en parallèle ; toutes les variantes à 1 et 8 threads, et `mdspan_tile_ops_misaligned` (une tuile plus petite qu'un chunk refusée dans une région parallèle) |
-| `examples/mdspan_tiles/mdspan_tiles.cpp` | les comparaisons des sections 2 et 3 ; `mdspan_tiles 4096` pour un champ plus grand |
+| `examples/mdspan_tiles/mdspan_tiles.cpp` | les comparaisons des sections 2 et 3, et le coût du multi-indice ; `mdspan_tiles 4096` pour un champ plus grand |

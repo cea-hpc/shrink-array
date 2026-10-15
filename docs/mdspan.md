@@ -124,6 +124,11 @@ build, GCC 14, on a 2-core container (orders of magnitude, not a benchmark):
 Each pair leaves the same field and the same materialised chunks: 2464 after the sum and the
 update, 3109 after the painting.
 
+The gain is in skipping the per-element access, not in the multi-index, which costs little: the
+same field summed element by element, 1 thread, reads at 2.8 ns per element through `a[k]`,
+3.3 ns through `f[i, j]` row-major and 3.5 ns through `f[i, j]` in tiles (the tiled mapping
+divides by its constant tile extents in unsigned arithmetic: shifts and masks).
+
 ## 4. Where `mdspan` comes from
 
 | available | used |
@@ -159,4 +164,4 @@ reports as skipped.
 | `examples/validation/mdspan_validation.cpp` | writes through the view and linear read-back, compound operators, rank 3, read-only views, the tiled mapping (bijection, padding), a uniform tile is a uniform run; every variant (one ctest each, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocks, tile extents on padded edges, uniform tiles, the update against the element formula, untouched tiles stay compressed, the parallel update; every variant at 1 and 8 threads, and `mdspan_tile_ops_misaligned` (a tile smaller than a chunk refused in a parallel region) |
-| `examples/mdspan_tiles/mdspan_tiles.cpp` | the comparisons of sections 2 and 3; `mdspan_tiles 4096` for a larger field |
+| `examples/mdspan_tiles/mdspan_tiles.cpp` | the comparisons of sections 2 and 3, and the cost of the multi-index; `mdspan_tiles 4096` for a larger field |
