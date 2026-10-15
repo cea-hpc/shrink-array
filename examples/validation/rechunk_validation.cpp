@@ -859,11 +859,9 @@ static int run_body(int argc, char** argv)
         // 4096, not 8192: rechunk_to() refuses anything above cst_buffer_size
         // (CHUNK_DYN_MAX_SIZE, 4096 by default) because the shared cst_val1/cst_val2
         // buffers are sized to that ceiling and a wider chunk would read them out of
-        // bounds. Asking for 8192 made this case fail with a bare
-        // "geometry 512 -> 512": the explanatory message in rechunk_to is gated on
-        // build_config::any_check (is_debug || check_optim), which the -DCHECK
-        // targets do NOT satisfy, so the refusal was silent. Raise the target here
-        // only together with -DCHUNK_DYN_MAX_SIZE.
+        // bounds. Asking for 8192 makes this case fail ("geometry 512 -> 512",
+        // with rechunk_to's refusal on stderr). Raise the target here only
+        // together with -DCHUNK_DYN_MAX_SIZE.
         {"all-same", 512,
          [&]
          {
