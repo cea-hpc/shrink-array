@@ -123,11 +123,8 @@ Release, GCC 14, sur un conteneur à 2 cœurs (des ordres de grandeur, pas un ba
 | 64 rectangles peints, `md::fill_box` | 1 | 103,3 ms | 8,8 ms | x 11,7 |
 | 64 rectangles peints, `md::fill_box` | 2 | 72,0 ms | 7,0 ms | x 10,4 |
 
-Chaque paire laisse le même champ. La somme et la mise à jour laissent les mêmes 2464 chunks
-matérialisés. Peindre élément par élément en laisse 6241, contre 3109 avec `fill_box` : 3132
-chunks repeints d'une seule valeur restent matérialisés, et aucune passe de compression ne les
-prend -- les écritures élément par élément ne les ont pas mis en file -- là où `fill_box` les
-écrit en constantes, mises en file.
+Chaque paire laisse le même champ et les mêmes chunks matérialisés : 2464 après la somme et la
+mise à jour, 3109 après la peinture.
 
 ## 4. D'où vient `mdspan`
 

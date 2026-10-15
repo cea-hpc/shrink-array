@@ -891,11 +891,13 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @details Beyond the shared predicate (a write of one of the two constants
      *          over something else), chunk2a queues two writes of its own:
      *          - discover: any non-first value on a chunk with no second value yet;
-     *          - leave: old == second, new is neither constant. The chunk may be
-     *            turning uniform at a third value W, which the pass compresses
-     *            (fill_list_to_compress scans against values[0]). Without this
-     *            clause a chunk once compressed to V, later uniformly W, is never
-     *            queued again until it passes through first_value.
+     *          - change: the chunk has a second value, new is neither constant and
+     *            differs from old. The chunk may be turning uniform at a third
+     *            value W, which the pass compresses (fill_list_to_compress scans
+     *            against values[0]). Do not narrow it to old == second: the write
+     *            that completes a uniform W often replaces a value that is neither
+     *            constant (a region painted over another one), and such a chunk
+     *            was then never queued again until it passed through a constant.
      *
      *          Both clauses also require may_become_uniform(new_value): otherwise
      *          a chunk of varied data is re-queued by every write and the writer
@@ -913,8 +915,8 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
             return true;
         }
         const bool discover = (second_value == first_value && new_value != first_value);
-        const bool leave    = (second_value != first_value && old_value == second_value && new_value != second_value);
-        if (!discover && !leave)
+        const bool change   = (second_value != first_value && new_value != second_value && !(new_value == old_value));
+        if (!discover && !change)
         {
             return false;
         }
@@ -984,7 +986,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     [[nodiscard]] bool
     pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
     {
-        // The "leave" clause depends on the old value, which this filter does not see: let
+        // The "change" clause depends on the old value, which this filter does not see: let
         // any write of a non-second value through; the predicate decides on the old value.
         return this->pre_check_mark_for_compression_strict(new_value, first_value, second_val) ||
                (second_val == first_value && new_value != first_value) ||

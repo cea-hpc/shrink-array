@@ -73,9 +73,7 @@ the tag's checksum to the recipe.
   row-major view to one value, one range op per run of covered tiles (tiled)
   or per contiguous run (row-major), crossed tiles updated as by
   `update_tiles`; a tile-range overload for a parallel phase. `mdspan_tiles`,
-  64 rectangles on 2048 x 2048 against `f[i, j]`: x 10 to x 12, and 3109
-  chunks left materialised against 6241 (the element writes leave chunks
-  painted over to one value unqueued).
+  64 rectangles on 2048 x 2048 against `f[i, j]`: x 10 to x 12.
 - Fast allocator: `CHUNK_REUSE_SHARE_DIV` and `CHUNK_REUSE_FLOOR_KB` (developer
   settings) set the reuse budget -- how many freed buffers a rank keeps parked
   for its next allocations -- whose default counts every chunk created,
@@ -86,6 +84,17 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Chunk2A: a chunk made uniform at a third value by writes over values that
+  are neither constant (a region painted over another one) was never queued
+  for compression and stayed materialised for good. The marking predicate's
+  clause for a third value required the write to leave the chunk's second
+  value; it now takes any change to a value other than the second value, under
+  the same `may_become_uniform` filter. `mdspan_tiles`, 64 rectangles painted
+  element by element: 6239 chunks left materialised -> 3109, as with
+  `md::fill_box`. Cost: the filter's two loads on varied writes into chunks
+  that have a second value, which chunks without one already paid (about
+  +1 ns per write, +8 %, in a probe at 1 and 2 threads). `mark_path_validation`
+  scenario D.
 - Fast allocator: `trim_reuse_pools` (hence `shrink_to_fit()` and
   `compress_now_and_trim_pools()`) was a no-op. It now returns the parked
   buffers to their slabs and gives the emptied slabs back to the system, the

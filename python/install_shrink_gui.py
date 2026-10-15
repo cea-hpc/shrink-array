@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Install shrink_gui into the tree: python/shrink_gui/ (the GUI that submits
 and follows the runs on inti), with its tests.
 

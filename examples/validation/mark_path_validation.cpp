@@ -52,6 +52,11 @@
 //      read-back of every element. The first 0 written over a materialised
 //      chunk of such an array must find its candidate list.
 //
+//   D  the second constant everywhere, a plain value, then a third value W
+//      everywhere, then a fourth W'. The writes of W replace plain values,
+//      neither constant: on chunk2a the chunk must still be queued when it
+//      turns uniform at W (a third value), as when it leaves its second value.
+//
 //   What is expected depends on the variant: chunk (v1) has no second
 //   constant, so its runs of 1.0 or 7.0 stay materialised; chunk2a picks a
 //   second value per chunk, so its runs of 7.0 compress even with nothing
@@ -299,6 +304,21 @@ int run(int /*argc*/, char** /*argv*/)
         }
         c.clear();
         other.clear();
+    }
+
+    // D: second constant, plain, then a third and a fourth value everywhere.
+    {
+        Array<double> d(N);
+        maybe_set_second_value(d, 1.0);
+        phase(d, N, [&](int i) { d[i] = 1.0; });
+        fails += check("D", "second", d, Kind::declared);
+        phase(d, N, [&](int i) { d[i] = plain(i); });
+        fails += check("D", "plain", d, Kind::plain);
+        phase(d, N, [&](int i) { d[i] = 5.0; });
+        fails += check("D", "third", d, Kind::other);
+        phase(d, N, [&](int i) { d[i] = 6.0; });
+        fails += check("D", "fourth", d, Kind::other);
+        d.clear();
     }
 
     // The library's own teardown, as in the other harnesses.

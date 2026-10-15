@@ -91,10 +91,12 @@ its own:
 
 - **discovery**: a write of a non-zero value into a chunk that does not yet have a
   second value; this is how it discovers one;
-- **departure**: a write that **leaves** the chunk's second value for a value that
-  is neither zero nor this second value. The chunk may be becoming uniform at
-  a third value; without this case, a chunk compressed once at V, then become uniform at W,
-  was never put back in the list (100 out of 100 in a probe from September 2026).
+- **change**: in a chunk that has a second value, a write of a value other than this
+  second value, different from the value it replaces. The chunk may be becoming uniform at
+  a third value, whatever the last write replaced: a region painted over another one ends
+  with writes over values that are neither constant. Do not narrow it to writes that leave
+  the second value: a chunk compressed once at V, then made uniform at W over other values,
+  would never be put back in the list (`mark_path_validation`, scenario D).
 
 Both cases are filtered by a **necessary condition** (`may_become_uniform`): two
 other elements of the chunk (the first and the last, or their neighbours if one of them is

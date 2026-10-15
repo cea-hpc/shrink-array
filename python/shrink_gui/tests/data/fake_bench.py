@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """A stand-in for bench_and_test.py in the tests: announces its output
 directory as it does, writes bench_errors.log, failed_cases.jsonl (one
 failure pointing to its full log, one not replayable) and run_logs/;

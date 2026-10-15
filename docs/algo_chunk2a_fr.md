@@ -92,10 +92,13 @@ lui sont propres :
 
 - **découverte** : une écriture d'une valeur non nulle dans un chunk qui n'a pas encore de
   seconde valeur ; c'est ainsi qu'il en découvre une ;
-- **départ** : une écriture qui **quitte** la seconde valeur du chunk vers une valeur qui
-  n'est ni zéro ni cette seconde valeur. Le chunk est peut-être en train de devenir uniforme à
-  une troisième valeur ; sans ce cas, un chunk compressé une fois à V, puis devenu uniforme à W,
-  n'était plus jamais remis en liste (100 sur 100 dans une sonde de septembre 2026).
+- **changement** : dans un chunk qui a une seconde valeur, une écriture d'une valeur autre que
+  cette seconde valeur, différente de celle qu'elle remplace. Le chunk est peut-être en train de
+  devenir uniforme à une troisième valeur, quoi qu'ait remplacé la dernière écriture : une zone
+  repeinte par-dessus une autre se termine par des écritures sur des valeurs qui ne sont aucune
+  des constantes. Ne pas le restreindre aux écritures qui quittent la seconde valeur : un chunk
+  compressé une fois à V, puis rendu uniforme à W par-dessus d'autres valeurs, ne serait plus
+  jamais remis en liste (`mark_path_validation`, scénario D).
 
 Ces deux cas sont filtrés par une **condition nécessaire** (`may_become_uniform`) : deux
 autres éléments du chunk (le premier et le dernier, ou leurs voisins si l'un d'eux est

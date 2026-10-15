@@ -121,10 +121,8 @@ build, GCC 14, on a 2-core container (orders of magnitude, not a benchmark):
 | 64 rectangles painted, `md::fill_box` | 1 | 103.3 ms | 8.8 ms | x 11.7 |
 | 64 rectangles painted, `md::fill_box` | 2 | 72.0 ms | 7.0 ms | x 10.4 |
 
-Each pair leaves the same field. The sum and the update leave the same 2464 materialised chunks.
-Painting element by element leaves 6241, against 3109 with `fill_box`: 3132 chunks painted over
-to a single value stay materialised, and no compression pass takes them -- the element writes did
-not queue them -- where `fill_box` writes them as constants, queued.
+Each pair leaves the same field and the same materialised chunks: 2464 after the sum and the
+update, 3109 after the painting.
 
 ## 4. Where `mdspan` comes from
 
