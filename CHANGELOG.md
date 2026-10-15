@@ -94,8 +94,11 @@ the tag's checksum to the recipe.
   two (the magic-number index split, a re-chunk 384 -> 768, past 2^31 at 768);
   `cst2_reclaim_validation` runs at dyn as well and reclaims across a re-chunk;
   `compile_all.sh` builds `omp-llvm-check-sv-indexed`
-  (`CHUNK_SECOND_VALUE_INDEXED`, CHECK_OPTIM, so with its harnesses), also in
-  the `multi_launch_stress.py` build lists.
+  (`CHUNK_SECOND_VALUE_INDEXED`, CHECK_OPTIM, so with its harnesses; Chunk2A
+  only), also in the `multi_launch_stress.py` build lists.
+- CMake option `CHUNK_VARIANTS` (default `chunk;chunk2;chunk2a`): the variants
+  built. The libraries, examples, benchmarks, harnesses and tests of a variant
+  left out are not built nor registered.
 
 ### Fixed
 

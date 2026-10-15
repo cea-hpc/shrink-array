@@ -144,6 +144,32 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     }
 
     /**
+     * @brief This array's num_tab, for the per-write refresh (Proxy2::set_num_tab()):
+     *        from the armed mirror when there is one, from inf_array otherwise.
+     * @details Not read back from inf_array when armed: set_info_second_value_ind()
+     *          has just copied the 16-byte record there with one q-register store,
+     *          and a narrower load of it cannot be forwarded on AArch64 (Neoverse)
+     *          -- the write then waits for the store to reach the cache. Same
+     *          hazard as in set_info_on_chunk().
+     */
+    [[nodiscard]] int armed_num_tab() const
+    {
+        if (const inf_array_t* src = armed_inf_array()) [[likely]]
+        {
+            return src->num_tab;
+        }
+        return unarmed_num_tab();
+    }
+
+    /// @brief armed_num_tab()'s unarmed path, out of line: inlined, the compiler
+    ///        turns the branch into a select that loads inf_array.num_tab on
+    ///        every write anyway (and waits for the store again).
+    [[gnu::noinline, gnu::cold]] int unarmed_num_tab() const noexcept
+    {
+        return inf_array.num_tab;
+    }
+
+    /**
      * @brief Most common non-zero value in the chunk
      * @details Used for second-level compression. When a chunk contains mostly
      *          this value (and first_value), it can be compressed to save memory.
@@ -240,6 +266,32 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
     constexpr bool make_second_value() noexcept
     {
         return true;
+    }
+
+    /**
+     * @brief This array's num_tab, for the per-write refresh (Proxy2::set_num_tab()):
+     *        from the armed mirror when there is one, from inf_array otherwise.
+     * @details Not read back from inf_array when armed: set_info_second_value_ind()
+     *          has just copied the 16-byte record there with one q-register store,
+     *          and a narrower load of it cannot be forwarded on AArch64 (Neoverse)
+     *          -- the write then waits for the store to reach the cache. Same
+     *          hazard as in set_info_on_chunk().
+     */
+    [[nodiscard]] int armed_num_tab() const
+    {
+        if (const inf_array_t* src = armed_inf_array()) [[likely]]
+        {
+            return src->num_tab;
+        }
+        return unarmed_num_tab();
+    }
+
+    /// @brief armed_num_tab()'s unarmed path, out of line: inlined, the compiler
+    ///        turns the branch into a select that loads inf_array.num_tab on
+    ///        every write anyway (and waits for the store again).
+    [[gnu::noinline, gnu::cold]] int unarmed_num_tab() const noexcept
+    {
+        return inf_array.num_tab;
     }
 
     /**
@@ -979,7 +1031,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     void set_num_tab() noexcept
     {
-        num_tab = inf_array.num_tab;
+        num_tab = BaseSpec::armed_num_tab(); // not inf_array.num_tab: see armed_num_tab()
     }
 
     /**

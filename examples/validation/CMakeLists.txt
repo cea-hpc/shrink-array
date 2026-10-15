@@ -285,6 +285,9 @@ foreach(_geom IN LISTS _rt_geometries)
     list(GET _rt_variant_names   ${_vi} _vname)
     list(GET _rt_variant_libbase ${_vi} _libbase)
     list(GET _rt_variant_macro   ${_vi} _vmacro)
+    if (NOT _vname IN_LIST CHUNK_VARIANTS)
+      continue()
+    endif()
 
     # The group: the round-trip harnesses, then the special cases below.
     set(_group "")
@@ -446,7 +449,10 @@ if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
     target_compile_definitions(${_tgt} PRIVATE ELEMENT_REF_CASE=${_case})
     validation_setup_target(${_tgt})
     add_test(NAME ${_tgt} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${_tgt})
+    # LC_ALL=C: the compiler's own words in English, whatever the locale (a
+    # French GCC writes "est supporté conditionnellement" for case 9).
     set_tests_properties(${_tgt} PROPERTIES PASS_REGULAR_EXPRESSION "named element proxy is used"
+                                            ENVIRONMENT LC_ALL=C
                                             RESOURCE_LOCK element_ref_misuse_build LABELS validation)
   endforeach()
   # 9: std::printf("%f", a[i]) passes the proxy through `...`: GCC with
@@ -463,6 +469,7 @@ if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
     add_test(NAME ${_tgt} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${_tgt})
     set_tests_properties(${_tgt} PROPERTIES
                          PASS_REGULAR_EXPRESSION "is conditionally supported|to variadic function"
+                         ENVIRONMENT LC_ALL=C
                          RESOURCE_LOCK element_ref_misuse_build LABELS validation)
   endif()
 endif()

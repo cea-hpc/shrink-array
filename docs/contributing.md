@@ -17,7 +17,8 @@ cmake --build build
 ```
 
 `-DCHUNK_STATIC_SIZES=256` builds one static size instead of two, which saves much of the build
-time. A Debug build, `-DCHECK_OPTIM=ON` or a sanitizer also builds the validation harnesses
+time; `-DCHUNK_VARIANTS=chunk2a` builds one variant instead of three, with its examples and
+harnesses only. A Debug build, `-DCHECK_OPTIM=ON` or a sanitizer also builds the validation harnesses
 (`examples/validation`).
 
 The whole matrix (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistics, std-alloc...) is

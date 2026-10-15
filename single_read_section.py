@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Reads: one read section per element read, not two.
 
 Run from the repository root:  python3 single_read_section.py

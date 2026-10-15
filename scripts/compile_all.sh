@@ -588,14 +588,15 @@ fi
 
 # CHUNK_SECOND_VALUE_INDEXED: Chunk2A's second values stored as 4-byte
 # identifiers, a library-wide option no other build here turns on. CHECK_OPTIM
-# so that the validation harnesses are built and run against it; one static
-# size (256) and dyn, which is all its code paths need.
+# so that the validation harnesses are built and run against it; Chunk2A alone
+# (the option changes nothing in chunk and chunk2, whose binaries would be
+# those of omp-llvm-check), one static size (256) and dyn: all its code paths.
 set_build_header 'Compiling llvm openmp with check, second values indexed (CHUNK_SECOND_VALUE_INDEXED):'
 if skip_release; then
    echo "[debug-only] skipping llvm openmp with check, second values indexed"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-check-sv-indexed/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHECK_OPTIM=ON -DCHUNK_SECOND_VALUE_INDEXED:BOOL=ON -DCHUNK_STATIC_SIZES=256 -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-check-sv-indexed/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHECK_OPTIM=ON -DCHUNK_SECOND_VALUE_INDEXED:BOOL=ON -DCHUNK_VARIANTS=chunk2a -DCHUNK_STATIC_SIZES=256 -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
    launch_build "$build_rep/cmake-build-omp-llvm-check-sv-indexed/$arch"
 fi

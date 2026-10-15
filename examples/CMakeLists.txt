@@ -105,11 +105,18 @@ int main()
     target_link_libraries(${target} PRIVATE m)
 endfunction()
 
+# The examples that need one variant (or two) are left out with it
+# (CHUNK_VARIANTS, chunk/CMakeLists.txt).
+
 # The program of docs/getting_started.md (also builds against an install)
-add_subdirectory(getting_started)
+if ("chunk2a" IN_LIST CHUNK_VARIANTS)
+    add_subdirectory(getting_started)
+endif()
 
 # Simple example
-add_subdirectory(simple_array)
+if ("chunk" IN_LIST CHUNK_VARIANTS)
+    add_subdirectory(simple_array)
+endif()
 
 # Simple example chunk : double value compression
 add_subdirectory(shrink_bench)
@@ -132,14 +139,21 @@ add_subdirectory(variant_compare)
 # The cost of an element access against a std::vector, in the same binary
 add_subdirectory(access_cost)
 
-# Multi-dimensional array example
-add_subdirectory(multi-mat)
+# Multi-dimensional array example (chunk and chunk2 in one program)
+if (TARGET chunk_v1v2_${CHUNK_DEFAULT_SIZE})
+    add_subdirectory(multi-mat)
+endif()
 
 # study vectorization whith OpenMP and chunk
-add_subdirectory(test_vecto_chunk)
+if ("chunk" IN_LIST CHUNK_VARIANTS)
+    add_subdirectory(test_vecto_chunk)
+endif()
 
 # The chunk-size advisor's step-0 check (dyn chunk2A only).
-add_subdirectory(advisor_demo)
+if ("chunk2a" IN_LIST CHUNK_VARIANTS)
+    add_subdirectory(advisor_demo)
+endif()
 
-# A 2D field through the mdspan view (chunk/mdspan.h), row-major against tiles.
+# A 2D field through the mdspan view (chunk/mdspan.h), row-major against tiles
+# (chunk_v2a_256: left out with chunk2a, mdspan_tiles/CMakeLists.txt).
 add_subdirectory(mdspan_tiles)

@@ -181,6 +181,9 @@ math(EXPR _sa2_nvar_last "${_sa2_nvar} - 1")
 foreach(_vi RANGE ${_sa2_nvar_last})
   list(GET _sa2_variant_names   ${_vi} _vname)
   list(GET _sa2_variant_libbase ${_vi} _libbase)
+  if (NOT _vname IN_LIST CHUNK_VARIANTS)
+    continue()
+  endif()
 
   # Static-size declinations.
   foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
@@ -247,7 +250,7 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # --- std_alloc (optional): mirror the declination scheme on the v2a path ---
-if (CHUNK_STD_ALLOC)
+if (CHUNK_STD_ALLOC AND "chunk2a" IN_LIST CHUNK_VARIANTS)
   foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
     set(_tgt shrink_bench_std_alloc_${_sz})
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
@@ -297,7 +300,7 @@ if (CHUNK_BUILD_DYN)
                        FIXTURES_CLEANUP shrink_bench_oracle
                        RESOURCE_LOCK shrink_bench_oracle_files)
 
-  foreach(_vname chunk chunk2 chunk2a)
+  foreach(_vname IN LISTS CHUNK_VARIANTS)
     foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
       # One binary per variant and size since the check/perf merge; the mode
       # is a run-time flag (the _check_ binaries these named no longer exist).
