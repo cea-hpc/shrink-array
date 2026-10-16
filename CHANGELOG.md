@@ -50,6 +50,8 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.1.2 -- 2026-10-16
+
 ### Added
 
 - Fast allocator: `CHUNK_REUSE_SHARE_DIV` and `CHUNK_REUSE_FLOOR_KB` (developer
@@ -88,6 +90,11 @@ the tag's checksum to the recipe.
   ("after init", "end") with `malloc_trim` (`SHRINK_BENCH_KEEP_POOLS=1`: not).
   `shrink_bench_chunk2a_int64_1024 --multiply 1`, 16 threads, current RSS after
   init: 3039 MB -> 567 MB (std allocator: 568 MB).
+
+### Changed
+
+- fast_allocators 2.1.10 (the reuse budget and the real `trim_reuse_pools` above);
+  `CHUNK_FAST_ALLOCATORS_VERSION` follows.
 
 ## 0.1.1 -- 2026-10-12
 
