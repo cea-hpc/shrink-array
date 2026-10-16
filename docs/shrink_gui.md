@@ -78,6 +78,13 @@ script therefore appears in the form without touching the interface. Changed opt
 bold; an option left at its default is not put on the command line. "Save as defaults"
 replaces this program's defaults on this architecture. "Command" shows exactly what will run.
 
+Before submitting an argparse script, the window has the script itself check the command on
+the cluster: its module-level `parse_args(argv)` function when it has one (`omp_speedup.py`:
+its own checks included, without running `main`), else its `parse_args()` call. An unknown
+option, an invalid value or one of the script's checks refuses the submission in the status
+bar, instead of a job that stops at once on a usage error. `"validate": False` in `PROGRAMS`
+turns this check off for a program.
+
 `compile_all.sh` only runs as a batch job, never on the login node. Its `--target` and
 `--exec` fields have a "Choose…" button listing the configurations and executables found on
 the cluster.

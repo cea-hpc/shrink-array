@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, 
 from shrink_gui import i18n, qos
 from shrink_gui.config import APP, DEFAULTS, LOCAL, PROGRAMS, QOS_FALLBACK
 from shrink_gui.git_panel import GitPanel
-from shrink_gui.i18n import T, status_text, tip
+from shrink_gui.i18n import T, status_short, status_text, tip
 from shrink_gui.launch_form import LaunchForm
 from shrink_gui.machine_panel import MachinePanel
 from shrink_gui.remote import Remote
@@ -254,6 +254,11 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         for c in range(len(self.COLS) - 1):
             h.setSectionResizeMode(c, QHeaderView.ResizeToContents)
         h.setSectionResizeMode(len(self.COLS) - 1, QHeaderView.Stretch)
+        # Statut: a width of its own, not its longest text's; drag it, the
+        # window keeps it (the cell elides with "…", the tooltip has it all).
+        h.setSectionResizeMode(self.COL_STATUS, QHeaderView.Interactive)
+        h.resizeSection(self.COL_STATUS, self.status_col_width())
+        h.sectionResized.connect(self.column_resized)
         self.table.itemSelectionChanged.connect(self.select)
         brefresh = QPushButton("Rafraîchir")
         brefresh.clicked.connect(self.refresh)
@@ -480,7 +485,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
             for i, run in enumerate(self.runs):
                 commit, commit_tip = self.commit_text(run)
                 vals = [run["id"], run["meta"].get("program", ""), run["meta"].get("partition", ""),
-                        commit, run.get("jobid", ""), status_text(run), T(self.progress_text(run)),
+                        commit, run.get("jobid", ""), status_short(run), T(self.progress_text(run)),
                         self.errors_text(run), self.duration_text(run), run["last"]]
                 for j, v in enumerate(vals):
                     it = QTableWidgetItem(str(v))
@@ -509,7 +514,8 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
                         self.table.setItem(i, j, it)
                         continue
                     it.setToolTip(commit_tip if j == 3 else
-                                  run["meta"].get("command", "") if j < 2 else str(v))
+                                  run["meta"].get("command", "") if j < 2 else
+                                  status_text(run) if j == self.COL_STATUS else str(v))
                     self.table.setItem(i, j, it)
                 if run["id"] == keep:
                     self.table.selectRow(i)
@@ -578,6 +584,19 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
             lines.append(f"≠ le job a démarré sur {start[:8]} : le dépôt a changé entre la "
                          "soumission et le démarrage")
         return txt, tip("\n".join(lines))
+
+    def status_col_width(self):
+        """The Statut column's width: the one the user set, else what
+        "terminé sans code…" needs."""
+        try:
+            w = int(self.settings.value("col_width/status", 0) or 0)
+        except (TypeError, ValueError):
+            w = 0
+        return w if w > 20 else self.table.fontMetrics().horizontalAdvance(T("terminé sans code") + "…") + 24
+
+    def column_resized(self, col, _old, new):
+        if col == self.COL_STATUS and new > 20:
+            self.settings.setValue("col_width/status", int(new))
 
     # ------------------------------------------------------------ durations
     @staticmethod

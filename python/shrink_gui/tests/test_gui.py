@@ -641,3 +641,44 @@ def test_omp_speedup_refused_without_exec(gui, site):
     w.extra.setText("--exec chunk2a@dyn")
     assert w.missing_options("omp_speedup.py") is None
     w.extra.setText("")
+
+
+def test_options_checked_by_the_script_before_submitting(gui, site):
+    w, pump = gui
+    w.program.setCurrentText("omp_speedup.py")
+    assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
+    w.form.set_values({"target": "omp-llvm", "execs": "*_dyn", "mode": "check", "multiply": "3",
+                       "min_threads": "1", "max_threads": "8"})
+    n = len(w.runs)
+    w.last_error = None
+    w.launch()
+    assert pump(lambda: w.last_error and "refuse ces options" in w.last_error, 20)
+    assert "--multiply must stay 1" in w.last_error and len(w.runs) == n
+    w.last_error = None
+    w.form.set_values({"target": "omp-llvm", "all_exec": True, "size": "dyn.1024",
+                       "min_threads": "1", "max_threads": "8"})
+    w.launch()
+    assert pump(lambda: w.last_error and "--size: dyn.1024" in w.last_error, 20)
+    assert len(w.runs) == n
+
+
+def test_bad_value_refused_for_a_plain_argparse_script(gui, site):
+    w, pump = gui
+    _choose_fake(w, pump)
+    n = len(w.runs)
+    w.last_error = None
+    w.extra.setText("--runs x")
+    w.launch()
+    assert pump(lambda: w.last_error and "invalid int value: 'x'" in w.last_error, 20)
+    assert len(w.runs) == n
+    w.extra.setText("")
+
+
+def test_status_column_has_its_own_width(gui):
+    w, pump = gui
+    h = w.table.horizontalHeader()
+    assert h.sectionResizeMode(w.COL_STATUS) == h.ResizeMode.Interactive
+    long = "terminé sans code (limite de temps ? voir le log)"
+    assert h.sectionSize(w.COL_STATUS) < w.table.fontMetrics().horizontalAdvance(long)
+    h.resizeSection(w.COL_STATUS, 77)
+    assert int(w.settings.value("col_width/status")) == 77 and w.status_col_width() == 77
