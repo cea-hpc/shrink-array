@@ -1157,23 +1157,31 @@ def act_delete(a):
     base64 JSON), the program outputs that are the run's own
     (outputs_to_delete). Everything is checked before anything is removed."""
     opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
-    print(json.dumps(delete_run(rdir(a[0]), a[1], opts)))
+    print(json.dumps(delete_run(rdir(a[0]), a[1], opts, keep_others=bool(opts.get("keep_others")))))
 
 def act_delete_many(a):
     """delete_run for each {"id", "own"?} of a[1] (base64 JSON list), in one
-    call: {"results": {id: {"ok", "removed"} or {"error"}}}. A run that
-    cannot be deleted leaves the others alone."""
+    call, oldest first: {"results": {id: {"ok", "removed", "kept"?} or
+    {"error"}}}. Outputs that are not the run's own (none announced, a shared
+    directory a newer run rewrote) are kept -- "kept" says why -- and the run
+    directory goes all the same: one such run must not keep a whole selection.
+    A run that cannot be deleted leaves the others alone."""
     base = rdir(a[0])
     out = {}
-    for item in json.loads(base64.b64decode(a[1]).decode()):
+    items = sorted(json.loads(base64.b64decode(a[1]).decode()), key=lambda it: str(it.get("id", "")))
+    for item in items:
         rid = str(item.get("id", ""))
         try:
-            out[rid] = delete_run(base, rid, {"own": item["own"]} if item.get("own") else {})
+            out[rid] = delete_run(base, rid, {"own": item["own"]} if item.get("own") else {},
+                                  keep_others=True)
         except Exception as e:          # one bad run must not stop the others
             out[rid] = {"error": "%s: %s" % (type(e).__name__, e)}
     print(json.dumps({"results": out}))
 
-def delete_run(base, rid, opts):
+def delete_run(base, rid, opts, keep_others=False):
+    """Remove run @p rid (and, opts["own"], its own outputs). An output that
+    is not its own refuses everything, unless @p keep_others: then it is kept
+    ("kept": why) and the run directory goes."""
     import shutil
     if not re.match(r"^[\w.-]+$", rid) or rid in (".", ".."):
         return {"error": "nom de run invalide : %s" % rid}
@@ -1182,11 +1190,14 @@ def delete_run(base, rid, opts):
         return {"error": "%s n'est pas un run" % d}
     paths = []
     meta = {}
+    kept = None
     if opts.get("own"):
         meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
         paths, err = outputs_to_delete(base, rid, d, meta, opts["own"])
-        if err:
+        if err and not keep_others:
             return {"error": err}
+        if err:
+            paths, kept, opts = [], err, {}
     removed = []
     for p in paths:
         if os.path.isdir(p) and not os.path.islink(p):
@@ -1204,7 +1215,7 @@ def delete_run(base, rid, opts):
             if sub and os.path.isdir(sub) and not os.path.islink(sub):
                 prune_empty(sub)      # emptied by this run's files only
     shutil.rmtree(d)
-    return {"ok": True, "removed": removed}
+    return dict({"ok": True, "removed": removed}, **({"kept": kept} if kept else {}))
 
 ERR_FILE_MAX = 1024 * 1024          # per file: its end only
 ERR_TOTAL_MAX = 4 * 1024 * 1024     # per call, every file together

@@ -114,3 +114,32 @@ def test_delete_many_in_one_call(site):
     assert res["m2"] == {"ok": True, "removed": []}
     assert "n'est pas un run" in res["nope"]["error"] and "invalide" in res["../x"]["error"]
     assert not (site.runs / "m1").exists() and not (site.runs / "m2").exists()
+
+
+def test_delete_many_keeps_outputs_that_are_not_the_runs_own(site):
+    """Bulk delete with the outputs: a run with no output directory announced,
+    or whose shared files a newer run rewrote, keeps them (with the reason)
+    and is deleted all the same -- the newer one's files go with it."""
+    od = site.home / "bench_results" / "aarch64"
+    od.mkdir(parents=True)
+    line = f"📁 Run outputs → {od}  (arch: aarch64)"
+    _fake_run(site, "s1", line, "2026-10-07 10:00:00", program="bench_and_test.py")
+    _fake_run(site, "s2", line, "2026-10-08 10:00:00", program="bench_and_test.py")
+    import time
+    time.sleep(0.05)
+    for f in ("bench_output.log", "bench_summary.csv"):     # written by s2, the newer one
+        (od / f).write_text("x\n")
+    _fake_run(site, "s3", "no output line", "2026-10-08 11:00:00", program="bench_and_test.py")
+    items = [{"id": r, "own": BENCH} for r in ("s2", "s3", "s1")]
+    blob = base64.b64encode(json.dumps(items).encode()).decode()
+    res = site.helper("delete_many", "~/shrink_runs", blob)["results"]
+    assert all(res[r]["ok"] for r in ("s1", "s2", "s3")), res
+    assert "s2" in res["s1"]["kept"] and "pas de dossier de sortie" in res["s3"]["kept"]
+    assert "kept" not in res["s2"] and not (od / "bench_output.log").exists()
+    assert not any((site.runs / r).exists() for r in ("s1", "s2", "s3"))
+    # one run: strict without keep_others; with it (what the window asks), deleted, outputs kept
+    _fake_run(site, "s4", "no output line", "2026-10-09 10:00:00", program="bench_and_test.py")
+    assert "error" in _delete(site, "s4", BENCH) and (site.runs / "s4").exists()
+    opts = base64.b64encode(json.dumps({"own": BENCH, "keep_others": True}).encode()).decode()
+    r = site.helper("delete", "~/shrink_runs", "s4", opts)
+    assert r["ok"] and "pas de dossier de sortie" in r["kept"] and not (site.runs / "s4").exists()

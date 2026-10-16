@@ -192,15 +192,23 @@ class RunActions:
                 for rid in gone:
                     if local.get(rid):
                         shutil.rmtree(local[rid], ignore_errors=True)
+            kept = {rid: res[rid]["kept"] for rid in gone if res[rid].get("kept")}
             n_out = sum(len(res[rid].get("removed", [])) for rid in gone)
             msg = (f"{len(gone)} run(s) supprimé(s)" + (f" (+ {n_out} sortie(s) sur inti)" if n_out else "")
                    + (" (+ copies locales)" if with_local else ""))
+            if kept:
+                msg += f" ; sorties gardées pour {len(kept)} run(s) (pas les leurs : voir l'infobulle)"
             if busy:
                 msg += f" ; {len(busy)} encore actif(s) laissé(s)"
             if bad:
-                self.error(msg + " ; en échec : " + " ; ".join(f"{k} : {v}" for k, v in sorted(bad.items())))
-            else:
-                self.info(msg)
+                msg += f" ; {len(bad)} en échec (voir l'infobulle)"
+            details = ([T("sorties gardées :")] + [f"  {k} : {T(v)}" for k, v in sorted(kept.items())]
+                       if kept else []) + \
+                      ([T("en échec :")] + [f"  {k} : {T(v)}" for k, v in sorted(bad.items())] if bad else [])
+            (self.error if bad else self.info)(msg)
+            self.statusBar().setToolTip("\n".join(details))
+            if details:
+                print("\n".join(details), file=sys.stderr)
             self.refresh()
 
         blob = base64.b64encode(json.dumps(items).encode()).decode()
@@ -234,10 +242,16 @@ class RunActions:
                 shutil.rmtree(local, ignore_errors=True)
             n = len(r.get("removed", []))
             self.info(f"{run['id']} supprimé" + (f" (+ {n} sortie(s) sur inti)" if n else "")
-                      + (" (+ copie locale)" if with_local else ""))
+                      + (" (+ copie locale)" if with_local else "")
+                      + (" ; sorties gardées, pas les siennes (voir l'infobulle)" if r.get("kept") else ""))
+            if r.get("kept"):
+                self.statusBar().setToolTip(T(r["kept"]))
             self.refresh()
 
-        opts = base64.b64encode(json.dumps({"own": own} if with_out else {}).encode()).decode()
+        # outputs that are not the run's own (none announced, a shared
+        # directory a newer run rewrote) are kept; the run goes all the same
+        opts = base64.b64encode(json.dumps({"own": own, "keep_others": True} if with_out else {})
+                                .encode()).decode()
         self.remote.helper("delete", [self.runs_dir.text().strip(), run["id"], opts], done)
 
     def fetch(self):

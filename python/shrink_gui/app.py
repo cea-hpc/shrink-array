@@ -465,10 +465,12 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
     def error(self, msg):
         msg = T(msg)
         self.last_error = msg
+        self.statusBar().setToolTip("")            # the details of an earlier message
         self.statusBar().showMessage(msg.splitlines()[0] if msg else "", 20000)
         print(msg, file=sys.stderr)
 
     def info(self, msg):
+        self.statusBar().setToolTip("")
         self.statusBar().showMessage(T(msg), 10000)
 
     # ----------------------------------------------------------------- runs
