@@ -308,11 +308,20 @@ void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
         }
     }
 
+    // ONE load of `values` for the state tests and the store, as in
+    // Proxy2A::perform_core_assignment(): is_cst_val1(), is_cst_val2() (a
+    // seq_cst load, ldar) and store_value() each reloaded it. Under the write
+    // session the chunk cannot be compressed, only materialised by a
+    // concurrent writer -- create_value() then loses its CAS, and the reload
+    // after it picks the winner's buffer.
+    T*         vals    = chunk.values_load();
+    const bool is_cst1 = Base::is_cst_val1(vals);
+
     if (v == second_value)
     {
-        if (Base::is_cst_val1())
+        if (is_cst1)
         {
-            create_value();
+            create_value(false);
 
             if constexpr (chunk_config::use_compression_with_counter)
             {
@@ -353,20 +362,15 @@ void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
         increm_chunk_write<ChunkType>(v);
     }
 
-    const bool need_alloc = Base2::is_cst_val();
+    const bool is_cst2 = !is_cst1 && is_cst_val2_at(vals);
 
-    if (need_alloc)
+    if (is_cst1 || is_cst2)
     {
-        [[maybe_unused]] bool was_cst_val2 = false;
-        [[maybe_unused]] bool was_cst_val1 = false;
+        [[maybe_unused]] const bool was_cst_val2 = is_cst2;
+        [[maybe_unused]] const bool was_cst_val1 = is_cst1;
 
-        if constexpr (chunk_config::use_compression_with_counter)
-        {
-            was_cst_val2 = is_cst_val2();
-            was_cst_val1 = Base::is_cst_val1();
-        }
-
-        create_value();
+        create_value(is_cst2);
+        vals = chunk.values_load();
 
         if constexpr (chunk_config::use_compression_with_counter)
         {
@@ -403,7 +407,7 @@ void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
         }
     }
 
-    Base::store_value(v);
+    Base::store_value_at(vals, v);
 
     if constexpr (build_config::do_check)
     {
