@@ -1,4 +1,4 @@
-# shrink-array : votre `std::vector`, sans les zéros
+# shrink-array : votre `std::vector`, sans les valeurs répétées
 
 > English version: [README.md](README.md).
 
