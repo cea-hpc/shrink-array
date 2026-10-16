@@ -187,6 +187,90 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    `tc_allocator.cpp` and `chunk_base.h` are `FAST_ALLOC_PMP_THREADED`. In
    7b the application drives the arrays from ONE thread; the library's own
    teams run on the pool. Application threads are 7c.
+   *7c done*: the application's threads under the pool backend.
+   - **Rank**: `pmp::thread_rank()` (`pmp_runtime.h`) is the rank in the
+     innermost active team of the pool when the thread is in one
+     (`pool::ThreadState::active_rank`, kept by `FrameGuard`), its
+     `registered_rank()` otherwise -- the application's threads, and the
+     thread that drives the library between teams. `chunk_pmp_library_rank()`
+     returns it under the pool backend; a full registry (-1) is the invariant
+     failure "no rank left", as a rank past `chunk_thread_capacity()` is.
+     `chunk_thread_capacity()` configures the registry with its own capacity
+     before the first rank; built first by the allocator, the registry takes
+     the same rule (hardware threads, team size, `CHUNK_THREAD_CAPACITY`).
+     `FAST_ALLOC_PMP_THREAD_RANK` is `thread_rank()` too (OpenMP: the same
+     `omp_get_thread_num()` as before), and the ladder's batches refuse a
+     rank of -1 as they refuse one past their size.
+   - **The two numberings share the per-rank structures, apart in time**: the
+     thread that opens a team is rank 0 in it whatever its registered rank,
+     and worker k is rank k, which is also an application thread's registered
+     rank. The contract keeps them apart: no team of the pool opens while
+     application threads write (below), and the team drains and sweeps
+     already mop up the ranks past the team (`CHUNK_PMP_RANK_BOUND`, which the
+     registered ranks raise through `chunk_pmp_checked_rank`).
+   - **Rank cache**: `chunk_rank_cache()` is `g_fast_omp_rank` (OpenMP,
+     serial) or the pool's `ThreadState::rank_cache`, which `FrameGuard`
+     clears on entering a team and restores on leaving it -- what OMPT's
+     implicit-task callback does for `g_fast_omp_rank` -- and
+     `release_registered_rank()` clears. `get_thr_rank_fast()` and
+     `begin_parallel_phase()` go through it.
+   - **Application phase** (`pool::Settings::application_phase`): opened by
+     `begin_parallel_phase()` from a thread in no team of the pool
+     (`pmp::enter_application_phase()`), closed first thing by
+     `finalize_parallel_phase()` (`leave_application_phase()`). While open,
+     `in_parallel()` is true on every thread -- the ladder takes its lock, the
+     loops that take a team only at a serial point stay on the caller -- and
+     `pool::open_team` runs every team as a team of one. `parallel_phase()`
+     on the pool does not open it: its `begin_parallel_phase()` calls are made
+     inside a team. A program that drives the arrays from ONE thread without
+     calling `begin_parallel_phase()` (7b) sees no change.
+   - **Phase guard**: `check_begin()` stamps a thread that begins in the
+     application phase (level 0, phase open), as one of a region, so a
+     deferred write of an unstamped thread still fails in check builds. A
+     second `begin_parallel_phase()` of the same thread in the phase is
+     allowed (same rank, same queue, writes in program order): the OpenMP
+     harnesses run serially in a pool build call it once per loop.
+   - **Op pools of exited threads** (`deferred_op_pool.h`): the serial
+     contract joins the writers, then finalizes -- so an application thread
+     exits with writes still queued on its rank. Its `thread_local` op / ctx
+     byte allocator gave its slabs back to the Op / Ctx arena at the exit,
+     where another thread's next slab took them and overwrote the queued ops
+     (`[DEFERRED_LIFECYCLE] op magic corrupt/poisoned`, found by the harness
+     below). Under the pool backend (`deferred_pools_outlive_thread`) the
+     allocator lives on the heap, the exiting thread hands it to
+     `detail::exited_thread_pools()`, and `finalize_parallel_phase()`
+     destroys those after its flush (`retire_exited_thread_pools()`).
+     OpenMP and serial keep the allocator inside the `thread_local`.
+   - Harness: `std_thread_validation` (pool builds, every variant and
+     geometry, 1 and 8 threads): fresh `std::thread`s every phase with the
+     main thread writing too, then long-lived ones on a `std::barrier`, then
+     work inside the phase -- each thread compresses its own array (a pass
+     on the calling thread), rewrites part of it, writes its share of a
+     shared array, one write in 7 deferred (`force_defer_every`); block and
+     interleaved shares, compression at the serial points, the arrays
+     against `std::vector`s after every phase, distinct ranks, ranks given
+     back at thread exit, `in_parallel()` during the phase only. It was
+     planned for 7d; 7d keeps the build in `compile_all.sh`.
+   - Harnesses made backend-neutral (the 7b suite in pool): they failed in
+     7b already, from OpenMP assumptions, not from the pool.
+     `bulk_write_team_validation` created its in-region arrays under
+     `#pragma omp critical` inside `parallel_phase()` -- a real team of the
+     pool, where the pragma is ignored: eight arrays created at once, out of
+     contract (TSan: `PointerMapChunk2A::insert`); a `std::mutex` now.
+     `pool_accounting` expected parking only under `use_openmp` (now
+     `threaded`, as the library since 7a) and materialised with an
+     `omp parallel for`, one thread in pool, which takes back the parked
+     buffers of one rank only; it now fills through `parallel_phase()` and
+     `current_team().for_static`.
+   - Not done: the application's threads must stop writing before
+     `finalize_parallel_phase()` -- nothing detects a writer that did not call
+     `begin_parallel_phase()` outside a check build (`phase_guard::check_write`
+     does, there). `churn::Materialisations` stays sized by
+     `CHUNK_PMP_MAX_THREADS` (statistics only; ranks past it are not counted).
+     The harness does not tell `in_parallel()`'s application-phase answer
+     from the old one (a mutation that drops it passes, TSan included): the
+     paths it guards (the ladder's lock, the in-region frees) are not reached
+     by its workload -- to cover in 7d.
 8. (later, on demand) **TBB backend** for the library's own loops, inside the
    application's arena, `static_partitioner`; the adaptor of section 2.
 

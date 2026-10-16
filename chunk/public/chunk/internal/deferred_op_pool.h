@@ -16,23 +16,26 @@
 
 #pragma once
 
-#include <algorithm>  // std::max (slab sizing)
-#include <bit>        // std::has_single_bit (the FOREIGN-block report schedule)
-#include <cassert>    // assert
-#include <cstddef>    // std::byte, std::size_t
-#include <cstdint>    // std::uintptr_t (the block probe)
-#include <cstdio>     // std::fprintf (diagnostics)
-#include <memory>     // std::unique_ptr
-#include <utility>    // std::move
-#include <vector>     // std::vector
-#include <sys/mman.h> // msync / MS_ASYNC (the block probe)
-#include <unistd.h>   // sysconf (same)
+#include <algorithm>   // std::max (slab sizing)
+#include <bit>         // std::has_single_bit (the FOREIGN-block report schedule)
+#include <cassert>     // assert
+#include <cstddef>     // std::byte, std::size_t
+#include <cstdint>     // std::uintptr_t (the block probe)
+#include <cstdio>      // std::fprintf (diagnostics)
+#include <memory>      // std::unique_ptr
+#include <mutex>       // std::mutex, std::scoped_lock (the pools of exited threads)
+#include <type_traits> // std::conditional_t (DeferredByteAllocSlot)
+#include <utility>     // std::move
+#include <vector>      // std::vector
+#include <sys/mman.h>  // msync / MS_ASYNC (the block probe)
+#include <unistd.h>    // sysconf (same)
 
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB), env_flag (CHUNK_RECYCLE_TRACE)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
 #include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EV_OP_ALLOC / EV_OP_FREE
+#include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::backend (the pools of exited threads)
 
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h"   // fast_alloc::ArenaKind
@@ -166,12 +169,122 @@ struct FastAllocatorBase
  * disjoint storage and makes the bodies non-identical, so ICF cannot fold them,
  * without relying on -fno-ipa-icf in the build.
  */
+/**
+ * @brief Pool backend: the op / ctx pools of a thread outlive it, until the
+ *        next phase end.
+ * @details An application thread under the pool backend (a std::thread, docs/
+ *          threading_backends.md step 7c) may exit with writes still queued on
+ *          its rank: the serial contract joins the writers, THEN calls
+ *          finalize_parallel_phase(), which replays them. Its thread_local
+ *          allocator would hand its slabs back to the Op / Ctx arena at the
+ *          exit, where another thread's next slab takes them and overwrites the
+ *          queued ops. So, under the pool backend, the allocator lives on the
+ *          heap, an exiting thread hands it to exited_thread_pools(), and
+ *          finalize_parallel_phase() destroys those after its flush
+ *          (retire_exited_thread_pools()). OpenMP's threads live as long as the
+ *          runtime: their pools stay in the thread_local, as before.
+ */
+inline constexpr bool deferred_pools_outlive_thread =
+    build_config::use_fast_alloc && ::fast_alloc::pmp::backend == ::fast_alloc::pmp::backend_kind::pool;
+
+namespace detail
+{
+/// @brief The op / ctx byte allocators of the threads that exited since the
+///        last phase end (pool backend; see deferred_pools_outlive_thread).
+struct ExitedThreadPools
+{
+    std::mutex                                           mutex; ///< guards list
+    std::vector<fast_alloc::TCTypeAllocator<std::byte>*> list;  ///< owned, destroyed by retire_exited_thread_pools()
+};
+
+/// @brief The process-wide list (immortal: threads add to it from their thread_local destructors).
+[[nodiscard]] inline ExitedThreadPools& exited_thread_pools()
+{
+    static auto* const p = new ExitedThreadPools; // NOLINT(cppcoreguidelines-owning-memory): immortal
+    return *p;
+}
+
+/// @brief In place of the inline allocator when it lives on the heap.
+struct NoInlineAlloc
+{
+};
+} // namespace detail
+
 template <typename T>
 struct DeferredByteAllocSlot
 {
-    fast_alloc::TCTypeAllocator<std::byte> alloc;               ///< this thread's byte allocator for T
-    bool                                   initialized = false; ///< alloc set up (allocator())
+    using Alloc = fast_alloc::TCTypeAllocator<std::byte>;
+    /// deferred_pools_outlive_thread, made dependent on T: the branch not
+    /// taken below is then not checked (it names the other member's type).
+    static constexpr bool kHeap = deferred_pools_outlive_thread && sizeof(T) > 0;
+
+    DeferredByteAllocSlot() = default;
+    // Owns its allocator (inline, or on the heap until the thread exits).
+    DeferredByteAllocSlot(const DeferredByteAllocSlot&)            = delete;
+    DeferredByteAllocSlot& operator=(const DeferredByteAllocSlot&) = delete;
+    DeferredByteAllocSlot(DeferredByteAllocSlot&&)                 = delete;
+    DeferredByteAllocSlot& operator=(DeferredByteAllocSlot&&)      = delete;
+
+    /// Pool backend: the thread exits; its allocator waits for the phase end.
+    ~DeferredByteAllocSlot()
+    {
+        if constexpr (kHeap)
+        {
+            if (heap_ != nullptr)
+            {
+                auto&                  ex = detail::exited_thread_pools();
+                const std::scoped_lock lock(ex.mutex);
+                ex.list.push_back(heap_);
+            }
+        }
+    }
+
+    /// @brief This thread's byte allocator for T.
+    [[nodiscard]] Alloc& alloc()
+    {
+        if constexpr (kHeap)
+        {
+            if (heap_ == nullptr) [[unlikely]]
+            {
+                heap_ = new Alloc; // NOLINT(cppcoreguidelines-owning-memory): handed over at thread exit
+            }
+            return *heap_;
+        }
+        else
+        {
+            return inline_;
+        }
+    }
+
+    bool initialized = false; ///< alloc set up (allocator())
+
+  private:
+    /// The allocator, in the thread_local itself (OpenMP, serial).
+    [[no_unique_address]] std::conditional_t<kHeap, detail::NoInlineAlloc, Alloc> inline_{};
+    Alloc* heap_ = nullptr; ///< pool backend: the allocator, on the heap
 };
+
+/**
+ * @brief Pool backend: destroy the op / ctx allocators of the threads that
+ *        exited (deferred_pools_outlive_thread). At a phase end, after the
+ *        flush: no op of theirs is queued any more. A no-op otherwise.
+ */
+inline void retire_exited_thread_pools()
+{
+    if constexpr (deferred_pools_outlive_thread)
+    {
+        std::vector<fast_alloc::TCTypeAllocator<std::byte>*> retired;
+        {
+            auto&                  ex = detail::exited_thread_pools();
+            const std::scoped_lock lock(ex.mutex);
+            retired.swap(ex.list);
+        }
+        for (auto* a : retired)
+        {
+            delete a; // NOLINT(cppcoreguidelines-owning-memory): owned by the list
+        }
+    }
+}
 
 /**
  * @brief Per-element-type free-list slot.
@@ -373,7 +486,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
         {
             // Op and ctx pools MUST draw from disjoint arenas: a freed ctx slab
             // reobtained by the op pool would overwrite a live op's vtable.
-            slot.alloc.set_arena(Arena);
+            slot.alloc().set_arena(Arena);
 
             constexpr size_t element_size = sizeof(T);
             // TCAllocator threads its free list through the freed elements (an
@@ -390,10 +503,10 @@ class FastAllocatorConcrete : public FastAllocatorBase
             // slab's address could be remapped by fast_alloc::map_anonymous() for
             // the VALUE pool on another thread and overwrite a still-live op. Op
             // slabs are small and bounded.
-            slot.alloc.init(element_size, slab_request, -1);
+            slot.alloc().init(element_size, slab_request, -1);
             slot.initialized = true;
         }
-        return slot.alloc;
+        return slot.alloc();
     }
 
     /**

@@ -50,6 +50,14 @@ struct ThreadState
     std::array<Frame, kMaxFrames> frames{};         ///< frames[l - 1]: the team of level l.
     int                           level        = 0; ///< Teams the thread is in, serialised ones included.
     int                           active_level = 0; ///< Those of more than one thread.
+    /// The thread's rank in its innermost ACTIVE team (the one of more than one
+    /// thread); -1 in none, where the thread's rank is its registered one
+    /// (pmp_runtime.h, thread_rank()).
+    int active_rank = -1;
+    /// The library's cache of thread_rank() (chunk's get_thr_rank_fast): -1
+    /// until filled; a team's entry clears it and its exit restores it, since
+    /// the rank changes there (OpenMP's OMPT implicit-task callback does the same).
+    int rank_cache = -1;
 
     /// @brief The innermost team's frame; a team of one outside any.
     [[nodiscard]] Frame innermost() const noexcept
@@ -77,11 +85,15 @@ class FrameGuard
             s.frames[s.level] = Frame{.ctx = ctx, .rank = rank, .size = size};
         }
         ++s.level;
-        active_ = size > 1;
+        active_     = size > 1;
+        prev_rank_  = s.active_rank;
+        prev_cache_ = s.rank_cache;
         if (active_)
         {
             ++s.active_level;
+            s.active_rank = rank;
         }
+        s.rank_cache = -1;
     }
     FrameGuard(const FrameGuard&)            = delete;
     FrameGuard& operator=(const FrameGuard&) = delete;
@@ -95,10 +107,14 @@ class FrameGuard
         {
             --s.active_level;
         }
+        s.active_rank = prev_rank_;
+        s.rank_cache  = prev_cache_;
     }
 
   private:
-    bool active_ = false;
+    bool active_     = false;
+    int  prev_rank_  = -1; ///< active_rank before the team: restored at its end.
+    int  prev_cache_ = -1; ///< rank_cache before the team: still right after it.
 };
 
 /// @brief The process-wide settings (OpenMP's ICVs): set by the queries'
@@ -109,6 +125,13 @@ struct Settings
     std::atomic<int> max_active_levels{1}; ///< Nested teams beyond this run as a team of one.
     std::atomic<int> sched_kind{1};        ///< omp_sched_t value of the run-time loops (1: static).
     std::atomic<int> sched_chunk{0};       ///< Their chunk (0: the default).
+    /// Application threads, which no team of the pool numbers, may be in the
+    /// library: set by the first begin_parallel_phase() made outside any team,
+    /// cleared by finalize_parallel_phase() (the phase contract,
+    /// docs/threading_backends.md). While it is set, in_parallel() is true
+    /// everywhere and no team of more than one thread opens: its workers'
+    /// ranks would be those of the application's threads.
+    std::atomic<bool> application_phase{false};
 };
 
 /// @brief The settings (one instance per process, never destroyed).

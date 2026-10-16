@@ -137,9 +137,10 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
             const int thr_rank = FAST_ALLOC_PMP_THREAD_RANK;
 
             // A rank the batches were not sized for (the team grew after
-            // they were built, before main): there is no batch to index, so
-            // free at once, under the lock the full path takes.
-            if (thr_rank >= tab_info_free_elt().nb_thr) [[unlikely]]
+            // they were built, before main; pool backend: a registered rank
+            // past them, or none, -1, the registry full): there is no batch to
+            // index, so free at once, under the lock the full path takes.
+            if (thr_rank < 0 || thr_rank >= tab_info_free_elt().nb_thr) [[unlikely]]
             {
                 const std::scoped_lock lock(ladder_mutex());
                 freeBlockWithInt(sz, ptr);

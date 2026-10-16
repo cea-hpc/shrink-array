@@ -108,13 +108,20 @@ inline constexpr bool active = tracked && build_config::any_check;
 /// @brief begin_parallel_phase(): fail if the calling thread already began in
 ///        this phase (finalize forgotten), then stamp it.
 /// @details Outside any region (level 0) it does nothing: there is no region
-///          to bracket. In a nested region it only stamps (see the file).
+///          to bracket -- except during an application phase of the pool
+///          backend (pmp::in_application_phase()), where the application's
+///          threads, in no team, are the region's threads: it stamps them,
+///          and a second begin of the same thread in the phase is allowed
+///          (same rank, same queue, its writes stay in program order; the
+///          phase has no region whose end could have been forgotten). In a
+///          nested region it only stamps (see the file).
 inline void check_begin() noexcept
 {
     if constexpr (tracked)
     {
-        const int level = CHUNK_PMP_LEVEL;
-        if (level == 0)
+        const int  level = CHUNK_PMP_LEVEL;
+        const bool app   = level == 0 && pmp::in_application_phase();
+        if (level == 0 && !app)
         {
             return;
         }

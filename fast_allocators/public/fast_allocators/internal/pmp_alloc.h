@@ -26,7 +26,7 @@
 // The macros are the runtime queries of pmp_runtime.h (the backend's).
 
 #include "fast_allocators/internal/pmp_loops.h"   // fast_alloc::pmp: parallel_for, parallel_for_local, parallel_sum
-#include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp: max_threads, team_rank, in_parallel
+#include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp: max_threads, thread_rank, in_parallel
 
 #if FAST_ALLOC_PMP_THREADED
 
@@ -35,7 +35,7 @@
     #endif
 
     #ifndef FAST_ALLOC_PMP_THREAD_RANK
-        #define FAST_ALLOC_PMP_THREAD_RANK ::fast_alloc::pmp::team_rank()
+        #define FAST_ALLOC_PMP_THREAD_RANK ::fast_alloc::pmp::thread_rank()
     #endif
 
     #ifndef FAST_ALLOC_PMP_IN_PARALLEL_REGION

@@ -213,15 +213,18 @@ inline void static_block(long long n, int nt, int rank, long long& b, long long&
 /**
  * @brief Open a team of @p nt threads (fewer: a team of one, see below) and
  *        run @p body(Team&) on each.
- * @details A team of one when @p on is false, @p nt is 1, or the calling
- *          thread is already in max_active_levels active teams; it still
- *          counts as a level, as OpenMP's serialised regions do.
+ * @details A team of one when @p on is false, @p nt is 1, the calling
+ *          thread is already in max_active_levels active teams, or an
+ *          application phase is open (application threads hold the ranks the
+ *          workers would take); it still counts as a level, as OpenMP's
+ *          serialised regions do.
  */
 template <typename TeamT, typename Body>
 void open_team(bool on, int nt, Body& body)
 {
     const auto& s = tls();
-    if (!on || nt <= 1 || s.active_level >= settings().max_active_levels.load(std::memory_order_relaxed))
+    if (!on || nt <= 1 || s.active_level >= settings().max_active_levels.load(std::memory_order_relaxed) ||
+        settings().application_phase.load(std::memory_order_acquire))
     {
         const FrameGuard frame(nullptr, 0, 1);
         TeamT            t(nullptr, 0);

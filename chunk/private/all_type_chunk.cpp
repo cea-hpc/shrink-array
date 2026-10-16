@@ -30,7 +30,7 @@
 #include "chunk/internal/manager_chunk.h"    // ManagerChunkInt, ManagerChunkParallelImpl
 #include "chunk/all_type_chunk.h"            // the declarations defined here
 #include "chunk/internal/churn_counters.h"   // churn::note_phase_end
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, g_fast_omp_rank, pmp::team, current_team
+#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/env_parse.h"        // env_number (CHUNK_RECLAIM_PHASE_KEEP)
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
@@ -132,7 +132,11 @@ namespace shrink_array
     {
         if constexpr (build_config::threaded)
         {
-            g_fast_omp_rank = CHUNK_PMP_THREAD_RANK;
+            // Pool backend, from a thread in no team of the pool (an application
+            // thread): the application phase opens -- in_parallel() true, no team
+            // of the pool -- until finalize_parallel_phase(). Nothing otherwise.
+            pmp::enter_application_phase();
+            chunk_rank_cache() = CHUNK_PMP_THREAD_RANK;
         }
         phase_guard::check_begin(); // finalize forgotten before this region: stops, in every build
     }
@@ -200,6 +204,10 @@ namespace shrink_array
 
     void finalize_parallel_phase()
     {
+        // The application's threads stopped writing (the contract): close its
+        // phase first, so the flush and the compression below run on teams of
+        // the pool (pool backend; nothing otherwise).
+        pmp::leave_application_phase();
         if constexpr (phase_guard::tracked)
         {
             phase_guard::next_phase();
@@ -210,6 +218,9 @@ namespace shrink_array
             ens_type_chunk.flush_all_deferred(false);
 
             reset_all();
+            // Pool backend: the op pools of the application threads that exited
+            // in this phase; their ops were just replayed (deferred_op_pool.h).
+            retire_exited_thread_pools();
 
             if constexpr (!chunk_config::have_aggressive_compression)
             {

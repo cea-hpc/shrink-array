@@ -32,6 +32,9 @@ namespace shrink_array::pmp
 using ::fast_alloc::pmp::backend;
 using ::fast_alloc::pmp::backend_kind;
 using ::fast_alloc::pmp::current_team;
+using ::fast_alloc::pmp::enter_application_phase;
+using ::fast_alloc::pmp::in_application_phase;
+using ::fast_alloc::pmp::leave_application_phase;
 using ::fast_alloc::pmp::nowait;
 using ::fast_alloc::pmp::options;
 using ::fast_alloc::pmp::parallel_for;
@@ -43,6 +46,7 @@ using ::fast_alloc::pmp::team;
 using ::fast_alloc::pmp::Team;
 using ::fast_alloc::pmp::team_any;
 using ::fast_alloc::pmp::team_sum;
+using ::fast_alloc::pmp::thread_rank;
 using ::fast_alloc::pmp::threaded;
 using ::fast_alloc::pmp::wait_mode;
 
@@ -54,7 +58,20 @@ namespace shrink_array
 {
 /// @brief Thread-local cache of the calling thread's rank in the active team;
 ///        -1 until get_thr_rank_fast() or begin_parallel_phase() fills it.
+///        Not used by the pool backend (chunk_rank_cache()).
 inline thread_local int g_fast_omp_rank = -1;
+
+/// @brief The calling thread's rank cache: g_fast_omp_rank, or, pool backend, the
+///        pool's (pmp::rank_cache(), which the pool clears when a team changes the
+///        thread's rank, as the OMPT implicit-task callback clears g_fast_omp_rank).
+[[nodiscard]] inline int& chunk_rank_cache() noexcept
+{
+#if FAST_ALLOC_PMP_BACKEND_POOL
+    return ::fast_alloc::pmp::rank_cache();
+#else
+    return ::shrink_array::g_fast_omp_rank;
+#endif
+}
 
 /// @brief The loop schedules a `schedule(runtime)` loop can be given -- the
 ///        values of omp_sched_t (OpenMP 5.x: static 1, dynamic 2, guided 3,
@@ -97,6 +114,8 @@ namespace shrink_array
  *          omp_get_num_procs()), raised by CHUNK_THREAD_CAPACITY. A rank at or past it
  *          is an invariant failure (chunk_pmp_checked_rank). OpenMP gives no real upper
  *          bound (omp_get_thread_limit() is usually INT_MAX), hence the cores as default.
+ *          Pool backend: also the capacity of the rank registry the application's
+ *          threads draw from (configured here, before its first use).
  */
 [[nodiscard]] inline int chunk_thread_capacity() noexcept
 {
@@ -104,6 +123,12 @@ namespace shrink_array
     {
         int cap = std::max(::fast_alloc::pmp::max_threads(), ::fast_alloc::pmp::num_procs());
         cap     = std::max(cap, shrink_array::env_number<int>("CHUNK_THREAD_CAPACITY", 0));
+        if constexpr (::fast_alloc::pmp::backend == ::fast_alloc::pmp::backend_kind::pool)
+        {
+            // false when the registry already exists (the allocator asked a rank
+            // first): it was then sized by the same rule, see thread_rank_registry().
+            (void)::fast_alloc::pmp::configure_thread_rank_registry(cap);
+        }
         return cap;
     }();
     return capacity;
@@ -149,10 +174,37 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
  *          rank 0's (unprotected, per-rank) structures. So the active team's rank comes
  *          from omp_get_ancestor_thread_num. Two ACTIVE levels are not supported (ranks of
  *          different inner teams collide): invariant failure.
+ *
+ *          Pool backend: pmp::thread_rank() -- the rank in the active team of the pool,
+ *          or, in none, the thread's registered rank (the application's threads and the
+ *          thread that drives the library between teams). A full registry (more
+ *          threads alive in the library than chunk_thread_capacity()) is an invariant
+ *          failure, as a rank past the capacity is.
  */
 [[nodiscard]] inline int chunk_pmp_library_rank() noexcept
 {
-    namespace rt    = ::fast_alloc::pmp;
+    namespace rt = ::fast_alloc::pmp;
+    if constexpr (rt::backend == rt::backend_kind::pool)
+    {
+        if (rt::active_level() > 1) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED(
+                "nested ACTIVE teams (active level {}) are not supported by the chunk arrays: per-thread "
+                "ranks of different inner teams would collide. Keep max_active_levels at 1 (the default).",
+                rt::active_level());
+        }
+        (void)chunk_thread_capacity(); // sizes the registry before its first rank
+        const int rank = rt::thread_rank();
+        if (rank < 0) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED(
+                "pool backend: no rank left for this thread -- {} threads already hold one, the capacity "
+                "the per-thread structures were sized for. Raise CHUNK_THREAD_CAPACITY, or let threads "
+                "that stopped using the arrays exit (or call pmp::release_registered_rank()).",
+                rt::thread_rank_registry().capacity());
+        }
+        return rank;
+    }
     const int level = rt::level();
     if (level <= 1) [[likely]]
     {
@@ -230,13 +282,13 @@ inline int get_thr_rank_fast() noexcept
 {
     // If OMPT is working, this value is already set at the start of the region.
     // No guards, no OpenMP library calls, just a direct TLS read.
-    int rank = ::shrink_array::g_fast_omp_rank;
+    int& cache = ::shrink_array::chunk_rank_cache();
+    int  rank  = cache;
 
     // Fallback if OMPT is disabled or not supported by the runtime
     if (rank == -1) [[unlikely]]
     {
-        rank = ::shrink_array::g_fast_omp_rank =
-            ::shrink_array::chunk_pmp_checked_rank(::shrink_array::chunk_pmp_library_rank());
+        rank = cache = ::shrink_array::chunk_pmp_checked_rank(::shrink_array::chunk_pmp_library_rank());
     }
     if constexpr (build_config::any_check)
     {

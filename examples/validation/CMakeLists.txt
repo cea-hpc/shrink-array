@@ -118,6 +118,14 @@
 #                           identifier limit reaches its end), and across a
 #                           re-chunk (dyn). Chunk2A only, default static
 #                           size and dyn.
+#   std_thread_validation   pool builds: arrays written from the application's
+#                           own std::threads -- new ones every phase, then
+#                           long-lived ones on a barrier -- each with a rank
+#                           of the registry, begin_parallel_phase() on every
+#                           writer and finalize_parallel_phase() once after
+#                           the join; the array equals a std::vector after
+#                           every phase, the ranks of a phase are distinct,
+#                           in_parallel() is true during the phase only.
 #   iterator_validation     the read-only const_iterator is random access:
 #                           jumps (it + n, it[n], it2 - it1, orderings) on
 #                           and around chunk boundaries, a ++/-- right after
@@ -338,6 +346,14 @@ foreach(_geom IN LISTS _rt_geometries)
     # 1 and 8 threads. Every variant and geometry: its replay path reads the
     # frozen geometry a dynamic build alone has.
     list(APPEND _group deferred_path_validation)
+    # std_thread_validation: arrays driven from the application's own
+    # std::threads (registered ranks, the application phase of the serial
+    # contract), fresh threads every phase and long-lived ones. Pool builds
+    # only (an OpenMP build numbers only OpenMP's threads), every variant and
+    # geometry, at 1 and 8 threads.
+    if (CHUNK_THREADS_BACKEND STREQUAL "pool")
+      list(APPEND _group std_thread_validation)
+    endif()
     # read_reclaim_validation: a read or a compound op against an in-region
     # pass that releases the buffer, and a pass that must not erase another
     # pass's claim (the harness says why). OpenMP builds only, default static

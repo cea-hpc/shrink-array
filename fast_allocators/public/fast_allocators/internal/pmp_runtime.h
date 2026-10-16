@@ -31,9 +31,10 @@
 // build add: the queries read the calling thread's frames, pmp_pool_state.h)
 // and serial (one thread, rank 0, no region).
 
-#include <atomic> // std::atomic (the rank registry)
-#include <memory> // std::unique_ptr (the registry's slots)
-#include <thread> // std::thread::hardware_concurrency (the registry's default capacity)
+#include <algorithm> // std::max (the registry's default capacity)
+#include <atomic>    // std::atomic (the rank registry)
+#include <memory>    // std::unique_ptr (the registry's slots)
+#include <thread>    // std::thread::hardware_concurrency (the registry's default capacity)
 
 /// 1 for the pool backend (FAST_ALLOC_PMP_POOL=1 on the command line, which the
 /// CMake targets of a CHUNK_THREADS=pool build add), 0 otherwise.
@@ -133,15 +134,58 @@ inline constexpr bool threaded = backend != backend_kind::serial;
 #endif
 }
 
-/// @brief Whether the calling thread is inside an ACTIVE region (omp_in_parallel).
+/// @brief Whether other threads may be in the library now: the calling thread
+///        is inside an ACTIVE region (omp_in_parallel).
+/// @details Pool backend: inside an active team of the pool, or during an
+///          application phase (in_application_phase()), when the application's
+///          own threads -- which no runtime of the library sees -- may be
+///          writing. The library takes its locks and opens no team when true.
 [[nodiscard]] inline bool in_parallel() noexcept
 {
 #ifdef _OPENMP
     return omp_in_parallel() != 0;
 #elif FAST_ALLOC_PMP_BACKEND_POOL
-    return pool::tls().active_level > 0;
+    return pool::tls().active_level > 0 || pool::settings().application_phase.load(std::memory_order_acquire);
 #else
     return false;
+#endif
+}
+
+/// @brief Pool backend: whether an application phase is open (application
+///        threads may be in the library); false for the other backends,
+///        where the runtime sees the application's threads.
+[[nodiscard]] inline bool in_application_phase() noexcept
+{
+#if FAST_ALLOC_PMP_BACKEND_POOL
+    return pool::settings().application_phase.load(std::memory_order_acquire);
+#else
+    return false;
+#endif
+}
+
+/// @brief The calling thread begins a phase (begin_parallel_phase()). Pool
+///        backend, from a thread in no team of the pool: an application
+///        thread, so open the application phase. Nothing otherwise.
+inline void enter_application_phase() noexcept
+{
+#if FAST_ALLOC_PMP_BACKEND_POOL
+    if (pool::tls().level == 0)
+    {
+        auto& flag = pool::settings().application_phase;
+        if (!flag.load(std::memory_order_relaxed))
+        {
+            flag.store(true, std::memory_order_seq_cst);
+        }
+    }
+#endif
+}
+
+/// @brief The phase ends (finalize_parallel_phase(), after the application's
+///        threads stopped writing): close the application phase. Pool only.
+inline void leave_application_phase() noexcept
+{
+#if FAST_ALLOC_PMP_BACKEND_POOL
+    pool::settings().application_phase.store(false, std::memory_order_seq_cst);
 #endif
 }
 
@@ -397,6 +441,12 @@ inline bool configure_thread_rank_registry(int capacity) noexcept
         if (cap <= 0)
         {
             cap = static_cast<int>(std::thread::hardware_concurrency());
+#if FAST_ALLOC_PMP_BACKEND_POOL
+            // As chunk's chunk_thread_capacity(), which configures it first when
+            // the chunk library is there: the team size, the hardware threads,
+            // CHUNK_THREAD_CAPACITY, the largest.
+            cap = std::max({cap, pool::nthreads_var(), pool::env_threads("CHUNK_THREAD_CAPACITY")});
+#endif
         }
         auto* r = new RankRegistry(cap); // NOLINT(cppcoreguidelines-owning-memory): immortal
         detail::g_registry_built.store(true, std::memory_order_release);
@@ -460,7 +510,49 @@ inline void release_registered_rank() noexcept
     {
         thread_rank_registry().release(slot.rank);
         slot.rank = -1;
+#if FAST_ALLOC_PMP_BACKEND_POOL
+        if (pool::tls().active_rank < 0)
+        {
+            pool::tls().rank_cache = -1; // it held the rank just given back
+        }
+#endif
     }
 }
+
+/**
+ * @brief The rank the library indexes its per-thread structures with.
+ * @details OpenMP: team_rank() (chunk refines it for nested regions,
+ *          chunk_pmp_library_rank). Serial: 0. Pool: the rank in the
+ *          innermost active team of the pool when the thread is in one, its
+ *          registered_rank() otherwise -- an application thread, or the thread
+ *          that drives the library between teams. -1 when the registry is full.
+ *
+ *          Pool: the two numberings share the per-rank structures, the
+ *          contract keeps them apart in time: the pool's teams of more than one
+ *          thread run while no application thread writes (no team opens during
+ *          an application phase), and the thread that opens one is rank 0 in
+ *          it, whatever its registered rank.
+ */
+[[nodiscard]] inline int thread_rank() noexcept
+{
+#ifdef _OPENMP
+    return omp_get_thread_num();
+#elif FAST_ALLOC_PMP_BACKEND_POOL
+    const int r = pool::tls().active_rank;
+    return r >= 0 ? r : registered_rank();
+#else
+    return 0;
+#endif
+}
+
+#if FAST_ALLOC_PMP_BACKEND_POOL
+/// @brief Pool backend: the calling thread's cache of the library's rank (-1:
+///        empty), cleared whenever thread_rank() may change (pool::FrameGuard,
+///        release_registered_rank()).
+[[nodiscard]] inline int& rank_cache() noexcept
+{
+    return pool::tls().rank_cache;
+}
+#endif
 
 } // namespace fast_alloc::pmp
