@@ -33,6 +33,11 @@
  *          libc++ (the omp-clang23 preset) and libstdc++ before GCC 16 do not
  *          have it: the plain cast, as before, which every compiler in use
  *          compiles to the same thing.
+ *
+ *          These start a lifetime: they belong where an object is first
+ *          written. A read of an object already living there (a slab's
+ *          back-pointer) uses std::launder instead -- starting a lifetime
+ *          again would end the one other threads are reading.
  */
 
 #pragma once
@@ -72,14 +77,4 @@ template <typename T>
 #endif
 }
 
-/// @brief start_lifetime_as() for a read: the object at @p p, as const T*.
-template <typename T>
-[[nodiscard]] inline const T* start_lifetime_as(const void* p) noexcept
-{
-#if defined(__cpp_lib_start_lifetime_as)
-    return std::start_lifetime_as<T>(p);
-#else
-    return static_cast<const T*>(p);
-#endif
-}
 } // namespace fast_alloc

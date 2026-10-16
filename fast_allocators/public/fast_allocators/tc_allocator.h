@@ -67,6 +67,7 @@
 #include <cstdlib>     // std::abort, std::getenv (FAST_ALLOC_TRACE)
 #include <cstdint>     // uintptr_t
 #include <limits>      // std::numeric_limits: TCAllocatorEB's index range
+#include <new>         // std::launder (slab_from, addr_to_block)
 #include <type_traits> // std::conditional_t (free_index_t)
 #include <cassert>     // assert (FAST_ALLOC_DBG_ASSERT)
 #include <sys/mman.h>  // mmap, munmap
@@ -337,7 +338,10 @@ class alignas(64) TCSlab
     {
         // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
         const char* base = static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & (slab_bytes - 1));
-        return *fast_alloc::start_lifetime_as<TCSlab*>(base + slab_bytes - sizeof(void*));
+        // A read of the object the slab's constructor created there (its
+        // start_lifetime_as, tc_allocator_inline.h): launder reaches it;
+        // starting a lifetime again would end it, under concurrent readers.
+        return *std::launder(reinterpret_cast<TCSlab* const*>(base + slab_bytes - sizeof(void*)));
     }
 
 // Declaration-level switch, so it stays a directive: serial builds route slab
@@ -1581,7 +1585,9 @@ class TCAllocatorEB
         // this pointer stored at the end of the block
         // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
         const char* base = static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & ~size_t(BlockAddrMask));
-        return *fast_alloc::start_lifetime_as<TCAllocatorEB*>(base + UsedBlockSize);
+        // A read of the object the block's initialisation created there (its
+        // start_lifetime_as, below): launder reaches it, as in slab_from().
+        return *std::launder(reinterpret_cast<TCAllocatorEB* const*>(base + UsedBlockSize));
     }
 
     char* data = nullptr; ///< The block itself, aligned on #BlockSizePOT.
