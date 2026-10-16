@@ -106,6 +106,12 @@ the node, by the second while the run runs, then its total once over; the toolti
 start, the end and the max time asked), last line of the log. A
 notification announces a run that ends, and the first error of a running one.
 
+Several runs can be selected at once: Ctrl / Shift + click, Ctrl+A, or the "Selection" button
+(all, finished runs, failed runs, none). "Stop" then stops all the active ones, "Delete"
+deletes all the finished ones after a single confirmation (in one call on the cluster; the
+active ones are left alone), "Fetch results" copies them one after the other. The log and the
+tabs follow the current row.
+
 | tab | contents |
 |---|---|
 | Log | the selected run's log, followed live; search with Ctrl+F |

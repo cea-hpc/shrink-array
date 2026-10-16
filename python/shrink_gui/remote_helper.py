@@ -1156,23 +1156,37 @@ def act_delete(a):
     """Remove one run directory and, when a[2] asks for it ({"own": ...},
     base64 JSON), the program outputs that are the run's own
     (outputs_to_delete). Everything is checked before anything is removed."""
+    opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
+    print(json.dumps(delete_run(rdir(a[0]), a[1], opts)))
+
+def act_delete_many(a):
+    """delete_run for each {"id", "own"?} of a[1] (base64 JSON list), in one
+    call: {"results": {id: {"ok", "removed"} or {"error"}}}. A run that
+    cannot be deleted leaves the others alone."""
+    base = rdir(a[0])
+    out = {}
+    for item in json.loads(base64.b64decode(a[1]).decode()):
+        rid = str(item.get("id", ""))
+        try:
+            out[rid] = delete_run(base, rid, {"own": item["own"]} if item.get("own") else {})
+        except Exception as e:          # one bad run must not stop the others
+            out[rid] = {"error": "%s: %s" % (type(e).__name__, e)}
+    print(json.dumps({"results": out}))
+
+def delete_run(base, rid, opts):
     import shutil
-    base, rid = rdir(a[0]), a[1]
     if not re.match(r"^[\w.-]+$", rid) or rid in (".", ".."):
-        print(json.dumps({"error": "nom de run invalide : %s" % rid}))
-        return
+        return {"error": "nom de run invalide : %s" % rid}
     d = os.path.join(base, rid)
     if not os.path.isfile(os.path.join(d, "meta.json")):
-        print(json.dumps({"error": "%s n'est pas un run" % d}))
-        return
-    opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
+        return {"error": "%s n'est pas un run" % d}
     paths = []
+    meta = {}
     if opts.get("own"):
         meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
         paths, err = outputs_to_delete(base, rid, d, meta, opts["own"])
         if err:
-            print(json.dumps({"error": err}))
-            return
+            return {"error": err}
     removed = []
     for p in paths:
         if os.path.isdir(p) and not os.path.islink(p):
@@ -1190,7 +1204,7 @@ def act_delete(a):
             if sub and os.path.isdir(sub) and not os.path.islink(sub):
                 prune_empty(sub)      # emptied by this run's files only
     shutil.rmtree(d)
-    print(json.dumps({"ok": True, "removed": removed}))
+    return {"ok": True, "removed": removed}
 
 ERR_FILE_MAX = 1024 * 1024          # per file: its end only
 ERR_TOTAL_MAX = 4 * 1024 * 1024     # per call, every file together
@@ -1428,7 +1442,8 @@ ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": a
            "git_branches": act_git_branches, "git_switch": act_git_switch, "options": act_options,
            "validate": act_validate, "launch": act_launch, "list": act_list,
            "tail": act_tail, "stop": act_stop, "pack": act_pack, "summary": act_summary,
-           "points": act_points, "delete": act_delete, "errors": act_errors,
+           "points": act_points, "delete": act_delete,
+           "delete_many": act_delete_many, "errors": act_errors,
            "errfile": act_errfile}
 if __name__ == "__main__":
     ACTIONS[sys.argv[1]](sys.argv[2:])

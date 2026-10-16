@@ -682,3 +682,43 @@ def test_status_column_has_its_own_width(gui):
     assert h.sectionSize(w.COL_STATUS) < w.table.fontMetrics().horizontalAdvance(long)
     h.resizeSection(w.COL_STATUS, 77)
     assert int(w.settings.value("col_width/status")) == 77 and w.status_col_width() == 77
+
+
+def test_several_runs_selected_deleted_and_stopped_at_once(gui, site, monkeypatch):
+    from PySide6.QtCore import QItemSelectionModel
+    w, pump = gui
+    _choose_fake(w, pump)
+    a = _submit(w, pump, {"runs": "2", "step": "0.01"}, len(w.runs))
+    b = _submit(w, pump, {"runs": "2", "step": "0.01"}, len(w.runs))
+    assert _wait_status(w, pump, a, "fini") and _wait_status(w, pump, b, "fini")
+    c = _submit(w, pump, {"runs": "500", "step": "0.5"}, len(w.runs))
+    assert _wait_status(w, pump, c, "en cours")
+    # the Sélection menu: the finished ones; the selection survives a refresh
+    w.select_where(lambda r: r["status"] not in w.ACTIVE)
+    assert {a, b} <= set(w.selected_ids()) and c not in w.selected_ids()
+    w.refresh()
+    assert pump(lambda: not w.list_busy, 10)
+    assert {a, b} <= set(w.selected_ids()) and c not in w.selected_ids()
+    # Supprimer on the selection + the running one: one dialog, the active one left
+    w.table.selectionModel().select(w.table.model().index(next(i for i, r in enumerate(w.runs)
+                                                                 if r["id"] == c), 0),
+                                    QItemSelectionModel.Select | QItemSelectionModel.Rows)
+    seen = {}
+
+    def fake_dialog(runs, n_own, n_local):
+        seen["ids"] = [r["id"] for r in runs]
+        return True, False, False
+    monkeypatch.setattr(w, "delete_many_dialog", fake_dialog)
+    w.delete()
+    assert c not in seen["ids"] and {a, b} <= set(seen["ids"])
+    assert pump(lambda: not (site.runs / a).exists() and not (site.runs / b).exists(), 10)
+    assert (site.runs / c).exists()
+    assert pump(lambda: (w.refresh() or True) and a not in [r["id"] for r in w.runs]
+                and b not in [r["id"] for r in w.runs], 10)
+    # Arrêter on several: the active ones
+    d = _submit(w, pump, {"runs": "500", "step": "0.5"}, len(w.runs))
+    assert _wait_status(w, pump, d, "en cours")
+    w.select_where(lambda r: r["id"] in (c, d))
+    assert set(w.selected_ids()) == {c, d}
+    w.stop()
+    assert _wait_status(w, pump, c, "arrêté") and _wait_status(w, pump, d, "arrêté")

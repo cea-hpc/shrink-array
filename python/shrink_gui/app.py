@@ -4,12 +4,12 @@
 import sys
 import time
 
-from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtCore import QItemSelectionModel, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCursor
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
-                               QHeaderView, QLabel, QLineEdit, QMainWindow, QPlainTextEdit, QPushButton,
-                               QScrollArea, QSplitter, QStyle, QSystemTrayIcon, QTableWidget,
-                               QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+                               QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu, QPlainTextEdit,
+                               QPushButton, QScrollArea, QSplitter, QStyle, QSystemTrayIcon, QTabWidget,
+                               QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget)
 
 from shrink_gui import i18n, qos
 from shrink_gui.config import APP, DEFAULTS, LOCAL, PROGRAMS, QOS_FALLBACK
@@ -247,7 +247,10 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.table = QTableWidget(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels([T(c) for c in self.COLS])
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        # several runs at once (Ctrl / Shift + click, Ctrl+A, "Sélection"):
+        # Arrêter, Supprimer and Récupérer act on all of them; the log, the
+        # tabs and "Reprendre ses options" follow the current row.
+        self.table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         h = self.table.horizontalHeader()
@@ -272,8 +275,23 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         bdelete = QPushButton("Supprimer")
         bdelete.setToolTip("Supprime le dossier du run sur inti (au choix : ses sorties, la copie locale)")
         bdelete.clicked.connect(self.delete)
+        bsel = QToolButton()
+        bsel.setText(T("Sélection"))
+        bsel.setToolTip(tip("Sélectionner plusieurs runs d'un coup (ou Ctrl / Maj + clic, Ctrl+A) : "
+                            "Arrêter, Supprimer et Récupérer agissent sur tous"))
+        bsel.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(bsel)
+        for label, pred in (("Tout", lambda r: True),
+                            ("Les runs finis", lambda r: r["status"] not in self.ACTIVE
+                             and not r["status"].startswith("en attente")),
+                            ("Les runs en échec", lambda r: (r["status"] == "fini" and r["code"] != 0)
+                             or r["status"].startswith("terminé") or r["status"] in ("arrêté", "interrompu")),
+                            ("Aucun", lambda r: False)):
+            menu.addAction(T(label)).triggered.connect(lambda _=False, p=pred: self.select_where(p))
+        bsel.setMenu(menu)
+        self.sel_button = bsel
         acts = QHBoxLayout()
-        for b in (brefresh, bstop, bfetch, bagain, bdelete):
+        for b in (brefresh, bsel, bstop, bfetch, bagain, bdelete):
             acts.addWidget(b)
         acts.addStretch(1)
         self.log = LogView()
@@ -470,6 +488,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
                 return
             if r is None:
                 return
+            keep_ids = {select} if select else set(self.selected_ids())
             self.runs = r["runs"]
             if r.get("now"):
                 self.clock_skew = time.time() - r["now"]
@@ -480,7 +499,10 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
             if cur and cur["status"] in self.ACTIVE:
                 self.tab_changed(self.tabs.currentIndex())
             keep = select or self.current
+            if keep:
+                keep_ids.add(keep)
             self.table.blockSignals(True)
+            self.table.clearSelection()
             self.table.setRowCount(len(self.runs))
             for i, run in enumerate(self.runs):
                 commit, commit_tip = self.commit_text(run)
@@ -517,17 +539,53 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
                                   run["meta"].get("command", "") if j < 2 else
                                   status_text(run) if j == self.COL_STATUS else str(v))
                     self.table.setItem(i, j, it)
+                if run["id"] in keep_ids:
+                    self.table.selectionModel().select(
+                        self.table.model().index(i, 0),
+                        QItemSelectionModel.Select | QItemSelectionModel.Rows)
                 if run["id"] == keep:
-                    self.table.selectRow(i)
+                    self.table.selectionModel().setCurrentIndex(self.table.model().index(i, 0),
+                                                                QItemSelectionModel.NoUpdate)
             self.table.blockSignals(False)
             if select:
                 self.select()
 
         self.remote.helper("list", [self.runs_dir.text().strip()], done)
 
+    def selected_runs(self):
+        """The selected runs, in the table's order."""
+        rows = sorted(i.row() for i in self.table.selectionModel().selectedRows())
+        return [self.runs[r] for r in rows if r < len(self.runs)]
+
+    def selected_ids(self):
+        return [r["id"] for r in self.selected_runs()]
+
     def selected_run(self):
-        rows = self.table.selectionModel().selectedRows()
-        return self.runs[rows[0].row()] if rows and rows[0].row() < len(self.runs) else None
+        """The current run: the current row when it is selected, else the
+        first selected one."""
+        sel = self.selected_runs()
+        cur = self.table.currentRow()
+        if 0 <= cur < len(self.runs) and self.runs[cur] in sel:
+            return self.runs[cur]
+        return sel[0] if sel else None
+
+    def select_where(self, pred):
+        """Select the runs for which @p pred(run) holds (the Sélection menu)."""
+        self.table.blockSignals(True)
+        self.table.clearSelection()
+        first = None
+        for i, run in enumerate(self.runs):
+            if pred(run):
+                self.table.selectionModel().select(self.table.model().index(i, 0),
+                                                   QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                first = i if first is None else first
+        if first is not None and self.selected_run() is None:
+            self.table.selectionModel().setCurrentIndex(self.table.model().index(first, 0),
+                                                        QItemSelectionModel.NoUpdate)
+        self.table.blockSignals(False)
+        n = len(self.selected_runs())
+        self.info(f"{n} run(s) sélectionné(s)")
+        self.select()
 
     def selected(self):
         r = self.selected_run()
