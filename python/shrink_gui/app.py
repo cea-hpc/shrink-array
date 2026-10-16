@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """The main window."""
 import sys
+import time
 
 from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCursor
@@ -30,9 +31,10 @@ from shrink_gui.widgets import DurationBox, LogView, OptionsForm, TLabel
 class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab, BenchChart, ErrorsTab,
            SpeedupChart, Tooltips, QMainWindow):
     COLS = ["Run", "Programme", "Partition", "Commit", "Job", "Statut", "Avancement", "Erreurs",
-            "Dernière ligne"]
+            "Durée", "Dernière ligne"]
     COL_STATUS = 5
     COL_ERRORS = 7
+    COL_DURATION = 8
     # the tabs under the runs table, in this order
     TAB_LOG, TAB_SUMMARY, TAB_CHART, TAB_ERRORS = range(4)
     ACTIVE = ("en cours", "en attente", "démarrage")
@@ -43,6 +45,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.settings = QSettings(APP, APP)
         self.remote = Remote(self, self.machine, self.error)
         self.runs = []
+        self.clock_skew = 0.0      # laptop clock - cluster clock, from the last list
         self.current = None      # id of the run shown in the log
         self.offset = 0
         self.tail_busy = False
@@ -357,6 +360,10 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.t_tail = QTimer(self)
         self.t_tail.timeout.connect(self.poll_tail)
         self.t_tail.start(2000)
+        # the Durée column of the running runs, every second between two lists
+        self.t_clock = QTimer(self)
+        self.t_clock.timeout.connect(self.tick_durations)
+        self.t_clock.start(1000)
         self.set_tooltips()
         self.translate_widgets()
         QTimer.singleShot(0, self.check)
@@ -421,6 +428,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.save()
         self.t_list.stop()
         self.t_tail.stop()
+        self.t_clock.stop()
         # The runs live on inti: only the pending ssh calls are dropped here.
         for p in list(self.remote.procs):
             p.finished.disconnect()
@@ -458,6 +466,8 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
             if r is None:
                 return
             self.runs = r["runs"]
+            if r.get("now"):
+                self.clock_skew = time.time() - r["now"]
             self.fill_after()
             self.notify_changes()
             self.fill_compare()
@@ -471,7 +481,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
                 commit, commit_tip = self.commit_text(run)
                 vals = [run["id"], run["meta"].get("program", ""), run["meta"].get("partition", ""),
                         commit, run.get("jobid", ""), status_text(run), T(self.progress_text(run)),
-                        self.errors_text(run), run["last"]]
+                        self.errors_text(run), self.duration_text(run), run["last"]]
                 for j, v in enumerate(vals):
                     it = QTableWidgetItem(str(v))
                     if j == 3:
@@ -489,6 +499,10 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
                         f = it.font()
                         f.setBold(True)
                         it.setFont(f)
+                    if j == self.COL_DURATION:
+                        self.style_duration(it, run)
+                        self.table.setItem(i, j, it)
+                        continue
                     if j == self.COL_ERRORS:
                         it.setTextAlignment(Qt.AlignCenter)
                         it.setToolTip(tip(self.errors_tip(run)))
@@ -564,6 +578,70 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
             lines.append(f"≠ le job a démarré sur {start[:8]} : le dépôt a changé entre la "
                          "soumission et le démarrage")
         return txt, tip("\n".join(lines))
+
+    # ------------------------------------------------------------ durations
+    @staticmethod
+    def fmt_elapsed(seconds):
+        """Seconds -> "3:59:50", "1 j 02:03:04" ("1 d ..." in English)."""
+        v = max(0, int(seconds))
+        d, v = divmod(v, 86400)
+        h, v = divmod(v, 3600)
+        m, sec = divmod(v, 60)
+        hms = f"{h}:{m:02d}:{sec:02d}"
+        return (f"{d} {'d' if i18n.LANG == 'en' else 'j'} {h:02d}:{m:02d}:{sec:02d}") if d else hms
+
+    def elapsed(self, run):
+        """(seconds, over) of @p run: since its start up to its end, or up to
+        now (cluster clock) while it runs; (None, False) when it has not
+        started (or the start is unknown)."""
+        started, ended = (run.get("times") or [None, None])[:2]
+        if started is None:
+            return None, False
+        if ended is not None:
+            return ended - started, True
+        if run["status"] not in self.ACTIVE and not run["status"].startswith("en cours"):
+            return None, False            # over, end unknown: no growing counter
+        return time.time() - self.clock_skew - started, False
+
+    def duration_text(self, run):
+        s, _over = self.elapsed(run)
+        return "" if s is None else self.fmt_elapsed(s)
+
+    def duration_tip(self, run):
+        started, ended = (run.get("times") or [None, None])[:2]
+        if started is None:
+            return T("Pas encore démarré (ou début inconnu).")
+        at = lambda t: time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t + self.clock_skew))
+        lines = [T("démarré : ") + at(started)]
+        s, over = self.elapsed(run)
+        if over:
+            lines.append(T("fini : ") + at(ended))
+            lines.append(T("durée : ") + self.fmt_elapsed(s))
+        elif s is not None:
+            lines.append(T("en cours depuis ") + self.fmt_elapsed(s))
+        limit = run["meta"].get("time_s")
+        if limit and run["meta"].get("mode") in ("msub", "local"):    # the detached mode has no -T
+            lines.append(T("durée max demandée : ") + self.fmt_elapsed(limit))
+        return "\n".join(lines)
+
+    def style_duration(self, it, run):
+        it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        it.setToolTip(self.duration_tip(run))
+        s, over = self.elapsed(run)
+        f = QFont("Monospace")
+        f.setItalic(s is not None and not over)       # still counting
+        it.setFont(f)
+
+    def tick_durations(self):
+        """Advances the Durée of the running runs between two lists."""
+        for i, run in enumerate(self.runs[:self.table.rowCount()]):
+            s, over = self.elapsed(run)
+            if s is None or over:
+                continue
+            it = self.table.item(i, self.COL_DURATION)
+            if it is not None:
+                it.setText(self.fmt_elapsed(s))
+                it.setToolTip(self.duration_tip(run))
 
     @staticmethod
     def errors_text(run):

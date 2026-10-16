@@ -97,3 +97,31 @@ def test_local_waits_for_a_local_compile(site):
     assert site.wait(lambda: _run(site, "l6")["status"] == "en attente", 5)
     assert site.wait(lambda: _run(site, "l6")["status"] == "fini", 30)
     assert _run(site, "l6")["code"] == 0 and "STARTED" in _log(site, "l6")
+
+
+def test_local_start_and_end_times(site):
+    _launch(site, "l9", _spec("sleep 2"))
+    assert site.wait(lambda: (_run(site, "l9")["times"] or [None])[0] is not None)
+    started, ended = _run(site, "l9")["times"]
+    assert ended is None and abs(site.helper("list", "~/shrink_runs")["now"] - started) < 60
+    assert site.wait(lambda: _run(site, "l9")["status"] == "fini")
+    started2, ended = _run(site, "l9")["times"]
+    assert started2 == started and ended - started >= 2
+
+
+def test_times_of_a_run_older_than_start_time(site):
+    """No start_time file: the start line of out.log; no exit code (time
+    limit): the last write to out.log once the job left the queue."""
+    import time
+    d = site.runs / "old1"
+    d.mkdir(parents=True)
+    (d / "meta.json").write_text(json.dumps({"program": "omp_speedup.py", "mode": "local"}))
+    (d / "out.log").write_text("[gui] node node0000  start 2026-10-15 14:30:53  job 9891915\n...\n")
+    (d / "pid").write_text("999999")
+    (d / "host").write_text(os.uname()[1])
+    end = time.mktime((2026, 10, 15, 18, 30, 46, 0, 0, -1))
+    os.utime(d / "out.log", (end, end))
+    run = _run(site, "old1")
+    assert run["status"] == "interrompu"
+    started, ended = run["times"]
+    assert ended - started == 4 * 3600 - 7

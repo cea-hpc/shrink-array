@@ -27,6 +27,7 @@ A **run** is a directory on the cluster, `<runs directory>/<id>/`:
 | `launch.sh` | detached mode: `ccc_mprun <options> bash run.sh` |
 | `out.log` | everything the job printed |
 | `jobid` | (`ccc_msub`) the batch id, for `squeue` and `ccc_mdel` |
+| `start_time` | when the run started on the node (seconds since the epoch), for the Duration column |
 | `exit_code` | written when the command returns |
 | `events.jsonl` | (`bench_and_test.py`) structured progress: phases, k/N |
 
@@ -93,7 +94,9 @@ ratio. Its outputs go to `$CCCWORKDIR/omp_speedup/` (else `~/omp_speedup/`).
 
 The table lists the runs of the runs directory, refreshed every 15 s: program, partition,
 commit, job, status, progress (k/N and time left when the program reports them), errors (live
-for `bench_and_test.py`, failed runs for `multi_launch_stress.py`), last line of the log. A
+for `bench_and_test.py`, failed runs for `multi_launch_stress.py`), duration (since the start on
+the node, by the second while the run runs, then its total once over; the tooltip gives the
+start, the end and the max time asked), last line of the log. A
 notification announces a run that ends, and the first error of a running one.
 
 | tab | contents |

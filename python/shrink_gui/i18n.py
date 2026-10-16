@@ -55,7 +55,10 @@ EN = {
     "Commande :": "Command:", "Soumettre": "Submit",
     # runs
     "Run": "Run", "Programme": "Program", "Job": "Job", "Statut": "Status",
-    "Avancement": "Progress", "Dernière ligne": "Last line",
+    "Avancement": "Progress", "Dernière ligne": "Last line", "Durée": "Duration",
+    "Pas encore démarré (ou début inconnu).": "Not started yet (or start unknown).",
+    "démarré : ": "started: ", "fini : ": "ended: ", "durée : ": "duration: ",
+    "en cours depuis ": "running for ", "durée max demandée : ": "max time asked: ",
     "Rafraîchir": "Refresh", "Arrêter": "Stop", "Récupérer les résultats": "Fetch results",
     "Reprendre ses options": "Reuse its options", "Supprimer": "Delete",
     "Log": "Log", "Résumé": "Summary", "Graphique": "Chart",

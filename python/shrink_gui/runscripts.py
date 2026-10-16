@@ -83,6 +83,8 @@ def make_run_sh(repo, cwd, command, check=None):
     return f"""#!/bin/bash
 echo "[gui] node $(hostname)  start $(date '+%F %T')  job ${{SLURM_JOB_ID:-}}"
 RUN_DIR="$(cd "$(dirname "$0")" && pwd)"
+# When the run started, by the node's clock (the Durée column of the window).
+date +%s > "$RUN_DIR/start_time" 2>/dev/null
 R={shlex.quote(repo)}
 R="${{R/#\\~/$HOME}}"
 cd "$R" || {{ echo "[gui] repository $R not found"; exit 97; }}

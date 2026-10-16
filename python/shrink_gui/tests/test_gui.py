@@ -601,3 +601,24 @@ def test_omp_speedup_submitted_from_the_window(gui, site):
     w.tabs.setCurrentIndex(w.TAB_ERRORS)
     assert pump(lambda: "error: no chunk today" in w.err_view.toPlainText(), 10)
     assert w.err_note.text().startswith("4 erreur(s)")
+
+
+def test_duration_column(gui, site):
+    w, pump = gui
+    assert w.fmt_elapsed(14390) == "3:59:50" and w.fmt_elapsed(90061) == "1 j 01:01:01"
+    _choose_fake(w, pump)
+    rid = _submit(w, pump, {"runs": "3", "step": "0.01"}, len(w.runs))
+    assert _wait_status(w, pump, rid, "fini")
+    row = next(i for i, r in enumerate(w.runs) if r["id"] == rid)
+    assert pump(lambda: w.table.item(row, w.COL_DURATION) is not None
+                and re.fullmatch(r"\d+:\d\d:\d\d", w.table.item(row, w.COL_DURATION).text()), 10)
+    it = w.table.item(row, w.COL_DURATION)
+    assert "démarré : " in it.toolTip() and "fini : " in it.toolTip() and not it.font().italic()
+    # a running run counts on between two lists, from the cluster's clock
+    import time
+    w.clock_skew = 0.0
+    run = {"id": "r8", "status": "en cours", "code": None, "times": [int(time.time()) - 125, None],
+           "meta": {"program": "omp_speedup.py", "mode": "msub", "time_s": 14400}}
+    assert w.duration_text(run) in ("0:02:05", "0:02:06")
+    assert "en cours depuis" in w.duration_tip(run) and "4:00:00" in w.duration_tip(run)
+    assert w.duration_text(dict(run, status="en attente", times=[None, None])) == ""

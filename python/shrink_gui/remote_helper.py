@@ -611,6 +611,43 @@ def errors_of(d, meta, st, ev):
             pass
     return r
 
+_START_RE = re.compile(r"\[gui\] node \S+\s+start (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)")
+
+def run_times(d, final):
+    """[started, ended] of run dir @p d, in seconds since the epoch by the
+    cluster's clock (None when unknown). Started: the start_time file run.sh
+    writes, else (a run older than that file) the "[gui] node ... start" line
+    at the top of out.log. Ended, once the run has an exit code: when its
+    exit_code was written; a run over without one (@p final: a job that left
+    the queue at its time limit, a stopped run): the last write to out.log."""
+    import time as _time
+    started = None
+    s = (read(os.path.join(d, "start_time")) or "").strip()
+    if s.isdigit():
+        started = int(s)
+    else:
+        try:
+            with open(os.path.join(d, "out.log"), "rb") as f:
+                head = f.read(16384).decode("utf-8", "replace")
+            m = _START_RE.search(head)
+            if m:
+                started = int(_time.mktime(_time.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")))
+        except (IOError, OSError, ValueError, OverflowError):
+            pass
+    if started is None:
+        return [None, None]
+    ended = None
+    for name in ("exit_code", "out.log"):
+        p = os.path.join(d, name)
+        if os.path.isfile(p) and (name == "exit_code" or final):
+            ended = os.path.getmtime(p)
+            break
+    return [started, max(started, int(ended)) if ended is not None else None]
+
+def time_now():
+    import time as _time
+    return _time.time()
+
 def act_list(a):
     base = rdir(a[0])
     runs = []
@@ -629,8 +666,12 @@ def act_list(a):
                          "jobid": (read(os.path.join(d, "jobid")) or "").strip(),
                          "progress": progress_of(os.path.join(d, "out.log"), meta, ev),
                          "git_start": (read(os.path.join(d, "git_start")) or "").strip(),
+                         "times": run_times(d, st in ("fini", "arrêté", "interrompu")
+                                            or st.startswith("terminé")),
                          "last": last_line(os.path.join(d, "out.log"))})
-    print(json.dumps({"host": socket.gethostname(), "runs": runs}))
+    # "now" by the cluster's clock: the window counts a running run's time
+    # from it, whatever the offset of the laptop's clock.
+    print(json.dumps({"host": socket.gethostname(), "now": int(time_now()), "runs": runs}))
 
 TAIL_START = 2 * 1024 * 1024   # a first display: the end of the log only
 TAIL_CHUNK = 4 * 1024 * 1024   # then what was appended, by blocks of this size
