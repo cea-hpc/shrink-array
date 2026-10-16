@@ -16,6 +16,7 @@
 | find a call: the API by task, on one page | [api.md](api.md) | trouver un appel : l'API par tâche, sur une page | [api_fr.md](api_fr.md) |
 | change the library: build, tests to run, code rules, measurements, docs | [contributing.md](contributing.md) | modifier la bibliothèque : build, tests à lancer, règles de code, mesures, docs | [contributing_fr.md](contributing_fr.md) |
 | choose a variant (Chunk, Chunk2, Chunk2A) | [variants.md](variants.md) | choisir une variante (Chunk, Chunk2, Chunk2A) | [variantes_fr.md](variantes_fr.md) |
+| know whether a sparse format, a compressor or a sparse grid fits better | [alternatives.md](alternatives.md) | savoir si un format creux, un compresseur ou une grille creuse convient mieux | [alternatives_fr.md](alternatives_fr.md) |
 | understand reads, writes, in-flight compression, deferred writes | [algo_chunk2.md](algo_chunk2.md) | comprendre lecture, écriture, compression en vol, écritures différées | [algo_chunk2_fr.md](algo_chunk2_fr.md) |
 | know what v1 and Chunk2A do differently | [algo_chunk.md](algo_chunk.md), [algo_chunk2a.md](algo_chunk2a.md) | savoir ce que v1 et Chunk2A font autrement | [algo_chunk_fr.md](algo_chunk_fr.md), [algo_chunk2a_fr.md](algo_chunk2a_fr.md) |
 | understand how writers, compressors and readers exclude each other without a lock | [synchronisation_dekker.md](synchronisation_dekker.md) | comprendre comment écrivains, compresseurs et lecteurs s'excluent sans verrou | [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
@@ -33,6 +34,7 @@
 | [api.md](api.md) / [api_fr.md](api_fr.md) | the API by task: start and stop, containers, operations, write proxy, range operations, OpenMP phases, adaptive chunk size, compile-time configuration |
 | [contributing.md](contributing.md) / [contributing_fr.md](contributing_fr.md) | for contributors: build, which tests for which change, code and comment rules, performance claims, docs and changelog |
 | [variants.md](variants.md) / [variantes_fr.md](variantes_fr.md) | what each variant compresses, what a chunk costs, which one to choose, orders of magnitude |
+| [alternatives.md](alternatives.md) / [alternatives_fr.md](alternatives_fr.md) | sparse formats, hash tables, zfp / Blosc2, OpenVDB: what each one does, and when to prefer it |
 | [algo_chunk2.md](algo_chunk2.md) / [algo_chunk2_fr.md](algo_chunk2_fr.md) | the whole algorithm, through Chunk2: geometry, chunk states, reads, writes through proxies, write engine, deferred writes, OMPT, in-flight compression, re-chunk, range operations |
 | [algo_chunk.md](algo_chunk.md) / [algo_chunk_fr.md](algo_chunk_fr.md) | Chunk (v1): compression to zero only, serial counters, pass threshold, sliced re-chunk |
 | [algo_chunk2a.md](algo_chunk2a.md) / [algo_chunk2a_fr.md](algo_chunk2a_fr.md) | Chunk2A: one second value per chunk, second-value registry, its own queueing criteria |
