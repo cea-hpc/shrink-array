@@ -567,6 +567,10 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"(\S+(?: / \S+)*) : le job (\S+) n'a pas pu être annulé", r"\1: job \2 could not be cancelled"),
     (r"lancé depuis (\S+), ce master arrive sur (\S+)", r"started from \1, this master lands on \2"),
     (r"arrêt impossible", "cannot stop"),
+    (r"^(\S+) : il faut (\S+) ou (\S+) \(sinon le job s'arrête aussitôt sur une erreur d'usage\)",
+     r"\1: needs \2 or \3 (else the job stops at once on a usage error)"),
+    (r" -- (.+) ne servent qu'avec (\S+) : est-ce lui qu'il fallait cocher \?$",
+     r" -- \1 only matter with \2: is it the one to tick?"),
     (r"^(\S+) se soumet par ccc_msub seulement \(il ne doit pas tourner depuis le nœud de login\) : "
      r"choisissez « (.+) »$",
      r'\1 is submitted with ccc_msub only (it must not run from the login node): choose "\2"'),

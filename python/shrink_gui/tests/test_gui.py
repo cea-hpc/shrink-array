@@ -622,3 +622,22 @@ def test_duration_column(gui, site):
     assert w.duration_text(run) in ("0:02:05", "0:02:06")
     assert "en cours depuis" in w.duration_tip(run) and "4:00:00" in w.duration_tip(run)
     assert w.duration_text(dict(run, status="en attente", times=[None, None])) == ""
+
+
+def test_omp_speedup_refused_without_exec(gui, site):
+    w, pump = gui
+    w.program.setCurrentText("omp_speedup.py")
+    assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
+    w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8",
+                       "size": "dyn,1024", "int64": True})
+    n = len(w.runs)
+    w.launch()
+    assert "--exec ou --all-exec" in w.last_error and "--size, --int64" in w.last_error
+    assert len(w.runs) == n
+    assert w.missing_options("omp_speedup.py")
+    w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8", "all_exec": True})
+    assert w.missing_options("omp_speedup.py") is None
+    w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8"})
+    w.extra.setText("--exec chunk2a@dyn")
+    assert w.missing_options("omp_speedup.py") is None
+    w.extra.setText("")
