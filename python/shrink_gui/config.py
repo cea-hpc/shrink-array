@@ -120,6 +120,12 @@ PROGRAMS = {
         "errors_files": ["errors.log"],
         "builds_opt": {"root": "build_root", "builds": "target"},
         "own_outputs": "dir",
+        # Checked before submitting (its own parse_args test, which the
+        # option scan cannot see): at least one of these options, else the
+        # job would only print a usage error. "with": options that do nothing
+        # without that group's one_with (here --size / --int64 need --all-exec).
+        "one_of": [{"dests": ["execs", "all_exec"], "one_with": "all_exec",
+                    "with": ["size", "int64"]}],
     },
     "compile_all.sh": {
         "time_s": 5400,  # default -T (short); then remembered per program

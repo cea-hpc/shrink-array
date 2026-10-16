@@ -62,7 +62,7 @@ class Remote:
         self._run(["-O", "check", self.host_fn()], None, lambda o: done(o is not None))
 
     def helper(self, action, args, done, binary=False):
-        py = f'"{NEWEST_PY}"' if action == "options" else "python3"
+        py = f'"{NEWEST_PY}"' if action in ("options", "validate") else "python3"
         remote_cmd = f"{py} - " + " ".join(shlex.quote(str(a)) for a in [action, *args])
 
         def parse(out):

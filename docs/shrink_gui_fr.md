@@ -27,6 +27,7 @@ Un **run** est un dossier sur le calculateur, `<dossier des runs>/<id>/` :
 | `launch.sh` | mode détaché : `ccc_mprun <options> bash run.sh` |
 | `out.log` | tout ce que le job a écrit |
 | `jobid` | (`ccc_msub`) l'identifiant batch, pour `squeue` et `ccc_mdel` |
+| `start_time` | l'heure de démarrage sur le nœud (secondes depuis l'époque), pour la colonne Durée |
 | `exit_code` | écrit quand la commande se termine |
 | `events.jsonl` | (`bench_and_test.py`) l'avancement structuré : phases, k/N |
 
@@ -78,6 +79,13 @@ modifiées sont en gras ; une option laissée à sa valeur par défaut n'est pas
 commande. « Enregistrer comme défauts » remplace les valeurs par défaut de ce programme sur
 cette architecture. « Commande » montre exactement ce qui sera exécuté.
 
+Avant de soumettre un script argparse, la fenêtre fait vérifier la commande par le script
+lui-même sur le calculateur : sa fonction `parse_args(argv)` quand il en a une au niveau du
+module (`omp_speedup.py` : ses propres contrôles compris, sans lancer `main`), sinon son appel
+à `parse_args()`. Une option inconnue, une valeur invalide ou un contrôle du script refuse la
+soumission dans la barre d'état, au lieu d'un job qui s'arrête aussitôt sur une erreur d'usage.
+`"validate": False` dans `PROGRAMS` désactive cette vérification pour un programme.
+
 `compile_all.sh` ne se lance qu'en batch, jamais sur le nœud de login. Ses champs `--target`
 et `--exec` ont un bouton « Choisir… » qui liste les configurations et les exécutables
 trouvés sur le calculateur.
@@ -96,7 +104,9 @@ un autre commit) et donne le rapport B / A. Ses sorties vont dans
 Le tableau liste les runs du dossier des runs, rafraîchi toutes les 15 s : programme,
 partition, commit, job, statut, avancement (k/N et temps restant quand le programme les
 donne), erreurs (en direct pour `bench_and_test.py`, runs en échec pour
-`multi_launch_stress.py`), dernière ligne du log. Une notification signale un run qui se
+`multi_launch_stress.py`), durée (depuis le démarrage sur le nœud, à la seconde tant que le
+run tourne, puis la durée totale une fois fini ; l'infobulle donne le début, la fin et la
+durée max demandée), dernière ligne du log. Une notification signale un run qui se
 termine, et la première erreur d'un run en cours.
 
 | onglet | contenu |

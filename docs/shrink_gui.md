@@ -27,6 +27,7 @@ A **run** is a directory on the cluster, `<runs directory>/<id>/`:
 | `launch.sh` | detached mode: `ccc_mprun <options> bash run.sh` |
 | `out.log` | everything the job printed |
 | `jobid` | (`ccc_msub`) the batch id, for `squeue` and `ccc_mdel` |
+| `start_time` | when the run started on the node (seconds since the epoch), for the Duration column |
 | `exit_code` | written when the command returns |
 | `events.jsonl` | (`bench_and_test.py`) structured progress: phases, k/N |
 
@@ -77,6 +78,13 @@ script therefore appears in the form without touching the interface. Changed opt
 bold; an option left at its default is not put on the command line. "Save as defaults"
 replaces this program's defaults on this architecture. "Command" shows exactly what will run.
 
+Before submitting an argparse script, the window has the script itself check the command on
+the cluster: its module-level `parse_args(argv)` function when it has one (`omp_speedup.py`:
+its own checks included, without running `main`), else its `parse_args()` call. An unknown
+option, an invalid value or one of the script's checks refuses the submission in the status
+bar, instead of a job that stops at once on a usage error. `"validate": False` in `PROGRAMS`
+turns this check off for a program.
+
 `compile_all.sh` only runs as a batch job, never on the login node. Its `--target` and
 `--exec` fields have a "Choose…" button listing the configurations and executables found on
 the cluster.
@@ -93,7 +101,9 @@ ratio. Its outputs go to `$CCCWORKDIR/omp_speedup/` (else `~/omp_speedup/`).
 
 The table lists the runs of the runs directory, refreshed every 15 s: program, partition,
 commit, job, status, progress (k/N and time left when the program reports them), errors (live
-for `bench_and_test.py`, failed runs for `multi_launch_stress.py`), last line of the log. A
+for `bench_and_test.py`, failed runs for `multi_launch_stress.py`), duration (since the start on
+the node, by the second while the run runs, then its total once over; the tooltip gives the
+start, the end and the max time asked), last line of the log. A
 notification announces a run that ends, and the first error of a running one.
 
 | tab | contents |

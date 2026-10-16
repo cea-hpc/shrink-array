@@ -12,6 +12,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import time
 
 from PySide6.QtCore import QTimer
@@ -133,6 +134,32 @@ class LaunchForm:
             builds = parts
         check["builds"] = [str(b) for b in builds]
         return check
+
+    def missing_options(self, prog):
+        """The refusal of PROGRAMS[prog]["one_of"] for the form as it is (none
+        of a group's options set, in the form or the "arguments en plus"), or
+        None."""
+        vals = self.form.values()
+        extra = self.extra.text().split()
+        widgets = self.form.widgets
+
+        def flags(dest):
+            return widgets[dest][0]["flags"] if dest in widgets else ["--" + dest.replace("_", "-")]
+
+        def given(dest):
+            return dest in vals or any(a == f or a.startswith(f + "=") for a in extra for f in flags(dest))
+
+        for rule in PROGRAMS[prog].get("one_of", []):
+            if any(given(d) for d in rule["dests"]):
+                continue
+            names = " ou ".join(max(flags(d), key=len) for d in rule["dests"])
+            msg = f"{prog} : il faut {names} (sinon le job s'arrête aussitôt sur une erreur d'usage)"
+            useless = [max(flags(d), key=len) for d in rule.get("with", []) if given(d)]
+            if useless and rule.get("one_with"):
+                msg += (f" -- {', '.join(useless)} ne servent qu'avec {max(flags(rule['one_with']), key=len)} : "
+                        "est-ce lui qu'il fallait cocher ?")
+            return msg
+        return None
 
     def command(self):
         prog = self.program.currentText()
@@ -267,6 +294,11 @@ class LaunchForm:
                 "Les options du script n'ont pas été lues : seuls les arguments en plus seront "
                 "passés.\n\nSoumettre quand même ?") != QMessageBox.Yes:
             return
+        if command is None and self.form.schema:
+            err = self.missing_options(prog)
+            if err:
+                self.error(err)
+                return
         pkey = self.preset.currentData()
         mode = self.mode.currentData()
         if PROGRAMS[prog].get("msub_only") and mode == "mprun":
@@ -289,6 +321,34 @@ class LaunchForm:
                 "(oracles, résumé).\n\nSoumettre quand même ?") != QMessageBox.Yes:
             return
         cmd = command if command is not None else self.command()
+        spec = PROGRAMS[prog]
+        if command is None and spec.get("scan") == "argparse" and spec.get("validate", True):
+            # The script's own parsing on the cluster first: a bad option
+            # (or one of its checks) refuses here, not in the job's log.
+            try:
+                argv = shlex.split(cmd)[2:]
+            except ValueError as e:
+                self.error(f"commande illisible : {e}")
+                return
+
+            def checked(r):
+                if r is None:
+                    return
+                if r.get("refused"):
+                    self.error(f"{prog} refuse ces options : {r['refused']}")
+                    return
+                if r.get("skipped"):
+                    self.info(f"options non vérifiées ({r['skipped']}) : soumis quand même")
+                self.submit(prog, pkey, mode, qname, cmd, extra, rerun_of)
+
+            blob = base64.b64encode(json.dumps(argv).encode()).decode()
+            self.info(f"vérification des options de {prog}…")
+            self.remote.helper("validate", [self.repo.text().strip(), spec["script"], blob], checked)
+            return
+        self.submit(prog, pkey, mode, qname, cmd, extra, rerun_of)
+
+    def submit(self, prog, pkey, mode, qname, cmd, extra, rerun_of):
+        """The second half of launch(): the run directory, its scripts, the job."""
         after_id = self.after.currentData() or ""
         after = {"run": after_id, "cond": self.after_cond.currentData()} if after_id else None
         delay_s = self.delay.value() if self.delay_on.isChecked() else 0
