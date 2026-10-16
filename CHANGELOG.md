@@ -114,6 +114,17 @@ the tag's checksum to the recipe.
   its number); `fill_box` takes any strided view. Checked against
   kokkos/mdspan before and after its canonical slices. Harness
   `mdspan_submdspan_validation`.
+- `md::layout_tiled_dyn<Rank>`: `layout_tiled` with the tile given at run time,
+  for the `_dyn` libraries (the same storage as `layout_tiled` for the same
+  tile; the tile operations, `submdspan` and `fill_box` take it alike).
+  `md::tile_shape<Rank>(n)`: a tile of exactly `n` elements, as square as the
+  divisors allow (384 -> 16 x 24); `md::tiled_view_dyn(a, ext...)` takes a tile
+  of `a.chunk_size()` elements, `md::tiled_size_dyn` sizes the array. The two
+  layouts share one implementation (`detail::tiled_mapping_base`); the tile
+  operations read the tile from the mapping, their buffer inline up to 8 KiB.
+  2048 x 2048, 1 thread: `f[i, j]` as fast as with `layout_tiled`,
+  `update_tiles` about 10 % slower. Harness `mdspan_tiled_dyn_validation`
+  (default size and dyn).
 
 ### Changed
 

@@ -162,6 +162,32 @@ md::update_tiles(sub, on_block, on_uniform);                       // the tiles 
 `examples/validation/mdspan_submdspan_validation.cpp`; checked against kokkos/mdspan before and
 after its canonical slices (May 2025, October 2026).
 
+### The tile at run time: `layout_tiled_dyn`
+
+A `_dyn` library knows its chunk size at run time only (`DYN_CHUNK_SIZE`, a re-chunk), so a tile
+of one chunk cannot be a template argument. `md::layout_tiled_dyn<Rank>` takes the tile at run
+time and lays the array out exactly as `layout_tiled` does for the same tile (the two views of one
+array agree); the tile operations, `submdspan` and `fill_box` take it as they take
+`layout_tiled`.
+
+```cpp
+ArrayChunk2A<double> a(md::tiled_size_dyn(md::tile_shape<2, long>(chunk_size), std::array<long, 2>{nx, ny}));
+auto f = md::tiled_view_dyn(a, nx, ny);                          // a tile of a.chunk_size() elements
+auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // or any tile
+```
+
+- `md::tile_shape<Rank>(n)` gives a tile of exactly `n` elements, as square as the divisors of
+  `n` allow, the longer extents last: 256 -> 16 x 16, 384 -> 16 x 24, 512 -> 16 x 32, 1024 ->
+  32 x 32, 256 in 3D -> 4 x 8 x 8. Every chunk size of the library (a power of two or a multiple
+  of 64) has such a tile; `tiled_view_dyn(a, ext...)` uses it with `a.chunk_size()`.
+- Cost, 2048 x 2048, 1 thread: a read through `f[i, j]` as with `layout_tiled` (2.75 ns per
+  element: the run-time division hides behind the element access), `update_tiles` about 10 %
+  slower (the block's extents are run-time values too).
+- After a re-chunk nothing moves: the view still reads and writes the right elements, and the
+  tile operations still work serially. But a tile is no longer a chunk -- at twice the chunk
+  size, a chunk holds two consecutive tiles -- so in a parallel region the tile operations stop
+  (two threads would share a chunk) until the field is copied into a view of the new tile.
+
 ## 4. Where `mdspan` comes from
 
 | available | used |
@@ -193,9 +219,10 @@ reports as skipped.
 
 | file | contents |
 |---|---|
-| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::view`, `md::tiled_view`, `md::tiled_size`, `md::submdspan` |
+| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | writes through the view and linear read-back, compound operators, rank 3, read-only views, the tiled mapping (bijection, padding), a uniform tile is a uniform run; every variant (one ctest each, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocks, tile extents on padded edges, uniform tiles, the update against the element formula, untouched tiles stay compressed, the parallel update; every variant at 1 and 8 threads, and `mdspan_tile_ops_misaligned` (a tile smaller than a chunk refused in a parallel region) |
 | `examples/validation/mdspan_submdspan_validation.cpp` | sub-views of a row-major view (block, row, column, read-only, `fill_box`) and of a tiled view (aligned, ending at the extent, a sub-view of a sub-view; the tile operations on it, serially and in a parallel phase); every variant at 1 and 8 threads, and `mdspan_submdspan_misaligned` (a tiled slice off the tiles stops) |
+| `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, every multiple of 64 to 4096), `layout_tiled_dyn` against `layout_tiled` index by index and through their sub-views, `tiled_view_dyn`'s tile per chunk, the tile operations on a tile per chunk, a 3 x 5 tile and one beyond the inline buffer; every variant at the default size and at dyn (a re-chunk under the view), 1 and 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | the comparisons of sections 2 and 3, and the cost of the multi-index; `mdspan_tiles 4096` for a larger field |

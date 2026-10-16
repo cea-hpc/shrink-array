@@ -71,6 +71,7 @@
     #include <tuple>       // std::apply (a multi-index into a mapping)
     #include <type_traits> // std::remove_cvref_t, std::is_const_v
     #include <utility>     // std::as_const, std::forward
+    #include <vector>      // std::vector (a run-time tile larger than the inline buffer)
 
     #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
     #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
@@ -92,10 +93,11 @@ struct tile
     std::array<Index, Rank> extent; ///< Elements of the tile inside the view's extents, per dimension.
 };
 
-/// @brief A tiled view of this library: layout_tiled and md::accessor.
+/// @brief A tiled view of this library: layout_tiled or layout_tiled_dyn, and md::accessor.
 template <typename View>
-concept tiled_view_of_array = requires {
-    View::mapping_type::tile_elems; // layout_tiled
+concept tiled_view_of_array = requires(const typename View::mapping_type& m) {
+    m.tile_elements(); // layout_tiled, layout_tiled_dyn
+    m.tile_extent(0);
     requires std::same_as<typename View::accessor_type, accessor<typename View::accessor_type::array_type>> ||
                  std::same_as<typename View::accessor_type, accessor<const typename View::accessor_type::array_type>>;
 };
@@ -108,22 +110,122 @@ using array_of = typename View::accessor_type::array_type;
 template <typename View>
 using value_of = typename array_of<View>::value_type;
 
-/// @brief The block type a callback receives: static extents Tile..., row-major.
+/// @brief The block type a callback receives, row-major over the tile:
+///        static extents Tile... (layout_tiled), dextents (layout_tiled_dyn).
 template <typename View, typename E, std::size_t... Tile>
 auto block_type_of(layout_tiled<Tile...>*) -> mdns::mdspan<E, mdns::extents<typename View::index_type, Tile...>>;
 
+template <typename View, typename E, std::size_t Rank>
+auto block_type_of(layout_tiled_dyn<Rank>*) -> mdns::mdspan<E, mdns::dextents<typename View::index_type, Rank>>;
+
 template <typename View, typename E>
 using block_t = decltype(block_type_of<View, E>(static_cast<typename View::layout_type*>(nullptr)));
+
+/// @brief The block of view @p f over the tile buffer @p p.
+template <typename View, typename E>
+block_t<View, E> make_block(const View& f, E* p)
+{
+    if constexpr (requires { View::mapping_type::tile_elems; })
+    {
+        return block_t<View, E>(p); // static extents
+    }
+    else
+    {
+        return block_t<View, E>(p, f.mapping().tile());
+    }
+}
+
+/**
+ * @brief A tile's worth of elements: a std::array for a tile known at compile
+ *        time; at run time (layout_tiled_dyn), inline up to 8 KiB, a vector
+ *        beyond -- update_tiles(f, k, k + 1) per tile in a parallel loop
+ *        then allocates nothing for the usual chunk sizes.
+ */
+template <typename View, typename T>
+class tile_buffer
+{
+    static constexpr bool        is_static = requires { View::mapping_type::tile_elems; };
+    static constexpr std::size_t inline_n =
+        is_static ? 1 : (sizeof(T) >= 8192 ? std::size_t{1} : 8192 / sizeof(T)); // dyn: inline capacity
+
+  public:
+    explicit tile_buffer(const View& f)
+    {
+        if constexpr (!is_static)
+        {
+            n_ = static_cast<std::size_t>(f.mapping().tile_elements());
+            if (n_ > inline_n)
+            {
+                heap_.resize(n_);
+            }
+        }
+    }
+    T* data() noexcept
+    {
+        if constexpr (is_static)
+        {
+            return fixed_.data();
+        }
+        else
+        {
+            return n_ > inline_n ? heap_.data() : small_.data();
+        }
+    }
+    std::size_t size() const noexcept
+    {
+        if constexpr (is_static)
+        {
+            return fixed_.size();
+        }
+        else
+        {
+            return n_;
+        }
+    }
+    T& operator[](std::size_t i) noexcept
+    {
+        return data()[i];
+    }
+    T* begin() noexcept
+    {
+        return data();
+    }
+    T* end() noexcept
+    {
+        return data() + size();
+    }
+
+  private:
+    struct none
+    {
+    };
+    static constexpr std::size_t fixed_n = [] {
+        if constexpr (is_static)
+        {
+            return static_cast<std::size_t>(View::mapping_type::tile_elems);
+        }
+        else
+        {
+            return std::size_t{1};
+        }
+    }();
+    // Left uninitialised, as a std::array<T, N> local was: gather() writes
+    // every element before anything reads one.
+    [[no_unique_address]] std::conditional_t<is_static, std::array<T, fixed_n>, none> fixed_;
+    [[no_unique_address]] std::conditional_t<is_static, none, std::array<T, inline_n>> small_;
+    [[no_unique_address]] std::conditional_t<is_static, none, std::vector<T>>          heap_;
+    std::size_t                                                                       n_ = 0;
+};
 
 /// @brief Tiles per dimension of view @p f.
 template <typename View>
 std::array<typename View::index_type, View::rank()> tiles_per_dim(const View& f)
 {
-    using M = typename View::mapping_type;
     std::array<typename View::index_type, View::rank()> n{};
     for (std::size_t r = 0; r < View::rank(); ++r)
     {
-        n[r] = (f.extent(r) + M::tile[r] - 1) / M::tile[r];
+        const auto t = f.mapping().tile_extent(static_cast<typename View::rank_type>(r));
+        n[r]         = (f.extent(r) + t - 1) / t;
     }
     return n;
 }
@@ -133,15 +235,15 @@ template <typename View>
 tile<typename View::index_type, View::rank()>
 tile_at(const View& f, const std::array<typename View::index_type, View::rank()>& per_dim, typename View::index_type k)
 {
-    using M = typename View::mapping_type;
     tile<typename View::index_type, View::rank()> t{k, {}, {}};
     auto                                          rest = k;
     for (std::size_t r = View::rank(); r-- > 0;)
     {
-        const auto c = rest % per_dim[r];
+        const auto te = f.mapping().tile_extent(static_cast<typename View::rank_type>(r));
+        const auto c  = rest % per_dim[r];
         rest /= per_dim[r];
-        t.origin[r] = c * M::tile[r];
-        t.extent[r] = std::min<typename View::index_type>(M::tile[r], f.extent(r) - t.origin[r]);
+        t.origin[r] = c * te;
+        t.extent[r] = std::min<typename View::index_type>(te, f.extent(r) - t.origin[r]);
     }
     return t;
 }
@@ -173,19 +275,20 @@ void check_tile_on_chunks(const Array& a, Index tile_elems, const char* who)
 }
 
 /**
- * @brief Read storage elements [lo, lo + N) of @p a into @p buf.
+ * @brief Read storage elements [lo, lo + buf.size()) of @p a into @p buf.
  * @return true when they are all one constant @p cst; @p buf is then left
  *         unfilled if @p lazy, so a uniform tile costs O(1).
  */
-template <typename Array, typename T, std::size_t N>
-bool gather(const Array& a, std::size_t lo, std::array<T, N>& buf, T& cst, bool lazy)
+template <typename Array, typename Buf, typename T>
+bool gather(const Array& a, std::size_t lo, Buf& buf, T& cst, bool lazy)
 {
-    std::size_t k       = 0;
+    const std::size_t N       = buf.size();
+    std::size_t       k       = 0;
     bool        uniform = true;
     bool        pending = false; // a constant run at the start, not yet written to buf
     struct Visitor
     {
-        std::array<T, N>& buf;
+        Buf&              buf;
         std::size_t&      k;
         bool&             uniform;
         bool&             pending;
@@ -377,16 +480,14 @@ void for_each_tile(const View&               f,
                    OnBlock&&                 on_block,
                    OnUniform&&               on_uniform = {})
 {
-    using T             = detail::value_of<View>;
-    using M             = typename View::mapping_type;
-    constexpr auto N    = static_cast<std::size_t>(M::tile_elems);
-    const auto&    a    = *f.data_handle();
-    const auto     dims = detail::tiles_per_dim(f);
-    detail::check_tile_on_chunks(a, M::tile_elems, "md::for_each_tile");
+    using T          = detail::value_of<View>;
+    const auto& a    = *f.data_handle();
+    const auto  dims = detail::tiles_per_dim(f);
+    detail::check_tile_on_chunks(a, f.mapping().tile_elements(), "md::for_each_tile");
     constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, detail::no_uniform>;
 
-    std::array<T, N> buf;
-    T                cst{};
+    detail::tile_buffer<View, T> buf(f);
+    T                            cst{};
     last = std::min(last, tile_count(f));
     for (auto k = first; k < last; ++k)
     {
@@ -400,7 +501,7 @@ void for_each_tile(const View&               f,
                 continue;
             }
         }
-        on_block(t, detail::block_t<View, const T>(buf.data()));
+        on_block(t, detail::make_block<View, const T>(f, buf.data()));
     }
 }
 
@@ -447,16 +548,15 @@ void update_tiles(const View&               f,
                   OnBlock&&                 on_block,
                   OnUniform&&               on_uniform = {})
 {
-    using T             = detail::value_of<View>;
-    using M             = typename View::mapping_type;
-    constexpr auto N    = static_cast<std::size_t>(M::tile_elems);
-    auto&          a    = *f.data_handle();
-    const auto     dims = detail::tiles_per_dim(f);
-    detail::check_tile_on_chunks(a, M::tile_elems, "md::update_tiles");
+    using T           = detail::value_of<View>;
+    const std::size_t N    = static_cast<std::size_t>(f.mapping().tile_elements());
+    auto&             a    = *f.data_handle();
+    const auto        dims = detail::tiles_per_dim(f);
+    detail::check_tile_on_chunks(a, f.mapping().tile_elements(), "md::update_tiles");
     constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, detail::no_uniform>;
 
-    std::array<T, N>                             buf;
-    std::array<T, N>                             before; // a materialised tile as read: written back only if changed
+    detail::tile_buffer<View, T>                 buf(f);
+    detail::tile_buffer<View, T>                 before(f); // a materialised tile as read: written back only if changed
     T                                            cst{};
     detail::range_writer<detail::array_of<View>> out{a};
     last = std::min(last, tile_count(f));
@@ -483,9 +583,9 @@ void update_tiles(const View&               f,
         }
         if (!uniform)
         {
-            before = buf;
+            std::copy(buf.begin(), buf.end(), before.begin());
         }
-        on_block(t, detail::block_t<View, T>(buf.data()));
+        on_block(t, detail::make_block<View, T>(f, buf.data()));
 
         const T    first_v = buf[0];
         const bool now_uniform =
@@ -541,9 +641,8 @@ void fill_box(const View&                        f,
               typename View::index_type          last)
 {
     using Index       = typename View::index_type;
-    using M           = typename View::mapping_type;
     constexpr auto R  = View::rank();
-    constexpr auto N  = static_cast<std::size_t>(M::tile_elems);
+    const auto     N  = static_cast<std::size_t>(f.mapping().tile_elements());
     auto           lo = detail::clipped_box<View>(box_lo);
     auto           hi = detail::clipped_box<View>(box_hi);
     if (!detail::clip_box(f, lo, hi))
@@ -566,8 +665,9 @@ void fill_box(const View&                        f,
     std::array<Index, R> thi{};
     for (std::size_t r = 0; r < R; ++r)
     {
-        tlo[r] = lo[r] / M::tile[r];
-        thi[r] = (hi[r] - 1) / M::tile[r] + 1;
+        const auto te = f.mapping().tile_extent(static_cast<typename View::rank_type>(r));
+        tlo[r]        = lo[r] / te;
+        thi[r]        = (hi[r] - 1) / te + 1;
     }
     // Tiles [first, last) are rows of tiles in storage order: only those rows
     // of the box are walked (a thread given a slice of the tiles skips the rest).

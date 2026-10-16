@@ -166,6 +166,34 @@ md::update_tiles(sub, on_block, on_uniform);                       // les seules
 `examples/validation/mdspan_submdspan_validation.cpp` ; vérifié avec kokkos/mdspan avant et après
 ses tranches canoniques (mai 2025, octobre 2026).
 
+### La tuile à l'exécution : `layout_tiled_dyn`
+
+Une bibliothèque `_dyn` ne connaît sa taille de chunk qu'à l'exécution (`DYN_CHUNK_SIZE`, un
+rechunk) : une tuile d'un chunk ne peut pas être un argument template.
+`md::layout_tiled_dyn<Rank>` prend la tuile à l'exécution et range le tableau exactement comme
+`layout_tiled` pour la même tuile (les deux vues d'un même tableau concordent) ; les opérations sur
+tuiles, `submdspan` et `fill_box` la prennent comme elles prennent `layout_tiled`.
+
+```cpp
+ArrayChunk2A<double> a(md::tiled_size_dyn(md::tile_shape<2, long>(chunk_size), std::array<long, 2>{nx, ny}));
+auto f = md::tiled_view_dyn(a, nx, ny);                          // une tuile de a.chunk_size() éléments
+auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // ou toute autre tuile
+```
+
+- `md::tile_shape<Rank>(n)` donne une tuile d'exactement `n` éléments, aussi carrée que les
+  diviseurs de `n` le permettent, les étendues les plus longues en dernier : 256 -> 16 x 16,
+  384 -> 16 x 24, 512 -> 16 x 32, 1024 -> 32 x 32, 256 en 3D -> 4 x 8 x 8. Toute taille de chunk de
+  la bibliothèque (une puissance de deux ou un multiple de 64) a une telle tuile ;
+  `tiled_view_dyn(a, ext...)` la prend avec `a.chunk_size()`.
+- Coût, 2048 x 2048, 1 thread : une lecture par `f[i, j]` comme avec `layout_tiled` (2,75 ns par
+  élément : la division à l'exécution se cache derrière l'accès à l'élément), `update_tiles`
+  environ 10 % plus lent (les étendues du bloc sont elles aussi des valeurs d'exécution).
+- Après un rechunk rien ne bouge : la vue lit et écrit toujours les bons éléments, et les
+  opérations sur tuiles marchent toujours en série. Mais une tuile n'est plus un chunk -- à une
+  taille de chunk double, un chunk tient deux tuiles consécutives --, donc dans une région
+  parallèle les opérations sur tuiles s'arrêtent (deux threads partageraient un chunk) tant que
+  le champ n'a pas été copié dans une vue de la nouvelle tuile.
+
 ## 4. D'où vient `mdspan`
 
 | disponible | utilisé |
@@ -197,9 +225,10 @@ compte comme sauté.
 
 | fichier | contenu |
 |---|---|
-| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::handle`, `md::layout_tiled` (et son `submdspan_mapping`), `md::view`, `md::tiled_view`, `md::tiled_size`, `md::submdspan` |
+| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::handle`, `md::layout_tiled` (et son `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | écritures par la vue et relecture linéaire, opérateurs composés, rang 3, vues en lecture seule, le mapping en tuiles (bijection, bourrage), une tuile uniforme est une suite uniforme ; toutes les variantes (un ctest chacune, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocs, étendues des tuiles sur les bords bourrés, tuiles uniformes, la mise à jour contre la formule élément par élément, les tuiles non touchées restent compressées, la mise à jour en parallèle ; toutes les variantes à 1 et 8 threads, et `mdspan_tile_ops_misaligned` (une tuile plus petite qu'un chunk refusée dans une région parallèle) |
 | `examples/validation/mdspan_submdspan_validation.cpp` | sous-vues d'une vue ligne par ligne (bloc, ligne, colonne, lecture seule, `fill_box`) et d'une vue en tuiles (alignée, finissant à l'étendue, sous-vue d'une sous-vue ; les opérations sur tuiles dessus, en série et en phase parallèle) ; toutes les variantes à 1 et 8 threads, et `mdspan_submdspan_misaligned` (une tranche en tuiles hors des tuiles arrête le programme) |
+| `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, tous les multiples de 64 jusqu'à 4096), `layout_tiled_dyn` contre `layout_tiled` indice par indice et par leurs sous-vues, la tuile par chunk de `tiled_view_dyn`, les opérations sur tuiles sur une tuile par chunk, une tuile 3 x 5 et une au-delà du tampon local ; toutes les variantes à la taille par défaut et en dyn (un rechunk sous la vue), 1 et 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | les comparaisons des sections 2 et 3, et le coût du multi-indice ; `mdspan_tiles 4096` pour un champ plus grand |

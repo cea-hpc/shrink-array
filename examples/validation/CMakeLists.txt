@@ -622,6 +622,33 @@ foreach(_vi RANGE ${_rt_nvar_last})
   endif()
 endforeach()
 
+# --- mdspan_tiled_dyn_validation_<variant>[_dyn]: md::layout_tiled_dyn (the tile
+# at run time) against layout_tiled, tiled_view_dyn's tile per chunk, the tile
+# operations on it; at the default static size, and at dyn for the variants
+# built there (a re-chunk under the view). Exits 77 without an mdspan.
+foreach(_vi RANGE ${_rt_nvar_last})
+  list(GET _rt_variant_names   ${_vi} _vname)
+  list(GET _rt_variant_libbase ${_vi} _libbase)
+  list(GET _rt_variant_macro   ${_vi} _vmacro)
+  foreach(_geom ${CHUNK_DEFAULT_SIZE} dyn)
+    if (TARGET ${_libbase}_${_geom})
+      if (_geom STREQUAL "dyn")
+        set(_tgt mdspan_tiled_dyn_validation_${_vname}_dyn)
+      else()
+        set(_tgt mdspan_tiled_dyn_validation_${_vname})
+      endif()
+      add_executable(${_tgt} mdspan_tiled_dyn_validation.cpp)
+      target_link_libraries(${_tgt} PRIVATE ${_libbase}_${_geom})
+      validation_variant_defs(${_tgt} ${_vmacro} ${_geom})
+      validation_setup_target(${_tgt})
+      validation_add_test(${_tgt} ${_tgt} "" "1;8")
+      foreach(_nthr 1 8)
+        set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
+      endforeach()
+    endif()
+  endforeach()
+endforeach()
+
 # --- mdspan_tile_ops_validation_<variant>: md::for_each_tile / md::update_tiles
 # (chunk/mdspan_tile_ops.h) against the element path, at 1 and 8 threads.
 # mdspan_tile_ops_misaligned: tiles smaller than a chunk inside a parallel
