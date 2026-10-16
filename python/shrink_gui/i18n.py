@@ -263,12 +263,14 @@ EN = {
         "Saves the current options as this program's defaults on this architecture.",
     "Crée le dossier du run sur inti et soumet le job.": "Creates the run directory on inti and submits the job.",
     "Relit maintenant (sinon automatique).": "Reads again now (otherwise automatic).",
-    "Annule le job du run sélectionné (ccc_mdel), ou arrête ccc_mprun en mode détaché.":
-        "Cancels the selected run's job (ccc_mdel), or stops ccc_mprun in detached mode.",
+    "Annule le job du run sélectionné (ccc_mdel), ou arrête ccc_mprun en mode détaché. "
+    "Plusieurs runs sélectionnés : tous ceux qui sont actifs.":
+        "Cancels the selected run's job (ccc_mdel), or stops ccc_mprun in detached mode. "
+        "Several runs selected: all the active ones.",
     "Copie sur ce portable le dossier du run et les fichiers de résultats du programme "
-    "(CSV, log, erreurs ; jamais les output_*).":
+    "(CSV, log, erreurs ; jamais les output_*). Plusieurs runs sélectionnés : chacun, l'un après l'autre.":
         "Copies the run directory and the program's result files (CSV, log, errors; never the "
-        "output_*) to this laptop.",
+        "output_*) to this laptop. Several runs selected: each, one after the other.",
     "Remet dans le formulaire le programme, la partition et les options du run sélectionné, "
     "pour le relancer ou le modifier.":
         "Puts the selected run's program, partition and options back in the form, to run it "
@@ -276,15 +278,27 @@ EN = {
     "Remet dans le formulaire le programme, la partition et les options de ce run":
         "Puts this run's program, partition and options back in the form",
     "Supprime le dossier du run sur inti ; au choix, aussi les sorties du "
-    "programme propres à ce run et la copie locale. Seulement pour un run terminé.":
+    "programme propres à ce run et la copie locale. Seulement pour un run terminé. "
+    "Plusieurs runs sélectionnés : une seule confirmation pour tous (les actifs sont laissés).":
         "Deletes the run directory on inti; optionally also the program outputs that are "
-        "this run's own, and the local copy. Finished runs only.",
+        "this run's own, and the local copy. Finished runs only. Several runs selected: one "
+        "confirmation for all (the active ones are left alone).",
     "Supprime le dossier du run sur inti (au choix : ses sorties, la copie locale)":
         "Deletes the run directory on inti (optionally: its outputs, the local copy)",
     "aussi le dossier de sortie du programme, propre à ce run":
         "also the program's output directory, this run's own",
     "pas de sorties propres à ce programme": "no outputs of its own for this program",
     "pas de copie locale": "no local copy",
+    "Sélection": "Selection", "Tout": "All", "Les runs finis": "Finished runs",
+    "Les runs en échec": "Failed runs", "Aucun": "None",
+    "Sélectionner plusieurs runs d'un coup (ou Ctrl / Maj + clic, Ctrl+A) : "
+    "Arrêter, Supprimer et Récupérer agissent sur tous":
+        "Select several runs at once (or Ctrl / Shift + click, Ctrl+A): Stop, Delete and Fetch act "
+        "on all of them",
+    "aucun des runs sélectionnés n'est actif": "none of the selected runs is active",
+    "les runs sélectionnés sont encore actifs : arrêtez-les d'abord":
+        "the selected runs are still active: stop them first",
+    "pas de sorties propres à ces programmes": "no outputs of their own for these programs",
     "Relit le fichier résumé du run sélectionné.": "Reads the selected run's summary file again.",
     "ccc_msub : ce qui lance run.sh sur le nœud réservé (le lanceur de la "
     "partition dans le fichier de site ; vide : directement dans le job).\n"
@@ -457,6 +471,25 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"programme restent en place\)$",
      r"Delete the directory of run \1 on inti?\n(log, scripts, exit code; the program's outputs stay)"),
     (r"^(\S+) supprimé$", r"\1 deleted"),
+    (r"^(\d+) run\(s\) sélectionné\(s\)$", r"\1 run(s) selected"),
+    (r"^Arrêter (\d+) run\(s\) \?", r"Stop \1 run(s)?"),
+    (r"^arrêt demandé pour (\d+) run\(s\)", r"stop asked for \1 run(s)"),
+    (r"^Supprimer (\d+) runs \?", r"Delete \1 runs?"),
+    (r"Sur inti, leurs dossiers \(log, scripts, code de retour\)\.$",
+     "On inti, their directories (log, scripts, exit code)."),
+    (r"^aussi les sorties propres à ces runs \((\d+) run\(s\) en ont\)$",
+     r"also these runs' own outputs (\1 run(s) have some)"),
+    (r"^aussi les copies locales \((\d+)\)$", r"also the local copies (\1)"),
+    (r"^(\d+) run\(s\) supprimé\(s\)", r"\1 run(s) deleted"),
+    (r" \(\+ copies locales\)", " (+ local copies)"),
+    (r" ; sorties gardées pour (\d+) run\(s\) \(pas les leurs : voir l'infobulle\)",
+     r"; outputs kept for \1 run(s) (not theirs: see the tooltip)"),
+    (r" ; (\d+) en échec \(voir l'infobulle\)", r"; \1 failed (see the tooltip)"),
+    (r" ; sorties gardées, pas les siennes \(voir l'infobulle\)", "; outputs kept, not its own (see the tooltip)"),
+    (r"^sorties gardées :$", "outputs kept:"), (r"^en échec :$", "failed:"),
+    (r" ; (\d+) encore actif\(s\) laissé\(s\)", r"; \1 still active, left alone"),
+    (r", en échec : ", ", failed: "), (r" ; en échec : ", "; failed: "),
+    (r"^(\d+) run\(s\) récupéré\(s\) dans ", r"\1 run(s) fetched into "),
     (r"^\[gui\] … les (\S+) premiers Mo du log ne sont pas affichés \(« Récupérer les résultats » copie le log "
      r"complet\)$", r"[gui] … the first \1 MB of the log are not shown (\"Fetch results\" copies the whole log)"),
     (r"^(\S+) supprimé( \(\+ (\d+) sortie\(s\) sur inti\))?( \(\+ copie locale\))?$",

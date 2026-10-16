@@ -47,7 +47,10 @@ class RunActions:
         self.info(f"options de {run['id']} reprises")
 
     def stop(self):
-        run = self.selected_run()
+        runs = self.selected_runs()
+        if len(runs) > 1:
+            return self.stop_many(runs)
+        run = runs[0] if runs else None
         if not run:
             return
         what = (f"le job {run['jobid']} (ccc_mdel)" if run.get("jobid") else
@@ -62,6 +65,34 @@ class RunActions:
             QTimer.singleShot(2000, self.refresh)
 
         self.remote.helper("stop", [self.runs_dir.text().strip(), run["id"], self.batch_arg()], done)
+
+    def stop_many(self, runs):
+        active = [r for r in runs if r["status"] in self.ACTIVE or r["status"].startswith("en attente")
+                  or r["status"].startswith("en cours")]
+        if not active:
+            self.info("aucun des runs sélectionnés n'est actif")
+            return
+        if ask(self, "Arrêter", f"Arrêter {len(active)} run(s) ?\n" + "\n".join(r["id"] for r in active[:15])
+               + ("\n…" if len(active) > 15 else "")) != QMessageBox.Yes:
+            return
+        todo, failed = list(active), []
+
+        def run_next():
+            if not todo:
+                self.info(f"arrêt demandé pour {len(active) - len(failed)} run(s)"
+                          + (f", en échec : {', '.join(failed)}" if failed else ""))
+                QTimer.singleShot(2000, self.refresh)
+                return
+            run = todo.pop(0)
+
+            def done(r):
+                if r is None:
+                    failed.append(run["id"])
+                run_next()
+
+            self.remote.helper("stop", [self.runs_dir.text().strip(), run["id"], self.batch_arg()], done)
+
+        run_next()
 
     def delete_dialog(self, run, own, local):
         """Confirmation of "Supprimer": (ok, also the program outputs on inti,
@@ -95,8 +126,99 @@ class RunActions:
             self.settings.setValue("delete_local", "true" if c_loc.isChecked() else "false")
         return True, c_out.isChecked() and bool(own), c_loc.isChecked() and bool(local)
 
+    def delete_many_dialog(self, runs, n_own, n_local):
+        """Confirmation of "Supprimer" for several runs: (ok, also their own
+        outputs on inti, also their local copies); the boxes are the ones of
+        the single-run dialog, remembered alike."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle(T("Supprimer"))
+        lay = QVBoxLayout(dlg)
+        names = "\n".join(r["id"] for r in runs[:15]) + ("\n…" if len(runs) > 15 else "")
+        lay.addWidget(QLabel(T(f"Supprimer {len(runs)} runs ?\n\n{names}\n\nSur inti, leurs dossiers (log, "
+                               "scripts, code de retour).")))
+        c_out = QCheckBox(T(f"aussi les sorties propres à ces runs ({n_own} run(s) en ont)") if n_own else
+                          T("pas de sorties propres à ces programmes"))
+        c_out.setEnabled(bool(n_own))
+        c_out.setChecked(bool(n_own) and self.settings.value("delete_outputs", "false") == "true")
+        c_loc = QCheckBox(T(f"aussi les copies locales ({n_local})") if n_local else T("pas de copie locale"))
+        c_loc.setEnabled(bool(n_local))
+        c_loc.setChecked(bool(n_local) and self.settings.value("delete_local", "false") == "true")
+        lay.addWidget(c_out)
+        lay.addWidget(c_loc)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        lay.addWidget(bb)
+        if dlg.exec() != QDialog.Accepted:
+            return False, False, False
+        if n_own:
+            self.settings.setValue("delete_outputs", "true" if c_out.isChecked() else "false")
+        if n_local:
+            self.settings.setValue("delete_local", "true" if c_loc.isChecked() else "false")
+        return True, c_out.isChecked() and bool(n_own), c_loc.isChecked() and bool(n_local)
+
+    def local_copy(self, run):
+        p = os.path.join(os.path.expanduser(self.local_dir.text().strip()), run["id"])
+        return p if os.path.isdir(p) else None
+
+    def delete_many(self, runs):
+        busy = [r for r in runs if r["status"] in self.ACTIVE or r["status"].startswith("en attente")
+                or r["status"].startswith("en cours")]
+        runs = [r for r in runs if r not in busy]
+        if not runs:
+            self.error("les runs sélectionnés sont encore actifs : arrêtez-les d'abord")
+            return
+        own = {r["id"]: PROGRAMS.get(r["meta"].get("program"), {}).get("own_outputs") for r in runs}
+        local = {r["id"]: self.local_copy(r) for r in runs}
+        ok, with_out, with_local = self.delete_many_dialog(runs, sum(1 for v in own.values() if v),
+                                                           sum(1 for v in local.values() if v))
+        if not ok:
+            return
+        items = [dict({"id": r["id"]}, **({"own": own[r["id"]]} if with_out and own[r["id"]] else {}))
+                 for r in runs]
+
+        def done(r):
+            if r is None:
+                return
+            res = r.get("results", {})
+            gone = [rid for rid, x in res.items() if x.get("ok")]
+            bad = {rid: x.get("error", "?") for rid, x in res.items() if not x.get("ok")}
+            if self.current in gone:
+                self.current = None
+                self.log.clear()
+            if with_local:
+                import shutil
+                for rid in gone:
+                    if local.get(rid):
+                        shutil.rmtree(local[rid], ignore_errors=True)
+            kept = {rid: res[rid]["kept"] for rid in gone if res[rid].get("kept")}
+            n_out = sum(len(res[rid].get("removed", [])) for rid in gone)
+            msg = (f"{len(gone)} run(s) supprimé(s)" + (f" (+ {n_out} sortie(s) sur inti)" if n_out else "")
+                   + (" (+ copies locales)" if with_local else ""))
+            if kept:
+                msg += f" ; sorties gardées pour {len(kept)} run(s) (pas les leurs : voir l'infobulle)"
+            if busy:
+                msg += f" ; {len(busy)} encore actif(s) laissé(s)"
+            if bad:
+                msg += f" ; {len(bad)} en échec (voir l'infobulle)"
+            details = ([T("sorties gardées :")] + [f"  {k} : {T(v)}" for k, v in sorted(kept.items())]
+                       if kept else []) + \
+                      ([T("en échec :")] + [f"  {k} : {T(v)}" for k, v in sorted(bad.items())] if bad else [])
+            (self.error if bad else self.info)(msg)
+            self.statusBar().setToolTip("\n".join(details))
+            if details:
+                print("\n".join(details), file=sys.stderr)
+            self.refresh()
+
+        blob = base64.b64encode(json.dumps(items).encode()).decode()
+        self.remote.helper("delete_many", [self.runs_dir.text().strip(), blob], done)
+
     def delete(self):
-        run = self.selected_run()
+        runs = self.selected_runs()
+        if len(runs) > 1:
+            return self.delete_many(runs)
+        run = runs[0] if runs else None
         if not run:
             return
         if run["status"] in self.ACTIVE or run["status"].startswith("en attente"):
@@ -120,16 +242,33 @@ class RunActions:
                 shutil.rmtree(local, ignore_errors=True)
             n = len(r.get("removed", []))
             self.info(f"{run['id']} supprimé" + (f" (+ {n} sortie(s) sur inti)" if n else "")
-                      + (" (+ copie locale)" if with_local else ""))
+                      + (" (+ copie locale)" if with_local else "")
+                      + (" ; sorties gardées, pas les siennes (voir l'infobulle)" if r.get("kept") else ""))
+            if r.get("kept"):
+                self.statusBar().setToolTip(T(r["kept"]))
             self.refresh()
 
-        opts = base64.b64encode(json.dumps({"own": own} if with_out else {}).encode()).decode()
+        # outputs that are not the run's own (none announced, a shared
+        # directory a newer run rewrote) are kept; the run goes all the same
+        opts = base64.b64encode(json.dumps({"own": own, "keep_others": True} if with_out else {})
+                                .encode()).decode()
         self.remote.helper("delete", [self.runs_dir.text().strip(), run["id"], opts], done)
 
     def fetch(self):
-        rid = self.selected()
-        if not rid:
-            return
+        ids = self.selected_ids()
+        if len(ids) > 1:
+            todo = list(ids)
+
+            def next_one():
+                if todo:
+                    self.fetch_one(todo.pop(0), then=next_one)
+                else:
+                    self.info(f"{len(ids)} run(s) récupéré(s) dans {self.local_dir.text().strip()}")
+            return next_one()
+        if ids:
+            self.fetch_one(ids[0])
+
+    def fetch_one(self, rid, then=None):
         dest = os.path.join(os.path.expanduser(self.local_dir.text().strip()), rid)
 
         def done(blob):
@@ -147,8 +286,12 @@ class RunActions:
                         t.extractall(dest, members=members)
             except (ValueError, tarfile.TarError, OSError) as e:
                 self.error(f"récupération : {e}")
+                if then:
+                    then()
                 return
             self.info(f"{len(members)} fichier(s) → {dest}")
+            if then:
+                then()
 
         self.info(f"récupération de {rid}…")
         self.remote.helper("pack", [self.runs_dir.text().strip(), rid], done, binary=True)

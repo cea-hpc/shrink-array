@@ -90,13 +90,17 @@ class Tooltips:
                                      "de ce programme sur cette architecture.",
         "Soumettre": "Crée le dossier du run sur inti et soumet le job.",
         "Rafraîchir": "Relit maintenant (sinon automatique).",
-        "Arrêter": "Annule le job du run sélectionné (ccc_mdel), ou arrête ccc_mprun en mode détaché.",
+        "Arrêter": "Annule le job du run sélectionné (ccc_mdel), ou arrête ccc_mprun en mode détaché. "
+                   "Plusieurs runs sélectionnés : tous ceux qui sont actifs.",
         "Récupérer les résultats": "Copie sur ce portable le dossier du run et les fichiers de "
-                                   "résultats du programme (CSV, log, erreurs ; jamais les output_*).",
+                                   "résultats du programme (CSV, log, erreurs ; jamais les output_*). "
+                                   "Plusieurs runs sélectionnés : chacun, l'un après l'autre.",
         "Reprendre ses options": "Remet dans le formulaire le programme, la partition et les options "
                                  "du run sélectionné, pour le relancer ou le modifier.",
         "Supprimer": "Supprime le dossier du run sur inti ; au choix, aussi les sorties du "
-                     "programme propres à ce run et la copie locale. Seulement pour un run terminé.",
+                     "programme propres à ce run et la copie locale. Seulement pour un run terminé. "
+                     "Plusieurs runs sélectionnés : une seule confirmation pour tous (les actifs "
+                     "sont laissés).",
         "Rafraîchir le résumé": "Relit le fichier résumé du run sélectionné.",
         "git pull": "git pull dans le dépôt d'inti (fusion si les branches ont divergé). "
                     "Un conflit annule le pull : le dépôt reste tel qu'il était.",
