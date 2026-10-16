@@ -891,7 +891,58 @@ void ArrayChunk2<T, ind_type>::compress_int(pmp::Team& team)
     // since to re-trigger the mark. The scan proved them constant, so compress
     // them directly (the call make_block_compression uses). Check builds only
     // (compress_int is PERF-gated). Serial here: thr_rank is the calling thread.
+    //
+    // A scanned chunk may be on a compression list -- another rank's, whose
+    // pass can be running now, in a parallel region (the drain above skipped):
+    // its scan done, its clear to come. A clear here, outside that pass's
+    // exclusion, has one side free a shared constant block
+    // (check_not_constant_before_clear). So each chunk's dedup flag is taken
+    // first, as a queueing write takes it: already up, the chunk is its pass's
+    // and is left to it (and out of the reports below); held, no pass can take
+    // it, and the chunk is re-checked -- a pass may have compressed it since
+    // the scan -- before the clear, then the flag handed back.
+    const auto materialised = [&](int jj) -> bool
     {
+        if constexpr (is_not_bool)
+        {
+            return chunk_list[jj].written(ind);
+        }
+        else
+        {
+            return chunk_list[jj].written();
+        }
+    };
+    std::vector<int> left_to_pass;
+    {
+        [[maybe_unused]] chunk_flag_row_t* flags = nullptr;
+        if constexpr (chunk_config::use_fast_block_compression)
+        {
+            flags = &Proxy2<T>::get_tab_is_inside_list_to_compress(
+                Proxy2<T>::share_info_array->get_num_tab(const_cast<void*>(this->registry_key())));
+        }
+        const auto heal = [&](int jj, auto&& clear)
+        {
+            if constexpr (chunk_config::use_fast_block_compression)
+            {
+                auto& flag     = (*flags)[static_cast<std::size_t>(jj)];
+                char  expected = 0;
+                if (!flag.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
+                {
+                    left_to_pass.push_back(jj);
+                    return;
+                }
+                if (materialised(jj))
+                {
+                    clear();
+                }
+                flag.store(0, std::memory_order_release);
+            }
+            else
+            {
+                clear();
+            }
+        };
+
         if constexpr (is_not_bool)
         {
             // Call clear_st(num, ind), the one name both Chunk2OmpPolicy
@@ -901,11 +952,11 @@ void ArrayChunk2<T, ind_type>::compress_int(pmp::Team& team)
             // counters to reset). They are not interchangeable.
             for (const int jj : tab_nb1)
             {
-                chunk_list[jj].clear_st(0, ind);
+                heal(jj, [&] { chunk_list[jj].clear_st(0, ind); });
             }
             for (const int jj : tab_nb2)
             {
-                chunk_list[jj].clear_st(1, ind);
+                heal(jj, [&] { chunk_list[jj].clear_st(1, ind); });
             }
         }
         else if constexpr (build_config::threaded)
@@ -915,11 +966,11 @@ void ArrayChunk2<T, ind_type>::compress_int(pmp::Team& team)
             // compresses inline) so there is nothing to reclaim -> empty else.
             for (const int jj : tab_nb1)
             {
-                chunk_list[jj].clear_int_st_bool(0, CHUNK_PMP_THREAD_RANK);
+                heal(jj, [&] { chunk_list[jj].clear_int_st_bool(0, CHUNK_PMP_THREAD_RANK); });
             }
             for (const int jj : tab_nb2)
             {
-                chunk_list[jj].clear_int_st_bool(1, CHUNK_PMP_THREAD_RANK);
+                heal(jj, [&] { chunk_list[jj].clear_int_st_bool(1, CHUNK_PMP_THREAD_RANK); });
             }
         }
     }
@@ -931,19 +982,13 @@ void ArrayChunk2<T, ind_type>::compress_int(pmp::Team& team)
     // self-heal would otherwise hide. Inside a parallel region the drain is
     // skipped and a queued compression looks the same, so the report says which.
     {
+        // Left to their pass: neither healed here nor a miss.
+        const auto to_pass = [&](int jj) { return std::ranges::find(left_to_pass, jj) != left_to_pass.end(); };
+        std::erase_if(tab_nb1, to_pass);
+        std::erase_if(tab_nb2, to_pass);
         const auto scanned1      = tab_nb1.size();
         const auto scanned2      = tab_nb2.size();
-        const auto still_written = [&](int jj) -> bool
-        {
-            if constexpr (is_not_bool)
-            {
-                return chunk_list[jj].written(ind);
-            }
-            else
-            {
-                return chunk_list[jj].written();
-            }
-        };
+        const auto still_written = materialised;
         std::vector<int> keep1;
         std::vector<int> keep2;
         keep1.reserve(tab_nb1.size());
