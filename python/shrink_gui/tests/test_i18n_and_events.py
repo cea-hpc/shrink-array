@@ -89,3 +89,14 @@ def test_run_counter_reports(tmp_path):
     done = [r["done"] for r in _records(p) if r["kind"] == "progress"]
     assert done[-1] == 2
     events.open_file("")
+
+
+def test_status_short_keeps_the_column_narrow():
+    i18n.LANG = "fr"
+    run = {"status": "terminé sans code (limite de temps ? voir le log)", "code": None}
+    assert i18n.status_short(run) == "terminé sans code…"
+    assert i18n.status_text(run) == run["status"]
+    assert i18n.status_short({"status": "fini", "code": 2}) == "fini (code 2)"
+    assert i18n.status_short({"status": "en cours", "code": None}) == "en cours"
+    assert i18n.status_short({"status": "en attente sans fin (r1 a échoué : à arrêter)",
+                              "code": None}) == "en attente sans fin…"

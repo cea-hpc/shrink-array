@@ -371,6 +371,80 @@ def act_options(a):
     sys.stdout = real_stdout
     print(json.dumps({"error": "%s ne lit pas ses options avec argparse (%s)" % (a[1], pyv)}))
 
+def act_validate(a):
+    """The command line a[2] (base64 JSON list of arguments) checked by the
+    script's own parsing, before a submission: {"ok": true}, {"refused":
+    message} (what the job would have stopped on: an argparse error or a
+    check of the script's), or {"skipped": why} (the check could not run: the
+    submission goes on). A script with a module-level parse_args(argv)
+    function (omp_speedup.py) is checked by it -- its own checks included --
+    without running main; otherwise the script runs up to its parse_args()
+    call, as for "options"."""
+    import argparse, inspect, runpy
+    path = os.path.abspath(os.path.join(os.path.expanduser(a[0]), a[1]))
+    argv = [os.path.expandvars(x) for x in json.loads(base64.b64decode(a[2]).decode())]
+    real_out, real_err = sys.stdout, sys.stderr
+    captured = io.StringIO()
+
+    class Done(Exception):
+        pass
+
+    orig_pa = argparse.ArgumentParser.parse_args
+    orig_pka = argparse.ArgumentParser.parse_known_args
+    state = {"depth": 0, "stop": True}
+
+    def hooked(orig):
+        def f(self, args=None, namespace=None):
+            if state["depth"]:          # parse_args -> parse_known_args, subparsers
+                return orig(self, args, namespace)
+            state["depth"] += 1
+            try:
+                r = orig(self, args, namespace)
+            finally:
+                state["depth"] -= 1
+            if state["stop"]:
+                raise Done()
+            return r
+        return f
+
+    def answer(**kw):
+        sys.stdout, sys.stderr = real_out, real_err
+        print(json.dumps(kw))
+
+    def refusal(e):
+        if isinstance(e.code, str):     # sys.exit("message")
+            return e.code
+        lines = [ln.strip() for ln in captured.getvalue().splitlines() if ln.strip()]
+        err = [ln for ln in lines if ": error: " in ln]
+        return (err or lines or ["code de sortie %s" % e.code])[-1]
+
+    argparse.ArgumentParser.parse_args = hooked(orig_pa)
+    argparse.ArgumentParser.parse_known_args = hooked(orig_pka)
+    sys.stdout = sys.stderr = captured
+    try:
+        os.chdir(os.path.dirname(path))
+        sys.path.insert(0, os.path.dirname(path))
+        sys.argv = [path] + argv
+        g = runpy.run_path(path, run_name="__shrink_gui_validate__")
+        fn = g.get("parse_args")
+        if inspect.isfunction(fn) and fn.__code__.co_argcount >= 1:
+            state["stop"] = False
+            fn(list(argv))
+            return answer(ok=True)
+        runpy.run_path(path, run_name="__main__")
+        return answer(skipped="%s n'a pas appelé parse_args" % a[1])
+    except Done:
+        return answer(ok=True)
+    except SystemExit as e:
+        if e.code in (0, None):
+            return answer(ok=True)
+        return answer(refused=refusal(e))
+    except BaseException as e:
+        return answer(skipped="%s: %s" % (type(e).__name__, e))
+    finally:
+        argparse.ArgumentParser.parse_args = orig_pa
+        argparse.ArgumentParser.parse_known_args = orig_pka
+
 def after_extra(base, spec):
     """(Slurm options, error): the start conditions of a batch
     run -- after the run spec["after"] = {"run", "cond": "ok"|"any"}
@@ -611,6 +685,43 @@ def errors_of(d, meta, st, ev):
             pass
     return r
 
+_START_RE = re.compile(r"\[gui\] node \S+\s+start (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)")
+
+def run_times(d, final):
+    """[started, ended] of run dir @p d, in seconds since the epoch by the
+    cluster's clock (None when unknown). Started: the start_time file run.sh
+    writes, else (a run older than that file) the "[gui] node ... start" line
+    at the top of out.log. Ended, once the run has an exit code: when its
+    exit_code was written; a run over without one (@p final: a job that left
+    the queue at its time limit, a stopped run): the last write to out.log."""
+    import time as _time
+    started = None
+    s = (read(os.path.join(d, "start_time")) or "").strip()
+    if s.isdigit():
+        started = int(s)
+    else:
+        try:
+            with open(os.path.join(d, "out.log"), "rb") as f:
+                head = f.read(16384).decode("utf-8", "replace")
+            m = _START_RE.search(head)
+            if m:
+                started = int(_time.mktime(_time.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")))
+        except (IOError, OSError, ValueError, OverflowError):
+            pass
+    if started is None:
+        return [None, None]
+    ended = None
+    for name in ("exit_code", "out.log"):
+        p = os.path.join(d, name)
+        if os.path.isfile(p) and (name == "exit_code" or final):
+            ended = os.path.getmtime(p)
+            break
+    return [started, max(started, int(ended)) if ended is not None else None]
+
+def time_now():
+    import time as _time
+    return _time.time()
+
 def act_list(a):
     base = rdir(a[0])
     runs = []
@@ -629,8 +740,12 @@ def act_list(a):
                          "jobid": (read(os.path.join(d, "jobid")) or "").strip(),
                          "progress": progress_of(os.path.join(d, "out.log"), meta, ev),
                          "git_start": (read(os.path.join(d, "git_start")) or "").strip(),
+                         "times": run_times(d, st in ("fini", "arrêté", "interrompu")
+                                            or st.startswith("terminé")),
                          "last": last_line(os.path.join(d, "out.log"))})
-    print(json.dumps({"host": socket.gethostname(), "runs": runs}))
+    # "now" by the cluster's clock: the window counts a running run's time
+    # from it, whatever the offset of the laptop's clock.
+    print(json.dumps({"host": socket.gethostname(), "now": int(time_now()), "runs": runs}))
 
 TAIL_START = 2 * 1024 * 1024   # a first display: the end of the log only
 TAIL_CHUNK = 4 * 1024 * 1024   # then what was appended, by blocks of this size
@@ -1310,7 +1425,8 @@ def act_build_targets(a):
     print(json.dumps({"configs": sorted(configs), "dirs": dirs, "build_rep": build_rep}))
 
 ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": act_git_pull,
-           "git_branches": act_git_branches, "git_switch": act_git_switch, "options": act_options, "launch": act_launch, "list": act_list,
+           "git_branches": act_git_branches, "git_switch": act_git_switch, "options": act_options,
+           "validate": act_validate, "launch": act_launch, "list": act_list,
            "tail": act_tail, "stop": act_stop, "pack": act_pack, "summary": act_summary,
            "points": act_points, "delete": act_delete, "errors": act_errors,
            "errfile": act_errfile}

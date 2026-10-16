@@ -55,7 +55,10 @@ EN = {
     "Commande :": "Command:", "Soumettre": "Submit",
     # runs
     "Run": "Run", "Programme": "Program", "Job": "Job", "Statut": "Status",
-    "Avancement": "Progress", "Dernière ligne": "Last line",
+    "Avancement": "Progress", "Dernière ligne": "Last line", "Durée": "Duration",
+    "Pas encore démarré (ou début inconnu).": "Not started yet (or start unknown).",
+    "démarré : ": "started: ", "fini : ": "ended: ", "durée : ": "duration: ",
+    "en cours depuis ": "running for ", "durée max demandée : ": "max time asked: ",
     "Rafraîchir": "Refresh", "Arrêter": "Stop", "Récupérer les résultats": "Fetch results",
     "Reprendre ses options": "Reuse its options", "Supprimer": "Delete",
     "Log": "Log", "Résumé": "Summary", "Graphique": "Chart",
@@ -564,6 +567,14 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"(\S+(?: / \S+)*) : le job (\S+) n'a pas pu être annulé", r"\1: job \2 could not be cancelled"),
     (r"lancé depuis (\S+), ce master arrive sur (\S+)", r"started from \1, this master lands on \2"),
     (r"arrêt impossible", "cannot stop"),
+    (r"^(\S+) refuse ces options : ", r"\1 refuses these options: "),
+    (r"^vérification des options de (\S+)…$", r"checking the options of \1…"),
+    (r"^options non vérifiées \((.*)\) : soumis quand même$", r"options not checked (\1): submitted anyway"),
+    (r"^commande illisible : ", "unreadable command: "),
+    (r"^(\S+) : il faut (\S+) ou (\S+) \(sinon le job s'arrête aussitôt sur une erreur d'usage\)",
+     r"\1: needs \2 or \3 (else the job stops at once on a usage error)"),
+    (r" -- (.+) ne servent qu'avec (\S+) : est-ce lui qu'il fallait cocher \?$",
+     r" -- \1 only matter with \2: is it the one to tick?"),
     (r"^(\S+) se soumet par ccc_msub seulement \(il ne doit pas tourner depuis le nœud de login\) : "
      r"choisissez « (.+) »$",
      r'\1 is submitted with ccc_msub only (it must not run from the login node): choose "\2"'),
@@ -644,6 +655,15 @@ def status_text(run):
     """A run's status as shown: translated, with the exit code when done."""
     st = T(run["status"])
     return st + (f" (code {run['code']})" if run["status"] == "fini" else "")
+
+def status_short(run):
+    """status_text() for the Statut cell: its explanation in parentheses
+    ("terminé sans code (limite de temps ? voir le log)") goes to the tooltip,
+    or the column is as wide as the longest one; "fini (code N)" stays."""
+    full = status_text(run)
+    if run["status"] == "fini" or " (" not in full:
+        return full
+    return full.split(" (", 1)[0] + "…"
 
 def tip(text):
     """A tooltip that wraps: Qt only wraps rich text, plain text stays one line

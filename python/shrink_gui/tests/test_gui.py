@@ -601,3 +601,84 @@ def test_omp_speedup_submitted_from_the_window(gui, site):
     w.tabs.setCurrentIndex(w.TAB_ERRORS)
     assert pump(lambda: "error: no chunk today" in w.err_view.toPlainText(), 10)
     assert w.err_note.text().startswith("4 erreur(s)")
+
+
+def test_duration_column(gui, site):
+    w, pump = gui
+    assert w.fmt_elapsed(14390) == "3:59:50" and w.fmt_elapsed(90061) == "1 j 01:01:01"
+    _choose_fake(w, pump)
+    rid = _submit(w, pump, {"runs": "3", "step": "0.01"}, len(w.runs))
+    assert _wait_status(w, pump, rid, "fini")
+    row = next(i for i, r in enumerate(w.runs) if r["id"] == rid)
+    assert pump(lambda: w.table.item(row, w.COL_DURATION) is not None
+                and re.fullmatch(r"\d+:\d\d:\d\d", w.table.item(row, w.COL_DURATION).text()), 10)
+    it = w.table.item(row, w.COL_DURATION)
+    assert "démarré : " in it.toolTip() and "fini : " in it.toolTip() and not it.font().italic()
+    # a running run counts on between two lists, from the cluster's clock
+    import time
+    w.clock_skew = 0.0
+    run = {"id": "r8", "status": "en cours", "code": None, "times": [int(time.time()) - 125, None],
+           "meta": {"program": "omp_speedup.py", "mode": "msub", "time_s": 14400}}
+    assert w.duration_text(run) in ("0:02:05", "0:02:06")
+    assert "en cours depuis" in w.duration_tip(run) and "4:00:00" in w.duration_tip(run)
+    assert w.duration_text(dict(run, status="en attente", times=[None, None])) == ""
+
+
+def test_omp_speedup_refused_without_exec(gui, site):
+    w, pump = gui
+    w.program.setCurrentText("omp_speedup.py")
+    assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
+    w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8",
+                       "size": "dyn,1024", "int64": True})
+    n = len(w.runs)
+    w.launch()
+    assert "--exec ou --all-exec" in w.last_error and "--size, --int64" in w.last_error
+    assert len(w.runs) == n
+    assert w.missing_options("omp_speedup.py")
+    w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8", "all_exec": True})
+    assert w.missing_options("omp_speedup.py") is None
+    w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8"})
+    w.extra.setText("--exec chunk2a@dyn")
+    assert w.missing_options("omp_speedup.py") is None
+    w.extra.setText("")
+
+
+def test_options_checked_by_the_script_before_submitting(gui, site):
+    w, pump = gui
+    w.program.setCurrentText("omp_speedup.py")
+    assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
+    w.form.set_values({"target": "omp-llvm", "execs": "*_dyn", "mode": "check", "multiply": "3",
+                       "min_threads": "1", "max_threads": "8"})
+    n = len(w.runs)
+    w.last_error = None
+    w.launch()
+    assert pump(lambda: w.last_error and "refuse ces options" in w.last_error, 20)
+    assert "--multiply must stay 1" in w.last_error and len(w.runs) == n
+    w.last_error = None
+    w.form.set_values({"target": "omp-llvm", "all_exec": True, "size": "dyn.1024",
+                       "min_threads": "1", "max_threads": "8"})
+    w.launch()
+    assert pump(lambda: w.last_error and "--size: dyn.1024" in w.last_error, 20)
+    assert len(w.runs) == n
+
+
+def test_bad_value_refused_for_a_plain_argparse_script(gui, site):
+    w, pump = gui
+    _choose_fake(w, pump)
+    n = len(w.runs)
+    w.last_error = None
+    w.extra.setText("--runs x")
+    w.launch()
+    assert pump(lambda: w.last_error and "invalid int value: 'x'" in w.last_error, 20)
+    assert len(w.runs) == n
+    w.extra.setText("")
+
+
+def test_status_column_has_its_own_width(gui):
+    w, pump = gui
+    h = w.table.horizontalHeader()
+    assert h.sectionResizeMode(w.COL_STATUS) == h.ResizeMode.Interactive
+    long = "terminé sans code (limite de temps ? voir le log)"
+    assert h.sectionSize(w.COL_STATUS) < w.table.fontMetrics().horizontalAdvance(long)
+    h.resizeSection(w.COL_STATUS, 77)
+    assert int(w.settings.value("col_width/status")) == 77 and w.status_col_width() == 77
