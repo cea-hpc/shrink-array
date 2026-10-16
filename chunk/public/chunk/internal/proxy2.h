@@ -659,15 +659,10 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          - All values become second_value
      *          Atomically adds chunk to compression list if needed.
      * @note Thread safety: Uses compare_exchange for atomic list insertion
-     * @note Called BEFORE the store (assign_impl's lbd_equal_core): the
-     *       pre-store form, as Proxy2A -- see mark_for_compression_before_store.
-     *       Its pre-check is inline; the old value is read only when a
-     *       constant is written. Forced inline: out of line, clang keeps a
-     *       prologue ahead of the pre-check.
      */
-    CHUNK_FORCE_INLINE void mark_for_compression_if_needed(in_t<T> new_value) const
+    void mark_for_compression_if_needed(in_t<T> new_value) const
     {
-        Base2::mark_for_compression_before_store(second_value, new_value, Chunk2<T>::first_value);
+        Base2::mark_for_compression_if_needed(second_value, new_value, Chunk2<T>::first_value);
     }
 
   private:
@@ -865,18 +860,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     void create_value() const noexcept
     {
-        create_value(is_cst_val2());
-    }
-
-    /**
-     * @brief create_value() with the compression state already known.
-     * @param is_cst2 Whether the chunk is at its second constant (else at the
-     *        first), from the caller's load of `values`. A stale state is
-     *        harmless: the chunk can only have been materialised since, and
-     *        the CAS of chunk.create_value() then fails.
-     */
-    void create_value(bool is_cst2) const noexcept
-    {
         if constexpr (build_config::chunk_dynamic)
         {
             // Route this (possibly worker-thread) allocation to the pool of THIS array's chunk
@@ -885,11 +868,11 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         }
         if constexpr (is_not_bool)
         {
-            chunk.create_value(is_cst2, inf_array);
+            chunk.create_value(is_cst_val2(), inf_array);
         }
         else
         {
-            chunk.create_value_bool(is_cst2);
+            chunk.create_value_bool(is_cst_val2());
         }
     }
 
@@ -1090,26 +1073,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         else
         {
             return chunk.is_cst_val2();
-        }
-    }
-
-    /**
-     * @brief is_cst_val2() judged from an already-loaded values pointer.
-     * @details Saves the reload -- `values == ...` on the atomic is a seq_cst
-     *          load (ldar on aarch64) -- and keeps the caller's tests on one
-     *          snapshot.
-     * @param vals The pointer the caller loaded.
-     * @return true if @p vals is the chunk's second constant buffer.
-     */
-    [[nodiscard]] bool is_cst_val2_at(const T* vals) const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return vals == chunk.get_cst_val2(BaseSpec::ind);
-        }
-        else
-        {
-            return vals == chunk.get_cst_val2();
         }
     }
 
