@@ -357,9 +357,14 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *          identifier to another value, and that chunk reads the other
      *          value. The refusals above see the CALLING thread only: a
      *          std::thread / TBB pool or a team started by another host thread
-     *          is not detected. Check builds fail an invariant on any lookup or
-     *          registration overlapping the reclaim (GlobalVecHolder's
-     *          LookupGuard / ReclaimScope); release builds check nothing.
+     *          is not detected -- except under the pool backend between a
+     *          begin_parallel_phase() and the finalize_parallel_phase() of the
+     *          phase contract, where in_parallel() is true on every thread
+     *          (the application phase, docs/threading_backends.md step 7c;
+     *          std_thread_validation checks the refusal). Check builds fail an
+     *          invariant on any lookup or registration overlapping the reclaim
+     *          (GlobalVecHolder's LookupGuard / ReclaimScope); release builds
+     *          check nothing.
      */
     static std::size_t reclaim_second_values()
     {

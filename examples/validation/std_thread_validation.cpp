@@ -54,7 +54,20 @@
 //     of an array all the threads share, one write in 7 sent down the
 //     deferred path (test_hooks::force_defer_every, check builds) -- the
 //     buffers freed by those passes, the deferred queues of the registered
-//     ranks, drained by finalize_parallel_phase().
+//     ranks, drained by finalize_parallel_phase();
+//   - frees across ranks in the phase: every thread materialises its own
+//     array, then folds its neighbour's (constants written, compress()) --
+//     buffers owned by the neighbour's rank, released while that rank
+//     allocates for its own neighbour's array. in_parallel() decides there
+//     between a direct free into the owner's lists and a park for it (TSan
+//     reports the race when the application phase does not count as
+//     parallel);
+//   - maintenance refused in the phase (Chunk2A): reclaim_second_values()
+//     called by one application thread while the others write must be
+//     refused as "in a parallel region" (second_value_stats().
+//     refused_parallel), and run once finalize_parallel_phase() closed the
+//     phase. The library sees the application's threads only through the
+//     application phase: without it the reclaim would run under the writers.
 //
 //   After every phase the array is compared, element by element, with a
 //   std::vector that received the same writes.
@@ -68,7 +81,7 @@
 #include <barrier>     // std::barrier (the long-lived threads)
 #include <latch>       // std::latch (the writers of a phase alive together)
 #include <thread>      // std::thread
-#include <type_traits> // std::conditional_t
+#include <type_traits> // std::conditional_t, std::is_same_v
 #include <vector>      // std::vector (the reference)
 
 #include "chunk/chunk_traits.h"        // forward decls + default ind_type = int
@@ -504,6 +517,178 @@ int in_phase_work(const char* label, long N, int nt, int phases, const Scenario<
     return fails == 0 ? 0 : 1;
 }
 
+/// Thread t folds the array thread t+1 materialised, while t+1 does the same
+/// to t+2's: frees into another rank's slabs, concurrent with its allocations.
+template <typename T>
+int cross_rank_frees(const char* label, long N, int nt, int phases, const Scenario<T>& sc)
+{
+    if (nt < 2)
+    {
+        println("[{}/{}] cross-rank frees: one writer, nothing to cross -- skipped", variant_name(), label);
+        return 0;
+    }
+    const long            n_own = N / 4;
+    std::vector<Array<T>> own;
+    own.reserve(static_cast<std::size_t>(nt));
+    for (int t = 0; t < nt; ++t)
+    {
+        own.emplace_back(n_own);
+        maybe_set_second_value(own.back(), sc.second);
+    }
+    // After a phase, array k: its first half constant (0 and the second value
+    // in runs), its second half varied -- both written by thread k - 1.
+    auto expected = [&](long i, int p) -> T
+    {
+        if (i < n_own / 2)
+        {
+            return (i / kRun) % 2 == 0 ? T(0) : sc.second;
+        }
+        return sc.varied(i, p + 1);
+    };
+
+    Failures f;
+    int      fails = 0;
+    for (int p = 0; p < phases; ++p)
+    {
+        std::latch               materialised(nt);
+        std::vector<std::thread> threads;
+        threads.reserve(static_cast<std::size_t>(nt));
+        for (int t = 0; t < nt; ++t)
+        {
+            threads.emplace_back(
+                [&, t]
+                {
+                    begin_parallel_phase();
+                    auto& mine = own[static_cast<std::size_t>(t)];
+                    for (long i = 0; i < n_own; ++i)
+                    {
+                        mine[i] = sc.varied(i, p); // every chunk materialised, on this rank
+                    }
+                    materialised.arrive_and_wait();
+                    auto& next = own[static_cast<std::size_t>((t + 1) % nt)];
+                    for (long i = 0; i < n_own / 2; ++i)
+                    {
+                        next[i] = (i / kRun) % 2 == 0 ? T(0) : sc.second;
+                    }
+                    next.compress(); // frees buffers of rank t + 1's slabs, on this thread
+                    for (long i = n_own / 2; i < n_own; ++i)
+                    {
+                        next[i] = sc.varied(i, p + 1);
+                    }
+                });
+        }
+        for (auto& th : threads)
+        {
+            th.join();
+        }
+        finalize_parallel_phase();
+        if (!check_closed())
+        {
+            ++fails;
+        }
+        bool ok = true;
+        for (int k = 0; k < nt && ok; ++k)
+        {
+            std::vector<T> ref(static_cast<std::size_t>(n_own));
+            for (long i = 0; i < n_own; ++i)
+            {
+                ref[static_cast<std::size_t>(i)] = expected(i, p);
+            }
+            ok = compare(label, p, own[static_cast<std::size_t>(k)], ref);
+        }
+        if (!ok)
+        {
+            ++fails;
+            break;
+        }
+    }
+    fails += f.n.load();
+    println("[{}/{}] cross-rank frees x{}, {} phases: {}", variant_name(), label, nt, phases,
+            fails == 0 ? "OK" : "FAIL");
+    for (auto& a : own)
+    {
+        a.clear();
+    }
+    return fails == 0 ? 0 : 1;
+}
+
+/// reclaim_second_values() from an application thread during the phase: refused.
+template <typename T>
+int maintenance_refused(const char* label, long N, int nt, const Scenario<T>& sc)
+{
+    if constexpr (!requires { Array<T>::reclaim_second_values(); } || std::is_same_v<T, bool>)
+    {
+        (void)label;
+        (void)N;
+        (void)nt;
+        (void)sc;
+        return 0; // Chunk2A only, and bool has no registry
+    }
+    else
+    {
+        Array<T> shared(N);
+        maybe_set_second_value(shared, sc.second);
+        const auto before = Array<T>::second_value_stats();
+
+        std::latch               writing(nt);
+        std::atomic<long>        got{-1};
+        std::vector<std::thread> threads;
+        threads.reserve(static_cast<std::size_t>(nt));
+        for (int t = 0; t < nt; ++t)
+        {
+            threads.emplace_back(
+                [&, t]
+                {
+                    begin_parallel_phase();
+                    for_share(N, t, nt, 0, [&](long i) { shared[i] = value_at(sc, i, 0); });
+                    writing.arrive_and_wait();
+                    if (t == 0)
+                    {
+                        got.store(static_cast<long>(Array<T>::reclaim_second_values()));
+                    }
+                    for_share(N, t, nt, 1, [&](long i) { shared[i] = value_at(sc, i, 1); });
+                });
+        }
+        for (auto& th : threads)
+        {
+            th.join();
+        }
+        const auto in_phase = Array<T>::second_value_stats();
+        finalize_parallel_phase();
+        (void)Array<T>::reclaim_second_values(); // the phase is closed: it runs
+        const auto after = Array<T>::second_value_stats();
+
+        int fails = 0;
+        if (got.load() != 0 || in_phase.refused_parallel != before.refused_parallel + 1 ||
+            in_phase.reclaims != before.reclaims)
+        {
+            println("FAIL: reclaim_second_values() in the application phase was not refused (returned {}, refused "
+                    "in a region {} -> {}, reclaims {} -> {})",
+                    got.load(), before.refused_parallel, in_phase.refused_parallel, before.reclaims, in_phase.reclaims);
+            ++fails;
+        }
+        if (after.reclaims != in_phase.reclaims + 1 || after.refused_parallel != in_phase.refused_parallel)
+        {
+            println("FAIL: reclaim_second_values() after finalize_parallel_phase() did not run (reclaims {} -> {})",
+                    in_phase.reclaims, after.reclaims);
+            ++fails;
+        }
+        std::vector<T> ref(static_cast<std::size_t>(N));
+        for (long i = 0; i < N; ++i)
+        {
+            ref[static_cast<std::size_t>(i)] = value_at(sc, i, 1);
+        }
+        if (!compare(label, 1, shared, ref))
+        {
+            ++fails;
+        }
+        println("[{}/{}] maintenance refused in the phase x{}: {}", variant_name(), label, nt,
+                fails == 0 ? "OK" : "FAIL");
+        shared.clear();
+        return fails == 0 ? 0 : 1;
+    }
+}
+
 int run(int argc, char** argv)
 {
     const long N      = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 18, "N") : (1L << 18);
@@ -548,6 +733,11 @@ int run(int argc, char** argv)
     fails += in_phase_work<double>("double", N, nt, phases, sd);
     fails += in_phase_work<int>("int", N, nt, phases, si);
     fails += in_phase_work<bool>("bool", N, nt, phases, sb);
+    fails += cross_rank_frees<double>("double", N, nt, phases, sd);
+    fails += cross_rank_frees<int>("int", N, nt, phases, si);
+    fails += cross_rank_frees<bool>("bool", N, nt, phases, sb);
+    fails += maintenance_refused<double>("double", N, nt, sd);
+    fails += maintenance_refused<int>("int", N, nt, si);
 
     release_chunk_pools();
     destroy_block_chunk();

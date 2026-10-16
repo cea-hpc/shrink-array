@@ -224,6 +224,27 @@ else
       "gnu std allocator (no openmp)"
 fi
 
+# The pool backend (CHUNK_THREADS=pool, docs/threading_backends.md step 7): the
+# library's teams on std::jthread workers of its own, no OpenMP (it forces
+# OMP OFF). Release, for the OpenMP-vs-pool timings, and CHECK_OPTIM, for the
+# validations -- std_thread_validation among them, the arrays driven from the
+# application's own std::threads.
+if skip_release; then
+    echo "[debug-only] skipping gnu pool"
+else
+    compile_with_cmake "$build_rep/cmake-build-pool-gnu${ICF_SUFFIX}/$arch" \
+      "-DCHUNK_THREADS=pool -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT" \
+      "gnu pool (no openmp)"
+fi
+
+if skip_release; then
+    echo "[debug-only] skipping gnu pool with check"
+else
+    compile_with_cmake "$build_rep/cmake-build-pool-gnu-check${ICF_SUFFIX}/$arch" \
+      "-DCHUNK_THREADS=pool -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+      "gnu pool with check (no openmp)"
+fi
+
 # Sequential twin of cmake-build-omp-gnu-stats above: same release build, same
 # CHUNK_STATS counters, OpenMP OFF. bench_and_test.py's seq-vs-OMP compare
 # (find_llvm_seq_omp_pairs) derives "cmake-build-gnu-stats" from
@@ -324,6 +345,15 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-addr
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-thread-sanitizer-have-aggressive-compression${ICF_SUFFIX}/$arch" \
   "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu relwithdebinfo openmp thread sanitizer have_aggressive_compression"
+
+# TSan on the pool backend, optimised, CHECK_OPTIM (the validations): unlike
+# libgomp the pool is standard C++ (std::atomic wait/notify, std::barrier), so
+# TSan sees every synchronisation of the library's teams -- a report here is
+# not a barrier the tool missed. The run for std_thread_validation:
+# OMP_NUM_THREADS=8 (the pool's team size, and the harness's thread count).
+compile_with_cmake "$build_rep/cmake-build-pool-gnu-relwithdebinfo-thread-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DCHUNK_THREADS=pool -DCHECK_OPTIM=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu relwithdebinfo pool thread sanitizer"
 
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-have-aggressive-compression${ICF_SUFFIX}/$arch" \
   "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \

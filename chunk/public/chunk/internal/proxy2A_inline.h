@@ -35,6 +35,7 @@
 #include "chunk/internal/bad_ptr_check.h"                // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_stats.h"                  // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/relaxed_element.h"              // store_element_relaxed (the deferred replay)
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/parallel_storage_init.h" // make_filled, resize_filled, for_each_chunk
@@ -728,8 +729,19 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         }
                     }
 
-                    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                    values_before[num] = static_cast<T>(ctx->operand);
+                    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers.
+                    // A relaxed atomic store where Chunk2A's element stores must be one
+                    // (relaxed_element.h): other writers' scans (may_become_uniform)
+                    // read this element meanwhile -- as the compound ops' replay does.
+                    if constexpr (internal::relaxed_element_stores_v<Chunk2A<T>, T>)
+                    {
+                        internal::store_element_relaxed(values_before + num, static_cast<T>(ctx->operand));
+                    }
+                    else
+                    {
+                        // raw-read: deferred replay, after materialisation (as above)
+                        values_before[num] = static_cast<T>(ctx->operand);
+                    }
 
                     // Post-store confirmation.
                     const T* values_after = chunk.values_load();

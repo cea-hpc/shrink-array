@@ -270,7 +270,42 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      The harness does not tell `in_parallel()`'s application-phase answer
      from the old one (a mutation that drops it passes, TSan included): the
      paths it guards (the ladder's lock, the in-region frees) are not reached
-     by its workload -- to cover in 7d.
+     by its workload -- covered in 7d.
+   *7d done*: the pool build in the build matrix, the harness completed.
+   - `compile_all_gnu.sh`: `cmake-build-pool-gnu` (release, for the timings
+     against OpenMP), `cmake-build-pool-gnu-check` (CHECK_OPTIM: the
+     validations) and `cmake-build-pool-gnu-relwithdebinfo-thread-sanitizer`.
+     Unlike libgomp the pool is standard C++, so TSan sees every
+     synchronisation of the library's teams there.
+   - `std_thread_validation`, two more cases. *Cross-rank frees*: each thread
+     materialises its array, then folds its neighbour's (constants,
+     `compress()`), while the neighbour does the same to the next one.
+     *Maintenance refused in the phase* (Chunk2A): `reclaim_second_values()`
+     from one application thread while the others write is refused as "in
+     a parallel region" (`second_value_stats().refused_parallel`) and runs
+     after `finalize_parallel_phase()`. The mutation that drops the
+     application phase from `in_parallel()` now fails this case, where it
+     passed every other one: in a threaded build a pass in the phase parks
+     its buffers on the rank's reuse list (probe: neither
+     `release_to_owner` nor the foreign free of `free_block_to_pool` ran in
+     an application phase), so the frees `in_parallel()` routes are not
+     reached by writes and passes; the maintenance calls (reclaim, trim,
+     sweeps) are what it protects there.
+   - Found by the harness under TSan (chunk2a, dyn, 8 threads): the deferred
+     replay of `=` on Chunk2A stored the element with a plain store while
+     another writer's `may_become_uniform` scan read it relaxed; Chunk2A's
+     element stores must be relaxed atomics (`relaxed_element_stores_v`),
+     as the compound ops' replay already was. Now
+     `store_element_relaxed` (`proxy2A_inline.h`). Not specific to the pool:
+     the replay runs in a region under OpenMP as well. Same machine code on
+     x86 and Arm (an aligned store), so no value was wrong; a data race all
+     the same.
+   - `array_chunk2A.h`: `reclaim_second_values()`'s warning said that a
+     `std::thread` pool is never detected; under the pool backend, within
+     the phase contract, it is.
+   - Left as they are: the `omp critical` of `deferred_path_validation` and
+     `blk_allocator_validation` sit in `omp parallel` regions, serial in a
+     pool build (the latter tests OpenMP's critical reentrancy itself).
 8. (later, on demand) **TBB backend** for the library's own loops, inside the
    application's arena, `static_partitioner`; the adaptor of section 2.
 
