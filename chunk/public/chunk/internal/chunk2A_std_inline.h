@@ -499,6 +499,67 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
 }
 
 /**
+ * @brief Sets every element of this chunk to @p v through its state alone.
+ *
+ * @details A whole-chunk fill needs no buffer: the chunk ends up a constant.
+ *          - materialised: register @p v (unless it is the first value) and
+ *            run the compression's own clear (clear_int_st), which frees the
+ *            buffer and installs the constant -- what compress() does after a
+ *            scan, the scan being pointless here;
+ *          - compressed: switch the constant in place. The second-value slot
+ *            and the type are written first, then the values pointer: the
+ *            order clear_int_st keeps. No CAS, no buffer allocated, filled,
+ *            scanned and freed again.
+ *          The value the chunk held before stays registered; a chunk
+ *          records no reference to it (reclaim_second_values() frees what no
+ *          chunk points at any more).
+ *
+ * @param thr_rank  Rank whose pool takes a released buffer.
+ * @param num_chunk Index of this chunk in its array.
+ * @param num_tab   Table number of the owning array.
+ * @param v         The value of every element.
+ */
+template <typename T>
+void Chunk2A<T>::fill_constant_st(int thr_rank, int num_chunk, int num_tab, in_t<T> v)
+{
+    static_assert(Base::is_not_bool, "fill_constant_st: bool chunks are bit-packed, fill them element by element");
+
+    const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+    char*                   ptr_type_cst     = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
+    const bool              to_first         = (v == static_cast<T>(first_value));
+
+    if (this->written())
+    {
+        // CHUNK_STATS: a compression reached without a scan, its attempt
+        // counted with it (as fill_range does on v1).
+        increm_chunk_compress_attempt<Chunk2A>();
+        T* cst2_ptr = to_first ? nullptr : tab_cst_val2_holder::find_or_set_ind_cst_val2(v, ptr_second_value);
+        clear_int_st(to_first ? 0 : 1, ptr_type_cst, ptr_second_value, thr_rank, cst2_ptr);
+        return;
+    }
+
+    if (to_first)
+    {
+        if (Base::is_cst_val1())
+        {
+            return;
+        }
+        ptr_second_value.reset();
+        set_cst_val_to_cst_val1(ptr_type_cst);
+        Base::values_store(Base::get_cst_val1());
+        return;
+    }
+
+    T* cst2_ptr = tab_cst_val2_holder::find_or_set_ind_cst_val2(v, ptr_second_value);
+    if (Base::values_load() == cst2_ptr)
+    {
+        return; // already at v
+    }
+    set_cst_val_to_cst_val2(ptr_type_cst);
+    Base::values_store(cst2_ptr);
+}
+
+/**
  * @brief Compresses every thread's candidate chunks, opening a parallel region if needed.
  *
  * Used between parallel phases (by compress_chunk_to_compress(), which disarms the OMPT

@@ -694,6 +694,13 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
 
     void compress(int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
 
+    /// @brief Sets every element of this chunk to @p v by its state alone,
+    ///        with no buffer touched: a whole-chunk fill (fill_range, a
+    ///        uniform copy_range span). Non-bool T only.
+    /// @pre   Serial contract (no concurrent writer, reader or pass on the
+    ///        array); the array's deferred writes drained.
+    void fill_constant_st(int thr_rank, int num_chunk, int num_tab, in_t<T> v);
+
     static void compress_chunk_to_compress(bool apply);
 
     /// @brief One rank's share of compress_chunk_to_compress() outside a

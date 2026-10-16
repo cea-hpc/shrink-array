@@ -103,8 +103,9 @@ doit pas compter. Une tuile uniforme que `update_tiles` laisse inchangée n'est 
 qui ne touche pas au fond ne le matérialise pas. Une tuile modifiée est écrite par `fill_range()`
 si elle est uniforme, sinon par `copy_range()` (les range ops séquentielles hors région
 parallèle, les `_mt` dedans). Hors région parallèle, sur Chunk2A, une tuile de chunks entiers qui
-en sort uniforme est compressée aussitôt, un tampon à la fois (`fill_range`), de même que chaque
-chunk uniforme d'une tuile qui ne l'est pas (`copy_range`). Sinon un chunk
+en sort uniforme prend sa constante sans tampon -- un chunk compressé change de constante sur
+place (`fill_range`) --, de même que chaque chunk uniforme d'une tuile qui ne l'est pas
+(`copy_range`). Sinon un chunk
 compressé qui change est matérialisé pour l'écriture et mis en file : la fin de la phase, ou la
 passe de compression suivante, le recompresse.
 

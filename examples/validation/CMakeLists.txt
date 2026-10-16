@@ -110,6 +110,13 @@
 #                           three-element guess skips, partial range), and on
 #                           Chunk2A leaves no covered chunk with a uniform
 #                           source materialised: it compresses each at once.
+#   constant_switch_validation  a compressed chunk switched to another
+#                           constant by fill_range / copy_range reads back
+#                           after every switch (first -> second -> another
+#                           second -> first), a write into it materialises it
+#                           from its own constant, and on Chunk2A no switch
+#                           allocates a buffer and reclaim_second_values()
+#                           frees the constants no chunk holds any more.
 #   fill_range_mt_v1v2_validation  the range ops in a TWO-variant build
 #                           (chunk_v1v2): an ArrayChunk and an ArrayChunk2 side
 #                           by side, fill_range_mt of each compressible value.
@@ -226,7 +233,8 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         swap_move_validation range_counters_validation thread_growth_validation
                         nested_region_validation iterator_validation stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
-                        fill_range_constant_validation copy_range_constant_validation)
+                        fill_range_constant_validation copy_range_constant_validation
+                        constant_switch_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.

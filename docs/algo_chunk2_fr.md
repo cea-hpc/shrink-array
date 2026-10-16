@@ -477,16 +477,23 @@ besoin, écrivent le reste **directement dans le tampon**, puis ne mettent en fi
 chunks qui **peuvent** être uniformes (premier, milieu et dernier éléments égaux) **à une
 valeur que Chunk2 sait compresser** (la première valeur ou la seconde valeur du tableau).
 Elles sont **séquentielles** : pas d'écrivain ni de compression concurrents sur le tableau.
-Le rechunk passe par `copy_range` pour reconstruire le nouveau tableau. Sur Chunk2A, un chunk
-que `fill_range` couvre entièrement est **compressé aussitôt** (`Chunk2A::compress`, le balayage
-et l'effacement de la passe elle-même, comme le repli du rechunk) : son tampon revient au pool
-avant que le chunk suivant soit armé, et un remplissage tient un tampon, pas les chunks
-matérialisés qu'une passe d'écrivain ramasserait. `copy_range` fait de même pour un chunk qu'elle
-couvre entièrement quand les trois éléments concordent : le balayage le compresse si la copie l'a
-laissé uniforme, et le refuse sinon (il n'est alors pas mis en file non plus : le balayage vient
-de dire qu'il est mélangé). Dans le rechunk, cela se fait sur les nouveaux chunks propres à
-chaque thread, à la nouvelle géométrie, avant le repli, qui trouve alors le chunk constant et n'a
-plus rien à faire.
+Le rechunk passe par `copy_range` pour reconstruire le nouveau tableau.
+
+Sur Chunk2A, un chunk que `fill_range` couvre entièrement prend la valeur pour constante **par
+son seul état** (`Chunk2A::fill_constant_st`), quels que soient la valeur et l'état du chunk : un
+chunk matérialisé passe par l'effacement de la compression elle-même (`clear_int_st` : tampon
+rendu, constante installée, sans balayage) ; un chunk compressé change de constante sur place --
+case de seconde valeur (enregistrée par `find_or_set_ind_cst_val2`), type, puis pointeur de
+valeurs, l'ordre que garde l'effacement. Aucun tampon n'est alloué, rempli, balayé ni rendu, et
+rien n'est mis en file. La constante que le chunk tenait reste enregistrée : aucun chunk n'y
+garde de référence, et `reclaim_second_values()` la libère dès qu'aucun chunk n'y pointe.
+
+`copy_range` lit d'abord la plage source d'un chunk qu'elle couvre entièrement (premier, milieu
+et dernier éléments, puis toute la plage s'ils concordent) : uniforme, le chunk prend cette
+constante de la même façon ; mélangée, elle est copiée et le chunk reste matérialisé, sans mise
+en file (la copie est la plage, donc mélangée elle aussi). Dans le rechunk, cela se fait sur les
+nouveaux chunks propres à chaque thread, à la nouvelle géométrie, avant le repli, qui trouve
+alors ces chunks constants et n'a plus rien à faire.
 
 `fill_range_mt(a, first, last, v)` peut être appelée **par plusieurs threads à la fois**, sur
 des indices disjoints (un chunk peut être partagé) : elle reprend, une fois par morceau de

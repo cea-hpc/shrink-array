@@ -417,12 +417,15 @@ void packed_chunk_store(Arr&         arr,
  *            chunk constant outright. A materialised chunk releases its buffer;
  *            an already-constant one costs nothing. No allocation either way
  *            (v1; Chunk2A below).
+ *          - Chunk2A, fully covered, any value: the chunk takes @p v as its
+ *            constant by state alone (Chunk2A::fill_constant_st): a
+ *            materialised chunk releases its buffer, a compressed one
+ *            switches its constant in place. No buffer allocated, stored or
+ *            scanned.
  *          - otherwise: arm the chunk with real proxy writes until it
  *            materialises, then store the remainder straight into its buffer
- *            and restore the zero counter the bulk store bypassed. Chunk2A, a
- *            fully covered chunk (any value): compressed at once, its buffer
- *            back in the pool before the next chunk is armed -- the fill holds
- *            one buffer at a time. The others queue the chunk for the pass.
+ *            and restore the zero counter the bulk store bypassed; queue the
+ *            chunk for the pass if it may be uniform at a compressible value.
  *
  *          bool (one byte per element, its second-value state in the proxy)
  *          takes the per-element path throughout -- still correct, just
@@ -548,6 +551,20 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
         }
         else
         {
+            // ── Chunk2A, whole chunk: a constant, no buffer ──────────────────
+            // Whatever the value and the chunk's state: a materialised chunk
+            // releases its buffer, a compressed one switches its constant in
+            // place (Chunk2A::fill_constant_st). Nothing allocated, stored or
+            // scanned; nothing queued for a pass.
+            if constexpr (internal::is_v2a_v<Arr>)
+            {
+                if (whole)
+                {
+                    ch.fill_constant_st(get_thr_rank_fast(), static_cast<int>(ci), arr.num_tab, value);
+                    continue;
+                }
+            }
+
             // ── Arm, then bulk-store ────────────────────────────────────────
             // Real proxy writes until the chunk materialises: that allocates the
             // buffer and registers the compression bookkeeping. If the loop
@@ -583,24 +600,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             }
             if (compressible_value && internal::may_be_uniform(dst, S))
             {
-                // Chunk2A, whole chunk: compress it now, as the rechunk fold
-                // does (Chunk2A::compress, apply = true: the pass's own scan and
-                // clear_int_st, nothing synthesised). Under the serial contract
-                // no writer can reach the chunk, so the buffer goes straight
-                // back to the pool: the fill holds one buffer at a time, and
-                // no pass has to rescan the chunk. The candidate the
-                // arming write may have queued stays in its list; the pass
-                // finds a constant chunk and skips it.
-                if constexpr (internal::is_v2a_v<Arr>)
-                {
-                    if (whole)
-                    {
-                        ch.compress(get_thr_rank_fast(), static_cast<int>(ci), arr.num_tab, /*apply=*/true,
-                                    ChunkElems{S});
-                        continue;
-                    }
-                }
-                internal::queue_for_compression(arr, c_begin);
+                internal::queue_for_compression(arr, c_begin); // a chunk covered in part
             }
         }
     }
@@ -612,10 +612,11 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
  * @details Same per-chunk strategy as fill_range, minus the constant shortcut:
  *          the source values are not known to be uniform, so a chunk is set
  *          constant only when the arming loop finds every value to be the
- *          compressible constant. Chunk2A, a fully covered chunk whose first,
- *          middle and last elements agree: compressed at once if the scan
- *          finds it uniform (as fill_range), left materialised and unqueued
- *          if not. The others queue such a chunk for the pass.
+ *          compressible constant. Chunk2A, a fully covered chunk: its source
+ *          span is read first (three elements, then all of it if they agree);
+ *          uniform, the chunk is set to that constant by state alone, as
+ *          fill_range does (no buffer); mixed, it is copied and not queued.
+ *          The others queue a chunk that may be uniform for the pass.
  *
  * @param arr       target array
  * @param first     first target index, inclusive (clamped to size())
@@ -660,6 +661,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         const std::size_t c_end   = c_begin + S;
         const std::size_t lo      = first > c_begin ? first : c_begin;
         const std::size_t hi      = last < c_end ? last : c_end;
+        const bool        whole   = (lo == c_begin) && (hi == c_end);
 
         auto& ch = arr.chunk_ref(ci);
 
@@ -684,6 +686,41 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         }
         else
         {
+            // ── Chunk2A, whole chunk: a uniform source span is a constant ────
+            // Read the span first (the three-element guess, then all of it):
+            // uniform, the chunk takes its constant by state alone
+            // (Chunk2A::fill_constant_st: no buffer allocated, stored, scanned
+            // and freed); mixed, it is copied below and stays materialised --
+            // the copy is exactly the span, so the copied chunk is mixed too.
+            bool span_mixed = false;
+            if constexpr (internal::is_v2a_v<Arr>)
+            {
+                if (whole)
+                {
+                    const auto src_at = [&](std::size_t k)
+                    { return static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(k - first))); };
+                    const T v0 = src_at(lo);
+                    span_mixed = !(v0 == src_at(lo + S / 2) && v0 == src_at(hi - 1));
+                    if (!span_mixed)
+                    {
+                        // No early exit: the guess has passed, the span is
+                        // most likely uniform, and a branch-free count
+                        // vectorises over a contiguous source.
+                        std::size_t differ = 0;
+                        for (std::size_t k = lo; k < hi; ++k)
+                        {
+                            differ += static_cast<std::size_t>(!(src_at(k) == v0));
+                        }
+                        span_mixed = (differ != 0);
+                    }
+                    if (!span_mixed)
+                    {
+                        ch.fill_constant_st(get_thr_rank_fast(), static_cast<int>(ci), arr.num_tab, v0);
+                        continue;
+                    }
+                }
+            }
+
             std::size_t i = lo;
             while (i < hi && !internal::materialised(arr, ch, ind2))
             {
@@ -703,26 +740,11 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
 
             internal::resync_counters(arr, ch, c_begin, dst, S); // as fill_range
 
-            // The source is not known to be uniform: the scan decides -- for
-            // the chunks that can be.
-            if (internal::may_be_uniform(dst, S))
+            // The source is not known to be uniform: the pass decides -- for
+            // the chunks that can be. Not a Chunk2A chunk covered whole: its
+            // span was read above and is mixed.
+            if (!span_mixed && internal::may_be_uniform(dst, S))
             {
-                // Chunk2A, whole chunk: compress it now, as fill_range does
-                // (Chunk2A::compress, apply = true: its own scan, which
-                // refuses a mixed chunk -- nothing to queue then -- and
-                // clear_int_st). The re-chunk rebuilds through here, on
-                // disjoint chunks per thread, ambient geometry already the
-                // new one: its fold then finds the chunk constant (compress()
-                // skips a chunk that is not written()).
-                if constexpr (internal::is_v2a_v<Arr>)
-                {
-                    if (lo == c_begin && hi == c_end)
-                    {
-                        ch.compress(get_thr_rank_fast(), static_cast<int>(ci), arr.num_tab, /*apply=*/true,
-                                    ChunkElems{S});
-                        continue;
-                    }
-                }
                 internal::queue_for_compression(arr, c_begin);
             }
         }

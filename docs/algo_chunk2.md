@@ -477,15 +477,22 @@ needed, write the rest **directly into the buffer**, then only queue the
 chunks that **may** be uniform (first, middle and last elements equal) **at a
 value that Chunk2 can compress** (the first value or the array's second value).
 They are **sequential**: no concurrent writer or compression on the array.
-The rechunk uses `copy_range` to rebuild the new array. On Chunk2A, a chunk that
-`fill_range` covers whole is **compressed at once** (`Chunk2A::compress`, the pass's own scan
-and clear, as the rechunk fold does): its buffer is back in the pool before the next chunk is
-armed, so a fill holds one buffer, not the materialised chunks a writer's pass would collect.
-`copy_range` does the same for a chunk it covers whole when the three elements agree: the scan
-compresses it if the copy left it uniform, and refuses it otherwise (it is then not queued
-either: the scan has just said it is mixed). Inside the rechunk this runs on each thread's own
-new chunks, at the new geometry, before the fold, which then finds the chunk constant and has
-nothing left to do.
+The rechunk uses `copy_range` to rebuild the new array.
+
+On Chunk2A, a chunk that `fill_range` covers whole takes the value as its constant **by its
+state alone** (`Chunk2A::fill_constant_st`), whatever the value and the chunk's state: a
+materialised chunk goes through the compression's own clear (`clear_int_st`: buffer released,
+constant installed, no scan); a compressed one switches its constant in place -- second-value
+slot (registered by `find_or_set_ind_cst_val2`), type, then values pointer, the order the
+clear keeps. No buffer is allocated, filled, scanned or freed, and nothing is queued. The
+constant the chunk held before stays registered: no chunk records a reference to it, and
+`reclaim_second_values()` frees it once no chunk points at it.
+
+`copy_range` reads the source span of a chunk it covers whole first (first, middle and last
+elements, then all of it if they agree): uniform, the chunk takes that constant the same way;
+mixed, it is copied and stays materialised, not queued (the copy is the span, so it is mixed
+too). Inside the rechunk this runs on each thread's own new chunks, at the new geometry, before
+the fold, which then finds those chunks constant and has nothing left to do.
 
 `fill_range_mt(a, first, last, v)` can be called **by several threads at once**, on
 disjoint indices (a chunk may be shared): it repeats, once per piece of
