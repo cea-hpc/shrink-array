@@ -612,7 +612,10 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
  * @details Same per-chunk strategy as fill_range, minus the constant shortcut:
  *          the source values are not known to be uniform, so a chunk is set
  *          constant only when the arming loop finds every value to be the
- *          compressible constant.
+ *          compressible constant. Chunk2A, a fully covered chunk whose first,
+ *          middle and last elements agree: compressed at once if the scan
+ *          finds it uniform (as fill_range), left materialised and unqueued
+ *          if not. The others queue such a chunk for the pass.
  *
  * @param arr       target array
  * @param first     first target index, inclusive (clamped to size())
@@ -700,10 +703,26 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
 
             internal::resync_counters(arr, ch, c_begin, dst, S); // as fill_range
 
-            // The source is not known to be uniform: the pass decides -- for
+            // The source is not known to be uniform: the scan decides -- for
             // the chunks that can be.
             if (internal::may_be_uniform(dst, S))
             {
+                // Chunk2A, whole chunk: compress it now, as fill_range does
+                // (Chunk2A::compress, apply = true: its own scan, which
+                // refuses a mixed chunk -- nothing to queue then -- and
+                // clear_int_st). The re-chunk rebuilds through here, on
+                // disjoint chunks per thread, ambient geometry already the
+                // new one: its fold then finds the chunk constant (compress()
+                // skips a chunk that is not written()).
+                if constexpr (internal::is_v2a_v<Arr>)
+                {
+                    if (lo == c_begin && hi == c_end)
+                    {
+                        ch.compress(get_thr_rank_fast(), static_cast<int>(ci), arr.num_tab, /*apply=*/true,
+                                    ChunkElems{S});
+                        continue;
+                    }
+                }
                 internal::queue_for_compression(arr, c_begin);
             }
         }

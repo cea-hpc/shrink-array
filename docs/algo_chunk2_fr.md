@@ -481,7 +481,12 @@ Le rechunk passe par `copy_range` pour reconstruire le nouveau tableau. Sur Chun
 que `fill_range` couvre entièrement est **compressé aussitôt** (`Chunk2A::compress`, le balayage
 et l'effacement de la passe elle-même, comme le repli du rechunk) : son tampon revient au pool
 avant que le chunk suivant soit armé, et un remplissage tient un tampon, pas les chunks
-matérialisés qu'une passe d'écrivain ramasserait.
+matérialisés qu'une passe d'écrivain ramasserait. `copy_range` fait de même pour un chunk qu'elle
+couvre entièrement quand les trois éléments concordent : le balayage le compresse si la copie l'a
+laissé uniforme, et le refuse sinon (il n'est alors pas mis en file non plus : le balayage vient
+de dire qu'il est mélangé). Dans le rechunk, cela se fait sur les nouveaux chunks propres à
+chaque thread, à la nouvelle géométrie, avant le repli, qui trouve alors le chunk constant et n'a
+plus rien à faire.
 
 `fill_range_mt(a, first, last, v)` peut être appelée **par plusieurs threads à la fois**, sur
 des indices disjoints (un chunk peut être partagé) : elle reprend, une fois par morceau de

@@ -113,6 +113,15 @@ the tag's checksum to the recipe.
   outside a parallel region inherit it.
 - `md::layout_tiled` computes its offsets in unsigned arithmetic (shifts, not
   corrected signed divisions): about a tenth of a tiled `f[i, j]` read.
+- `copy_range` on Chunk2A compresses at once a chunk it covers whole when the
+  copy leaves it uniform (`Chunk2A::compress`, as `fill_range`); a chunk whose
+  first, middle and last elements agree but that is mixed is refused by the
+  scan and no longer queued. 2^25 doubles copied over a compressed array, 1
+  thread: a source uniform per chunk 83-87 ms -> 48-54 ms and 2545 -> 0 chunks
+  left materialised; half the chunks uniform 97 -> 67 ms; a mixed source
+  unchanged (73 ms). The rechunk rebuilds through `copy_range`, on each
+  thread's own chunks: its fold then finds them constant (rebuild 64 -> 256
+  unchanged). Harness `copy_range_constant_validation`.
 
 ### Fixed
 
