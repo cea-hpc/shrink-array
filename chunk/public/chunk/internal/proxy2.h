@@ -860,6 +860,18 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     void create_value() const noexcept
     {
+        create_value(is_cst_val2());
+    }
+
+    /**
+     * @brief create_value() with the compression state already known.
+     * @param is_cst2 Whether the chunk is at its second constant (else at the
+     *        first), from the caller's load of `values`. A stale state is
+     *        harmless: the chunk can only have been materialised since, and
+     *        the CAS of chunk.create_value() then fails.
+     */
+    void create_value(bool is_cst2) const noexcept
+    {
         if constexpr (build_config::chunk_dynamic)
         {
             // Route this (possibly worker-thread) allocation to the pool of THIS array's chunk
@@ -868,11 +880,11 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         }
         if constexpr (is_not_bool)
         {
-            chunk.create_value(is_cst_val2(), inf_array);
+            chunk.create_value(is_cst2, inf_array);
         }
         else
         {
-            chunk.create_value_bool(is_cst_val2());
+            chunk.create_value_bool(is_cst2);
         }
     }
 
@@ -1073,6 +1085,26 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         else
         {
             return chunk.is_cst_val2();
+        }
+    }
+
+    /**
+     * @brief is_cst_val2() judged from an already-loaded values pointer.
+     * @details Saves the reload -- `values == ...` on the atomic is a seq_cst
+     *          load (ldar on aarch64) -- and keeps the caller's tests on one
+     *          snapshot.
+     * @param vals The pointer the caller loaded.
+     * @return true if @p vals is the chunk's second constant buffer.
+     */
+    [[nodiscard]] bool is_cst_val2_at(const T* vals) const noexcept
+    {
+        if constexpr (is_not_bool)
+        {
+            return vals == chunk.get_cst_val2(BaseSpec::ind);
+        }
+        else
+        {
+            return vals == chunk.get_cst_val2();
         }
     }
 
