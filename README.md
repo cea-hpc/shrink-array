@@ -1,169 +1,24 @@
-# shrink-array: compressed arrays for C++
-
-*The project is `shrink-array` (repository, Spack package); the C++ namespace is
-`shrink_array`, and the installed CMake package is `chunk` (`find_package(chunk)`,
-targets `chunk::…`).*
+# shrink-array: your `std::vector`, without the zeros
 
 > Version française : [README_fr.md](README_fr.md).
 
-shrink-array provides arrays that are used like a `std::vector` and take less memory when large
-parts of them hold the same value -- zero, or a few repeated values. It is written for HPC codes:
-C++20, OpenMP, arrays of 10⁹ elements, up to a few hundred threads.
+**shrink-array** gives C++ HPC codes arrays that read and write like a `std::vector` -- same
+`[]`, same loops, same OpenMP threads -- but stop paying for the parts that hold the same value.
+On the reference benchmark, a billion-element workload that needs **125.9 GB** with
+`std::vector` runs in **6 to 7.3 GB**: up to 20 times less memory, with no change to the loops.
 
-An array is cut into **chunks** of `S` consecutive elements (`S` a power of two or a multiple of 64). A chunk whose
-elements all hold one constant keeps no buffer of its own: it points to a shared buffer of that
-constant and costs a few bytes of metadata. Writing another value into it gives it a buffer
-again, and while the program runs, the chunks that have become uniform are compressed again and
-their buffers go back to the allocator. Reads and writes keep the `[]` syntax.
+- **Drop-in**: `a[i] = v`, `a[i] += x`, `resize`, `push_back`, range-for. No new indexing, no
+  rebuild step, no loss.
+- **Compresses while the program runs**: a chunk that becomes uniform gives its buffer back;
+  one that is written again gets a new one.
+- **Any repeated value**, not only zero (Chunk2A), for any trivially copyable type: `double`,
+  `std::complex`, your own structures.
+- **Built for many threads**: no lock on the write path, arrays of 10⁹ elements, a few hundred
+  threads. C++20, Linux, CMake, Spack.
 
-It pays off on data that is mostly zero, or mostly made of runs of a few values: sparse fields,
-material masks, multi-material quantities, flags. It does not on data where every chunk holds
-varied values: there it costs a little more memory than a `std::vector`, and every access is
-slower.
-
-## Three variants
-
-| variant | class | a chunk is compressed when it is uniform at… |
-|---|---|---|
-| Chunk (v1) | `ArrayChunk<T>` | `T{}` (zero) only |
-| Chunk2 | `ArrayChunk2<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
-| Chunk2A | `ArrayChunk2A<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
-
-The variant and the chunk size are chosen by the library you link (`chunk::chunk_v2a_256`,
-`chunk::chunk_v2a_dyn`, ...); the headers are the same for all of them. Write the class of
-that variant, or an alias on it ([docs/getting_started.md](docs/getting_started.md) §3): an
-array of another variant than the library's is not supported. Chunk2A compresses the
-most and is the one to try first.
-
-What the arrays save depends on the data. For an order of magnitude, the `shrink_bench`
-benchmark ([examples/shrink_bench](examples/shrink_bench), `--mode perf`) holds arrays of about
-10⁹ elements of a dozen element types (`double`, `float`, `int`, `long`, `std::complex`,
-structures, `bool`...). Each one is filled so that most of it is zero or one of a few repeated
-values and the rest varied data, then rewritten piece by piece over the 2,000 iterations of a
-compute loop. Memory of the whole process at the end of the run, measured exactly
-([docs/performance_measurement.md](docs/performance_measurement.md)), on Grace with 64 threads:
-
-| variant | static chunks of 256 elements (`_256`) | dynamic chunks (`_dyn`): from 64, adaptive re-chunk |
-|---|---|---|
-| Chunk2A | 7.26 GB | 6.0 GB |
-| Chunk2 | 17.3 GB | 16.3 GB |
-| Chunk (v1) | 40.2 GB | 40.3 GB |
-| `std::vector` (`shrink_bench_vector_perf`) | 125.9 GB | — |
-
-For scale, the same benchmark on `std::vector`s uses 125.9 GB, measured the same way; their
-elements alone are about 100 GB. The gap between the variants is the share of the data each one
-can compress: v1 only the zero runs, Chunk2 one more value per array, Chunk2A every run of a
-repeated value. On data where every chunk holds varied values, there is nothing to compress and
-the arrays cost a little more than a `std::vector`.
-[docs/variants.md](docs/variants.md) explains what each one costs and which one to choose.
-`ArrayChunkBits` stores `bool` one bit per element (Chunk2 builds).
-
-The time of an access, measured by [examples/access_cost](examples/access_cost) in the same
-binary as a `std::vector`, on Grace with 64 threads, with loops that do nothing but access (the
-worst case): a read costs about 1.9 times the vector's (2.6 to 2.9 times at random indices), a
-rewrite 7 times with v1, 12 times with Chunk2A, 16 times with Chunk2. On one thread the read gap
-is about 4 times, mostly because the loop over the vector is vectorised and the one over the
-array is not. In a real code, the computation around the accesses absorbs part of this cost.
-
-## Alternatives, and when to prefer them
-
-shrink-array is a drop-in replacement for a `std::vector` that the program keeps reading and
-writing in place, from OpenMP threads: same index space, same `[]`, no loss, and every repeated
-value is compressed chunk by chunk (Chunk2A), not only zero. Other structures save memory on
-other data, and are the better choice there:
-
-| alternative | what it does | prefer it when |
-|---|---|---|
-| sparse formats (CSR / COO, Eigen SparseMatrix, PETSc `Mat`) | stores the non-zero entries and their indices; only zero is implicit | the data is very sparse and the computation is sparse linear algebra (SpMV, solvers); the structure changes rarely, since writing outside it means rebuilding it |
-| hash tables (`std::unordered_map`, open-addressing maps) | a key and a value per stored entry, tens of bytes each, scattered in memory | the entries are extremely few, without spatial structure, and their range is not known in advance; under threads it needs a concurrent table |
-| compressors with array access: [zfp](https://github.com/LLNL/zfp) compressed arrays, [Blosc2](https://www.blosc.org/) | compress blocks of any data, varied values included; zfp's fixed-rate arrays are lossy and offer `[]` through a block cache; Blosc2 is lossless by default, by chunk and block | the values are varied but compressible, or a controlled loss is acceptable (zfp, SZ), or the array is mostly written once and read, or stored (I/O, checkpoints): a write in the middle decompresses and recompresses a block |
-| sparse 3D grids: [OpenVDB](https://www.openvdb.org/) / NanoVDB, SPGrid, AMR libraries | a hierarchy of tiles over a 3D domain, with a background value and constant tiles | the data is a 3D field handled as geometry (narrow bands, level sets, neighbourhoods, topology operations) rather than as an array indexed by the code's own loops |
-
-The idea of a uniform chunk that keeps no buffer is close to OpenVDB's constant tiles; what
-shrink-array adds is that it stays a flat array: the loops, the indexing and the parallel
-writes of a code written for `std::vector` are kept as they are. Where every chunk holds varied
-values, none of these structures helps much except a compressor, and shrink-array costs a little
-more than the `std::vector`.
-
-## Requirements
-
-- **Linux**, x86-64 or aarch64. The library relies on Linux system calls (`membarrier`,
-  `madvise`, `mincore`) and on `/proc`.
-- A **C++20** compiler: GCC 13 or 14 and Clang 18 are tested; the build also covers oneAPI
-  (`icpx`), AOCC and NVHPC. With Clang the build links libc++ by default (`-DUSE_LIBCXX=OFF`
-  for libstdc++).
-- **CMake 3.20** or later.
-- **OpenMP**, optional (`-DOMP=ON`). A program that uses the arrays from OpenMP regions needs a
-  library built with it. Thread identity is the OpenMP rank: use the arrays from OpenMP
-  threads, not from `std::thread`, and set `OMP_NUM_THREADS` (or `CHUNK_THREAD_CAPACITY`) to the
-  largest team before the first array.
-- **OMPT**: with Clang or oneAPI the OpenMP runtime has the OMPT interface, and the library hooks
-  the start and end of the parallel regions itself. GCC's `libgomp` has none: the program then
-  marks its regions -- `begin_parallel_phase()` by every thread at the top of a region,
-  `finalize_parallel_phase()` once after it -- or opens them with `parallel_phase()`, which
-  does both.
-- Python 3, for the source checks run by `ctest` (optional).
-
-## Build and install
-
-```shell
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOMP=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
-cmake --build build
-ctest --test-dir build
-cmake --install build
-```
-
-| option | default | effect |
-|---|---|---|
-| `OMP` | `OFF` | build with OpenMP |
-| `CHUNK_STATIC_SIZES` | `256;1024` | the compile-time chunk sizes built, one library per size and variant |
-| `CHUNK_VARIANTS` | `chunk;chunk2;chunk2a` | the variants built (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`); the examples, benchmarks and harnesses of a variant left out are not built |
-| `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen, and can change, at run time (`_dyn`) |
-| `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
-| `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` at the top level | the examples, the benchmark and the validation harnesses (the harnesses in Debug, `CHECK_OPTIM` or sanitizer builds, or with `-DCHUNK_BUILD_VALIDATION=ON`) |
-| `SHRINK_ARRAY_BUILD_TESTS` | `ON` at the top level | register the tests with `ctest` |
-
-The user settings: [docs/environment_variables.md](docs/environment_variables.md). The developers'
-switches (tuning, traces, benchmark, debugging options, build scripts):
-[docs/developer_settings.md](docs/developer_settings.md).
-
-### With Spack
-
-The recipe is in the repository ([spack/spack_repo/shrink_array](spack/spack_repo/shrink_array),
-Spack 1.x):
-
-```shell
-spack repo add <clone>/spack/spack_repo/shrink_array
-spack install shrink-array +openmp sizes=256,1024 %gcc@15
-```
-
-Its variants are the options above: `+openmp` (`OMP`), `sizes=` (`CHUNK_STATIC_SIZES`), `+dyn`
-(`CHUNK_BUILD_DYN`), `~fast_alloc` (`CHUNK_STD_ALLOC`), `+stats`, `+checks` (`CHECK_OPTIM`),
-`+second_value_indexed`, `+examples`; `spack info shrink-array` lists them. The versions are the
-branches (`main`, `cpp23`, `develop`), fetched from GitHub with your own git
-credentials; `spack develop` builds a local clone instead.
-
-## Use it from CMake
-
-After an install:
-
-```cmake
-find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
-target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
-```
-
-Or from the sources, as part of your own build. Only the libraries are built then -- no
-examples, no tests -- and nothing is written into your cache:
-
-```cmake
-add_subdirectory(shrink-array)              # or FetchContent_Declare(shrink_array GIT_REPOSITORY <url> GIT_TAG <tag>)
-                                            #    FetchContent_MakeAvailable(shrink_array)
-target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
-```
-
-`chunk::chunk_v2a` is Chunk2A at the first static size; `chunk::chunk_v2a_1024` and
-`chunk::chunk_v2a_dyn` pick another size, `chunk::chunk_v1` and `chunk::chunk_v2` another
-variant.
+*The project is `shrink-array` (repository, Spack package); the C++ namespace is
+`shrink_array`; the installed CMake package is `chunk` (`find_package(chunk)`, targets
+`chunk::…`).*
 
 ## A first program
 
@@ -197,136 +52,139 @@ int main()
 }
 ```
 
-The complete version, which also checks what it reads back, is
-[examples/getting_started](examples/getting_started/getting_started.cpp), and
-[docs/getting_started.md](docs/getting_started.md) walks through it.
+Link it with `chunk::chunk_v2a` (see [Install](#install)). The complete version, which checks
+what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp);
+[docs/getting_started.md](docs/getting_started.md) walks through it, then through the rules
+below.
 
-## Using the arrays
+## How it works
 
-### Element types
+An array is cut into **chunks** of `S` consecutive elements (`S` a power of two or a multiple
+of 64). A chunk whose elements all hold one constant keeps no buffer: it points to a shared
+buffer of that constant and costs a few bytes of metadata. Three variants decide which
+constants count:
 
-An array holds any type that is **trivially copyable**, **equality comparable** and **default
-constructible**: every arithmetic type, `bool`, `std::complex`, enums, `std::array` of those and
-any aggregate of them. Nothing is declared up front and nothing needs calling first: each array registers its element
-type when the first one is constructed, global and `static` arrays included.
+| variant | class | a chunk is compressed when it is uniform at… |
+|---|---|---|
+| Chunk (v1) | `ArrayChunk<T>` | `T{}` (zero) only |
+| Chunk2 | `ArrayChunk2<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| Chunk2A | `ArrayChunk2A<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
 
-```cpp
-struct Point { double x, y, z; auto operator<=>(const Point&) const = default; };
-shrink_array::ArrayChunk2A<Point> pts(n);   // compresses runs of {0,0,0} and of any repeated point
+The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are chosen by the
+library you link: `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
+[docs/variants.md](docs/variants.md) says what each one costs;
+[docs/algo_chunk2.md](docs/algo_chunk2.md) how reads, writes and compression run side by side.
+
+## In numbers
+
+`shrink_bench` ([examples/shrink_bench](examples/shrink_bench), `--mode perf`): arrays of about
+10⁹ elements of a dozen types, mostly zero or a few repeated values, rewritten piece by piece
+over 2,000 iterations. Whole-process memory at the end, on Grace, 64 threads
+([how it is measured](docs/performance_measurement.md)):
+
+| | static chunks of 256 (`_256`) | dynamic chunks (`_dyn`) |
+|---|---|---|
+| Chunk2A | **7.26 GB** | **6.0 GB** |
+| Chunk2 | 17.3 GB | 16.3 GB |
+| Chunk (v1) | 40.2 GB | 40.3 GB |
+| `std::vector` | 125.9 GB | — |
+
+The price is access time. In loops that do nothing but access (the worst case,
+[examples/access_cost](examples/access_cost)), a read costs about 1.9 times a vector's, a
+rewrite 7 to 16 times depending on the variant; in a real code the computation around the
+accesses absorbs part of it.
+
+**Use it** on data that is mostly zero or made of runs of a few values: sparse fields, material
+masks, multi-material quantities, flags. **Don't** on data where every chunk holds varied
+values: there it costs a little more memory than a `std::vector`, and is slower. Sparse
+formats, hash tables, zfp / Blosc2 or OpenVDB may fit better:
+[docs/alternatives.md](docs/alternatives.md) compares them.
+
+## Install
+
+Requirements: **Linux** (x86-64 or aarch64), a **C++20** compiler (GCC 13 or 14 and Clang 18
+tested; oneAPI, AOCC and NVHPC built), **CMake 3.20**, and optionally **OpenMP**.
+
+```shell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOMP=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
+cmake --build build
+ctest --test-dir build
+cmake --install build
 ```
 
-A type owning a resource (`std::string`, anything whose destructor matters) is refused at
-compile time, with the contract in the error (`ArrayChunkElement`). The chunks are raw memory,
-copied, parked and replaced by a shared constant buffer without ever running a constructor or
-a destructor. Chunk2 orders its second values and asks a floating-point aggregate for an
-`operator<` (a defaulted `operator<=>` provides it).
+Then, in your project:
 
-### What of `std::vector` is there
+```cmake
+find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
+target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+```
 
-- **There:** `operator[]`, `at`, `front`, `back`; `size`, `empty`, `capacity`, `reserve`;
-  `resize`, `clear`, `assign`, `swap`, `shrink_to_fit`; `push_back`, `emplace_back`,
-  `pop_back`; const random-access iterators (`begin`/`end`, `rbegin`/`rend`, range-for,
-  `std::lower_bound`); the `(first, last)` and `{a, b, c}` constructors; deep copy and move.
-  `shrink_to_fit()` also folds every chunk that has become constant, and `compress()` runs a
-  full compression pass on demand.
-- **Not there, by construction:** `data()` (a compressed chunk has no buffer), mutable iterators
-  and `T&` on an element, `insert` / `erase` in the middle, and hence an in-place `std::sort`
-  (sort a copy, then `assign` it back).
-- The index type is `int` by default: `ArrayChunk2A<T, long>` for more than 2³¹ elements.
+`add_subdirectory(shrink-array)` or `FetchContent` work too (libraries only, nothing written
+into your cache). With Spack, the recipe is in the repository:
 
-[docs/api.md](docs/api.md) lists every call, by task, on one page.
+```shell
+spack repo add <clone>/spack/spack_repo/shrink_array
+spack install shrink-array +openmp sizes=256,1024 %gcc@15
+```
 
-### The write proxy
+The CMake options (`OMP`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,
+`CHUNK_STD_ALLOC`...) and the environment variables:
+[docs/environment_variables.md](docs/environment_variables.md).
 
-The non-const `operator[]` returns a *proxy*, not a `T&`: a handle on the element that reads it
-on conversion and routes every write through the compression machinery.
+## Good to know
 
-- `T v = a[i];` takes the value; `auto v = a[i];` keeps the proxy, which then follows the
-  element. Code ported from `std::vector` wants `T`, not `auto`: a use of such a `v` does not
-  compile (`internal/element_ref.h`).
-- `std::printf("%f", a[i])`, `std::format("{}", a[i])`, `std::max(a[i], 2.0)` would get the
-  proxy, not the value, and do not compile: write `double(a[i])`.
-- `a[i] += x;` and the other compound operators return a proxy; discarding it, as here, lets the
-  library defer the operation at no cost. `a[i]++` returns the old value as a `T`.
-- A proxy holds references into the array's chunks: anything that rebuilds them -- `resize`,
-  `reserve`, `shrink_to_fit`, `clear`, `assign`, `swap`, an assignment to the array, a re-chunk
-  -- invalidates it. Keep proxies short-lived.
+- **`T v = a[i];`, not `auto`**: the non-const `[]` returns a write proxy, not a `T&`; pass
+  `double(a[i])` to `printf`, `std::format` or `std::max`.
+- **Threads**: different elements need no synchronisation, even in the same chunk; anything that
+  rebuilds the storage (`resize`, `shrink_to_fit`, `assign`, a re-chunk) is a sequential point.
+  Use the arrays from OpenMP threads, with `OMP_NUM_THREADS` set before the first array;
+  without OMPT (GCC's `libgomp`), open the regions with `parallel_phase()`.
+- **Not there, by construction**: `data()` (a compressed chunk has no buffer), `T&` and mutable
+  iterators, `insert` / `erase` in the middle.
+- **Faster bulk writes**: `fill_range`, `copy_range` and their `_mt` versions decide once per
+  chunk instead of once per element.
 
-### Threads
+Every call, by task: [docs/api.md](docs/api.md).
 
-Under OpenMP the contract is `std::vector`'s, element by element:
+## In progress
 
-- **Different elements** need no synchronisation, even when they share a chunk.
-- **The same element** accessed from several threads must be ordered by the program (a barrier,
-  a `critical` section, an atomic flag with release/acquire). Ordered, it behaves as on a
-  `std::vector`: a write the library deferred is applied before any later access the program
-  ordered after it.
-- **Everything that rebuilds the storage** -- the operations that invalidate proxies, re-chunks
-  included -- is a sequential point: call it outside any parallel region.
+Two development branches, not in a release yet:
 
-The write path takes no lock: writers and compressors exclude each other with an asymmetric
-Dekker handshake (a plain store for the writer, a `membarrier()` call for the rare compressor),
-and a write that meets a compressor on its chunk is deferred and replayed, never lost
-([docs/synchronisation_dekker.md](docs/synchronisation_dekker.md)).
+- **`threads` -- OpenMP becomes optional.** The library's own parallel work goes through a
+  backend chosen at build time: OpenMP (unchanged), a pool of C++ threads (std::jthread), or serial;
+  no OpenMP pragma is left outside one backend file. The pool backend runs today with the
+  application on one thread; arrays driven from the application's own `std::thread`s (or TBB)
+  come next. Plan and status:
+  [docs/threading_backends.md](https://github.com/cea-hpc/shrink-array/blob/threads/docs/threading_backends.md).
+- **`cpp23` -- C++23 and `mdspan`.** A multidimensional view on any array: `f[i, j]` goes
+  through the same write proxy, and a tiled layout (16 x 16 tiles for 256-element chunks) makes
+  a uniform 2D or 3D region compress whatever its width. Needs GCC 14 or Clang 18.
+  [docs/mdspan.md](https://github.com/cea-hpc/shrink-array/blob/cpp23/docs/mdspan.md).
 
-### Filling ranges
+`develop` is merged into both as it moves; `cpp23` is also a Spack version
+(`spack install shrink-array@cpp23`).
 
-`chunk/array_chunk_range_ops.h` decides once per chunk instead of once per element:
-`fill_range(a, first, last, v)`, `copy_range(a, first, last, src_first)`, and `fill_range_mt`,
-`copy_range_mt`, `transform_range_mt` for several threads writing disjoint ranges at once.
-
-### Adaptive chunk size
-
-In the `_dyn` libraries the chunk size of an array is chosen, and can change, at run time:
-`a.rechunk_to(n)` re-chunks one array, and a `RechunkDecider` (`chunk/rechunk_decider.h`),
-driven by `ChunkSizeAdvisor` estimates, decides tick after tick whether a re-chunk is worth it.
-See [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md).
-
-## Examples and tools
-
-- [examples/getting_started](examples/getting_started): the first program above, complete.
-- [examples/simple_array](examples/simple_array): the same computation on a `std::vector` and on
-  a compressed array, to compare time and memory.
-- [examples/multi-mat](examples/multi-mat): multi-material fields, each material in compressed
-  arrays or in `std::vector`s, with loops written once for both
-  ([Loops.h](examples/multi-mat/Loops.h)).
-- [examples/shrink_bench](examples/shrink_bench): the reference benchmark -- eighteen arrays of
-  different element types under a compute loop, `--mode check` against `std::vector` reference
-  files, `--mode perf` for timing.
-- [examples/validation](examples/validation): one harness per property (compression round trip,
-  deferred writes, re-chunk, read/reclaim, pool accounting, nested regions...), run by `ctest`.
-- [examples/advisor_demo](examples/advisor_demo) and
-  [examples/variant_compare](examples/variant_compare): the chunk-size advisor against real sizes,
-  and Chunk2 against Chunk2A on one workload.
-- [examples/access_cost](examples/access_cost): the time per element of six access patterns
-  (sequential, random and constant reads, overwrites, first writes, read-modify-write) on a
-  `std::vector` and on the array, in the same binary; `python/access_cost.py` runs it over rounds
-  and thread counts.
-- [python/shrink_gui](python/shrink_gui): a window on the laptop to submit the build, the tests
-  and the benchmark on the cluster and follow them ([docs/shrink_gui.md](docs/shrink_gui.md)).
-
-`simple_array` and `multi-mat` work on arrays of 10⁹ elements: their `ctest` needs a compute
-node (24 GB for the `std::vector` version of `simple_array`) and is killed on a laptop.
-
-## Documentation
+## Going further
 
 | I want to… | read |
 |---|---|
-| install, link from CMake, write a first program, follow the OpenMP rules | [docs/getting_started.md](docs/getting_started.md) |
+| install, link, write a first program, follow the OpenMP rules | [docs/getting_started.md](docs/getting_started.md) |
 | find a call | [docs/api.md](docs/api.md) |
 | choose a variant | [docs/variants.md](docs/variants.md) |
+| compare with sparse formats, compressors, sparse grids | [docs/alternatives.md](docs/alternatives.md) |
 | understand reads, writes, in-flight compression, deferred writes | [docs/algo_chunk2.md](docs/algo_chunk2.md) |
+| know why the write path needs no lock | [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |
-| tune the library or the build | [docs/environment_variables.md](docs/environment_variables.md) |
 | measure memory and time reliably | [docs/performance_measurement.md](docs/performance_measurement.md) |
 | submit and follow runs on the cluster from a window | [docs/shrink_gui.md](docs/shrink_gui.md) |
 | contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
-Every document also exists in French; the index is [docs/README.md](docs/README.md). What changed
-from one version to the next, and the versioning policy: [CHANGELOG.md](CHANGELOG.md).
+Examples: [simple_array](examples/simple_array) (the same computation on a `std::vector` and on
+an array), [multi-mat](examples/multi-mat) (multi-material fields, loops written once for both),
+[validation](examples/validation) (one harness per property, run by `ctest`). Every document
+exists in French ([docs/README.md](docs/README.md)); the changes from one version to the next:
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-Apache License 2.0, see [LICENSE](LICENSE).
-
-Copyright CEA
+Apache License 2.0, see [LICENSE](LICENSE). Copyright CEA.
