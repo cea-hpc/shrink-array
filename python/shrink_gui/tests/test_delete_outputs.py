@@ -99,3 +99,18 @@ def test_shared_bench_dir_newer_run_is_refused(site):
 def test_no_output_dir_announced(site):
     _fake_run(site, "n1", "nothing here", "2026-10-08 10:00:00")
     assert "pas de dossier de sortie" in _delete(site, "n1", MULTI)["error"]
+
+
+def test_delete_many_in_one_call(site):
+    out_a = site.home / "out_a"
+    out_a.mkdir()
+    (out_a / "timings_summary.csv").write_text("x\n")
+    _fake_run(site, "m1", f"Outputs, CSV and log in {out_a}", "2026-10-16 10:00:00")
+    _fake_run(site, "m2", "nothing announced", "2026-10-16 10:01:00")
+    items = [{"id": "m1", "own": MULTI}, {"id": "m2"}, {"id": "nope"}, {"id": "../x"}]
+    blob = base64.b64encode(json.dumps(items).encode()).decode()
+    res = site.helper("delete_many", "~/shrink_runs", blob)["results"]
+    assert res["m1"]["ok"] and str(out_a) in res["m1"]["removed"] and not out_a.exists()
+    assert res["m2"] == {"ok": True, "removed": []}
+    assert "n'est pas un run" in res["nope"]["error"] and "invalide" in res["../x"]["error"]
+    assert not (site.runs / "m1").exists() and not (site.runs / "m2").exists()

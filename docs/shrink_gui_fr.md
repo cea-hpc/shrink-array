@@ -109,6 +109,12 @@ run tourne, puis la durée totale une fois fini ; l'infobulle donne le début, l
 durée max demandée), dernière ligne du log. Une notification signale un run qui se
 termine, et la première erreur d'un run en cours.
 
+Plusieurs runs se sélectionnent d'un coup : Ctrl / Maj + clic, Ctrl+A, ou le bouton
+« Sélection » (tout, les runs finis, les runs en échec, aucun). « Arrêter » arrête alors tous
+ceux qui sont actifs, « Supprimer » supprime tous ceux qui sont terminés après une seule
+confirmation (en un seul appel sur le calculateur ; les actifs sont laissés), « Récupérer les
+résultats » les copie l'un après l'autre. Le log et les onglets suivent la ligne courante.
+
 | onglet | contenu |
 |---|---|
 | Log | le log du run sélectionné, suivi en direct ; recherche avec Ctrl+F |
