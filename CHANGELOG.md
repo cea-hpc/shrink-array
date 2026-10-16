@@ -59,6 +59,24 @@ the tag's checksum to the recipe.
   buffers actually materialised. `CHUNK_RECLAIM_PHASE_KEEP=K` gives the empty
   slabs back to the system after every compression pass, keeping K per
   allocator instance (off by default: it costs page faults).
+- `ArrayChunk2A<T>::second_value_stats()`: where the type's second-value
+  identifiers stand -- in use against the capacity (running out stops the run),
+  free, the reclaims run and what they freed, the reclaims refused by cause
+  (parallel region, re-chunk, degraded index), and the degradation. A refused
+  `reclaim_second_values()` returns 0 as one with nothing to free does; this
+  tells them apart. Relaxed reads, callable at any time. shrink_bench prints it
+  per type with `CHUNK_CST2_RECLAIM=N`.
+- Validation coverage: the round-trip harnesses run at every static size
+  built (`CHUNK_STATIC_SIZES`, so 1024 too), not the default one only;
+  `index64_validation_*_dyn_np2` starts at 384, a size that is not a power of
+  two (the magic-number index split, a re-chunk 384 -> 768, past 2^31 at 768);
+  `cst2_reclaim_validation` runs at dyn as well and reclaims across a re-chunk;
+  `compile_all.sh` builds `omp-llvm-check-sv-indexed`
+  (`CHUNK_SECOND_VALUE_INDEXED`, CHECK_OPTIM, so with its harnesses; Chunk2A
+  only), also in the `multi_launch_stress.py` build lists.
+- CMake option `CHUNK_VARIANTS` (default `chunk;chunk2;chunk2a`): the variants
+  built. The libraries, examples, benchmarks, harnesses and tests of a variant
+  left out are not built nor registered.
 
 ### Fixed
 

@@ -185,7 +185,7 @@ class ErrorsTab:
         rid = run["id"]
         prog = PROGRAMS.get(run["meta"].get("program"), {})
         opts = {"files": prog.get("errors_files") or [], "cases": prog.get("failed_cases"),
-                "full_logs": prog.get("full_logs")}
+                "full_logs": prog.get("full_logs"), "fail_re": prog.get("fail_re")}
         self.err_busy = True
         if not self.err_view.toPlainText():
             self.err_note.setText("chargement…")

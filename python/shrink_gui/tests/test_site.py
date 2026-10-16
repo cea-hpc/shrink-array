@@ -98,6 +98,23 @@ def test_qos_reads_sbatch_directives():
     assert qos.choose(rows, "cpu", 64, 3 * 3600)[0] == "normal"
 
 
+def test_qos_star_row_with_max_sub_0_is_closed():
+    # inti's ccc_mqinfo: long is open on gh200-bxi only, xlong on milan-bxi
+    # ("long" on milan-bxi: "Invalid qos specification").
+    mq = ("Name     Partition  Priority  MaxCPUs  SumCPUs  MaxNodes  MaxRun  MaxSub        MaxTime\n"
+          "-------  ---------  --------  -------  -------  --------  ------  ------  -------------\n"
+          "long             *        20        0        0                         0     3-00:00:00\n"
+          "long     gh200-bxi        20     2880     2880                       100     3-00:00:00\n"
+          "normal           *        20                                         100     1-00:00:00\n"
+          "xlong            *        20        0        0                         0   365-00:00:00\n"
+          "xlong    milan-bxi        20      128      128                       100   365-00:00:00\n")
+    rows = qos.parse_mqinfo(mq)
+    assert qos.limits(rows, "long", "milan-bxi") is None
+    assert qos.limits(rows, "normal", "milan-bxi")["max_sub"] == 100
+    assert qos.choose(rows, "milan-bxi", 64, 2 * 86400)[0] == "xlong"
+    assert qos.choose(rows, "gh200-bxi", 288, 2 * 86400)[0] == "long"
+
+
 def test_site_words():
     i18n.set_site_words(sitecfg.load(SLURM).words())
     try:

@@ -887,6 +887,32 @@ int main(int argc, char* argv[])
             const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
             std::fprintf(stderr, "[cst2-reclaim @ iter %ld] %zu second value(s) freed in %.3f ms\n",
                          static_cast<long>(k_iter), freed, ms);
+            // Where each type's identifiers stand (second_value_stats()): the
+            // trend of "in use" against the capacity is the early warning of the
+            // exhaustion that stops the run; a refused reclaim freed nothing
+            // because it could not run.
+            const auto report = [](const char* name, const SecondValueStats& s)
+            {
+                if (s.handed_out == 0 && s.refused() == 0)
+                {
+                    return;
+                }
+                std::fprintf(stderr, "  %-14s %zu in use / %zu (%.2f%%), %zu free, %zu reclaim(s), %zu refused%s\n",
+                             name, s.in_use(), s.capacity,
+                             s.capacity != 0 ? 100.0 * static_cast<double>(s.in_use()) / static_cast<double>(s.capacity)
+                                             : 0.0,
+                             s.free, s.reclaims, s.refused(), s.degraded ? "  DEGRADED: reclaims refused" : "");
+            };
+            report("double", ArrayChunk2A<double, Int>::second_value_stats());
+            report("float", ArrayChunk2A<float, Int>::second_value_stats());
+            report("int", ArrayChunk2A<int, Int>::second_value_stats());
+            report("long", ArrayChunk2A<long, Int>::second_value_stats());
+            report("unsigned long", ArrayChunk2A<unsigned long, Int>::second_value_stats());
+            report("short", ArrayChunk2A<short, Int>::second_value_stats());
+            report("unsigned char", ArrayChunk2A<unsigned char, Int>::second_value_stats());
+            report("complex_double", ArrayChunk2A<complex_double, Int>::second_value_stats());
+            report("Point3", ArrayChunk2A<Point3, Int>::second_value_stats());
+            report("Cell", ArrayChunk2A<Cell, Int>::second_value_stats());
         }
     };
 

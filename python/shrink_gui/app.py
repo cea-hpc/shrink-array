@@ -480,7 +480,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
                     if j == self.COL_STATUS:
                         s = run["status"]
                         color = ("#1e8449" if s == "fini" and run["code"] == 0 else
-                                 "#c0392b" if s == "fini" or s.startswith("terminé") else
+                                 "#c0392b" if s == "fini" or s.startswith(("terminé", "soumission refusée")) else
                                  "#2471a3" if s in ("en cours", "démarrage") else
                                  "#7d3c98" if s == "en attente" else "#b9770e")
                         it.setForeground(QColor(color))

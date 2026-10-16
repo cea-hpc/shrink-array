@@ -351,8 +351,20 @@ void Proxy2A<T>::ensure_writable_storage()
     }
     const bool is_val2 = is_cst_val2();
 
-    // The cached per-chunk pointers are armed here, never earlier.
-    set_info_on_chunk();
+    // The cached per-chunk pointers are armed here, never earlier. Under fast
+    // block compression the write engine already armed num_tab and the
+    // queued-flag pointer (write_with_optional_lock_info's lbd_info, as
+    // handle_no_bool_assignment() relies on): only the type-of-constant slot
+    // and the second value are left -- set_info_on_chunk() redid both lookups.
+    if constexpr (chunk_config::use_fast_block_compression)
+    {
+        ptr_type_cst = &tab_type_cst_val[num_tab][num_chunk];
+        set_ptr_second_value();
+    }
+    else
+    {
+        set_info_on_chunk();
+    }
 
     // Allocate from THIS array's chunk-size pool: the per-thread size may be
     // stale (left by an op on another array), and a smaller buffer written at
@@ -784,11 +796,22 @@ void Proxy2A<T>::execute_simple_operation(ModifyFn modify_fn)
 {
     ensure_writable_storage();
 
-    const in_t<T> v_old = read_values();
+    // Under fast block compression the body (arithmetic_assign's, the only
+    // caller) marks from its own (old, new) pair, read in the same session:
+    // marking here as well read the element twice more and ran the same test
+    // a second time.
+    if constexpr (chunk_config::use_fast_block_compression)
+    {
+        modify_fn();
+    }
+    else
+    {
+        const in_t<T> v_old = read_values();
 
-    modify_fn();
+        modify_fn();
 
-    mark_for_compression_if_needed_with_value(v_old, read_values());
+        mark_for_compression_if_needed_with_value(v_old, read_values());
+    }
 }
 
 /**

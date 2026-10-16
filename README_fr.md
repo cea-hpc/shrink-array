@@ -62,6 +62,14 @@ un peu plus qu'un `std::vector`.
 [docs/variantes_fr.md](docs/variantes_fr.md) explique ce que coûte chacune et laquelle choisir.
 `ArrayChunkBits` stocke des `bool` à un bit par élément (builds Chunk2).
 
+Le temps d'un accès, mesuré par [examples/access_cost](examples/access_cost) dans le même binaire
+qu'un `std::vector`, sur Grace avec 64 threads et des boucles qui ne font qu'accéder (le pire
+cas) : une lecture coûte environ 1,9 fois celle du vector (2,6 à 2,9 fois à des indices
+aléatoires), une réécriture 7 fois en v1, 12 fois en Chunk2A, 16 fois en Chunk2. Sur un seul
+thread l'écart en lecture est d'environ 4 fois, surtout parce que la boucle sur le vector se
+vectorise et pas celle sur le tableau. Dans un code réel, le calcul fait autour des accès absorbe
+une partie de ce surcoût.
+
 ## Alternatives, et quand les préférer
 
 shrink-array remplace directement un `std::vector` que le programme continue de lire et
@@ -116,6 +124,7 @@ cmake --install build
 | `OMP` | `OFF` | compiler avec OpenMP |
 | `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `pool` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `256;1024` | les tailles de chunk fixées à la compilation, une bibliothèque par taille et par variante |
+| `CHUNK_VARIANTS` | `chunk;chunk2;chunk2a` | les variantes construites (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) ; les exemples, bancs et harnais d'une variante écartée ne sont pas construits |
 | `CHUNK_BUILD_DYN` | `ON` | compiler aussi les bibliothèques dont la taille de chunk est choisie, et peut changer, à l'exécution (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allouer les tampons des chunks avec l'allocateur standard au lieu des `fast_allocators` fournis (utile sous AddressSanitizer) |
 | `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` au premier niveau | les exemples, le banc et les harnais de validation (les harnais dans les builds Debug, `CHECK_OPTIM` ou avec sanitizer, ou avec `-DCHUNK_BUILD_VALIDATION=ON`) |

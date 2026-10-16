@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """QoS: ccc_mqinfo's table, and the QoS a job gets."""
 import pytest
 

@@ -39,6 +39,22 @@ set(CHUNK_STATIC_SIZES "256;1024" CACHE STRING
     "Semicolon list of compile-time chunk sizes to build (powers of two or multiples of 64).")
 option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per variant." ON)
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
+# The variants built: chunk (ArrayChunk, chunk_v1_*), chunk2 (ArrayChunk2,
+# chunk_v2_*), chunk2a (ArrayChunk2A, chunk_v2a_*). The examples, benchmarks
+# and harnesses of a variant left out are not built nor registered as tests. A
+# build that checks one variant's option (CHUNK_SECOND_VALUE_INDEXED is
+# Chunk2A's) needs only that one; trim it during development too.
+set(CHUNK_VARIANTS "chunk;chunk2;chunk2a" CACHE STRING
+    "Semicolon list of the variants to build: chunk, chunk2, chunk2a.")
+foreach(_v IN LISTS CHUNK_VARIANTS)
+  if (NOT _v MATCHES "^(chunk|chunk2|chunk2a)$")
+    message(FATAL_ERROR "CHUNK_VARIANTS: unknown variant '${_v}' (chunk, chunk2, chunk2a)")
+  endif()
+endforeach()
+if (NOT CHUNK_VARIANTS)
+  message(FATAL_ERROR "CHUNK_VARIANTS is empty: name at least one of chunk, chunk2, chunk2a")
+endif()
+message(STATUS "CHUNK_VARIANTS = ${CHUNK_VARIANTS}")
 
 # --- Aggressive vs release compression scheduling ------------------------
 option(HAVE_AGGRESSIVE_COMPRESSION "Enable aggressive-compression scheduling mode." OFF)
@@ -540,8 +556,20 @@ chunk_add_variant(chunk_vector "" "" FALSE)
 
 # The three shrink variants, each in every static size + an optional dyn lib.
 # Naming: chunk_v1_64, chunk_v1_256, ..., chunk_v2a_dyn.
-set(_chunk_variant_names   chunk_v1 chunk_v2 chunk_v2a)
-set(_chunk_variant_defines "CHUNK_VARIANT_V1=1" "CHUNK_VARIANT_V2=1" "CHUNK_VARIANT_V2A=1")
+# Only those of CHUNK_VARIANTS.
+set(_chunk_variant_names   "")
+set(_chunk_variant_defines "")
+foreach(_pair "chunk:chunk_v1:CHUNK_VARIANT_V1=1" "chunk2:chunk_v2:CHUNK_VARIANT_V2=1"
+              "chunk2a:chunk_v2a:CHUNK_VARIANT_V2A=1")
+  string(REPLACE ":" ";" _f "${_pair}")
+  list(GET _f 0 _short)
+  if (_short IN_LIST CHUNK_VARIANTS)
+    list(GET _f 1 _lib)
+    list(GET _f 2 _def)
+    list(APPEND _chunk_variant_names ${_lib})
+    list(APPEND _chunk_variant_defines ${_def})
+  endif()
+endforeach()
 
 list(LENGTH _chunk_variant_names _nvar)
 math(EXPR _nvar_last "${_nvar} - 1")
@@ -590,7 +618,10 @@ endforeach()
 # "nothing forbids a build from selecting more than one"); what the second
 # define costs v1 is the raw fill of its range ops (raw_fillable_v). Without
 # the OMPT tool: the example carries its own (examples/multi-mat/manage_ompt.cpp).
-chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1" ${CHUNK_DEFAULT_SIZE} FALSE NO_OMPT_TOOL)
+if ("chunk" IN_LIST CHUNK_VARIANTS AND "chunk2" IN_LIST CHUNK_VARIANTS)
+  chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1" ${CHUNK_DEFAULT_SIZE} FALSE
+                    NO_OMPT_TOOL)
+endif()
 
 # A REAL default library (not just an ALIAS), so the include directories reach the executables.
 # Default library: no variant define, default compile-time size (static_chunk_size=64), static.

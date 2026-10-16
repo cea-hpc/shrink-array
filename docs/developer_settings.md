@@ -60,7 +60,7 @@
 | `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry) |
 | `CHUNK_OMPT_STATS` | statistics of the synchronisation regions (OMPT builds) |
 | `CHUNK_CST2_PROBE` (*set*) | Chunk2A: report of the second-value registry at each pass (benchmark) |
-| `CHUNK_CST2_RECLAIM` | Chunk2A, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many (benchmark, any build) |
+| `CHUNK_CST2_RECLAIM` | Chunk2A, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
 | `ALLOC_TOKEN_REPORT` | `SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `FAST_ALLOC_TRACE` (*set*) | one `[MUNMAP]` line per emptied slab that a pool's reserve does not keep and that is freed (silent by default) |
 

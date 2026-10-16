@@ -50,11 +50,37 @@ hors de toute région parallèle, et il invalide les proxys du tableau.
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
 | compression **(S)** | `compress()` | une passe de compression complète, immédiate (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `ArrayChunk2A<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`ArrayChunk2A`) |
+| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `ArrayChunk2A<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`ArrayChunk2A`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas |
 | statistiques | `stats()`, `get_nb_chunk_written()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) |
 
 Chunk2 seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_second_value()`.
+
+**`reclaim_second_values()` : une précondition sur tout le type.** Les autres opérations **(S)**
+concernent un tableau ; celle-ci est statique et libère les secondes valeurs de tous les
+`ArrayChunk2A<T>` du programme, quel que soit leur type d'index. Pendant qu'elle s'exécute,
+**aucun thread ne doit écrire dans un `ArrayChunk2A<T>` ni le compresser**, pas seulement dans
+les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propres
+`ArrayChunk2A<double>`, le point séquentiel doit valoir pour tous.
+
+- *Hors contrat, l'erreur est silencieuse* : un chunk compressé pendant la libération peut
+  garder un identifiant qu'elle libère puis attribue à une autre valeur ; ce chunk lit alors
+  l'autre valeur, sans plantage ni message.
+- *Ce qui est refusé, dans tous les builds* : un appel dans une région parallèle du thread
+  appelant, pendant un re-chunk, ou quand l'index des secondes valeurs est dégradé (elle renvoie
+  0). Les threads que l'appel ne voit pas ne sont pas détectés : un pool `std::thread` ou TBB,
+  ou une équipe OpenMP lancée par un autre thread hôte.
+- *Ce qui le détecte* : les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent sur toute
+  recherche ou tout enregistrement de seconde valeur qui chevauche une libération. Faites
+  tourner l'application une fois dans un build de contrôle avec ses appels de libération ; les
+  builds release ne paient rien et ne vérifient rien.
+- *Surveiller les identifiants* : `ArrayChunk2A<T>::second_value_stats()` (statique, à tout
+  moment, depuis tout thread) renvoie les identifiants en usage face à la capacité -- les épuiser
+  arrête le run --, les libres, les libérations faites et ce qu'elles ont libéré, les libérations
+  refusées par cause (un appel refusé renvoie 0 comme un appel qui n'a rien à libérer) et si
+  l'index est dégradé (toute libération est alors refusée et les identifiants ne font que
+  croître). Échantillonné aux points de contrôle de l'application, `in_use()` / `capacity` est
+  l'alerte précoce.
 
 Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un tri en place.
 
