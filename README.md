@@ -1,4 +1,4 @@
-# shrink-array: your `std::vector`, without the zeros
+# shrink-array: your `std::vector`, minus the repeated values
 
 > Version française : [README_fr.md](README_fr.md).
 
