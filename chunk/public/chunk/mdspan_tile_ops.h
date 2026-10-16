@@ -146,6 +146,16 @@ tile_at(const View& f, const std::array<typename View::index_type, View::rank()>
     return t;
 }
 
+/// @brief Index in the array of tile @p t's first element: the view's base
+///        plus the mapping of the tile's origin -- k * tile_elems for a whole
+///        view, the parent's grid for a sub-view (md::submdspan).
+template <typename View, typename Tile>
+std::size_t tile_storage(const View& f, const Tile& t)
+{
+    return static_cast<std::size_t>(f.data_handle().base) +
+           static_cast<std::size_t>(std::apply([&f](auto... x) { return f.mapping()(x...); }, t.origin));
+}
+
 /// @brief Inside a parallel region, a tile must be whole chunks (see the file's warning).
 template <typename Array, typename Index>
 void check_tile_on_chunks(const Array& a, Index tile_elems, const char* who)
@@ -340,7 +350,12 @@ bool clip_box(const View& f, Box& lo, Box& hi)
 template <tiled_view_of_array View>
 typename View::index_type tile_count(const View& f)
 {
-    return static_cast<typename View::index_type>(f.mapping().required_span_size() / View::mapping_type::tile_elems);
+    typename View::index_type n = 1;
+    for (const auto d : detail::tiles_per_dim(f))
+    {
+        n *= d;
+    }
+    return n;
 }
 
 /**
@@ -376,7 +391,7 @@ void for_each_tile(const View&               f,
     for (auto k = first; k < last; ++k)
     {
         const auto t       = detail::tile_at(f, dims, k);
-        const bool uniform = detail::gather(a, static_cast<std::size_t>(k) * N, buf, cst, has_uniform);
+        const bool uniform = detail::gather(a, detail::tile_storage(f, t), buf, cst, has_uniform);
         if constexpr (has_uniform)
         {
             if (uniform)
@@ -407,8 +422,9 @@ void for_each_tile(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {
  *          written in one go: fill_range() when it comes out uniform, else
  *          copy_range() -- the serial range ops outside a parallel region, the
  *          _mt ones inside (one write session per chunk, the element path's
- *          guarantees). Outside a region, on Chunk2A, fill_range() compresses a
- *          whole chunk at once (one buffer at a time). Otherwise a compressed
+ *          guarantees). Outside a region, on Chunk2A, a whole chunk that comes
+ *          out uniform takes its constant with no buffer (fill_range(), or
+ *          copy_range() for a uniform chunk of a mixed tile). Otherwise a compressed
  *          chunk that changes is materialised for the write and queued: the end
  *          of the phase, or the next compression pass, compresses it again if
  *          it is uniform.
@@ -447,7 +463,7 @@ void update_tiles(const View&               f,
     for (auto k = first; k < last; ++k)
     {
         const auto        t       = detail::tile_at(f, dims, k);
-        const std::size_t lo      = static_cast<std::size_t>(k) * N;
+        const std::size_t lo      = detail::tile_storage(f, t);
         const bool        uniform = detail::gather(a, lo, buf, cst, has_uniform);
         if constexpr (has_uniform)
         {
@@ -510,7 +526,7 @@ void update_tiles(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {}
  * @param lo first multi-index of the box, inclusive
  * @param hi last multi-index of the box, exclusive
  * @warning A fill is a write. Outside a parallel region on Chunk2A, a covered
- *          chunk is compressed at once (fill_range(): one buffer at a time).
+ *          chunk takes the value as its constant, with no buffer (fill_range()).
  *          Inside a region, a compressed chunk that changes is materialised for
  *          the write and compressed again by the end of the phase or the next
  *          pass (see update_tiles()).
@@ -584,7 +600,8 @@ void fill_box(const View&                        f,
             }
             if (whole)
             {
-                runs.add(static_cast<std::size_t>(k) * N, static_cast<std::size_t>(k + 1) * N);
+                const std::size_t s = detail::tile_storage(f, t);
+                runs.add(s, s + N);
             }
             else
             {
@@ -649,16 +666,18 @@ void fill_box(const View&                        f,
 }
 
 /**
- * @brief Set the box [@p lo, @p hi) of row-major view @p f (md::view()) to
- *        @p v: one range op per contiguous run -- a row of the box, or several
- *        rows when the box spans whole rows.
+ * @brief Set the box [@p lo, @p hi) of a strided view @p f (md::view(), or a
+ *        submdspan of one: layout_right, layout_stride) to @p v: one range op
+ *        per contiguous run -- a row
+ *        of the box, or several rows when the box spans whole rows. With a
+ *        last stride other than 1 (a sub-view taking every other column, a
+ *        layout_left view) every element is a run of its own.
  * @details The box is clipped to the view's extents. Callable in a phase,
  *          each thread on its own box (its own rows): the runs of two threads
  *          may share a chunk, which fill_range_mt() allows.
  */
 template <typename View, std::integral I>
-    requires(std::same_as<typename View::layout_type, mdns::layout_right> &&
-             !std::is_const_v<typename View::element_type> &&
+    requires(View::mapping_type::is_always_strided() && !std::is_const_v<typename View::element_type> &&
              std::same_as<typename View::accessor_type, accessor<typename View::accessor_type::array_type>>)
 void fill_box(const View&                        f,
               const std::array<I, View::rank()>& box_lo,
@@ -675,18 +694,19 @@ void fill_box(const View&                        f,
     }
     detail::range_writer<detail::array_of<View>>                       out{*f.data_handle()};
     detail::run_filler<detail::array_of<View>, detail::value_of<View>> runs{out, v};
-    std::array<Index, R> i = lo; // the last index is always lo[R - 1]: one run per i
+    const auto base = static_cast<std::size_t>(f.data_handle().base);
+    // Contiguous along the last dimension: one run per row of the box. Else
+    // one run per element (the last dimension walked too).
+    const bool           rows = f.stride(R - 1) == 1;
+    const std::size_t    walk = rows ? R - 1 : R; // dimensions walked index by index
+    std::array<Index, R> i    = lo;
     while (true)
     {
-        const auto a = static_cast<std::size_t>(std::apply([&f](auto... x) { return f.mapping()(x...); }, i));
-        runs.add(a, a + static_cast<std::size_t>(hi[R - 1] - lo[R - 1]));
-        if constexpr (R == 1)
+        const auto a =
+            base + static_cast<std::size_t>(std::apply([&f](auto... x) { return f.mapping()(x...); }, i));
+        runs.add(a, a + (rows ? static_cast<std::size_t>(hi[R - 1] - lo[R - 1]) : std::size_t{1}));
         {
-            break;
-        }
-        else
-        {
-            std::size_t r = R - 1;
+            std::size_t r = walk;
             while (r-- > 0)
             {
                 if (++i[r] < hi[r])

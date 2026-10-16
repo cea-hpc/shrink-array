@@ -131,6 +131,37 @@ same field summed element by element, 1 thread, reads at 2.8 ns per element thro
 3.3 ns through `f[i, j]` row-major and 3.5 ns through `f[i, j]` in tiles (the tiled mapping
 divides by its constant tile extents in unsigned arithmetic: shifts and masks).
 
+### Sub-views: `md::submdspan`
+
+`md::submdspan(f, slices...)` is the `submdspan` of the `mdspan` in use (`Kokkos::submdspan`, or
+`std::submdspan` where the standard library has it), with `md::full_extent`. The view's data
+handle is an `md::handle`: the array and the index in it of the sub-view's first element
+(`f.data_handle().base`); `*f.data_handle()` is still the array.
+
+```cpp
+auto f   = md::view(a, nx, ny);
+auto blk = md::submdspan(f, std::pair{3, 20}, std::pair{5, 40}); // blk[0, 0] is f[3, 5]
+auto row = md::submdspan(f, 7, md::full_extent);                 // rank 1
+
+auto g   = md::tiled_view<16, 16>(b, nx, ny);
+auto sub = md::submdspan(g, std::pair{16, 64}, std::pair{32, ny}); // tiled again
+md::update_tiles(sub, on_block, on_uniform);                       // the tiles of sub only
+```
+
+- A row-major view takes any slices (the standard layouts' own `submdspan_mapping`: the result is
+  `layout_right` or `layout_stride`). `fill_box` takes any strided view: one range op per row of
+  the box when the last stride is 1, one per element otherwise.
+- A tiled view takes rank-preserving slices of stride 1 (`full_extent`, `{first, last}`) aligned
+  on its tiles: each range starts on a tile and ends on one or at the view's extent; anything
+  else stops the program. The sub-view is a `layout_tiled` again, in its parent's tile grid: its
+  tiles are the parent's, each still one chunk, and the padding of its last tiles is the
+  parent's padding. `for_each_tile`, `update_tiles` and `fill_box` work on it as on a whole view
+  -- they read and write whole tiles, and touch nothing outside the sub-view --, in a parallel
+  phase too (`tile_count(sub)` tiles).
+
+`examples/validation/mdspan_submdspan_validation.cpp`; checked against kokkos/mdspan before and
+after its canonical slices (May 2025, October 2026).
+
 ## 4. Where `mdspan` comes from
 
 | available | used |
@@ -152,8 +183,8 @@ reports as skipped.
   (`parallel_phase()`, see [getting_started.md](getting_started.md)), no element proxy kept
   across a sequential point. In check builds `auto x = f[i, j];` does not compile, as for
   `a[i]`: write `double x = f[i, j];`.
-- It is not a pointer: `data_handle()` is the array's address, not a `T*`, and the accessor has
-  no `offset()` -- no `submdspan`, no handing the data to code that expects contiguous memory.
+- It is not a pointer: `data_handle()` is an `md::handle` (the array and an index), not a `T*`
+  -- no handing the data to code that expects contiguous memory.
 - `layout_tiled` is not strided (`is_strided()` is false) and is exhaustive only when every
   extent is a multiple of its tile; code that requires `layout_right` or a strided layout takes
   the row-major view.
@@ -162,8 +193,9 @@ reports as skipped.
 
 | file | contents |
 |---|---|
-| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::layout_tiled`, `md::view`, `md::tiled_view`, `md::tiled_size` |
+| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::view`, `md::tiled_view`, `md::tiled_size`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | writes through the view and linear read-back, compound operators, rank 3, read-only views, the tiled mapping (bijection, padding), a uniform tile is a uniform run; every variant (one ctest each, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocks, tile extents on padded edges, uniform tiles, the update against the element formula, untouched tiles stay compressed, the parallel update; every variant at 1 and 8 threads, and `mdspan_tile_ops_misaligned` (a tile smaller than a chunk refused in a parallel region) |
+| `examples/validation/mdspan_submdspan_validation.cpp` | sub-views of a row-major view (block, row, column, read-only, `fill_box`) and of a tiled view (aligned, ending at the extent, a sub-view of a sub-view; the tile operations on it, serially and in a parallel phase); every variant at 1 and 8 threads, and `mdspan_submdspan_misaligned` (a tiled slice off the tiles stops) |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | the comparisons of sections 2 and 3, and the cost of the multi-index; `mdspan_tiles 4096` for a larger field |

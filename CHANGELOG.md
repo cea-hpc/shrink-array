@@ -101,6 +101,19 @@ the tag's checksum to the recipe.
 - CMake option `CHUNK_VARIANTS` (default `chunk;chunk2;chunk2a`): the variants
   built. The libraries, examples, benchmarks, harnesses and tests of a variant
   left out are not built nor registered.
+- `md::submdspan` (the `submdspan` of the mdspan in use, with
+  `md::full_extent`): sub-views of the views of `chunk/mdspan.h`. The data
+  handle is now an `md::handle` -- the array and the index of the view's first
+  element; `*data_handle()` is still the array -- and the accessor has
+  `offset()`. A row-major view takes any slices; a tiled view takes
+  rank-preserving slices aligned on its tiles (a range starts on a tile and
+  ends on one or at the extent; anything else stops the program) and stays
+  tiled, in its parent's tile grid (`layout_tiled::mapping` gains tile strides
+  and a `submdspan_mapping`). `for_each_tile`, `update_tiles` and `fill_box`
+  work on a tiled sub-view (a tile's position comes from the mapping, not from
+  its number); `fill_box` takes any strided view. Checked against
+  kokkos/mdspan before and after its canonical slices. Harness
+  `mdspan_submdspan_validation`.
 
 ### Changed
 

@@ -134,6 +134,38 @@ le même champ sommé élément par élément, 1 thread, se lit à 2,8 ns par é
 3,3 ns par `f[i, j]` ligne par ligne et 3,5 ns par `f[i, j]` en tuiles (le mapping en tuiles
 divise par ses étendues de tuile constantes en arithmétique non signée : décalages et masques).
 
+### Sous-vues : `md::submdspan`
+
+`md::submdspan(f, tranches...)` est le `submdspan` du `mdspan` utilisé (`Kokkos::submdspan`, ou
+`std::submdspan` là où la bibliothèque standard l'a), avec `md::full_extent`. La poignée de
+données de la vue est un `md::handle` : le tableau et l'indice dans celui-ci du premier élément de
+la sous-vue (`f.data_handle().base`) ; `*f.data_handle()` est toujours le tableau.
+
+```cpp
+auto f   = md::view(a, nx, ny);
+auto blk = md::submdspan(f, std::pair{3, 20}, std::pair{5, 40}); // blk[0, 0] est f[3, 5]
+auto row = md::submdspan(f, 7, md::full_extent);                 // rang 1
+
+auto g   = md::tiled_view<16, 16>(b, nx, ny);
+auto sub = md::submdspan(g, std::pair{16, 64}, std::pair{32, ny}); // de nouveau en tuiles
+md::update_tiles(sub, on_block, on_uniform);                       // les seules tuiles de sub
+```
+
+- Une vue ligne par ligne accepte toutes les tranches (le `submdspan_mapping` des layouts
+  standard : le résultat est `layout_right` ou `layout_stride`). `fill_box` accepte toute vue à
+  pas : une range op par ligne de la boîte quand le dernier pas vaut 1, une par élément sinon.
+- Une vue en tuiles accepte des tranches qui gardent la dimension, de pas 1 (`full_extent`,
+  `{first, last}`), alignées sur ses tuiles : chaque plage commence sur une tuile et finit sur
+  une tuile ou à l'étendue de la vue ; tout le reste arrête le programme. La sous-vue est de
+  nouveau un `layout_tiled`, dans la grille de tuiles du parent : ses tuiles sont celles du
+  parent, chacune toujours un chunk, et le bourrage de ses dernières tuiles est celui du parent.
+  `for_each_tile`, `update_tiles` et `fill_box` s'y appliquent comme sur une vue entière -- ils
+  lisent et écrivent des tuiles entières et ne touchent à rien hors de la sous-vue --, en phase
+  parallèle aussi (`tile_count(sub)` tuiles).
+
+`examples/validation/mdspan_submdspan_validation.cpp` ; vérifié avec kokkos/mdspan avant et après
+ses tranches canoniques (mai 2025, octobre 2026).
+
 ## 4. D'où vient `mdspan`
 
 | disponible | utilisé |
@@ -155,9 +187,8 @@ compte comme sauté.
   OpenMP (`parallel_phase()`, voir [getting_started_fr.md](getting_started_fr.md)), aucun proxy
   d'élément gardé au-delà d'un point séquentiel. En build de contrôle `auto x = f[i, j];` ne
   compile pas, comme pour `a[i]` : écrire `double x = f[i, j];`.
-- Ce n'est pas un pointeur : `data_handle()` est l'adresse du tableau, pas un `T*`, et
-  l'accesseur n'a pas d'`offset()` -- pas de `submdspan`, pas de passage des données à du code
-  qui attend une mémoire contiguë.
+- Ce n'est pas un pointeur : `data_handle()` est un `md::handle` (le tableau et un indice), pas
+  un `T*` -- pas de passage des données à du code qui attend une mémoire contiguë.
 - `layout_tiled` n'est pas à pas constant (`is_strided()` est faux) et n'est exhaustif que si
   chaque étendue est un multiple de sa tuile ; le code qui exige `layout_right` ou
   un layout à pas prend la vue ligne par ligne.
@@ -166,8 +197,9 @@ compte comme sauté.
 
 | fichier | contenu |
 |---|---|
-| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::layout_tiled`, `md::view`, `md::tiled_view`, `md::tiled_size` |
+| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::handle`, `md::layout_tiled` (et son `submdspan_mapping`), `md::view`, `md::tiled_view`, `md::tiled_size`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | écritures par la vue et relecture linéaire, opérateurs composés, rang 3, vues en lecture seule, le mapping en tuiles (bijection, bourrage), une tuile uniforme est une suite uniforme ; toutes les variantes (un ctest chacune, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocs, étendues des tuiles sur les bords bourrés, tuiles uniformes, la mise à jour contre la formule élément par élément, les tuiles non touchées restent compressées, la mise à jour en parallèle ; toutes les variantes à 1 et 8 threads, et `mdspan_tile_ops_misaligned` (une tuile plus petite qu'un chunk refusée dans une région parallèle) |
+| `examples/validation/mdspan_submdspan_validation.cpp` | sous-vues d'une vue ligne par ligne (bloc, ligne, colonne, lecture seule, `fill_box`) et d'une vue en tuiles (alignée, finissant à l'étendue, sous-vue d'une sous-vue ; les opérations sur tuiles dessus, en série et en phase parallèle) ; toutes les variantes à 1 et 8 threads, et `mdspan_submdspan_misaligned` (une tranche en tuiles hors des tuiles arrête le programme) |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | les comparaisons des sections 2 et 3, et le coût du multi-indice ; `mdspan_tiles 4096` pour un champ plus grand |

@@ -594,6 +594,34 @@ foreach(_vi RANGE ${_rt_nvar_last})
   endif()
 endforeach()
 
+# --- mdspan_submdspan_validation_<variant>: md::submdspan of a row-major and of
+# a tiled view (chunk/mdspan.h), the tile operations on a tiled sub-view, at 1
+# and 8 threads. mdspan_submdspan_misaligned: a tiled slice off the tiles must
+# stop the program. Exits 77 -- skipped -- without a submdspan (kokkos/mdspan,
+# or a C++26 <mdspan>).
+foreach(_vi RANGE ${_rt_nvar_last})
+  list(GET _rt_variant_names   ${_vi} _vname)
+  list(GET _rt_variant_libbase ${_vi} _libbase)
+  list(GET _rt_variant_macro   ${_vi} _vmacro)
+  if (TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    set(_tgt mdspan_submdspan_validation_${_vname})
+    add_executable(${_tgt} mdspan_submdspan_validation.cpp)
+    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
+    validation_setup_target(${_tgt})
+    validation_add_test(${_tgt} ${_tgt} "" "1;8")
+    foreach(_nthr 1 8)
+      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
+    endforeach()
+    if (_vname STREQUAL "chunk2a")
+      add_test(NAME mdspan_submdspan_misaligned
+               COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=misaligned
+                       "-DEXPECT=a tiled sub-view takes ranges" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)
+      set_tests_properties(mdspan_submdspan_misaligned PROPERTIES LABELS validation)
+    endif()
+  endif()
+endforeach()
+
 # --- mdspan_tile_ops_validation_<variant>: md::for_each_tile / md::update_tiles
 # (chunk/mdspan_tile_ops.h) against the element path, at 1 and 8 threads.
 # mdspan_tile_ops_misaligned: tiles smaller than a chunk inside a parallel
