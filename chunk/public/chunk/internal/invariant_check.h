@@ -17,147 +17,128 @@
 #pragma once
 
 
-#include <format>          // std::format, std::format_string, std::formatter
-#include <string>          // the byte dump of an unformattable argument
-#include <string_view>     // its hex digits
-#include <cstdio>          // std::fputs, std::fwrite, std::fputc, std::fflush
+#include <atomic>          // std::atomic_flag (one thread reports)
+#include <cstddef>         // std::size_t
+#include <cstdio>          // std::fputs, std::fwrite, std::fflush
 #include <cstdlib>         // std::abort
+#include <cstring>         // std::memcpy
+#include <format>          // std::format, std::format_to_n, std::format_string
+#include <string>          // std::string (value_repr)
+#include <string_view>     // std::string_view
 #include <utility>         // std::forward
-#include <type_traits>     // std::remove_cvref_t, std::conditional_t
 #include <source_location> // std::source_location
-#include <complex>         // std::complex (spelled by invariant_fmt_arg)
+#include <unistd.h>        // pause
 
 #include "chunk/debug.h"  // print_backtrace
 #include "chunk/config.h" // build_config
+#include "chunk/log.h"    // logging: fmt_arg, format_message, emit_fatal; CHUNK_LOG
 
 namespace shrink_array
 {
-// std::complex is spelled here, by an invariant_fmt_arg overload, and not by
-// a std::formatter<std::complex<T>> specialisation: adding one to namespace
-// std is undefined unless it depends on a program-defined type
-// ([namespace.std]), it would leak from this public header into every user's
-// code (a user defining their own gets a redefinition), and it would clash
-// with a standard library that ships one (proposed for C++26, P2197).
-
-/// @brief True for std::complex<T>.
-template <typename V>
-inline constexpr bool invariant_is_complex = false;
-template <typename T>
-inline constexpr bool invariant_is_complex<std::complex<T>> = true;
-
-/// @brief True when std::format has a formatter for V (C++20 spelling of
-///        C++23's std::formattable: a disabled formatter has no format()).
-template <typename V>
-concept invariant_formattable =
-    requires(std::formatter<V, char> fmt, const V& v, std::format_context& fmt_ctx) { fmt.format(v, fmt_ctx); };
-
-/**
- * @brief The argument std::format will see for @p arg: itself when its type is
- *        formattable, its bytes in hex otherwise.
- *
- * The invariant messages print element values ("expected={} readback={}").
- * An element type is anything trivially copyable with an operator== -- a
- * struct of doubles, an enum class, a std::array -- and most of those have no
- * std::formatter. Rather than ask every such type for one, or drop the value
- * from the message, the byte dump is what a type with no better spelling
- * gets: enough to tell two values apart in a post-mortem, which is what the
- * message is for.
- */
-template <typename A>
-    requires invariant_formattable<std::remove_cvref_t<A>>
-A&& invariant_fmt_arg(A&& arg)
-{
-    return std::forward<A>(arg);
-}
-
-/// @brief Overload for std::complex: "(re+imi)", "(re-imi)" for a negative imaginary part.
-template <typename A>
-    requires invariant_is_complex<std::remove_cvref_t<A>>
-std::string invariant_fmt_arg(A&& z)
-{
-    return std::format("({}{:+}i)", z.real(), z.imag());
-}
-
-/// @brief Overload for a type with no formatter: the bytes of @p arg in hex, prefixed with "0x".
-/// @param arg Value to dump.
-/// @return The hex string, two digits per byte in memory order.
-template <typename A>
-    requires(!invariant_formattable<std::remove_cvref_t<A>> && !invariant_is_complex<std::remove_cvref_t<A>>)
-std::string invariant_fmt_arg(A&& arg)
-{
-    using V = std::remove_cvref_t<A>;
-    std::string out;
-    out.reserve(2 + (2 * sizeof(V)));
-    out += "0x";
-    const auto* bytes = reinterpret_cast<const unsigned char*>(&arg);
-    for (std::size_t i = 0; i < sizeof(V); ++i)
-    {
-        static constexpr std::string_view hex = "0123456789abcdef";
-        out += hex[static_cast<unsigned>(bytes[i]) >> 4U];
-        out += hex[static_cast<unsigned>(bytes[i]) & 0xFU];
-    }
-    return out;
-}
+// The arguments are those of the log (fast_allocators/internal/log_core.h):
+// anything std::format spells, std::complex as "(re+imi)", any other type as
+// its bytes in hex -- the element values an invariant message prints.
 
 /// @brief The value as a string, for the diagnostics written with operator<<:
 ///        std::format's rendering when the type has one, the bytes otherwise.
 template <typename V>
 std::string value_repr(const V& v)
 {
-    if constexpr (invariant_formattable<V>)
-    {
-        return std::format("{}", v);
-    }
-    else
-    {
-        return invariant_fmt_arg(v);
-    }
+    return std::format("{}", logging::detail::fmt_arg(v));
 }
 
-/// @brief The type std::format deduces for that argument: the reference for an
-///        lvalue, the value for anything else (an rvalue reference would not match).
-template <typename A, typename R = decltype(invariant_fmt_arg(std::declval<A>()))>
-using invariant_fmt_arg_t = std::conditional_t<std::is_lvalue_reference_v<R>, R, std::remove_reference_t<R>>;
+namespace detail
+{
+/// @brief Set by the first thread that reports an invariant failure: the
+///        others wait for it to abort the process, so the reports of a race
+///        seen by several threads at once do not interleave.
+inline std::atomic_flag invariant_reporting{};
 
 /**
- * @brief Report a broken invariant on stderr -- location, message, backtrace --
- *        and abort.
- * @param loc  Where the check failed (CHUNK_INVARIANT_FAILED passes the caller's).
- * @param fmt  std::format string of the message.
- * @param args Its arguments; one with no formatter is printed as its bytes.
+ * @brief Report the failure @p msg at @p loc -- on stderr, one block, then
+ *        the backtrace; then to the log's sink (logging::detail::emit_fatal)
+ *        -- and abort.
  */
-template <typename... Args>
-[[noreturn]] void invariant_failed(const std::source_location&                      loc,
-                                   std::format_string<invariant_fmt_arg_t<Args>...> fmt,
-                                   Args&&... args) noexcept
+[[noreturn]] inline void invariant_report(const std::source_location& loc, std::string_view msg) noexcept
 {
-    // 1. Prefix by build mode
-    constexpr const char* prefix = build_config::is_debug ? "[DEBUG_INVARIANT_FAILURE] " : "[CRITICAL_FAILURE] ";
+    constexpr std::string_view prefix = build_config::is_debug ? "[DEBUG_INVARIANT_FAILURE] " : "[CRITICAL_FAILURE] ";
 
-    // 2. Format the message, then print the location and the message
+    // A failure while reporting one (in the backtrace, in the sink): stop there.
+    thread_local bool reporting = false;
+    if (reporting)
+    {
+        std::fputs("[CRITICAL_FAILURE] invariant failure while reporting one: ", stderr);
+        std::fwrite(msg.data(), 1, msg.size(), stderr);
+        std::fputs("\n", stderr);
+        std::fflush(stderr);
+        std::abort();
+    }
+    reporting = true;
+
+    // Another thread is reporting: it aborts the process.
+    if (invariant_reporting.test_and_set(std::memory_order_acq_rel))
+    {
+        while (true)
+        {
+            ::pause();
+        }
+    }
+
+    // 1. Location and message, in one write. A template's function name can
+    //    run to kilobytes: the block is cut (with "...") past 8 KiB.
+    char        block[8192];
+    std::size_t n = 0;
     try
     {
-        const auto msg = std::format(fmt, invariant_fmt_arg(std::forward<Args>(args))...);
-        std::fprintf(stderr, "%sIn file '%s' at line %u\n", prefix, loc.file_name(), loc.line());
-        std::fprintf(stderr, "Inside function: %s\n", loc.function_name());
-        std::fputs(prefix, stderr);
-        std::fwrite(msg.data(), 1, msg.size(), stderr);
-        std::fputc('\n', stderr);
+        const auto res =
+            std::format_to_n(block, sizeof(block) - 1, "{0}In file '{1}' at line {2}\nInside function: {3}\n{0}{4}",
+                             prefix, loc.file_name(), loc.line(), loc.function_name(), msg);
+        n = static_cast<std::size_t>(res.size);
+        if (n > sizeof(block) - 1)
+        {
+            n = sizeof(block) - 1;
+            std::memcpy(block + n - 3, "...", 3);
+        }
     }
     catch (...)
     {
-        // Fallback if formatting itself fails (rare)
-        std::fputs("Critical error: Failed to format invariant message.\n", stderr);
+        n = 0;
     }
+    block[n++] = '\n';
+    std::fwrite(block, 1, n, stderr);
 
-    // 3. Print the execution backtrace for easier post-mortem analysis
+    // 2. The execution backtrace, for the post-mortem.
     std::fputs("\n--- Execution Backtrace ---\n", stderr);
     print_backtrace();
     std::fputs("---------------------------\n", stderr);
-
-    // 4. Final flush and immediate termination
     std::fflush(stderr);
+
+    // 3. The program's sink, or CHUNK_LOG_FILE: last, so that a sink that
+    //    misbehaves cannot hide what stderr already has.
+    logging::detail::emit_fatal(logging::Record{logging::Level::fatal, logging::Channel::general, msg, loc});
+
     std::abort();
+}
+} // namespace detail
+
+/**
+ * @brief Report a broken invariant -- location, message, backtrace -- and abort.
+ * @param loc  Where the check failed (CHUNK_INVARIANT_FAILED passes the caller's).
+ * @param fmt  std::format string of the message.
+ * @param args Its arguments; one with no formatter is printed as its bytes.
+ *
+ * The message is formatted on the stack (logging::line_max bytes, "..." when
+ * cut): no allocation, so a failure inside an allocator, or out of memory,
+ * still says what it is.
+ */
+template <typename... Args>
+[[noreturn]] void invariant_failed(const std::source_location&                             loc,
+                                   std::format_string<logging::detail::fmt_arg_t<Args>...> fmt,
+                                   Args&&... args) noexcept
+{
+    char              msg[logging::line_max];
+    const std::size_t len = logging::detail::format_message(msg, fmt, std::forward<Args>(args)...);
+    detail::invariant_report(loc, std::string_view{msg, len});
 }
 
 // --- The Frontend Macro ---
@@ -165,5 +146,25 @@ template <typename... Args>
 // while keeping std::format_string compile-time checks.
 #define CHUNK_INVARIANT_FAILED(fmt, ...) \
     shrink_array::invariant_failed(std::source_location::current(), fmt, ##__VA_ARGS__)
+
+/**
+ * @brief A condition that must not happen, but that a release build survives:
+ *        an invariant failure in a check build (build_config::any_check:
+ *        message, backtrace, abort), an error on channel @p chan of the log
+ *        elsewhere -- after which the caller carries on with its fallback.
+ *        One message for both; the failure names the channel ("[drain] ...").
+ */
+#define CHUNK_CHECK_FAILED(chan, fmt, ...)                             \
+    do                                                                 \
+    {                                                                  \
+        if constexpr (::shrink_array::build_config::any_check)         \
+        {                                                              \
+            CHUNK_INVARIANT_FAILED("[" #chan "] " fmt, ##__VA_ARGS__); \
+        }                                                              \
+        else                                                           \
+        {                                                              \
+            CHUNK_LOG(error, chan, fmt, ##__VA_ARGS__);                \
+        }                                                              \
+    } while (false)
 
 } // namespace shrink_array

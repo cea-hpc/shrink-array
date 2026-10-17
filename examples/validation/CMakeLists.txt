@@ -522,11 +522,17 @@ set_property(TEST bit_words_validation PROPERTY LABELS validation)
 # --- log_validation: the library's log (fast_allocators/internal/log_core.h)
 # alone -- CHUNK_LOG / CHUNK_LOG_FILE, the filter, a sink, the rate-limited
 # macros, the cut of a long message, no allocation on the path of a message,
-# whole lines from 8 threads. Header-only: no library, no variant.
+# whole lines from 8 threads -- and its fatal level, CHUNK_INVARIANT_FAILED
+# and CHUNK_CHECK_FAILED, each case in a child (the executable re-runs
+# itself with --fatal K). Header-only: no library, no variant.
 add_executable(log_validation log_validation.cpp)
 target_include_directories(log_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
+                                                  ${PROJECT_BINARY_DIR}/chunk/generated # chunk/build_options.h
                                                   ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(log_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(log_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
+endif()
 chunk_require_cxx20(log_validation PRIVATE)
 add_test(NAME log_validation COMMAND log_validation)
 set_property(TEST log_validation PROPERTY LABELS validation)

@@ -65,6 +65,15 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- An invariant failure is reported by one thread only (when a race is seen by
+  several threads at once, their reports no longer interleave), as one block
+  on stderr followed by the backtrace, and its message is formatted without
+  allocating; it then reaches the program's sink (`set_sink()`) or
+  `CHUNK_LOG_FILE`, as a record of level fatal.
+- A double free caught at teardown, a drain that does not settle and deferred
+  writes about to be lost stop a check build (as before) and, in the other
+  builds, are errors of the log (channels `pool`, `drain`) instead of raw
+  stderr lines.
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.

@@ -32,12 +32,20 @@
 //   6. a message longer than line_max is cut, with "...";
 //   7. no allocation on the path of a message (operator new is counted);
 //   8. 8 threads writing to the default sink at once: every line in the file
-//      whole, none lost.
+//      whole, none lost;
+//   9. the fatal level, each case in a child (this executable re-run with
+//      --fatal K): CHUNK_INVARIANT_FAILED writes its block and the backtrace
+//      on stderr, the record reaches CHUNK_LOG_FILE or the program's sink,
+//      element values of any type are spelled; 8 threads failing at once
+//      give one report; a failure inside the sink still stops; and
+//      CHUNK_CHECK_FAILED stops a check build and logs an error elsewhere.
 //
 // Exit status 0 when every check passes.
 
 #include <array>       // std::array
 #include <atomic>      // std::atomic
+#include <complex>     // std::complex (check 9)
+#include <cstdint>     // std::uint32_t (check 9)
 #include <cstdio>      // std::remove, std::sscanf
 #include <cstdlib>     // std::malloc, std::free, setenv
 #include <cstring>     // std::memcpy
@@ -48,10 +56,12 @@
 #include <string_view> // std::string_view
 #include <thread>      // std::thread
 #include <vector>      // std::vector
+#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 #include <unistd.h>    // getpid
 
-#include "chunk/log.h"            // shrink_array::logging, CHUNK_LOG
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/log.h"                      // shrink_array::logging, CHUNK_LOG
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
+#include "chunk/internal/print.h"           // shrink_array::println
 
 using shrink_array::println;
 
@@ -377,10 +387,167 @@ void check_threads()
     logging::configure("warn");
 }
 
+// --- 9 ----------------------------------------------------------------------
+struct NoFormatter // an element type with no std::formatter: printed as its bytes
+{
+    std::uint32_t a;
+    std::uint32_t b;
+};
+
+void fatal_sink(const logging::Record& r, void* /*user*/) noexcept
+{
+    std::printf("SINK %s: %.*s\n", std::string(logging::name(r.level)).c_str(), static_cast<int>(r.message.size()),
+                r.message.data());
+    std::fflush(stdout);
+}
+
+void failing_sink(const logging::Record& r, void* /*user*/) noexcept
+{
+    CHUNK_INVARIANT_FAILED("failure inside the sink, on \"{}\"", r.message);
+}
+
+/// @brief The child of check 9: case @p k, which aborts (or, case 4 in a
+///        build that is not a check build, returns).
+int run_fatal(int k)
+{
+    switch (k)
+    {
+        case 0: // block, backtrace, bytes and complex spelled, record in CHUNK_LOG_FILE
+            CHUNK_INVARIANT_FAILED("value {} complex {} bytes {}", 7, std::complex<double>(1.0, -2.0),
+                                   NoFormatter{1, 2});
+        case 1: // 8 threads at once: one report
+        {
+            std::atomic<int>         ready{0};
+            std::vector<std::thread> team;
+            for (int t = 0; t < 8; ++t)
+            {
+                team.emplace_back(
+                    [&ready, t]
+                    {
+                        ready.fetch_add(1);
+                        while (ready.load() < 8)
+                        {
+                        }
+                        CHUNK_INVARIANT_FAILED("thread {} failed", t);
+                    });
+            }
+            for (auto& th : team)
+            {
+                th.join();
+            }
+            return 0;
+        }
+        case 2: // the record reaches the program's sink
+            logging::set_sink(fatal_sink);
+            CHUNK_INVARIANT_FAILED("to the sink {}", 42);
+        case 3: // a failure inside the sink still stops, without waiting on the sink's lock
+            logging::set_sink(failing_sink);
+            CHUNK_LOG(warn, general, "trigger");
+            return 0;
+        case 4: // CHUNK_CHECK_FAILED: stops a check build, logs elsewhere
+            CHUNK_CHECK_FAILED(drain, "check failed {}", 5);
+            std::printf("carried on\n");
+            return 0;
+        default:
+            return 2;
+    }
+}
+
+struct FatalRun
+{
+    int         status = -1; ///< the shell's: 134 for an abort
+    std::string out;         ///< stdout and stderr
+    std::string log;         ///< CHUNK_LOG_FILE
+};
+
+FatalRun run_child(const char* self, int k)
+{
+    const std::string dir  = std::filesystem::temp_directory_path().string();
+    const std::string base = dir + "/shrink_log_fatal." + std::to_string(::getpid()) + "." + std::to_string(k);
+    const std::string cmd  = "ulimit -c 0; CHUNK_LOG=warn CHUNK_LOG_FILE=\"" + base + ".log\" timeout 60 \"" +
+                             std::string(self) + "\" --fatal " + std::to_string(k) + " > \"" + base + ".out\" 2>&1";
+    FatalRun          run;
+    const int         status = std::system(cmd.c_str());
+    run.status               = (status != -1 && WIFEXITED(status)) ? WEXITSTATUS(status) : -1;
+    for (const auto& l : read_lines(base + ".out"))
+    {
+        run.out += l + "\n";
+    }
+    for (const auto& l : read_lines(base + ".log"))
+    {
+        run.log += l + "\n";
+    }
+    std::remove((base + ".out").c_str());
+    std::remove((base + ".log").c_str());
+    return run;
+}
+
+std::size_t count(const std::string& s, std::string_view what)
+{
+    std::size_t n = 0;
+    for (std::size_t pos = s.find(what); pos != std::string::npos; pos = s.find(what, pos + what.size()))
+    {
+        ++n;
+    }
+    return n;
+}
+
+void check_fatal(const char* self)
+{
+    constexpr int kAbort = 134; // 128 + SIGABRT, as the shell reports it
+
+    auto r = run_child(self, 0);
+    check(r.status == kAbort, "fatal: CHUNK_INVARIANT_FAILED aborts");
+    check(count(r.out, "In file '") == 1 && r.out.find("Inside function: ") != std::string::npos,
+          "fatal: location block on stderr");
+    check(r.out.find("value 7 complex (1-2i) bytes 0x0100000002000000") != std::string::npos,
+          "fatal: int, std::complex and a type with no formatter spelled");
+    check(r.out.find("--- Execution Backtrace ---") != std::string::npos, "fatal: backtrace on stderr");
+    check(r.log.find("[shrink_array][general][F][") != std::string::npos &&
+              r.log.find("] value 7 complex") != std::string::npos,
+          "fatal: the record reaches CHUNK_LOG_FILE");
+    if (g_fails != 0)
+    {
+        println("---- child 0 output ----\n{}---- log ----\n{}------------------------", r.out, r.log);
+    }
+
+    r = run_child(self, 1);
+    check(r.status == kAbort && count(r.out, "In file '") == 1 && count(r.out, "--- Execution Backtrace ---") == 1,
+          "fatal: 8 threads failing at once give one report");
+
+    r = run_child(self, 2);
+    check(r.status == kAbort && r.out.find("SINK fatal: to the sink 42") != std::string::npos &&
+              r.out.find("--- Execution Backtrace ---") != std::string::npos,
+          "fatal: the record reaches the program's sink, after the block");
+
+    r = run_child(self, 3);
+    check(r.status == kAbort && r.out.find("failure inside the sink, on \"trigger\"") != std::string::npos,
+          "fatal: a failure inside the sink stops (no deadlock: timeout 60 s)");
+
+    r = run_child(self, 4);
+    if constexpr (shrink_array::build_config::any_check)
+    {
+        check(r.status == kAbort && r.out.find("[drain] check failed 5") != std::string::npos &&
+                  r.out.find("carried on") == std::string::npos,
+              "CHUNK_CHECK_FAILED stops a check build");
+    }
+    else
+    {
+        check(r.status == 0 && r.log.find("[shrink_array][drain][E][") != std::string::npos &&
+                  r.log.find("] check failed 5") != std::string::npos && r.out.find("carried on") != std::string::npos,
+              "CHUNK_CHECK_FAILED logs an error and carries on outside a check build");
+    }
+}
+
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    if (argc > 2 && std::string_view(argv[1]) == "--fatal")
+    {
+        return run_fatal(std::atoi(argv[2]));
+    }
+
     // Before the first message: the configuration is read at it.
     const std::string dir = std::filesystem::temp_directory_path().string();
     g_log_path            = dir + "/shrink_log_validation." + std::to_string(::getpid()) + ".log";
@@ -396,6 +563,7 @@ int main()
     check_truncation();
     check_no_allocation();
     check_threads();
+    check_fatal(argv[0]);
 
     std::remove(g_log_path.c_str());
     println("{}", g_fails == 0 ? "PASS" : "FAILED");

@@ -32,7 +32,7 @@
 
 #include "chunk/internal/manager_chunk.h"     // the declarations these bodies belong to
 #include "chunk/config.h"                     // build_config::use_fast_alloc, chunk_config::use_fast_block_compression
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED
 #include "fast_allocators/internal/svalloc.h" // svfree
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
@@ -545,17 +545,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
 
         if (pass >= kMaxDrainPasses)
         {
-            if constexpr (build_config::any_check)
-            {
-                CHUNK_INVARIANT_FAILED("[DRAIN] flush_all_deferred hit {} passes without settling -- "
-                                       "possible runaway re-enqueue",
-                                       kMaxDrainPasses);
-            }
-            std::fprintf(stderr,
-                         "[DRAIN] flush_all_deferred hit %d passes without settling — "
-                         "possible runaway re-enqueue\n",
-                         kMaxDrainPasses);
-            std::fflush(stderr);
+            CHUNK_CHECK_FAILED(drain,
+                               "flush_all_deferred hit {} passes without settling -- possible runaway re-enqueue",
+                               kMaxDrainPasses);
         }
 
         have_flushed |= local_flushed;
@@ -580,17 +572,10 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         // remain, those writes are about to be lost: report it in every build.
         if (CompressionManager<T, CHUNK_T<T>>::any_pending_ops()) [[unlikely]]
         {
-            if constexpr (build_config::any_check)
-            {
-                CHUNK_INVARIANT_FAILED("[DRAIN] flush_all_deferred: deferred ops still queued after {} pass(es) -- "
-                                       "storage.destroy() would discard them: their writes would be LOST",
-                                       pass);
-            }
-            std::fprintf(stderr,
-                         "[DRAIN] flush_all_deferred: deferred ops still queued after %d pass(es) -- "
-                         "storage.destroy() discards them: their writes are LOST\n",
-                         pass);
-            std::fflush(stderr);
+            CHUNK_CHECK_FAILED(drain,
+                               "flush_all_deferred: deferred ops still queued after {} pass(es) -- "
+                               "storage.destroy() discards them: their writes are LOST",
+                               pass);
         }
 
         storage.destroy();
@@ -950,15 +935,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_sort([[ma
     {
         if (blocks[i] == blocks[i - 1])
         {
-            if constexpr (build_config::any_check)
-            {
-                CHUNK_INVARIANT_FAILED("[DOUBLE-FREE] {} queued twice for free in bucket {}",
-                                       static_cast<void*>(blocks[i]), bucket);
-            }
-            std::fprintf(stderr,
-                         "[DOUBLE-FREE] %p queued twice for free in bucket %d "
-                         "-- NOT freeing again\n",
-                         static_cast<void*>(blocks[i]), bucket);
+            CHUNK_CHECK_FAILED(pool, "double free: {} queued twice for free in bucket {} -- NOT freeing again",
+                               static_cast<void*>(blocks[i]), bucket);
         }
     }
     blocks.erase(std::ranges::unique(blocks).begin(), blocks.end());
@@ -1080,15 +1058,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
         {
             // Same pointer as the one just produced from a lower bucket: this
             // one is the repeat, skipped when ITS bucket is freed.
-            if constexpr (build_config::any_check)
-            {
-                CHUNK_INVARIANT_FAILED("[DOUBLE-FREE] {} queued for free in buckets {} and {}",
-                                       static_cast<void*>(head.p), prev_bucket, head.bucket);
-            }
-            std::fprintf(stderr,
-                         "[DOUBLE-FREE] %p queued for free in buckets %zu and %zu "
-                         "-- NOT freeing again\n",
-                         static_cast<void*>(head.p), prev_bucket, head.bucket);
+            CHUNK_CHECK_FAILED(pool, "double free: {} queued for free in buckets {} and {} -- NOT freeing again",
+                               static_cast<void*>(head.p), prev_bucket, head.bucket);
             repeats.push_back(internal::TeardownRepeat<T>{head.bucket, head.p});
         }
         prev        = head.p;

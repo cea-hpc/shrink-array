@@ -46,6 +46,9 @@
  *       [shrink_array][rechunk][W][12345] message
  *   (channel, level letter, kernel thread id), so lines from many threads
  *   do not interleave.
+ * - Arguments: anything std::format spells, plus std::complex, "(re+imi)",
+ *   and any other type as its bytes in hex (fmt_arg): a message can print
+ *   an element value of any type.
  * - Not here: the fatal level. An invariant failure is CHUNK_INVARIANT_FAILED
  *   (chunk/internal/invariant_check.h), which no setting can turn off.
  */
@@ -53,6 +56,7 @@
 #include <array>           // std::array (the thresholds, the names)
 #include <atomic>          // std::atomic
 #include <bit>             // std::has_single_bit (CHUNK_LOG_POW2)
+#include <complex>         // std::complex (spelled by fmt_arg)
 #include <cstddef>         // std::size_t
 #include <cstdint>         // std::uint8_t, std::uint64_t
 #include <cstdio>          // std::FILE, std::fopen, std::fwrite, std::fflush, stderr
@@ -62,7 +66,9 @@
 #include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock
 #include <source_location> // std::source_location
 #include <string_view>     // std::string_view
-#include <utility>         // std::forward
+#include <type_traits>     // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v
+#include <utility>         // std::forward, std::declval
+#include <sched.h>         // sched_yield (emit_fatal)
 #include <unistd.h>        // getpid, gettid
 
 #ifndef CHUNK_LOG_MAX_LEVEL
@@ -147,6 +153,76 @@ using Sink = void (*)(const Record& record, void* user) noexcept;
 
 namespace detail
 {
+// --- The arguments: what std::format sees for each ---------------------------
+// The messages print element values ("expected={} readback={}"). An element
+// type is anything trivially copyable with an operator== -- a struct of
+// doubles, an enum class, a std::array -- and most of those have no
+// std::formatter. Rather than ask every such type for one, or drop the value
+// from the message, the byte dump is what a type with no better spelling
+// gets: enough to tell two values apart in a post-mortem. std::complex is
+// spelled here too, and not by a std::formatter<std::complex<T>>
+// specialisation: adding one to namespace std is undefined unless it depends
+// on a program-defined type ([namespace.std]), it would leak from this header
+// into every user's code, and it would clash with a standard library that
+// ships one (C++26, P2197). Both are wrappers formatted in place: no
+// allocation.
+
+/// @brief True for std::complex<T>.
+template <typename V>
+inline constexpr bool is_complex = false;
+template <typename T>
+inline constexpr bool is_complex<std::complex<T>> = true;
+
+/// @brief True when std::format has a formatter for V (C++20 spelling of
+///        C++23's std::formattable: a disabled formatter has no format()).
+template <typename V>
+concept formattable =
+    requires(std::formatter<V, char> fmt, const V& v, std::format_context& fmt_ctx) { fmt.format(v, fmt_ctx); };
+
+/// @brief A std::complex, formatted "(re+imi)", "(re-imi)" for a negative imaginary part.
+template <typename T>
+struct ComplexArg
+{
+    std::complex<T> z;
+};
+
+/// @brief A value of a type with no formatter, formatted as its bytes: "0x" and
+///        two hex digits per byte, in memory order.
+template <typename V>
+struct BytesArg
+{
+    const V* v;
+};
+
+/// @brief The argument std::format sees for @p arg: itself when its type is formattable.
+template <typename A>
+    requires(formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
+constexpr A&& fmt_arg(A&& arg) noexcept
+{
+    return std::forward<A>(arg);
+}
+
+/// @brief Overload for std::complex.
+template <typename A>
+    requires is_complex<std::remove_cvref_t<A>>
+constexpr auto fmt_arg(A&& z) noexcept
+{
+    return ComplexArg<typename std::remove_cvref_t<A>::value_type>{z};
+}
+
+/// @brief Overload for a type with no formatter: its bytes.
+template <typename A>
+    requires(!formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
+constexpr auto fmt_arg(A&& arg) noexcept
+{
+    return BytesArg<std::remove_cvref_t<A>>{&arg};
+}
+
+/// @brief The type std::format deduces for that argument: the reference for an
+///        lvalue, the value for anything else (an rvalue reference would not match).
+template <typename A, typename R = decltype(fmt_arg(std::declval<A>()))>
+using fmt_arg_t = std::conditional_t<std::is_lvalue_reference_v<R>, R, std::remove_reference_t<R>>;
+
 /// @brief A CHUNK_LOG specification, parsed: the most verbose level let
 ///        through per channel, and the items that were not understood.
 struct Spec
@@ -312,10 +388,12 @@ inline void default_sink(const Record& r) noexcept
     std::fflush(f);
 }
 
+/// @brief True while the calling thread runs the sink of set_sink().
+inline thread_local bool in_sink = false;
+
 /// @brief Hand @p r to the sink. A sink that logs reaches the default sink.
 inline void emit(const Record& r) noexcept
 {
-    thread_local bool in_sink = false;
     if (in_sink)
     {
         default_sink(r);
@@ -340,13 +418,54 @@ inline void emit(const Record& r) noexcept
     }
 }
 
+inline void ensure_configured() noexcept;
+
+/**
+ * @brief The record of an invariant failure (CHUNK_INVARIANT_FAILED, which
+ *        has already written it on stderr): to the sink of set_sink(), or to
+ *        CHUNK_LOG_FILE when the default sink writes there. Never waits for
+ *        long: the lock is tried for a while, then given up; a failure inside
+ *        the sink skips it.
+ */
+inline void emit_fatal(const Record& r) noexcept
+{
+    ensure_configured();
+    const bool to_file = out != nullptr && out != stderr;
+    if (!in_sink)
+    {
+        for (int attempt = 0; attempt < 1000; ++attempt)
+        {
+            if (sink_mutex.try_lock())
+            {
+                if (sink != nullptr)
+                {
+                    in_sink = true;
+                    sink(r, sink_user);
+                    in_sink = false;
+                }
+                else if (to_file)
+                {
+                    default_sink(r);
+                }
+                sink_mutex.unlock();
+                return;
+            }
+            ::sched_yield();
+        }
+    }
+    if (to_file)
+    {
+        default_sink(r);
+    }
+}
+
 /// @brief Format @p fmt into @p buf (line_max bytes, "..." when cut); the length written.
 template <typename... Args>
-std::size_t format_message(char* buf, std::format_string<Args...> fmt, Args&&... args) noexcept
+std::size_t format_message(char* buf, std::format_string<fmt_arg_t<Args>...> fmt, Args&&... args) noexcept
 {
     try
     {
-        const auto res = std::format_to_n(buf, line_max, fmt, std::forward<Args>(args)...);
+        const auto res = std::format_to_n(buf, line_max, fmt, fmt_arg(std::forward<Args>(args))...);
         if (static_cast<std::size_t>(res.size) <= line_max)
         {
             return static_cast<std::size_t>(res.size);
@@ -435,7 +554,7 @@ inline void read_environment() noexcept
     report_bad_items(spec, "CHUNK_LOG");
 }
 
-inline void ensure_configured() noexcept
+inline void ensure_configured() noexcept // declared above, for emit_fatal
 {
     try
     {
@@ -449,10 +568,10 @@ inline void ensure_configured() noexcept
 
 /// @brief Format and emit one message (CHUNK_LOG's slow path, past enabled()).
 template <typename... Args>
-void write(Level                       l,
-           Channel                     c,
-           const std::source_location& loc,
-           std::format_string<Args...> fmt,
+void write(Level                                  l,
+           Channel                                c,
+           const std::source_location&            loc,
+           std::format_string<fmt_arg_t<Args>...> fmt,
            Args&&... args) noexcept
 {
     char              buf[line_max];
@@ -509,6 +628,48 @@ inline void set_sink(Sink sink, void* user = nullptr) noexcept
     }
 }
 } // namespace fast_alloc::logging
+
+/// @brief fmt_arg's std::complex: "(re+imi)".
+template <typename T>
+struct std::formatter<fast_alloc::logging::detail::ComplexArg<T>, char>
+{
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        return ctx.begin();
+    }
+
+    template <typename Ctx>
+    auto format(const fast_alloc::logging::detail::ComplexArg<T>& a, Ctx& ctx) const
+    {
+        return std::format_to(ctx.out(), "({}{:+}i)", a.z.real(), a.z.imag());
+    }
+};
+
+/// @brief fmt_arg's byte dump: "0x" and two hex digits per byte, in memory order.
+template <typename V>
+struct std::formatter<fast_alloc::logging::detail::BytesArg<V>, char>
+{
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        return ctx.begin();
+    }
+
+    template <typename Ctx>
+    auto format(const fast_alloc::logging::detail::BytesArg<V>& a, Ctx& ctx) const
+    {
+        constexpr std::string_view hex = "0123456789abcdef";
+        auto                       it  = ctx.out();
+        *it++                          = '0';
+        *it++                          = 'x';
+        const auto* bytes              = reinterpret_cast<const unsigned char*>(a.v);
+        for (std::size_t i = 0; i < sizeof(V); ++i)
+        {
+            *it++ = hex[static_cast<unsigned>(bytes[i]) >> 4U];
+            *it++ = hex[static_cast<unsigned>(bytes[i]) & 0xFU];
+        }
+        return it;
+    }
+};
 
 /// @brief Log a message of level @p lvl (error, warn, info, debug, trace) on
 ///        channel @p chan: a std::format string, checked at compile time, and
