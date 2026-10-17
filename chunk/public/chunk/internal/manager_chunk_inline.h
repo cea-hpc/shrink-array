@@ -545,6 +545,12 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
 
         if (pass >= kMaxDrainPasses)
         {
+            if constexpr (build_config::any_check)
+            {
+                CHUNK_INVARIANT_FAILED("[DRAIN] flush_all_deferred hit {} passes without settling -- "
+                                       "possible runaway re-enqueue",
+                                       kMaxDrainPasses);
+            }
             std::fprintf(stderr,
                          "[DRAIN] flush_all_deferred hit %d passes without settling — "
                          "possible runaway re-enqueue\n",
@@ -944,6 +950,11 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_sort([[ma
     {
         if (blocks[i] == blocks[i - 1])
         {
+            if constexpr (build_config::any_check)
+            {
+                CHUNK_INVARIANT_FAILED("[DOUBLE-FREE] {} queued twice for free in bucket {}",
+                                       static_cast<void*>(blocks[i]), bucket);
+            }
             std::fprintf(stderr,
                          "[DOUBLE-FREE] %p queued twice for free in bucket %d "
                          "-- NOT freeing again\n",
@@ -1069,6 +1080,11 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
         {
             // Same pointer as the one just produced from a lower bucket: this
             // one is the repeat, skipped when ITS bucket is freed.
+            if constexpr (build_config::any_check)
+            {
+                CHUNK_INVARIANT_FAILED("[DOUBLE-FREE] {} queued for free in buckets {} and {}",
+                                       static_cast<void*>(head.p), prev_bucket, head.bucket);
+            }
             std::fprintf(stderr,
                          "[DOUBLE-FREE] %p queued for free in buckets %zu and %zu "
                          "-- NOT freeing again\n",
