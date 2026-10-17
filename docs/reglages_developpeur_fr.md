@@ -48,14 +48,21 @@
 
 ## 2. Traces et diagnostics
 
-| variable | ce qu'elle affiche |
+Les traces sont des messages du journal de la bibliothèque, choisis par `CHUNK_LOG` (voir
+[variables_environnement_fr.md](variables_environnement_fr.md)). Les variables des anciennes
+traces marchent toujours : chacune règle le niveau qui lui correspond, avec un avertissement
+de dépréciation.
+
+| réglage | ce qu'il affiche |
 |---|---|
-| `CHUNK_RECHUNK_TRACE` (*définie*) | pour chaque rechunk : durée des phases et des tranches |
-| `CHUNK_RECHUNK_TRACE_MEM` (*définie*) | le côté mémoire de la trace des rechunks : mémoire exacte à chaque étape (`[RECHUNK-RSS]`), occupation de la nouvelle géométrie, chunks repliés, refusés et installés directement, recensement des allocateurs. Coûteux (des secondes par run à des dizaines de Go) : séparé des mesures de temps |
-| `CHUNK_RECHUNK_TRACE_SLICES` (*définie*) | mémoire à chaque tranche de la reconstruction de v1 (lue à chaque rechunk) |
-| `CHUNK_RECHUNK_MEMTRACE` | à chaque passage de l'advisor : mémoire exacte, dont la part résidente de l'arène des tampons |
+| `CHUNK_LOG=rechunk=info` | les décisions du décideur (`decide <tableau>: re-chunk S=.. -> S'=.. ... [APPLIED]`, ou `[dry-run] would re-chunk`) |
+| `CHUNK_LOG=rechunk=debug` (autrefois `CHUNK_RECHUNK_TRACE`) | en plus, les verdicts d'attente, et pour chaque rechunk la durée des phases et des tranches |
+| `CHUNK_LOG=rechunk=trace` (autrefois `CHUNK_RECHUNK_TRACE_SLICES`) | en plus, la mémoire à chaque tranche de la reconstruction de v1 |
+| `CHUNK_LOG=memory=info` (autrefois `CHUNK_RECHUNK_MEMTRACE`) | à chaque passage de l'advisor : mémoire exacte, dont la part résidente de l'arène des tampons |
+| `CHUNK_LOG=memory=debug` (autrefois `CHUNK_RECHUNK_TRACE_MEM`) | en plus, le côté mémoire de la trace des rechunks : mémoire exacte à chaque étape (ligne `rss`), occupation de la nouvelle géométrie, chunks repliés, refusés et installés directement, recensement des allocateurs. Coûteux (des secondes par run à des dizaines de Go) : un canal à part des mesures de temps |
+| `CHUNK_LOG=advisor=info` | builds de vérification : à la destruction d'un tableau, la taille de chunk qui aurait pris le moins de mémoire, quand elle en économise au moins 10 % |
 | `CHUNK_ADVISOR_TABLE` | `1` ou `=nom` : la table complète de l'advisor à chaque passage (tous les tableaux ou un seul) |
-| `CHUNK_RECHUNK_CHURN` | `1` ou `=nom` : matérialisations par passage et estimation du coût passager qu'elles impliquent |
+| `CHUNK_RECHUNK_CHURN` | `1` ou `=nom` : matérialisations par passage et estimation du coût passager qu'elles impliquent (niveau info du canal rechunk, qu'elle active) |
 | `CHUNK_AFFINITY_TRACE` (*définie*) | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
 | `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) |
 | `CHUNK_RECYCLE_TRACE` | une ligne par bloc recyclé du pool des écritures différées (au lieu d'un résumé) |

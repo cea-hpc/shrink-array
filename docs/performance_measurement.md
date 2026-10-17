@@ -40,16 +40,16 @@ In the library: `shrink_array::exact_rss_kib()` (`internal/exact_rss.h`). In the
   `SHRINK_BENCH_EXACT_RSS=1`;
 - the "peak" is the maximum of `ru_maxrss` and of the exact reads;
   `SHRINK_BENCH_RSS_SAMPLE_MS=<ms>` adds background sampling;
-- the rechunk traces (`[RECHUNK-RSS]`, `[RECHUNK-MEM]`) read the exact value.
+- the memory traces (`CHUNK_LOG=memory=info` / `memory=debug`) read the exact value.
 
 ### 1.3 Locating memory
 
 | question | tool |
 |---|---|
-| how much in chunk buffers, how much elsewhere? | `CHUNK_RECHUNK_MEMTRACE=1`: at each advisor tick, the exact memory, including the resident part of the buffer arena (`mincore`) |
+| how much in chunk buffers, how much elsewhere? | `CHUNK_LOG=memory=info`: at each advisor tick, the exact memory, including the resident part of the buffer arena (`mincore`) |
 | what are the slabs doing? | `CHUNK_ARENA_REPORT=1` (slabs handed out, returned to the system) |
 | which area of the address space is growing? | two `pmap -x <pid>` at two points in time, compared area by area |
-| what does each rechunk return? | `CHUNK_RECHUNK_TRACE=1`: `[RECHUNK-RSS]` line (memory at each step, `end-entry`) |
+| what does each rechunk return? | `CHUNK_LOG=memory=debug`: `rss` line (memory at each step, `end-entry`) |
 
 A trap: the "materialised" counter of the stats build is a difference of counters
 (allocated − freed). It is only correct if every free is counted, which was not the
@@ -123,11 +123,11 @@ slowdown comes from the rechunks or from what follows them:
 
 ```
 tick_times() {
-  env "$@" CHUNK_RECHUNK_MEMTRACE=1 OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores \
+  env "$@" CHUNK_LOG=warn,memory=info,rechunk=info OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores \
     $BIN --mode perf --no_io 2>&1 >/dev/null \
   | while read -r l; do
       case "$l" in
-        *"RECHUNK-MEM]"*) echo "T $(date +%s.%N) ${l#*tick }" ;;
+        *"[memory][I]"*)  echo "T $(date +%s.%N) ${l#*tick }" ;;
         *APPLIED*)        echo "R" ;;
       esac
     done \

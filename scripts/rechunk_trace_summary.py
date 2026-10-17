@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""Sum the CHUNK_RECHUNK_TRACE phase times of shrink_bench logs, one line per log.
+"""Sum the re-chunk phase times (CHUNK_LOG=rechunk=debug) of shrink_bench logs, one line per log.
 
 For each log: the number of re-chunks, the bench's "Elapsed time" lines, then
-each phase of the `[RECHUNK] a -> b phases (ms)` and `slices` lines summed over
+each phase of the `a -> b phases (ms)` and `slices` lines summed over
 every re-chunk of the run, in seconds. Comparing two thread counts shows which
 phase grows.
 
@@ -17,7 +17,8 @@ import os
 import re
 import sys
 
-LINE = re.compile(r"\[RECHUNK\] \d+ -> \d+ (phases|slices \d+) \(ms\): (.*)")
+# As the log writes them (rechunk=debug) and as they were printed before.
+LINE = re.compile(r"(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\]) \d+ -> \d+ (phases|slices \d+) \(ms\): (.*)")
 
 
 def summary(path):
@@ -51,7 +52,7 @@ def main() -> int:
         elif n == 0:
             print("   (no re-chunk in this run)")
         else:
-            print("   (no [RECHUNK] phase line: not run with CHUNK_RECHUNK_TRACE=1?)")
+            print("   (no re-chunk phase line: not run with CHUNK_LOG=rechunk=debug?)")
     return 0
 
 

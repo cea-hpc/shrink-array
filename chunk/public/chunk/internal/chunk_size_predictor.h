@@ -40,13 +40,15 @@
 //      buffer). The buffer term dominates and is what varies with S'.
 //
 // Sizes < current are out of scope here (need intra-chunk re-reading, usually
-// lose on metadata). Gated by the caller on any_check — never in production.
+// lose on metadata). Gated by the caller on any_check and on the log
+// (advisor=info) -- never in production.
 
 #include <cstddef>  // std::size_t
-#include <cstdio>   // std::fprintf, std::fflush
 #include <optional> // std::optional
 #include <utility>  // std::pair
 #include <vector>   // std::vector
+
+#include "chunk/log.h" // CHUNK_LOG
 
 namespace shrink_array
 {
@@ -157,12 +159,11 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
             100.0 * static_cast<double>(current.mem_bytes - best.mem_bytes) / static_cast<double>(current.mem_bytes);
         if (gain_pct >= 10.0)
         {
-            std::fprintf(stderr,
-                         "[SIZE-PREDICT] %s tab=%d: current S=%u -> %zu B ; "
-                         "optimal S'=%u -> %zu B (mem -%.1f%%, %d/%d blocks constant)\n",
-                         variant, num_tab, S, current.mem_bytes, best.S_prime, best.mem_bytes, gain_pct,
-                         best.n_const_blocks, best.n_blocks);
-            std::fflush(stderr);
+            CHUNK_LOG(info, advisor,
+                      "size prediction {} tab={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
+                      "blocks constant)",
+                      variant, num_tab, S, current.mem_bytes, best.S_prime, best.mem_bytes, gain_pct,
+                      best.n_const_blocks, best.n_blocks);
         }
     }
 }

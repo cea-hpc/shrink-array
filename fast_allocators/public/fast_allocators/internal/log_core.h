@@ -34,7 +34,8 @@
  * - Filtering: CHUNK_LOG=warn (the default), CHUNK_LOG=warn,rechunk=debug,
  *   CHUNK_LOG=off. Items apply left to right: a bare level sets every
  *   channel, `channel=level` one. Read once, at the first message;
- *   configure() applies a specification on top of it.
+ *   configure() applies a specification on top of it. The switches of the
+ *   former traces raise a channel on top (see legacy_switches).
  * - Cost: a message filtered out is one relaxed load and a compare; its
  *   arguments are not evaluated. CHUNK_LOG_MAX_LEVEL (0 fatal .. 5 trace, 5
  *   by default) removes the levels above it from the build altogether.
@@ -104,6 +105,7 @@ enum class Channel : std::uint8_t
     ompt,
     affinity,
     advisor,
+    memory, ///< the probes that cost: exact RSS (a page-table walk), allocator census, occupancy
     count_
 };
 
@@ -115,7 +117,7 @@ inline constexpr std::size_t line_max = 1024;
 
 inline constexpr std::array<std::string_view, n_channels> channel_names{
     "general",  "env",     "alloc",  "arena", "pool",     "rechunk", "drain",
-    "compress", "recycle", "ledger", "ompt",  "affinity", "advisor",
+    "compress", "recycle", "ledger", "ompt",  "affinity", "advisor", "memory",
 };
 inline constexpr std::array<std::string_view, n_levels> level_names{"fatal", "error", "warn", "info", "debug", "trace"};
 
@@ -391,6 +393,11 @@ inline void default_sink(const Record& r) noexcept
 /// @brief True while the calling thread runs the sink of set_sink().
 inline thread_local bool in_sink = false;
 
+/// @brief True while the calling thread reads the configuration (inside the
+///        call_once): what it warns about can reach a sink that fails, and
+///        the failure must not call_once again.
+inline thread_local bool configuring = false;
+
 /// @brief Hand @p r to the sink. A sink that logs reaches the default sink.
 inline void emit(const Record& r) noexcept
 {
@@ -429,7 +436,10 @@ inline void ensure_configured() noexcept;
  */
 inline void emit_fatal(const Record& r) noexcept
 {
-    ensure_configured();
+    if (!configuring)
+    {
+        ensure_configured();
+    }
     const bool to_file = out != nullptr && out != stderr;
     if (!in_sink)
     {
@@ -515,11 +525,76 @@ inline void report_bad_items(const Spec& spec, std::string_view who) noexcept
     }
 }
 
-/// @brief Read CHUNK_LOG and CHUNK_LOG_FILE: once, at the first message.
+/// @brief An environment switch that raises a channel to a level: a trace
+///        of before the log (deprecated: its use is warned about), or a
+///        setting whose point is what it logs (CHUNK_RECHUNK_DRY_RUN).
+struct LegacySwitch
+{
+    std::string_view name;
+    Channel          channel;
+    Level            level;
+    bool             deprecated;
+};
+
+/// @brief The switches, applied after CHUNK_LOG and raising only: setting
+///        one shows what it showed before, whatever CHUNK_LOG says.
+///        Set = non-empty and not starting with '0'.
+inline constexpr std::array<LegacySwitch, 7> legacy_switches{{
+    {"CHUNK_RECHUNK_TRACE", Channel::rechunk, Level::debug, true},
+    {"CHUNK_RECHUNK_TRACE_SLICES", Channel::rechunk, Level::trace, true},
+    {"CHUNK_RECHUNK_TRACE_MEM", Channel::memory, Level::debug, true},
+    {"CHUNK_RECHUNK_MEMTRACE", Channel::memory, Level::info, true},
+    {"CHUNK_RECHUNK_DRY_RUN", Channel::rechunk, Level::info, false},
+    {"CHUNK_RECHUNK_CHURN", Channel::rechunk, Level::info, false},
+    {"CHUNK_FORCE_RECHUNK", Channel::rechunk, Level::info, false},
+}};
+
+/// @brief True when switch @p s is set.
+[[nodiscard]] inline bool is_set(const LegacySwitch& s) noexcept
+{
+    char name[64];
+    std::memcpy(name, s.name.data(), s.name.size());
+    name[s.name.size()] = '\0';
+    const char* v       = std::getenv(name);
+    return v != nullptr && v[0] != '\0' && v[0] != '0';
+}
+
+/// @brief Raise @p max by the legacy switches set.
+inline void raise_by_legacy_switches(std::array<Level, n_channels>& max) noexcept
+{
+    for (const LegacySwitch& s : legacy_switches)
+    {
+        Level& m = max[static_cast<std::size_t>(s.channel)];
+        if (is_set(s) && m < s.level)
+        {
+            m = s.level;
+        }
+    }
+}
+
+/// @brief Warn, on channel env, about the deprecated switches set.
+inline void warn_deprecated_switches() noexcept
+{
+    for (const LegacySwitch& s : legacy_switches)
+    {
+        if (s.deprecated && is_set(s))
+        {
+            char       msg[line_max];
+            const auto len =
+                format_message(msg, "{} is deprecated: it means CHUNK_LOG={}={}, which it now sets", s.name,
+                               fast_alloc::logging::name(s.channel), fast_alloc::logging::name(s.level));
+            emit_direct(Level::warn, Channel::env, std::string_view{msg, len});
+        }
+    }
+}
+
+/// @brief Read CHUNK_LOG, the legacy switches and CHUNK_LOG_FILE: once, at the first message.
 inline void read_environment() noexcept
 {
+    configuring      = true;
     const char* env  = std::getenv("CHUNK_LOG");
-    const Spec  spec = parse_spec(env != nullptr ? env : "", default_max);
+    Spec        spec = parse_spec(env != nullptr ? env : "", default_max);
+    raise_by_legacy_switches(spec.max);
     store(spec.max);
 
     const char* path = std::getenv("CHUNK_LOG_FILE");
@@ -552,6 +627,8 @@ inline void read_environment() noexcept
     }
 
     report_bad_items(spec, "CHUNK_LOG");
+    warn_deprecated_switches();
+    configuring = false;
 }
 
 inline void ensure_configured() noexcept // declared above, for emit_fatal

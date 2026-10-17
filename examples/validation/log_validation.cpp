@@ -19,8 +19,9 @@
 // no variant.
 // ============================================================================
 //
-//   1. the environment: CHUNK_LOG and CHUNK_LOG_FILE, set before the first
-//      message, are read at it -- the levels apply, the file receives the
+//   1. the environment: CHUNK_LOG, a legacy switch and CHUNK_LOG_FILE, set
+//      before the first message, are read at it -- the levels apply, the
+//      switch raises its channel and is warned about, the file receives the
 //      lines, and an item not understood is reported there;
 //   2. parse_spec: bare levels, channel=level, left to right, spaces, empty
 //      items, the items not understood;
@@ -166,19 +167,27 @@ void check_environment()
     check(!logging::enabled(Channel::rechunk, Level::trace), "env: rechunk stops at debug");
     check(logging::enabled(Channel::pool, Level::warn), "env: the bare level warn applies to pool");
     check(!logging::enabled(Channel::pool, Level::info), "env: pool stops at warn");
+    check(logging::enabled(Channel::memory, Level::debug), "env: CHUNK_RECHUNK_TRACE_MEM=1 raises memory to debug");
+    check(!logging::enabled(Channel::rechunk, Level::trace), "env: CHUNK_RECHUNK_TRACE_SLICES=0 is not set");
 
     CHUNK_LOG(warn, general, "first line through the default sink");
     const auto lines             = read_lines(g_log_path);
     bool       bad_item_reported = false;
     bool       first_line        = false;
+    bool       deprecated        = false;
     for (const auto& l : lines)
     {
+        deprecated |=
+            l.starts_with("[shrink_array][env][W][") &&
+            l.ends_with("] CHUNK_RECHUNK_TRACE_MEM is deprecated: it means CHUNK_LOG=memory=debug, which it now "
+                        "sets");
         bad_item_reported |= l.starts_with("[shrink_array][env][W][") && l.find("\"verbose\"") != std::string::npos;
         first_line |=
             l.starts_with("[shrink_array][general][W][") && l.ends_with("] first line through the default sink");
     }
     check(bad_item_reported, "env: CHUNK_LOG item \"verbose\" reported in CHUNK_LOG_FILE");
     check(first_line, "env: a message reaches CHUNK_LOG_FILE with its prefix");
+    check(deprecated, "env: a deprecated switch is warned about");
 }
 
 // --- 2 ----------------------------------------------------------------------
@@ -521,8 +530,11 @@ void check_fatal(const char* self)
           "fatal: the record reaches the program's sink, after the block");
 
     r = run_child(self, 3);
-    check(r.status == kAbort && r.out.find("failure inside the sink, on \"trigger\"") != std::string::npos,
-          "fatal: a failure inside the sink stops (no deadlock: timeout 60 s)");
+    // The first record the sink sees is the deprecation warning of
+    // CHUNK_RECHUNK_TRACE_MEM (inherited from main), written while the
+    // configuration is read: the failure must not wait on that read.
+    check(r.status == kAbort && r.out.find("failure inside the sink, on \"") != std::string::npos,
+          "fatal: a failure inside the sink stops, even during the configuration (no deadlock: timeout 60 s)");
 
     r = run_child(self, 4);
     if constexpr (shrink_array::build_config::any_check)
@@ -553,6 +565,8 @@ int main(int argc, char** argv)
     g_log_path            = dir + "/shrink_log_validation." + std::to_string(::getpid()) + ".log";
     std::remove(g_log_path.c_str());
     setenv("CHUNK_LOG", "warn, rechunk=debug, verbose", 1);
+    setenv("CHUNK_RECHUNK_TRACE_MEM", "1", 1);    // a legacy switch: raises memory to debug
+    setenv("CHUNK_RECHUNK_TRACE_SLICES", "0", 1); // "0": not set
     setenv("CHUNK_LOG_FILE", (dir + "/shrink_log_validation.%p.log").c_str(), 1);
 
     check_environment();

@@ -72,7 +72,7 @@ for c in $CONFIGS; do
         for rec in $RECYCLE; do
           log="$OUT/${lab/@/-}_${t}th_rec${rec}_numa-${m}_r$r.log"
           s=$(date +%s.%N)
-          ( cd "$OUT" && env ${envset[@]+"${envset[@]}"} OMP_NUM_THREADS=$t CHUNK_RECHUNK_RECYCLE=$rec CHUNK_RECHUNK_TRACE=1 \
+          ( cd "$OUT" && env ${envset[@]+"${envset[@]}"} OMP_NUM_THREADS=$t CHUNK_RECHUNK_RECYCLE=$rec CHUNK_LOG=warn,rechunk=debug \
               $pre "$exe" "${ARGS[@]}" ) >"$log" 2>&1 || echo "  FAIL: $log" >&2
           e=$(date +%s.%N)
           printf "%s %s %s %s %s %.2f\n" "$lab" $t $rec $m $r \
@@ -86,7 +86,7 @@ for c in $CONFIGS; do
 done
 echo; echo "== best of $REPS (s) ==";
 awk 'NR>1{k=$1" "$2"th rec="$3" numa="$4; if(!(k in b)||$6<b[k])b[k]=$6} END{for(k in b)print k, b[k]}' "$OUT/results.txt" | sort -k1,1 -k2,2n -k3,3 -k4,4
-echo "logs (with CHUNK_RECHUNK_TRACE phase times): $OUT"
+echo "logs (with the rechunk=debug phase times): $OUT"
 # Rechunk phase totals of the first repetition, recycling on when it was run.
 summ="$(cd "$(dirname "$0")" && pwd)/rechunk_trace_summary.py"
 rec1=$(set -- $RECYCLE; case " $RECYCLE " in *" 1 "*) echo 1;; *) echo "$1";; esac)

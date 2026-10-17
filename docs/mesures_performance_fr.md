@@ -40,16 +40,16 @@ Dans la bibliothèque : `shrink_array::exact_rss_kib()` (`internal/exact_rss.h`)
   `SHRINK_BENCH_EXACT_RSS=1` ;
 - le « peak » est le maximum de `ru_maxrss` et des lectures exactes ;
   `SHRINK_BENCH_RSS_SAMPLE_MS=<ms>` ajoute un échantillonnage de fond ;
-- les traces des rechunks (`[RECHUNK-RSS]`, `[RECHUNK-MEM]`) lisent la valeur exacte.
+- les traces mémoire (`CHUNK_LOG=memory=info` / `memory=debug`) lisent la valeur exacte.
 
 ### 1.3 Localiser la mémoire
 
 | question | outil |
 |---|---|
-| combien dans les tampons de chunks, combien ailleurs ? | `CHUNK_RECHUNK_MEMTRACE=1` : à chaque passage de l'advisor, la mémoire exacte, dont la part résidente de l'arène des tampons (`mincore`) |
+| combien dans les tampons de chunks, combien ailleurs ? | `CHUNK_LOG=memory=info` : à chaque passage de l'advisor, la mémoire exacte, dont la part résidente de l'arène des tampons (`mincore`) |
 | que font les slabs ? | `CHUNK_ARENA_REPORT=1` (slabs distribués, rendus au système) |
 | quelle zone de l'espace d'adressage grossit ? | deux `pmap -x <pid>` à deux instants, comparés par zone |
-| que rend chaque rechunk ? | `CHUNK_RECHUNK_TRACE=1` : ligne `[RECHUNK-RSS]` (mémoire à chaque étape, `end-entry`) |
+| que rend chaque rechunk ? | `CHUNK_LOG=memory=debug` : ligne `rss` (mémoire à chaque étape, `end-entry`) |
 
 Un piège : le compteur « materialised » du build stats est une différence de compteurs
 (alloué − libéré). Il n'est juste que si chaque libération est comptée, ce qui n'était pas le
@@ -123,11 +123,11 @@ ralentissement vient des rechunks ou de ce qui les suit :
 
 ```
 tick_times() {
-  env "$@" CHUNK_RECHUNK_MEMTRACE=1 OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores \
+  env "$@" CHUNK_LOG=warn,memory=info,rechunk=info OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores \
     $BIN --mode perf --no_io 2>&1 >/dev/null \
   | while read -r l; do
       case "$l" in
-        *"RECHUNK-MEM]"*) echo "T $(date +%s.%N) ${l#*tick }" ;;
+        *"[memory][I]"*)  echo "T $(date +%s.%N) ${l#*tick }" ;;
         *APPLIED*)        echo "R" ;;
       esac
     done \

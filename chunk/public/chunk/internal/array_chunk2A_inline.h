@@ -29,6 +29,7 @@
 #include "chunk/array_chunk2A.h"                        // ArrayChunk2A, the class these bodies belong to
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
+#include "chunk/log.h"                                  // logging::enabled (the size prediction's gate)
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"               // ManagerChunk: per-size free lists, candidate filter
@@ -187,7 +188,8 @@ void ArrayChunk2A<T, ind_type>::clear()
     // stats scan) and keeps chunk order.
     if constexpr (build_config::any_check)
     {
-        if (nb_chunk > 0)
+        // The scan only feeds the advisor's info line: skipped when it is not shown.
+        if (nb_chunk > 0 && logging::enabled(logging::Channel::advisor, logging::Level::info))
         {
             const auto                      csz = static_cast<unsigned int>(this->size_policy_.size());
             std::vector<std::pair<bool, T>> summary(static_cast<std::size_t>(nb_chunk));

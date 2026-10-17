@@ -50,6 +50,13 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Fixed
+
+- A "wait" line of the re-chunk decider ended with a stray `0` when the array
+  had no back-off.
+- An invariant failure inside a program's log sink, while the log was reading
+  its configuration, blocked instead of stopping the program.
+
 ### Added
 
 - One log for both libraries (`chunk/log.h`, built on
@@ -74,6 +81,26 @@ the tag's checksum to the recipe.
   writes about to be lost stop a check build (as before) and, in the other
   builds, are errors of the log (channels `pool`, `drain`) instead of raw
   stderr lines.
+- The re-chunk traces go through the log, with a new channel `memory` for the
+  probes that cost: `CHUNK_LOG=rechunk=debug` (phase times, rebuild schedule,
+  slice split; formerly `CHUNK_RECHUNK_TRACE`), `rechunk=trace` (memory per
+  slice; `CHUNK_RECHUNK_TRACE_SLICES`), `memory=info` (memory split at each
+  advisor tick; `CHUNK_RECHUNK_MEMTRACE`), `memory=debug` (exact memory at
+  each re-chunk step, census; `CHUNK_RECHUNK_TRACE_MEM`). The former variables
+  still work, with a deprecation warning; `0` now means unset for them too.
+- The re-chunk decider's lines are no longer written by default:
+  `rechunk=info` writes its moves (`decide <array>: re-chunk S=.. -> S'=..
+  ... [APPLIED]`), `rechunk=debug` its waits too. `CHUNK_RECHUNK_DRY_RUN`,
+  `CHUNK_RECHUNK_CHURN` and `CHUNK_FORCE_RECHUNK` switch `rechunk=info` on.
+  python/bench_runner and multi_launch_stress.py set
+  `CHUNK_LOG=warn,rechunk=info` unless it is set; their parser,
+  rechunk_trace_summary.py and diag_v1_rechunk_slowdown.py read the new and
+  the former format.
+- A refused `rechunk_to()`, `set_chunk_size()` or `set_active_chunk_size()` is
+  a warning of channel `rechunk` (written by default, as before); the notices
+  of `CHUNK_RECHUNK_KEEP_RECYCLED(_MB)` are of level info (no longer written
+  by default); check builds' chunk-size prediction is `advisor=info`, and its
+  scan is skipped when not written.
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.

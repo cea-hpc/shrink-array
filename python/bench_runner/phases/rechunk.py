@@ -64,6 +64,9 @@ def run_rechunk_phase(args, extra_ldpath, errors):
     }
     env_common = {
         "OMP_NUM_THREADS":      str(args.check_threads),
+        # The applied moves this phase looks for ("[APPLIED]") are log
+        # messages of level info, not written by default.
+        "CHUNK_LOG":            "warn,rechunk=info",
         "CHUNK_ADVISOR_PERIOD": "4",
         # The gates of a coarsening, off: the metadata floor and rate, and the
         # absolute deadband of the data branch (the ~0.7 MB gain of the
@@ -109,8 +112,8 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                     [exe] + stage_extra_args[stage],
                     run_env, to,
                     extra_ld_library_path=extra_ldpath, cwd=rdir,
-                    # "[APPLIED]", not "[RECHUNK-APPLY]": the library prints
-                    # "[RECHUNK-DECIDE] <array>: re-chunk S=.. -> S'=.. (...) [APPLIED]".
+                    # "[APPLIED]", not "[RECHUNK-APPLY]": the library logs
+                    # "decide <array>: re-chunk S=.. -> S'=.. (...) [APPLIED]" (rechunk=info).
                     # The old marker existed nowhere in the tree, so this test
                     # reported FAIL on a process that had exited 0.
                     must_contain="[APPLIED]",
