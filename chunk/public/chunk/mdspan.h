@@ -189,6 +189,7 @@ struct accessor
     }
 };
 
+    #if SHRINK_ARRAY_HAS_SUBMDSPAN
 namespace detail
 {
 /**
@@ -234,6 +235,7 @@ constexpr void tiled_slice(const Slice& s, Index extent, Index& first, Index& si
     }
 }
 } // namespace detail
+    #endif
 
 namespace detail
 {
@@ -366,6 +368,7 @@ class tiled_mapping_base
         tstride_ = g;
     }
 
+    #if SHRINK_ARRAY_HAS_SUBMDSPAN
     /// @brief A submdspan's sub-view: its extents and its offset. Every slice
     ///        keeps its dimension, with stride 1, and is aligned on the tiles
     ///        (it starts on a tile and ends on one or at the extent); a slice
@@ -403,6 +406,7 @@ class tiled_mapping_base
         }
         return {size, static_cast<std::size_t>(which) * static_cast<std::size_t>(self().tile_elements())};
     }
+    #endif
 
   private:
     constexpr const Derived& self() const noexcept
