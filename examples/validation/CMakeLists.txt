@@ -506,7 +506,8 @@ function(chunk_add_alloc_token_rt target)
     target_sources(${target} PRIVATE ${_rt})
     set_source_files_properties(${_rt} DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                                 PROPERTIES COMPILE_OPTIONS "-fno-sanitize=alloc-token")
-    target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public) # env_parse.h
+    target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public # env_parse.h
+                                                 ${PROJECT_SOURCE_DIR}/fast_allocators/public) # its log_core.h
   endif()
 endfunction()
 
@@ -517,6 +518,18 @@ target_link_libraries(bit_words_validation PRIVATE Threads::Threads)
 chunk_require_cxx20(bit_words_validation PRIVATE)
 add_test(NAME bit_words_validation COMMAND bit_words_validation)
 set_property(TEST bit_words_validation PROPERTY LABELS validation)
+
+# --- log_validation: the library's log (fast_allocators/internal/log_core.h)
+# alone -- CHUNK_LOG / CHUNK_LOG_FILE, the filter, a sink, the rate-limited
+# macros, the cut of a long message, no allocation on the path of a message,
+# whole lines from 8 threads. Header-only: no library, no variant.
+add_executable(log_validation log_validation.cpp)
+target_include_directories(log_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
+                                                  ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(log_validation PRIVATE Threads::Threads)
+chunk_require_cxx20(log_validation PRIVATE)
+add_test(NAME log_validation COMMAND log_validation)
+set_property(TEST log_validation PROPERTY LABELS validation)
 
 # --- blk_allocator_validation: fast_allocators' public size-dispatching front
 # end (BlkAllocator) alone. Nothing in the library calls it, so this is what

@@ -33,11 +33,12 @@
 
 #include <cerrno>       // errno, ERANGE (strtod)
 #include <charconv>     // std::from_chars
-#include <cstdio>       // std::fprintf
 #include <cstdlib>      // std::getenv, std::strtod
 #include <cstring>      // std::strlen
 #include <system_error> // std::errc
 #include <type_traits>  // std::is_arithmetic_v, std::is_integral_v, std::is_same_v
+
+#include "chunk/log.h" // CHUNK_LOG
 
 namespace shrink_array
 {
@@ -86,14 +87,14 @@ template <typename T>
 /// @brief The warning of a variable whose value is not the number expected.
 inline void warn_invalid_env(const char* name, const char* value) noexcept
 {
-    std::fprintf(stderr, "[env] %s=\"%s\" is not a valid value: ignored, the default is kept\n", name, value);
+    CHUNK_LOG(warn, env, "{}=\"{}\" is not a valid value: ignored, the default is kept", name, value);
 }
 
 /**
  * @brief The number in environment variable @p name, or @p fallback.
  * @return @p fallback when the variable is unset or empty, and when its value
- *         is not a number of type T (with a warning on stderr: a typo such as
- *         CHUNK_RECHUNK_SLICES=1o does not pass unnoticed).
+ *         is not a number of type T (with a warning on the log, channel env:
+ *         a typo such as CHUNK_RECHUNK_SLICES=1o does not pass unnoticed).
  */
 template <typename T>
 [[nodiscard]] T env_number(const char* name, T fallback) noexcept
@@ -124,8 +125,8 @@ template <typename T>
     {
         return v;
     }
-    std::fprintf(stderr, "[arg] %s \"%s\" is not a valid value: ignored, the default is kept\n", what,
-                 text != nullptr ? text : "");
+    CHUNK_LOG(warn, general, "{} \"{}\" is not a valid value: ignored, the default is kept", what,
+              text != nullptr ? text : "");
     return fallback;
 }
 

@@ -50,6 +50,25 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- One log for both libraries (`chunk/log.h`, built on
+  `fast_allocators/internal/log_core.h`): every message has a level and a
+  channel, `CHUNK_LOG` (default `warn`) says which are written, e.g.
+  `CHUNK_LOG=warn,rechunk=debug`, and `CHUNK_LOG_FILE` where (stderr by
+  default). A program can set the levels with `shrink_array::logging::configure()`
+  and receive every message in its own logger with
+  `shrink_array::logging::set_sink()`. A message is formatted on the stack (no
+  allocation) and written as one line, `[shrink_array][channel][level][tid] text`.
+  New harness `log_validation`. The library's other stderr messages move to it
+  in the next steps.
+
+### Changed
+
+- The warnings on an environment variable or an argument that is not a valid
+  number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
+  valid value: ...` instead of `[env] NAME=...`.
+
 ## 0.1.2 -- 2026-10-16
 
 ### Added

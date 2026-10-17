@@ -33,6 +33,7 @@ set(ALLOCATORS_PUBLIC_HEADERS
 set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/alloc_config.h
   public/fast_allocators/internal/int_alloc.h
+  public/fast_allocators/internal/log_core.h
   public/fast_allocators/internal/next_power_of_2.h
   public/fast_allocators/internal/pmp_alloc.h
   public/fast_allocators/internal/singleton.h
