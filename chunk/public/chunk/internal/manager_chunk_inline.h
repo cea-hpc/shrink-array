@@ -21,8 +21,6 @@
 // (CHUNK_T, T) the consumer uses auto-instantiates at its use site.
 
 #include <atomic>        // std::atomic, std::memory_order
-#include <cstdio>        // std::fprintf, std::fflush
-#include <cstdlib>       // std::getenv (the trace switches)
 #include <algorithm>     // std::max, std::ranges::sort, std::ranges::push_heap
 #include <functional>    // std::less
 #include <tuple>         // std::tuple (the memory estimate)
@@ -32,7 +30,8 @@
 
 #include "chunk/internal/manager_chunk.h"     // the declarations these bodies belong to
 #include "chunk/config.h"                     // build_config::use_fast_alloc, chunk_config::use_fast_block_compression
-#include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
+#include "chunk/log.h"                        // CHUNK_LOG, CHUNK_LOG_FIRST_N
 #include "fast_allocators/internal/svalloc.h" // svfree
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
@@ -345,8 +344,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_all_list_block_free_thr(
  *        destruction has to be serialised with `omp single`.
  *
  * @note It first walks the maps for ops that were enqueued but never drained,
- *       in EVERY build. It does not abort on them: it reports (stderr, the
- *       first 16 times), then applies and clears them. Skipping the walk would
+ *       in EVERY build. It does not abort on them: it reports (an error of
+ *       the log's channel drain, the first 16 times), then applies and clears them. Skipping the walk would
  *       destroy the maps with the ops in them: a write lost without a word,
  *       its block never recycled.
  *       The walk is one empty() test per rank when nothing is left.
@@ -378,15 +377,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
                 }
 
                 // Should never happen: report, capped.
-                static std::atomic<int> reports{0};
-                const int               report = reports.fetch_add(1, std::memory_order_relaxed);
-                if (report < 16)
-                {
-                    std::fprintf(stderr,
-                                 "[LEAK] destroy_after_flush: thr=%d has %zu chunks with deferred ops (draining "
-                                 "defensively)%s\n",
-                                 rank, arr[rank].size(), report == 15 ? " -- further reports suppressed" : "");
-                }
+                CHUNK_LOG_FIRST_N(16, error, drain,
+                                  "destroy_after_flush: thr={} has {} chunks with deferred ops (draining defensively)",
+                                  rank, arr[rank].size());
 
                 for (auto& [chunk_ptr, ops_map_ptr] : arr[rank])
                 {
@@ -423,8 +416,6 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
             {
                 drain_index(t);
             }
-
-            std::fflush(stderr);
         }
     }
     using ArrayType = ArrayChunkFor_t<CHUNK_T<T>>;
@@ -461,10 +452,10 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
  *                     the caller knows whether buffers need reclaiming.
  *
  * @warning The drain loop is capped at 1024 passes. Reaching the cap means ops
- *          are being re-enqueued as fast as they are drained; it reports on
- *          stderr and gives up rather than hanging.
+ *          are being re-enqueued as fast as they are drained; it reports
+ *          (CHUNK_CHECK_FAILED) and gives up rather than hanging.
  * @note Under any_check, and outside aggressive mode, it also audits whether
- *       candidates remain after the final flush. A few are benign; a large or
+ *       candidates remain after the final flush (compress=info). A few are benign; a large or
  *       recurring residual is not.
  */
 template <template <typename> typename CHUNK_T, typename T>
@@ -561,10 +552,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         {
             if (self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
             {
-                std::fprintf(stderr, "[COMPRESS-AUDIT] blocks left to compress after final flush "
-                                     "(non-aggressive) — compression pass skipped some blocks. "
-                                     "A few is benign; a recurring/large residual is not.\n");
-                std::fflush(stderr);
+                CHUNK_LOG(info, compress,
+                          "audit: blocks left to compress after final flush (non-aggressive) -- compression pass "
+                          "skipped some blocks. A few is benign; a recurring/large residual is not.");
             }
         }
 
@@ -978,8 +968,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
     if (static_cast<std::size_t>(slice) >= mgr::teardown_repeats_.size())
     {
         // A team larger than max_thr: prepare() could not size for it.
-        std::fprintf(stderr, "[DOUBLE-FREE] teardown dedup: slice %d of %d has no repeat list, skipped\n", slice,
-                     nslices);
+        CHUNK_LOG(warn, pool, "teardown dedup: slice {} of {} has no repeat list, skipped", slice, nslices);
         return;
     }
     const std::size_t k = to_free.size();
@@ -1194,12 +1183,8 @@ bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int 
         // The array's own share per rank, where the global budget uses the
         // process-wide somme_chunk_create.
         set_size_buffer_reuse(key, static_cast<int>(nb_chunk / (reuse_share_div() * max_thr)), size);
-        if (std::getenv("CHUNK_AFFINITY_TRACE") != nullptr)
-        {
-            std::fprintf(stderr, "[AFFINITY] key=%u size=%u nb_chunk=%d budget=%d threads=%d\n", key, size, nb_chunk,
-                         get_size_buffer_reuse(key), max_thr);
-            std::fflush(stderr);
-        }
+        CHUNK_LOG(debug, affinity, "key={} size={} nb_chunk={} budget={} threads={}", key, size, nb_chunk,
+                  get_size_buffer_reuse(key), max_thr);
         return true;
     }
     else

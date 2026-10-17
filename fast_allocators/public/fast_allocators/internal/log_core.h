@@ -30,6 +30,7 @@
  *     CHUNK_LOG(warn, env, "{}=\"{}\" is not a valid value: ignored", name, value);
  *     CHUNK_LOG_FIRST_N(16, error, drain, "thr={} has {} chunks with deferred ops", rank, n);
  *     CHUNK_LOG_POW2(warn, recycle, "dropped FOREIGN block {}", ptr);
+ *     CHUNK_LOG_ALWAYS(pool, "{} size {}: {} block(s)", label, size, n); // a report asked for
  *
  * - Filtering: CHUNK_LOG=warn (the default), CHUNK_LOG=warn,rechunk=debug,
  *   CHUNK_LOG=off. Items apply left to right: a bare level sets every
@@ -50,6 +51,13 @@
  * - Arguments: anything std::format spells, plus std::complex, "(re+imi)",
  *   and any other type as its bytes in hex (fmt_arg): a message can print
  *   an element value of any type.
+ * - Traces and reports: a trace is a flow CHUNK_LOG switches on (CHUNK_LOG);
+ *   a report is a summary the program asked for explicitly -- a print_*
+ *   function it called, a report switch it set (CHUNK_LEDGER_REPORT,
+ *   CHUNK_OMPT_STATS), a trace build option -- and is written whatever
+ *   CHUNK_LOG says (CHUNK_LOG_ALWAYS, level info), through the same sink.
+ *   A report can run at exit: a sink installed with set_sink() must outlive
+ *   it, or be removed (set_sink(nullptr)) before its state goes.
  * - Not here: the fatal level. An invariant failure is CHUNK_INVARIANT_FAILED
  *   (chunk/internal/invariant_check.h), which no setting can turn off.
  */
@@ -539,7 +547,7 @@ struct LegacySwitch
 /// @brief The switches, applied after CHUNK_LOG and raising only: setting
 ///        one shows what it showed before, whatever CHUNK_LOG says.
 ///        Set = non-empty and not starting with '0'.
-inline constexpr std::array<LegacySwitch, 7> legacy_switches{{
+inline constexpr std::array<LegacySwitch, 8> legacy_switches{{
     {"CHUNK_RECHUNK_TRACE", Channel::rechunk, Level::debug, true},
     {"CHUNK_RECHUNK_TRACE_SLICES", Channel::rechunk, Level::trace, true},
     {"CHUNK_RECHUNK_TRACE_MEM", Channel::memory, Level::debug, true},
@@ -547,6 +555,7 @@ inline constexpr std::array<LegacySwitch, 7> legacy_switches{{
     {"CHUNK_RECHUNK_DRY_RUN", Channel::rechunk, Level::info, false},
     {"CHUNK_RECHUNK_CHURN", Channel::rechunk, Level::info, false},
     {"CHUNK_FORCE_RECHUNK", Channel::rechunk, Level::info, false},
+    {"CHUNK_AFFINITY_TRACE", Channel::affinity, Level::debug, true},
 }};
 
 /// @brief True when switch @p s is set.
@@ -766,6 +775,17 @@ struct std::formatter<fast_alloc::logging::detail::BytesArg<V>, char>
                                                      std::source_location::current(), fmt, ##__VA_ARGS__); \
             }                                                                                              \
         }                                                                                                  \
+    } while (false)
+
+/// @brief A message the program asked for explicitly (a report: see the file
+///        comment): written whatever CHUNK_LOG says, at level info on channel
+///        @p chan, through the sink.
+#define CHUNK_LOG_ALWAYS(chan, fmt, ...)                                                                               \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        ::fast_alloc::logging::detail::ensure_configured();                                                            \
+        ::fast_alloc::logging::detail::write(::fast_alloc::logging::Level::info, ::fast_alloc::logging::Channel::chan, \
+                                             std::source_location::current(), fmt, ##__VA_ARGS__);                     \
     } while (false)
 
 /// @brief CHUNK_LOG for the first @p limit times this line's message gets

@@ -18,9 +18,10 @@
 
 #include <atomic>      // std::memory_order (the missed-compression audit)
 #include <cstddef>     // std::size_t
-#include <cstdio>      // std::fprintf (check-build trace)
+#include <array>       // std::array (the residual's sample)
 #include <iomanip>     // std::setw (print_type_name)
-#include <iostream>    // std::cout / std::cerr
+#include <iostream>    // std::cout (print_type_name)
+#include <string_view> // std::string_view (the residual's kind)
 #include <string>      // the type name in print_type_name
 #include <type_traits> // std::remove_reference_t
 #include <utility>     // std::pair (the clear() summary)
@@ -29,7 +30,8 @@
 #include "chunk/array_chunk2A.h"                        // ArrayChunk2A, the class these bodies belong to
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
-#include "chunk/log.h"                                  // logging::enabled (the size prediction's gate)
+#include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled (the size prediction's gate)
+#include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"               // ManagerChunk: per-size free lists, candidate filter
@@ -360,21 +362,19 @@ void ArrayChunk2A<T, ind_type>::clear_core()
 
             if (missed_first + missed_second != 0)
             {
-                std::fprintf(stderr,
-                             "[COMPRESS-AUDIT] chunk2a tab=%d: %zu constant block(s) never queued for "
-                             "compression (%zu at first_value, %zu at their second value: missed by the "
-                             "marking path). A few is benign; a recurring/large count is not.\n",
-                             num_tab, missed_first + missed_second, missed_first, missed_second);
-                std::fflush(stderr);
+                CHUNK_LOG(info, compress,
+                          "audit: chunk2a tab={}: {} constant block(s) never queued for compression ({} at "
+                          "first_value, {} at their second value: missed by the marking path). A few is benign; a "
+                          "recurring/large count is not.",
+                          num_tab, missed_first + missed_second, missed_first, missed_second);
             }
             if (stuck != 0)
             {
-                std::fprintf(stderr,
-                             "[COMPRESS-AUDIT] chunk2a tab=%d: %zu block(s) constant at a value other than "
-                             "their second value: stuck, not a marking miss (chunk2a keeps a chunk's "
-                             "second value until it passes through first_value).\n",
-                             num_tab, stuck);
-                std::fflush(stderr);
+                CHUNK_LOG(info, compress,
+                          "audit: chunk2a tab={}: {} block(s) constant at a value other than their second value: "
+                          "stuck, not a marking miss (chunk2a keeps a chunk's second value until it passes through "
+                          "first_value).",
+                          num_tab, stuck);
             }
         }
     }
@@ -568,65 +568,22 @@ void ArrayChunk2A<T, ind_type>::compress_int()
     // keeping up (or, in a use_openmp && !OMPT build, that Chunk2A::compress()
     // returns early by design and make_block_compression is the only
     // compressor left -- see its guard in chunk2A_std_inline.h).
-    const auto nb1 = static_cast<int>(tab_nb1.size());
-
-    if (nb1 != 0)
+    // compress=info, one line per kind and thread (its share of the chunks).
+    const auto report = [&](const std::vector<int>& tab, std::string_view at)
     {
-#pragma omp critical
+        if (tab.empty())
         {
-            std::cerr << "[compress-residual chunk2a] " << nb1
-                      << " block(s) constant at first_value, still materialised "
-                         "(awaiting the next compression pass)\n";
-            std::cerr << "ArrayChunk2A type: ArrayChunk2A<" << type_name<T>() << ", " << type_name<ind_type>() << ">"
-                      << std::endl;
-
-            // Cap the dump at 10 ENTRIES (not at chunk index 10: an array whose
-            // residual starts past chunk 10 would print a single line).
-            int shown = 0;
-            for (const int ind : tab_nb1)
-            {
-                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size())
-                          << "\n";
-                if (++shown >= 10)
-                {
-                    break;
-                }
-            }
-            if (nb1 > shown)
-            {
-                std::cerr << "\n...\n";
-            }
+            return;
         }
-    }
-
-    const auto nb2 = static_cast<int>(tab_nb2.size());
-
-    if (nb2 != 0)
-    {
-#pragma omp critical
-        {
-            std::cerr << "[compress-residual chunk2a] " << nb2
-                      << " block(s) constant at the second value, still materialised "
-                         "(awaiting the next compression pass)\n";
-            std::cerr << "ArrayChunk2A type: ArrayChunk2A<" << type_name<T>() << ", " << type_name<ind_type>() << ">"
-                      << std::endl;
-
-            int shown = 0;
-            for (const int ind : tab_nb2)
-            {
-                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size())
-                          << "\n";
-                if (++shown >= 10)
-                {
-                    break;
-                }
-            }
-            if (nb2 > shown)
-            {
-                std::cerr << "\n...\n";
-            }
-        }
-    }
+        std::array<char, 256> sample{};
+        CHUNK_LOG(info, compress,
+                  "residual ArrayChunk2A<{}, {}>: {} block(s) constant at {}, still materialised (awaiting the next "
+                  "compression pass): {}",
+                  type_name<T>(), type_name<ind_type>(), tab.size(), at,
+                  internal::chunk_index_sample(sample, tab, static_cast<ind_type>(this->size_policy_.size())));
+    };
+    report(tab_nb1, "first_value");
+    report(tab_nb2, "the second value");
 }
 
 template <ArrayChunkElement T, typename ind_type>

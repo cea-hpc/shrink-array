@@ -101,6 +101,18 @@ the tag's checksum to the recipe.
   of `CHUNK_RECHUNK_KEEP_RECYCLED(_MB)` are of level info (no longer written
   by default); check builds' chunk-size prediction is `advisor=info`, and its
   scan is skipped when not written.
+- Manager, compression audits, pool and ledger reports, OMPT go through the
+  log: a drain left with deferred operations at teardown is an error of
+  channel `drain` (the first 16); the check builds' compression audits and the
+  compression residual of `compress()` are `compress=info` (no longer written
+  by default; ArrayChunk2's per-chunk detail at `compress=debug`); the
+  per-array allocator sets are `affinity=debug` (formerly
+  `CHUNK_AFFINITY_TRACE`, deprecated); the OMPT tool's warnings are of channel
+  `ompt`, and with `CHUNK_REQUIRE_OMPT=1` an invariant failure. Reports asked
+  for explicitly -- `print_all_reuse_pool_breakdown()`, `CHUNK_LEDGER_REPORT`,
+  `CHUNK_OMPT_STATS`, `compress_int(true)`, the `CHUNK_RECHUNK_LEDGERTRACE`
+  build -- are written whatever `CHUNK_LOG` says (`CHUNK_LOG_ALWAYS`), through
+  the sink.
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.

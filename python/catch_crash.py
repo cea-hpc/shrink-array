@@ -149,6 +149,7 @@ def looks_like_crash(returncode, output):
         "ALLOC_PROBE",
         "FLUSH_PROBE",
         "POOL_LEDGER",
+        "[ledger]",                   # the block ledger's lines in the library's log
         "INVARIANT",
         "ThreadSanitizer",
     ]
