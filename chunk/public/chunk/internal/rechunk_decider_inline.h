@@ -162,7 +162,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // gain can be refused forever on a big array.
     const bool coarsening = best_sz > cur_size;
     // Expected rebuild cost: gates a coarsening (coarsen_min_meta_rate), and
-    // is logged to compare with CHUNK_RECHUNK_TRACE when refitting constants.
+    // is logged to compare with the rechunk=debug phase times when refitting constants.
     const double est_cost_ms =
         rechunk_cost_ms(cur_e.n_chunks, cur_size, cur_e.mat, rep.elem_bytes, CHUNK_PMP_MAX_THREADS);
     const double gain_meta = static_cast<double>(cur_e.n_chunks - best_e.n_chunks) * rep.meta_bytes;
@@ -360,7 +360,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     return act;
 }
 
-/// @brief CHUNK_RECHUNK_MEMTRACE: the last tick printed -- one variable for
+/// @brief memory=info: the last tick printed -- one variable for
 ///        every consider<T, Arr> instantiation (a function-local static in the
 ///        template would print once per element type).
 inline int& rechunk_memtrace_last_tick() noexcept

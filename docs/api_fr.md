@@ -162,3 +162,30 @@ La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adap
 | `chunk_config::stats` | build `CHUNK_STATS` |
 
 Variables d'environnement et options de build : [variables_environnement_fr.md](variables_environnement_fr.md).
+
+## 9. Le journal
+
+Tous les messages des deux bibliothèques passent par un seul journal (`chunk/log.h`, espace de
+noms `shrink_array::logging`) : un niveau (`error`, `warn`, `info`, `debug`, `trace`) et un canal
+(`general`, `env`, `alloc`, `arena`, `pool`, `rechunk`, `drain`, `compress`, `recycle`, `ledger`,
+`ompt`, `affinity`, `advisor`, `memory`). Par défaut, les avertissements et les erreurs sont
+écrits, une ligne chacun, sur stderr :
+
+```
+[shrink_array][rechunk][W][12345] rechunk_to(48) refused: a chunk size must be a power of two or a multiple of 64
+```
+
+| appel ou variable | effet |
+|---|---|
+| `CHUNK_LOG=warn,rechunk=info` | les niveaux : un niveau seul pour tous les canaux, `canal=niveau` pour un seul, de gauche à droite ; `off` n'écrit que les échecs fatals |
+| `CHUNK_LOG_FILE=chemin` | le fichier où les lignes sont ajoutées au lieu de stderr (`%p` : le numéro du processus) |
+| `logging::configure("warn,rechunk=debug")` | la même spécification depuis le code, par-dessus `CHUNK_LOG` ; renvoie le nombre d'éléments non compris |
+| `logging::set_sink(fn, user)` | confie chaque enregistrement (niveau, canal, message, emplacement dans le source) à `fn` -- le logger du programme -- au lieu de stderr ; `nullptr` revient au défaut. Un enregistrement peut arriver à la sortie : le sink doit lui survivre, ou être retiré avant |
+
+Ce qu'un programme demande explicitement -- `print_all_reuse_pool_breakdown()`,
+`CHUNK_ARENA_REPORT`, `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` -- est écrit quel que soit
+`CHUNK_LOG`, par le même sink. Une violation d'invariant ou un échec fatal de l'allocateur arrête
+toujours le programme : un bloc sur stderr commençant par `[CRITICAL_FAILURE]`
+(`[DEBUG_INVARIANT_FAILURE]` dans un build debug), la backtrace, puis l'enregistrement (niveau
+fatal) vers le sink ou `CHUNK_LOG_FILE`. Le contenu des canaux :
+[reglages_developpeur_fr.md](reglages_developpeur_fr.md), section 2.

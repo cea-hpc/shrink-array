@@ -50,13 +50,6 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
-### Fixed
-
-- A "wait" line of the re-chunk decider ended with a stray `0` when the array
-  had no back-off.
-- An invariant failure inside a program's log sink, while the log was reading
-  its configuration, blocked instead of stopping the program.
-
 ### Added
 
 - One log for both libraries (`chunk/log.h`, built on
@@ -140,6 +133,23 @@ the tag's checksum to the recipe.
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.
+
+### Deprecated
+
+- The trace switches of before the log, replaced by `CHUNK_LOG` levels: `CHUNK_RECHUNK_TRACE`
+  (`rechunk=debug`), `CHUNK_RECHUNK_TRACE_SLICES` (`rechunk=trace`), `CHUNK_RECHUNK_MEMTRACE`
+  (`memory=info`), `CHUNK_RECHUNK_TRACE_MEM` (`memory=debug`), `CHUNK_AFFINITY_TRACE`
+  (`affinity=debug`), `CHUNK_RECYCLE_TRACE` (`recycle=trace`), `FAST_ALLOC_TRACE`
+  (`alloc=trace`). Still accepted -- each sets its level, with a warning -- and to be removed in
+  0.3.0. They are developer settings ([docs/developer_settings.md](docs/developer_settings.md)),
+  outside the versioning policy; the deprecation period is a courtesy to the scripts that set them.
+
+### Fixed
+
+- A "wait" line of the re-chunk decider ended with a stray `0` when the array
+  had no back-off.
+- An invariant failure inside a program's log sink, while the log was reading
+  its configuration, blocked instead of stopping the program.
 
 ## 0.1.2 -- 2026-10-16
 
