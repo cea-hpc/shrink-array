@@ -116,7 +116,7 @@ class RechunkHooks2<Derived, false>
     using value_type = Traits::value_type;        ///< Stored element type.
 
     /** @brief No-op: the geometry is fixed at compile time. */
-    void rechunk_drop_candidates() const noexcept  {}
+    void rechunk_drop_candidates() const noexcept {}
     /** @brief No-op: the geometry is fixed at compile time. */
     void rechunk_drain_reuse_list(unsigned int /*new_size*/) const noexcept {}
     /** @brief No state to carry: there is no re-chunk to carry it across. */

@@ -63,14 +63,14 @@
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>   // getpid
 
-#include "chunk/chunk_traits.h"       // forward decls (Chunk2A) + default ind_type = int
-#include "chunk/array_chunk2A.h"      // ArrayChunk2A, Chunk2A complete (its registry types)
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/config.h"             // chunk_config::use_chunk2a, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
-#include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/chunk_traits.h"               // forward decls (Chunk2A) + default ind_type = int
+#include "chunk/array_chunk2A.h"              // ArrayChunk2A, Chunk2A complete (its registry types)
+#include "chunk/param_chunk.h"                // ParamChunk::init_indexes
+#include "chunk/config.h"                     // chunk_config::use_chunk2a, build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
+#include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/env_parse.h"         // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"             // shrink_array::println
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size (G)
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -287,8 +287,8 @@ int run(int argc, char** argv)
         expect_eq("stats: reclaims counted", static_cast<long>(after_a.reclaims - before_a.reclaims), 4);
         expect_eq("stats: freed counted", static_cast<long>(after_a.freed - before_a.freed), freed_a);
         expect_eq("stats: none refused", static_cast<long>(after_a.refused() - before_a.refused()), 0);
-        expect_eq("stats: free + in use = handed out",
-                  static_cast<long>(after_a.free + after_a.in_use()), handed_out());
+        expect_eq("stats: free + in use = handed out", static_cast<long>(after_a.free + after_a.in_use()),
+                  handed_out());
 
         // B: half the chunks rewritten.
         println("B  even chunks rewritten");

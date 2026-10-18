@@ -258,8 +258,8 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // consider() skips the analysis until next_look_tick.
     static const int backoff_env = shrink_array::env_number<int>("CHUNK_ADVISOR_BACKOFF_MAX", -1);
     const int        backoff_max = backoff_env >= 0 ? backoff_env : pol_.max_backoff_ticks;
-    const bool settled = !act && (std::strcmp(reason, "already optimal") == 0 ||
-                                  std::strcmp(reason, "gain below deadband") == 0);
+    const bool       settled =
+        !act && (std::strcmp(reason, "already optimal") == 0 || std::strcmp(reason, "gain below deadband") == 0);
     if (settled && backoff_max > 1)
     {
         hist.backoff        = std::min(hist.backoff * 2, backoff_max);

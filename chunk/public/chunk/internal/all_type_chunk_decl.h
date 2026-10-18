@@ -465,7 +465,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
  *
  * @details Worth calling FIRST THING in main, before any parallel region.
  *
-     *          glibc gives each contending thread its own arena -- up to 8 per core
+ *          glibc gives each contending thread its own arena -- up to 8 per core
  *          -- and an arena never lends a freed block to another. A program that
  *          allocates and frees millions of buffers across many threads therefore
  *          pays for the high-water mark of EVERY arena, not of the process:

@@ -622,10 +622,8 @@ void ArrayChunk2A<T, ind_type>::release_chunk_range(int first, int last)
         // geometry. Inside a region, or for a few chunks, the calling thread.
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
-            first, last,
-            [my_sz]() -> auto& {
-                return manager_chunk2A::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz);
-            },
+            first, last, [my_sz]() -> auto&
+            { return manager_chunk2A::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this](int j, auto& lbf)
             {
                 if (chunk_list[j].written_test())
@@ -635,7 +633,7 @@ void ArrayChunk2A<T, ind_type>::release_chunk_range(int first, int last)
                         increm_chunk_teardown_clear<Chunk2A<T>>();
                         // The size read here, not captured: stats builds only use it.
                         add_chunk_released<Chunk2A<T>>(1, static_cast<long>(sizeof(T)) *
-                                                          static_cast<long>(this->size_policy_.size()));
+                                                              static_cast<long>(this->size_policy_.size()));
                     }
                     T* values_loc = chunk_list[j].values;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");

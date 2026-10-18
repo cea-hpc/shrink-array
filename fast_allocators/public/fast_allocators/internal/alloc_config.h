@@ -35,7 +35,7 @@
 
 #include <sys/mman.h> // madvise, MADV_HUGEPAGE / MADV_NOHUGEPAGE (advise_thp_region)
 
-#include "fast_allocators/build_options.h" // FAST_ALLOC_OPT_*: the options the library was built with
+#include "fast_allocators/build_options.h"     // FAST_ALLOC_OPT_*: the options the library was built with
 #include "fast_allocators/internal/log_core.h" // CHUNK_LOG (the CHUNK_RECLAIM_MIN_SLABS and CHUNK_THP messages)
 
 namespace fast_alloc::alloc_config

@@ -428,7 +428,7 @@ class GlobalVecHolder
     /// @brief Where this type's identifiers stand. Relaxed reads, any time.
     [[nodiscard]] static SecondValueStats stats() noexcept
     {
-        constexpr auto rx = std::memory_order_relaxed;
+        constexpr auto   rx = std::memory_order_relaxed;
         SecondValueStats s;
         s.handed_out       = ids_handed_out();
         s.free             = free_id_count();
@@ -575,7 +575,7 @@ class GlobalVecHolder
      */
     static std::size_t reclaim_unmarked(const std::vector<std::uint8_t>& referenced)
     {
-        const ReclaimScope     scope; // check builds: no lookup in flight (nests in the caller's)
+        const ReclaimScope     scope;            // check builds: no lookup in flight (nests in the caller's)
         const std::scoped_lock lk(insert_mutex); // the contract excludes appenders: uncontended
 
         std::vector<T*> kept;
@@ -1052,9 +1052,9 @@ class GlobalVecHolder
         if (char* expected = nullptr;
             region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
         {
-            region_end           = static_cast<char*>(raw) + kRegionUsable;
-            const auto lim        = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
-            id_limit              = (lim >= 1 && lim < kMaxIds) ? lim : kMaxIds; // lowers only
+            region_end     = static_cast<char*>(raw) + kRegionUsable;
+            const auto lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
+            id_limit       = (lim >= 1 && lim < kMaxIds) ? lim : kMaxIds; // lowers only
         }
         else
         {
@@ -1243,7 +1243,7 @@ class TabCstVal2Holder
         // Up to the record in the second-value table, which the reclaim's mark
         // scans: a reclaim must not run in between (LookupGuard).
         const typename global_vec_holder::LookupGuard in_flight;
-        T* buf = find_or_register(second_v);
+        T*                                            buf = find_or_register(second_v);
         ptr_second_value.set_from_array(buf);
         return buf;
     }

@@ -415,9 +415,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ///          twice the buffers actually materialised.
     [[nodiscard]] static long reuse_share_div() noexcept
     {
-        static const long div = std::max(
-            1L, env_number<long>("CHUNK_REUSE_SHARE_DIV",
-                                 static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse)));
+        static const long div =
+            std::max(1L, env_number<long>("CHUNK_REUSE_SHARE_DIV",
+                                          static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse)));
         return div;
     }
 
@@ -1189,7 +1189,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     //      the rank that owns it.
                     // Blocks no slab claims (bypass_slabs(), slab torn down) stay
                     // parked: an unreachable block is worse than a retained one.
-                    using alloc_t = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
+                    using alloc_t     = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
                     alloc_t* geometry = nullptr; // any instance of this size: slab_of() needs its geometry only
                     {
                         const unsigned int saved_sz = shrink_array::thread_chunk_size();

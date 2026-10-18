@@ -199,7 +199,8 @@ class tile_buffer
     struct none
     {
     };
-    static constexpr std::size_t fixed_n = [] {
+    static constexpr std::size_t fixed_n = []
+    {
         if constexpr (is_static)
         {
             return static_cast<std::size_t>(View::mapping_type::tile_elems);
@@ -211,10 +212,10 @@ class tile_buffer
     }();
     // Left uninitialised, as a std::array<T, N> local was: gather() writes
     // every element before anything reads one.
-    [[no_unique_address]] std::conditional_t<is_static, std::array<T, fixed_n>, none> fixed_;
+    [[no_unique_address]] std::conditional_t<is_static, std::array<T, fixed_n>, none>  fixed_;
     [[no_unique_address]] std::conditional_t<is_static, none, std::array<T, inline_n>> small_;
     [[no_unique_address]] std::conditional_t<is_static, none, std::vector<T>>          heap_;
-    std::size_t                                                                       n_ = 0;
+    std::size_t                                                                        n_ = 0;
 };
 
 /// @brief Tiles per dimension of view @p f.
@@ -284,16 +285,16 @@ bool gather(const Array& a, std::size_t lo, Buf& buf, T& cst, bool lazy)
 {
     const std::size_t N       = buf.size();
     std::size_t       k       = 0;
-    bool        uniform = true;
-    bool        pending = false; // a constant run at the start, not yet written to buf
+    bool              uniform = true;
+    bool              pending = false; // a constant run at the start, not yet written to buf
     struct Visitor
     {
-        Buf&              buf;
-        std::size_t&      k;
-        bool&             uniform;
-        bool&             pending;
-        T&                cst;
-        bool              lazy;
+        Buf&         buf;
+        std::size_t& k;
+        bool&        uniform;
+        bool&        pending;
+        T&           cst;
+        bool         lazy;
 
         void flush_pending() const
         {
@@ -548,7 +549,7 @@ void update_tiles(const View&               f,
                   OnBlock&&                 on_block,
                   OnUniform&&               on_uniform = {})
 {
-    using T           = detail::value_of<View>;
+    using T                = detail::value_of<View>;
     const std::size_t N    = static_cast<std::size_t>(f.mapping().tile_elements());
     auto&             a    = *f.data_handle();
     const auto        dims = detail::tiles_per_dim(f);
@@ -802,8 +803,7 @@ void fill_box(const View&                        f,
     std::array<Index, R> i    = lo;
     while (true)
     {
-        const auto a =
-            base + static_cast<std::size_t>(std::apply([&f](auto... x) { return f.mapping()(x...); }, i));
+        const auto a = base + static_cast<std::size_t>(std::apply([&f](auto... x) { return f.mapping()(x...); }, i));
         runs.add(a, a + (rows ? static_cast<std::size_t>(hi[R - 1] - lo[R - 1]) : std::size_t{1}));
         {
             std::size_t r = walk;

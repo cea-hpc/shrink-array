@@ -877,12 +877,9 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self
 
         T* values_loc = self.Chunk2Base<T, Derived>::allocate_chunk_internal(thr_rank, init_func);
 
-        self.Chunk2Base<T, Derived>::apply_cas_or_recup(values_loc, thr_rank,
-                                                        [&self, need_set_second_value](bool* cst_ptr)
-                                                        {
-                                                            return self.compare_and_swap(cst_ptr,
-                                                                                         need_set_second_value);
-                                                        });
+        self.Chunk2Base<T, Derived>::apply_cas_or_recup(
+            values_loc, thr_rank, [&self, need_set_second_value](bool* cst_ptr)
+            { return self.compare_and_swap(cst_ptr, need_set_second_value); });
     }
     else
     {

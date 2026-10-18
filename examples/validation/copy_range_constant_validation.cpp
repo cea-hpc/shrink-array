@@ -175,8 +175,8 @@ static int report(const char* scase, long bad, int mat, int mat_expected)
     }
     if (chunk_config::use_chunk2a && mat != mat_expected)
     {
-        println("[{}/{}] FAIL: {} chunk(s) materialised right after the copy, expected {}", variant_name(), scase,
-                mat, mat_expected);
+        println("[{}/{}] FAIL: {} chunk(s) materialised right after the copy, expected {}", variant_name(), scase, mat,
+                mat_expected);
         ++fails;
     }
     if (fails == 0)
@@ -282,9 +282,9 @@ int run(int /*argc*/, char** /*argv*/)
             return 0.0;
         };
         copy_range(a, sz(c.lo), sz(c.hi), c.src.begin() + c.lo);
-        const long bad = mismatches(a, 0, Ntot,
-                                    [&](long i)
-                                    { return (i >= c.lo && i < c.hi) ? c.src[static_cast<std::size_t>(i)] : before(i); });
+        const long bad =
+            mismatches(a, 0, Ntot, [&](long i)
+                       { return (i >= c.lo && i < c.hi) ? c.src[static_cast<std::size_t>(i)] : before(i); });
         fails += report(c.name, bad, materialised(a, 0, c.count_to), c.mat_expected);
         a.clear();
     }

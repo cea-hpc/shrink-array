@@ -16,14 +16,14 @@
 
 #pragma once
 
-#include <algorithm> // std::ranges::find (the healed-chunk report), std::min (the birth size of bits)
-#include <array>     // std::array (the residual's sample)
-#include <atomic>    // std::memory_order
-#include <cstddef>   // std::size_t
-#include <ostream>   // print_compression_stats(std::ostream&)
-#include <string>    // the healed-chunk report
+#include <algorithm>   // std::ranges::find (the healed-chunk report), std::min (the birth size of bits)
+#include <array>       // std::array (the residual's sample)
+#include <atomic>      // std::memory_order
+#include <cstddef>     // std::size_t
+#include <ostream>     // print_compression_stats(std::ostream&)
+#include <string>      // the healed-chunk report
 #include <string_view> // std::string_view (the residual's kind)
-#include <vector>    // std::vector
+#include <vector>      // std::vector
 
 #include <sys/mman.h> // mprotect (use_mm_protect: the read-only cst_val2 blocks)
 #include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
@@ -124,8 +124,9 @@ void ArrayChunk2<T, ind_type>::create(ind_type sz)
         // Capped at the largest multiple of the size that the shared constant
         // buffers cover: a multiple of a valid size is valid (768 * 8 = 6144 >
         // 4096 gives 3840, not 4096, which 768 does not divide).
-        const unsigned int size  = this->size_policy_.size();
-        const unsigned int birth = std::min(size * packed_bit_birth_factor, shrink_array::cst_buffer_size / size * size);
+        const unsigned int size = this->size_policy_.size();
+        const unsigned int birth =
+            std::min(size * packed_bit_birth_factor, shrink_array::cst_buffer_size / size * size);
         if (!t_birth_at_active_size && birth != this->size_policy_.size())
         {
             const unsigned int global = g_active_chunk_size;
@@ -1128,10 +1129,8 @@ void ArrayChunk2<T, ind_type>::release_chunk_range(int first, int last)
         // geometry. Inside a region, or for a few chunks, the calling thread.
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
-            first, last,
-            [my_sz]() -> auto& {
-                return manager_chunk2::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz);
-            },
+            first, last, [my_sz]() -> auto&
+            { return manager_chunk2::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this](int j, auto& lbf)
             {
                 if (chunk_list[j].owns_live_buffer())
@@ -1141,7 +1140,7 @@ void ArrayChunk2<T, ind_type>::release_chunk_range(int first, int last)
                         increm_chunk_teardown_clear<Chunk2<T>>();
                         // The size read here, not captured: stats builds only use it.
                         add_chunk_released<Chunk2<T>>(1, static_cast<long>(sizeof(T)) *
-                                                          static_cast<long>(this->size_policy_.size()));
+                                                             static_cast<long>(this->size_policy_.size()));
                     }
                     T* values_loc = chunk_list[j].values;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");

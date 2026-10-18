@@ -25,8 +25,8 @@
 #include <utility> // std::cmp_less (the element-size check)
 #include <vector>  // std::vector
 
-#include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
-#include "fast_allocators/slab_arena.h"   // disjoint op/ctx/value slab arenas
+#include "fast_allocators/tc_allocator.h"   // the declarations these bodies belong to
+#include "fast_allocators/slab_arena.h"     // disjoint op/ctx/value slab arenas
 #include "fast_allocators/internal/fatal.h" // FAST_ALLOC_FATAL
 
 namespace fast_alloc

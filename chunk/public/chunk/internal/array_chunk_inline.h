@@ -379,10 +379,8 @@ void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
         // thread.
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
-            first, last,
-            [my_sz]() -> auto& {
-                return Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz);
-            },
+            first, last, [my_sz]() -> auto&
+            { return Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this, my_sz](int j, auto& lbf)
             {
                 if (chunk_list[j].written())

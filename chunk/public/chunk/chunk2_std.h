@@ -985,7 +985,11 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
     /// @name No-op compression passes
     /// @{
     template <typename FillFunc, typename ClearFunc>
-    static void make_block_compression_impl(int /*thr_rank*/, T /*second_value*/, Proxy2<T>* /*proxy2*/, FillFunc&& /*fill_func*/, ClearFunc&& /*clear_func*/)
+    static void make_block_compression_impl(int /*thr_rank*/,
+                                            T /*second_value*/,
+                                            Proxy2<T>* /*proxy2*/,
+                                            FillFunc&& /*fill_func*/,
+                                            ClearFunc&& /*clear_func*/)
     {
     }
 

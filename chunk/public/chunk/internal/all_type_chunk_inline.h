@@ -25,12 +25,12 @@
 
 #include "chunk/internal/all_type_chunk_decl.h" // the declarations these bodies belong to
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::use_chunk*
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/for_each_type.h"   // for_each_type
-#include "chunk/internal/manager_chunk.h"   // ManagerChunk<CHUNK_T, T>
-#include "chunk/singleton.h"                // SingletonChk<AllTypeChunk>, for ensure_manager
-#include "chunk/chunk_traits.h"             // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
-#include "chunk/internal/link_check.h"      // CHUNK_LINK_CHECK: the program's settings, the library's
+#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/for_each_type.h"       // for_each_type
+#include "chunk/internal/manager_chunk.h"       // ManagerChunk<CHUNK_T, T>
+#include "chunk/singleton.h"                    // SingletonChk<AllTypeChunk>, for ensure_manager
+#include "chunk/chunk_traits.h"                 // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
+#include "chunk/internal/link_check.h"          // CHUNK_LINK_CHECK: the program's settings, the library's
 // Not the chunk definitions: register_manager<> is instantiated in the TU that
 // builds the array (which has them), and including them here would be a cycle.
 

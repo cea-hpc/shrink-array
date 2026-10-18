@@ -190,7 +190,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         const std::string_view kv    = spec.substr(0, comma);
         int                    chunk = 0;
         chunk_pmp_sched        k     = chunk_pmp_sched::sched_static;
-        bool ok = true;
+        bool                   ok    = true;
         if (comma != std::string_view::npos)
         {
             const auto parsed_chunk = parse_number<int>(env + comma + 1);

@@ -97,10 +97,10 @@
 
 #if SHRINK_ARRAY_HAS_MDSPAN
 
-    #include <array>       // std::array (the tile extents, the tile strides)
-    #include <cstddef>     // std::size_t
+    #include <array>   // std::array (the tile extents, the tile strides)
+    #include <cstddef> // std::size_t
     #include <type_traits> // std::remove_const_t, std::is_const_v, std::conditional_t, std::make_unsigned_t, std::is_convertible_v
-    #include <utility>     // std::declval, std::index_sequence, std::pair
+    #include <utility> // std::declval, std::index_sequence, std::pair
 
     #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (a tiled submdspan off the tiles)
 
@@ -215,13 +215,21 @@ constexpr void tiled_slice(const Slice& s, Index extent, Index& first, Index& si
                       "md::layout_tiled: a submdspan of a tiled view keeps every dimension -- "
                       "take a range {first, last}, not an index");
     }
-    else if constexpr (requires { s.offset; s.extent; s.stride; })
+    else if constexpr (requires {
+                           s.offset;
+                           s.extent;
+                           s.stride;
+                       })
     {
         first  = static_cast<Index>(s.offset);
         size   = static_cast<Index>(s.extent);
         stride = static_cast<Index>(s.stride);
     }
-    else if constexpr (requires { s.first; s.last; s.stride; })
+    else if constexpr (requires {
+                           s.first;
+                           s.last;
+                           s.stride;
+                       })
     {
         first  = static_cast<Index>(s.first);
         size   = static_cast<Index>(s.last) - first;
@@ -391,8 +399,9 @@ class tiled_mapping_base
         {
             const index_type t   = self().tile_extent(r);
             const index_type end = first[r] + size[r];
-            const bool ok = first[r] >= 0 && size[r] >= 0 && end <= ext_.extent(r) && (stride[r] == 1 || size[r] <= 1) &&
-                            first[r] % t == 0 && (end % t == 0 || end == ext_.extent(r));
+            const bool       ok  = first[r] >= 0 && size[r] >= 0 && end <= ext_.extent(r) &&
+                                   (stride[r] == 1 || size[r] <= 1) && first[r] % t == 0 &&
+                                   (end % t == 0 || end == ext_.extent(r));
             if (!ok) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("{}: submdspan slice {} = [{}, {}) (stride {}) of extent {}: a tiled sub-view "
@@ -502,7 +511,7 @@ struct layout_tiled
         template <typename... Slices>
         friend constexpr auto submdspan_mapping(const mapping& m, Slices... slices)
         {
-            using sub_extents        = mdns::dextents<index_type, Extents::rank()>;
+            using sub_extents         = mdns::dextents<index_type, Extents::rank()>;
             const auto [size, offset] = m.sub_view("md::layout_tiled", slices...);
             return mdns::submdspan_mapping_result<mapping<sub_extents>>{
                 mapping<sub_extents>(sub_extents(size), m.tile_strides()), offset};
@@ -592,7 +601,7 @@ struct layout_tiled_dyn
         template <typename... Slices>
         friend constexpr auto submdspan_mapping(const mapping& m, Slices... slices)
         {
-            using sub_extents        = mdns::dextents<index_type, Rank>;
+            using sub_extents         = mdns::dextents<index_type, Rank>;
             const auto [size, offset] = m.sub_view("md::layout_tiled_dyn", slices...);
             return mdns::submdspan_mapping_result<mapping<sub_extents>>{
                 mapping<sub_extents>(sub_extents(size), m.tile(), m.tile_strides()), offset};

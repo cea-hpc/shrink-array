@@ -138,7 +138,7 @@ static void check(const char* step, const Array<double>& arr, Expect&& expect, i
     {
         bad += (std::as_const(arr)[static_cast<int>(i)] != expect(i));
     }
-    const int mat    = materialised(arr);
+    const int  mat    = materialised(arr);
     const bool mat_ok = !chunk_config::use_chunk2a || mat == mat_expected;
     if (bad == 0 && mat_ok)
     {
@@ -188,12 +188,11 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    const long S = static_cast<long>(Array<double>(1).chunk_size());
-    const long N = kChunks * S;
+    const long S  = static_cast<long>(Array<double>(1).chunk_size());
+    const long N  = kChunks * S;
     const auto sz = [](long x) { return static_cast<std::size_t>(x); };
 
-    println("=== constant_switch_validation [variant = {}]  chunk_size={}  chunks={} ===", variant_name(), S,
-            kChunks);
+    println("=== constant_switch_validation [variant = {}]  chunk_size={}  chunks={} ===", variant_name(), S, kChunks);
 
     // Chunk c at base + c, one value per chunk, by fill_range.
     const auto fill_per_chunk = [&](Array<double>& a, double base)
@@ -224,8 +223,9 @@ int run(int /*argc*/, char** /*argv*/)
 
         // 3: one element per chunk written through the proxy.
         phase(a, kChunks, [&](long c) { a[static_cast<int>(c * S + 5)] = 99.0; });
-        check("write one element per chunk", a,
-              [S](long i) { return (i % S == 5) ? 99.0 : 30.0 + static_cast<double>(i / S); }, kChunks);
+        check(
+            "write one element per chunk", a,
+            [S](long i) { return (i % S == 5) ? 99.0 : 30.0 + static_cast<double>(i / S); }, kChunks);
         fill_per_chunk(a, 30.0);
         check("fill: back to 30 + c", a, per_chunk(30.0), 0);
 
@@ -270,8 +270,9 @@ int run(int /*argc*/, char** /*argv*/)
         check("copy: mixed -> 80 + c", a, per_chunk(80.0), 0);
 
         phase(a, kChunks, [&](long c) { a[static_cast<int>(c * S + S - 1)] = -1.0; });
-        check("write one element per chunk", a,
-              [S](long i) { return (i % S == S - 1) ? -1.0 : 80.0 + static_cast<double>(i / S); }, kChunks);
+        check(
+            "write one element per chunk", a,
+            [S](long i) { return (i % S == S - 1) ? -1.0 : 80.0 + static_cast<double>(i / S); }, kChunks);
         a.clear();
     }
 

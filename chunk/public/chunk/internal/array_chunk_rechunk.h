@@ -39,11 +39,11 @@
 
 #include <expected> // std::expected (try_rechunk_to)
 
-#include "chunk/config.h"                   // build_config::chunk_dynamic
+#include "chunk/config.h"                     // build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // ChunkSizeError, static_chunk_size (try_rechunk_to)
-#include "chunk/chunk_traits.h"             // ArrayChunkTraits
-#include "chunk/internal/in_t.h"            // in_t<T>: the captured state
-#include "chunk/internal/array_chunk_for.h" // ArrayChunkCore -- rechunk_all_to's registry keys
+#include "chunk/chunk_traits.h"               // ArrayChunkTraits
+#include "chunk/internal/in_t.h"              // in_t<T>: the captured state
+#include "chunk/internal/array_chunk_for.h"   // ArrayChunkCore -- rechunk_all_to's registry keys
 
 namespace shrink_array
 {

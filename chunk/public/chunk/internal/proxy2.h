@@ -396,7 +396,6 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     static inline thread_local bool list_over_threshold_ = false;
 
   public:
-
     /**
      * @brief Async-context counterpart of execute_simple_operation():
      *        materialise the chunk referenced by `ctx` if it is at either

@@ -240,22 +240,23 @@ void tiled()
 
     // update_tiles serially: +1 inside, the padding cells too (the parent's
     // padding past j = 90): the parent reads back +1 inside only.
-    md::update_tiles(s,
-                     [](const auto&, auto b)
-                     {
-                         for (long i = 0; i < 16; ++i)
-                         {
-                             for (long j = 0; j < 16; ++j)
-                             {
-                                 b[i, j] += 1.0;
-                             }
-                         }
-                     },
-                     [](const auto&, double& v)
-                     {
-                         v += 1.0;
-                         return true;
-                     });
+    md::update_tiles(
+        s,
+        [](const auto&, auto b)
+        {
+            for (long i = 0; i < 16; ++i)
+            {
+                for (long j = 0; j < 16; ++j)
+                {
+                    b[i, j] += 1.0;
+                }
+            }
+        },
+        [](const auto&, double& v)
+        {
+            v += 1.0;
+            return true;
+        });
     check_parent(a, [&](long i, long j) { return cell(i, j) + (inside(i, j) ? 1.0 : 0.0); }, "update_tiles serial");
 
     // update_tiles in a parallel phase, a tile per thread: back to cell().
@@ -283,10 +284,9 @@ void tiled()
 
     // fill_box on the sub-view: whole tiles and crossed tiles.
     md::fill_box(s, std::array<long, 2>{8, 0}, std::array<long, 2>{40, 50}, 5.0);
-    check_parent(a,
-                 [&](long i, long j)
-                 { return (i >= i0 + 8 && i < i0 + 40 && j >= j0 && j < j0 + 50) ? 5.0 : cell(i, j); },
-                 "fill_box tiled sub");
+    check_parent(
+        a, [&](long i, long j) { return (i >= i0 + 8 && i < i0 + 40 && j >= j0 && j < j0 + 50) ? 5.0 : cell(i, j); },
+        "fill_box tiled sub");
 
     // A whole tile of the sub-view at 5.0 is a compressed chunk (Chunk2A:
     // fill_range sets it without a buffer).
@@ -302,8 +302,7 @@ void tiled()
     {
         for (long j = 0; j < 42; ++j)
         {
-            const double w =
-                (i + i0 + 16 < i0 + 40 && j + j0 + 16 < j0 + 50) ? 5.0 : cell(i + i0 + 16, j + j0 + 16);
+            const double w = (i + i0 + 16 < i0 + 40 && j + j0 + 16 < j0 + 50) ? 5.0 : cell(i + i0 + 16, j + j0 + 16);
             expect(static_cast<double>(ss[i, j]) == w, "sub-sub read", i, j);
         }
     }

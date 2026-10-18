@@ -788,8 +788,8 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     using Base::read_values;
     using Base::values;
 
-    using Base::num;
     using Base::chunk; ///< owning chunk
+    using Base::num;
 
     using Base::ptr_on_array; ///< pointer to array (for tab lookup)
 

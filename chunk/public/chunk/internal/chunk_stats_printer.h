@@ -62,7 +62,7 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
                                         const std::string& chunk_name,         // e.g. "Chunk", "Chunk2" or "Chunk2A"
                                         int                n_cross       = -1, // cross-variant probe count (-1 = none)
                                         const std::string& cross_name    = "", // richer variant the probe refers to
-                                        bool               bool_elements = false)            // bool: one second value, true
+                                        bool               bool_elements = false) // bool: one second value, true
 {
     if (nb_chunk == 0)
     {

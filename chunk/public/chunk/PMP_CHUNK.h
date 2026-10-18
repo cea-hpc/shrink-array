@@ -48,7 +48,7 @@ struct chunk_pmp_schedule
 } // namespace shrink_array
 
 #ifdef _OPENMP
-    #include <atomic>    // std::atomic
+    #include <atomic> // std::atomic
 
     #include <omp.h> // omp_get_thread_num, omp_get_max_threads, omp_in_parallel
 
