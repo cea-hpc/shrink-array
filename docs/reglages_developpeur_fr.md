@@ -65,14 +65,14 @@ de dépréciation.
 | `CHUNK_RECHUNK_CHURN` | `1` ou `=nom` : matérialisations par passage et estimation du coût passager qu'elles impliquent (niveau info du canal rechunk, qu'elle active) |
 | `CHUNK_LOG=affinity=debug` (autrefois `CHUNK_AFFINITY_TRACE`) | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
 | `CHUNK_LOG=compress=info` | builds de vérification : les blocs restant à compresser après le dernier vidage, et les blocs constants de Chunk2A jamais mis en file ; le résidu de compression d'un audit (`compress()` sur ArrayChunk2 / ArrayChunk2A) ; `compress=debug` ajoute le détail par chunk d'ArrayChunk2 |
-| `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) |
+| `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `arena`) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (autrefois `CHUNK_RECYCLE_TRACE`) | builds de vérification : les blocs étrangers que le pool des écritures différées abandonne, à intervalles doublants / une ligne par bloc |
 | `CHUNK_LEDGER_REPORT` (*définie*) | le rapport du registre des blocs (builds avec registre), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ledger`) |
 | `CHUNK_OMPT_STATS` | statistiques des régions de synchronisation (builds OMPT), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ompt`) |
 | `CHUNK_CST2_PROBE` (*définie*) | Chunk2A : rapport du registre des secondes valeurs à chaque passage (banc) |
 | `CHUNK_CST2_RECLAIM` | Chunk2A, `N` : toutes les N itérations, libère les secondes valeurs qu'aucun chunk n'utilise plus (`reclaim_second_values()`) et affiche leur nombre, puis pour chaque type les identifiants en usage face à la capacité, libres, les libérations et les refus (`second_value_stats()`) (banc, tout build) |
 | `ALLOC_TOKEN_REPORT` | les builds `SANITIZER=token` impriment toujours, à la sortie, les allocations par jeton (les 40 plus grosses) ; elle en fixe le nombre : `0` aucune, `N` les N plus grosses, `all` toutes |
-| `FAST_ALLOC_TRACE` (*définie*) | une ligne `[MUNMAP]` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré (muet par défaut) |
+| `CHUNK_LOG=alloc=trace` (autrefois `FAST_ALLOC_TRACE`) | une ligne `munmap` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré |
 
 ## 3. Rechunks forcés (tests)
 

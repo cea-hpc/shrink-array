@@ -38,11 +38,12 @@
 #include <cerrno>  // errno, ENOMEM: the failure message
 #include <cstddef> // std::size_t
 #include <cstdint> // SIZE_MAX
-#include <cstdio>  // std::fprintf, std::fflush
-#include <cstdlib> // std::malloc, std::calloc, std::free, std::abort
+#include <cstdlib> // std::malloc, std::calloc, std::free
 #include <cstring> // std::memset, std::strerror
 
 #include <stdlib.h> // posix_memalign (POSIX: <cstdlib> need not declare it)
+
+#include "fast_allocators/internal/fatal.h" // FAST_ALLOC_FATAL (out_of_memory)
 
 #ifndef FAST_ALLOC_SIMD_SZ
     #define FAST_ALLOC_SIMD_SZ 32u
@@ -69,15 +70,9 @@ out_of_memory(const char* what, std::size_t n, std::size_t elem, int err) noexce
 {
     if (err != 0)
     {
-        std::fprintf(stderr, "Fatal Error: %s: allocation of %zu x %zu bytes failed (%s)\n", what, n, elem,
-                     std::strerror(err));
+        FAST_ALLOC_FATAL("{}: allocation of {} x {} bytes failed ({})", what, n, elem, std::strerror(err));
     }
-    else
-    {
-        std::fprintf(stderr, "Fatal Error: %s: %zu x %zu bytes overflows size_t\n", what, n, elem);
-    }
-    std::fflush(stderr);
-    std::abort();
+    FAST_ALLOC_FATAL("{}: {} x {} bytes overflows size_t", what, n, elem);
 }
 
 /// @brief @p n * @p elem, or out_of_memory() when the product overflows.

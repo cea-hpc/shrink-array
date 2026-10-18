@@ -28,7 +28,7 @@
 
 #include <charconv>     // std::from_chars (CHUNK_RECLAIM_MIN_SLABS)
 #include <cstddef>      // std::size_t
-#include <cstdio>       // std::fprintf
+#include <cstdio>       // std::fopen, std::fscanf (the huge page size)
 #include <cstdlib>      // std::getenv
 #include <cstring>      // std::strlen
 #include <system_error> // std::errc
@@ -36,6 +36,7 @@
 #include <sys/mman.h> // madvise, MADV_HUGEPAGE / MADV_NOHUGEPAGE (advise_thp_region)
 
 #include "fast_allocators/build_options.h" // FAST_ALLOC_OPT_*: the options the library was built with
+#include "fast_allocators/internal/log_core.h" // CHUNK_LOG (the CHUNK_RECLAIM_MIN_SLABS and CHUNK_THP messages)
 
 namespace fast_alloc::alloc_config
 {
@@ -103,7 +104,7 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
         const auto  res = std::from_chars(env, end, v);
         if (res.ec != std::errc{} || res.ptr != end)
         {
-            std::fprintf(stderr, "[env] CHUNK_RECLAIM_MIN_SLABS=\"%s\" is not a valid value: ignored, 0 kept\n", env);
+            CHUNK_LOG(warn, env, "CHUNK_RECLAIM_MIN_SLABS=\"{}\" is not a valid value: ignored, 0 kept", env);
             return 0;
         }
         return v;
@@ -147,18 +148,16 @@ inline bool thp_advise() noexcept
         {
             if (pmd <= 0)
             {
-                std::fprintf(stderr, "[env] CHUNK_THP=%s ignored: the huge page size is unknown here\n", env);
+                CHUNK_LOG(warn, env, "CHUNK_THP={} ignored: the huge page size is unknown here", env);
             }
             else
             {
-                std::fprintf(stderr,
-                             "[env] CHUNK_THP=%s ignored: the huge page is %ld MiB here, not a 2 MiB slab's size\n",
-                             env, pmd >> 20);
+                CHUNK_LOG(warn, env, "CHUNK_THP={} ignored: the huge page is {} MiB here, not a 2 MiB slab's size", env,
+                          pmd >> 20);
             }
             return false;
         }
-        std::fprintf(stderr, "[env] CHUNK_THP: MADV_HUGEPAGE on the slab arenas and the cst2 region (%ld KiB)\n",
-                     pmd >> 10);
+        CHUNK_LOG(info, env, "CHUNK_THP: MADV_HUGEPAGE on the slab arenas and the cst2 region ({} KiB)", pmd >> 10);
         return true;
     }();
     return on;
@@ -184,10 +183,10 @@ inline bool thp_never() noexcept
             return false;
         }
 #ifdef MADV_NOHUGEPAGE
-        std::fprintf(stderr, "[env] CHUNK_THP=never: MADV_NOHUGEPAGE on the slab arenas\n");
+        CHUNK_LOG(info, env, "CHUNK_THP=never: MADV_NOHUGEPAGE on the slab arenas");
         return true;
 #else
-        std::fprintf(stderr, "[env] CHUNK_THP=never ignored: no MADV_NOHUGEPAGE on this system\n");
+        CHUNK_LOG(warn, env, "CHUNK_THP=never ignored: no MADV_NOHUGEPAGE on this system");
         return false;
 #endif
     }();

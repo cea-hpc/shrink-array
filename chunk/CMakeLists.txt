@@ -473,8 +473,8 @@ function(chunk_add_variant target_name variant_define size is_dyn)
   # generated chunk/build_options.h, on the include path below.
 
   if (CHUNK_STD_ALLOC)
-    # No fast_allocators library here, but three of its headers -- svalloc.h,
-    # singleton.h and log_core.h, standard library only -- are chunk's too
+    # No fast_allocators library here, but four of its headers -- svalloc.h,
+    # singleton.h, log_core.h and fatal.h, standard library only -- are chunk's too
     # (one copy, see them): their directory stays on the include path.
     # Installed below.
     target_include_directories(${target_name}
@@ -664,11 +664,12 @@ install(FILES ${CHUNK_GENERATED_INCLUDE_DIR}/chunk/build_options.h
         COMPONENT chunk-devel)
 
 # A std-alloc build installs no fast_allocators, yet chunk's headers include
-# its svalloc.h, singleton.h and log_core.h: install those three with chunk then.
+# its svalloc.h, singleton.h, log_core.h and fatal.h: install those four with chunk then.
 if (CHUNK_STD_ALLOC)
   install(FILES ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/svalloc.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/singleton.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/log_core.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/fatal.h
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fast_allocators/internal
           COMPONENT chunk-devel)
 endif()

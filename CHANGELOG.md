@@ -113,6 +113,18 @@ the tag's checksum to the recipe.
   `CHUNK_OMPT_STATS`, `compress_int(true)`, the `CHUNK_RECHUNK_LEDGERTRACE`
   build -- are written whatever `CHUNK_LOG` says (`CHUNK_LOG_ALWAYS`), through
   the sink.
+- fast_allocators goes through the log too, and its fatal failures (an
+  allocation or a `mmap` that fails, a slab handed out twice, an element that
+  does not fit a slab) through the same fatal report as an invariant failure
+  (`FAST_ALLOC_FATAL`, `fast_allocators/internal/fatal.h`, which also holds
+  `print_backtrace()` now -- `chunk/debug.h` forwards to it): one block on
+  stderr headed `[CRITICAL_FAILURE]`, the backtrace, the program's sink, one
+  reporting thread. A slab freed or recycled twice is a warning of channel
+  `arena`, an invalid `CHUNK_RECLAIM_MIN_SLABS` / `CHUNK_THP` a warning of
+  `env` (the `CHUNK_THP` notices are of level info), a failed trim or
+  `posix_memalign` an `alloc` message; `CHUNK_ARENA_REPORT` is a report
+  (written whatever `CHUNK_LOG` says); the slab evictions are `alloc=trace`
+  (formerly `FAST_ALLOC_TRACE`, deprecated).
 - The library's remaining messages go through the log: the warnings of
   `set_second_value()` and of a static build's ignored setters (`ParamChunk`)
   and the one-page caution (`warn`, channel `general`); a compound operator a

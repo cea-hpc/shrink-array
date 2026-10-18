@@ -38,8 +38,9 @@
 //      --fatal K): CHUNK_INVARIANT_FAILED writes its block and the backtrace
 //      on stderr, the record reaches CHUNK_LOG_FILE or the program's sink,
 //      element values of any type are spelled; 8 threads failing at once
-//      give one report; a failure inside the sink still stops; and
-//      CHUNK_CHECK_FAILED stops a check build and logs an error elsewhere.
+//      give one report; a failure inside the sink still stops;
+//      CHUNK_CHECK_FAILED stops a check build and logs an error elsewhere;
+//      and fast_allocators' FAST_ALLOC_FATAL gives the same report.
 //
 // Exit status 0 when every check passes.
 
@@ -457,6 +458,8 @@ int run_fatal(int k)
             CHUNK_CHECK_FAILED(drain, "check failed {}", 5);
             std::printf("carried on\n");
             return 0;
+        case 5: // fast_allocators' fatal level: the same report, headed [CRITICAL_FAILURE]
+            FAST_ALLOC_FATAL("allocator failure {}", 6);
         default:
             return 2;
     }
@@ -535,6 +538,12 @@ void check_fatal(const char* self)
     // configuration is read: the failure must not wait on that read.
     check(r.status == kAbort && r.out.find("failure inside the sink, on \"") != std::string::npos,
           "fatal: a failure inside the sink stops, even during the configuration (no deadlock: timeout 60 s)");
+
+    r = run_child(self, 5);
+    check(r.status == kAbort && r.out.find("[CRITICAL_FAILURE] allocator failure 6") != std::string::npos &&
+              r.out.find("--- Execution Backtrace ---") != std::string::npos &&
+              r.log.find("[shrink_array][general][F][") != std::string::npos,
+          "FAST_ALLOC_FATAL: the same fatal report (block, backtrace, CHUNK_LOG_FILE)");
 
     r = run_child(self, 4);
     if constexpr (shrink_array::build_config::any_check)
