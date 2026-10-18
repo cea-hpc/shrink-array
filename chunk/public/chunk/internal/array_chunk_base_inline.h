@@ -19,7 +19,6 @@
 // Out-of-line template method bodies for ArrayChunkBase<Derived>. Included at the
 // end of array_chunk_base.h (after the class), so every TU that uses the class
 // sees the definitions. Kept separate to keep array_chunk_base.h to declarations.
-#include <cstdio>    // std::fprintf (set_chunk_size refusal)
 #include <iterator>  // std::forward_iterator, std::distance (assign)
 #include <stdexcept> // std::out_of_range (at())
 
@@ -31,6 +30,7 @@
 #include "chunk/PMP_CHUNK.h"                      // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
 #include "chunk/manage_ompt.h"                    // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
+#include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
 
 namespace shrink_array
 {
@@ -87,11 +87,9 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
     {
         if (!is_valid_chunk_size(new_chunk_size))
         {
-            std::fprintf(stderr,
-                         "[chunk] set_chunk_size(%u) refused: a chunk size must be a power of two or a multiple of "
-                         "64\n",
-                         new_chunk_size);
-            std::fflush(stderr);
+            CHUNK_LOG(warn, rechunk,
+                      "set_chunk_size({}) refused: a chunk size must be a power of two or a multiple of 64",
+                      new_chunk_size);
             return;
         }
     }

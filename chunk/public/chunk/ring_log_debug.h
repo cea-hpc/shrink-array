@@ -20,6 +20,7 @@
 #include <cstdio>  // std::fprintf/std::snprintf — used HERE, not via includers
 
 #include "chunk/config.h" // chunk_config::ring_log_debug, CHUNK_RING_LOG_ANY
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (Manual mode: end() not called)
 
 namespace shrink_array
 {
@@ -185,15 +186,14 @@ class ScopedRingLog
             }
             else
             {
-                // Manual mode: warn (in debug only) if user forgot to call .end()
+                // Manual mode: stop (in check builds only) if the user forgot to call .end()
                 if constexpr (build_config::any_check)
                 {
                     if (!ended)
                     {
-                        std::fprintf(stderr,
-                                     "[INVARIANT] ScopedRingLog<Manual>: end() not called "
-                                     "before destruction (BEGIN_EVENT=%d)\n",
-                                     static_cast<int>(BEGIN_EVENT));
+                        CHUNK_INVARIANT_FAILED("ScopedRingLog<Manual>: end() not called before destruction "
+                                               "(BEGIN_EVENT={})",
+                                               static_cast<int>(BEGIN_EVENT));
                     }
                 }
             }

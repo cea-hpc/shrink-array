@@ -72,7 +72,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Hooks2     = RechunkHooks2<ArrayChunk2>;     ///< Re-chunk hooks (dynamic geometry).
 
     friend Base2;                                    ///< The CRTP base reaches this class's private members.
-    friend ArrayChunkBase<ArrayChunk2<T, ind_type>>; ///< For swap_identity().
+    friend ArrayChunkBase<ArrayChunk2>; ///< For swap_identity().
 
     // RechunkHooks2::rechunk_reown_after_swap copies the private ind_cst_val2.
     template <typename, bool>

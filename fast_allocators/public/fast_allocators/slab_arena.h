@@ -49,8 +49,7 @@
 #include <algorithm>  // std::max, the high-water mark
 #include <cstddef>    // std::size_t
 #include <cstdint>    // std::uintptr_t, std::uint8_t
-#include <cstdio>     // std::fprintf, std::fflush
-#include <cstdlib>    // std::abort, std::getenv
+#include <cstdlib>    // std::getenv
 #include <functional> // std::less (the sweep orders slab pointers)
 #include <utility>    // std::cmp_less
 #include <vector>     // std::vector
@@ -65,6 +64,8 @@
 
 #include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
 #include "fast_allocators/internal/pmp_alloc.h"    // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
+#include "fast_allocators/internal/fatal.h"        // FAST_ALLOC_FATAL
+#include "fast_allocators/internal/log_core.h"     // CHUNK_LOG, CHUNK_LOG_ALWAYS (CHUNK_ARENA_REPORT)
 
 namespace fast_alloc
 {
@@ -204,7 +205,7 @@ inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) no
     const auto  res = std::from_chars(env, end, v);
     if (res.ec != std::errc{} || res.ptr != end)
     {
-        std::fprintf(stderr, "[env] %s=\"%s\" is not a valid value: ignored, %zu kept\n", name, env, fallback);
+        CHUNK_LOG(warn, env, "{}=\"{}\" is not a valid value: ignored, {} kept", name, env, fallback);
         return fallback;
     }
     return v;
@@ -600,11 +601,8 @@ class SlabArena
         {
             if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
             {
-                std::fprintf(stderr,
-                             "[ARENA %s] DOUBLE-ALLOC recycled slab %p (size=%zu): handed out while still live\n",
-                             name_, block, size);
-                std::fflush(stderr);
-                std::abort();
+                FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC recycled slab {} (size={}): handed out while still live",
+                                 name_, block, size);
             }
             live_.insert(reinterpret_cast<std::uintptr_t>(block));
             bytes_live_ += size;
@@ -622,12 +620,9 @@ class SlabArena
             // Impossible by construction (a free-list slab was removed from live_).
             if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
             {
-                std::fprintf(stderr,
-                             "[ARENA %s] DOUBLE-ALLOC slab %p (size=%zu): handed out while still live "
-                             "— a slab was recycled with live blocks still in it\n",
-                             name_, block, size);
-                std::fflush(stderr);
-                std::abort();
+                FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC slab {} (size={}): handed out while still live -- a slab was "
+                                 "recycled with live blocks still in it",
+                                 name_, block, size);
             }
             live_.insert(reinterpret_cast<std::uintptr_t>(block));
             bytes_live_ += size;
@@ -671,8 +666,7 @@ class SlabArena
         // Not live: warn, do NOT abort (see @note).
         if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
         {
-            std::fprintf(stderr, "[ARENA %s] double-free/unknown slab %p (size=%zu) — ignored\n", name_, block, size);
-            std::fflush(stderr);
+            CHUNK_LOG(warn, arena, "{}: double-free/unknown slab {} (size={}) -- ignored", name_, block, size);
             return; // don't push an unknown slab onto the free-list
         }
         bytes_live_ -= size;
@@ -721,9 +715,8 @@ class SlabArena
             }
             if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
             {
-                std::fprintf(stderr, "[ARENA %s] recycle of an unknown/free slab %p (size=%zu) -- ignored\n", name_,
-                             block, size);
-                std::fflush(stderr);
+                CHUNK_LOG(warn, arena, "{}: recycle of an unknown/free slab {} (size={}) -- ignored", name_, block,
+                          size);
                 continue;
             }
             bytes_live_ -= size;
@@ -963,14 +956,13 @@ class SlabArena
         {
             recycled += kv.first * kv.second.count;
         }
-        std::fprintf(stderr,
-                     "[ARENA %-6s] %-16s mapped=%8zu KiB  live=%8zu KiB  high=%8zu KiB  "
-                     "freelist=%8zu KiB  regions=%zu  allocs=%zu  deallocs=%zu  deallocMiB=%zu  "
-                     "recycled=%zu KiB (in=%zu out=%zu foreign=%zu advised=%zu)\n",
-                     name_, when, mapped >> 10U, bytes_live_ >> 10U, bytes_high_ >> 10U, freelist >> 10U,
-                     regions_.size(), alloc_calls_, dealloc_calls_, dealloc_bytes_ >> 20U, recycled >> 10U,
-                     recycled_in_, recycled_out_, recycled_foreign_, recycled_advised_);
-        std::fflush(stderr);
+        // CHUNK_ARENA_REPORT asked for it: a report, written whatever CHUNK_LOG says.
+        CHUNK_LOG_ALWAYS(arena,
+                         "{:<6} {:<16} mapped={:8} KiB  live={:8} KiB  high={:8} KiB  freelist={:8} KiB  regions={}  "
+                         "allocs={}  deallocs={}  deallocMiB={}  recycled={} KiB (in={} out={} foreign={} advised={})",
+                         name_, when, mapped >> 10U, bytes_live_ >> 10U, bytes_high_ >> 10U, freelist >> 10U,
+                         regions_.size(), alloc_calls_, dealloc_calls_, dealloc_bytes_ >> 20U, recycled >> 10U,
+                         recycled_in_, recycled_out_, recycled_foreign_, recycled_advised_);
     }
 
 
@@ -1031,8 +1023,8 @@ class SlabArena
         void* base = ::mmap(nullptr, want, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (base == MAP_FAILED)
         {
-            std::fprintf(stderr, "SlabArena(%s): mmap of %zu bytes failed\n", name_, want);
-            std::abort();
+            const int err = errno;
+            FAST_ALLOC_FATAL("arena {}: mmap of {} bytes failed ({})", name_, want, std::strerror(err));
         }
         // CHUNK_THP: `1` advises huge pages (the slabs are 2 MiB and aligned
         // on it, a huge page each), `never` forbids them, unset leaves the
@@ -1184,25 +1176,24 @@ inline void report_all_arenas(const char* when) noexcept
     op_arena().report(when);
     ctx_arena().report(when);
     value_arena().report(when);
-    std::fprintf(
-        stderr,
-        "[RECLAIM] %-16s madvise_calls=%zu  slabs=%zu  advised=%zu MiB  "
-        "(emptied-slab calls=%zu, skipped: still-live=%zu unaligned=%zu too-small=%zu)  "
-        "sweep=%.1f ms in %zu flushes (threads=%d)\n",
+    CHUNK_LOG_ALWAYS(
+        arena,
+        "reclaim {:<16} madvise_calls={}  slabs={}  advised={} MiB  (emptied-slab calls={}, skipped: still-live={} "
+        "unaligned={} too-small={})  sweep={:.1f} ms in {} flushes (threads={})",
         when, reclaim_syscalls().load(std::memory_order_relaxed), reclaim_calls().load(std::memory_order_relaxed),
         reclaim_bytes().load(std::memory_order_relaxed) >> 20U, reclaim_entered().load(std::memory_order_relaxed),
         reclaim_skip_live().load(std::memory_order_relaxed), reclaim_skip_unaligned().load(std::memory_order_relaxed),
         reclaim_skip_small().load(std::memory_order_relaxed),
         static_cast<double>(reclaim_sweep_ns().load(std::memory_order_relaxed)) * 1e-6,
         reclaim_sweeps().load(std::memory_order_relaxed), detail::reclaim_sweep_threads());
-    std::fprintf(stderr, "[FREEPATH] %-15s freed=%zu  parked_own=%zu  parked_foreign=%zu  kept_no_migrate=%zu\n", when,
-                 freepath_freed().load(std::memory_order_relaxed), freepath_park_own().load(std::memory_order_relaxed),
-                 freepath_park_foreign().load(std::memory_order_relaxed),
-                 freepath_kept_nomigrate().load(std::memory_order_relaxed));
-    std::fprintf(stderr, "[FREEPATH] %-15s materialised: keyed=%zu  keyless=%zu\n", when,
-                 freepath_alloc_keyed().load(std::memory_order_relaxed),
-                 freepath_alloc_key0().load(std::memory_order_relaxed));
-    std::fflush(stderr);
+    CHUNK_LOG_ALWAYS(arena, "freepath {:<15} freed={}  parked_own={}  parked_foreign={}  kept_no_migrate={}", when,
+                     freepath_freed().load(std::memory_order_relaxed),
+                     freepath_park_own().load(std::memory_order_relaxed),
+                     freepath_park_foreign().load(std::memory_order_relaxed),
+                     freepath_kept_nomigrate().load(std::memory_order_relaxed));
+    CHUNK_LOG_ALWAYS(arena, "freepath {:<15} materialised: keyed={}  keyless={}", when,
+                     freepath_alloc_keyed().load(std::memory_order_relaxed),
+                     freepath_alloc_key0().load(std::memory_order_relaxed));
 }
 
 } // namespace fast_alloc

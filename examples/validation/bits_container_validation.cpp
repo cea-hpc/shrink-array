@@ -42,7 +42,10 @@
 //      the chunks a fill left constant;
 //   9. fill_range_mt from every thread of a region, on spans of 1..97
 //      elements handed out round-robin (neighbouring spans of one word belong
-//      to different threads), twice over, against std::vector<bool>;
+//      to different threads), twice over, against std::vector<bool>; then
+//      copy_range_mt and transform_range_mt the same way, from a byte source
+//      (they keep the span's values in a per-thread buffer: it did not
+//      compile for bits, std::vector<bool> having no data());
 //  10. birth size (dyn builds): born at packed_bit_birth_factor times the
 //      active size (capped at cst_buffer_size), which it leaves unchanged --
 //      an array of another type created next is born at it.
@@ -50,7 +53,7 @@
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
-#include <cstdint>   // std::uint64_t, std::uint32_t
+#include <cstdint>   // std::uint64_t, std::uint32_t, std::uint8_t (the copy source)
 #include <cstdio>    // std::snprintf
 #include <random>    // std::mt19937_64
 #include <utility>   // std::pair
@@ -59,7 +62,7 @@
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int (ArrayChunk2<bool>)
 #include "chunk/array_chunk_bits.h"      // ArrayChunkBits, Bit (and ArrayChunk2 with them)
 #include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor
-#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
+#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, and their _mt forms
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // build_config::chunk_dynamic, build_config::has_not_ompt
@@ -651,6 +654,66 @@ int parallel_fill(long N)
     return fails;
 }
 
+int parallel_copy_transform(long N)
+{
+    ArrayChunkBits<>  a(N);
+    std::vector<bool> ref(static_cast<std::size_t>(N), false);
+    int               fails = 0;
+
+    // Runs of ones and zeros, and a mixed stretch: spans copied whole uniform
+    // and spans copied mixed.
+    std::vector<std::uint8_t> src(static_cast<std::size_t>(N));
+    for (long i = 0; i < N; ++i)
+    {
+        src[static_cast<std::size_t>(i)] = (i / 300) % 3 == 2 ? static_cast<std::uint8_t>(i % 5 == 0)
+                                                              : static_cast<std::uint8_t>((i / 300) % 3 == 0);
+    }
+
+    std::vector<std::pair<long, long>> spans;
+    for (long lo = 0, len = 1; lo < N; lo += len, len = (len % 97) + 1)
+    {
+        spans.emplace_back(lo, std::min(N, lo + len));
+    }
+    const auto nspans = static_cast<long>(spans.size());
+
+    for (int pass = 0; pass < 2; ++pass) // 0: copy_range_mt, 1: transform_range_mt (negation)
+    {
+#pragma omp parallel
+        {
+            begin_phase();
+#pragma omp for schedule(static, 1)
+            for (long s = 0; s < nspans; ++s)
+            {
+                const auto lo = static_cast<std::size_t>(spans[static_cast<std::size_t>(s)].first);
+                const auto hi = static_cast<std::size_t>(spans[static_cast<std::size_t>(s)].second);
+                if (pass == 0)
+                {
+                    copy_range_mt(a, lo, hi, src.begin() + static_cast<std::ptrdiff_t>(lo));
+                }
+                else
+                {
+                    transform_range_mt(a, lo, hi, src.begin() + static_cast<std::ptrdiff_t>(lo),
+                                       [](std::uint8_t x) { return x == 0; });
+                }
+            }
+        }
+        end_phase();
+        for (long i = 0; i < N; ++i)
+        {
+            const bool v                     = src[static_cast<std::size_t>(i)] != 0;
+            ref[static_cast<std::size_t>(i)] = pass == 0 ? v : !v;
+        }
+        fails += compare(a, ref, pass == 0 ? "copy_range_mt" : "transform_range_mt") != 0;
+    }
+    if (fails == 0)
+    {
+        println("[bits] OK copy_range_mt / transform_range_mt from {} threads, neighbouring spans in one word",
+                CHUNK_PMP_MAX_THREADS);
+    }
+    a.clear();
+    return fails;
+}
+
 } // namespace
 
 int run(int argc, char** argv)
@@ -670,6 +733,7 @@ int run(int argc, char** argv)
     fails += advisor_and_rechunk(N);
     fails += bulk_ranges(N);
     fails += parallel_fill(N);
+    fails += parallel_copy_transform(N);
 
     release_chunk_pools();
     destroy_block_chunk();

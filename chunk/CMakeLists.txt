@@ -484,10 +484,10 @@ function(chunk_add_variant target_name variant_define size is_dyn)
 
   if (CHUNK_STD_ALLOC)
     # No fast_allocators library here, but some of its headers -- svalloc.h,
-    # singleton.h and the threading backend (pmp_loops.h, pmp_runtime.h,
-    # pmp_pool.h, pmp_pool_state.h), standard library (and <omp.h>) only --
-    # are chunk's too (one copy, see them): their directory stays on the
-    # include path. Installed below.
+    # singleton.h, log_core.h, fatal.h and the threading backend (pmp_loops.h,
+    # pmp_runtime.h, pmp_pool.h, pmp_pool_state.h), standard library (and
+    # <omp.h>) only -- are chunk's too (one copy, see them): their directory
+    # stays on the include path. Installed below.
     target_include_directories(${target_name}
             PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/fast_allocators/public>)
   else()
@@ -681,10 +681,13 @@ install(FILES ${CHUNK_GENERATED_INCLUDE_DIR}/chunk/build_options.h
         COMPONENT chunk-devel)
 
 # A std-alloc build installs no fast_allocators, yet chunk's headers include
-# its svalloc.h, singleton.h and the backend's pmp_*.h: install those with chunk then.
+# its svalloc.h, singleton.h, log_core.h, fatal.h and the backend's pmp_*.h:
+# install those with chunk then.
 if (CHUNK_STD_ALLOC)
   install(FILES ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/svalloc.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/singleton.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/log_core.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/fatal.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_loops.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_runtime.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_pool.h

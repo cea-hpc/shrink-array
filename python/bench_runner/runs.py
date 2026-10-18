@@ -555,12 +555,16 @@ def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None,
 
     Returns (success, duration_s, returncode, stdout_text, stderr_tail).
     With merge_stderr, stdout_text is followed by the whole stderr: what the
-    library traces there (the re-chunk decider's [RECHUNK-DECIDE] lines) is
+    library logs there (the re-chunk decider's "decide ... [APPLIED]" lines) is
     then readable by the caller too.
     """
     start = time.perf_counter()
     _bind = {"OMP_PROC_BIND": "close", "OMP_PLACES": "cores"}
-    child_env = {**_bind, **os.environ, **env_vars}
+    # The decider's applied re-chunks (parsing._parse_applied_rechunks) are
+    # log messages of level info, not written by default: ask for them,
+    # unless the caller's environment says otherwise.
+    _log = {"CHUNK_LOG": "warn,rechunk=info"}
+    child_env = {**_bind, **_log, **os.environ, **env_vars}
     if extra_ld_library_path:
         prev = child_env.get("LD_LIBRARY_PATH", "")
         child_env["LD_LIBRARY_PATH"] = (

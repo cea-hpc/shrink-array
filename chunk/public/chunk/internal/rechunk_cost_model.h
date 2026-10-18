@@ -38,11 +38,11 @@
 // materialised data alone underestimates sparse arrays by an order of magnitude.
 //
 // The constants were fitted (least squares) on rebuilds measured with
-// CHUNK_RECHUNK_TRACE on one ARM machine at 64 threads (median error under
+// CHUNK_LOG=rechunk=debug on one ARM machine at 64 threads (median error under
 // 10%). They are HARDWARE-specific; elsewhere the formula's shape holds and
-// the scalars move. The [RECHUNK-DECIDE] lines log the estimate, the chunk and
-// materialised counts, and CHUNK_RECHUNK_TRACE the measured total, which is
-// what a refit needs.
+// the scalars move. The decider's "decide" lines (rechunk=info) log the
+// estimate, the chunk and materialised counts, and the rechunk=debug phase line
+// the measured total, which is what a refit needs.
 //
 // Thread count: the constants hold at 64 threads, and the rebuild does not
 // all run in parallel (the refill scales almost linearly, the teardown by

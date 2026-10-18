@@ -50,6 +50,107 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- One log for both libraries (`chunk/log.h`, built on
+  `fast_allocators/internal/log_core.h`): every message has a level and a
+  channel, `CHUNK_LOG` (default `warn`) says which are written, e.g.
+  `CHUNK_LOG=warn,rechunk=debug`, and `CHUNK_LOG_FILE` where (stderr by
+  default). A program can set the levels with `shrink_array::logging::configure()`
+  and receive every message in its own logger with
+  `shrink_array::logging::set_sink()`. A message is formatted on the stack (no
+  allocation) and written as one line, `[shrink_array][channel][level][tid] text`.
+  New harness `log_validation`. The library's other stderr messages move to it
+  in the next steps.
+
+### Changed
+
+- An invariant failure is reported by one thread only (when a race is seen by
+  several threads at once, their reports no longer interleave), as one block
+  on stderr followed by the backtrace, and its message is formatted without
+  allocating; it then reaches the program's sink (`set_sink()`) or
+  `CHUNK_LOG_FILE`, as a record of level fatal.
+- A double free caught at teardown, a drain that does not settle and deferred
+  writes about to be lost stop a check build (as before) and, in the other
+  builds, are errors of the log (channels `pool`, `drain`) instead of raw
+  stderr lines.
+- The re-chunk traces go through the log, with a new channel `memory` for the
+  probes that cost: `CHUNK_LOG=rechunk=debug` (phase times, rebuild schedule,
+  slice split; formerly `CHUNK_RECHUNK_TRACE`), `rechunk=trace` (memory per
+  slice; `CHUNK_RECHUNK_TRACE_SLICES`), `memory=info` (memory split at each
+  advisor tick; `CHUNK_RECHUNK_MEMTRACE`), `memory=debug` (exact memory at
+  each re-chunk step, census; `CHUNK_RECHUNK_TRACE_MEM`). The former variables
+  still work, with a deprecation warning; `0` now means unset for them too.
+- The re-chunk decider's lines are no longer written by default:
+  `rechunk=info` writes its moves (`decide <array>: re-chunk S=.. -> S'=..
+  ... [APPLIED]`), `rechunk=debug` its waits too. `CHUNK_RECHUNK_DRY_RUN`,
+  `CHUNK_RECHUNK_CHURN` and `CHUNK_FORCE_RECHUNK` switch `rechunk=info` on.
+  python/bench_runner and multi_launch_stress.py set
+  `CHUNK_LOG=warn,rechunk=info` unless it is set; their parser,
+  rechunk_trace_summary.py and diag_v1_rechunk_slowdown.py read the new and
+  the former format.
+- A refused `rechunk_to()`, `set_chunk_size()` or `set_active_chunk_size()` is
+  a warning of channel `rechunk` (written by default, as before); the notices
+  of `CHUNK_RECHUNK_KEEP_RECYCLED(_MB)` are of level info (no longer written
+  by default); check builds' chunk-size prediction is `advisor=info`, and its
+  scan is skipped when not written.
+- Manager, compression audits, pool and ledger reports, OMPT go through the
+  log: a drain left with deferred operations at teardown is an error of
+  channel `drain` (the first 16); the check builds' compression audits and the
+  compression residual of `compress()` are `compress=info` (no longer written
+  by default; ArrayChunk2's per-chunk detail at `compress=debug`); the
+  per-array allocator sets are `affinity=debug` (formerly
+  `CHUNK_AFFINITY_TRACE`, deprecated); the OMPT tool's warnings are of channel
+  `ompt`, and with `CHUNK_REQUIRE_OMPT=1` an invariant failure. Reports asked
+  for explicitly -- `print_all_reuse_pool_breakdown()`, `CHUNK_LEDGER_REPORT`,
+  `CHUNK_OMPT_STATS`, `compress_int(true)`, the `CHUNK_RECHUNK_LEDGERTRACE`
+  build -- are written whatever `CHUNK_LOG` says (`CHUNK_LOG_ALWAYS`), through
+  the sink.
+- fast_allocators goes through the log too, and its fatal failures (an
+  allocation or a `mmap` that fails, a slab handed out twice, an element that
+  does not fit a slab) through the same fatal report as an invariant failure
+  (`FAST_ALLOC_FATAL`, `fast_allocators/internal/fatal.h`, which also holds
+  `print_backtrace()` now -- `chunk/debug.h` forwards to it): one block on
+  stderr headed `[CRITICAL_FAILURE]`, the backtrace, the program's sink, one
+  reporting thread. A slab freed or recycled twice is a warning of channel
+  `arena`, an invalid `CHUNK_RECLAIM_MIN_SLABS` / `CHUNK_THP` a warning of
+  `env` (the `CHUNK_THP` notices are of level info), a failed trim or
+  `posix_memalign` an `alloc` message; `CHUNK_ARENA_REPORT` is a report
+  (written whatever `CHUNK_LOG` says); the slab evictions are `alloc=trace`
+  (formerly `FAST_ALLOC_TRACE`, deprecated).
+- The library's remaining messages go through the log: the warnings of
+  `set_second_value()` and of a static build's ignored setters (`ParamChunk`)
+  and the one-page caution (`warn`, channel `general`); a compound operator a
+  bool element has not (`error`); the second-value registry's warnings
+  (identifiers past half used, degraded index, refused reclaim: `warn`,
+  channel `compress`); a deferred replay retried past its cap outside check
+  builds (`drain`); `gc_mark_report()` and the `verbose` build's candidate-list
+  lines (reports, written whatever `CHUNK_LOG` says); the foreign blocks the
+  deferred-write pool drops (`recycle=debug`, every one at `recycle=trace`,
+  formerly `CHUNK_RECYCLE_TRACE`, deprecated; no longer written by default in
+  check builds); a lookup of an unknown array key, before its invariant failure
+  (`error`).
+- The warnings on an environment variable or an argument that is not a valid
+  number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
+  valid value: ...` instead of `[env] NAME=...`.
+
+### Deprecated
+
+- The trace switches of before the log, replaced by `CHUNK_LOG` levels: `CHUNK_RECHUNK_TRACE`
+  (`rechunk=debug`), `CHUNK_RECHUNK_TRACE_SLICES` (`rechunk=trace`), `CHUNK_RECHUNK_MEMTRACE`
+  (`memory=info`), `CHUNK_RECHUNK_TRACE_MEM` (`memory=debug`), `CHUNK_AFFINITY_TRACE`
+  (`affinity=debug`), `CHUNK_RECYCLE_TRACE` (`recycle=trace`), `FAST_ALLOC_TRACE`
+  (`alloc=trace`). Still accepted -- each sets its level, with a warning -- and to be removed in
+  0.3.0. They are developer settings ([docs/developer_settings.md](docs/developer_settings.md)),
+  outside the versioning policy; the deprecation period is a courtesy to the scripts that set them.
+
+### Fixed
+
+- A "wait" line of the re-chunk decider ended with a stray `0` when the array
+  had no back-off.
+- An invariant failure inside a program's log sink, while the log was reading
+  its configuration, blocked instead of stopping the program.
+
 ## 0.1.2 -- 2026-10-16
 
 ### Added

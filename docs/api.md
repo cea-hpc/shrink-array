@@ -159,3 +159,29 @@ The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptiv
 | `chunk_config::stats` | `CHUNK_STATS` build |
 
 Environment variables and build options: [environment_variables.md](environment_variables.md).
+
+## 9. The log
+
+Every message of both libraries goes through one log (`chunk/log.h`, namespace
+`shrink_array::logging`): a level (`error`, `warn`, `info`, `debug`, `trace`) and a channel
+(`general`, `env`, `alloc`, `arena`, `pool`, `rechunk`, `drain`, `compress`, `recycle`, `ledger`,
+`ompt`, `affinity`, `advisor`, `memory`). By default the warnings and errors are written, one line
+each, on stderr:
+
+```
+[shrink_array][rechunk][W][12345] rechunk_to(48) refused: a chunk size must be a power of two or a multiple of 64
+```
+
+| call or variable | what it does |
+|---|---|
+| `CHUNK_LOG=warn,rechunk=info` | the levels: a bare level for every channel, `channel=level` for one, left to right; `off` writes nothing but the fatal failures |
+| `CHUNK_LOG_FILE=path` | the file the lines are appended to instead of stderr (`%p`: the process id) |
+| `logging::configure("warn,rechunk=debug")` | the same specification from the code, on top of `CHUNK_LOG`; returns the number of items not understood |
+| `logging::set_sink(fn, user)` | hands every record (level, channel, message, source location) to `fn` -- the program's own logger -- instead of stderr; `nullptr` goes back. A record can arrive at exit: the sink must outlive it, or be removed first |
+
+What a program asks for explicitly -- `print_all_reuse_pool_breakdown()`, `CHUNK_ARENA_REPORT`,
+`CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` -- is written whatever `CHUNK_LOG` says, through the
+same sink. A broken invariant or a fatal allocator failure always stops the program: a block on
+stderr headed `[CRITICAL_FAILURE]` (`[DEBUG_INVARIANT_FAILURE]` in a debug build), the
+backtrace, then the record (level fatal) to the sink or `CHUNK_LOG_FILE`. The channels'
+contents: [developer_settings.md](developer_settings.md), section 2.

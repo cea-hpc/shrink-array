@@ -23,7 +23,6 @@
 #include <map>           // std::map
 #include <vector>        // std::vector
 #include <tuple>         // std::tuple, std::get
-#include <cstdio>        // fprintf (pool breakdown)
 #include <unordered_map> // std::unordered_map
 #include <cstdint>       // pool keys (drain_reuse_list_for_size, keyed lists)
 #include <type_traits>   // remove_reference_t / remove_pointer_t (same)
@@ -34,6 +33,7 @@
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // thread_chunk_size, set_thread_chunk_size
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_REUSE_SHARE_DIV, CHUNK_REUSE_FLOOR_KB)
+#include "chunk/log.h"                        // CHUNK_LOG_ALWAYS (pool breakdown)
 #include "chunk/internal/TChunk.h"            // TChunkComp, TChunk2CompMap, TChunk2AComp
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_CAPACITY (max_thr), pmp::team
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_DISCARD (drain_reuse_list_for_size)
@@ -497,12 +497,11 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
         if (legacy_blocks != 0)
         {
-            std::fprintf(stderr,
-                         "[POOLS] %s %-22s legacy store        : %9zu block(s), %8.1f MB"
-                         " (sized by the ambient %u)\n",
-                         label, type_name<T>().data(), legacy_blocks,
-                         (double)(legacy_blocks * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size())) / 1e6,
-                         thread_chunk_size());
+            CHUNK_LOG_ALWAYS(pool,
+                             "{} {:<22} legacy store        : {:9} block(s), {:8.1f} MB (sized by the ambient {})",
+                             label, type_name<T>(), legacy_blocks,
+                             (double)(legacy_blocks * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size())) / 1e6,
+                             thread_chunk_size());
         }
 
         if constexpr (chunk_config::chunk_dynamic)
@@ -523,12 +522,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 {
                     continue;
                 }
-                std::fprintf(stderr,
-                             "[POOLS] %s %-22s size %-6u        : %9zu block(s), %8.1f MB"
-                             " across %zu/%zu rank(s)\n",
-                             label, type_name<T>().data(), kv.first, blocks,
-                             (double)(blocks * sizeof(T) * CHUNK_T<T>::storage_units(kv.first)) / 1e6, non_empty_ranks,
-                             kv.second.size());
+                CHUNK_LOG_ALWAYS(pool, "{} {:<22} size {:<6}        : {:9} block(s), {:8.1f} MB across {}/{} rank(s)",
+                                 label, type_name<T>(), kv.first, blocks,
+                                 (double)(blocks * sizeof(T) * CHUNK_T<T>::storage_units(kv.first)) / 1e6,
+                                 non_empty_ranks, kv.second.size());
             }
         }
     }

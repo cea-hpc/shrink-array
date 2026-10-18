@@ -42,7 +42,7 @@ Part 1 -- A/B on the rebuild's state (always). shrink_bench_chunk_1024
   The time per iteration comes from the timestamps of the "iter <k> : time"
   lines (printed every 100 iterations; stdout line-buffered by stdbuf), so
   each 100-iteration interval gives a mean. An interval in which a
-  [RECHUNK] line appeared is marked. The summary compares the intervals after
+  re-chunk phase line appeared is marked. The summary compares the intervals after
   the LAST re-chunk with the same intervals of the static run.
 
 Part 2 -- probes during the slow phase (--perf), static and dyn only, at
@@ -76,7 +76,8 @@ import time
 from pathlib import Path
 
 ITER_RE = re.compile(r"^iter (\d+) : time : ")
-RECHUNK_RE = re.compile(r"^\[RECHUNK\] (\d+) -> (\d+) phases")
+# The re-chunk's phase line, as the log writes it (rechunk=debug) and as it was printed before.
+RECHUNK_RE = re.compile(r"^(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\]) (\d+) -> (\d+) phases")
 FREEPATH_RE = re.compile(r"\[FREEPATH\] (\S+)\s+freed=(\d+)\s+parked_own=(\d+)\s+parked_foreign=(\d+)")
 
 CONFIGS = [
@@ -105,7 +106,7 @@ class Run:
         self.dir = Path(outdir) / name
         self.dir.mkdir(parents=True, exist_ok=True)
         self.env = os.environ.copy()
-        self.env.update({"OMP_NUM_THREADS": str(threads), "NO_IO": "1", "CHUNK_RECHUNK_TRACE": "1"})
+        self.env.update({"OMP_NUM_THREADS": str(threads), "NO_IO": "1", "CHUNK_LOG": "warn,rechunk=debug"})
         self.env.setdefault("OMP_PROC_BIND", "close")
         self.env.setdefault("OMP_PLACES", "cores")
         self.env.update(env_extra)
@@ -274,7 +275,7 @@ def main():
 
     for name in runs:
         if name != "static" and last_rechunk(runs[name]) is None:
-            summary.append(f"WARNING: {name}: no re-chunk seen ([RECHUNK] a -> b phases) -- the comparison "
+            summary.append(f"WARNING: {name}: no re-chunk seen (no 'a -> b phases' line) -- the comparison "
                            "below is then between two non-re-chunked runs")
     st = best_times(runs.get("static", []))
     summary.append("\n## Part 1: iteration wall time after the last re-chunk (vs static 1024, same iterations;"

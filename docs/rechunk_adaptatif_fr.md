@@ -115,7 +115,7 @@ mesure à données constantes et la possibilité de revenir en arrière.
 ## 4. La reconstruction : `rechunk_to()`
 
 `internal/array_chunk_rechunk_inline.h`. Les étapes, avec leur nom dans la trace
-`CHUNK_RECHUNK_TRACE=1` :
+`CHUNK_LOG=rechunk=debug` :
 
 1. **prologue** : à l'ancienne géométrie, vider les écritures différées du tableau, puis
    compresser ses candidats en attente avant de les retirer des listes ;

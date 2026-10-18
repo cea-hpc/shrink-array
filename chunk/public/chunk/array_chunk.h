@@ -55,7 +55,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
                    public RechunkHooks<ArrayChunk<T, ind_type>>
 {
   private:
-    friend ArrayChunkBase<ArrayChunk<T, ind_type>>; // swap_identity()
+    friend ArrayChunkBase<ArrayChunk>; // swap_identity()
 
     using Base     = ArrayChunkBase<ArrayChunk>;
     using Parallel = ParallelSupport<ArrayChunk>;

@@ -96,6 +96,14 @@ Le prix est le temps d'accès. Dans des boucles qui ne font qu'accéder (le pire
 vector, une réécriture 7 à 16 fois selon la variante ; dans un vrai code, le calcul autour des
 accès en absorbe une partie.
 
+Montée en threads, à trois fois la taille (`--multiply 3`, 3·10⁹ éléments : les builds à index
+64 bits `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cœurs), temps de calcul par rapport
+à 4 threads ([python/omp_speedup.py](python/omp_speedup.py)) : toutes les variantes suivent la
+droite idéale jusqu'à 32 threads, atteignent un speedup de 14 à 20 à 128 threads et restent
+entre 12 et 18 jusqu'à 288, là où `std::vector` retombe vers 8.
+
+![Speedup OpenMP des builds int64 sur Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
+
 **À utiliser** sur des données surtout nulles ou faites de plages de quelques valeurs : champs
 creux, masques de matériaux, grandeurs multi-matériaux, drapeaux. **À éviter** sur des données
 où chaque chunk contient des valeurs variées : elles y coûtent un peu plus de mémoire qu'un
@@ -146,6 +154,10 @@ Les options CMake (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS
   itérateurs mutables, `insert` / `erase` au milieu.
 - **Écritures en masse plus rapides** : `fill_range`, `copy_range` et leurs versions `_mt`
   décident une fois par chunk au lieu d'une fois par élément.
+- **Messages** : seulement les avertissements et les erreurs, sur stderr, une ligne chacun ;
+  `CHUNK_LOG=warn,rechunk=info` en montre plus, `CHUNK_LOG_FILE` les écrit dans un fichier,
+  `shrink_array::logging::set_sink()` les confie à votre propre logger
+  ([docs/api_fr.md](docs/api_fr.md), section 9).
 
 Chaque appel, par tâche : [docs/api_fr.md](docs/api_fr.md).
 

@@ -21,7 +21,6 @@
 #include <cassert>     // assert
 #include <cstddef>     // std::byte, std::size_t
 #include <cstdint>     // std::uintptr_t (the block probe)
-#include <cstdio>      // std::fprintf (diagnostics)
 #include <memory>      // std::unique_ptr
 #include <mutex>       // std::mutex, std::scoped_lock (the pools of exited threads)
 #include <type_traits> // std::conditional_t (DeferredByteAllocSlot)
@@ -31,11 +30,12 @@
 #include <unistd.h>    // sysconf (same)
 
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
-#include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB), env_flag (CHUNK_RECYCLE_TRACE)
+#include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
 #include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EV_OP_ALLOC / EV_OP_FREE
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::backend (the pools of exited threads)
+#include "chunk/log.h"                            // CHUNK_LOG (recycle)
 
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h"   // fast_alloc::ArenaKind
@@ -429,20 +429,25 @@ class FastAllocatorConcrete : public FastAllocatorBase
             {
                 if constexpr (build_config::any_check)
                 {
-                    // Expected, not an anomaly: report the first, then on a
-                    // doubling schedule with the running total (~log2(N) lines
-                    // per thread). CHUNK_RECYCLE_TRACE=1 prints one line per block.
-                    static const bool        trace     = env_flag("CHUNK_RECYCLE_TRACE");
+                    // Expected, not an anomaly: recycle=debug reports the
+                    // first, then on a doubling schedule with the running total
+                    // (~log2(N) lines per thread); recycle=trace (formerly
+                    // CHUNK_RECYCLE_TRACE) one line per block.
                     thread_local std::size_t n_foreign = 0;
                     ++n_foreign;
-                    if (trace || std::has_single_bit(n_foreign))
+                    if (std::has_single_bit(n_foreign))
                     {
-                        std::fprintf(stderr,
-                                     "[RECYCLE] dropped FOREIGN block %p (not owned by this thread's slab) "
-                                     "— cross-thread drain, would be use-after-munmap if recycled; "
-                                     "%zu on this thread so far\n",
-                                     block, n_foreign);
-                        std::fflush(stderr);
+                        CHUNK_LOG(debug, recycle,
+                                  "dropped FOREIGN block {} (not owned by this thread's slab) -- cross-thread drain, "
+                                  "would be use-after-munmap if recycled; {} on this thread so far",
+                                  block, n_foreign);
+                    }
+                    else
+                    {
+                        CHUNK_LOG(trace, recycle,
+                                  "dropped FOREIGN block {} (not owned by this thread's slab) -- cross-thread drain, "
+                                  "would be use-after-munmap if recycled; {} on this thread so far",
+                                  block, n_foreign);
                     }
                 }
                 return;

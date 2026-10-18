@@ -115,7 +115,7 @@ measurement at unchanged data and the ability to go back.
 ## 4. The rebuild: `rechunk_to()`
 
 `internal/array_chunk_rechunk_inline.h`. The steps, with their name in the
-`CHUNK_RECHUNK_TRACE=1` trace:
+`CHUNK_LOG=rechunk=debug` trace:
 
 1. **prologue**: at the old geometry, flush the array's deferred writes, then
    compress its pending candidates before removing them from the lists;

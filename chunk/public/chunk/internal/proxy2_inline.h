@@ -17,7 +17,6 @@
 #pragma once
 
 #include <cstddef>     // std::size_t
-#include <iostream>    // std::cerr (verbose)
 #include <type_traits> // std::remove_cvref_t
 
 #include "chunk/internal/in_t.h"          // in_t<T>
@@ -31,6 +30,7 @@
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/test_hooks.h"   // TEST KNOB: test_hooks::maybe_read_delay
+#include "chunk/log.h"                   // CHUNK_LOG_ALWAYS (verbose)
 
 namespace shrink_array
 {
@@ -234,7 +234,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
 
     if constexpr (chunk_config::verbose)
     {
-        std::cerr << "⚠️ List became dangerous (rank " << thr_rank << ")\n";
+        CHUNK_LOG_ALWAYS(compress, "candidate list became dangerous (rank {})", thr_rank);
     }
 }
 

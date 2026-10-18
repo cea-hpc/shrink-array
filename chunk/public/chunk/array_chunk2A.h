@@ -20,7 +20,6 @@
 #include <atomic>           // std::atomic (operator==: a difference found)
 #include <cstddef>          // std::size_t
 #include <cstdint>          // std::uint8_t, std::uint32_t (reclaim_second_values' mark)
-#include <cstdio>           // std::printf
 #include <iostream>         // for cout, ostream
 #include <utility>          // for move
 #include <vector>           // for vector, swap
@@ -41,6 +40,7 @@
 #include "chunk/internal/array_chunk_core.h"            // the core the bases share
 #include "chunk/internal/proxy2A.h"                     // Proxy2A<T> and its tables
 #include "chunk/chunk2A_std.h"                          // Chunk2A<T>
+#include "chunk/log.h"                                  // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
 
 namespace shrink_array
 {
@@ -77,7 +77,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using Hooks2A = RechunkHooks<ArrayChunk2A>;    ///< Re-chunk hooks (dynamic geometry).
 
     friend Base2;                                     ///< The CRTP base reaches this class's private members.
-    friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; ///< For swap_identity().
+    friend ArrayChunkBase<ArrayChunk2A>; ///< For swap_identity().
 
     // Re-declared (not only inherited): the mixins declare them too, so an outside
     // `Arr::chunk_type` would be ambiguous between base subobjects (lookup precedes access).
@@ -315,16 +315,16 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @brief Report how many cst2 buffers a sweep could reclaim.
      * @details Runs gc_collect_live() and compares the live count with
      *          GlobalVecHolder's total; the difference is the reclaimable set.
-     *          Diagnostic only -- prints to stderr and frees nothing.
+     *          Diagnostic only -- a report (written whatever CHUNK_LOG says,
+     *          channel compress) -- and frees nothing.
      */
     static void gc_mark_report()
     {
         std::unordered_set<const void*> live;
         gc_collect_live(live);
         const std::size_t held = GlobalVecHolder<T>::count_entries();
-        std::fprintf(stderr, "[cst2-gc] live=%zu / holder=%zu  (reclaimable=%zu)\n", live.size(), held,
-                     held > live.size() ? held - live.size() : 0);
-        std::fflush(stderr);
+        CHUNK_LOG_ALWAYS(compress, "cst2-gc: live={} / holder={}  (reclaimable={})", live.size(), held,
+                         held > live.size() ? held - live.size() : 0);
     }
 
     /**
@@ -390,9 +390,10 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                 static std::atomic<bool> warned{false};
                 if (!warned.exchange(true, std::memory_order_relaxed))
                 {
-                    std::cerr << "[cst_val2] reclaim_second_values() refused: the second-value index is "
-                                 "degraded, a value unfindable by value could be freed. Nothing is reclaimed "
-                                 "for this type until its last array is destroyed.\n";
+                    CHUNK_LOG(warn, compress,
+                              "reclaim_second_values() refused: the second-value index is degraded, a value unfindable "
+                              "by value could be freed. Nothing is reclaimed for this type until its last array is "
+                              "destroyed.");
                 }
                 return 0;
             }

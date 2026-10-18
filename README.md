@@ -94,6 +94,14 @@ The price is access time. In loops that do nothing but access (the worst case,
 rewrite 7 to 16 times depending on the variant; in a real code the computation around the
 accesses absorbs part of it.
 
+Thread scaling, at three times the size (`--multiply 3`, 3·10⁹ elements: the 64-bit index
+builds `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cores), compute time against 4
+threads ([python/omp_speedup.py](python/omp_speedup.py)): every variant follows the ideal line
+up to 32 threads, reaches a speedup of 14 to 20 at 128 threads and stays between 12 and 18 up
+to 288, where `std::vector` falls back to about 8.
+
+![OpenMP speedup of the int64 builds on Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
+
 **Use it** on data that is mostly zero or made of runs of a few values: sparse fields, material
 masks, multi-material quantities, flags. **Don't** on data where every chunk holds varied
 values: there it costs a little more memory than a `std::vector`, and is slower. Sparse
@@ -143,6 +151,9 @@ The CMake options (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS
   iterators, `insert` / `erase` in the middle.
 - **Faster bulk writes**: `fill_range`, `copy_range` and their `_mt` versions decide once per
   chunk instead of once per element.
+- **Messages**: warnings and errors only, on stderr, one line each; `CHUNK_LOG=warn,rechunk=info`
+  shows more, `CHUNK_LOG_FILE` writes them to a file, `shrink_array::logging::set_sink()` hands
+  them to your own logger ([docs/api.md](docs/api.md), section 9).
 
 Every call, by task: [docs/api.md](docs/api.md).
 

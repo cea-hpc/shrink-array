@@ -36,13 +36,13 @@
 #include <array>   // std::array
 #include <cstddef> // std::size_t
 #include <cstdint> // std::uintptr_t (the aarch64 alignment probe)
-#include <cstdio>  // std::fprintf
 #include <cstdlib> // std::abort
 #include <mutex>   // std::mutex, std::scoped_lock
 #include <utility> // std::cmp_equal
 
 #include "chunk/config.h"                   // build_config::any_check
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/log.h"                      // CHUNK_LOG_ALWAYS (the report, the transition trace)
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
@@ -340,22 +340,17 @@ inline void report_live_blocks() noexcept
             }
             ++rows[i].count;
         }
-        std::fprintf(stderr,
-                     "\n[POOL_LEDGER/REPORT] blocks still recorded at exit: "
-                     "%zu LIVE, %zu PARKED\n",
-                     n_live, n_parked);
+        CHUNK_LOG_ALWAYS(ledger, "report: blocks still recorded at exit: {} LIVE, {} PARKED", n_live, n_parked);
         for (int i = 0; i < n_rows; ++i)
         {
-            std::fprintf(stderr, "[POOL_LEDGER/REPORT]   %-7s %8zu  last site: %s\n",
-                         rows[i].state == static_cast<int>(BState::LIVE) ? "LIVE" : "PARKED", rows[i].count,
-                         rows[i].site);
+            CHUNK_LOG_ALWAYS(ledger, "report:   {:<7} {:8}  last site: {}",
+                             rows[i].state == static_cast<int>(BState::LIVE) ? "LIVE" : "PARKED", rows[i].count,
+                             rows[i].site);
         }
         if (n_live == 0 && n_parked == 0)
         {
-            std::fprintf(stderr, "[POOL_LEDGER/REPORT]   (none) -- any LSan leak comes "
-                                 "from a path the ledger does not trace\n");
+            CHUNK_LOG_ALWAYS(ledger, "report:   (none) -- any LSan leak comes from a path the ledger does not trace");
         }
-        std::fflush(stderr);
     }
 }
 
@@ -429,8 +424,8 @@ inline void block_transition(const void* block,
         if constexpr (build_config::rechunk_ledger_trace)
         {
             const char* cur = (it == block_live().end()) ? "ABSENT" : bstate_name(it->second.state);
-            std::fprintf(stderr, "[LEDGER] %p op=%s cur=%s -> %s site=%s sz=%zu\n", block, op, cur, bstate_name(next),
-                         site, block_live().size());
+            CHUNK_LOG_ALWAYS(ledger, "{} op={} cur={} -> {} site={} sz={}", block, op, cur, bstate_name(next), site,
+                             block_live().size());
         }
         if (it == block_live().end())
         {

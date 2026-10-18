@@ -491,6 +491,9 @@ for i in range(n):
         # hammer remote memory (huge slowdown). Overridable from the outer env.
         env.setdefault("OMP_PROC_BIND", "close")
         env.setdefault("OMP_PLACES", "cores")
+        # The re-chunk decider's moves (the stats builds' trace on stderr):
+        # log messages of level info, not written by default.
+        env.setdefault("CHUNK_LOG", "warn,rechunk=info")
         # Compression is off by default in shrink_bench (opt-in: --compress /
         # COMPRESS=1), so nothing to set here any more.
         if no_io:
@@ -521,7 +524,7 @@ for i in range(n):
             returncode = result.returncode
 
             # error_*.txt only for a FAILED run: a successful one may still
-            # write to stderr (the stats builds' [RECHUNK-DECIDE] trace).
+            # write to stderr (the re-chunk decider's moves, CHUNK_LOG=rechunk=info).
             if not no_io and os.path.isfile(stderr_file):
                 if os.stat(stderr_file).st_size == 0:
                     os.remove(stderr_file)

@@ -22,13 +22,12 @@
 #include <bit>      // std::bit_width, the element-size shift
 #include <cstddef>  // std::ptrdiff_t, the element offsets
 #include <cstdint>  // std::uintptr_t
-#include <cstdlib>  // std::abort on an arena failure
-#include <iostream> // std::cerr on an arena failure
 #include <utility>  // std::cmp_less (the element-size check)
 #include <vector>   // std::vector
 
 #include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
 #include "fast_allocators/slab_arena.h"   // disjoint op/ctx/value slab arenas
+#include "fast_allocators/internal/fatal.h" // FAST_ALLOC_FATAL
 
 namespace fast_alloc
 {
@@ -47,9 +46,8 @@ inline void TCSlab<Links>::alloc_block()
     // overwrite it. Nothing to round to -- refuse, with the sizes.
     if (BlockSize < 1) [[unlikely]]
     {
-        std::cerr << "[TCAllocator] element of " << ElementSize << " bytes does not fit in a slab of " << BlockAllocator
-                  << " bytes (back-pointer included)\n";
-        std::abort();
+        FAST_ALLOC_FATAL("TCAllocator: element of {} bytes does not fit in a slab of {} bytes (back-pointer included)",
+                         ElementSize, BlockAllocator);
     }
 
     if constexpr (side_links)
@@ -70,9 +68,8 @@ inline void TCSlab<Links>::alloc_block()
 
     if (data == nullptr) [[unlikely]]
     {
-        std::cerr << "Fatal Error: slab arena (kind " << static_cast<int>(arena_kind) << ") failed to allocate "
-                  << BlockAllocator << " bytes\n";
-        std::abort();
+        FAST_ALLOC_FATAL("slab arena (kind {}) failed to allocate {} bytes", static_cast<int>(arena_kind),
+                         BlockAllocator);
     }
 
     // NOTE: no memset, fresh slab or recycled. The pool makes no promise about element
@@ -109,10 +106,9 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
         // ElementSize is a run-time value, so this is a release check, once per slab.
         if (std::cmp_less(ElementSize_, sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0) [[unlikely]]
         {
-            std::cerr << "[TCAllocator] element size " << ElementSize_
-                      << " bytes cannot hold the free-list index (an int: " << sizeof(int) << " bytes, aligned on "
-                      << alignof(int) << ")\n";
-            std::abort();
+            FAST_ALLOC_FATAL("TCAllocator: element size {} bytes cannot hold the free-list index (an int: {} bytes, "
+                             "aligned on {})",
+                             ElementSize_, sizeof(int), alignof(int));
         }
     }
 
@@ -125,9 +121,8 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
     // few MiB; a release check, once per slab, like the one above.
     if (slab_bytes_for(BlockAllocator_) > (std::uintptr_t{1} << 32)) [[unlikely]]
     {
-        std::cerr << "[TCAllocator] slab of " << slab_bytes_for(BlockAllocator_)
-                  << " bytes: num_block() indexes offsets below 4 GiB only\n";
-        std::abort();
+        FAST_ALLOC_FATAL("TCAllocator: slab of {} bytes: num_block() indexes offsets below 4 GiB only",
+                         slab_bytes_for(BlockAllocator_));
     }
     // Unused (and 0, the +1 wrapping) for an element size of 1: a power of
     // two, num_block_pow2() takes it.
