@@ -21,7 +21,7 @@
 #include <functional>    // std::hash
 #include <limits>        // std::numeric_limits
 #include <atomic>        // std::atomic, std::memory_order
-#include <iostream>      // std::cout, std::cerr
+#include <iostream>      // std::cout
 #include <thread>        // std::thread::id, std::this_thread
 #include <unordered_map> // std::unordered_map
 #include <vector>        // std::vector
@@ -34,6 +34,7 @@
 #include "chunk/config.h"         // build_config::use_openmp (get_tid)
 #include "chunk/PMP_CHUNK.h"      // chunk_pmp_team_rank (get_tid)
 #include "chunk/ring_log_debug.h" // the declarations defined here
+#include "chunk/log.h"            // CHUNK_LOG
 
 #ifdef CHUNK_RING_LOG_ANY
 
@@ -632,7 +633,7 @@ bool analyze_ring_sweep()
             {
                 if (ep.idx >= compress_intervals[ep.tid].size())
                 {
-                    std::cerr << "❌ Invalid compress index " << ep.idx << " for TID " << ep.tid << "\n";
+                    CHUNK_LOG(warn, general, "ring log: invalid compress index {} for TID {}", ep.idx, ep.tid);
                     continue;
                 }
                 const Interval&      iv = compress_intervals[ep.tid][ep.idx];
@@ -666,7 +667,7 @@ bool analyze_ring_sweep()
             {
                 if (ep.idx >= fast_intervals[ep.tid].size())
                 {
-                    std::cerr << "❌ Invalid fast index " << ep.idx << " for TID " << ep.tid << "\n";
+                    CHUNK_LOG(warn, general, "ring log: invalid fast index {} for TID {}", ep.idx, ep.tid);
                     continue;
                 }
                 const Interval& fiv = fast_intervals[ep.tid][ep.idx];

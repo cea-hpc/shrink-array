@@ -113,6 +113,18 @@ the tag's checksum to the recipe.
   `CHUNK_OMPT_STATS`, `compress_int(true)`, the `CHUNK_RECHUNK_LEDGERTRACE`
   build -- are written whatever `CHUNK_LOG` says (`CHUNK_LOG_ALWAYS`), through
   the sink.
+- The library's remaining messages go through the log: the warnings of
+  `set_second_value()` and of a static build's ignored setters (`ParamChunk`)
+  and the one-page caution (`warn`, channel `general`); a compound operator a
+  bool element has not (`error`); the second-value registry's warnings
+  (identifiers past half used, degraded index, refused reclaim: `warn`,
+  channel `compress`); a deferred replay retried past its cap outside check
+  builds (`drain`); `gc_mark_report()` and the `verbose` build's candidate-list
+  lines (reports, written whatever `CHUNK_LOG` says); the foreign blocks the
+  deferred-write pool drops (`recycle=debug`, every one at `recycle=trace`,
+  formerly `CHUNK_RECYCLE_TRACE`, deprecated; no longer written by default in
+  check builds); a lookup of an unknown array key, before its invariant failure
+  (`error`).
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.
