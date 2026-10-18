@@ -19,14 +19,14 @@
 // Bodies of the slab classes declared in tc_allocator.h, which includes this
 // file at its end.
 
-#include <bit>      // std::bit_width, the element-size shift
-#include <cstddef>  // std::ptrdiff_t, the element offsets
-#include <cstdint>  // std::uintptr_t
-#include <utility>  // std::cmp_less (the element-size check)
-#include <vector>   // std::vector
+#include <bit>     // std::bit_width, the element-size shift
+#include <cstddef> // std::ptrdiff_t, the element offsets
+#include <cstdint> // std::uintptr_t
+#include <utility> // std::cmp_less (the element-size check)
+#include <vector>  // std::vector
 
-#include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
-#include "fast_allocators/slab_arena.h"   // disjoint op/ctx/value slab arenas
+#include "fast_allocators/tc_allocator.h"   // the declarations these bodies belong to
+#include "fast_allocators/slab_arena.h"     // disjoint op/ctx/value slab arenas
 #include "fast_allocators/internal/fatal.h" // FAST_ALLOC_FATAL
 
 namespace fast_alloc

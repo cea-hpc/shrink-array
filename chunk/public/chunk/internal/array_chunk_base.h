@@ -138,8 +138,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     using difference_type = std::ptrdiff_t;
     /// non-const positional access: the write proxy, wrapped in an ElementRef
     /// (build_config::strict_element_ref; not with -DCHUNK_LOOSE_ELEMENT_REF)
-    using reference = std::conditional_t<build_config::strict_element_ref, ElementRef<proxy_type, T>, proxy_type>;
-    using const_reference = T;          // const positional access (value)
+    using reference       = std::conditional_t<build_config::strict_element_ref, ElementRef<proxy_type, T>, proxy_type>;
+    using const_reference = T; // const positional access (value)
 
     /** @} */
     using CRTPSupport<Derived>::derived;

@@ -109,8 +109,8 @@ int integer_ops()
     std::vector<int> ref(static_cast<std::size_t>(n), 0);
     for (int i = 0; i < n; ++i)
     {
-        const int v = (i / 1000) % 3 == 0 ? 0 : 4 + (i % 9);
-        a[i]        = v;
+        const int v                      = (i / 1000) % 3 == 0 ? 0 : 4 + (i % 9);
+        a[i]                             = v;
         ref[static_cast<std::size_t>(i)] = v;
     }
     for (int i = 0; i < n; ++i)
@@ -146,8 +146,8 @@ int float_div_by_zero()
     a[2] = -3.0;
     a[1] /= 0.0;
     a[2] /= 0.0;
-    const double p = std::as_const(a)[1];
-    const double m = std::as_const(a)[2];
+    const double p  = std::as_const(a)[1];
+    const double m  = std::as_const(a)[2];
     const bool   ok = p == std::numeric_limits<double>::infinity() && m == -std::numeric_limits<double>::infinity();
     return report("double /= 0.0 gives +-inf", ok ? 0 : 1);
 }
@@ -180,7 +180,7 @@ int second_value_zero()
 int run_child(int k)
 {
     Arr<int> a(1024);
-    a[5]         = 7;
+    a[5]              = 7;
     volatile int zero = 0; // not a constant the compiler could see
     if (k == 0)
     {
@@ -198,9 +198,10 @@ int check_stops(const char* self, int k)
 {
     const char*       what = k == 0 ? "int /= 0 stops (check build)" : "int %= 0 stops (check build)";
     const std::string log  = "/tmp/compound_ops_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
-    const std::string cmd  = validation::self_command(self) + " --child " + std::to_string(k) + " > \"" + log + "\" 2>&1";
-    const int         status = std::system(cmd.c_str());
-    std::string       out;
+    const std::string cmd =
+        validation::self_command(self) + " --child " + std::to_string(k) + " > \"" + log + "\" 2>&1";
+    const int   status = std::system(cmd.c_str());
+    std::string out;
     if (FILE* f = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];

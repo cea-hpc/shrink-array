@@ -76,7 +76,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using Base    = ArrayChunkBase<ArrayChunk2A>;  ///< Base shared by every variant.
     using Hooks2A = RechunkHooks<ArrayChunk2A>;    ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2;                                     ///< The CRTP base reaches this class's private members.
+    friend Base2;                        ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<ArrayChunk2A>; ///< For swap_identity().
 
     // Re-declared (not only inherited): the mixins declare them too, so an outside

@@ -26,7 +26,7 @@
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"               // in_t<T>
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/crp_helper.h"         // CRTPSupport
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/pointer_map_chunk2.h" // PointerMapChunk2
@@ -448,7 +448,6 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     static inline thread_local bool list_over_threshold_ = false;
 
   public:
-
     /**
      * @brief Async-context counterpart of execute_simple_operation():
      *        materialise the chunk referenced by `ctx` if it is at either
@@ -1031,7 +1030,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         }
         return *this;
     }
-    Proxy2(const Proxy2& other)                 = default;
+    Proxy2(const Proxy2& other) = default;
 
     T*       operator&()       = delete;
     const T* operator&() const = delete;

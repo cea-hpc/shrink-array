@@ -96,8 +96,8 @@ inline double g_rechunk_cost_min_threads  = 8.;   // below the measured range: t
     const double n_elems    = static_cast<double>(n_chunks_old) * static_cast<double>(S_old);
     const double data_bytes = static_cast<double>(mat_old) * static_cast<double>(S_old) * elem_bytes;
     const double ns         = (n_elems * g_rechunk_cost_elem_ns) +
-                      (static_cast<double>(n_chunks_old) * g_rechunk_cost_chunk_ns) +
-                      (data_bytes * g_rechunk_cost_byte_ns);
+                              (static_cast<double>(n_chunks_old) * g_rechunk_cost_chunk_ns) +
+                              (data_bytes * g_rechunk_cost_byte_ns);
     return ns / 1.0e6 * rechunk_thread_factor(threads);
 }
 

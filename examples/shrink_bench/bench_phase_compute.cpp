@@ -449,9 +449,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                     const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
                     const double arm    = b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) -
-                                               (std::tan(t3) + std::cos(t5))
+                                                  (std::tan(t3) + std::cos(t5))
                                             : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) -
-                                               (std::sin(t3) + std::atan(t5));
+                                                  (std::sin(t3) + std::atan(t5));
 
                     p_val_sum += common + arm;
                     p_v_real += std::cos(valc.real()) - tab_float[i];

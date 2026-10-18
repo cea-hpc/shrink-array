@@ -514,7 +514,11 @@ class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     void clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
     /// @brief Release the buffer outright (no rank pool) and point at a constant.
-    void block_clear(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int /*thr_rank*/, T* cst2_ptr);
+    void block_clear(int               num_compress_value,
+                     char*             ptr_type_cst,
+                     SecondValueRef<T> ptr_second_value,
+                     int /*thr_rank*/,
+                     T* cst2_ptr);
 };
 
 /// @brief Chunk of values compressible to the first constant or to a second constant shared through the

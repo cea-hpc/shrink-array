@@ -33,7 +33,7 @@
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for use_fast_block_compression, use_openmp
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_CAPACITY
 #include "chunk/chunk2_std.h"                           // Chunk2<T>
@@ -71,7 +71,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using FastBlock2 = FastBlockSupport2<ArrayChunk2>; ///< Fast-block compression pass.
     using Hooks2     = RechunkHooks2<ArrayChunk2>;     ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2;                                    ///< The CRTP base reaches this class's private members.
+    friend Base2;                       ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<ArrayChunk2>; ///< For swap_identity().
 
     // RechunkHooks2::rechunk_reown_after_swap copies the private ind_cst_val2.
