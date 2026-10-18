@@ -50,6 +50,19 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added (cpp23)
+
+- `std::expected` forms that say why they refuse, beside the existing calls
+  (unchanged): `try_rechunk_to(n)`, `try_set_chunk_size(n)` and
+  `try_set_active_chunk_size(n)` return `std::expected<void, ChunkSizeError>`
+  (`not_pow2_or_x64`, `exceeds_buffer`, `fixed_geometry` in a static build);
+  `ArrayChunk2A<T>::try_reclaim_second_values()` returns
+  `std::expected<std::size_t, ReclaimRefusal>` (`parallel_region`,
+  `rechunk_in_progress`, `degraded_index`). They write no message. The
+  re-chunk decider uses `try_rechunk_to()`: a refused size is a warning and
+  no event, where it was recorded as performed. `rechunk_to(0)` is now a
+  refusal with its warning, where it returned silently.
+
 ### Fixed
 
 - A "wait" line of the re-chunk decider ended with a stray `0` when the array

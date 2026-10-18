@@ -41,6 +41,7 @@
 #include <array>    // std::array (the bulk-read buffer)
 #include <concepts> // std::invocable (for_each_span's run overload)
 #include <cstddef>  // std::size_t (size_type)
+#include <expected> // std::expected (try_set_chunk_size)
 #include <span>     // std::span (for_each_span)
 #include <utility>  // std::swap, std::as_const
 #include <iterator> // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
@@ -51,6 +52,7 @@
 #include "chunk/chunk_traits.h"                 // ArrayChunkTraits, Proxy2
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
+#include "chunk/internal/chunk_size_policy.h"   // ChunkSizeError (try_set_chunk_size)
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
 #include "chunk/internal/element_ref.h"         // ElementRef: what operator[] returns
@@ -173,6 +175,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     using Core::registry_key;
 
     using RechunkSupport<Derived>::rechunk_to;
+    using RechunkSupport<Derived>::try_rechunk_to;
     using RechunkSupport<Derived>::rechunk_all_to;
     using RechunkSupport<Derived>::rechunk_refill;
     using RechunkSupport<Derived>::rechunk_drop_candidates;
@@ -474,8 +477,21 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param new_chunk_size the new chunk size (a power of two or a multiple of 64)
      * @warning Must be called on an empty container, before any
      *          resize/allocation, since it changes how indices map to chunks.
+     * @note A refused size is written on the log (channel rechunk, warning);
+     *       try_set_chunk_size() returns the reason instead.
      */
     void set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept;
+
+    /**
+     * @brief set_chunk_size(), which says why it refuses a size.
+     * @param new_chunk_size the new chunk size (a power of two or a multiple of 64)
+     * @return Nothing, or why @p new_chunk_size was refused, geometry kept:
+     *         with DynamicChunkSize, not is_valid_chunk_size (as
+     *         set_chunk_size()); with StaticChunkSize, any size but the
+     *         compiled one (fixed_geometry -- set_chunk_size() ignores the
+     *         call). Writes no message: the caller decides.
+     */
+    std::expected<void, ChunkSizeError> try_set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept;
 
     /** @brief log2(chunk_size()): the index shift of a power-of-two size, meaningless otherwise. */
     [[deprecated("chunk sizes may be multiples of 64: use i / chunk_size()")]] [[nodiscard]] unsigned int

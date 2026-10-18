@@ -78,20 +78,22 @@ bool ArrayChunkBase<Derived>::is_written_at(this const Derived& self, int j) noe
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept
+std::expected<void, ChunkSizeError>
+ArrayChunkBase<Derived>::try_set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept
 {
     // Same rule as rechunk_to() (this is also its path on an empty array):
     // a power of two or a multiple of 64 (is_valid_chunk_size). Refused,
-    // geometry kept.
+    // geometry kept. A static build has its compiled size only.
     if constexpr (build_config::chunk_dynamic)
     {
         if (!is_valid_chunk_size(new_chunk_size))
         {
-            CHUNK_LOG(warn, rechunk,
-                      "set_chunk_size({}) refused: a chunk size must be a power of two or a multiple of 64",
-                      new_chunk_size);
-            return;
+            return std::unexpected(ChunkSizeError::not_pow2_or_x64);
         }
+    }
+    else if (new_chunk_size != static_chunk_size)
+    {
+        return std::unexpected(ChunkSizeError::fixed_geometry);
     }
     size_policy_.set_size(new_chunk_size); // no-op under StaticChunkSize
     if constexpr (build_config::chunk_dynamic)
@@ -100,6 +102,19 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
         // make it this thread's active size, so its allocations route there.
         register_runtime_chunk_size(new_chunk_size);
         set_thread_chunk_size(new_chunk_size);
+    }
+    return {};
+}
+
+template <typename Derived>
+void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept
+{
+    // A static build ignores the call, as it always has (no message): the
+    // geometry is the compiled one, whatever the caller asks.
+    if (const auto set = try_set_chunk_size(new_chunk_size); !set && set.error() != ChunkSizeError::fixed_geometry)
+        [[unlikely]]
+    {
+        warn_chunk_size_refused("set_chunk_size", new_chunk_size, set.error());
     }
 }
 

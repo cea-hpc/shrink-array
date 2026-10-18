@@ -22,7 +22,7 @@
 #include <cstdint>          // std::uint8_t, std::uint32_t (reclaim_second_values' mark)
 #include <cstdio>           // std::printf
 #include <iostream>         // for cout, ostream
-#include <print>            // std::println (the reclaim refusal)
+#include <expected>         // std::expected (try_reclaim_second_values)
 #include <utility>          // for move
 #include <vector>           // for vector, swap
 #include <unordered_set>    // for the cst2 GC live set
@@ -37,6 +37,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for use_openmp, g_in_rechunk_rebuild
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values)
+#include "chunk/log.h"                                  // CHUNK_LOG (reclaim_second_values: a degraded index)
 #include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"            // the core the bases share
@@ -48,6 +49,29 @@ namespace shrink_array
 
 template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk;
+
+/// @brief Why ArrayChunk2A<T>::try_reclaim_second_values() refuses to run.
+enum class ReclaimRefusal : std::uint8_t
+{
+    parallel_region,     ///< called inside a parallel region
+    rechunk_in_progress, ///< called while a re-chunk rebuilds an array
+    degraded_index,      ///< the type's second-value index is degraded: a value unfindable by value could be freed
+};
+
+/// @brief The reason @p r, in words.
+[[nodiscard]] constexpr const char* to_string(ReclaimRefusal r) noexcept
+{
+    switch (r)
+    {
+        case ReclaimRefusal::parallel_region:
+            return "inside a parallel region";
+        case ReclaimRefusal::rechunk_in_progress:
+            return "during a re-chunk rebuild";
+        case ReclaimRefusal::degraded_index:
+            return "the second-value index is degraded";
+    }
+    return "?";
+}
 
 /**
  * @brief Chunked array whose chunks may each compress to their OWN second value.
@@ -333,10 +357,12 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *              (init_values_cst_val() finds the slot from it by value).
      *          O(chunks of every ArrayChunk2A<T>) + O(registered values).
      *
-     * @return How many identifiers were freed; 0 when refused: inside a parallel region,
-     *         during a re-chunk rebuild, or with a degraded index (the mark could miss a
-     *         value unfindable by value). A refusal is counted by cause in
-     *         second_value_stats(), which tells it from a call with nothing to free.
+     * @return How many identifiers were freed, or why the call was refused
+     *         (ReclaimRefusal): inside a parallel region, during a re-chunk
+     *         rebuild, or with a degraded index (the mark could miss a value
+     *         unfindable by value). A refusal is also counted by cause in
+     *         second_value_stats(). Writes no message: the caller decides
+     *         (reclaim_second_values() returns 0 and says a degraded index once).
      *
      * @pre   A sequential point over the whole TYPE, not one array: no thread
      *        writes to or compresses ANY ArrayChunk2A<T> of the program
@@ -353,7 +379,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *          registration overlapping the reclaim (GlobalVecHolder's
      *          LookupGuard / ReclaimScope); release builds check nothing.
      */
-    static std::size_t reclaim_second_values()
+    static std::expected<std::size_t, ReclaimRefusal> try_reclaim_second_values()
     {
         if constexpr (std::is_same_v<T, bool>)
         {
@@ -362,32 +388,21 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         else
         {
             using gvh = GlobalVecHolder<T>;
-            // Each refusal counted by cause (second_value_stats()): it returns
-            // 0 as a call with nothing to free does.
+            // Each refusal counted by cause as well (second_value_stats()).
             if (CHUNK_PMP_IN_PARALLEL_REGION)
             {
                 gvh::refused_parallel.fetch_add(1, std::memory_order_relaxed);
-                return 0;
+                return std::unexpected(ReclaimRefusal::parallel_region);
             }
             if (g_in_rechunk_rebuild.load(std::memory_order_acquire))
             {
                 gvh::refused_rechunk.fetch_add(1, std::memory_order_relaxed);
-                return 0;
+                return std::unexpected(ReclaimRefusal::rechunk_in_progress);
             }
             if (gvh::index_degraded.load(std::memory_order_relaxed))
             {
                 gvh::refused_degraded.fetch_add(1, std::memory_order_relaxed);
-                // Sticky until the last array of the type goes: say it once, the
-                // run will otherwise end on the identifier exhaustion with no cause.
-                static std::atomic<bool> warned{false};
-                if (!warned.exchange(true, std::memory_order_relaxed))
-                {
-                    std::println(stderr,
-                                 "[cst_val2] reclaim_second_values() refused: the second-value index is "
-                                 "degraded, a value unfindable by value could be freed. Nothing is reclaimed "
-                                 "for this type until its last array is destroyed.");
-                }
-                return 0;
+                return std::unexpected(ReclaimRefusal::degraded_index);
             }
             // Check builds: no lookup or registration in flight from here to the
             // end of reclaim_unmarked() -- the mark included, since a slot found
@@ -449,6 +464,31 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
             gvh::reclaim_freed.fetch_add(freed, std::memory_order_relaxed);
             return freed;
         }
+    }
+
+    /**
+     * @brief try_reclaim_second_values(), 0 for a refusal (the counts of
+     *        second_value_stats() tell it from a call with nothing to free).
+     * @details A degraded index is written on the log once (channel compress,
+     *          warning): sticky until the last array of the type goes, the run
+     *          would otherwise end on the identifier exhaustion with no cause.
+     * @pre   As try_reclaim_second_values().
+     */
+    static std::size_t reclaim_second_values()
+    {
+        const auto freed = try_reclaim_second_values();
+        if (!freed && freed.error() == ReclaimRefusal::degraded_index)
+        {
+            static std::atomic<bool> warned{false};
+            if (!warned.exchange(true, std::memory_order_relaxed))
+            {
+                CHUNK_LOG(
+                    warn, compress,
+                    "reclaim_second_values() refused: the second-value index is degraded, a value unfindable by "
+                    "value could be freed. Nothing is reclaimed for this type until its last array is destroyed.");
+            }
+        }
+        return freed.value_or(0);
     }
 
     /**

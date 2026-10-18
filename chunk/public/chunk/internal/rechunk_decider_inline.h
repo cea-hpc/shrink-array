@@ -358,7 +358,13 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             if (cur_sz != tgt)
             {
                 CHUNK_LOG(info, rechunk, "force {}: {} -> {}", name, cur_sz, tgt);
-                arr.rechunk_to(tgt);
+                // CHUNK_FORCE_RECHUNK(_ALT) are the user's: a size the array refuses is said, not logged as done.
+                if (const auto done = arr.try_rechunk_to(tgt); !done)
+                {
+                    CHUNK_LOG(warn, rechunk, "force {}: {} -> {} refused: {}", name, cur_sz, tgt,
+                              to_string(done.error()));
+                    return false;
+                }
                 // Logged for print_rechunk_log(); mem figures 0 (not measured).
                 log_.emplace_back(RechunkEvent{iter, std::string(name), cur_sz, tgt, 0.0, 0.0, 0.0});
                 return true;
@@ -520,7 +526,14 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             const unsigned old_sz   = cur_e.size;
             const unsigned new_sz   = best_e.size;
 
-            arr.rechunk_to(new_sz);
+            // The advisor proposes geometries only (is_valid_chunk_size), so a
+            // refusal is the ceiling (cst_buffer_size): said, and no event.
+            if (const auto done = arr.try_rechunk_to(new_sz); !done) [[unlikely]]
+            {
+                CHUNK_LOG(warn, rechunk, "decide {}: re-chunk S={} -> S'={} refused: {}", name, old_sz, new_sz,
+                          to_string(done.error()));
+                return false;
+            }
 
             // "after" is measured at the NEXT tick; seed it with the prediction
             // for a run that ends before then.

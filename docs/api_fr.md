@@ -55,9 +55,9 @@ hors de toute région parallèle, et il invalide les proxys du tableau.
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
 | compression **(S)** | `compress()` | une passe de compression complète, immédiate (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `ArrayChunk2A<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`ArrayChunk2A`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas |
+| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `ArrayChunk2A<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre, 0 en cas de refus (`ArrayChunk2A`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas. `try_reclaim_second_values()` renvoie un `std::expected<std::size_t, ReclaimRefusal>` : leur nombre, ou la raison du refus (`parallel_region`, `rechunk_in_progress`, `degraded_index`) |
 | statistiques | `stats()`, `get_nb_chunk_written()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
-| géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) |
+| géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) ; une taille refusée est un avertissement du journal. `try_rechunk_to(n)`, `try_set_chunk_size(n)` et la fonction libre `try_set_active_chunk_size(n)` renvoient à la place un `std::expected<void, ChunkSizeError>` : rien, ou la raison (`not_pow2_or_x64`, `exceeds_buffer`, `fixed_geometry` dans un build statique), sans message |
 
 Chunk2 seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_second_value()`.
 
@@ -152,7 +152,7 @@ aussi sur une écriture différée dans une région par un thread qui n'a pas ap
 | `RechunkDecider` avec `RechunkPolicy` | `chunk/rechunk_decider.h` | décide, tick après tick, si un rechunk en vaut la peine |
 | `decider.consider<T>(a, tick, iter, "name")` | | analyse le tableau et applique le rechunk si la politique est d'accord **(S)** |
 | `decider.print_rechunk_log()` | | la table des rechunks effectués |
-| `a.rechunk_to(n)` **(S)** | | rechunke un tableau à `n` éléments par chunk |
+| `a.rechunk_to(n)` **(S)** | | rechunke un tableau à `n` éléments par chunk (`a.try_rechunk_to(n)` : dit pourquoi une taille est refusée) |
 
 La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 

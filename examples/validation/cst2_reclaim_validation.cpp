@@ -347,13 +347,16 @@ int run(int argc, char** argv)
             fill(a, nch, S, 10000.);
             const std::size_t refused_before = Arr::second_value_stats().refused_parallel;
             long              in_region      = -1;
+            long              why            = -1; // the ReclaimRefusal, -1 for none
             int               team           = 0;
 #pragma omp parallel
             {
 #pragma omp masked
                 {
-                    team      = CHUNK_PMP_NUM_THREADS;
-                    in_region = reclaim();
+                    team             = CHUNK_PMP_NUM_THREADS;
+                    const auto tried = Arr::try_reclaim_second_values();
+                    in_region        = static_cast<long>(tried.value_or(0));
+                    why              = tried ? -1 : static_cast<long>(tried.error());
                 }
             }
             // A team of one is an inactive region: no other thread, the call
@@ -361,6 +364,8 @@ int run(int argc, char** argv)
             const bool active = team > 1;
             expect_eq(active ? "freed inside the (active) region" : "freed inside the (inactive) region", in_region,
                       active ? 0 : nch);
+            expect_eq("try_reclaim_second_values: the refusal says why", why,
+                      active ? static_cast<long>(ReclaimRefusal::parallel_region) : -1);
             // The refusal is counted: 0 freed, but not "nothing to free".
             expect_eq("stats: refused in a parallel region",
                       static_cast<long>(Arr::second_value_stats().refused_parallel - refused_before), active ? 1 : 0);
@@ -402,10 +407,14 @@ int run(int argc, char** argv)
             const std::size_t refused_before = Arr::second_value_stats().refused_rechunk;
             g_in_rechunk_rebuild.store(true, std::memory_order_release);
             const long during = reclaim();
+            const auto tried  = Arr::try_reclaim_second_values();
             g_in_rechunk_rebuild.store(false, std::memory_order_release);
             expect_eq("freed during a re-chunk rebuild", during, 0);
+            expect_eq("try_reclaim_second_values during a re-chunk: the refusal says why",
+                      tried ? -1L : static_cast<long>(tried.error()),
+                      static_cast<long>(ReclaimRefusal::rechunk_in_progress));
             expect_eq("stats: refused during a re-chunk",
-                      static_cast<long>(Arr::second_value_stats().refused_rechunk - refused_before), 1);
+                      static_cast<long>(Arr::second_value_stats().refused_rechunk - refused_before), 2);
             set_active_chunk_size(ambient);
             set_thread_chunk_size(ambient);
         }

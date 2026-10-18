@@ -55,9 +55,9 @@ outside any parallel region, and it invalidates the array's proxies.
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
 | compress **(S)** | `compress()` | a full compression pass now (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `ArrayChunk2A<T>` uses any more, so that their identifiers are reused; returns how many (`ArrayChunk2A`); a sequential point over **every** array of the type, see below |
+| free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `ArrayChunk2A<T>` uses any more, so that their identifiers are reused; returns how many, 0 when refused (`ArrayChunk2A`); a sequential point over **every** array of the type, see below. `try_reclaim_second_values()` returns a `std::expected<std::size_t, ReclaimRefusal>`: how many, or why it was refused (`parallel_region`, `rechunk_in_progress`, `degraded_index`) |
 | statistics | `stats()`, `get_nb_chunk_written()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
-| geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones) |
+| geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones); a refused size is a warning of the log. `try_rechunk_to(n)`, `try_set_chunk_size(n)` and the free `try_set_active_chunk_size(n)` return a `std::expected<void, ChunkSizeError>` instead: nothing, or why (`not_pow2_or_x64`, `exceeds_buffer`, `fixed_geometry` in a static build), with no message |
 
 Chunk2 only: `set_second_value(v)` **(S)**, before the writes, and `get_second_value()`.
 
@@ -148,7 +148,7 @@ in a region by a thread that did not call `begin_parallel_phase()`.
 | `RechunkDecider` with `RechunkPolicy` | `chunk/rechunk_decider.h` | decides, tick after tick, whether a re-chunk is worth it |
 | `decider.consider<T>(a, tick, iter, "name")` | | analyses the array and applies the re-chunk if the policy agrees **(S)** |
 | `decider.print_rechunk_log()` | | the table of the re-chunks performed |
-| `a.rechunk_to(n)` **(S)** | | re-chunk one array to `n` elements per chunk |
+| `a.rechunk_to(n)` **(S)** | | re-chunk one array to `n` elements per chunk (`a.try_rechunk_to(n)`: says why a size is refused) |
 
 The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptive_rechunk.md).
 

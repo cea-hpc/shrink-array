@@ -243,35 +243,35 @@ namespace shrink_array
 template <typename Derived>
 void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int new_size)
 {
+    // A refusal is a caller bug, on a cold path: a message in EVERY build.
+    if (const auto done = self.try_rechunk_to(new_size); !done) [[unlikely]]
+    {
+        warn_chunk_size_refused("rechunk_to", new_size, done.error());
+    }
+}
+
+template <typename Derived>
+std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_to(this Derived& self,
+                                                                                  unsigned int  new_size)
+{
     const unsigned int old_size = self.size_policy_.size();
     // Captured before the swap below hands `self` tmp's key: the allocator set
     // holding the OLD geometry's blocks is (old_key, old_size), and it is the
     // one whose slabs must empty for the re-chunk to give memory back.
     const unsigned int old_key = self.alloc_key();
-    if (new_size == old_size || new_size == 0)
+    if (new_size == old_size)
     {
-        return;
+        return {};
     }
 
-    // A power of two or a multiple of 64 (is_valid_chunk_size). Refused, with
-    // a message in EVERY build: a caller bug, on a cold path.
-    if (!is_valid_chunk_size(new_size))
+    // A power of two or a multiple of 64 (is_valid_chunk_size; 0 refused),
+    // and at most cst_buffer_size: the shared constant buffers (cst_val1 /
+    // cst_val2) are that wide (the dynamic-mode ceiling), and a wider chunk
+    // would read them out of bounds. Raise CHUNK_DYN_MAX_SIZE if a legitimate
+    // geometry needs to be larger.
+    if (const auto ok = check_chunk_size(new_size); !ok) [[unlikely]]
     {
-        CHUNK_LOG(warn, rechunk, "rechunk_to({}) refused: a chunk size must be a power of two or a multiple of 64",
-                  new_size);
-        return;
-    }
-
-    // SAFETY: the shared constant buffers (cst_val1 / cst_val2) are sized
-    // cst_buffer_size (the dynamic-mode ceiling). A chunk wider than that
-    // would read those buffers out of bounds, so refuse the re-chunk.
-    // Raise CHUNK_DYN_MAX_SIZE if a legitimate geometry needs to be larger.
-    // Message in every build, as for an invalid size above.
-    if (new_size > cst_buffer_size)
-    {
-        CHUNK_LOG(warn, rechunk, "rechunk_to({}) refused: exceeds cst_buffer_size={} (raise CHUNK_DYN_MAX_SIZE)",
-                  new_size, shrink_array::cst_buffer_size);
-        return;
+        return ok;
     }
 
     // Serial fast-alloc builds re-chunk too: the per-size allocator pool
@@ -281,8 +281,8 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
     const ind_type total = self.m_size;
     if (total <= 0)
     {
-        self.set_chunk_size(new_size); // legal on an empty array
-        return;
+        self.set_chunk_size(new_size); // legal on an empty array (the size is checked above)
+        return {};
     }
 
     // A real geometry change is now committed: every no-op / refusal exit
@@ -596,6 +596,7 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
                   old_size, new_size, r_entry, r_flush, r_pre_tmp, r_refill, r_swap, r_teardown, r_end,
                   r_end - r_entry);
     }
+    return {};
 }
 
 template <typename Derived>

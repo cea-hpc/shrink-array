@@ -37,7 +37,10 @@
  * @see chunk_size_policy.h for the geometry policies this switches between
  */
 
+#include <expected> // std::expected (try_rechunk_to)
+
 #include "chunk/config.h"                   // build_config::chunk_dynamic
+#include "chunk/internal/chunk_size_policy.h" // ChunkSizeError, static_chunk_size (try_rechunk_to)
 #include "chunk/chunk_traits.h"             // ArrayChunkTraits
 #include "chunk/internal/in_t.h"            // in_t<T>: the captured state
 #include "chunk/internal/array_chunk_for.h" // ArrayChunkCore -- rechunk_all_to's registry keys
@@ -106,8 +109,21 @@ class RechunkSupport<Derived, true>
      *          swapped out and destroyed with tmp. A RechunkDecider may call
      *          this on the user's behalf, so a proxy must not be held across an
      *          advisor tick either.
+     * @note A refused size is written on the log (channel rechunk, warning);
+     *       try_rechunk_to() returns the reason instead.
      */
     void rechunk_to(this Derived& self, unsigned int new_size);
+
+    /**
+     * @brief rechunk_to(), which says why it refuses a size.
+     * @param new_size the new chunk size (a power of two or a multiple of 64,
+     *        at most cst_buffer_size: check_chunk_size)
+     * @return Nothing -- the array's geometry is now @p new_size, also when it
+     *         already was --, or why @p new_size was refused, geometry and
+     *         content kept. Writes no message: the caller decides.
+     * @warning As rechunk_to(): invalidates every outstanding proxy of the array.
+     */
+    std::expected<void, ChunkSizeError> try_rechunk_to(this Derived& self, unsigned int new_size);
 
     /**
      * @brief Refill @p tmp from *this across a geometry change.
@@ -224,6 +240,15 @@ class RechunkSupport<Derived, false>
   protected:
     /** @brief No-op: the geometry is fixed at compile time. */
     static void rechunk_to(unsigned int /*new_size*/) noexcept {}
+    /** @brief The compiled size only: any other is refused (fixed_geometry). */
+    static std::expected<void, ChunkSizeError> try_rechunk_to(unsigned int new_size) noexcept
+    {
+        if (new_size != static_chunk_size)
+        {
+            return std::unexpected(ChunkSizeError::fixed_geometry);
+        }
+        return {};
+    }
     /** @brief No-op: never reached, since rechunk_to() does nothing. */
     static void rechunk_refill(Derived& /*tmp*/, unsigned int /*old_size*/, unsigned int /*new_size*/) noexcept {}
 

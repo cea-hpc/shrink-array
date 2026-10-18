@@ -55,12 +55,14 @@
 
 #include <cstdio>      // std::fprintf, stderr
 #include <cstring>     // std::strcmp
+#include <expected>    // std::expected (the try_ forms' refusals)
 #include <functional>  // std::function
 #include <limits>      // std::numeric_limits (index-split)
 #include <string>      // std::string
 #include <vector>      // std::vector
 #include <cmath>       // std::floor, std::sin
 #include <type_traits> // std::conditional_t
+#include <utility>     // std::pair (try_set_active_chunk_size's cases)
 
 #include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
 #include "chunk/array_chunk.h"                // ArrayChunk
@@ -565,10 +567,37 @@ int check_non_pow2_refused(const char* label)
         ++bad;
     }
 
+    // The try_ forms say why, and change nothing either.
+    const auto expect_refused = [&](const char* what, std::expected<void, ChunkSizeError> got, ChunkSizeError want)
+    {
+        if (got || got.error() != want)
+        {
+            println("[{}/{}] FAIL: {}: {}, expected refused ({})", variant_name(), label, what,
+                    got ? "accepted" : to_string(got.error()), to_string(want));
+            ++bad;
+        }
+    };
+    expect_refused("try_rechunk_to(48)", arr.try_rechunk_to(48u), ChunkSizeError::not_pow2_or_x64);
+    expect_refused("try_rechunk_to(0)", arr.try_rechunk_to(0u), ChunkSizeError::not_pow2_or_x64);
+    expect_refused("try_rechunk_to(2 * cst_buffer_size)", arr.try_rechunk_to(2u * cst_buffer_size),
+                   ChunkSizeError::exceeds_buffer);
+    if (!arr.try_rechunk_to(old_size))
+    {
+        println("[{}/{}] FAIL: try_rechunk_to(the current size) refused", variant_name(), label);
+        ++bad;
+    }
+    if (arr.chunk_size() != old_size)
+    {
+        println("[{}/{}] FAIL: try_rechunk_to moved the geometry {} -> {}", variant_name(), label, old_size,
+                arr.chunk_size());
+        ++bad;
+    }
+
     Array<double>  empty(0);
     const unsigned e0 = empty.chunk_size();
     empty.rechunk_to(48u);
     empty.set_chunk_size(96u);
+    expect_refused("empty.try_set_chunk_size(96)", empty.try_set_chunk_size(96u), ChunkSizeError::not_pow2_or_x64);
     if (empty.chunk_size() != e0)
     {
         println("[{}/{}] FAIL: empty array: geometry {} -> {}", variant_name(), label, e0, empty.chunk_size());
@@ -595,8 +624,8 @@ int check_non_pow2_refused(const char* label)
 
     if (!bad)
     {
-        println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays), content and geometry kept, "
-                "{} -> {} still works",
+        println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays, try_ forms with their reason), content "
+                "and geometry kept, {} -> {} still works",
                 variant_name(), label, old_size + 1u, old_size, old_size * 2u);
     }
     return bad ? 1 : 0;
@@ -619,6 +648,22 @@ int check_active_size_refused(const char* label)
         if (active_chunk_size() != ambient)
         {
             println("[{}/{}] FAIL: set_active_chunk_size({}) accepted: active size {}", variant_name(), label, s,
+                    active_chunk_size());
+            ++bad;
+            set_active_chunk_size(ambient);
+        }
+    }
+    // try_set_active_chunk_size() says why.
+    const std::pair<unsigned, ChunkSizeError> tries[] = {{0u, ChunkSizeError::not_pow2_or_x64},
+                                                         {100u, ChunkSizeError::not_pow2_or_x64},
+                                                         {2u * cst_buffer_size, ChunkSizeError::exceeds_buffer}};
+    for (const auto& [s, want] : tries)
+    {
+        const auto got = try_set_active_chunk_size(s);
+        if (got || got.error() != want || active_chunk_size() != ambient)
+        {
+            println("[{}/{}] FAIL: try_set_active_chunk_size({}): {}, expected refused ({}); active size {}",
+                    variant_name(), label, s, got ? "accepted" : to_string(got.error()), to_string(want),
                     active_chunk_size());
             ++bad;
             set_active_chunk_size(ambient);
