@@ -812,11 +812,8 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
 
         T* values_loc = Base::allocate_chunk_internal(thr_rank, init_func);
 
-        Base::apply_cas_or_recup(values_loc, thr_rank,
-                                 [this, need_set_second_value](bool* cst_ptr)
-                                 {
-                                     return this->compare_and_swap(cst_ptr, need_set_second_value);
-                                 });
+        Base::apply_cas_or_recup(values_loc, thr_rank, [this, need_set_second_value](bool* cst_ptr)
+                                 { return this->compare_and_swap(cst_ptr, need_set_second_value); });
     }
     else
     {

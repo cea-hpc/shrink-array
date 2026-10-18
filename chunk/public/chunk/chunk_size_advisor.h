@@ -129,14 +129,14 @@ struct ChunkSizeAdvisor
     /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.
     struct Options
     {
-        int     coarser_levels = 4;     ///< evaluate S*2 .. S*2^levels
-        int     finer_levels   = 2;     ///< evaluate S/2 .. S/2^levels (data sampled)
-        int     grid_bits      = default_grid_bits(); ///< also every multiple of 64 between
-                                                      ///< S/2^finer_levels and S*2^coarser_levels whose
-                                                      ///< C/64 has at most this many significant bits
-                                                      ///< (2: 192, 384, 768...: steps of at most 50%;
-                                                      ///< 3: 320, 448, 640...: 25%); 0: none
-        int64_t max_mat_scans  = 65536; ///< cap on materialized chunks whose DATA is read
+        int coarser_levels = 4;                   ///< evaluate S*2 .. S*2^levels
+        int finer_levels   = 2;                   ///< evaluate S/2 .. S/2^levels (data sampled)
+        int grid_bits      = default_grid_bits(); ///< also every multiple of 64 between
+                                                  ///< S/2^finer_levels and S*2^coarser_levels whose
+                                                  ///< C/64 has at most this many significant bits
+                                                  ///< (2: 192, 384, 768...: steps of at most 50%;
+                                                  ///< 3: 320, 448, 640...: 25%); 0: none
+        int64_t max_mat_scans = 65536;            ///< cap on materialized chunks whose DATA is read
         /// Per-chunk metadata beyond sizeof(chunk): tracking-list entry (~0.8 B,
         /// see the GLOBAL COMPRESSION LISTS monitoring table: List Memory /
         /// Allocated Chunks) + dirty bitset (128 B / 64 chunks = 2 B) + slack.
@@ -343,7 +343,8 @@ struct ChunkSizeAdvisor
             }
             for (int ci = 0; ci < n_cand; ++ci)
             {
-                inside[static_cast<std::size_t>(ci)] += windows_inside(seg.start, seg.end, cand[static_cast<std::size_t>(ci)]);
+                inside[static_cast<std::size_t>(ci)] +=
+                    windows_inside(seg.start, seg.end, cand[static_cast<std::size_t>(ci)]);
             }
         };
 
@@ -651,7 +652,8 @@ struct ChunkSizeAdvisor
                                     }
                                 }
                             }
-                            const auto seg_of = [&](int64_t i) {
+                            const auto seg_of = [&](int64_t i)
+                            {
                                 return std::upper_bound(seg_start.begin(), seg_start.end(), static_cast<uint32_t>(i)) -
                                        seg_start.begin() - 1;
                             };
@@ -759,8 +761,8 @@ struct ChunkSizeAdvisor
                 const double amb = scanned > 0 ? static_cast<double>(found[static_cast<std::size_t>(ci)]) *
                                                      static_cast<double>(mat0) / static_cast<double>(scanned)
                                                : 0.;
-                mat = nch - inside[static_cast<std::size_t>(ci)] - std::lround(amb);
-                mat = mat < 0 ? 0 : (mat > nch ? nch : mat);
+                mat              = nch - inside[static_cast<std::size_t>(ci)] - std::lround(amb);
+                mat              = mat < 0 ? 0 : (mat > nch ? nch : mat);
             }
             ChunkSizeEstimate est;
             est.size      = c;

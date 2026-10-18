@@ -91,12 +91,12 @@ T value_at(long i)
 {
     switch ((i / 1000) % 3)
     {
-    case 0:
-        return T{};
-    case 1:
-        return static_cast<T>(7);
-    default:
-        return static_cast<T>((i % 97) + 1);
+        case 0:
+            return T{};
+        case 1:
+            return static_cast<T>(7);
+        default:
+            return static_cast<T>((i % 97) + 1);
     }
 }
 

@@ -303,11 +303,12 @@ void read_check_binary_file(Int                ind,
     {
 #pragma omp critical
         {
-            std::cerr << std::format("{}: iteration {}: elements cannot be compared (checksum read {}, calculated {}): the reference "
-                                     "has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
-                                     "full reference (vector baseline without --checksum_only) to locate the "
-                                     "diverging element.\n",
-                                     tab_name, ind, lchs_read, lchs, filename, filename_gz);
+            std::cerr << std::format(
+                "{}: iteration {}: elements cannot be compared (checksum read {}, calculated {}): the reference "
+                "has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
+                "full reference (vector baseline without --checksum_only) to locate the "
+                "diverging element.\n",
+                tab_name, ind, lchs_read, lchs, filename, filename_gz);
         }
         std::abort();
     }

@@ -51,11 +51,11 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
     // The flags the two lambdas captured from main(), under their original
     // names so the bodies below are VERBATIM.
-    const char*                 no_io       = io.no_io;
-    const char*                 no_compress = io.no_compress;
-    const Int                   io_res      = io.io_res;
-    [[maybe_unused]] const bool read_trace  = io.read_trace;
-    [[maybe_unused]] const bool write_trace = io.write_trace;
+    const char*                 no_io         = io.no_io;
+    const char*                 no_compress   = io.no_compress;
+    const Int                   io_res        = io.io_res;
+    [[maybe_unused]] const bool read_trace    = io.read_trace;
+    [[maybe_unused]] const bool write_trace   = io.write_trace;
     const bool                  checksum_only = io.checksum_only;
 
     auto lbd_check =

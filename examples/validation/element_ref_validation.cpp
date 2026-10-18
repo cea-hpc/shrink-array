@@ -52,7 +52,8 @@ using namespace shrink_array;
 namespace
 {
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T>,
                                  std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
 
 int fails = 0;
@@ -110,12 +111,12 @@ int usage()
     os << a[1];
     expect("os << a[1]", os.str() == "2", true);
 
-    a.at(7)      = 7.0;
-    a.front()    = 1.0;
-    a.back()     = 9.0;
+    a.at(7)   = 7.0;
+    a.front() = 1.0;
+    a.back()  = 9.0;
     expect("at / front / back", static_cast<double>(a[7]) + a[0] + a[n - 1], 17.0);
 
-    auto&& kept = a[8]; // a proxy kept on purpose
+    auto&& kept     = a[8]; // a proxy kept on purpose
     std::move(kept) = 8.0;
     expect("std::move(kept) = 8", static_cast<double>(a[8]), 8.0);
     auto p = a.element_proxy(9); // the proxy itself, in every build
@@ -142,8 +143,8 @@ int usage()
     expect("int %, ~, <<=", k[2] + k[3] + k[4], 1 - 8 + 8);
 
     Array<bool> t(100);
-    t[1] = true;
-    t[2] = t[1];
+    t[1]          = true;
+    t[2]          = t[1];
     const bool tb = t[2];
     expect("bool t[2] = t[1]", tb, true);
 
@@ -158,14 +159,14 @@ int usage()
 void misuse()
 {
     Array<double> a(10);
-#if ELEMENT_REF_CASE == 1
+    #if ELEMENT_REF_CASE == 1
     auto   v = a[0]; // conversion
     double d = v;
     (void)d;
-#elif ELEMENT_REF_CASE == 2
+    #elif ELEMENT_REF_CASE == 2
     auto v = a[0]; // assignment
     v      = 3.0;
-#elif ELEMENT_REF_CASE == 3
+    #elif ELEMENT_REF_CASE == 3
     auto v = a[0]; // arithmetic
     println("{:g}", v + 1.0);
     #elif ELEMENT_REF_CASE == 4

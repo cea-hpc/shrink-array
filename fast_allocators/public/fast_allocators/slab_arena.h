@@ -44,20 +44,20 @@
 
 #pragma once
 
-#include <sys/mman.h> // mmap, madvise
-#include <unistd.h>   // sysconf(_SC_PAGESIZE)
-#include <algorithm>  // std::max, the high-water mark
-#include <cstddef>    // std::size_t
-#include <cstdint>    // std::uintptr_t, std::uint8_t
-#include <cstdlib>    // std::getenv
-#include <functional> // std::less (the sweep orders slab pointers)
-#include <utility>    // std::cmp_less
-#include <vector>     // std::vector
-#include <mutex>      // std::mutex, std::scoped_lock
-#include <atomic>     // std::atomic, std::memory_order_relaxed
-#include <charconv>   // std::from_chars (CHUNK_RECLAIM_THREADS)
-#include <chrono>     // the sweep timer
-#include <cstring>    // std::strlen
+#include <sys/mman.h>    // mmap, madvise
+#include <unistd.h>      // sysconf(_SC_PAGESIZE)
+#include <algorithm>     // std::max, the high-water mark
+#include <cstddef>       // std::size_t
+#include <cstdint>       // std::uintptr_t, std::uint8_t
+#include <cstdlib>       // std::getenv
+#include <functional>    // std::less (the sweep orders slab pointers)
+#include <utility>       // std::cmp_less
+#include <vector>        // std::vector
+#include <mutex>         // std::mutex, std::scoped_lock
+#include <atomic>        // std::atomic, std::memory_order_relaxed
+#include <charconv>      // std::from_chars (CHUNK_RECLAIM_THREADS)
+#include <chrono>        // the sweep timer
+#include <cstring>       // std::strlen
 #include <unordered_map> // std::unordered_map
 #include <unordered_set> // std::unordered_set
 #include <system_error>  // std::errc (std::from_chars)
@@ -854,8 +854,7 @@ class SlabArena
         {
             const Span* run = spans.data();
             pmp::parallel_for(0L, n_runs, pmp::options{.num_threads = nthr, .sched = pmp::schedule::dynamic(16)},
-                              [run](long i)
-                              { ::madvise(detail::addr_ptr(run[i].begin), run[i].len, MADV_DONTNEED); });
+                              [run](long i) { ::madvise(detail::addr_ptr(run[i].begin), run[i].len, MADV_DONTNEED); });
         }
         else
         {

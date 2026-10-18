@@ -98,7 +98,7 @@ struct chunk_pmp_schedule
 // queries, all through fast_alloc::pmp. Stays a directive: the serial branch
 // below defines the same names as constants.
 #if FAST_ALLOC_PMP_THREADED
-    #include <atomic>    // std::atomic
+    #include <atomic> // std::atomic
 
     #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
     #include "chunk/internal/env_parse.h"       // CHUNK_THREAD_CAPACITY

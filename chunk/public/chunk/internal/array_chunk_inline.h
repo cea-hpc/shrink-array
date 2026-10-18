@@ -16,8 +16,8 @@
 
 #pragma once
 
-#include <array>    // std::array (the residual's sample)
-#include <vector>   // std::vector
+#include <array>  // std::array (the residual's sample)
+#include <vector> // std::vector
 
 #include "chunk/all_type_chunk.h"                       // ensure_manager, from create
 #include "chunk/array_chunk.h"                          // ArrayChunk, the class these bodies belong to
@@ -28,7 +28,7 @@
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_PARK / DISCARD
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
 #include "chunk/log.h"                                  // CHUNK_LOG_ALWAYS
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
@@ -383,10 +383,8 @@ void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
         // thread.
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
-            first, last,
-            [my_sz]() -> auto& {
-                return Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz);
-            },
+            first, last, [my_sz]() -> auto&
+            { return Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this, my_sz](int j, auto& lbf)
             {
                 if (chunk_list[j].written())

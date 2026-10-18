@@ -93,12 +93,12 @@ struct schedule
     /// @brief Round-robin blocks of @p c iterations.
     [[nodiscard]] static constexpr schedule static_chunks(int c) noexcept
     {
-        return {.kind=sched_kind::static_chunks, .chunk=c};
+        return {.kind = sched_kind::static_chunks, .chunk = c};
     }
     /// @brief Blocks of @p c iterations, taken by whichever thread is free.
     [[nodiscard]] static constexpr schedule dynamic(int c) noexcept
     {
-        return {.kind=sched_kind::dynamic, .chunk=c};
+        return {.kind = sched_kind::dynamic, .chunk = c};
     }
 };
 
@@ -167,21 +167,21 @@ template <typename Index, typename Body>
 void parallel_for(Index first, Index last, [[maybe_unused]] const options& opt, Body&& body)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-#ifdef _OPENMP
+    #ifdef _OPENMP
     const bool on = opt.use_team;
     const int  nt = detail::team_size(opt);
     const int  c  = detail::chunk_of(opt.sched);
     switch (opt.sched.kind)
     {
         case sched_kind::dynamic:
-    #pragma omp parallel for schedule(dynamic, c) if (on) num_threads(nt)
+        #pragma omp parallel for schedule(dynamic, c) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
                 body(i);
             }
             return;
         case sched_kind::static_chunks:
-    #pragma omp parallel for schedule(static, c) if (on) num_threads(nt)
+        #pragma omp parallel for schedule(static, c) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
                 body(i);
@@ -190,17 +190,17 @@ void parallel_for(Index first, Index last, [[maybe_unused]] const options& opt, 
         case sched_kind::static_blocks:
             break;
     }
-    #pragma omp parallel for schedule(static) if (on) num_threads(nt)
+        #pragma omp parallel for schedule(static) if (on) num_threads(nt)
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#else
+    #else
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#endif
+    #endif
 }
 
 /**
@@ -222,33 +222,33 @@ void parallel_for_local(Index                           first,
                         Body&&                          body)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-#ifdef _OPENMP
+    #ifdef _OPENMP
     const bool       on   = opt.use_team;
     const int        nt   = detail::team_size(opt);
     const int        c    = detail::chunk_of(opt.sched);
     const sched_kind kind = opt.sched.kind;
-    #pragma omp      parallel if (on) num_threads(nt)
+        #pragma omp parallel if (on) num_threads(nt)
     {
         decltype(auto) local = make_local();
         // Every thread takes the same branch: each meets the same `omp for`.
         switch (kind)
         {
             case sched_kind::dynamic:
-    #pragma omp for schedule(dynamic, c)
+        #pragma omp for schedule(dynamic, c)
                 for (Index i = first; i < last; ++i)
                 {
                     body(i, local);
                 }
                 break;
             case sched_kind::static_chunks:
-    #pragma omp for schedule(static, c)
+        #pragma omp for schedule(static, c)
                 for (Index i = first; i < last; ++i)
                 {
                     body(i, local);
                 }
                 break;
             case sched_kind::static_blocks:
-    #pragma omp for schedule(static)
+        #pragma omp for schedule(static)
                 for (Index i = first; i < last; ++i)
                 {
                     body(i, local);
@@ -256,13 +256,13 @@ void parallel_for_local(Index                           first,
                 break;
         }
     }
-#else
+    #else
     decltype(auto) local = make_local();
     for (Index i = first; i < last; ++i)
     {
         body(i, local);
     }
-#endif
+    #endif
 }
 
 /**
@@ -285,40 +285,40 @@ template <typename T, std::size_t N, typename Index, typename Body>
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     static_assert(std::is_arithmetic_v<T> && N > 0, "N arithmetic counters");
     T acc[N] = {}; // NOLINT(cppcoreguidelines-avoid-c-arrays): an OpenMP array-section reduction
-#ifdef _OPENMP
+    #ifdef _OPENMP
     const bool on = opt.use_team;
     const int  nt = detail::team_size(opt);
     const int  c  = detail::chunk_of(opt.sched);
     switch (opt.sched.kind)
     {
         case sched_kind::dynamic:
-    #pragma omp parallel for schedule(dynamic, c) reduction(+ : acc[ : N]) if (on) num_threads(nt)
+        #pragma omp parallel for schedule(dynamic, c) reduction(+ : acc[ : N]) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
                 body(i, acc);
             }
             break;
         case sched_kind::static_chunks:
-    #pragma omp parallel for schedule(static, c) reduction(+ : acc[ : N]) if (on) num_threads(nt)
+        #pragma omp parallel for schedule(static, c) reduction(+ : acc[ : N]) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
                 body(i, acc);
             }
             break;
         case sched_kind::static_blocks:
-    #pragma omp parallel for schedule(static) reduction(+ : acc[ : N]) if (on) num_threads(nt)
+        #pragma omp parallel for schedule(static) reduction(+ : acc[ : N]) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
                 body(i, acc);
             }
             break;
     }
-#else
+    #else
     for (Index i = first; i < last; ++i)
     {
         body(i, acc);
     }
-#endif
+    #endif
     std::array<T, N> sums{};
     for (std::size_t k = 0; k < N; ++k)
     {
@@ -342,21 +342,21 @@ class Team
     /// @brief The calling thread's rank in this team, in [0, size()).
     [[nodiscard]] int rank() const noexcept
     {
-#ifdef _OPENMP
+    #ifdef _OPENMP
         return omp_get_thread_num();
-#else
+    #else
         return 0;
-#endif
+    #endif
     }
 
     /// @brief The number of threads in this team.
     [[nodiscard]] int size() const noexcept
     {
-#ifdef _OPENMP
+    #ifdef _OPENMP
         return omp_get_num_threads();
-#else
+    #else
         return 1;
-#endif
+    #endif
     }
 
     /**
@@ -368,27 +368,27 @@ class Team
     void for_static(Index first, Index last, Body&& body, [[maybe_unused]] wait_mode w = wait_mode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-#ifdef _OPENMP
+    #ifdef _OPENMP
         if (w == wait_mode::nowait)
         {
-    #pragma omp for schedule(static) nowait
+        #pragma omp for schedule(static) nowait
             for (Index i = first; i < last; ++i)
             {
                 body(i);
             }
             return;
         }
-    #pragma omp for schedule(static)
+        #pragma omp for schedule(static)
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
-#else
+    #else
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
-#endif
+    #endif
     }
 
     /**
@@ -402,27 +402,27 @@ class Team
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
         [[maybe_unused]] const int c = chunk > 0 ? chunk : 1;
-#ifdef _OPENMP
+    #ifdef _OPENMP
         if (w == wait_mode::nowait)
         {
-    #pragma omp for schedule(dynamic, c) nowait
+        #pragma omp for schedule(dynamic, c) nowait
             for (Index i = first; i < last; ++i)
             {
                 body(i);
             }
             return;
         }
-    #pragma omp for schedule(dynamic, c)
+        #pragma omp for schedule(dynamic, c)
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
-#else
+    #else
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
-#endif
+    #endif
     }
 
     /**
@@ -436,35 +436,35 @@ class Team
     void for_runtime(Index first, Index last, Body&& body, [[maybe_unused]] wait_mode w = wait_mode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-#ifdef _OPENMP
+    #ifdef _OPENMP
         if (w == wait_mode::nowait)
         {
-    #pragma omp for schedule(runtime) nowait
+        #pragma omp for schedule(runtime) nowait
             for (Index i = first; i < last; ++i)
             {
                 body(i);
             }
             return;
         }
-    #pragma omp for schedule(runtime)
+        #pragma omp for schedule(runtime)
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
-#else
+    #else
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
-#endif
+    #endif
     }
 
     /// @brief Wait until every thread of the team gets here (`omp barrier`).
     void barrier() noexcept
     {
-#ifdef _OPENMP
-    #pragma omp barrier
-#endif
+    #ifdef _OPENMP
+        #pragma omp barrier
+    #endif
     }
 
     /**
@@ -476,30 +476,30 @@ class Team
     template <typename F>
     void single(F&& f, [[maybe_unused]] wait_mode w = wait_mode::wait)
     {
-#ifdef _OPENMP
+    #ifdef _OPENMP
         if (w == wait_mode::nowait)
         {
-    #pragma omp single nowait
+        #pragma omp single nowait
             f();
             return;
         }
-    #pragma omp single
+        #pragma omp single
         f();
-#else
+    #else
         f();
-#endif
+    #endif
     }
 
     /// @brief Run @p f on the team's rank 0 only, no barrier (`omp masked`).
     template <typename F>
     void masked(F&& f)
     {
-#ifdef _OPENMP
-    #pragma omp masked
+    #ifdef _OPENMP
+        #pragma omp masked
         f();
-#else
+    #else
         f();
-#endif
+    #endif
     }
 };
 
@@ -518,19 +518,19 @@ class Team
 template <typename Body>
 void team(const options& opt, Body&& body)
 {
-#ifdef _OPENMP
-    const bool  on = opt.use_team;
-    const int   nt = detail::team_size(opt);
-    #pragma omp parallel if (on) num_threads(nt)
+    #ifdef _OPENMP
+    const bool on = opt.use_team;
+    const int  nt = detail::team_size(opt);
+        #pragma omp parallel if (on) num_threads(nt)
     {
         Team t;
         body(t);
     }
-#else
+    #else
     (void)opt;
     Team t;
     body(t);
-#endif
+    #endif
 }
 
 /**
@@ -545,19 +545,19 @@ template <typename T, std::size_t N, typename Body>
 {
     static_assert(std::is_arithmetic_v<T> && N > 0, "N arithmetic counters");
     T acc[N] = {}; // NOLINT(cppcoreguidelines-avoid-c-arrays): an OpenMP array-section reduction
-#ifdef _OPENMP
-    const bool  on = opt.use_team;
-    const int   nt = detail::team_size(opt);
-    #pragma omp parallel if (on) num_threads(nt) reduction(+ : acc[ : N])
+    #ifdef _OPENMP
+    const bool on = opt.use_team;
+    const int  nt = detail::team_size(opt);
+        #pragma omp parallel if (on) num_threads(nt) reduction(+ : acc[ : N])
     {
         Team t;
         body(t, acc);
     }
-#else
+    #else
     (void)opt;
     Team t;
     body(t, acc);
-#endif
+    #endif
     std::array<T, N> sums{};
     for (std::size_t k = 0; k < N; ++k)
     {
@@ -577,19 +577,19 @@ template <typename Body>
 [[nodiscard]] bool team_any(const options& opt, Body&& body)
 {
     bool flag = false;
-#ifdef _OPENMP
-    const bool  on = opt.use_team;
-    const int   nt = detail::team_size(opt);
-    #pragma omp parallel if (on) num_threads(nt) reduction(|| : flag)
+    #ifdef _OPENMP
+    const bool on = opt.use_team;
+    const int  nt = detail::team_size(opt);
+        #pragma omp parallel if (on) num_threads(nt) reduction(|| : flag)
     {
         Team t;
         body(t, flag);
     }
-#else
+    #else
     (void)opt;
     Team t;
     body(t, flag);
-#endif
+    #endif
     return flag;
 }
 

@@ -34,13 +34,13 @@
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
-#include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
-#include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
-#include "chunk/internal/array_chunk_core.h"            // the core the bases share
-#include "chunk/internal/proxy2A.h"                     // Proxy2A<T> and its tables
-#include "chunk/chunk2A_std.h"                          // Chunk2A<T>
-#include "chunk/log.h"                                  // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
+#include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
+#include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
+#include "chunk/internal/array_chunk_core.h"           // the core the bases share
+#include "chunk/internal/proxy2A.h"                    // Proxy2A<T> and its tables
+#include "chunk/chunk2A_std.h"                         // Chunk2A<T>
+#include "chunk/log.h"                                 // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
 
 namespace shrink_array
 {
@@ -76,7 +76,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using Base    = ArrayChunkBase<ArrayChunk2A>;  ///< Base shared by every variant.
     using Hooks2A = RechunkHooks<ArrayChunk2A>;    ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2;                                     ///< The CRTP base reaches this class's private members.
+    friend Base2;                        ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<ArrayChunk2A>; ///< For swap_identity().
 
     // Re-declared (not only inherited): the mixins declare them too, so an outside

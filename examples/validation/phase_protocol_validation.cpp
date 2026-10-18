@@ -285,8 +285,8 @@ int check_case(const char* self, int k)
 
     const bool ran_ok   = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
     const bool must_run = c.must_print == nullptr;
-    const bool pass = must_run ? (ran_ok && out.find("[PHASE PROTOCOL]") == std::string::npos)
-                               : (!ran_ok && out.find(c.must_print) != std::string::npos);
+    const bool pass     = must_run ? (ran_ok && out.find("[PHASE PROTOCOL]") == std::string::npos)
+                                   : (!ran_ok && out.find(c.must_print) != std::string::npos);
     println("[{}/phase-protocol] {:<36} {}{}", variant_name(), c.name,
             must_run ? (ran_ok ? "ran" : "STOPPED") : (ran_ok ? "RAN ON" : "stopped"), pass ? "" : "   <-- FAIL");
     if (!pass)

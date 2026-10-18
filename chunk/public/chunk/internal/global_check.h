@@ -20,8 +20,8 @@
 
 #if CHUNK_OPT_DO_CHECK
 
-    #include <cmath>    // std::isnan
-    #include <complex>  // std::complex
+    #include <cmath>   // std::isnan
+    #include <complex> // std::complex
 
     #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 

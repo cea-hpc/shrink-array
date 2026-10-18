@@ -193,8 +193,7 @@ template <typename V>
 // jump-label pass of the serial build.
 __attribute__((optimize("O2")))
 #endif
-uint64_t
-calculate_checksum(const V& vec)
+uint64_t calculate_checksum(const V& vec)
 {
     uint64_t checksum = 0;
 
@@ -246,7 +245,8 @@ void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_
 
         if (element != zero)
         {
-            checksum += static_cast<uint64_t_padding>(bench_checksum::contribution(static_cast<std::uint64_t>(k), element));
+            checksum +=
+                static_cast<uint64_t_padding>(bench_checksum::contribution(static_cast<std::uint64_t>(k), element));
         }
     }
 }

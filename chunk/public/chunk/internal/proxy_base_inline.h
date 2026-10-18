@@ -953,8 +953,8 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
             operation, static_cast<T>(v),
             [this, &v, operation](auto) // operation functor is used instead of the passed one to ensure consistency
             {
-                const in_t<T> current = load_value();
-                const CalcType res = operation(static_cast<CalcType>(current), static_cast<CalcType>(v));
+                const in_t<T>  current = load_value();
+                const CalcType res     = operation(static_cast<CalcType>(current), static_cast<CalcType>(v));
 
                 // ─── Pre-store check: cst_val should not be visible here under Dekker ───
                 if constexpr (build_config::any_check)
@@ -1301,7 +1301,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_inplace_operation(SyncOp           
                                                ArithmeticProxyContext<T>,                 // Proxy<T>
                                                ArithmeticContext<T, ChunkType, ProxyType> // Proxy2<T>, Proxy2A<T>
                                                >;
-            auto* ctx = pool_new_ctx<CtxType>(derived(), ptr_on_array);
+            auto* ctx     = pool_new_ctx<CtxType>(derived(), ptr_on_array);
 
             // Rebuild a fresh proxy at replay time.
             auto write_body = [ctx, op = std::forward<AsyncOp>(async_op)]() mutable

@@ -31,21 +31,21 @@
  * @see chunk/manage_ompt.h for the semantics of the phase transitions.
  */
 
-#include <array>     // std::array
-#include <algorithm> // std::min (CHUNK_OMPT_STATS report)
-#include <atomic>    // std::atomic, std::memory_order
-#include <chrono>    // CHUNK_OMPT_STATS: time spent flushing
-#include <cstdint>   // std::uint64_t
-#include <cstdlib>   // std::getenv (CHUNK_REQUIRE_OMPT)
-#include <cstring>   // std::strlen (the refused callbacks' list)
-#include <format>    // std::format_to_n (the same list)
+#include <array>       // std::array
+#include <algorithm>   // std::min (CHUNK_OMPT_STATS report)
+#include <atomic>      // std::atomic, std::memory_order
+#include <chrono>      // CHUNK_OMPT_STATS: time spent flushing
+#include <cstdint>     // std::uint64_t
+#include <cstdlib>     // std::getenv (CHUNK_REQUIRE_OMPT)
+#include <cstring>     // std::strlen (the refused callbacks' list)
+#include <format>      // std::format_to_n (the same list)
 #include <string_view> // std::string_view (the CHUNK_REQUIRE_OMPT messages)
 
-#include "chunk/config.h"      // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
-#include "chunk/singleton.h"   // SingletonChk
-#include "chunk/manage_ompt.h" // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
-#include "chunk/PMP_CHUNK.h"   // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
-#include "chunk/log.h"         // CHUNK_LOG, CHUNK_LOG_ALWAYS
+#include "chunk/config.h"                   // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
+#include "chunk/singleton.h"                // SingletonChk
+#include "chunk/manage_ompt.h"              // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
+#include "chunk/PMP_CHUNK.h"                // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
+#include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (CHUNK_REQUIRE_OMPT)
 
 #include "chunk/all_type_chunk.h"          // AllTypeChunk

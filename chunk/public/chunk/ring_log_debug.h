@@ -19,7 +19,7 @@
 #include <cstdint> // uint8_t (EventCode underlying type)
 #include <cstdio>  // std::fprintf/std::snprintf — used HERE, not via includers
 
-#include "chunk/config.h" // chunk_config::ring_log_debug, CHUNK_RING_LOG_ANY
+#include "chunk/config.h"                   // chunk_config::ring_log_debug, CHUNK_RING_LOG_ANY
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (Manual mode: end() not called)
 
 namespace shrink_array

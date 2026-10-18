@@ -229,9 +229,9 @@ static int run_validation(long N, int rounds)
             const long hi = lo + kBlk < N ? lo + kBlk : N;
             for (long i = lo; i < hi; ++i)
             {
-                const double bulk = mode == Mode::fill   ? fill_v
-                                    : mode == Mode::copy ? src_value(i, r)
-                                                         : transform_op(src_value(i, r));
+                const double bulk                = mode == Mode::fill   ? fill_v
+                                                   : mode == Mode::copy ? src_value(i, r)
+                                                                        : transform_op(src_value(i, r));
                 ref[static_cast<std::size_t>(i)] = is_fill(b) ? bulk : elem_value(i, r);
             }
         }

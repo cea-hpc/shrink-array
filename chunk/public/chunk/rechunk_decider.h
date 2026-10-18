@@ -51,26 +51,26 @@ namespace shrink_array
 /// @brief Thresholds of RechunkDecider: stability ticks, gain deadbands, cooldown, caps and dry-run switch.
 struct RechunkPolicy
 {
-    int         stability_ticks = 3;        ///< best must hold this many ticks
-    std::size_t min_gain_bytes  = 8u << 20; ///< deadband: ignore gains below 8 MB
-    double      min_gain_frac   = 0.15;     ///< ALSO require gain >= this fraction of
-                                            ///< CURRENT memory (relative deadband):
-                                            ///< refuses marginal moves on a large
-                                            ///< array, the main thrashing driver.
-                                            ///< 0 disables (absolute deadband only).
-    int cooldown_ticks      = 5;            ///< min ticks between actions (0 = off)
-    int anti_reversal_ticks = 30;           ///< do NOT re-chunk back to the size we
-                                            ///< just left within this many ticks
-                                            ///< (kills 512<->1024 oscillation). 0=off.
-    unsigned max_coarsen_factor = 4;        ///< cap a coarsening step to this factor x
-                                            ///< cur_size per rechunk; 1 disables (fining
-                                            ///< is never capped). CHUNK_RECHUNK_MAX_COARSEN
-                                            ///< overrides it at run time. 4 gave the
-                                            ///< lowest end memory. Not higher: the old
-                                            ///< size must stay within the advisor's two
-                                            ///< finer levels, so the next tick measures
-                                            ///< the move at unchanged data and a bad step
-                                            ///< can be seen and reverted.
+    int         stability_ticks             = 3;        ///< best must hold this many ticks
+    std::size_t min_gain_bytes              = 8u << 20; ///< deadband: ignore gains below 8 MB
+    double      min_gain_frac               = 0.15;     ///< ALSO require gain >= this fraction of
+                                                        ///< CURRENT memory (relative deadband):
+                                                        ///< refuses marginal moves on a large
+                                                        ///< array, the main thrashing driver.
+                                                        ///< 0 disables (absolute deadband only).
+    int         cooldown_ticks              = 5;        ///< min ticks between actions (0 = off)
+    int         anti_reversal_ticks         = 30;       ///< do NOT re-chunk back to the size we
+                                                        ///< just left within this many ticks
+                                                        ///< (kills 512<->1024 oscillation). 0=off.
+    unsigned    max_coarsen_factor          = 4;        ///< cap a coarsening step to this factor x
+                                                        ///< cur_size per rechunk; 1 disables (fining
+                                                        ///< is never capped). CHUNK_RECHUNK_MAX_COARSEN
+                                                        ///< overrides it at run time. 4 gave the
+                                                        ///< lowest end memory. Not higher: the old
+                                                        ///< size must stay within the advisor's two
+                                                        ///< finer levels, so the next tick measures
+                                                        ///< the move at unchanged data and a bad step
+                                                        ///< can be seen and reverted.
     std::size_t coarsen_min_meta_gain_bytes = 1u << 20;
     ///< A coarsening must gain at least this much METADATA to be counted at all
     ///< (below it the gain is not measurable); whether it is worth a rebuild is
@@ -96,8 +96,8 @@ struct RechunkPolicy
                                         ///< below this ratio coarsening is barred
                                         ///< for THIS array from then on (fining
                                         ///< stays). 0 disables the feedback.
-    bool dry_run = true;                ///< never mutate, only log the verdict
-    int  max_backoff_ticks = 8;         ///< an array whose verdict is a settled "no move"
+    bool   dry_run             = true;  ///< never mutate, only log the verdict
+    int    max_backoff_ticks   = 8;     ///< an array whose verdict is a settled "no move"
                                         ///< ("already optimal", "gain below deadband") is
                                         ///< looked at again after 2, 4, ... ticks, up to
                                         ///< this many; any other verdict, or a move, brings
@@ -185,8 +185,8 @@ class RechunkDecider
         long     churn_mat     = 0;
         // Back-off (max_backoff_ticks): the current gap, in ticks, between two
         // analyses of this array, and the first tick it is analysed again.
-        int backoff         = 1;
-        int next_look_tick  = -1000000000;
+        int backoff        = 1;
+        int next_look_tick = -1000000000;
     };
 
     // `tick` increments once per advisor call (NOT the raw iteration index), so

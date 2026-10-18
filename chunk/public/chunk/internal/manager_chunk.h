@@ -413,9 +413,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ///          twice the buffers actually materialised.
     [[nodiscard]] static long reuse_share_div() noexcept
     {
-        static const long div = std::max(
-            1L, env_number<long>("CHUNK_REUSE_SHARE_DIV",
-                                 static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse)));
+        static const long div =
+            std::max(1L, env_number<long>("CHUNK_REUSE_SHARE_DIV",
+                                          static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse)));
         return div;
     }
 
@@ -1212,7 +1212,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     //      the rank that owns it.
                     // Blocks no slab claims (bypass_slabs(), slab torn down) stay
                     // parked: an unreachable block is worse than a retained one.
-                    using alloc_t = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
+                    using alloc_t     = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
                     alloc_t* geometry = nullptr; // any instance of this size: slab_of() needs its geometry only
                     {
                         const unsigned int saved_sz = shrink_array::thread_chunk_size();
@@ -1234,22 +1234,32 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
                         if constexpr (chunk_config::not_use_compression_with_ompt)
                         {
-// Serial call sites. Not under OMPT: opening a region there
-// would fire compression callbacks that must not run here.
-pmp::team(pmp::options{}, [&](pmp::Team& /*team*/) { sort_own_list(CHUNK_PMP_THREAD_RANK); });
-// Ranks a smaller team did not cover (cheap when empty).
-for (int q = 0; q < n_thr; ++q)
-    sort_own_list(q);
-pmp::team(pmp::options{}, [&](pmp::Team& /*team*/) { free_own_buckets(CHUNK_PMP_THREAD_RANK); });
-for (int r = 0; r < n_thr; ++r)
-    free_own_buckets(r);
+                            // Serial call sites. Not under OMPT: opening a region there
+                            // would fire compression callbacks that must not run here.
+                            pmp::team(pmp::options{},
+                                      [&](pmp::Team& /*team*/) { sort_own_list(CHUNK_PMP_THREAD_RANK); });
+                            // Ranks a smaller team did not cover (cheap when empty).
+                            for (int q = 0; q < n_thr; ++q)
+                            {
+                                sort_own_list(q);
+                            }
+                            pmp::team(pmp::options{},
+                                      [&](pmp::Team& /*team*/) { free_own_buckets(CHUNK_PMP_THREAD_RANK); });
+                            for (int r = 0; r < n_thr; ++r)
+                            {
+                                free_own_buckets(r);
+                            }
                         }
                         else
                         {
                             for (int q = 0; q < n_thr; ++q)
+                            {
                                 sort_own_list(q);
+                            }
                             for (int r = 0; r < n_thr; ++r)
+                            {
                                 free_own_buckets(r);
+                            }
                         }
                     }
                 }

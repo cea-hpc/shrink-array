@@ -22,13 +22,13 @@
 #include <iterator>  // std::forward_iterator, std::distance (assign)
 #include <stdexcept> // std::out_of_range (at())
 
-#include "chunk/internal/array_chunk_base.h"      // ArrayChunkBase, the class these bodies belong to
-#include "chunk/internal/all_type_chunk_decl.h"  // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
-#include "chunk/config.h"                         // build_config::chunk_dynamic, chunk_config::CheckNaN
-#include "chunk/internal/chunk_size_policy.h"     // register_runtime_chunk_size / set_thread_chunk_size
-#include "chunk/internal/process_verbs.h"         // compress_now_and_trim_pools -- shrink_to_fit()
-#include "chunk/PMP_CHUNK.h"                      // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
-#include "chunk/manage_ompt.h"                    // parallel_phase -- write_range_by_chunks
+#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase, the class these bodies belong to
+#include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
+#include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::CheckNaN
+#include "chunk/internal/chunk_size_policy.h"   // register_runtime_chunk_size / set_thread_chunk_size
+#include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools -- shrink_to_fit()
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
+#include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
 
@@ -157,10 +157,10 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(ind_type first, ind_type las
         return;
     }
     // In long long: (c + 1) * chunk_size() may pass ind_type's range near its top.
-    const auto      csz     = static_cast<long long>(chunk_size());
-    const int       c_first = chunk_index_of(first);
-    const int       c_last  = chunk_index_of(last - 1) + 1;
-    const auto      span    = [&](int c)
+    const auto csz     = static_cast<long long>(chunk_size());
+    const int  c_first = chunk_index_of(first);
+    const int  c_last  = chunk_index_of(last - 1) + 1;
+    const auto span    = [&](int c)
     {
         const long long lo_ll = static_cast<long long>(c) * csz;
         const long long hi_ll = lo_ll + csz;

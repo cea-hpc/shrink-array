@@ -222,7 +222,8 @@ template <typename T, typename C>
 static long returns_chain(C& c, long i)
 {
     long bad = 0;
-    bad += check_returned<T>(c, i, [&](auto&& e) { return T(std::forward<decltype(e)>(e) = static_cast<T>((i % 17) + 1)); });
+    bad += check_returned<T>(c, i,
+                             [&](auto&& e) { return T(std::forward<decltype(e)>(e) = static_cast<T>((i % 17) + 1)); });
     if constexpr (is_complex_v<T>)
     {
         bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) += T(1.5, -0.5)); });

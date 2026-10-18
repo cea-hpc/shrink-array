@@ -665,8 +665,8 @@ int parallel_copy_transform(long N)
     std::vector<std::uint8_t> src(static_cast<std::size_t>(N));
     for (long i = 0; i < N; ++i)
     {
-        src[static_cast<std::size_t>(i)] = (i / 300) % 3 == 2 ? static_cast<std::uint8_t>(i % 5 == 0)
-                                                              : static_cast<std::uint8_t>((i / 300) % 3 == 0);
+        src[static_cast<std::size_t>(i)] =
+            (i / 300) % 3 == 2 ? static_cast<std::uint8_t>(i % 5 == 0) : static_cast<std::uint8_t>((i / 300) % 3 == 0);
     }
 
     std::vector<std::pair<long, long>> spans;

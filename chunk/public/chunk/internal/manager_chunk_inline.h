@@ -33,8 +33,8 @@
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
 #include "chunk/log.h"                        // CHUNK_LOG, CHUNK_LOG_FIRST_N
 #include "fast_allocators/internal/svalloc.h" // svfree
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS, pmp::team / team_any / current_team
-#include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS, pmp::team / team_any / current_team
+#include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count
 #include "chunk/internal/compression_manager.h"  // CompressionManager (the barrier flushes)
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
@@ -399,12 +399,12 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
 
             if constexpr (chunk_config::not_use_compression_with_ompt)
             {
-// Route-to-owner drain. destroy_after_flush(false) is only called from serial context
-// (finalize_parallel_phase_after_flush runs after the parallel region closes), so this
-// region does not nest. Each thread drains only its own index (disjoint, race-free) and
-// recycles into its own pool. Compiled out under OMPT: opening a region would fire the
-// parallel_end compression callback, which must not run from a teardown drain.
-pmp::team(pmp::options{}, [&](pmp::Team& /*team*/) { drain_index(CHUNK_PMP_THREAD_RANK); });
+                // Route-to-owner drain. destroy_after_flush(false) is only called from serial context
+                // (finalize_parallel_phase_after_flush runs after the parallel region closes), so this
+                // region does not nest. Each thread drains only its own index (disjoint, race-free) and
+                // recycles into its own pool. Compiled out under OMPT: opening a region would fire the
+                // parallel_end compression callback, which must not run from a teardown drain.
+                pmp::team(pmp::options{}, [&](pmp::Team& /*team*/) { drain_index(CHUNK_PMP_THREAD_RANK); });
             }
 
             // Serial mop-up: the OMPT build (no region above) and any index the team did
