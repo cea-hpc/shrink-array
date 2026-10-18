@@ -155,6 +155,10 @@ Les options CMake (`OMP`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_D
   itérateurs mutables, `insert` / `erase` au milieu.
 - **Écritures en masse plus rapides** : `fill_range`, `copy_range` et leurs versions `_mt`
   décident une fois par chunk au lieu d'une fois par élément.
+- **Messages** : seulement les avertissements et les erreurs, sur stderr, une ligne chacun ;
+  `CHUNK_LOG=warn,rechunk=info` en montre plus, `CHUNK_LOG_FILE` les écrit dans un fichier,
+  `shrink_array::logging::set_sink()` les confie à votre propre logger
+  ([docs/api_fr.md](docs/api_fr.md), section 9).
 
 Chaque appel, par tâche : [docs/api_fr.md](docs/api_fr.md).
 

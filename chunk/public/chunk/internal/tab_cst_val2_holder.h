@@ -69,8 +69,6 @@
 #include <mutex>       // std::mutex, std::scoped_lock
 #include <type_traits> // std::conditional_t
 #include <vector>      // index_generations
-#include <cstdio>      // stderr
-#include <print>       // std::println
 // <iostream> directly: param_chunk.h would be a circular include (it reaches this header).
 #include <iostream> // std::cout
 
@@ -80,6 +78,7 @@
 #include "chunk/config.h"                     // build_config::use_mm_protect
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/log.h"                        // CHUNK_LOG (the identifier and index warnings)
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
 #endif
@@ -685,10 +684,11 @@ class GlobalVecHolder
             bool               expected = false;
             if (warned.compare_exchange_strong(expected, true, std::memory_order_relaxed))
             {
-                std::println(stderr,
-                             "[cst_val2] second-value identifiers past half used: {} of {} (bound by {}). Raise it if "
-                             "the count keeps growing; running out aborts.",
-                             off / bytes, cap_bytes / bytes, limiting);
+                CHUNK_LOG(
+                    warn, compress,
+                    "second-value identifiers past half used: {} of {} (bound by {}). Raise it if the count keeps "
+                    "growing; running out aborts.",
+                    off / bytes, cap_bytes / bytes, limiting);
             }
         }
         if (off + bytes > cap_bytes) [[unlikely]]
@@ -809,9 +809,10 @@ class GlobalVecHolder
         // only grow, and the exhaustion abort alone would not name the cause.
         if (!index_degraded.exchange(true, std::memory_order_relaxed))
         {
-            std::cerr << "[cst_val2] second-value index degraded (probe budget exhausted after a regrowth): "
-                         "lookups fall back to the O(N) chain scan, and reclaim_second_values() is refused "
-                         "until the last array of this type is destroyed -- the identifiers can only grow.\n";
+            CHUNK_LOG(warn, compress,
+                      "second-value index degraded (probe budget exhausted after a regrowth): lookups fall back to the "
+                      "O(N) chain scan, and reclaim_second_values() is refused until the last array of this type is "
+                      "destroyed -- the identifiers can only grow.");
         }
     }
 

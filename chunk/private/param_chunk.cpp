@@ -30,7 +30,6 @@
 #include <algorithm> // std::max
 #include <chrono>    // steady_clock, the gate rates (CHUNK_STATS report only)
 #include <cstddef>   // std::size_t (CHUNK_STATS report only: the retention)
-#include <cstdio>    // stderr
 #include <mutex>     // std::scoped_lock (CHUNK_STATS report only: the size distribution)
 #include <print>     // std::println (the CHUNK_STATS report)
 #include <utility>   // std::cmp_greater
@@ -45,6 +44,7 @@
 #include "chunk/PMP_CHUNK.h"                           // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
 #include "chunk/all_type_chunk.h"                      // AllTypeChunk
+#include "chunk/log.h"                                 // CHUNK_LOG
 
 namespace shrink_array
 {
@@ -109,7 +109,7 @@ void ParamChunk::init_indexes(bool big_chunk_block)
 
     if (std::cmp_greater(static_chunk_size, sz))
     {
-        std::println(stderr, "Caution: chunk sizes can't be larger than one page.");
+        CHUNK_LOG(warn, general, "chunk sizes can't be larger than one page");
     }
 
     // Per-type structures are built when each type registers its manager (first

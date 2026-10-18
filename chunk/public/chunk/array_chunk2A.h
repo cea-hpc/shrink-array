@@ -20,7 +20,6 @@
 #include <atomic>           // std::atomic (operator==: a difference found)
 #include <cstddef>          // std::size_t
 #include <cstdint>          // std::uint8_t, std::uint32_t (reclaim_second_values' mark)
-#include <cstdio>           // std::printf
 #include <iostream>         // for cout, ostream
 #include <expected>         // std::expected (try_reclaim_second_values)
 #include <utility>          // for move
@@ -43,6 +42,7 @@
 #include "chunk/internal/array_chunk_core.h"            // the core the bases share
 #include "chunk/internal/proxy2A.h"                     // Proxy2A<T> and its tables
 #include "chunk/chunk2A_std.h"                          // Chunk2A<T>
+#include "chunk/log.h"                                  // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
 
 namespace shrink_array
 {
@@ -331,16 +331,16 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @brief Report how many cst2 buffers a sweep could reclaim.
      * @details Runs gc_collect_live() and compares the live count with
      *          GlobalVecHolder's total; the difference is the reclaimable set.
-     *          Diagnostic only -- prints to stderr and frees nothing.
+     *          Diagnostic only -- a report (written whatever CHUNK_LOG says,
+     *          channel compress) -- and frees nothing.
      */
     static void gc_mark_report()
     {
         std::unordered_set<const void*> live;
         gc_collect_live(live);
         const std::size_t held = GlobalVecHolder<T>::count_entries();
-        std::fprintf(stderr, "[cst2-gc] live=%zu / holder=%zu  (reclaimable=%zu)\n", live.size(), held,
-                     held > live.size() ? held - live.size() : 0);
-        std::fflush(stderr);
+        CHUNK_LOG_ALWAYS(compress, "cst2-gc: live={} / holder={}  (reclaimable={})", live.size(), held,
+                         held > live.size() ? held - live.size() : 0);
     }
 
     /**

@@ -547,7 +547,7 @@ struct LegacySwitch
 /// @brief The switches, applied after CHUNK_LOG and raising only: setting
 ///        one shows what it showed before, whatever CHUNK_LOG says.
 ///        Set = non-empty and not starting with '0'.
-inline constexpr std::array<LegacySwitch, 8> legacy_switches{{
+inline constexpr std::array<LegacySwitch, 10> legacy_switches{{
     {"CHUNK_RECHUNK_TRACE", Channel::rechunk, Level::debug, true},
     {"CHUNK_RECHUNK_TRACE_SLICES", Channel::rechunk, Level::trace, true},
     {"CHUNK_RECHUNK_TRACE_MEM", Channel::memory, Level::debug, true},
@@ -556,6 +556,8 @@ inline constexpr std::array<LegacySwitch, 8> legacy_switches{{
     {"CHUNK_RECHUNK_CHURN", Channel::rechunk, Level::info, false},
     {"CHUNK_FORCE_RECHUNK", Channel::rechunk, Level::info, false},
     {"CHUNK_AFFINITY_TRACE", Channel::affinity, Level::debug, true},
+    {"CHUNK_RECYCLE_TRACE", Channel::recycle, Level::trace, true},
+    {"FAST_ALLOC_TRACE", Channel::alloc, Level::trace, true},
 }};
 
 /// @brief True when switch @p s is set.

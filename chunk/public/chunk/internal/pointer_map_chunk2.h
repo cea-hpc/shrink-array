@@ -34,7 +34,9 @@
 // The key -> value store is a LINEAR scan over a std::deque (PointerMapLinear; see
 // the storage note in PointerMapChunk2). Only the value -> inf_array side is a std::map.
 
-#include <cstdio>      // fprintf / fflush in report_key_not_found
+#include <array>       // std::array (report_key_not_found)
+#include <format>      // std::format_to_n (report_key_not_found)
+#include <string_view> // std::string_view (report_key_not_found)
 #include <deque>       // std::deque: share_info storage, no realloc invalidation
 #include <map>         // std::map
 #include <ranges>      // std::views::keys / values, std::ranges::to (get_all_*)
@@ -51,6 +53,7 @@
 #include "chunk/config.h"                      // build_config::any_check
 #include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/second_value_info.h"  // SecondValueInfo (inf_array_t)
+#include "chunk/log.h"                         // CHUNK_LOG (report_key_not_found)
 
 namespace shrink_array
 {
@@ -219,8 +222,9 @@ class PointerMapChunk2
     // Keys are inserted once at setup, before any parallel region, so a miss is
     // either a GARBAGE key or a VALID key that vanished (container raced). Printing
     // the searched key beside every stored one tells the two apart.
-    /// @brief Check-only: dump the searched @p key and every stored
-    ///        (key, num_tab) on stderr before a lookup from @p site fails.
+    /// @brief Check-only: write the searched @p key and every stored
+    ///        (key, num_tab) on the log (an error) before a lookup from @p
+    ///        site fails.
     void report_key_not_found(const void* key, const char* site) const noexcept
     {
         if constexpr (build_config::any_check)
@@ -230,18 +234,23 @@ class PointerMapChunk2
             const int    rank  = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
             const size_t count = vec.size();
 
-            std::fprintf(stderr,
-                         "[share_info %s] KEY NOT FOUND: this=%p rank=%d searched_key=%p "
-                         "vec.size=%zu\n  valid keys:",
-                         site, static_cast<const void*>(this), rank, key, count);
-            // Bound the dump so a corrupt size can't run away.
-            const size_t lim = (count > 64u) ? 64u : count;
-            for (size_t i = 0; i < lim; ++i)
+            // The valid keys, bounded so a corrupt size can't run away (and
+            // cut at the log's line length anyway).
+            std::array<char, logging::line_max> keys{};
+            std::size_t                         n   = 0;
+            const size_t                        lim = (count > 64u) ? 64u : count;
+            for (size_t i = 0; i < lim && n < keys.size(); ++i)
             {
-                std::fprintf(stderr, " [%p num_tab=%d]", static_cast<const void*>(vec[i].first), vec[i].second.num_tab);
+                n += static_cast<std::size_t>(std::format_to_n(keys.data() + n, keys.size() - n, " [{} num_tab={}]",
+                                                               static_cast<const void*>(vec[i].first),
+                                                               vec[i].second.num_tab)
+                                                  .size);
             }
-            std::fprintf(stderr, "%s\n", (count > lim) ? " …(truncated)" : "");
-            std::fflush(stderr);
+            CHUNK_LOG(error, general,
+                      "share_info {}: KEY NOT FOUND: this={} rank={} searched_key={} vec.size={}; valid keys:{}{}",
+                      site, static_cast<const void*>(this), rank, key, count,
+                      std::string_view{keys.data(), n < keys.size() ? n : keys.size()},
+                      count > lim ? " ...(truncated)" : "");
         }
     }
 

@@ -17,8 +17,6 @@
 #pragma once
 
 #include <atomic>          // std::atomic<char> (the "queued" flags)
-#include <cstdio>          // std::fprintf (check-build trace), stderr
-#include <print>           // std::println (verbose)
 #include <source_location> // std::source_location
 #include <thread>          // std::this_thread::yield (replay_retry)
 #include <type_traits>     // std::remove_cvref_t
@@ -40,6 +38,7 @@
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/parallel_storage_init.h" // make_filled, resize_filled, for_each_chunk
+#include "chunk/log.h"                            // CHUNK_LOG, CHUNK_LOG_ALWAYS
 
 /**
  * @file proxy2A_inline.h
@@ -116,10 +115,10 @@ inline void replay_retry(int&                        retry_count,
             static std::atomic<bool> warned{false};
             if (!warned.exchange(true, std::memory_order_relaxed))
             {
-                std::fprintf(stderr,
-                             "[shrink_array] warning: %s: deferred replay retried more than %d times "
-                             "on chunk=%p num=%d (still retrying; reported once per process)\n",
-                             where, kReplayRetryCap, chunk, num);
+                CHUNK_LOG(warn, drain,
+                          "{}: deferred replay retried more than {} times on chunk={} num={} (still retrying; reported "
+                          "once per process)",
+                          where, kReplayRetryCap, static_cast<const void*>(chunk), num);
             }
         }
     }
@@ -269,7 +268,7 @@ void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
 
             if constexpr (chunk_config::verbose)
             {
-                std::println(stderr, "⚠️ List became dangerous: size={}", sz);
+                CHUNK_LOG_ALWAYS(compress, "candidate list became dangerous: size={}", sz);
             }
         }
     }
@@ -343,7 +342,7 @@ void Proxy2A<T>::ensure_writable_storage()
             const unsigned int used = this->chunk_size();
             if (used != live || frozen != 0U)
             {
-                std::fprintf(stderr, "[EWS] used=%u live=%u frozen=%u\n", used, live, frozen);
+                CHUNK_LOG(debug, rechunk, "ensure_writable_storage: used={} live={} frozen={}", used, live, frozen);
             }
         }
         shrink_array::set_thread_chunk_size(this->chunk_size());

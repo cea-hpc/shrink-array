@@ -16,10 +16,8 @@
 
 #pragma once
 
-#include <cstdio>      // stderr
 #include <cstdlib>     // std::abort
 #include <functional>  // std::divides, std::multiplies
-#include <print>       // std::println
 #include <type_traits> // std::is_integral_v, std::is_same_v
 #include <utility>     // std::forward
 
@@ -29,6 +27,7 @@
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
 #include "chunk/internal/in_t.h"                         // in_t<T>
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
+#include "chunk/log.h"                                   // CHUNK_LOG (the operators bool has not)
 
 namespace shrink_array
 {
@@ -101,7 +100,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     {
         if constexpr (is_bool)
         {
-            std::println(stderr, "operator not implemented for bool");
+            CHUNK_LOG(error, general, "operator not implemented for bool: the element is left unchanged");
             return self;
         }
         else
@@ -136,7 +135,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     {
         if constexpr (is_bool)
         {
-            std::println(stderr, "operator not implemented for bool");
+            CHUNK_LOG(error, general, "operator not implemented for bool: the element is left unchanged");
             return self;
         }
         else
@@ -180,7 +179,9 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         }
         else
         {
-            std::println(stderr, "operator not implemented (requires integral non-bool type)");
+            CHUNK_LOG(error, general,
+                      "operator not implemented (requires an integral non-bool type): the element is "
+                      "left unchanged");
             return self;
         }
     }

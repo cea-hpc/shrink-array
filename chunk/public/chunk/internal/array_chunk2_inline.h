@@ -20,9 +20,7 @@
 #include <array>     // std::array (the residual's sample)
 #include <atomic>    // std::memory_order
 #include <cstddef>   // std::size_t
-#include <cstdio>    // stderr (set_second_value's warnings)
 #include <ostream>   // print_compression_stats(std::ostream&)
-#include <print>     // std::println (set_second_value's warnings)
 #include <string>    // the healed-chunk report
 #include <string_view> // std::string_view (the residual's kind)
 #include <vector>    // std::vector
@@ -217,7 +215,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
     {
         if constexpr (is_bool)
         {
-            std::println(stderr, "\nWarning useless method for bool : second_value is true");
+            CHUNK_LOG(warn, general, "set_second_value: useless for bool, its second value is true");
         }
     }
 
@@ -230,7 +228,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
         {
             if (message)
             {
-                std::println(stderr, "\nWarning set_second_value(T{{}}) ignored: T{{}} is already the first value");
+                CHUNK_LOG(warn, general, "set_second_value(T{{}}) ignored: T{{}} is already the first value");
             }
             return;
         }

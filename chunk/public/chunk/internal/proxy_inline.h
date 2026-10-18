@@ -18,8 +18,6 @@
 
 #include <atomic>      // std::atomic_thread_fence, std::memory_order_seq_cst
 #include <cstddef>     // std::size_t
-#include <cstdio>      // stderr
-#include <print>       // std::println (the mismatch diagnostic)
 #include <type_traits> // std::common_type_t
 #include <memory>      // std::addressof (operator=: operator& is deleted)
 #include <utility>     // std::move
@@ -32,6 +30,7 @@
 #include "chunk/internal/concept_is_clean_assignement.h" // base_t
 #include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
 
 namespace shrink_array
 {
@@ -733,7 +732,7 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
     }
     else
     {
-        std::println(stderr, "operator not implemented for bool");
+        CHUNK_LOG(error, general, "operator not implemented for bool: the element is left unchanged");
     }
 }
 
@@ -752,7 +751,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int
 
         if constexpr (chunk_config::verbose)
         {
-            std::println(stderr, "⚠️ List became dangerous: size={}", sz);
+            CHUNK_LOG_ALWAYS(compress, "candidate list became dangerous: size={}", sz);
         }
     }
 }

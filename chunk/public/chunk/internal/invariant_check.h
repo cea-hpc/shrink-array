@@ -17,21 +17,16 @@
 #pragma once
 
 
-#include <atomic>          // std::atomic_flag (one thread reports)
 #include <cstddef>         // std::size_t
-#include <cstdio>          // std::fputs, std::fwrite, std::fflush
-#include <cstdlib>         // std::abort
-#include <cstring>         // std::memcpy
-#include <format>          // std::format, std::format_to_n, std::format_string
+#include <format>          // std::format, std::format_string
 #include <string>          // std::string (value_repr)
 #include <string_view>     // std::string_view
 #include <utility>         // std::forward
 #include <source_location> // std::source_location
-#include <unistd.h>        // pause
 
-#include "chunk/debug.h"  // print_backtrace
-#include "chunk/config.h" // build_config
-#include "chunk/log.h"    // logging: fmt_arg, format_message, emit_fatal; CHUNK_LOG
+#include "chunk/config.h"                   // build_config
+#include "chunk/log.h"                      // logging: fmt_arg, format_message; CHUNK_LOG
+#include "fast_allocators/internal/fatal.h" // logging::fatal_report: the report itself
 
 namespace shrink_array
 {
@@ -49,75 +44,17 @@ std::string value_repr(const V& v)
 
 namespace detail
 {
-/// @brief Set by the first thread that reports an invariant failure: the
-///        others wait for it to abort the process, so the reports of a race
-///        seen by several threads at once do not interleave.
-inline std::atomic_flag invariant_reporting{};
-
 /**
- * @brief Report the failure @p msg at @p loc -- on stderr, one block, then
- *        the backtrace; then to the log's sink (logging::detail::emit_fatal)
- *        -- and abort.
+ * @brief Report the failure @p msg at @p loc and abort: the log's fatal
+ *        report (fast_allocators/internal/fatal.h: one block on stderr, the
+ *        backtrace, the sink; one reporting thread), headed
+ *        [DEBUG_INVARIANT_FAILURE] in a debug build, [CRITICAL_FAILURE]
+ *        otherwise.
  */
 [[noreturn]] inline void invariant_report(const std::source_location& loc, std::string_view msg) noexcept
 {
     constexpr std::string_view prefix = build_config::is_debug ? "[DEBUG_INVARIANT_FAILURE] " : "[CRITICAL_FAILURE] ";
-
-    // A failure while reporting one (in the backtrace, in the sink): stop there.
-    thread_local bool reporting = false;
-    if (reporting)
-    {
-        std::fputs("[CRITICAL_FAILURE] invariant failure while reporting one: ", stderr);
-        std::fwrite(msg.data(), 1, msg.size(), stderr);
-        std::fputs("\n", stderr);
-        std::fflush(stderr);
-        std::abort();
-    }
-    reporting = true;
-
-    // Another thread is reporting: it aborts the process.
-    if (invariant_reporting.test_and_set(std::memory_order_acq_rel))
-    {
-        while (true)
-        {
-            ::pause();
-        }
-    }
-
-    // 1. Location and message, in one write. A template's function name can
-    //    run to kilobytes: the block is cut (with "...") past 8 KiB.
-    char        block[8192];
-    std::size_t n = 0;
-    try
-    {
-        const auto res =
-            std::format_to_n(block, sizeof(block) - 1, "{0}In file '{1}' at line {2}\nInside function: {3}\n{0}{4}",
-                             prefix, loc.file_name(), loc.line(), loc.function_name(), msg);
-        n = static_cast<std::size_t>(res.size);
-        if (n > sizeof(block) - 1)
-        {
-            n = sizeof(block) - 1;
-            std::memcpy(block + n - 3, "...", 3);
-        }
-    }
-    catch (...)
-    {
-        n = 0;
-    }
-    block[n++] = '\n';
-    std::fwrite(block, 1, n, stderr);
-
-    // 2. The execution backtrace, for the post-mortem.
-    std::fputs("\n--- Execution Backtrace ---\n", stderr);
-    print_backtrace();
-    std::fputs("---------------------------\n", stderr);
-    std::fflush(stderr);
-
-    // 3. The program's sink, or CHUNK_LOG_FILE: last, so that a sink that
-    //    misbehaves cannot hide what stderr already has.
-    logging::detail::emit_fatal(logging::Record{logging::Level::fatal, logging::Channel::general, msg, loc});
-
-    std::abort();
+    logging::fatal_report(prefix, loc, msg);
 }
 } // namespace detail
 

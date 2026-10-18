@@ -63,13 +63,6 @@ the tag's checksum to the recipe.
   no event, where it was recorded as performed. `rechunk_to(0)` is now a
   refusal with its warning, where it returned silently.
 
-### Fixed
-
-- A "wait" line of the re-chunk decider ended with a stray `0` when the array
-  had no back-off.
-- An invariant failure inside a program's log sink, while the log was reading
-  its configuration, blocked instead of stopping the program.
-
 ### Added
 
 - One log for both libraries (`chunk/log.h`, built on
@@ -126,9 +119,50 @@ the tag's checksum to the recipe.
   `CHUNK_OMPT_STATS`, `compress_int(true)`, the `CHUNK_RECHUNK_LEDGERTRACE`
   build -- are written whatever `CHUNK_LOG` says (`CHUNK_LOG_ALWAYS`), through
   the sink.
+- fast_allocators goes through the log too, and its fatal failures (an
+  allocation or a `mmap` that fails, a slab handed out twice, an element that
+  does not fit a slab) through the same fatal report as an invariant failure
+  (`FAST_ALLOC_FATAL`, `fast_allocators/internal/fatal.h`, which also holds
+  `print_backtrace()` now -- `chunk/debug.h` forwards to it): one block on
+  stderr headed `[CRITICAL_FAILURE]`, the backtrace, the program's sink, one
+  reporting thread. A slab freed or recycled twice is a warning of channel
+  `arena`, an invalid `CHUNK_RECLAIM_MIN_SLABS` / `CHUNK_THP` a warning of
+  `env` (the `CHUNK_THP` notices are of level info), a failed trim or
+  `posix_memalign` an `alloc` message; `CHUNK_ARENA_REPORT` is a report
+  (written whatever `CHUNK_LOG` says); the slab evictions are `alloc=trace`
+  (formerly `FAST_ALLOC_TRACE`, deprecated).
+- The library's remaining messages go through the log: the warnings of
+  `set_second_value()` and of a static build's ignored setters (`ParamChunk`)
+  and the one-page caution (`warn`, channel `general`); a compound operator a
+  bool element has not (`error`); the second-value registry's warnings
+  (identifiers past half used, degraded index, refused reclaim: `warn`,
+  channel `compress`); a deferred replay retried past its cap outside check
+  builds (`drain`); `gc_mark_report()` and the `verbose` build's candidate-list
+  lines (reports, written whatever `CHUNK_LOG` says); the foreign blocks the
+  deferred-write pool drops (`recycle=debug`, every one at `recycle=trace`,
+  formerly `CHUNK_RECYCLE_TRACE`, deprecated; no longer written by default in
+  check builds); a lookup of an unknown array key, before its invariant failure
+  (`error`).
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.
+
+### Deprecated
+
+- The trace switches of before the log, replaced by `CHUNK_LOG` levels: `CHUNK_RECHUNK_TRACE`
+  (`rechunk=debug`), `CHUNK_RECHUNK_TRACE_SLICES` (`rechunk=trace`), `CHUNK_RECHUNK_MEMTRACE`
+  (`memory=info`), `CHUNK_RECHUNK_TRACE_MEM` (`memory=debug`), `CHUNK_AFFINITY_TRACE`
+  (`affinity=debug`), `CHUNK_RECYCLE_TRACE` (`recycle=trace`), `FAST_ALLOC_TRACE`
+  (`alloc=trace`). Still accepted -- each sets its level, with a warning -- and to be removed in
+  0.3.0. They are developer settings ([docs/developer_settings.md](docs/developer_settings.md)),
+  outside the versioning policy; the deprecation period is a courtesy to the scripts that set them.
+
+### Fixed
+
+- A "wait" line of the re-chunk decider ended with a stray `0` when the array
+  had no back-off.
+- An invariant failure inside a program's log sink, while the log was reading
+  its configuration, blocked instead of stopping the program.
 
 ## 0.1.2 -- 2026-10-16
 

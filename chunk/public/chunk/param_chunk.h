@@ -17,9 +17,7 @@
 #pragma once
 
 #include <cstddef>  // std::size_t
-#include <cstdio>   // stderr
 #include <iostream> // std::cout
-#include <print>    // std::println
 #include <utility>  // std::cmp_not_equal
 
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_dynamic
@@ -28,6 +26,7 @@
 #include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
 #include "chunk/singleton.h"                  // SingletonChk
 #include "chunk/all_type_chunk.h"             // AllTypeChunk
+#include "chunk/log.h"                        // CHUNK_LOG (the static build's ignored setters)
 
 namespace shrink_array
 {
@@ -354,9 +353,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     {
         if (std::cmp_not_equal(v, static_chunk_size))
         {
-            std::println(stderr,
-                         "Warning: set_chunk_size({}) ignored; built with CHUNK_SIZE={} (rebuild with -DCHUNK_SIZE={})",
-                         v, static_chunk_size, v);
+            CHUNK_LOG(warn, general,
+                      "set_chunk_size({}) ignored; built with CHUNK_SIZE={} (rebuild with -DCHUNK_SIZE={})", v,
+                      static_chunk_size, v);
         }
     }
 
@@ -386,8 +385,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     {
         if (v != static_chunk_shift)
         {
-            std::println(stderr, "Warning: set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", v,
-                         static_chunk_size, static_chunk_shift);
+            CHUNK_LOG(warn, general, "set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", v,
+                      static_chunk_size, static_chunk_shift);
         }
     }
 
@@ -411,8 +410,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     {
         if (std::cmp_not_equal(v, static_chunk_mask))
         {
-            std::println(stderr, "Warning: set_modulo_chunk({}) ignored; built with CHUNK_SIZE={} (mask {})", v,
-                         static_chunk_size, static_chunk_mask);
+            CHUNK_LOG(warn, general, "set_modulo_chunk({}) ignored; built with CHUNK_SIZE={} (mask {})", v,
+                      static_chunk_size, static_chunk_mask);
         }
     }
 

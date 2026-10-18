@@ -61,10 +61,7 @@
 #include <bit>         // std::has_single_bit, bit_width, bit_ceil, bit_floor
 #include <cerrno>      // errno, after a failed mmap
 #include <cstddef>     // std::size_t
-#include <cstdio>      // std::fprintf / std::fflush (the [MUNMAP] traces), stderr
 #include <cstring>     // std::strerror
-#include <print>       // std::println
-#include <cstdlib>     // std::abort, std::getenv (FAST_ALLOC_TRACE)
 #include <cstdint>     // uintptr_t
 #include <limits>      // std::numeric_limits: TCAllocatorEB's index range
 #include <new>         // std::launder (slab_from, addr_to_block)
@@ -79,6 +76,8 @@
 #include "fast_allocators/internal/alloc_config.h"    // alloc_config::use_std_alloc / is_debug / use_openmp
 #include "fast_allocators/internal/lifetime.h"        // fast_alloc::start_lifetime_as(_array)
 #include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
+#include "fast_allocators/internal/fatal.h"           // FAST_ALLOC_FATAL
+#include "fast_allocators/internal/log_core.h"        // CHUNK_LOG, logging::enabled (the eviction trace)
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
 
 namespace fast_alloc
@@ -108,12 +107,11 @@ namespace fast_alloc
     return ps;
 }
 
-/// @brief FAST_ALLOC_TRACE is set in the environment: trace the evictions of
-///        emptied slabs (the [MUNMAP] lines). Read once.
+/// @brief CHUNK_LOG=alloc=trace (formerly FAST_ALLOC_TRACE): trace the
+///        evictions of emptied slabs.
 [[nodiscard]] inline bool trace_evictions() noexcept
 {
-    static const bool on = std::getenv("FAST_ALLOC_TRACE") != nullptr;
-    return on;
+    return logging::enabled(logging::Channel::alloc, logging::Level::trace);
 }
 
 /**
@@ -135,9 +133,7 @@ inline void* map_anonymous(size_t size)
     if (tmp == MAP_FAILED)
     {
         const int err = errno;
-        std::println(stderr, "mmap failed: errno = {} ({})", err, std::strerror(err));
-        std::println(stderr, "size = {}", size);
-        std::abort();
+        FAST_ALLOC_FATAL("mmap of {} bytes failed: errno = {} ({})", size, err, std::strerror(err));
     }
 
     alloc_config::advise_thp_region(tmp, size); // CHUNK_THP, as the slab arenas
@@ -782,8 +778,7 @@ class TCSlabPool
             // new_slab() hands it to TCSlab::init() as an int.
             if (ElementSize > static_cast<size_t>(std::numeric_limits<int>::max())) [[unlikely]]
             {
-                std::println(stderr, "[TCAllocator] element size {} bytes is past INT_MAX", ElementSize);
-                std::abort();
+                FAST_ALLOC_FATAL("TCAllocator: element size {} bytes is past INT_MAX", ElementSize);
             }
 
             BlockAllocator = BlockAllocator_;
@@ -1209,9 +1204,8 @@ class TCSlabPool
     {
         if (fast_alloc::trace_evictions())
         {
-            std::fprintf(stderr, "[MUNMAP] %s delete slab p=%p nb_max_block_empty=%d\n", Derived::pool_name,
-                         static_cast<void*>(slab), nb_max_block_empty);
-            std::fflush(stderr);
+            CHUNK_LOG(trace, alloc, "munmap: {} delete slab p={} nb_max_block_empty={}", Derived::pool_name,
+                      static_cast<void*>(slab), nb_max_block_empty);
         }
         delete slab;
     }
@@ -1474,7 +1468,7 @@ class TCAllocatorEB
         // out and corrupt memory silently. Abort, as the other families do.
         if (alloc_block() != 0)
         {
-            std::abort();
+            FAST_ALLOC_FATAL("TCAllocatorEB: its first block could not be allocated");
         }
     }
 
@@ -1635,12 +1629,12 @@ class TCAllocatorEB
             if (lng != 0 && munmap(mapping, lng) == -1)
             {
                 const int err = errno;
-                std::println(stderr, "munmap (head trim) failed: {} -- surplus left mapped", std::strerror(err));
+                CHUNK_LOG(warn, alloc, "munmap (head trim) failed: {} -- surplus left mapped", std::strerror(err));
             }
             if (munmap(data + BlockSize, (2 * BlockSize) - (lng + BlockSize)) == -1)
             {
                 const int err = errno;
-                std::println(stderr, "munmap (tail trim) failed: {} -- surplus left mapped", std::strerror(err));
+                CHUNK_LOG(warn, alloc, "munmap (tail trim) failed: {} -- surplus left mapped", std::strerror(err));
             }
         }
         else
@@ -1652,8 +1646,7 @@ class TCAllocatorEB
 
             if (result != 0)
             {
-                std::println(stderr, "posix_memalign failed with error code: {}", result);
-                std::println(stderr, "Error message: {}", std::strerror(result));
+                CHUNK_LOG(error, alloc, "posix_memalign failed: error {} ({})", result, std::strerror(result));
                 return 1;
             }
             data = static_cast<char*>(datal);
