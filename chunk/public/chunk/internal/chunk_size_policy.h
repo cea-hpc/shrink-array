@@ -40,13 +40,13 @@
 #include <bit>         // std::has_single_bit
 #include <cstddef>     // std::size_t (func_p2.h uses size_t unqualified)
 #include <cstdint>     // std::uint64_t (DynamicChunkSize's divider)
-#include <cstdio>      // std::fprintf, stderr (set_active_chunk_size's refusals)
 #include <type_traits> // std::conditional_t, std::make_unsigned_t
 
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
 #include "chunk/internal/func_p2.h"           // log2int (constexpr, also usable at run time)
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size / static_chunk_shift / static_chunk_mask
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED (an invalid geometry)
+#include "chunk/log.h"                        // CHUNK_LOG (set_active_chunk_size's refusals)
 
 namespace shrink_array
 {
@@ -404,20 +404,15 @@ inline void set_active_chunk_size(unsigned int size) noexcept
 {
     if (!is_valid_chunk_size(size)) [[unlikely]]
     {
-        std::fprintf(stderr,
-                     "[chunk] set_active_chunk_size(%u) refused: a chunk size must be a power of two or a multiple "
-                     "of 64\n",
-                     size);
-        std::fflush(stderr);
+        CHUNK_LOG(warn, rechunk,
+                  "set_active_chunk_size({}) refused: a chunk size must be a power of two or a multiple of 64", size);
         return;
     }
     if (size > cst_buffer_size) [[unlikely]]
     {
-        std::fprintf(stderr,
-                     "[chunk] set_active_chunk_size(%u) refused: exceeds cst_buffer_size=%u (raise "
-                     "CHUNK_DYN_MAX_SIZE)\n",
-                     size, cst_buffer_size);
-        std::fflush(stderr);
+        CHUNK_LOG(warn, rechunk,
+                  "set_active_chunk_size({}) refused: exceeds cst_buffer_size={} (raise CHUNK_DYN_MAX_SIZE)", size,
+                  cst_buffer_size);
         return;
     }
     g_active_chunk_size = size;

@@ -46,19 +46,26 @@
 
 ## 2. Traces and diagnostics
 
-| variable | what it prints |
+The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
+[environment_variables.md](environment_variables.md)). The variables of the former traces
+still work: each sets the level it stands for, with a deprecation warning.
+
+| setting | what it prints |
 |---|---|
-| `CHUNK_RECHUNK_TRACE` (*set*) | for each rechunk: duration of the phases and of the slices |
-| `CHUNK_RECHUNK_TRACE_MEM` (*set*) | the memory side of the rechunk trace: exact memory at each step (`[RECHUNK-RSS]`), occupancy of the new geometry, chunks folded, refused and installed directly, allocator census. Costly (seconds per run at tens of GB): kept apart from the timings |
-| `CHUNK_RECHUNK_TRACE_SLICES` (*set*) | memory at each slice of the v1 rebuild (read at every rechunk) |
-| `CHUNK_RECHUNK_MEMTRACE` | at each advisor pass: exact memory, including the resident part of the buffer arena |
+| `CHUNK_LOG=rechunk=info` | the decider's moves (`decide <array>: re-chunk S=.. -> S'=.. ... [APPLIED]`, or `[dry-run] would re-chunk`) |
+| `CHUNK_LOG=rechunk=debug` (formerly `CHUNK_RECHUNK_TRACE`) | in addition, the verdicts that wait, and for each rechunk the duration of the phases and of the slices |
+| `CHUNK_LOG=rechunk=trace` (formerly `CHUNK_RECHUNK_TRACE_SLICES`) | in addition, memory at each slice of the v1 rebuild |
+| `CHUNK_LOG=memory=info` (formerly `CHUNK_RECHUNK_MEMTRACE`) | at each advisor pass: exact memory, including the resident part of the buffer arena |
+| `CHUNK_LOG=memory=debug` (formerly `CHUNK_RECHUNK_TRACE_MEM`) | in addition, the memory side of the rechunk trace: exact memory at each step (`rss` line), occupancy of the new geometry, chunks folded, refused and installed directly, allocator census. Costly (seconds per run at tens of GB): a channel apart from the timings |
+| `CHUNK_LOG=advisor=info` | check builds: at an array's destruction, the chunk size that would have used the least memory, when it saves at least 10 % |
 | `CHUNK_ADVISOR_TABLE` | `1` or `=name`: the full advisor table at each pass (all arrays or a single one) |
-| `CHUNK_RECHUNK_CHURN` | `1` or `=name`: materialisations per pass and an estimate of the transient cost they imply |
-| `CHUNK_AFFINITY_TRACE` (*set*) | each per-array set of allocators created (key, size, budget) |
+| `CHUNK_RECHUNK_CHURN` | `1` or `=name`: materialisations per pass and an estimate of the transient cost they imply (level info of channel rechunk, which it switches on) |
+| `CHUNK_LOG=affinity=debug` (formerly `CHUNK_AFFINITY_TRACE`) | each per-array set of allocators created (key, size, budget) |
+| `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and Chunk2A's constant blocks never queued; the compression residual of an audit (`compress()` on ArrayChunk2 / ArrayChunk2A); `compress=debug` adds ArrayChunk2's per-chunk detail |
 | `CHUNK_ARENA_REPORT` | the summary of the buffer arena (slabs handed out, given back to the system) |
 | `CHUNK_RECYCLE_TRACE` | one line per recycled block of the deferred-write pool (instead of a summary) |
-| `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry) |
-| `CHUNK_OMPT_STATS` | statistics of the synchronisation regions (OMPT builds) |
+| `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry), at exit; a report: written whatever `CHUNK_LOG` says (channel `ledger`) |
+| `CHUNK_OMPT_STATS` | statistics of the synchronisation regions (OMPT builds), at exit; a report: written whatever `CHUNK_LOG` says (channel `ompt`) |
 | `CHUNK_CST2_PROBE` (*set*) | Chunk2A: report of the second-value registry at each pass (benchmark) |
 | `CHUNK_CST2_RECLAIM` | Chunk2A, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
 | `ALLOC_TOKEN_REPORT` | `SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |

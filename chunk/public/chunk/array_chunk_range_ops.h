@@ -54,7 +54,7 @@
 #include <algorithm>   // std::min (the range clamps)
 #include <cstddef>     // std::size_t, std::ptrdiff_t
 #include <type_traits> // std::is_same_v, std::conditional_t
-#include <vector>      // std::vector (the span buffer of copy_range_mt / transform_range_mt)
+#include <memory> // std::unique_ptr, std::make_unique_for_overwrite (the span buffer of copy_range_mt / transform_range_mt)
 
 #include "chunk/bit.h"                     // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/element_access.h" // internal::as_words: Bit chunks are words of bits
@@ -893,16 +893,20 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
 
         // One buffer per thread and element type, reused across calls: callers
         // cut a range into small spans, and an allocation per call (malloc
-        // contention, zeroing a chunk's worth) costs more than the copy.
+        // contention, zeroing a chunk's worth) costs more than the copy. Not a
+        // std::vector: std::vector<bool> (ArrayChunkBits) packs its bits and
+        // has no data(). Not zeroed: a span writes each slot before reading it.
         buf_value_t* buf = nullptr;
         if constexpr (!Constant)
         {
-            thread_local std::vector<buf_value_t> tl_buf;
-            if (tl_buf.size() < S)
+            thread_local std::unique_ptr<buf_value_t[]> tl_buf;
+            thread_local unsigned int                   tl_cap = 0;
+            if (tl_cap < S)
             {
-                tl_buf.resize(S);
+                tl_buf = std::make_unique_for_overwrite<buf_value_t[]>(S);
+                tl_cap = S;
             }
-            buf = tl_buf.data();
+            buf = tl_buf.get();
         }
 
         const std::size_t first_chunk = first / S;

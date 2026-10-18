@@ -22,7 +22,7 @@
 #include <algorithm> // std::max
 #include <array>     // std::array (CHUNK_ADVISOR_TABLE title)
 #include <cstddef>   // std::size_t
-#include <cstdio>    // std::fprintf, std::fflush
+#include <cstdio>    // std::fprintf, std::fflush (the advisor table, print_rechunk_log)
 #include <cstdlib>   // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks
 #include <cstring>   // std::strcmp (CHUNK_ADVISOR_TABLE)
 #include <format>    // std::format (CHUNK_ADVISOR_TABLE title)
@@ -33,10 +33,11 @@
 #include "chunk/chunk_size_advisor.h"          // ChunkSizeAdvisor, ChunkSizeReport
 #include "chunk/config.h"                      // build_config::chunk_dynamic
 #include "chunk/internal/env_parse.h"          // env_number / env_flag (checked, not atoi)
+#include "chunk/log.h"                         // CHUNK_LOG, logging::enabled
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
 #include "chunk/internal/churn_counters.h"     // CHUNK_RECHUNK_CHURN
-#include "chunk/internal/exact_rss.h"          // exact_rss_kib ([RECHUNK-MEM])
-#include "chunk/internal/values_arena_bytes.h" // the values arena, if the build has one ([RECHUNK-MEM])
+#include "chunk/internal/exact_rss.h"          // exact_rss_kib (memory=info, per tick)
+#include "chunk/internal/values_arena_bytes.h" // the values arena, if the build has one (memory=info)
 
 namespace shrink_array
 {
@@ -270,17 +271,17 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         hist.next_look_tick = tick + 1;
     }
 
+    // rechunk=info: the moves (python/bench_runner reads the [APPLIED] ones);
+    // rechunk=debug: the verdicts that wait as well.
     if (act)
     {
-        std::fprintf(stderr,
-                     "[RECHUNK-DECIDE] %s: %s S=%u -> S'=%u "
-                     "(gain %.1f MB = meta %.1f + data %.1f, stable %d ticks, est. cost %.0f ms, %.0f MB/s, chunks "
-                     "%lld mat %lld)%s\n",
-                     name, (pol_.dry_run || rechunk_env_dry_run()) ? "[dry-run] would re-chunk" : "re-chunk", cur_size,
-                     best_sz, gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.), gain_data / (1024. * 1024.),
-                     hist.stable_count, est_cost_ms, meta_rate, static_cast<long long>(cur_e.n_chunks),
-                     static_cast<long long>(cur_e.mat), (pol_.dry_run || rechunk_env_dry_run()) ? "" : " [APPLIED]");
-        std::fflush(stderr);
+        const bool dry = pol_.dry_run || rechunk_env_dry_run();
+        CHUNK_LOG(info, rechunk,
+                  "decide {}: {} S={} -> S'={} (gain {:.1f} MB = meta {:.1f} + data {:.1f}, stable {} ticks, est. cost "
+                  "{:.0f} ms, {:.0f} MB/s, chunks {} mat {}){}",
+                  name, dry ? "[dry-run] would re-chunk" : "re-chunk", cur_size, best_sz, gain_b / (1024. * 1024.),
+                  gain_meta / (1024. * 1024.), gain_data / (1024. * 1024.), hist.stable_count, est_cost_ms, meta_rate,
+                  static_cast<long long>(cur_e.n_chunks), static_cast<long long>(cur_e.mat), dry ? "" : " [APPLIED]");
 
         hist.last_action_tick = tick;
         hist.stable_count     = 0;        // must re-stabilise before next move
@@ -294,17 +295,20 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     }
     else
     {
-        std::fprintf(stderr,
-                     "[RECHUNK-DECIDE] %s: wait (%s) "
-                     "S=%u best=%u gain %.1f MB "
-                     "(meta %.1f + data %.1f; cur %.1f MB, data gate %.1f MB, est. cost %.0f ms, %.0f MB/s)"
-                     "%s%d%s\n",
-                     name, reason, cur_size, best_sz, gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.),
-                     gain_data / (1024. * 1024.), cur_e.mem_bytes / (1024. * 1024.),
-                     static_cast<double>(data_gate) / (1024. * 1024.), est_cost_ms, meta_rate,
-                     hist.backoff > 1 ? ", next look in " : "", hist.backoff > 1 ? hist.backoff : 0,
-                     hist.backoff > 1 ? " ticks" : "");
-        std::fflush(stderr);
+        if (logging::enabled(logging::Channel::rechunk, logging::Level::debug))
+        {
+            char       next[48] = "";
+            const auto w        = std::format_to_n(next, sizeof(next) - 1, ", next look in {} ticks", hist.backoff);
+            *w.out              = '\0';
+            CHUNK_LOG(
+                debug, rechunk,
+                "decide {}: wait ({}) S={} best={} gain {:.1f} MB (meta {:.1f} + data {:.1f}; cur {:.1f} MB, data "
+                "gate {:.1f} MB, est. cost {:.0f} ms, {:.0f} MB/s){}",
+                name, reason, cur_size, best_sz, gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.),
+                gain_data / (1024. * 1024.), cur_e.mem_bytes / (1024. * 1024.),
+                static_cast<double>(data_gate) / (1024. * 1024.), est_cost_ms, meta_rate,
+                std::string_view{hist.backoff > 1 ? next : ""});
+        }
     }
     return act;
 }
@@ -353,7 +357,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             const unsigned tgt    = force_toggle ? (cur_sz == force_sz ? force_alt : force_sz) : force_sz;
             if (cur_sz != tgt)
             {
-                std::fprintf(stderr, "[FORCE_RECHUNK] %s: %u -> %u\n", name, cur_sz, tgt);
+                CHUNK_LOG(info, rechunk, "force {}: {} -> {}", name, cur_sz, tgt);
                 arr.rechunk_to(tgt);
                 // Logged for print_rechunk_log(); mem figures 0 (not measured).
                 log_.emplace_back(RechunkEvent{iter, std::string(name), cur_sz, tgt, 0.0, 0.0, 0.0});
@@ -362,17 +366,13 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             return false;
         }
 
-        // CHUNK_RECHUNK_MEMTRACE=1: once per tick, the process memory split
-        // into the chunk value arena (resident pages, mincore) and the rest.
-        // MiB, like [RECHUNK-RSS] (rss_mib_now), so the two traces add up.
+        // memory=info (or CHUNK_RECHUNK_MEMTRACE): once per tick, the process
+        // memory split into the chunk value arena (resident pages, mincore)
+        // and the rest. MiB, like the re-chunk's "rss" line (rss_mib_now), so
+        // the two traces add up.
         {
-            static const bool memtrace = []
-            {
-                const char* e = std::getenv("CHUNK_RECHUNK_MEMTRACE");
-                return e != nullptr && e[0] != '\0' && e[0] != '0';
-            }();
             int& last_mem_tick = rechunk_memtrace_last_tick();
-            if (memtrace && tick != last_mem_tick)
+            if (tick != last_mem_tick && logging::enabled(logging::Channel::memory, logging::Level::info))
             {
                 last_mem_tick = tick;
                 // Exact (smaps_rollup): statm can lag by gigabytes.
@@ -380,8 +380,8 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 const long rss_mb  = rss_kib >= 0 ? rss_kib / 1024 : -1;
                 if constexpr (build_config::use_std_alloc)
                 {
-                    std::fprintf(stderr, "[RECHUNK-MEM] tick %d iter %d: rss %ld MB (std-alloc: no values arena)\n",
-                                 tick, iter, rss_mb);
+                    CHUNK_LOG(info, memory, "tick {} iter {}: rss {} MB (std-alloc: no values arena)", tick, iter,
+                              rss_mb);
                 }
                 else
                 {
@@ -389,14 +389,13 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                     // branch compiles in a std-alloc build too.
                     const internal::ArenaBytes va     = internal::values_arena_bytes().value_or(internal::ArenaBytes{});
                     const long                 res_mb = static_cast<long>(static_cast<double>(va.resident) / 1048576.);
-                    std::fprintf(stderr,
-                                 "[RECHUNK-MEM] tick %d iter %d: rss %ld MB = values arena %ld MB + other %ld MB"
-                                 "   (arena mapped %ld MB, slabs handed out %ld MB)\n",
-                                 tick, iter, rss_mb, res_mb, rss_mb - res_mb,
-                                 static_cast<long>(static_cast<double>(va.mapped) / 1048576.),
-                                 static_cast<long>(static_cast<double>(va.live) / 1048576.));
+                    CHUNK_LOG(info, memory,
+                              "tick {} iter {}: rss {} MB = values arena {} MB + other {} MB   (arena mapped {} MB, "
+                              "slabs handed out {} MB)",
+                              tick, iter, rss_mb, res_mb, rss_mb - res_mb,
+                              static_cast<long>(static_cast<double>(va.mapped) / 1048576.),
+                              static_cast<long>(static_cast<double>(va.live) / 1048576.));
                 }
-                std::fflush(stderr);
             }
         }
 
@@ -434,19 +433,17 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                         static_cast<double>(d_creates - (growth > 0 ? growth : 0)) / static_cast<double>(d_phases);
                     const double mb_S   = transient * S * sizeof(T) / 1e6;
                     const double mb_64s = transient * 64. * sizeof(T) / 1e6; // same chunk count at 64
-                    std::fprintf(stderr,
-                                 "[RECHUNK-CHURN] %s S=%u: %ld materialisations over %ld phases since the last "
-                                 "tick (%.0f/phase), resident materialised %ld -> %ld: transient ~%.0f "
-                                 "chunks/phase = %.1f MB at S=%u; at S=64: %.1f MB if scattered, %.1f MB if "
-                                 "grouped\n",
-                                 name, S, d_creates, d_phases, static_cast<double>(d_creates) / d_phases, h.churn_mat,
-                                 mat_now, transient, mb_S, S, mb_64s, mb_S);
+                    CHUNK_LOG(info, rechunk,
+                              "churn {} S={}: {} materialisations over {} phases since the last tick ({:.0f}/phase), "
+                              "resident materialised {} -> {}: transient ~{:.0f} chunks/phase = {:.1f} MB at S={}; at "
+                              "S=64: {:.1f} MB if scattered, {:.1f} MB if grouped",
+                              name, S, d_creates, d_phases, static_cast<double>(d_creates) / d_phases, h.churn_mat,
+                              mat_now, transient, mb_S, S, mb_64s, mb_S);
                 }
                 else
                 {
-                    std::fprintf(stderr, "[RECHUNK-CHURN] %s S=%u: baseline (key %u)\n", name, S, key);
+                    CHUNK_LOG(info, rechunk, "churn {} S={}: baseline (key {})", name, S, key);
                 }
-                std::fflush(stderr);
                 h.churn_key     = key;
                 h.churn_creates = creates;
                 h.churn_phases  = phases;

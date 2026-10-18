@@ -465,7 +465,8 @@ compression et le budget des réserves, qui dépendent du nombre total de chunks
 recalculés à la destruction comme à la création. Le décideur, ses critères et les résultats
 mesurés sont décrits dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
-`CHUNK_RECHUNK_TRACE=1` affiche le temps de chaque phase et les compteurs de repliement.
+`CHUNK_LOG=rechunk=debug` affiche le temps de chaque phase, `CHUNK_LOG=memory=debug` les
+compteurs de repliement.
 
 ---
 
@@ -566,7 +567,7 @@ Chunk2 :
 | variable | effet |
 |---|---|
 | `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | ordonnancement de la reconstruction du rechunk (`guided,16` par défaut) |
-| `CHUNK_RECHUNK_TRACE=1` | temps des phases du rechunk, repliements |
+| `CHUNK_LOG=rechunk=debug` | temps des phases du rechunk (`memory=debug` : repliements) |
 | `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
 | `CHUNK_RECHUNK_DRY_RUN=1` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses) |
 | `CHUNK_RECHUNK_MAX_COARSEN=<n>` | facteur maximal d'un grossissement (4 par défaut) |

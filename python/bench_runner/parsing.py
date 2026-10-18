@@ -151,8 +151,12 @@ def _parse_still_at_exit(stdout_text, variant_base):
     return None
 
 
+# The decider's applied moves, as the library's log writes them since
+# (CHUNK_LOG=rechunk=info: "[shrink_array][rechunk][I][<tid>] decide <array>: re-chunk ...")
+# and as it printed them before ("[RECHUNK-DECIDE] <array>: re-chunk ..."), for older logs.
 _RECHUNK_APPLIED_RE = _re.compile(
-    r"^\[RECHUNK-DECIDE\] (\S+): re-chunk S=(\d+) -> S'=(\d+) .*\[APPLIED\]", _re.MULTILINE)
+    r"^(?:\[RECHUNK-DECIDE\] |\[shrink_array\]\[rechunk\]\[I\]\[\d+\] decide )"
+    r"(\S+): re-chunk S=(\d+) -> S'=(\d+) .*\[APPLIED\]", _re.MULTILINE)
 
 
 def _parse_applied_rechunks(text):

@@ -607,15 +607,10 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          - All values become second_value
      *          Atomically adds chunk to compression list if needed.
      * @note Thread safety: Uses compare_exchange for atomic list insertion
-     * @note Called BEFORE the store (assign_impl's lbd_equal_core): the
-     *       pre-store form, as Proxy2A -- see mark_for_compression_before_store.
-     *       Its pre-check is inline; the old value is read only when a
-     *       constant is written. Forced inline: out of line, clang keeps a
-     *       prologue ahead of the pre-check.
      */
-    CHUNK_FORCE_INLINE void mark_for_compression_if_needed(this const Derived& self, in_t<T> new_value)
+    void mark_for_compression_if_needed(this const Derived& self, in_t<T> new_value)
     {
-        self.Base2::mark_for_compression_before_store(self.second_value, new_value, Chunk2<T>::first_value);
+        self.Base2::mark_for_compression_if_needed(self.second_value, new_value, Chunk2<T>::first_value);
     }
 
   private:

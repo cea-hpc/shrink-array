@@ -265,14 +265,8 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     void
     mark_for_compression_if_needed(this const Derived& self, in_t<T> second_val, in_t<T> new_value, in_t<T> first_value)
     {
-        // isv false makes the core a no-op: test it BEFORE the old-value read,
-        // which an argument would otherwise evaluate (an acquire load of
-        // `values`, the element load) for nothing.
-        if (!self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val))
-        {
-            return;
-        }
-        self.mark_for_compression_impl(self.Base::read_values(), new_value, true, second_val, first_value);
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, second_val, first_value);
     }
 
     /**
@@ -307,28 +301,6 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         {
             self.add_to_compression_list();
         }
-    }
-
-    /**
-     * @brief mark_for_compression_before_store() for a caller with no values
-     *        pointer in hand (Proxy2's assignment: mark, then
-     *        perform_core_assignment).
-     * @details Inline: only the pre-check (isv) lands in the caller -- a couple
-     *          of compares when no constant is written, the common case. The
-     *          old-value read and the decision are in the out-of-line
-     *          mark_for_compression_before_store_tail().
-     * @param second_val The second constant value.
-     * @param new_value The value about to be stored.
-     * @param first_value The first constant value.
-     */
-    CHUNK_FORCE_INLINE void
-    mark_for_compression_before_store(this const Derived& self, in_t<T> second_val, in_t<T> new_value, in_t<T> first_value)
-    {
-        if (!self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val))
-        {
-            return;
-        }
-        self.mark_for_compression_before_store_tail(second_val, new_value, first_value);
     }
 
     /**
@@ -410,27 +382,6 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
   private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
-
-    /**
-     * @brief Tail of the 3-argument mark_for_compression_before_store(), once
-     *        isv has held: the test of the 4-argument form, the old value read
-     *        through `values`.
-     * @details Out of line: reached only when a constant is written, and its
-     *          body would otherwise cost the caller's hot path registers.
-     * @param second_val The second constant value.
-     * @param new_value The value about to be stored.
-     * @param first_value The first constant value.
-     */
-    [[gnu::noinline]] void
-    mark_for_compression_before_store_tail(this const Derived& self, in_t<T> second_val, in_t<T> new_value, in_t<T> first_value)
-    {
-        const T old = self.Base::read_values();
-        if (self.should_mark_for_compression(old, new_value, second_val, first_value) ||
-            (self.Base::read_values() != old)) [[unlikely]]
-        {
-            self.add_to_compression_list();
-        }
-    }
 
     /**
      * @brief Whether the chunk is currently at ONE of the two constants and

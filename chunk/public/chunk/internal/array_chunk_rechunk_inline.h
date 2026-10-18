@@ -24,15 +24,14 @@
 
 #include <algorithm>   // std::min / std::max (CHUNK_RECHUNK_SLICES)
 #include <array>       // std::array (CHUNK_RECHUNK_SCHEDULE text buffers)
-#include <atomic>      // std::atomic<long> n_folded (CHUNK_RECHUNK_TRACE)
-#include <chrono>      // CHUNK_RECHUNK_TRACE phase timers
+#include <atomic>      // std::atomic<long> n_folded (the memory census)
+#include <chrono>      // the rechunk=debug phase timers
 #include <ratio>       // std::milli (the same timers)
 #include <cstddef>     // std::size_t
-#include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
 #include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstring>     // std::memcpy / std::memcmp (refill bulk read)
 #include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
-#include <cstdlib>     // std::getenv (CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SCHEDULE)
+#include <cstdlib>     // std::getenv (CHUNK_RECHUNK_RECYCLE, CHUNK_RECHUNK_SCHEDULE)
 #include <optional>    // the affinity scope around tmp
 #include <type_traits> // std::is_same_v, the v1 bool guard
 #include <string_view> // CHUNK_RECHUNK_SCHEDULE parsing
@@ -48,6 +47,7 @@
 #include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/env_parse.h"           // env_number / env_flag (checked, not atoi)
+#include "chunk/log.h"                          // CHUNK_LOG, logging::enabled (the traces)
 #include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
 #include "chunk/vector_range_ops.h"             // assume_drained
 #include "chunk/config.h"                       // build_config::use_openmp, chunk_config::use_chunk2a
@@ -58,9 +58,23 @@
 
 namespace shrink_array::internal
 {
-/// CHUNK_RECHUNK_TRACE (read once, set = on): per-phase timings, memory and
-/// occupancy of every re-chunk.
-inline const bool g_rechunk_trace = std::getenv("CHUNK_RECHUNK_TRACE") != nullptr;
+/// @brief CHUNK_LOG=rechunk=debug (or CHUNK_RECHUNK_TRACE): the per-phase
+///        timings of every re-chunk, its rebuild schedule and the split of the
+///        slice regions' wall time. Read by each re-chunk, at its start.
+[[nodiscard]] inline bool rechunk_trace_on() noexcept
+{
+    return logging::enabled(logging::Channel::rechunk, logging::Level::debug);
+}
+
+/// @brief CHUNK_LOG=memory=debug (or CHUNK_RECHUNK_TRACE_MEM): the MEMORY side
+///        of the trace -- exact RSS at the phase boundaries (a page-table walk
+///        per read), the new geometry's occupancy, the allocator census. A
+///        channel of its own so the phase times are not measured with these
+///        probes inside them (they cost seconds per run on large arrays).
+[[nodiscard]] inline bool rechunk_trace_mem_on() noexcept
+{
+    return logging::enabled(logging::Channel::memory, logging::Level::debug);
+}
 
 /// CHUNK_RECHUNK_RECYCLE (default on; 0 = off): at the v1 refill's slice
 /// boundaries, hand the slabs the old geometry has just emptied to the value
@@ -85,8 +99,7 @@ inline const bool g_rechunk_keep_recycled = []() noexcept
     const bool  on  = env != nullptr && env[0] != '\0' && env[0] != '0';
     if (on)
     {
-        std::fprintf(stderr, "[env] CHUNK_RECHUNK_KEEP_RECYCLED=1: the refill's leftover recycled slabs "
-                             "stay resident\n");
+        CHUNK_LOG(info, env, "CHUNK_RECHUNK_KEEP_RECYCLED=1: the refill's leftover recycled slabs stay resident");
     }
     return on;
 }();
@@ -101,28 +114,22 @@ inline const std::size_t g_rechunk_keep_recycled_bytes = []() noexcept
     const auto mb = env_number<std::size_t>("CHUNK_RECHUNK_KEEP_RECYCLED_MB", 0);
     if (mb != 0)
     {
-        std::fprintf(stderr, "[env] CHUNK_RECHUNK_KEEP_RECYCLED_MB=%zu: up to %zu MiB of the refill's leftover "
-                             "recycled slabs stay resident per arena\n",
-                     mb, mb);
+        CHUNK_LOG(info, env,
+                  "CHUNK_RECHUNK_KEEP_RECYCLED_MB={}: up to {} MiB of the refill's leftover recycled slabs stay "
+                  "resident per arena",
+                  mb, mb);
     }
     return mb << 20U;
 }();
 
-/// CHUNK_RECHUNK_TRACE_MEM (read once, set = on): the MEMORY side of the trace --
-/// [RECHUNK-RSS] (exact RSS, a page-table walk per read), the new geometry's
-/// occupancy, the allocator census. Kept apart from CHUNK_RECHUNK_TRACE so the
-/// phase times are not measured with these probes inside them (they cost
-/// seconds per run on large arrays).
-inline const bool g_rechunk_trace_mem = std::getenv("CHUNK_RECHUNK_TRACE_MEM") != nullptr;
-
-/// CHUNK_RECHUNK_TRACE: the v1 refill's inter-slice costs for the re-chunk in
+/// rechunk_trace_on(): the v1 refill's inter-slice costs for the re-chunk in
 /// progress (ms), reset by rechunk_to() and printed in its phases line.
 /// Written by the master between the slice regions only.
 inline double g_slice_drain_ms   = 0.0;
 inline double g_slice_collect_ms = 0.0;
 inline double g_slice_madvise_ms = 0.0;
 
-/// CHUNK_RECHUNK_TRACE: where the v1 refill's slice regions spend their wall
+/// rechunk_trace_on(): where the v1 refill's slice regions spend their wall
 /// time, summed over the slices of the re-chunk in progress (ms), reset by
 /// rechunk_to() and printed on its "slices" line. Instants on steady_clock
 /// (one system-wide counter), relative to the master just before the region:
@@ -146,7 +153,7 @@ inline double g_slice_setup_max_ms = 0.0;
 
 /// @brief Resident set size of this process in MiB, or -1 if unreadable.
 /// @details EXACT (smaps_rollup, see exact_rss.h): statm lags by gigabytes
-///          under many threads. Only the CHUNK_RECHUNK_TRACE paths read it.
+///          under many threads. Only the traces read it.
 inline long rss_mib_now() noexcept
 {
     const long kib = shrink_array::exact_rss_kib();
@@ -215,10 +222,10 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         }
         if (!ok)
         {
-            std::fprintf(stderr,
-                         "[RECHUNK] CHUNK_RECHUNK_SCHEDULE=\"%s\" not understood "
-                         "(kind[,chunk], kind = static|dynamic|guided|auto): keeping guided,16\n",
-                         env);
+            CHUNK_LOG(warn, env,
+                      "CHUNK_RECHUNK_SCHEDULE=\"{}\" not understood (kind[,chunk], kind = static|dynamic|guided|auto): "
+                      "keeping guided,16",
+                      env);
             return parsed;
         }
         parsed.schedule    = {.kind = k, .chunk = chunk}; // chunk 0: the runtime's default for this kind
@@ -250,10 +257,8 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
     // a message in EVERY build: a caller bug, on a cold path.
     if (!is_valid_chunk_size(new_size))
     {
-        std::fprintf(stderr,
-                     "[RECHUNK] rechunk_to(%u) refused: a chunk size must be a power of two or a multiple of 64\n",
-                     new_size);
-        std::fflush(stderr);
+        CHUNK_LOG(warn, rechunk, "rechunk_to({}) refused: a chunk size must be a power of two or a multiple of 64",
+                  new_size);
         return;
     }
 
@@ -264,11 +269,8 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
     // Message in every build, as for an invalid size above.
     if (new_size > cst_buffer_size)
     {
-        std::fprintf(stderr,
-                     "[RECHUNK] rechunk_to(%u) refused: exceeds cst_buffer_size=%u "
-                     "(raise CHUNK_DYN_MAX_SIZE)\n",
-                     new_size, shrink_array::cst_buffer_size);
-        std::fflush(stderr);
+        CHUNK_LOG(warn, rechunk, "rechunk_to({}) refused: exceeds cst_buffer_size={} (raise CHUNK_DYN_MAX_SIZE)",
+                  new_size, shrink_array::cst_buffer_size);
         return;
     }
 
@@ -288,9 +290,10 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
     // this point, and nothing below aborts. Count it for the run's stats.
     ++shrink_array::g_rechunk_count;
 
-    // CHUNK_RECHUNK_TRACE=1: per-phase wall time (tmp creation, refill,
-    // flush+swap, tmp teardown).
-    const bool trace_phases = internal::g_rechunk_trace;
+    // rechunk=debug: per-phase wall time (tmp creation, refill, flush+swap,
+    // tmp teardown); memory=debug: the probes (see rechunk_trace_mem_on).
+    const bool trace_phases = internal::rechunk_trace_on();
+    const bool trace_mem    = internal::rechunk_trace_mem_on();
     const auto t_now        = [] { return std::chrono::steady_clock::now(); };
     const auto t_ms         = [](auto start, auto stop)
     { return std::chrono::duration<double, std::milli>(stop - start).count(); };
@@ -313,9 +316,9 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
     std::chrono::steady_clock::time_point t4_out;
     // Process RSS at each phase boundary (the slice trace inside
     // rechunk_refill brackets the refill; this brackets everything around it).
-    // Only under CHUNK_RECHUNK_TRACE_MEM: each read walks the page tables,
-    // inside the timed phases.
-    const auto rss_now    = [&] { return internal::g_rechunk_trace_mem ? internal::rss_mib_now() : -1L; };
+    // Only under memory=debug: each read walks the page tables, inside the
+    // timed phases.
+    const auto rss_now    = [&] { return trace_mem ? internal::rss_mib_now() : -1L; };
     const long r_entry    = rss_now();
     long       r_flush    = -1;
     long       r_pre_tmp  = -1;
@@ -513,7 +516,7 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
         sweep.flush();
         set_thread_chunk_size(saved_sz);
     }
-    if (internal::g_rechunk_trace_mem) // a census: memory side of the trace
+    if (trace_mem) // a census: memory side of the trace
     {
         // Occupancy of the allocator set the array just left: after the drain
         // its slabs should be empty. A non-zero "live" means blocks of that
@@ -558,43 +561,40 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
             scan(0u, s0, l0, e0);
         }
         const std::size_t blk = static_cast<std::size_t>(old_size) * sizeof(T);
-        std::fprintf(stderr,
-                     "[RECHUNK-POOL] S=%u key=%u after drain: slabs=%zu  live_blocks=%zu (%zu MB)  "
-                     "empty_slabs=%zu | key=0 (shared pool): slabs=%zu  live_blocks=%zu (%zu MB)  "
-                     "empty_slabs=%zu\n",
-                     old_size, old_key, slabs, live_blocks, (live_blocks * blk) >> 20U, empty_slabs, s0, l0,
-                     (l0 * blk) >> 20U, e0);
-        std::fflush(stderr);
+        CHUNK_LOG(debug, memory,
+                  "pool S={} key={} after drain: slabs={}  live_blocks={} ({} MB)  empty_slabs={} | key=0 (shared "
+                  "pool): slabs={}  live_blocks={} ({} MB)  empty_slabs={}",
+                  old_size, old_key, slabs, live_blocks, (live_blocks * blk) >> 20U, empty_slabs, s0, l0,
+                  (l0 * blk) >> 20U, e0);
     }
     if (trace_phases)
     {
         const auto t6 = t_now();
-        std::fprintf(stderr,
-                     "[RECHUNK] %u -> %u phases (ms): prologue %.0f | tmp create %.0f | refill %.0f | "
-                     "of which slice drain %.0f | of which slice collect %.0f | of which slice madvise %.0f | "
-                     "flush+swap %.0f | tmp teardown %.0f | old-pool drain %.0f | slab sweep %.0f | total %.0f\n",
-                     old_size, new_size, t_ms(t0, t1_out), t_ms(t1_out, t2_out), t_ms(t2_out, t3_out),
-                     internal::g_slice_drain_ms, internal::g_slice_collect_ms, internal::g_slice_madvise_ms,
-                     t_ms(t3_out, t4_out), t_ms(t4_out, t5), t_ms(t5, t5b), t_ms(t5b, t6), t_ms(t0, t6));
+        CHUNK_LOG(debug, rechunk,
+                  "{} -> {} phases (ms): prologue {:.0f} | tmp create {:.0f} | refill {:.0f} | of which slice drain "
+                  "{:.0f} | of which slice collect {:.0f} | of which slice madvise {:.0f} | flush+swap {:.0f} | tmp "
+                  "teardown {:.0f} | old-pool drain {:.0f} | slab sweep {:.0f} | total {:.0f}",
+                  old_size, new_size, t_ms(t0, t1_out), t_ms(t1_out, t2_out), t_ms(t2_out, t3_out),
+                  internal::g_slice_drain_ms, internal::g_slice_collect_ms, internal::g_slice_madvise_ms,
+                  t_ms(t3_out, t4_out), t_ms(t4_out, t5), t_ms(t5, t5b), t_ms(t5b, t6), t_ms(t0, t6));
         if (internal::g_slice_count > 0)
         {
-            std::fprintf(stderr,
-                         "[RECHUNK] %u -> %u slices %d (ms): fork %.1f | loop %.1f | work max %.1f | "
-                         "work avg %.1f | setup max %.1f | barrier %.1f | boundary %.1f | join %.1f\n",
-                         old_size, new_size, internal::g_slice_count, internal::g_slice_fork_ms,
-                         internal::g_slice_loop_ms, internal::g_slice_work_max_ms, internal::g_slice_work_avg_ms,
-                         internal::g_slice_setup_max_ms, internal::g_slice_barrier_ms, internal::g_slice_boundary_ms,
-                         internal::g_slice_join_ms);
+            CHUNK_LOG(debug, rechunk,
+                      "{} -> {} slices {} (ms): fork {:.1f} | loop {:.1f} | work max {:.1f} | work avg {:.1f} | setup "
+                      "max {:.1f} | barrier {:.1f} | boundary {:.1f} | join {:.1f}",
+                      old_size, new_size, internal::g_slice_count, internal::g_slice_fork_ms, internal::g_slice_loop_ms,
+                      internal::g_slice_work_max_ms, internal::g_slice_work_avg_ms, internal::g_slice_setup_max_ms,
+                      internal::g_slice_barrier_ms, internal::g_slice_boundary_ms, internal::g_slice_join_ms);
         }
     }
-    if (internal::g_rechunk_trace_mem)
+    if (trace_mem)
     {
         const long r_end = rss_now();
-        std::fprintf(stderr,
-                     "[RECHUNK-RSS] %u -> %u (MB): entry %ld | after flush %ld | before tmp %ld | after refill %ld | "
-                     "after swap %ld | after teardown %ld | after sweep %ld   (end-entry %+ld)\n",
-                     old_size, new_size, r_entry, r_flush, r_pre_tmp, r_refill, r_swap, r_teardown, r_end,
-                     r_end - r_entry);
+        CHUNK_LOG(debug, memory,
+                  "rss {} -> {} (MB): entry {} | after flush {} | before tmp {} | after refill {} | after swap {} | "
+                  "after teardown {} | after sweep {}   (end-entry {:+})",
+                  old_size, new_size, r_entry, r_flush, r_pre_tmp, r_refill, r_swap, r_teardown, r_end,
+                  r_end - r_entry);
     }
 }
 
@@ -622,6 +622,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // Seed the process-wide global ONCE (final value = new); NEVER set the
         // global inside the loop — it would race under parallelism.
         set_active_chunk_size(new_size);
+
+        // The traces, read once for the whole refill (rechunk_to() reads them
+        // at its start too): rechunk=debug times, rechunk=trace the slices,
+        // memory=debug the census.
+        const bool trace_on     = internal::rechunk_trace_on();
+        const bool trace_mem_on = internal::rechunk_trace_mem_on();
 
         // Rebuild one new chunk c into its own buffer. Pure-read of *this (old)
         // + armed write of tmp (new). Independent across c: each new chunk is
@@ -1124,24 +1130,24 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         {
             const auto& rs = internal::rebuild_schedule();
             chunk_pmp_set_schedule(rs.schedule);
-            if (internal::g_rechunk_trace)
+            if (trace_on)
             {
-                std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text.data());
+                CHUNK_LOG(debug, rechunk, "rebuild schedule: {}", std::string_view{rs.text.data()});
             }
         }
         g_in_rechunk_rebuild.store(true, std::memory_order_release);
-        // Its own knob (the per-slice lines would bury the CHUNK_RECHUNK_TRACE
-        // summary). Shows the peak's SHAPE: a saw-tooth means the drains return
-        // memory, a monotonic climb that they return nothing.
-        const bool slice_trace = std::getenv("CHUNK_RECHUNK_TRACE_SLICES") != nullptr;
+        // rechunk=trace, a level above the timings (the per-slice lines would
+        // bury their summary). Shows the peak's SHAPE: a saw-tooth means the
+        // drains return memory, a monotonic climb that they return nothing.
+        const bool slice_trace = logging::enabled(logging::Channel::rechunk, logging::Level::trace);
         const long rss_start   = slice_trace ? internal::rss_mib_now() : -1;
         if (slice_trace)
         {
-            std::fprintf(stderr, "[RECHUNK-SLICE] 0/%d start       rss=%ld MB\n", n_slices, rss_start);
+            CHUNK_LOG(trace, rechunk, "slice 0/{} start       rss={} MB", n_slices, rss_start);
         }
-        // CHUNK_RECHUNK_TRACE: the slice regions' wall time, split (see
+        // rechunk=debug: the slice regions' wall time, split (see
         // internal::g_slice_fork_ms). Shared by the team; ns since sp_a.
-        const bool sp_on = internal::g_rechunk_trace;
+        const bool sp_on = trace_on;
         struct SliceProbe
         {
             std::atomic<long long> entry_max{0};
@@ -1193,13 +1199,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 // so the bypassed gate guards nothing. Per-thread
                 // (thread_local), so it lives inside the region.
                 const typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
-                std::vector<T> buf(static_cast<std::size_t>(new_size));
-                RebuildTally   tally; // this thread's fold counts for this slice
-                                      // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                                      // (internal::rebuild_schedule).
+                std::vector<T>                buf(static_cast<std::size_t>(new_size));
+                RebuildTally                  tally; // this thread's fold counts for this slice
+                                                     // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
+                                                     // (internal::rebuild_schedule).
                 const slice_clock::time_point sp_w0 = sp_on ? slice_clock::now() : slice_clock::time_point{};
                 // nowait + the explicit barrier below: the same closing barrier,
-                // with each thread's loop end observable (CHUNK_RECHUNK_TRACE).
+                // with each thread's loop end observable (rechunk=debug).
 #pragma omp for schedule(runtime) nowait
                 for (int c = c0; c < c1; ++c)
                 {
@@ -1218,7 +1224,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 // One RMW per thread and slice, not one per folded chunk; and
                 // none at all unless the [RECHUNK] census, their only reader,
                 // is on.
-                if (internal::g_rechunk_trace_mem)
+                if (trace_mem_on)
                 {
                     n_folded.fetch_add(tally.folded, std::memory_order_relaxed);
                     n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
@@ -1248,7 +1254,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     {
 #pragma omp masked
                         {
-                            if (internal::g_rechunk_trace)
+                            if (trace_on)
                             {
                                 slice_t0 = slice_clock::now();
                             }
@@ -1271,9 +1277,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                             // the leftovers' madvise as "madvise".
 #pragma omp single
                             {
-                                const auto sc0 =
-                                    internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
-                                if (internal::g_rechunk_trace)
+                                const auto sc0 = trace_on ? slice_clock::now() : slice_clock::time_point{};
+                                if (trace_on)
                                 {
                                     internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
                                 }
@@ -1291,7 +1296,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                                 // the same as advising them between slices, and
                                 // the per-slice serial madvise passes (a TLB
                                 // shootdown on every CPU each) become one.
-                                if (internal::g_rechunk_trace)
+                                if (trace_on)
                                 {
                                     slice_t1 = slice_clock::now();
                                     internal::g_slice_madvise_ms += slice_ms(sc0, slice_t1);
@@ -1334,7 +1339,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                                     allocator.recycle_detached(recycle_scratch[r]);
                                 }
                                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                                if (internal::g_rechunk_trace)
+                                if (trace_on)
                                 {
                                     internal::g_slice_collect_ms += slice_ms(slice_t1, slice_clock::now());
                                 }
@@ -1344,9 +1349,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                         {
 #pragma omp single
                             {
-                                const auto sc0 =
-                                    internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
-                                if (internal::g_rechunk_trace)
+                                const auto sc0 = trace_on ? slice_clock::now() : slice_clock::time_point{};
+                                if (trace_on)
                                 {
                                     internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
                                 }
@@ -1366,10 +1370,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                                 {
                                     chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
                                 }
-                                const auto sc1 =
-                                    internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
+                                const auto sc1 = trace_on ? slice_clock::now() : slice_clock::time_point{};
                                 sweep.flush();
-                                if (internal::g_rechunk_trace)
+                                if (trace_on)
                                 {
                                     internal::g_slice_collect_ms += slice_ms(sc0, sc1);
                                     internal::g_slice_madvise_ms += slice_ms(sc1, slice_clock::now());
@@ -1408,15 +1411,15 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             if (slice_trace && sl + 1 < n_slices)
             {
                 const long rss_mib = internal::rss_mib_now();
-                std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d after-drain rss=%ld MB  (%+ld since start)\n", sl + 1,
-                             n_slices, rss_mib, rss_mib - rss_start);
+                CHUNK_LOG(trace, rechunk, "slice {}/{} after-drain rss={} MB  ({:+} since start)", sl + 1, n_slices,
+                          rss_mib, rss_mib - rss_start);
             }
         }
         if (slice_trace)
         {
             const long rss_mib = internal::rss_mib_now();
-            std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d end         rss=%ld MB  (%+ld since start)\n", n_slices,
-                         n_slices, rss_mib, rss_mib - rss_start);
+            CHUNK_LOG(trace, rechunk, "slice {}/{} end         rss={} MB  ({:+} since start)", n_slices, n_slices,
+                      rss_mib, rss_mib - rss_start);
         }
         if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
         {
@@ -1426,12 +1429,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // for the next allocations (SlabArena::allocate() takes them first).
             if (internal::g_rechunk_recycle && n_slices > 1 && !internal::g_rechunk_keep_recycled)
             {
-                const auto a0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
+                const auto a0 = trace_on ? slice_clock::now() : slice_clock::time_point{};
                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
                 chunk_type::get_chunk_allocator(0, old_key_refill)
                     .advise_recycled_slabs(internal::g_rechunk_keep_recycled_bytes);
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                if (internal::g_rechunk_trace)
+                if (trace_on)
                 {
                     internal::g_slice_madvise_ms += slice_ms(a0, slice_clock::now());
                 }
@@ -1439,7 +1442,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         }
         g_in_rechunk_rebuild.store(false, std::memory_order_release);
         chunk_pmp_set_schedule(caller_schedule); // the caller's, untouched
-        if (internal::g_rechunk_trace_mem)       // a serial count inside the refill phase
+        if (trace_mem_on)                        // a serial count inside the refill phase
         {
             // What the new geometry actually HOLDS, counted on tmp before the
             // swap: "folded" counts spans the rebuild could fold, this the
@@ -1477,11 +1480,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     ++n_mat;
                 }
             }
-            std::fprintf(stderr,
-                         "[RECHUNK] %d -> %d: %d new chunks, %ld folded back at rebuild (%ld installed directly), "
-                         "%ld still materialised (%ld MB of buffers), %ld refused merged-constant spans\n",
-                         old_size, new_size, n_new, n_folded.load(), n_installed.load(), n_mat,
-                         (n_mat * static_cast<long>(new_size) * static_cast<long>(sizeof(T))) >> 20, n_refused.load());
+            CHUNK_LOG(debug, memory,
+                      "{} -> {}: {} new chunks, {} folded back at rebuild ({} installed directly), {} still "
+                      "materialised ({} MB of buffers), {} refused merged-constant spans",
+                      old_size, new_size, n_new, n_folded.load(), n_installed.load(), n_mat,
+                      (n_mat * static_cast<long>(new_size) * static_cast<long>(sizeof(T))) >> 20, n_refused.load());
         }
     }
     else

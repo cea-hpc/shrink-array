@@ -36,15 +36,17 @@
 #include <atomic>    // std::atomic, std::memory_order
 #include <chrono>    // CHUNK_OMPT_STATS: time spent flushing
 #include <cstdint>   // std::uint64_t
-#include <cstdio>    // CHUNK_OMPT_STATS report
-#include <cstdlib>   // std::getenv, std::abort (CHUNK_REQUIRE_OMPT)
+#include <cstdlib>   // std::getenv (CHUNK_REQUIRE_OMPT)
 #include <cstring>   // std::strlen (the refused callbacks' list)
 #include <format>    // std::format_to_n (the refused callbacks' list)
+#include <string_view> // std::string_view (the CHUNK_REQUIRE_OMPT messages)
 
 #include "chunk/config.h"      // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
 #include "chunk/singleton.h"   // SingletonChk
 #include "chunk/manage_ompt.h" // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
 #include "chunk/PMP_CHUNK.h"   // g_fast_omp_rank
+#include "chunk/log.h"         // CHUNK_LOG, CHUNK_LOG_ALWAYS
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (CHUNK_REQUIRE_OMPT)
 
 #include "chunk/all_type_chunk.h"          // AllTypeChunk
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
@@ -176,11 +178,11 @@ void ompt_finalize(ompt_data_t*)
     {
         return;
     }
+    // CHUNK_OMPT_STATS asked for it: a report, written whatever CHUNK_LOG says.
     const int nslots = std::min(g_ompt_next_slot.load(std::memory_order_acquire), kOmptMaxSlots);
-    std::fprintf(stderr, "\n[OMPT-SYNC] %d threads seen. Per sync-region kind and endpoint, summed over threads:\n",
-                 nslots);
-    std::fprintf(stderr, "[OMPT-SYNC] %-27s %-5s %12s %12s %12s %12s %10s %10s\n", "kind", "end", "calls",
-                 "flush_tried", "skip_flag", "flushed", "flush_ms", "max_thr_ms");
+    CHUNK_LOG_ALWAYS(ompt, "sync: {} threads seen. Per sync-region kind and endpoint, summed over threads:", nslots);
+    CHUNK_LOG_ALWAYS(ompt, "sync: {:<27} {:<5} {:>12} {:>12} {:>12} {:>12} {:>10} {:>10}", "kind", "end", "calls",
+                     "flush_tried", "skip_flag", "flushed", "flush_ms", "max_thr_ms");
     for (int k = 0; k < kOmptKinds; ++k)
     {
         for (int e = 0; e < 2; ++e)
@@ -201,13 +203,11 @@ void ompt_finalize(ompt_data_t*)
             {
                 continue;
             }
-            std::fprintf(stderr, "[OMPT-SYNC] %-27s %-5s %12llu %12llu %12llu %12llu %10.1f %10.1f\n",
-                         ompt_kind_name(k), e == 0 ? "begin" : "end", (unsigned long long)calls,
-                         (unsigned long long)tried, (unsigned long long)skip, (unsigned long long)fl,
-                         static_cast<double>(ns) * 1e-6, static_cast<double>(ns_max) * 1e-6);
+            CHUNK_LOG_ALWAYS(ompt, "sync: {:<27} {:<5} {:>12} {:>12} {:>12} {:>12} {:>10.1f} {:>10.1f}",
+                             ompt_kind_name(k), e == 0 ? "begin" : "end", calls, tried, skip, fl,
+                             static_cast<double>(ns) * 1e-6, static_cast<double>(ns_max) * 1e-6);
         }
     }
-    std::fflush(stderr);
 }
 
 /**
@@ -466,7 +466,7 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
     {
         *std::format_to_n(g_ompt_refused, sizeof g_ompt_refused - 1, " (ompt_set_callback is null)").out = '\0';
         g_ompt_tool_state.store(2, std::memory_order_release);
-        std::fprintf(stderr, "[OMPT] ompt_set_callback is null: the chunk library's callbacks are not installed\n");
+        CHUNK_LOG(warn, ompt, "ompt_set_callback is null: the chunk library's callbacks are not installed");
     }
     return 1;
 }
@@ -507,29 +507,36 @@ void shrink_array::check_ompt_tool_loaded()
 
         const char* req   = std::getenv("CHUNK_REQUIRE_OMPT");
         const bool  fatal = req && req[0] && req[0] != '0';
+        // CHUNK_REQUIRE_OMPT=1: stop, whatever CHUNK_LOG says (an invariant
+        // failure: message, backtrace, abort); otherwise a warning.
+        constexpr std::string_view not_loaded =
+            "this build (OMPT tool) runs its phase boundaries -- deferred-write flush, compression between parallel "
+            "regions -- from an OMPT tool, and the OpenMP runtime did not load it. Usual causes: OMP_TOOL=disabled; "
+            "another tool found first through OMP_TOOL_LIBRARIES; ompt_start_tool not found in the executable. "
+            "OMP_TOOL_VERBOSE_INIT=stderr shows the runtime's search.";
+        constexpr std::string_view refused =
+            " -- the phase boundaries they run (deferred-write flush, compression between parallel regions) will "
+            "not all happen.";
+        if (fatal)
+        {
+            if (state == 0)
+            {
+                CHUNK_INVARIANT_FAILED("[ompt] {} (CHUNK_REQUIRE_OMPT=1)", not_loaded);
+            }
+            CHUNK_INVARIANT_FAILED("[ompt] the chunk library's OMPT tool is loaded but the runtime refused:{}{} "
+                                   "(CHUNK_REQUIRE_OMPT=1)",
+                                   std::string_view{g_ompt_refused}, refused);
+        }
         if (state == 0)
         {
-            std::fprintf(stderr,
-                         "[OMPT] %s: this build (OMPT tool) runs its phase boundaries -- deferred-write flush, "
-                         "compression between parallel regions -- from an OMPT tool, and the OpenMP runtime did "
-                         "not load it. Usual causes: OMP_TOOL=disabled; another tool found first through "
-                         "OMP_TOOL_LIBRARIES; ompt_start_tool not found in the executable. "
-                         "OMP_TOOL_VERBOSE_INIT=stderr shows the runtime's search.%s\n",
-                         fatal ? "FATAL" : "WARNING", fatal ? "" : " CHUNK_REQUIRE_OMPT=1 makes this fatal.");
+            CHUNK_LOG(warn, ompt, "{} CHUNK_REQUIRE_OMPT=1 makes this fatal.", not_loaded);
         }
         else
         {
-            std::fprintf(stderr,
-                         "[OMPT] %s: the chunk library's OMPT tool is loaded but the runtime refused:%s -- the "
-                         "phase boundaries they run (deferred-write flush, compression between parallel "
-                         "regions) will not all happen.%s\n",
-                         fatal ? "FATAL" : "WARNING", g_ompt_refused,
-                         fatal ? "" : " CHUNK_REQUIRE_OMPT=1 makes this fatal.");
-        }
-        std::fflush(stderr);
-        if (fatal)
-        {
-            std::abort();
+            CHUNK_LOG(warn, ompt,
+                      "the chunk library's OMPT tool is loaded but the runtime refused:{}{} "
+                      "CHUNK_REQUIRE_OMPT=1 makes this fatal.",
+                      std::string_view{g_ompt_refused}, refused);
         }
         return false;
     }();

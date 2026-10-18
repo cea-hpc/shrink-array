@@ -16,10 +16,8 @@
 
 #pragma once
 
-#include <cstdio>  // stderr
-#include <cstdlib> // std::abort
+#include <array>   // std::array (the residual's sample)
 #include <ostream> // print_compression_stats(std::ostream&)
-#include <print>   // std::println
 #include <vector>  // std::vector
 
 #include "chunk/all_type_chunk.h"                       // ensure_manager, from create
@@ -32,6 +30,8 @@
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
+#include "chunk/log.h"                                  // CHUNK_LOG_ALWAYS
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
@@ -342,30 +342,17 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
     // incremental (a write only QUEUES its chunk), so such a chunk normally
     // waits for the next pass. Its SIZE and TREND matter: a handful is normal,
     // a large or growing count means the incremental path is not keeping up.
-    // Printed only when `verbose`.
+    // Written when the caller asks (`verbose`: a report, whatever CHUNK_LOG
+    // says), one line per thread (its share of the chunks).
     if (nb != 0 && verbose)
     {
-#pragma omp critical
-        {
-            std::println(stderr,
-                         "[compress-residual chunk] {} chunk(s) constant at zero, still materialised "
-                         "(awaiting the next compression pass)",
-                         nb);
-            std::println(stderr, "ArrayChunk type: ArrayChunk<{}, {}>", type_name<T>(), type_name<ind_type>());
-
-            // At most 10 entries, then the ellipsis.
-            const int shown = nb < 10 ? nb : 10;
-            for (int k = 0; k < shown; ++k)
-            {
-                const int ind1 = ll[k];
-                std::println(stderr, "{} {}", ind1,
-                             static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size()));
-            }
-            if (nb > shown)
-            {
-                std::println(stderr, "... ({} more)", nb - shown);
-            }
-        }
+        std::array<char, 256> sample{};
+        CHUNK_LOG_ALWAYS(
+            compress,
+            "residual ArrayChunk<{}, {}>: {} chunk(s) constant at zero, still materialised (awaiting the next "
+            "compression pass): {}",
+            type_name<T>(), type_name<ind_type>(), nb,
+            internal::chunk_index_sample(sample, ll, static_cast<ind_type>(this->size_policy_.size())));
     }
 }
 

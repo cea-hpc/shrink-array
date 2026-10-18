@@ -465,7 +465,8 @@ passes and the pool budget, which depend on the total number of chunks, are
 recomputed on destruction as on creation. The decider, its criteria and the measured
 results are described in [adaptive_rechunk.md](adaptive_rechunk.md).
 
-`CHUNK_RECHUNK_TRACE=1` prints the time of each phase and the folding counters.
+`CHUNK_LOG=rechunk=debug` prints the time of each phase, `CHUNK_LOG=memory=debug` the folding
+counters.
 
 ---
 
@@ -564,7 +565,7 @@ Chunk2:
 | variable | effect |
 |---|---|
 | `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | scheduling of the rechunk rebuild (`guided,16` by default) |
-| `CHUNK_RECHUNK_TRACE=1` | rechunk phase times, foldings |
+| `CHUNK_LOG=rechunk=debug` | rechunk phase times (`memory=debug`: foldings) |
 | `CHUNK_OMPT_STATS=1` | statistics of synchronisation regions (OMPT build) |
 | `CHUNK_RECHUNK_DRY_RUN=1` | the decider analyses and logs, but applies no rechunk (to measure the cost of the analyses) |
 | `CHUNK_RECHUNK_MAX_COARSEN=<n>` | maximum coarsening factor (4 by default) |
