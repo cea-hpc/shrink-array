@@ -509,7 +509,7 @@ fi
 
 # LLVM Section
 if [ "$enable_llvm" = true ]; then
-set_build_header 'Compiling llvm openmp:'
+set_build_header 'Setting up llvm:'
 reset_compiler_modules
 
 latest_llvm=$(module av llvm 2>&1 | tr -s '[:space:]' '\n' | grep -oE 'llvm/[0-9]+(\.[0-9]+)*' | sort -V -u | tail -1)
@@ -548,6 +548,76 @@ run_cmd "module load gcc/15.2.0"
 LLVM_STDLIB_OPT="-DUSE_LIBCXX=OFF $(chunk_gcc_toolchain_opt cmake)"
 echo "llvm → libstdc++ from ${CHUNK_GCC_TOOLCHAIN_DIR:-the default gcc} (USE_LIBCXX=OFF)"
 
+# Launch order: longest first, as in compile_all_gnu.sh. A build gets its share
+# of the cores when it is launched and keeps it, so the ones launched last are
+# the ones left running alone at the end: the sanitizers (RelWithDebInfo, then
+# Debug) go first, then the releases, then the short Debug builds.
+
+# Optimised thread-sanitizer build, with the switches of the *_check_* benchmark
+# binaries: RelWithDebInfo so the scheduling and the inlining are the
+# production ones -- a race that needs them does not show in the Debug TSan
+# build below --, HAVE_AGGRESSIVE_COMPRESSION and CHECK_OPTIM as in those
+# binaries. LLVM
+# libomp carries the TSan annotations for barriers / omp for / tasks (Archer),
+# which is what makes the reports meaningful across region boundaries; the same
+# build with libgomp reports a race at every region end. Hardening
+# (CHUNK_GLIBCXX_ASSERTIONS) is added by default as for every -DSANITIZER build;
+# --no-hardening removes it if it perturbs the timing too much.
+if [ "$enable_sanitizers" = true ]; then
+set_build_header 'Compiling llvm relwithdebinfo openmp have_aggressive_compression thread sanitizer:'
+if skip_release; then
+   echo "[debug-only] skipping llvm relwithdebinfo have_aggressive_compression thread-sanitizer build"
+else
+   if [ "$BUILD_ONLY" = false ]; then
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-relwithdebinfo-have-aggressive-compression-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
+   fi
+   launch_build "$build_rep/cmake-build-omp-llvm-relwithdebinfo-have-aggressive-compression-thread-sanitizer/$arch"
+fi
+fi
+
+if [ "$enable_sanitizers" = true ]; then
+
+# Token (alloc-token census) on the std_alloc axis only: it instruments
+# malloc / operator new, and under fast_allocators the chunk buffers come from
+# mmap'd slabs the census never sees.
+# Opt-in: built with --with-token-sanitizer, or when a --target glob selects it.
+if [ "$WITH_TOKEN" = true ] || { [ -n "${CHUNK_BUILD_TARGET:-}" ] && __target_wants "omp-llvm-debug-std-alloc-token-sanitizer"; }; then
+set_build_header 'Compiling llvm debug openmp std_alloc token sanitizer:'
+if [ "$BUILD_ONLY" = false ]; then
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=token"
+fi
+launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch"
+else
+    echo "[default] skipping llvm debug openmp std_alloc token sanitizer (--with-token-sanitizer builds it)"
+fi
+
+set_build_header 'Compiling llvm debug openmp thread sanitizer:'
+if [ "$BUILD_ONLY" = false ]; then
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
+fi
+launch_build "$build_rep/cmake-build-omp-llvm-debug-thread-sanitizer/$arch"
+
+# (No fast-allocator ASan build: with the fast allocator the chunk buffers
+# live inside the library's slab arenas, which ASan sees as a few large blocks
+# -- an overflow or use-after-free inside a slab goes unreported. ASan runs on
+# the std-alloc builds, where every buffer is a real malloc.)
+
+set_build_header 'Compiling llvm debug openmp std_alloc thread sanitizer:'
+if [ "$BUILD_ONLY" = false ]; then
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
+fi
+launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-thread-sanitizer/$arch"
+
+set_build_header 'Compiling llvm debug openmp std_alloc address sanitizer:'
+if [ "$BUILD_ONLY" = false ]; then
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-address-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=address"
+fi
+launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-address-sanitizer/$arch"
+else
+    echo "[SKIP] sanitizer builds disabled (enable_sanitizers=$enable_sanitizers)"
+fi
+
+set_build_header 'Compiling llvm openmp:'
 if skip_release; then
    echo "[debug-only] skipping llvm release build"
 else
@@ -601,67 +671,6 @@ else
    launch_build "$build_rep/cmake-build-omp-llvm-check-sv-indexed/$arch"
 fi
 
-# MM_PROTECT: its branches are `if constexpr` in class templates, never
-# instantiated by any other build here, so a change can break them unseen (it
-# did: d0eb79ba..e0ce84e9). Built, not run: running it is a debugging session.
-# Debug only (it was RelWithDebInfo): the point is to compile those branches,
-# which an unoptimised build does for less, and it is the build one would run
-# to debug MM_PROTECT. Without the validation harnesses a Debug build would
-# otherwise add (-DCHUNK_BUILD_VALIDATION=ON by hand to run them under it).
-set_build_header 'Compiling llvm debug openmp with MM_PROTECT (CHUNK_MM_PROTECT):'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-mm-protect/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_MM_PROTECT=ON -DCHUNK_BUILD_VALIDATION=OFF -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-mm-protect/$arch"
-
-set_build_header 'Compiling llvm debug openmp:'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug/$arch"
-
-if [ "$enable_sanitizers" = true ]; then
-
-# Token (alloc-token census) on the std_alloc axis only: it instruments
-# malloc / operator new, and under fast_allocators the chunk buffers come from
-# mmap'd slabs the census never sees.
-# Opt-in: built with --with-token-sanitizer, or when a --target glob selects it.
-if [ "$WITH_TOKEN" = true ] || { [ -n "${CHUNK_BUILD_TARGET:-}" ] && __target_wants "omp-llvm-debug-std-alloc-token-sanitizer"; }; then
-set_build_header 'Compiling llvm debug openmp std_alloc token sanitizer:'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=token"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch"
-else
-    echo "[default] skipping llvm debug openmp std_alloc token sanitizer (--with-token-sanitizer builds it)"
-fi
-
-set_build_header 'Compiling llvm debug openmp thread sanitizer:'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-thread-sanitizer/$arch"
-
-# (No fast-allocator ASan build: with the fast allocator the chunk buffers
-# live inside the library's slab arenas, which ASan sees as a few large blocks
-# -- an overflow or use-after-free inside a slab goes unreported. ASan runs on
-# the std-alloc builds, where every buffer is a real malloc.)
-
-set_build_header 'Compiling llvm debug openmp std_alloc thread sanitizer:'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-thread-sanitizer/$arch"
-
-set_build_header 'Compiling llvm debug openmp std_alloc address sanitizer:'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-address-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=address"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-address-sanitizer/$arch"
-else
-    echo "[SKIP] sanitizer builds disabled (enable_sanitizers=$enable_sanitizers)"
-fi
-
 set_build_header 'Compiling llvm openmp std_alloc:'
 if skip_release; then
    echo "[debug-only] skipping llvm std_alloc (release) build"
@@ -682,27 +691,24 @@ else
    launch_build "$build_rep/cmake-build-omp-llvm-have-aggressive-compression/$arch"
 fi
 
-# Optimised thread-sanitizer build, with the switches of the *_check_* benchmark
-# binaries: RelWithDebInfo so the scheduling and the inlining are the
-# production ones -- a race that needs them does not show in the Debug TSan
-# build above --, HAVE_AGGRESSIVE_COMPRESSION and CHECK_OPTIM as in those
-# binaries. LLVM
-# libomp carries the TSan annotations for barriers / omp for / tasks (Archer),
-# which is what makes the reports meaningful across region boundaries; the same
-# build with libgomp reports a race at every region end. Hardening
-# (CHUNK_GLIBCXX_ASSERTIONS) is added by default as for every -DSANITIZER build;
-# --no-hardening removes it if it perturbs the timing too much.
-if [ "$enable_sanitizers" = true ]; then
-set_build_header 'Compiling llvm relwithdebinfo openmp have_aggressive_compression thread sanitizer:'
-if skip_release; then
-   echo "[debug-only] skipping llvm relwithdebinfo have_aggressive_compression thread-sanitizer build"
-else
-   if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-relwithdebinfo-have-aggressive-compression-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
-   fi
-   launch_build "$build_rep/cmake-build-omp-llvm-relwithdebinfo-have-aggressive-compression-thread-sanitizer/$arch"
+# MM_PROTECT: its branches are `if constexpr` in class templates, never
+# instantiated by any other build here, so a change can break them unseen (it
+# did: d0eb79ba..e0ce84e9). Built, not run: running it is a debugging session.
+# Debug only (it was RelWithDebInfo): the point is to compile those branches,
+# which an unoptimised build does for less, and it is the build one would run
+# to debug MM_PROTECT. Without the validation harnesses a Debug build would
+# otherwise add (-DCHUNK_BUILD_VALIDATION=ON by hand to run them under it).
+set_build_header 'Compiling llvm debug openmp with MM_PROTECT (CHUNK_MM_PROTECT):'
+if [ "$BUILD_ONLY" = false ]; then
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-mm-protect/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_MM_PROTECT=ON -DCHUNK_BUILD_VALIDATION=OFF -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
+launch_build "$build_rep/cmake-build-omp-llvm-debug-mm-protect/$arch"
+
+set_build_header 'Compiling llvm debug openmp:'
+if [ "$BUILD_ONLY" = false ]; then
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
+launch_build "$build_rep/cmake-build-omp-llvm-debug/$arch"
 
 # ─── llvm custom CHUNK_SIZE variants (large-chunk validation, on demand) ─────
 # Two builds: RelWithDebInfo (perf/repro at scale) and Debug (-O0 -g, for gdb
