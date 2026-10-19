@@ -188,7 +188,7 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
 }
 
 /**
- * @brief Counter mode, Chunk2: fold a chunk the bulk store left uniform.
+ * @brief Counter mode, Chunk2 and v1: fold a chunk the bulk store left uniform.
  *
  * @details In a serial build the compression of a Chunk2 chunk is the element
  *          write that brings one of its counters to S (manage_full_*): there
@@ -239,6 +239,12 @@ template <typename Arr, typename Chunk>
             proxy.manage_full_second_value();
         }
         return true;
+    }
+    else if constexpr (track_zeros_v<Arr>)
+    {
+        // v1: one constant, zero (resync_counters() set the count).
+        (void)ch;
+        return arr.element_proxy(static_cast<decltype(arr.size())>(c_begin)).fold_if_full_zero();
     }
     else
     {
@@ -632,7 +638,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
 
             // Restore the per-chunk counters the bulk store bypassed.
             internal::resync_counters(arr, ch, c_begin, dst, S);
-            // Serial Chunk2: the chunk is constant now -> folded here (no pass).
+            // Serial builds: the chunk is constant now -> folded here (no pass).
             if (internal::fold_if_full(arr, ch, c_begin, S))
             {
                 continue;
@@ -746,7 +752,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             }
 
             internal::resync_counters(arr, ch, c_begin, dst, S); // as fill_range
-            if (internal::fold_if_full(arr, ch, c_begin, S)) // serial Chunk2: as fill_range
+            if (internal::fold_if_full(arr, ch, c_begin, S)) // serial builds: as fill_range
             {
                 continue;
             }
