@@ -439,6 +439,9 @@ otherwise the allocation could take back the block that a pass is returning.
   and without `CHUNK_TEST_READ_DELAY_EVERY`, and under ASan with std-alloc), then a
   `multi_launch_stress.py` series: defects in this code show up once in thousands of
   runs.
+- **The reduced model of the handshake** ([formal_models.md](formal_models.md), `formal/`) must
+  still pass under GenMC with its mutations refused: a change to an atomic or to an order here
+  is a change to the model too (its table maps every name to its line of the source).
 
 Check builds (`any_check`) verify the protocol invariants and stop
 with a `Dekker: ...` message if they are violated: flag raised right after the announce, still

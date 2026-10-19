@@ -775,6 +775,12 @@ if(SHRINK_ARRAY_BUILD_EXAMPLES)
     shrink_add_check_target()
 endif()
 
+# The reduced models of the lock-free handshakes (formal/, docs/formal_models.md):
+# run natively by ctest, and under GenMC when it is installed. Tests only.
+if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING)
+    add_subdirectory(formal)
+endif()
+
 # Every raw read of a chunk's buffer in the library states why it is safe
 # (scripts/check_raw_reads.py): a source check, run with the validation tests.
 find_package(Python3 COMPONENTS Interpreter QUIET)

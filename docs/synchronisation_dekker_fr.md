@@ -439,6 +439,9 @@ sans quoi l'allocation pourrait reprendre le bloc qu'une passe est en train de r
   et sans `CHUNK_TEST_READ_DELAY_EVERY`, et sous ASan en std-alloc), puis une série
   `multi_launch_stress.py` : les défauts de ce code se manifestent une fois sur des milliers de
   runs.
+- **Le modèle réduit du handshake** ([formal_models_fr.md](formal_models_fr.md), `formal/`) doit
+  toujours passer sous GenMC avec ses mutations refusées : un changement d'atomique ou d'ordre ici
+  est aussi un changement du modèle (sa table fait correspondre chaque nom à sa ligne du source).
 
 Les builds de vérification (`any_check`) contrôlent les invariants du protocole et s'arrêtent
 sur un message `Dekker: ...` s'ils sont violés : drapeau levé juste après l'annonce, toujours

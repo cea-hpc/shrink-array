@@ -38,8 +38,8 @@ import re
 import subprocess
 import sys
 
-SOURCE_DIRS = ["chunk", "fast_allocators", "examples", "scripts", "python", "cmake"]
-SOURCE_EXT = {".h", ".hpp", ".cpp", ".cxx", ".in", ".py", ".sh", ".txt", ".cmake"}
+SOURCE_DIRS = ["chunk", "fast_allocators", "examples", "scripts", "python", "cmake", "formal"]
+SOURCE_EXT = {".h", ".hpp", ".cpp", ".cxx", ".c", ".in", ".py", ".sh", ".txt", ".cmake"}
 
 # English document -> French document, where the names differ.
 PAIRS = {

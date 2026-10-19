@@ -185,6 +185,7 @@ Two development branches, not in a release yet:
 | compare with sparse formats, compressors, sparse grids | [docs/alternatives.md](docs/alternatives.md) |
 | understand reads, writes, in-flight compression, deferred writes | [docs/algo_chunk2.md](docs/algo_chunk2.md) |
 | know why the write path needs no lock | [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) |
+| check a handshake with a model checker | [docs/formal_models.md](docs/formal_models.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |
 | measure memory and time reliably | [docs/performance_measurement.md](docs/performance_measurement.md) |
 | submit and follow runs on the cluster from a window | [docs/shrink_gui.md](docs/shrink_gui.md) |
