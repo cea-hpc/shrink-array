@@ -306,6 +306,45 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    - Left as they are: the `omp critical` of `deferred_path_validation` and
      `blk_allocator_validation` sit in `omp parallel` regions, serial in a
      pool build (the latter tests OpenMP's critical reentrancy itself).
+   *7e done*: shrink_bench on the backend's teams. Compiled without OpenMP,
+   the bench's pragmas were ignored: in a pool build the application side
+   ran on ONE thread, and an OpenMP-vs-pool timing compared 64 threads with
+   one. Its regions and loops now go through `examples/shrink_bench/bench_par.h`,
+   one source for every backend:
+   - a region is `bench_par::region(body)`, `body(Team& t)` on a team of
+     `pmp::team` (OpenMP: a `#pragma omp parallel` calling the body);
+   - a loop is a header macro, `BENCH_FOR_STATIC_NOWAIT_SCALAR(t, i, b, e)`
+     and its schedules (`_STATIC`, `_BLOCK` for `schedule(static,
+     sched_blk)`, `_ROUND_ROBIN` for `schedule(static, 1)`), then the body.
+     OpenMP: the pragma the loop had, unchanged, and
+     `for (Int i = (b); i < (e); ++i)` -- the worksharing the compiler sees is
+     the same orphaned `omp for`. Pool and serial: the calling thread's share,
+     computed from `t.rank()` and `t.size()` as libgomp shares the same
+     schedule out, so a rank gets the same iterations in every loop of a
+     region (the nowait reasoning of bench_phase_compute.cpp) and from one
+     region to the next (first touch);
+   - reductions: the body adds to `BENCH_RED(v)`; OpenMP keeps its
+     `reduction(+ : v)` clause on the shared `v`, the other builds add a
+     per-thread partial into `v` atomically when the thread's share ends.
+     The region-level `parallel for reduction` loops (census, checksum) are
+     `pmp::parallel_sum`, the zeroing of the baseline vector
+     `pmp::parallel_for`;
+   - `omp single nowait` is `t.single(f, bench_par::nowait)`; the `sections`
+     of the reference check are one `single nowait` each; `omp critical` is
+     `bench_par::critical(f)` (one mutex, as an unnamed critical), `omp
+     atomic` `bench_par::atomic_add` (`omp atomic` itself under OpenMP), the
+     stress phase's `schedule(dynamic, grain)` `Team::for_dynamic`;
+   - the phase ends: the split end (`only_flush` in the region,
+     `after_flush` after it) stays under OpenMP; the other backends call
+     `finalize_parallel_phase()` after the region (bench_phases.h), the
+     serial shape, which drains every rank's queue itself. No library change.
+   - The prealloc test and the compression dispatch passed the rank to
+     `alloc_chunk` and drained the queued candidates only under
+     `use_openmp`; now under `threaded`.
+   Checked here (gcc 13, Release + CHECK_OPTIM, chunk2a_256): every array
+   checksum of `--mode check --no_io` runs (with and without `--test_prealloc
+   --test_stl`) is the same for the OpenMP build before the change, after it,
+   and the pool build, at 1, 4 and 8 threads.
 8. **TBB**: the adaptor of section 2 (8a), then, on demand, a TBB backend for
    the library's own loops, inside the application's arena,
    `static_partitioner` (8b).

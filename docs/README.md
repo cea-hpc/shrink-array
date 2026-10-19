@@ -20,6 +20,7 @@
 | understand reads, writes, in-flight compression, deferred writes | [algo_chunk2.md](algo_chunk2.md) | comprendre lecture, écriture, compression en vol, écritures différées | [algo_chunk2_fr.md](algo_chunk2_fr.md) |
 | know what v1 and Chunk2A do differently | [algo_chunk.md](algo_chunk.md), [algo_chunk2a.md](algo_chunk2a.md) | savoir ce que v1 et Chunk2A font autrement | [algo_chunk_fr.md](algo_chunk_fr.md), [algo_chunk2a_fr.md](algo_chunk2a_fr.md) |
 | understand how writers, compressors and readers exclude each other without a lock | [synchronisation_dekker.md](synchronisation_dekker.md) | comprendre comment écrivains, compresseurs et lecteurs s'excluent sans verrou | [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
+| check the handshakes with a model checker: the reduced models, their calibration, the findings | [formal_models.md](formal_models.md) | vérifier les handshakes avec un vérificateur de modèles : les modèles réduits, leur calibration, les constats | [formal_models_fr.md](formal_models_fr.md) |
 | use dynamic geometry and adaptive re-chunking | [adaptive_rechunk.md](adaptive_rechunk.md) | utiliser la géométrie dynamique et le rechunk adaptatif | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) |
 | set up the library and its build | [environment_variables.md](environment_variables.md) | régler la bibliothèque et sa compilation | [variables_environnement_fr.md](variables_environnement_fr.md) |
 | tune the decider, the allocators, the benchmark, the traces, the build scripts | [developer_settings.md](developer_settings.md) | régler finement le décideur, les allocateurs, le banc, les traces, les scripts de compilation | [reglages_developpeur_fr.md](reglages_developpeur_fr.md) |
@@ -39,6 +40,7 @@
 | [algo_chunk.md](algo_chunk.md) / [algo_chunk_fr.md](algo_chunk_fr.md) | Chunk (v1): compression to zero only, serial counters, pass threshold, sliced re-chunk |
 | [algo_chunk2a.md](algo_chunk2a.md) / [algo_chunk2a_fr.md](algo_chunk2a_fr.md) | Chunk2A: one second value per chunk, second-value registry, its own queueing criteria |
 | [synchronisation_dekker.md](synchronisation_dekker.md) / [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) | Dekker's algorithm, its symmetric and asymmetric (`membarrier`) shapes, and its three uses: writers ↔ compressors, flushes ↔ compressors, readers ↔ buffer reclaim |
+| [formal_models.md](formal_models.md) / [formal_models_fr.md](formal_models_fr.md) | the reduced models of the handshakes under GenMC: how to run them, the mutation calibration, the findings F1 and F2, the limits |
 | [adaptive_rechunk.md](adaptive_rechunk.md) / [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) | advisor, decider, rebuild, per-array allocators, results and limits |
 | [environment_variables.md](environment_variables.md) / [variables_environnement_fr.md](variables_environnement_fr.md) | the user settings: environment variables, CMake options, variant and geometry |
 | [developer_settings.md](developer_settings.md) / [reglages_developpeur_fr.md](reglages_developpeur_fr.md) | the developers' switches, with their removal dates: tuning, traces, forced rechunks, benchmark, macros, debugging options, build scripts |
@@ -57,3 +59,4 @@
 | `examples/` | `getting_started`, `simple_array`, `multi-mat`, the `shrink_bench` benchmark, the `validation` harnesses, `advisor_demo`, `variant_compare` |
 | `scripts/` | `compile_all.sh` / `compile_all_gnu.sh`: the whole build matrix |
 | `python/` | `bench_and_test.py` (test and performance campaigns), `multi_launch_stress.py` (repeated runs at random thread counts), `shrink_gui/` (the GUI) |
+| `formal/` | the reduced models of the handshakes (`writer_compressor.c`), `run_genmc.sh`, the `formal` ctest label |

@@ -33,6 +33,8 @@
 #include "chunk/internal/proxy2A.h"       // Proxy2A<T>
 #include "chunk/internal/manager_chunk.h" // manager_chunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
+#include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
+#include "chunk/chunk_traits.h"                        // ChunkTraits<ChunkT>::proxy_type (wait_before_materialise)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
@@ -708,19 +710,33 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
  * The compressor only steals a chunk it has MARKED, holding the mark from before start()
  * to after the CAS, so this chunk's own mark is the exact condition (cheaper than the global
  * is_hard_compression_inflight(), which makes every materialisation spin for a whole pass).
- * A fast-path writer never gets here with the chunk marked (the gate stopped it), and a
- * flush replay never overlaps a stealer (flush_deferred waits stealing_inflight_ out and
- * blocks start()), so the wait is a no-op in practice. Builds without marks use the global
+ *
+ * A fast-path writer -- its flag raised on THIS chunk, check #2 passed -- does not wait: a
+ * mark it sees now was set AFTER its check #2 (set before, the handshake made the writer
+ * see it and defer), so the pass that owns it is PARKED in start(), waiting for this very
+ * flag, and steals nothing before end_write(). Waiting here was the writer waiting for the
+ * compressor waiting for the writer, resolved only by the compressor's yield budget
+ * (CHUNK_COMPRESS_MAX_YIELDS): a stall of both for that whole budget, then an abandoned
+ * pass (formal/writer_compressor.c, MUT_MATERIALISE_WAIT_UNDER_FLAG). The callers with no
+ * flag keep the wait: alloc_chunk() (pre-allocation, usable from a parallel region) and a
+ * flush replay, which never overlaps a stealer anyway (flush_deferred waits
+ * stealing_inflight_ out and blocks start()). Builds without marks use the global
  * condition -- never a broad "compression active", which also counts flush-draining slow
  * paths and deadlocks from a flusher's write body.
  *
- * @param chunk The chunk about to be materialised.
+ * @param chunk    The chunk about to be materialised.
+ * @param thr_rank The calling thread's rank: whose writer flag is consulted.
  */
 template <typename T, typename ChunkT>
-void wait_before_materialise(const ChunkT& chunk) noexcept
+void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank) noexcept
 {
     if constexpr (chunk_config::use_chunk_steal_mark)
     {
+        using Policy = WriteCompressSyncPolicy<typename ChunkTraits<ChunkT>::proxy_type>;
+        if (Policy::is_thread_writing_on(thr_rank, static_cast<const void*>(&chunk)))
+        {
+            return; // our own write session: the pass holding the mark is parked on our flag
+        }
         while (chunk.steal_marked())
         {
             CHUNK_CPU_PAUSE();
@@ -743,7 +759,8 @@ void wait_before_materialise(const ChunkT& chunk) noexcept
  * another thread materialised first; apply_cas_or_recup() recycles our buffer.
  *
  * @warning Waits first until no compressor may steal THIS chunk
- *          (wait_before_materialise()). Never on a broad "compression
+ *          (wait_before_materialise(); not when the caller's own writer flag is
+ *          on the chunk). Never on a broad "compression
  *          active": this can run from a flusher's write body while a slow-path
  *          thread waits on the lock that flusher holds -- a deadlock.
  */
@@ -755,7 +772,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
     if constexpr (is_not_bool)
     {
         // Exclude a concurrent steal of this chunk: see wait_before_materialise().
-        wait_before_materialise<T>(derived());
+        wait_before_materialise<T>(derived(), thr_rank);
 
         const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
         {
@@ -802,7 +819,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
     {
         // Same exclusion as create_value(): a bool chunk is CAS-stolen like any other (see
         // wait_before_materialise()).
-        wait_before_materialise<T>(derived());
+        wait_before_materialise<T>(derived(), thr_rank);
 
         const auto init_func = [need_set_second_value](bool* ptr)
         {

@@ -61,28 +61,28 @@ void bench_phase_mask_fill(BenchArrays& bench_arr)
     const Int n        = static_cast<Int>(tab_mask.size());
     const Int n_blocks = (n + bench_mask_block - 1) / bench_mask_block;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int b = 0; b < n_blocks; ++b)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& t)
         {
-            const Int lo = b * bench_mask_block;
-            const Int hi = lo + bench_mask_block < n ? lo + bench_mask_block : n;
-            for (Int i = lo; i < hi; ++i)
+            begin_parallel_phase_g();
+
+            BENCH_FOR_STATIC_NOWAIT_SCALAR(t, b, 0, n_blocks)
             {
-                // A fresh array is all false: only the true elements are written,
-                // so a false segment stays a constant chunk nothing materialised.
-                if (bench_mask_initial(i))
+                const Int lo = b * bench_mask_block;
+                const Int hi = lo + bench_mask_block < n ? lo + bench_mask_block : n;
+                for (Int i = lo; i < hi; ++i)
                 {
-                    tab_mask[i] = true;
+                    // A fresh array is all false: only the true elements are written,
+                    // so a false segment stays a constant chunk nothing materialised.
+                    if (bench_mask_initial(i))
+                    {
+                        tab_mask[i] = true;
+                    }
                 }
             }
-        }
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            finalize_parallel_phase_only_flush_g();
+        });
     finalize_parallel_phase_after_flush_g();
 }
 
@@ -128,60 +128,59 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count)
 
     long count = 0;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int b = 0; b < n_blocks; ++b)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& t)
         {
-            if (!mask_block_written(b, k))
+            begin_parallel_phase_g();
+
+            BENCH_FOR_STATIC_NOWAIT_SCALAR(t, b, 0, n_blocks)
             {
-                continue;
-            }
-            const Int  lo       = b * bench_mask_block;
-            const Int  hi       = lo + bench_mask_block < n ? lo + bench_mask_block : n;
-            const auto kind     = bench_mask_kind(lo / bench_mask_segment);
-            const bool constant = kind == BenchMaskKind::all_false || kind == BenchMaskKind::all_true;
-            if (constant)
-            {
-                const bool now = tab_mask[lo]; // the whole segment's value
-                for (Int i = lo; i < hi; ++i)
+                if (!mask_block_written(b, k))
                 {
-                    tab_mask[i] = !now;
+                    continue;
                 }
-            }
-            else
-            {
-                for (Int i = lo; i < hi; ++i)
+                const Int  lo       = b * bench_mask_block;
+                const Int  hi       = lo + bench_mask_block < n ? lo + bench_mask_block : n;
+                const auto kind     = bench_mask_kind(lo / bench_mask_segment);
+                const bool constant = kind == BenchMaskKind::all_false || kind == BenchMaskKind::all_true;
+                if (constant)
                 {
-                    if (mask_flips(i, k))
+                    const bool now = tab_mask[lo]; // the whole segment's value
+                    for (Int i = lo; i < hi; ++i)
                     {
-                        const bool now = tab_mask[i];
-                        tab_mask[i]    = !now;
+                        tab_mask[i] = !now;
+                    }
+                }
+                else
+                {
+                    for (Int i = lo; i < hi; ++i)
+                    {
+                        if (mask_flips(i, k))
+                        {
+                            const bool now = tab_mask[i];
+                            tab_mask[i]    = !now;
+                        }
                     }
                 }
             }
-        }
 
-        // Same schedule and bounds: a thread reads back its own blocks.
-        BENCH_OMP_FOR_STATIC_NOWAIT_RED_SCALAR(count)
-        for (Int b = 0; b < n_blocks; ++b)
-        {
-            if (!mask_block_written(b, k))
+            // Same schedule and bounds: a thread reads back its own blocks.
+            BENCH_FOR_STATIC_NOWAIT_RED_SCALAR(t, b, 0, n_blocks, count)
             {
-                continue;
+                if (!mask_block_written(b, k))
+                {
+                    continue;
+                }
+                const Int lo = b * bench_mask_block;
+                const Int hi = lo + bench_mask_block < n ? lo + bench_mask_block : n;
+                for (Int i = lo; i < hi; ++i)
+                {
+                    BENCH_RED(count) += tab_mask[i] ? 1 : 0;
+                }
             }
-            const Int lo = b * bench_mask_block;
-            const Int hi = lo + bench_mask_block < n ? lo + bench_mask_block : n;
-            for (Int i = lo; i < hi; ++i)
-            {
-                count += tab_mask[i] ? 1 : 0;
-            }
-        }
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            finalize_parallel_phase_only_flush_g();
+        });
     finalize_parallel_phase_after_flush_g();
 
     mask_count += count;

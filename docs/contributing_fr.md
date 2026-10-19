@@ -83,6 +83,8 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   sans avertissement (`ctest -R check_doxygen` quand Doxygen est installé).
 - **Code sans verrou** : suivre les règles de [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md)
   §6, et écrire l'argument d'ordonnancement à côté de chaque atomique qui en a besoin.
+  Quand la modification touche un handshake, lancer aussi `formal/run_genmc.sh`
+  ([formal_models_fr.md](formal_models_fr.md)).
 
 ## 4. Affirmations de performance
 

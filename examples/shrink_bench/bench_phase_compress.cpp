@@ -78,7 +78,7 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         // drain (it would nest a parallel region), so a candidate still queued
         // by the serial writes of the iteration (fill_range / copy_range) was
         // reported as a miss its self-heal had to compress.
-        if constexpr (build_config::use_openmp && !chunk_config::have_aggressive_compression)
+        if constexpr (build_config::threaded && !chunk_config::have_aggressive_compression)
         {
             auto& ens = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
             if (ens.have_chunk_to_compress_potentially())
@@ -87,69 +87,52 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
             }
         }
 
-#pragma omp parallel
-        {
-#pragma omp single nowait
-            std::cout << "  tab1" << std::endl;
-            compress_one(tab1);
-#pragma omp single nowait
-            std::cout << "  tab2" << std::endl;
-            compress_one(tab2);
-#pragma omp single nowait
-            std::cout << "  tab3" << std::endl;
-            compress_one(tab3);
-#pragma omp single nowait
-            std::cout << "  tab4" << std::endl;
-            compress_one(tab4);
-#pragma omp single nowait
-            std::cout << "  tab5" << std::endl;
-            compress_one(tab5);
-#pragma omp single nowait
-            std::cout << "  tab_int" << std::endl;
-            compress_one(tab_int);
-#pragma omp single nowait
-            std::cout << "  tab_bool" << std::endl;
-            compress_one(tab_bool);
-#pragma omp single nowait
-            std::cout << "  tab_bool_bits" << std::endl;
-            compress_one(tab_bool_bits);
-#pragma omp single nowait
-            std::cout << " tab_complex" << std::endl;
-            compress_one(tab_complex);
-#pragma omp single nowait
-            std::cout << " tab_float" << std::endl;
-            compress_one(tab_float);
-#pragma omp single nowait
-            std::cout << " tab_char" << std::endl;
-            compress_one(tab_char);
-#pragma omp single nowait
-            std::cout << " tab_short" << std::endl;
-            compress_one(tab_short);
-#pragma omp single nowait
-            std::cout << " tab_long" << std::endl;
-            compress_one(tab_long);
-#pragma omp single nowait
-            std::cout << " tab_ulong" << std::endl;
-            compress_one(tab_ulong);
-#pragma omp single nowait
-            std::cout << " tab_quant" << std::endl;
-            compress_one(tab_quant);
-            if (bench_arr.with_struct) // --no_struct
+        bench_par::region(
+            [&]([[maybe_unused]] bench_par::Team& t)
             {
-#pragma omp single nowait
-                std::cout << " tab_point" << std::endl;
-                compress_one(tab_point);
-#pragma omp single nowait
-                std::cout << " tab_cell" << std::endl;
-                compress_one(tab_cell);
-            }
-            if (bench_arr.with_mask) // --no_mask
-            {
-#pragma omp single nowait
-                std::cout << " tab_mask" << std::endl;
-                compress_one(tab_mask);
-            }
-        }
+                t.single([&] { std::cout << "  tab1" << std::endl; }, bench_par::nowait);
+                compress_one(tab1);
+                t.single([&] { std::cout << "  tab2" << std::endl; }, bench_par::nowait);
+                compress_one(tab2);
+                t.single([&] { std::cout << "  tab3" << std::endl; }, bench_par::nowait);
+                compress_one(tab3);
+                t.single([&] { std::cout << "  tab4" << std::endl; }, bench_par::nowait);
+                compress_one(tab4);
+                t.single([&] { std::cout << "  tab5" << std::endl; }, bench_par::nowait);
+                compress_one(tab5);
+                t.single([&] { std::cout << "  tab_int" << std::endl; }, bench_par::nowait);
+                compress_one(tab_int);
+                t.single([&] { std::cout << "  tab_bool" << std::endl; }, bench_par::nowait);
+                compress_one(tab_bool);
+                t.single([&] { std::cout << "  tab_bool_bits" << std::endl; }, bench_par::nowait);
+                compress_one(tab_bool_bits);
+                t.single([&] { std::cout << " tab_complex" << std::endl; }, bench_par::nowait);
+                compress_one(tab_complex);
+                t.single([&] { std::cout << " tab_float" << std::endl; }, bench_par::nowait);
+                compress_one(tab_float);
+                t.single([&] { std::cout << " tab_char" << std::endl; }, bench_par::nowait);
+                compress_one(tab_char);
+                t.single([&] { std::cout << " tab_short" << std::endl; }, bench_par::nowait);
+                compress_one(tab_short);
+                t.single([&] { std::cout << " tab_long" << std::endl; }, bench_par::nowait);
+                compress_one(tab_long);
+                t.single([&] { std::cout << " tab_ulong" << std::endl; }, bench_par::nowait);
+                compress_one(tab_ulong);
+                t.single([&] { std::cout << " tab_quant" << std::endl; }, bench_par::nowait);
+                compress_one(tab_quant);
+                if (bench_arr.with_struct) // --no_struct
+                {
+                    t.single([&] { std::cout << " tab_point" << std::endl; }, bench_par::nowait);
+                    compress_one(tab_point);
+                    t.single([&] { std::cout << " tab_cell" << std::endl; }, bench_par::nowait);
+                    compress_one(tab_cell);
+                }
+                if (bench_arr.with_mask) // --no_mask
+                {
+                    t.single([&] { std::cout << " tab_mask" << std::endl; }, bench_par::nowait);
+                    compress_one(tab_mask);
+                }
+            });
 
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
     }

@@ -204,16 +204,18 @@ uint64_t calculate_checksum(const V& vec)
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
-#pragma omp parallel for reduction(+ : checksum)
-    for (Int k = 0; k < nn; ++k)
-    {
-        const T element = vec[k];
+    // `omp parallel for schedule(static) reduction(+ : ...)` with OpenMP.
+    checksum = shrink_array::pmp::parallel_sum<uint64_t, 1>(Int{0}, nn, shrink_array::pmp::options{},
+                                                            [&](Int k, auto& acc)
+                                                            {
+                                                                const T element = vec[k];
 
-        if (element != zero)
-        {
-            checksum += bench_checksum::contribution(static_cast<std::uint64_t>(k), element);
-        }
-    }
+                                                                if (element != zero)
+                                                                {
+                                                                    acc[0] += bench_checksum::contribution(
+                                                                        static_cast<std::uint64_t>(k), element);
+                                                                }
+                                                            })[0];
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
 
@@ -223,13 +225,14 @@ uint64_t calculate_checksum(const V& vec)
 
 /// @brief Inside a parallel region (`omp for nowait`): add bench_checksum::contribution(k, element) of every
 ///        element of @p vec different from V::value_type{} to the calling thread's slot of @p checksum_thr.
+/// @param t The region's team (bench_par::region).
 /// @param vec Container to sum.
 /// @param checksum_thr Per-thread accumulators, indexed by thread rank.
 template <typename V>
 #if defined(__GNUC__) && !defined(__NVCOMPILER) && !defined(__clang__)
 __attribute__((optimize("O2")))
 #endif
-void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_thr)
+void calculate_checksum_0([[maybe_unused]] bench_par::Team& t, const V& vec, std::vector<uint64_t_padding>& checksum_thr)
 {
     using T      = V::value_type;
     const Int nn = vec.size();
@@ -238,8 +241,7 @@ void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_
 
     auto& checksum = checksum_thr[CHUNK_PMP_THREAD_RANK];
 
-#pragma omp for schedule(static) nowait
-    for (Int k = 0; k < nn; ++k)
+    BENCH_FOR_STATIC_NOWAIT_SCALAR(t, k, 0, nn)
     {
         const T element = vec[k];
 

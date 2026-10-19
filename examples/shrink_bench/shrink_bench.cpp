@@ -109,23 +109,24 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
                   })
     {
         const Int step = static_cast<Int>(a.chunk_size());
-#pragma omp parallel
-        {
-            begin_parallel_phase_g();
-#pragma omp for schedule(static)
-            for (Int c = beg / step; c <= (end - 1) / step; ++c)
+        bench_par::region(
+            [&]([[maybe_unused]] bench_par::Team& t)
             {
-                if constexpr (build_config::use_openmp)
+                begin_parallel_phase_g();
+                BENCH_FOR_STATIC(t, c, beg / step, ((end - 1) / step) + 1)
                 {
-                    a.alloc_chunk(c * step, get_thr_rank_fast());
+                    if constexpr (build_config::threaded)
+                    {
+                        a.alloc_chunk(c * step, get_thr_rank_fast());
+                    }
+                    else
+                    {
+                        a.alloc_chunk(c * step);
+                    }
                 }
-                else
-                {
-                    a.alloc_chunk(c * step);
-                }
-            }
-            finalize_parallel_phase_only_flush_g();
-        }
+                BENCH_END_FOR(t);
+                finalize_parallel_phase_only_flush_g();
+            });
         finalize_parallel_phase_after_flush_g();
 
         // Materialised exactly over the window: every chunk it touches, and
@@ -149,16 +150,17 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
     }
 
     // The loop over the window: stores into chunks that already exist.
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-#pragma omp for schedule(static)
-        for (Int i = beg; i < end; ++i)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& t)
         {
-            a[i] = value_at(i);
-        }
-        finalize_parallel_phase_only_flush_g();
-    }
+            begin_parallel_phase_g();
+            BENCH_FOR_STATIC(t, i, beg, end)
+            {
+                a[i] = value_at(i);
+            }
+            BENCH_END_FOR(t);
+            finalize_parallel_phase_only_flush_g();
+        });
     finalize_parallel_phase_after_flush_g();
     for (Int i = beg; i < end; ++i)
     {
@@ -1173,11 +1175,12 @@ int main(int argc, char* argv[])
                 const bool have_to_compress = k % freq_compress == 0;
                 if (have_to_compress)
                 {
-#pragma omp parallel
-                    {
-                        // Compiled in the std::vector build too: a no-op there.
-                        ParamChunk::force_compression();
-                    }
+                    bench_par::region(
+                        [&]([[maybe_unused]] bench_par::Team& t)
+                        {
+                            // Compiled in the std::vector build too: a no-op there.
+                            ParamChunk::force_compression();
+                        });
                 }
             }
 

@@ -79,6 +79,8 @@
 #include "chunk/singleton.h"               // SingletonChk (the bench TUs)
 #include "chunk/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
 
+#include "bench_par.h" // bench_par::region, BENCH_FOR_* (the phases' regions and loops)
+
 #if (defined CHUNK_VARIANT_V1 || defined CHUNK_VARIANT_V2 || defined CHUNK_VARIANT_V2A)
     #define SHRINK_ARRAY
 #endif

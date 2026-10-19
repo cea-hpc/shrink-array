@@ -47,20 +47,31 @@ inline void begin_parallel_phase_g()
 }
 
 /// @brief Without OMPT: shrink_array::finalize_parallel_phase_only_flush(); no-op otherwise.
+/// @details OpenMP only: the split end needs a barrier of the application's
+///          team, which only OpenMP gives the library (manage_ompt.h). The
+///          other backends end the phase after the region, in one call
+///          (finalize_parallel_phase_after_flush_g()).
 inline void finalize_parallel_phase_only_flush_g()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::has_not_ompt && build_config::use_openmp)
     {
         shrink_array::finalize_parallel_phase_only_flush();
     }
 }
 
 /// @brief Without OMPT: shrink_array::finalize_parallel_phase_after_flush(); no-op otherwise.
+/// @details Pool and serial backends: shrink_array::finalize_parallel_phase(),
+///          the serial end of the phase contract -- it drains every rank's
+///          queue itself, after the region's team has joined.
 inline void finalize_parallel_phase_after_flush_g()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::has_not_ompt && build_config::use_openmp)
     {
         shrink_array::finalize_parallel_phase_after_flush();
+    }
+    else if constexpr (build_config::has_not_ompt)
+    {
+        shrink_array::finalize_parallel_phase();
     }
 }
 
