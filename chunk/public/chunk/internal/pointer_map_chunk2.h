@@ -370,7 +370,7 @@ class PointerMapChunk2
 
     /// @brief The second value recorded for array @p key (true for bool).
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    [[nodiscard]] T get_second_value(void* key) const noexcept
+    [[nodiscard]] T get_second_value(const void* key) const noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -392,7 +392,7 @@ class PointerMapChunk2
     }
     /// @brief The num_tab recorded for array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    [[nodiscard]] int get_num_tab(void* key) const noexcept
+    [[nodiscard]] int get_num_tab(const void* key) const noexcept
     {
         for (const auto& item : vec)
         {

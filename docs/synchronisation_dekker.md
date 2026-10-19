@@ -354,7 +354,9 @@ write engine's profile.
 
 Builds without marks (`SHRINK_SMALL_CHUNK`, for lack of room in the chunk header;
 `chunk_config::use_chunk_steal_mark = false`) keep the global gate: the writer looks at
-`hard_inflight_`, and the compressor waits for all writers.
+`hard_inflight_` (an *acquire* load, paired with the decrement of `finish()`: a writer that sees
+a pass over must also see the `values` it installed, or it writes into the buffer that pass
+returned -- [formal_models.md](formal_models.md), F1), and the compressor waits for all writers.
 
 ### 5.4 Compressor and deferred-write flush
 
@@ -413,9 +415,13 @@ need it: no user read is running then. Beyond `CHUNK_READ_RECLAIM_SLOTS`
 Materialising a chunk (`create_value`) needs no handshake: the buffer is
 **filled before it is published**, and publication is a single CAS from the constant to the
 buffer. A reader sees the old constant or the complete buffer, never a half-filled
-buffer; the loser of the CAS recycles its buffer. The only precaution: wait until no
-compressor can steal **this** chunk (its mark, or `stealing_inflight_` without marks),
-otherwise the allocation could take back the block that a pass is returning.
+buffer; the loser of the CAS recycles its buffer. The only precaution, for a caller that holds
+no writer flag (`alloc_chunk`, a flush replay): wait until no compressor can steal **this**
+chunk (its mark, or `stealing_inflight_` without marks), otherwise the allocation could take
+back the block that a pass is returning. A fast-path writer does not wait: a mark it sees after
+its check no. 2 belongs to a pass **parked** on its own flag, which steals nothing before
+`end_write`; waiting would make the two wait for each other until the compressor's yield budget
+runs out ([formal_models.md](formal_models.md), F2).
 
 ---
 
@@ -439,6 +445,9 @@ otherwise the allocation could take back the block that a pass is returning.
   and without `CHUNK_TEST_READ_DELAY_EVERY`, and under ASan with std-alloc), then a
   `multi_launch_stress.py` series: defects in this code show up once in thousands of
   runs.
+- **The reduced model of the handshake** ([formal_models.md](formal_models.md), `formal/`) must
+  still pass under GenMC with its mutations refused: a change to an atomic or to an order here
+  is a change to the model too (its table maps every name to its line of the source).
 
 Check builds (`any_check`) verify the protocol invariants and stop
 with a `Dekker: ...` message if they are violated: flag raised right after the announce, still

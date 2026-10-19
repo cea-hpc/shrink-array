@@ -188,7 +188,7 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
 }
 
 /**
- * @brief Counter mode, Chunk2: fold a chunk the bulk store left uniform.
+ * @brief Counter mode, Chunk2 and v1: fold a chunk the bulk store left uniform.
  *
  * @details In a serial build the compression of a Chunk2 chunk is the element
  *          write that brings one of its counters to S (manage_full_*): there
@@ -239,6 +239,12 @@ template <typename Arr, typename Chunk>
             proxy.manage_full_second_value();
         }
         return true;
+    }
+    else if constexpr (track_zeros_v<Arr>)
+    {
+        // v1: one constant, zero (resync_counters() set the count).
+        (void)ch;
+        return arr.element_proxy(static_cast<decltype(arr.size())>(c_begin)).fold_if_full_zero();
     }
     else
     {
@@ -407,13 +413,19 @@ template <typename Arr, typename Chunk>
  *          a chunk they leave constant would otherwise stay materialised. This
  *          does what the span's last write would have done: the flag's CAS
  *          and, the first time, one entry in the caller's candidate list; the
- *          pass drops the chunk if it is not constant. Fast-block builds only
- *          (the serial counters are resynced by the caller).
+ *          pass drops the chunk if it is not constant. Fast-block builds,
+ *          and Chunk2A in every build: it has no counters, its serial build
+ *          compresses through the same list and pass. The serial v1 / Chunk2
+ *          counters are resynced by the caller instead (fold_if_full, when
+ *          present). In a serial build the proxy is armed by
+ *          set_info_on_chunk(): set_num_tab_ptr_is_inside_chunk() is a
+ *          fast-block member.
  */
 template <typename Arr>
 void queue_for_compression(Arr& arr, std::size_t i)
 {
-    if constexpr (chunk_config::use_fast_block_compression)
+    // Chunk2A: a candidate list in serial builds too (no counters there).
+    if constexpr (chunk_config::use_fast_block_compression || is_v2a_v<Arr>)
     {
         // Chunk2: candidate lists are keyed by second value and exist only for
         // arrays that called set_second_value() -- skip the others, as the
@@ -716,7 +728,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
 
             // Restore the per-chunk counters the bulk store bypassed.
             internal::resync_counters(arr, ch, c_begin, dst, S);
-            // Serial Chunk2: the chunk is constant now -> folded here (no pass).
+            // Serial builds: the chunk is constant now -> folded here (no pass).
             if (internal::fold_if_full(arr, ch, c_begin, S))
             {
                 continue;
@@ -869,7 +881,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             }
 
             internal::resync_counters(arr, ch, c_begin, dst, S); // as fill_range
-            if (internal::fold_if_full(arr, ch, c_begin, S)) // serial Chunk2: as fill_range
+            if (internal::fold_if_full(arr, ch, c_begin, S)) // serial builds: as fill_range
             {
                 continue;
             }

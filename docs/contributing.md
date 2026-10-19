@@ -83,6 +83,8 @@ The source checks run with the others (`ctest -R check_`):
   free of warnings (`ctest -R check_doxygen` when Doxygen is installed).
 - **Lock-free code**: follow the rules of [synchronisation_dekker.md](synchronisation_dekker.md)
   §6, and write the ordering argument next to every atomic that needs one.
+  When the change touches a handshake, run `formal/run_genmc.sh` too
+  ([formal_models.md](formal_models.md)).
 
 ## 4. Performance claims
 

@@ -77,6 +77,17 @@ par la bibliothèque liée : `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
 [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) comment lectures, écritures et compression
 tournent ensemble.
 
+**Vérifié, pas seulement testé.** Les poignées de main entre les écrivains d'éléments, la passe de
+compression et le flush des écritures différées sont vérifiées par model checking : des modèles
+réduits ([formal/](formal/)) en sont explorés exhaustivement par
+[GenMC](https://github.com/MPI-SWS/genmc) sous le modèle mémoire C11 (RC11 et IMM) jusqu'à 5
+écrivains, sans écriture perdue, sans accès à un tampon rendu, sans course de données et sans
+attente non bornée, et les modèles refusent dix mutations, dont six bugs que la bibliothèque a eus.
+La forme à `membarrier()` repose sur l'argument de la section 4.2 de
+[docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) ; la poignée de main
+lecteurs / réemploi des tampons n'est pas encore modélisée
+([docs/formal_models_fr.md](docs/formal_models_fr.md)).
+
 ## En chiffres
 
 `shrink_bench` ([examples/shrink_bench](examples/shrink_bench), `--mode perf`) : des tableaux
@@ -191,6 +202,7 @@ Deux branches de développement, pas encore dans une version :
 | comparer aux formats creux, aux compresseurs, aux grilles creuses | [docs/alternatives_fr.md](docs/alternatives_fr.md) |
 | comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) |
 | savoir pourquoi l'écriture n'a besoin d'aucun verrou | [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) |
+| vérifier un handshake avec un vérificateur de modèles | [docs/formal_models_fr.md](docs/formal_models_fr.md) |
 | utiliser les tailles de chunk dynamiques | [docs/rechunk_adaptatif_fr.md](docs/rechunk_adaptatif_fr.md) |
 | indexer un tableau en 2D ou 3D (`mdspan`), en tuiles qui se compressent | [docs/mdspan_fr.md](docs/mdspan_fr.md) |
 | mesurer mémoire et temps sans se tromper | [docs/mesures_performance_fr.md](docs/mesures_performance_fr.md) |

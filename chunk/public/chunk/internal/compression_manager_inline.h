@@ -686,7 +686,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::wait_out_compressor(con
     int                         spin     = 0;
     int                         yields   = 0;
     [[maybe_unused]] const bool mark_hit = chunk.steal_marked();
-    // Relaxed, the same predicate as the gate: the decision is re-taken by
+    // The same predicate as the gate: the decision is re-taken by
     // the caller's gate loads, which the handshake orders (announce_write,
     // then check #2).
     while (must_defer_write(chunk))

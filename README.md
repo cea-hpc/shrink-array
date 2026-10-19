@@ -75,6 +75,15 @@ library you link: `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
 [docs/algo_chunk2.md](docs/algo_chunk2.md) how reads, writes and compression run side by side.
 
+**Checked, not only tested.** The handshakes between element writers, the compression pass and the
+deferred-write flush are model-checked: reduced models of them ([formal/](formal/)) are explored
+exhaustively by [GenMC](https://github.com/MPI-SWS/genmc) under the C11 memory model (RC11 and
+IMM) for up to 5 writers, with no lost write, no use-after-free, no data race and no unbounded
+wait, and the models refuse ten mutations, six of them bugs the library once had. The
+`membarrier()` shape rests on the argument of
+[docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) section 4.2; the readers /
+buffer-reclamation handshake is not modelled yet ([docs/formal_models.md](docs/formal_models.md)).
+
 ## In numbers
 
 `shrink_bench` ([examples/shrink_bench](examples/shrink_bench), `--mode perf`): arrays of about
@@ -186,6 +195,7 @@ Two development branches, not in a release yet:
 | compare with sparse formats, compressors, sparse grids | [docs/alternatives.md](docs/alternatives.md) |
 | understand reads, writes, in-flight compression, deferred writes | [docs/algo_chunk2.md](docs/algo_chunk2.md) |
 | know why the write path needs no lock | [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) |
+| check a handshake with a model checker | [docs/formal_models.md](docs/formal_models.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |
 | index an array in 2D or 3D (`mdspan`), in tiles that compress | [docs/mdspan.md](docs/mdspan.md) |
 | measure memory and time reliably | [docs/performance_measurement.md](docs/performance_measurement.md) |
