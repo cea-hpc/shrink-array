@@ -75,6 +75,19 @@ the tag's checksum to the recipe.
   allocation) and written as one line, `[shrink_array][channel][level][tid] text`.
   New harness `log_validation`. The library's other stderr messages move to it
   in the next steps.
+- `multi-mat-md`, the multi-material example in 2D through `mdspan`
+  (`examples/multi-mat`): every material occupies a box of an `nx x ny` mesh
+  at each iteration; its arrays are seen through `md::tiled_view` (chunk
+  arrays, a tile per chunk) or a standard `mdspan` (`std::vector`), and one
+  loop body serves both. `--chunk-mode tiles` (default) walks the chunk
+  arrays tile by tile (`md::update_tiles`, `md::fill_box`, four tiles read in
+  one go for the reduction), `elements` cell by cell in the same layout,
+  `rows` cell by cell row-major. 1600 x 1600, 50 chunk materials, 2 threads:
+  663 MiB peak in tiles, 1847 MiB row-major, 3912 MiB all `std::vector`;
+  the same result in all four. `--verify` replays the run serially and
+  compares every array and the result; tests `multi_mat_md_tiles`,
+  `multi_mat_md_elements`, `multi_mat_md_rows` (and `multi_mat_md_embedded`
+  with an OMPT tool).
 
 ### Changed
 

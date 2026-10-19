@@ -188,6 +188,44 @@ auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // or any t
   size, a chunk holds two consecutive tiles -- so in a parallel region the tile operations stop
   (two threads would share a chunk) until the field is copied into a view of the new tile.
 
+### A whole program: `multi-mat-md`
+
+`examples/multi-mat` exists in 2D: `multi-mat-md` is the same mock (every material carries
+three fields and a presence fraction over the whole mesh, occupies a random part of it at each
+iteration, is written there and read back by the same gadget computation), on an `nx x ny`
+mesh where a material occupies a box. Every array is seen through a 2D `mdspan`: `md::view` or
+`md::tiled_view` for the chunk arrays (v1 for the fields, Chunk2 for the fraction), a standard
+`mdspan` over `data()` for the `std::vector` ones. The loop body is written once against the
+views; the policy of the material's storage (`LoopsMd.h`) says how a box is written, zeroed and
+read, as `Loops.h` does in 1D -- and the indirection list of the 1D version is gone: the box is
+the loop.
+
+| `--chunk-mode` | chunk arrays | box loops |
+|---|---|---|
+| `tiles` (default) | `layout_tiled`, a tile per chunk | tile by tile: `update_tiles` (a tile of the interior already at 1 is left alone), `fill_box` for the reset, four tiles read in one go each for the reduction |
+| `elements` | `layout_tiled` | cell by cell, `f[i, j]` |
+| `rows` | row-major `md::view` | cell by cell, `f[i, j]` |
+
+1600 x 1600 mesh, 50 materials all in chunk arrays, 100 iterations, boxes up to 113 x 113
+(`--pc-chunk 0.5`), the same boxes for every line (`--seed 3`); Release, GCC 14, kokkos/mdspan,
+2 threads on a 2-core container (orders of magnitude):
+
+| | chunks written, fields / fraction | peak memory | time | of which writes / reads |
+|---|---|---|---|---|
+| `--chunk-mode tiles` | 16.7 % / 12.5 % | 663 MiB | 3.45 s | 0.35 s / 1.77 s |
+| `--chunk-mode elements` | 16.7 % / 12.5 % | 659 MiB | 4.36 s | 0.68 s / 2.36 s |
+| `--chunk-mode rows` | 46.1 % / 46.1 % | 1847 MiB | 4.14 s | 1.01 s / 1.96 s |
+| all in `std::vector` (`--option 2`) | -- | 3912 MiB | 1.90 s | 0.12 s / 1.55 s |
+
+All four print the same result. Row-major, a box narrower than a chunk leaves every chunk it
+crosses written, and the fraction never compresses inside it; in tiles only the tiles along the
+sides stay. The time left after the writes and the reads is the initialisation, which zeroes
+every array over the whole mesh as the 1D version does (about 1.2 s on the chunk arrays: a
+`fill_range` over chunks already compressed at the value still walks their elements on v1 and
+Chunk2). `--verify` replays the run serially on plain vectors and compares every array cell by
+cell and the result (exit 1 on a difference); the tests `multi_mat_md_tiles`, `multi_mat_md_elements` and `multi_mat_md_rows` run it small.
+The options are listed at the top of `main_md.cpp`.
+
 ## 4. Where `mdspan` comes from
 
 | available | used |
@@ -226,3 +264,4 @@ reports as skipped.
 | `examples/validation/mdspan_submdspan_validation.cpp` | sub-views of a row-major view (block, row, column, read-only, `fill_box`) and of a tiled view (aligned, ending at the extent, a sub-view of a sub-view; the tile operations on it, serially and in a parallel phase); every variant at 1 and 8 threads, and `mdspan_submdspan_misaligned` (a tiled slice off the tiles stops) |
 | `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, every multiple of 64 to 4096), `layout_tiled_dyn` against `layout_tiled` index by index and through their sub-views, `tiled_view_dyn`'s tile per chunk, the tile operations on a tile per chunk, a 3 x 5 tile and one beyond the inline buffer; every variant at the default size and at dyn (a re-chunk under the view), 1 and 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | the comparisons of sections 2 and 3, and the cost of the multi-index; `mdspan_tiles 4096` for a larger field |
+| `examples/multi-mat/main_md.cpp`, `LoopsMd.h`, `ComputeLoopsMd.h`, `SimuMd.h` | `multi-mat-md`, the multi-material mock in 2D (section 3); tests `multi_mat_md_tiles`, `multi_mat_md_elements`, `multi_mat_md_rows` (`--verify`) |

@@ -194,6 +194,45 @@ auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // ou toute
   parallèle les opérations sur tuiles s'arrêtent (deux threads partageraient un chunk) tant que
   le champ n'a pas été copié dans une vue de la nouvelle tuile.
 
+### Un programme complet : `multi-mat-md`
+
+`examples/multi-mat` existe en 2D : `multi-mat-md` est la même maquette (chaque matériau porte
+trois champs et une fraction de présence sur tout le maillage, en occupe une partie tirée au
+hasard à chaque itération, y est écrit puis relu par le même calcul gadget), sur un maillage
+`nx x ny` où un matériau occupe un rectangle. Chaque tableau est vu par un `mdspan` 2D :
+`md::view` ou `md::tiled_view` pour les tableaux chunk (v1 pour les champs, Chunk2 pour la
+fraction), un `mdspan` standard sur `data()` pour les `std::vector`. Le corps de boucle est écrit
+une fois contre les vues ; la politique du stockage du matériau (`LoopsMd.h`) dit comment un
+rectangle est écrit, remis à zéro et lu, comme `Loops.h` en 1D -- et la liste d'indirection de
+la version 1D disparaît : le rectangle est la boucle.
+
+| `--chunk-mode` | tableaux chunk | boucles sur le rectangle |
+|---|---|---|
+| `tiles` (défaut) | `layout_tiled`, une tuile par chunk | tuile par tuile : `update_tiles` (une tuile de l'intérieur déjà à 1 n'est pas touchée), `fill_box` pour la remise à zéro, quatre tuiles lues d'un bloc chacune pour la réduction |
+| `elements` | `layout_tiled` | cellule par cellule, `f[i, j]` |
+| `rows` | `md::view` ligne par ligne | cellule par cellule, `f[i, j]` |
+
+Maillage 1600 x 1600, 50 matériaux tous en tableaux chunk, 100 itérations, rectangles jusqu'à
+113 x 113 (`--pc-chunk 0.5`), les mêmes rectangles pour chaque ligne (`--seed 3`) ; Release,
+GCC 14, kokkos/mdspan, 2 threads sur un conteneur à 2 cœurs (ordres de grandeur) :
+
+| | chunks écrits, champs / fraction | mémoire max | temps | dont écritures / lectures |
+|---|---|---|---|---|
+| `--chunk-mode tiles` | 16,7 % / 12,5 % | 663 Mio | 3,45 s | 0,35 s / 1,77 s |
+| `--chunk-mode elements` | 16,7 % / 12,5 % | 659 Mio | 4,36 s | 0,68 s / 2,36 s |
+| `--chunk-mode rows` | 46,1 % / 46,1 % | 1847 Mio | 4,14 s | 1,01 s / 1,96 s |
+| tout en `std::vector` (`--option 2`) | -- | 3912 Mio | 1,90 s | 0,12 s / 1,55 s |
+
+Les quatre affichent le même résultat. Ligne par ligne, un rectangle plus étroit qu'un chunk
+laisse écrit chaque chunk qu'il traverse, et la fraction ne se comprime jamais à l'intérieur ;
+en tuiles, seules restent les tuiles le long des bords. Le temps qui reste après les écritures
+et les lectures est l'initialisation, qui remet à zéro chaque tableau sur tout le maillage comme
+la version 1D (environ 1,2 s sur les tableaux chunk : un `fill_range` sur des chunks déjà
+compressés à la valeur parcourt encore leurs éléments en v1 et en Chunk2). `--verify` rejoue le
+calcul en série sur des vecteurs simples et compare chaque tableau cellule par cellule ainsi que
+le résultat (sortie 1 sur une différence) ; les tests `multi_mat_md_tiles`, `multi_mat_md_elements` et `multi_mat_md_rows` le lancent en petit.
+Les options sont décrites en tête de `main_md.cpp`.
+
 ## 4. D'où vient `mdspan`
 
 | disponible | utilisé |
@@ -232,3 +271,4 @@ compte comme sauté.
 | `examples/validation/mdspan_submdspan_validation.cpp` | sous-vues d'une vue ligne par ligne (bloc, ligne, colonne, lecture seule, `fill_box`) et d'une vue en tuiles (alignée, finissant à l'étendue, sous-vue d'une sous-vue ; les opérations sur tuiles dessus, en série et en phase parallèle) ; toutes les variantes à 1 et 8 threads, et `mdspan_submdspan_misaligned` (une tranche en tuiles hors des tuiles arrête le programme) |
 | `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, tous les multiples de 64 jusqu'à 4096), `layout_tiled_dyn` contre `layout_tiled` indice par indice et par leurs sous-vues, la tuile par chunk de `tiled_view_dyn`, les opérations sur tuiles sur une tuile par chunk, une tuile 3 x 5 et une au-delà du tampon local ; toutes les variantes à la taille par défaut et en dyn (un rechunk sous la vue), 1 et 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | les comparaisons des sections 2 et 3, et le coût du multi-indice ; `mdspan_tiles 4096` pour un champ plus grand |
+| `examples/multi-mat/main_md.cpp`, `LoopsMd.h`, `ComputeLoopsMd.h`, `SimuMd.h` | `multi-mat-md`, la maquette multi-matériaux en 2D (section 3) ; tests `multi_mat_md_tiles`, `multi_mat_md_elements`, `multi_mat_md_rows` (`--verify`) |

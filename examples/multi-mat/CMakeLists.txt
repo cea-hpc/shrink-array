@@ -67,3 +67,36 @@ else ()
 endif ()
 multi_mat_setup_target(multi-mat-embedded)
 target_compile_definitions(multi-mat-embedded PRIVATE MULTIMAT_EMBEDDED_COMPRESSION)
+
+# multi-mat-md: the same mock on a 2D mesh, every array through an mdspan
+# view (chunk/mdspan.h): a material occupies a box per iteration, the chunk
+# materials are laid out in tiles of one chunk and walked tile by tile
+# (chunk/mdspan_tile_ops.h). Needs <mdspan> or kokkos/mdspan on the include
+# path, else it exits 77 (skipped). Its tests are small and replay the run
+# serially (--verify), once per way of walking the chunk materials.
+set(_mm_md_sources main_md.cpp
+        SimuMd.h LoopsMd.h ComputeLoopsMd.h
+        MultiMatAlgo.h Loops.h PMP.h Containers.h Dispatch.h config.h)
+add_executable(multi-mat-md ${_mm_md_sources} ompt_off.cpp)
+multi_mat_setup_target(multi-mat-md)
+# A 200 x 328 mesh (328: the last column of tiles padded), 6 materials half
+# chunk half vector, 24 iterations with resets and compression passes.
+function(multi_mat_md_test name exe)
+    add_test(NAME ${name}
+             COMMAND ${exe} --nx 200 --ny 328 --mat 6 --iter 24 --option 3 --pc-chunk 8 --pc-vector 8
+                     --freq-rtz 5 --freq-compress 4 --seed 7 --verify ${ARGN})
+    set_property(TEST ${name} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+    set_property(TEST ${name} PROPERTY SKIP_RETURN_CODE 77)
+endfunction()
+multi_mat_md_test(multi_mat_md_tiles multi-mat-md --chunk-mode tiles)
+multi_mat_md_test(multi_mat_md_elements multi-mat-md --chunk-mode elements)
+multi_mat_md_test(multi_mat_md_rows multi-mat-md --chunk-mode rows)
+
+if (CHUNK_HAVE_OMPT)
+    add_executable(multi-mat-md-embedded ${_mm_md_sources} manage_ompt.cpp)
+    multi_mat_md_test(multi_mat_md_embedded multi-mat-md-embedded)
+else ()
+    add_executable(multi-mat-md-embedded EXCLUDE_FROM_ALL ${_mm_md_sources} manage_ompt.cpp)
+endif ()
+multi_mat_setup_target(multi-mat-md-embedded)
+target_compile_definitions(multi-mat-md-embedded PRIVATE MULTIMAT_EMBEDDED_COMPRESSION)
