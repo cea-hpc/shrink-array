@@ -336,14 +336,14 @@ class Chunk2CounterPolicy
 
     /// @brief Current first-value counter.
     /// @return Number of elements currently equal to the first constant.
-    [[nodiscard]] unsigned char get_nb_first_value() const noexcept
+    [[nodiscard]] counter_value_t get_nb_first_value() const noexcept
     {
         return nb_val_eq_first_value;
     }
 
     /// @brief Current second-value counter.
     /// @return Number of elements currently equal to the second constant.
-    [[nodiscard]] unsigned char get_nb_second_value() const noexcept
+    [[nodiscard]] counter_value_t get_nb_second_value() const noexcept
     {
         return nb_val_eq_second_value;
     }

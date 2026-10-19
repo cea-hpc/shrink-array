@@ -188,6 +188,69 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
 }
 
 /**
+ * @brief Counter mode, Chunk2: fold a chunk the bulk store left uniform.
+ *
+ * @details In a serial build the compression of a Chunk2 chunk is the element
+ *          write that brings one of its counters to S (manage_full_*): there
+ *          is no pass, and queue_for_compression() does nothing. A raw store
+ *          bypasses that write, so after resync_counters() a chunk whose count
+ *          is S must be folded here, as that last write would have done --
+ *          what packed_chunk_store() does for bit-packed chunks. Without it,
+ *          every chunk a re-chunk rebuilds from second-value sources stays
+ *          materialised (rechunk_refill()'s own fold-back is fast-block only).
+ *          The second value is folded only when it is designated (differs from
+ *          first_value).
+ * @return true when the chunk was folded: its buffer is gone, the caller must
+ *         not read it again.
+ */
+template <typename Arr, typename Chunk>
+[[nodiscard]] bool fold_if_full(Arr& arr, Chunk& ch, std::size_t c_begin, unsigned int S)
+{
+    if constexpr (track_chunk2_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
+    {
+        using ind_type    = decltype(arr.size());
+        using T           = typename Arr::value_type;
+        const bool first  = ch.is_full_first_value(S);
+        const bool second = !first && ch.is_full_second_value(S) &&
+                            !(static_cast<T>(arr.get_second_value()) == static_cast<T>(Chunk::first_value));
+        if (!first && !second)
+        {
+            return false;
+        }
+        auto proxy = arr.element_proxy(static_cast<ind_type>(c_begin));
+        // element_proxy() leaves the proxy's second-value index unset; the
+        // write path loads it first (assign_impl), and manage_full_*() pass it
+        // to clear_st(): a stale index points the chunk at ANOTHER value's
+        // constant array, which the next write then scribbles over.
+        proxy.set_info_second_value_ind();
+        if constexpr (build_config::chunk_dynamic)
+        {
+            // The ambient geometry and allocator set the free routes by, as the
+            // write path pins them (Proxy2::execute_simple_operation).
+            shrink_array::set_thread_chunk_size(S);
+            shrink_array::set_thread_alloc_key(proxy.alloc_key());
+        }
+        if (first)
+        {
+            proxy.manage_full_first_value();
+        }
+        else
+        {
+            proxy.manage_full_second_value();
+        }
+        return true;
+    }
+    else
+    {
+        (void)arr;
+        (void)ch;
+        (void)c_begin;
+        (void)S;
+    }
+    return false;
+}
+
+/**
  * @brief Can the chunk whose buffer is @p dst (@p S elements) be uniform?
  * @details NECESSARY condition only -- first, middle and last element equal.
  *          A uniform chunk always passes; a chunk that fails cannot be
@@ -569,6 +632,11 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
 
             // Restore the per-chunk counters the bulk store bypassed.
             internal::resync_counters(arr, ch, c_begin, dst, S);
+            // Serial Chunk2: the chunk is constant now -> folded here (no pass).
+            if (internal::fold_if_full(arr, ch, c_begin, S))
+            {
+                continue;
+            }
 
             // The chunk may be constant now: a fill of first_value, or on
             // chunk2a of any value (a uniform run is its second constant).
@@ -678,6 +746,10 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             }
 
             internal::resync_counters(arr, ch, c_begin, dst, S); // as fill_range
+            if (internal::fold_if_full(arr, ch, c_begin, S)) // serial Chunk2: as fill_range
+            {
+                continue;
+            }
 
             // The source is not known to be uniform: the pass decides -- for
             // the chunks that can be.

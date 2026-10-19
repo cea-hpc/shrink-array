@@ -78,7 +78,8 @@
 #include <type_traits>     // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v
 #include <utility>         // std::forward, std::declval
 #include <sched.h>         // sched_yield (emit_fatal)
-#include <unistd.h>        // getpid, gettid
+#include <sys/syscall.h>   // SYS_gettid
+#include <unistd.h>        // getpid, syscall
 
 #ifndef CHUNK_LOG_MAX_LEVEL
     #define CHUNK_LOG_MAX_LEVEL 5 // trace: every message compiled in, CHUNK_LOG filters at run time
@@ -356,7 +357,8 @@ inline std::FILE*     out       = nullptr; ///< the default sink's stream; stder
 /// @brief The calling thread's kernel id, read once per thread.
 [[nodiscard]] inline long thread_id() noexcept
 {
-    thread_local const long id = static_cast<long>(::gettid());
+    // syscall, not ::gettid(): the glibc wrapper is 2.30+ and RHEL 8 ships 2.28
+    thread_local const long id = ::syscall(SYS_gettid);
     return id;
 }
 
