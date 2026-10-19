@@ -4,7 +4,7 @@
 # formal/: reduced models of the lock-free handshakes (docs/formal_models.md),
 # checked by GenMC. Two kinds of tests, both under the label `formal`:
 #
-#   formal_native_<model>  the model compiled as an ordinary C program and run
+#   formal_native_<model>  each model compiled as an ordinary C program and run
 #                          a few hundred times: proves it is a real program, a
 #                          weak oracle for the protocol (needs a C compiler);
 #   formal_genmc           formal/run_genmc.sh: every configuration and every
@@ -19,7 +19,7 @@ include(CheckLanguage)
 check_language(C)
 if(CMAKE_C_COMPILER)
     enable_language(C)
-    set(_formal_models writer_compressor)
+    set(_formal_models writer_compressor compressor_flush)
     foreach(_m IN LISTS _formal_models)
         add_executable(formal_native_${_m} ${_m}.c)
         target_compile_definitions(formal_native_${_m} PRIVATE NATIVE SHAPE_SYMMETRIC)

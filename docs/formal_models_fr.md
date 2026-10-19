@@ -20,7 +20,7 @@ les séries de `multi_launch_stress.py` trouvent un défaut une fois sur des mil
 vérificateur le trouve à la première exécution qui le montre, en une fraction de seconde, et dit
 « aucun » sinon.
 
-Ce que « aucun » veut dire a des limites, listées en section 6 : le modèle est une réduction (la
+Ce que « aucun » veut dire a des limites, listées en section 7 : le modèle est une réduction (la
 fidélité est le risque), il est borné (jusqu'à 5 écrivains), et C11 n'a pas de `membarrier()`. La
 façon de faire confiance à un modèle est de le **calibrer** : lui donner les bugs que la
 bibliothèque a vraiment eus, sous forme de mutations du modèle, et vérifier que le vérificateur
@@ -113,7 +113,7 @@ RC11 et sous IMM (identiques). « Exécutions » est le nombre d'exécutions com
 
 Toutes les mutations sont refusées, et le protocole du source passe dans toutes ses
 configurations. Les trois dernières lignes sont les deux comportements que ce travail a changés
-dans le source (section 5) : la bibliothèque d'avant est refusée, la bibliothèque d'aujourd'hui
+dans le source (section 6) : la bibliothèque d'avant est refusée, la bibliothèque d'aujourd'hui
 passe. Le verdict sur `MUT_RELAXED_MARK` mérite un mot : la section 5.3 dit que
 la marque « a besoin de sa propre paire release/acquire » et qu'une lecture relaxed a été
 « confirmée par TSan » -- TSan ne modélise pas les barrières, cette confirmation seule aurait pu
@@ -123,9 +123,43 @@ lecture relaxed, rien ne l'ordonne après le CAS de la passe, donc son `values_l
 l'ancien tampon -- celui que la passe vient de rendre -- et l'écriture tombe dans une mémoire
 libérée. L'acquire s'apparie avec le release de `steal_unmark()` et emporte le CAS avec lui.
 
-## 5. Constats
+## 5. Le modèle du handshake 2 : compresseur contre flush
 
-### 5.1 F1 : la porte sans marques lisait `hard_inflight_` en relaxed (corrigé)
+`formal/compressor_flush.c` ajoute la section 5.4 par-dessus le handshake 1. NWRITERS écrivains (1
+par défaut, jusqu'à 3 vérifiés) écrivent chacun une fois un élément -- **différé** quand le regard
+n° 2 voit la marque de la passe, direct sinon -- et un écrivain qui a différé vide ensuite son
+propre rang, comme la bibliothèque le fait au-delà du seuil d'arriéré : `announce_flush()`
+(incrément seq_cst, barrière), l'attente des voleurs sur `stealing_inflight_`, puis le rejeu
+exactement comme `lbd_equal_asynch` le fait : une écriture **simple** (« les flushes excluent les
+voleurs »), la confirmation après écriture, la boucle de reprise. La passe a ses deux regards sur
+les flushs, la sortie anticipée après `hard_inflight_++` et le second regard après
+`stealing_inflight_++`. Une quatrième propriété rejoint les trois du handshake 1 : **P4**,
+l'écriture simple du rejeu n'est jamais en course avec le parcours de la passe (la détection de
+courses de GenMC).
+
+| cas | attendu | verdict | exécutions |
+|---|---|---|---|
+| source, 1 écrivain ; 2 écrivains ; 3 écrivains (vivacité vérifiée) | passe | passe | 12 ; 403 ; 25 810 |
+| `MUT_NO_SECOND_LOOK` : le bug du 5.4 (1 et 2 écrivains) | échoue | **course**, et détection de courses coupée le **rejeu perdu** lui-même | 1 |
+| `MUT_NO_SECOND_LOOK` + `MUT_NO_POSTCHECK` | échoue | rejeu perdu | 1 |
+| `MUT_FLUSH_NO_DRAIN` : le flush rejoue sans attendre la fin des voleurs | échoue | rejeu perdu | 1 |
+| `MUT_NO_FIRST_LOOK` : la sortie anticipée retirée (1 et 2 écrivains) | passe | passe | 10 ; 357 |
+| `MUT_NO_POSTCHECK` : la confirmation après écriture retirée (1 et 2 écrivains) | passe | passe | 12 ; 403 |
+
+Trois choses que la table dit. Le **second regard** est la paire : sans lui le premier
+contre-exemple du vérificateur est le bug de l'historique, ligne pour ligne -- l'écrivain diffère
+sur la marque ; le flush annonce, trouve `stealing_inflight_` à zéro (la passe est parquée),
+rejoue, sa confirmation après écriture passe ; la passe ouvre alors sa fenêtre, entre en vol,
+parcourt les zéros d'avant le rejeu, remet le chunk sur la constante par CAS et rend le tampon ;
+l'écriture rejouée a disparu. Le **premier regard** « ne s'apparie avec rien », comme le dit la
+section 5.4 : le retirer ne change aucun verdict, c'est une optimisation. La **confirmation après
+écriture** est une seconde ligne de défense, pas l'exclusion : avec le second regard en place elle
+ne sert jamais, et sans le second regard elle ne sauve pas l'écriture (le CAS de la passe peut
+tomber après la lecture de la confirmation).
+
+## 6. Constats
+
+### 6.1 F1 : la porte sans marques lisait `hard_inflight_` en relaxed (corrigé)
 
 Dans le build `SHRINK_SMALL_CHUNK` (pas de marque par chunk, `chunk_config::use_chunk_steal_mark`
 faux), `CompressionManager::must_defer_write()` était `hard_inflight_.load(relaxed) > 0`. Le
@@ -149,7 +183,7 @@ de la constante (la matérialisation). Le vérificateur l'accepte à 2 et 3 écr
 développeur ([reglages_developpeur_fr.md](reglages_developpeur_fr.md)), pas une bibliothèque
 livrée ; le build par défaut n'est pas touché.
 
-### 5.2 F2 : un écrivain qui matérialise et un compresseur parqué s'attendaient (corrigé)
+### 6.2 F2 : un écrivain qui matérialise et un compresseur parqué s'attendaient (corrigé)
 
 Le commentaire de `wait_before_materialise()` disait qu'elle « est un no-op en pratique : un
 écrivain du chemin rapide n'arrive jamais ici avec le chunk marqué (la porte l'a arrêté) ». Le
@@ -176,7 +210,7 @@ gardent l'attente, que le modèle ne couvre pas (handshake 2). Avec le correctif
 prouve sûreté et vivacité même avec une attente **non bornée** du compresseur (26 et 191
 exécutions) ; `MUT_MATERIALISE_WAIT_UNDER_FLAG` est l'attente telle qu'elle était.
 
-### 5.3 Ce que le vérificateur a confirmé
+### 6.3 Ce que le vérificateur a confirmé
 
 Les règles de la section 6 du document de synchronisation tiennent dans le modèle : les deux
 compteurs doivent rester deux (`MUT_WAIT_ON_HARD` est le triangle, trouvé comme violation de
@@ -185,14 +219,15 @@ annonce sont chacun porteurs ; la forme asymétrique n'est pas sûre sans `memba
 protocole tel que livré est correct, avec les marques par chunk, à 2 et 3 écrivains, que le chunk
 parte comprimé ou matérialisé.
 
-## 6. Limites
+## 7. Limites
 
 - **Fidélité.** Le modèle est une réduction écrite à la main depuis le source : une ligne que le
   modèle simplifie est une ligne que le vérificateur ne voit pas. La table de correspondance de la
   section 3 est ce qu'il faut relire quand le source change, et les mutations sont la garde contre
   un modèle qui ne prouve rien.
-- **Bornes.** Jusqu'à 5 écrivains, un chunk, une passe, une écriture chacun (5 écrivains avec
-  matérialisation : 9 637 exécutions, 7 s). Un bug qui demande deux
+- **Bornes.** Jusqu'à 5 écrivains (handshake 1 ; 3 pour le handshake 2, chacun avec son flush),
+  un chunk, une passe, une écriture chacun (5 écrivains avec matérialisation : 9 637 exécutions,
+  7 s). Un bug qui demande deux
   passes ou un chunk recyclé deux fois est hors champ.
 - **`membarrier()`.** Aucun modèle mémoire de langage ne l'a. Le vérificateur vérifie la forme
   symétrique ; l'asymétrique repose sur la section 4.2 et sur le contrat de `membarrier(2)`. GenMC
@@ -204,9 +239,7 @@ parte comprimé ou matérialisé.
   tout processeur conformes ; une exécution qu'ils autorisent peut être observable ou non sur
   Grace.
 
-## 7. Prochaines étapes
+## 8. Prochaines étapes
 
-- Handshake 2, compresseur contre flush des écritures différées (5.4) : le « second regard »,
-  avec le bug du rejeu perdu de l'historique de la bibliothèque comme oracle.
 - Handshake 3, lecteurs contre réemploi des tampons (5.5) : le `ReadSection` actuel, et la période
   de grâce en cours de conception à côté, pour ne mesurer qu'une variante correcte.

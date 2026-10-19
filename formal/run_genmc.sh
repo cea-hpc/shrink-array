@@ -27,7 +27,7 @@ run() {
     local actual
     if grep -q "No errors were detected" <<<"$out"; then
         actual=ok
-    elif grep -qE "Error detected|violation|Assertion|assertion|use-after-free|freed memory|Liveness|liveness|Non-terminating|non-terminating" <<<"$out"; then
+    elif grep -qE "Error detected|Error:|violation|race|Assertion|assertion|use-after-free|freed memory|Liveness|liveness|Non-terminating|non-terminating" <<<"$out"; then
         actual=error
     else
         actual=unknown
@@ -71,5 +71,22 @@ echo "-- the two behaviours the model changed in the source (docs/formal_models.
 run error "MUT_NO_MARKS_RELAXED_GATE (F1, before)"           -- -DSHAPE_SYMMETRIC -DNO_MARKS -DMUT_NO_MARKS_RELAXED_GATE $M
 run error "MUT_MATERIALISE_WAIT_UNDER_FLAG (F2, before), unbounded wait" --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DMUT_MATERIALISE_WAIT_UNDER_FLAG $M
 run ok    "MUT_MATERIALISE_WAIT_UNDER_FLAG, bounded wait: safe, stalls only" --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DMUT_MATERIALISE_WAIT_UNDER_FLAG -DBOUNDED_COMPRESSOR_WAIT $M
+
+M2=compressor_flush.c
+echo "== handshake 2: compressor <-> deferred-write flush ($M2) =="
+run ok    "source, 1 writer (deferred then flushed)"         --check-liveness -- $M2
+run ok    "source, 2 writers"                                --check-liveness -- -DNWRITERS=2 $M2
+run ok    "source, 3 writers"                                --check-liveness -- -DNWRITERS=3 $M2
+echo "-- mutations: each must be refused --"
+run error "MUT_NO_SECOND_LOOK (section 5.4: the lost replay)" -- -DMUT_NO_SECOND_LOOK $M2
+run error "MUT_NO_SECOND_LOOK, 2 writers"                    -- -DMUT_NO_SECOND_LOOK -DNWRITERS=2 $M2
+run error "MUT_NO_SECOND_LOOK, race detection off: the lost write itself" --disable-race-detection -- -DMUT_NO_SECOND_LOOK $M2
+run error "MUT_NO_SECOND_LOOK + MUT_NO_POSTCHECK"            -- -DMUT_NO_SECOND_LOOK -DMUT_NO_POSTCHECK $M2
+run error "MUT_FLUSH_NO_DRAIN (replay without draining the stealers)" -- -DMUT_FLUSH_NO_DRAIN $M2
+echo "-- what the document says is NOT load-bearing: must still pass --"
+run ok    "MUT_NO_FIRST_LOOK (the early-out 'pairs with nothing')" -- -DMUT_NO_FIRST_LOOK $M2
+run ok    "MUT_NO_FIRST_LOOK, 2 writers"                     -- -DMUT_NO_FIRST_LOOK -DNWRITERS=2 $M2
+run ok    "MUT_NO_POSTCHECK (post-store confirmation: a second line)" -- -DMUT_NO_POSTCHECK $M2
+run ok    "MUT_NO_POSTCHECK, 2 writers"                      -- -DMUT_NO_POSTCHECK -DNWRITERS=2 $M2
 
 exit $fail

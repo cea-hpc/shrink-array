@@ -18,7 +18,7 @@ could make -- and reports a violated assertion, an access to freed memory, or (w
 `multi_launch_stress.py` find a defect once in thousands of runs, the checker finds it in the
 first execution that exhibits it, in a fraction of a second, and says "none" otherwise.
 
-What "none" means has limits, listed in section 6: the model is a reduction (fidelity is the
+What "none" means has limits, listed in section 7: the model is a reduction (fidelity is the
 risk), it is bounded (up to 5 writers), and C11 has no `membarrier()`. The way to trust a model
 is to **calibrate** it: feed it the bugs the library really had, as mutations of the model, and
 check that the checker refuses every one of them. Section 4 is that calibration.
@@ -106,7 +106,7 @@ under IMM (identical). "Executions" is the number of complete executions the che
 | the same with the library's bounded wait: safe, a stall only | pass | pass | 116 |
 
 Every mutation is refused, and the protocol of the source passes in every configuration. The
-last three lines are the two behaviours this work changed in the source (section 5): the
+last three lines are the two behaviours this work changed in the source (section 6): the
 library as it was before is refused, the library as it is passes. The verdict on
 `MUT_RELAXED_MARK` is worth a word: section 5.3 says the mark "needs its own
 release/acquire pair" and that a relaxed read was "confirmed by TSan" -- TSan does not model
@@ -117,9 +117,40 @@ zero **after** `steal_unmark()`; with a relaxed read nothing orders it after the
 lands in freed memory. The acquire pairs with the release of `steal_unmark()` and carries the CAS
 with it.
 
-## 5. Findings
+## 5. The model of handshake 2: compressor against flush
 
-### 5.1 F1: the gate without marks read `hard_inflight_` relaxed (fixed)
+`formal/compressor_flush.c` adds section 5.4 on top of handshake 1. NWRITERS writers (1 by
+default, up to 3 checked) each write one element once -- **deferred** when check no. 2 sees the
+pass's mark, direct otherwise -- and a writer that deferred then flushes its own rank, as the
+library does past its backlog threshold: `announce_flush()` (seq_cst increment, barrier), the wait
+for the stealers on `stealing_inflight_`, then the replay exactly as `lbd_equal_asynch` does it: a
+**plain** store ("flushes exclude the stealers"), the post-store confirmation, the retry loop. The
+pass has its two looks at the flushers, the early-out after `hard_inflight_++` and the second look
+after `stealing_inflight_++`. A fourth property joins the three of handshake 1: **P4**, the plain
+replay store never races the pass's scan (GenMC's race detection).
+
+| case | expected | verdict | executions |
+|---|---|---|---|
+| source, 1 writer; 2 writers; 3 writers (liveness checked) | pass | pass | 12; 403; 25,810 |
+| `MUT_NO_SECOND_LOOK`: the bug of 5.4 (1 and 2 writers) | fail | **race**, and with race detection off the **lost replay** itself | 1 |
+| `MUT_NO_SECOND_LOOK` + `MUT_NO_POSTCHECK` | fail | lost replay | 1 |
+| `MUT_FLUSH_NO_DRAIN`: the flush replays without waiting the stealers out | fail | lost replay | 1 |
+| `MUT_NO_FIRST_LOOK`: the early-out removed (1 and 2 writers) | pass | pass | 10; 357 |
+| `MUT_NO_POSTCHECK`: the post-store confirmation removed (1 and 2 writers) | pass | pass | 12; 403 |
+
+Three things the table says. The **second look** is the pair: without it the checker's first
+counter-example is the history's bug, line for line -- the writer defers on the mark; the flush
+announces, finds `stealing_inflight_` at zero (the pass is parked), replays, its post-store
+confirmation passes; the pass then opens its window, enters stealing, scans the pre-replay zeros,
+CASes the chunk back to the constant and returns the buffer; the replayed write is gone. The **first
+look** "pairs with nothing", as section 5.4 says: removing it changes no verdict, it is an
+optimisation. The **post-store confirmation** is a second line of defence, not the exclusion: with
+the second look in place it is never needed, and without the second look it does not save the write
+(the pass's CAS can land after the confirmation's load).
+
+## 6. Findings
+
+### 6.1 F1: the gate without marks read `hard_inflight_` relaxed (fixed)
 
 In the `SHRINK_SMALL_CHUNK` build (no per-chunk mark, `chunk_config::use_chunk_steal_mark`
 false), `CompressionManager::must_defer_write()` was `hard_inflight_.load(relaxed) > 0`. The
@@ -141,7 +172,7 @@ writers; `MUT_NO_MARKS_RELAXED_GATE` is the line as it was. The build is a devel
 ([developer_settings.md](developer_settings.md)), not a shipped library; the default build is not
 affected.
 
-### 5.2 F2: a materialising writer and a parked compressor waited for each other (fixed)
+### 6.2 F2: a materialising writer and a parked compressor waited for each other (fixed)
 
 The comment of `wait_before_materialise()` said it was "a no-op in practice: a fast-path writer
 never gets here with the chunk marked (the gate stopped it)". The model shows the window the
@@ -166,7 +197,7 @@ cover (handshake 2). With the fix the checker proves safety and liveness even wi
 **unbounded** compressor wait (26 and 191 executions); `MUT_MATERIALISE_WAIT_UNDER_FLAG` is the
 wait as it was.
 
-### 5.3 What the checker confirmed
+### 6.3 What the checker confirmed
 
 The rules of section 6 of the synchronisation document hold in the model: the two counters must
 stay two (`MUT_WAIT_ON_HARD` is the triangle, found as a liveness violation in 5 executions); the
@@ -174,14 +205,14 @@ compressor's barrier and the writer's look after its announce are each load-bear
 asymmetric shape is unsound without `membarrier()`; and the protocol as shipped is correct, with
 the per-chunk marks, for 2 and 3 writers, whether the chunk starts compressed or materialised.
 
-## 6. Limits
+## 7. Limits
 
 - **Fidelity.** The model is a reduction written by hand from the source: a line the model
   simplifies is a line the checker does not see. The mapping table of section 3 is the thing to
   review when the source changes, and the mutations are the guard against a model that proves
   nothing.
-- **Bounds.** Up to 5 writers, one chunk, one pass, one write each (5 writers with
-  materialisation: 9,637 executions, 7 s). A bug that needs two passes or
+- **Bounds.** Up to 5 writers (handshake 1; 3 for handshake 2, each with its own flush), one
+  chunk, one pass, one write each (5 writers with materialisation: 9,637 executions, 7 s). A bug that needs two passes or
   a chunk recycled twice is outside.
 - **`membarrier()`.** No language memory model has it. The checker verifies the symmetric shape;
   the asymmetric one rests on section 4.2 and on `membarrier(2)`'s contract. GenMC also treats
@@ -191,9 +222,7 @@ the per-chunk marks, for 2 and 3 writers, whether the chunk starts compressed or
   own model. An execution they forbid is forbidden on every conforming compiler and processor; one
   they allow may or may not be observable on Grace.
 
-## 7. Next steps
+## 8. Next steps
 
-- Handshake 2, compressor against the deferred-write flush (5.4): the "second look", with the
-  lost-replay bug of the library's history as its oracle.
 - Handshake 3, readers against buffer reclamation (5.5): the current `ReadSection`, and the
   grace period under design next to it, so that only a correct variant is measured.

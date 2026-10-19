@@ -52,13 +52,15 @@ the tag's checksum to the recipe.
 
 ### Added
 
-- Reduced models of the writer / compressor handshake, checked by GenMC
-  (`formal/`, `docs/formal_models.md`): the protocol as shipped verified under
-  RC11 and IMM, every known bug of its history refused as a mutation, and two
-  findings -- the `SHRINK_SMALL_CHUNK` gate's relaxed load of `hard_inflight_`
-  (F1) and the materialisation wait against a parked compressor (F2), both
-  fixed (see Fixed), the library as it was refused as two more mutations.
-  New ctest label `formal`.
+- Reduced models of the writer / compressor and compressor / flush
+  handshakes, checked by GenMC (`formal/`, `docs/formal_models.md`): the
+  protocols of the source verified under RC11 and IMM, every known bug of
+  their history refused as a mutation (the lost replay of a flush without
+  the compressor's second look among them), and two findings -- the
+  `SHRINK_SMALL_CHUNK` gate's relaxed load of `hard_inflight_` (F1) and the
+  materialisation wait against a parked compressor (F2), both fixed (see
+  Fixed), the library as it was refused as two more mutations. New ctest
+  label `formal`.
 - One log for both libraries (`chunk/log.h`, built on
   `fast_allocators/internal/log_core.h`): every message has a level and a
   channel, `CHUNK_LOG` (default `warn`) says which are written, e.g.
