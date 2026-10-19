@@ -1031,7 +1031,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // AND gated on use_fast_block_compression: this four-argument
                 // compress() lives in Chunk2FastCompPolicy<..., Enabled>, which
                 // Chunk2 inherits with Enabled = use_fast_block_compression
-                // (= use_openmp): a SERIAL build has no such overload.
+                // (= use_openmp): a SERIAL build has no such overload. There,
+                // copy_range() above already folded every chunk it left uniform,
+                // through the counters (internal::fold_if_full).
                 if constexpr (chunk_config::use_fast_block_compression && Derived::is_not_bool)
                 {
                     if (all_folded)
