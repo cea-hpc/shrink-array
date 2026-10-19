@@ -11,7 +11,7 @@ document says what the models are, how to run them, what they proved, and what t
 
 ## 1. What a model proves, and what it does not
 
-A reduced model is a program of 2 to 4 threads and one chunk. The checker enumerates **every**
+A reduced model is a program of a few threads (up to 5 writers and one pass) and one chunk. The checker enumerates **every**
 execution the memory model allows -- every interleaving, every read-from choice a weak processor
 could make -- and reports a violated assertion, an access to freed memory, or (with
 `--check-liveness`) a spin loop that never ends. Where the stress runs of
@@ -19,7 +19,7 @@ could make -- and reports a violated assertion, an access to freed memory, or (w
 first execution that exhibits it, in a fraction of a second, and says "none" otherwise.
 
 What "none" means has limits, listed in section 6: the model is a reduction (fidelity is the
-risk), it is bounded (2 to 3 writers), and C11 has no `membarrier()`. The way to trust a model
+risk), it is bounded (up to 5 writers), and C11 has no `membarrier()`. The way to trust a model
 is to **calibrate** it: feed it the bugs the library really had, as mutations of the model, and
 check that the checker refuses every one of them. Section 4 is that calibration.
 
@@ -89,23 +89,26 @@ under IMM (identical). "Executions" is the number of complete executions the che
 
 | case | expected | verdict | executions |
 |---|---|---|---|
-| the protocol as shipped, marks, buffer start | pass | pass | 21 |
-| as shipped, marks, constant start | pass | pass | 116 |
-| as shipped, 3 writers | pass | pass | 120 |
-| as shipped, liveness, bounded compressor wait | pass | pass | 42 |
-| as shipped, liveness, constant start, bounded wait | pass | pass | 116 |
-| `NO_MARKS` as shipped (relaxed load of `hard_inflight_`) -- **F1** | pass | **access to freed memory** | 5 |
-| `NO_MARKS` + `FIX_NO_MARKS_ACQUIRE` | pass | pass | 21 |
-| unbounded compressor wait, constant start -- **F2** | fail | **liveness violation** | 4 |
-| unbounded wait + `FIX_MATERIALISE_NO_WAIT_UNDER_FLAG`, liveness | pass | pass | 26 |
+| the protocol of the source, marks, buffer start | pass | pass | 21 |
+| source, marks, constant start (the writers materialise) | pass | pass | 26 |
+| source, marks, 3 writers; constant start, 3 writers | pass | pass | 120; 191 |
+| source, no marks (`SHRINK_SMALL_CHUNK`); constant start; 3 writers | pass | pass | 21; 82; 120 |
+| source, liveness, **unbounded** compressor wait, buffer or constant start | pass | pass | 21; 26 |
+| source, liveness, constant start, 3 writers; bounded wait (the library) | pass | pass | 191; 82 |
+| source, liveness, 5 writers, buffer start; constant start | pass | pass | 3,938; 9,637 |
 | `MUT_NO_CHECK2`: no look at the gate after the announce | fail | lost write | -- |
 | `SHAPE_ASYMMETRIC_NAKED`: asymmetric shape without `membarrier()` | fail | access to freed memory | -- |
 | `MUT_NO_FENCE_COMPRESSOR`: the compressor announces without its barrier | fail | access to freed memory | -- |
 | `MUT_WAIT_ON_HARD`: materialisation waits on `hard_inflight_` (the triangle of 5.3) | fail | liveness violation | 5 |
 | `MUT_RELAXED_MARK`: the mark relaxed instead of release/acquire (5.3) | fail | access to freed memory | 8 |
+| `MUT_NO_MARKS_RELAXED_GATE`: the no-marks gate before **F1** (relaxed load) | fail | **access to freed memory** | 5 |
+| `MUT_MATERIALISE_WAIT_UNDER_FLAG`: the materialisation wait before **F2**, unbounded compressor wait | fail | **liveness violation** | 4 |
+| the same with the library's bounded wait: safe, a stall only | pass | pass | 116 |
 
-Every mutation is refused, and the protocol as shipped passes in every configuration but one.
-The verdict on `MUT_RELAXED_MARK` is worth a word: section 5.3 says the mark "needs its own
+Every mutation is refused, and the protocol of the source passes in every configuration. The
+last three lines are the two behaviours this work changed in the source (section 5): the
+library as it was before is refused, the library as it is passes. The verdict on
+`MUT_RELAXED_MARK` is worth a word: section 5.3 says the mark "needs its own
 release/acquire pair" and that a relaxed read was "confirmed by TSan" -- TSan does not model
 fences, so that confirmation alone could have been an artefact of the symmetric build. The checker
 settles it: the acquire *is* load-bearing, and the trace shows how. A writer reads the mark at
@@ -116,10 +119,10 @@ with it.
 
 ## 5. Findings
 
-### 5.1 F1: the gate without marks reads `hard_inflight_` relaxed
+### 5.1 F1: the gate without marks read `hard_inflight_` relaxed (fixed)
 
 In the `SHRINK_SMALL_CHUNK` build (no per-chunk mark, `chunk_config::use_chunk_steal_mark`
-false), `CompressionManager::must_defer_write()` is `hard_inflight_.load(relaxed) > 0`. The
+false), `CompressionManager::must_defer_write()` was `hard_inflight_.load(relaxed) > 0`. The
 checker finds this execution: the pass runs to completion -- mark, `start()`, scan, CAS of
 `values` to the constant, buffer returned, `finish()` -- and only then the writer's check no. 2
 reads `hard_inflight_`, which is back to zero. The writer proceeds; its `values_load()`
@@ -131,17 +134,18 @@ release store and `steal_marked()` an acquire load. On AArch64 the relaxed `ldr`
 may be satisfied after a later `ldar` of `values`; on x86 the two loads stay in order and the hole
 is closed by the hardware.
 
-The candidate fix, `FIX_NO_MARKS_ACQUIRE`, is one word: `memory_order_acquire` on that load. It
-pairs with the `seq_cst` RMW of `finish()`, so a writer that sees the pass over also sees the
-`values` it installed, and takes the constant path (materialisation). The checker accepts it with
-2 and 3 writers. The build is a developer setting ([developer_settings.md](developer_settings.md)),
-not a shipped library; the default build is not affected.
+The fix is one word: `memory_order_acquire` on that load (`compression_manager.h`). It pairs
+with the `seq_cst` RMW of `finish()`, so a writer that sees the pass over also sees the `values`
+it installed, and takes the constant path (materialisation). The checker accepts it with 2 and 3
+writers; `MUT_NO_MARKS_RELAXED_GATE` is the line as it was. The build is a developer setting
+([developer_settings.md](developer_settings.md)), not a shipped library; the default build is not
+affected.
 
-### 5.2 F2: a materialising writer and a parked compressor wait for each other
+### 5.2 F2: a materialising writer and a parked compressor waited for each other (fixed)
 
-Section 5.6 says `wait_before_materialise()` "is a no-op in practice: a fast-path writer never
-gets here with the chunk marked (the gate stopped it)". The model shows the window the sentence
-skips: the mark can land **between** check no. 2 and `wait_before_materialise()`. A writer passes
+The comment of `wait_before_materialise()` said it was "a no-op in practice: a fast-path writer
+never gets here with the chunk marked (the gate stopped it)". The model shows the window the
+sentence skipped: the mark can land **between** check no. 2 and `wait_before_materialise()`. A writer passes
 check no. 2 on a compressed chunk, finds `values` at the constant, and enters `create_value()`;
 the pass marks the chunk and parks in `start()`, waiting for the flags that point to a marked
 chunk -- this writer's. The writer spins on the mark, the compressor on the flag. In the library
@@ -151,12 +155,16 @@ abandoned (the gate counter of aborts on an overly long wait, in the `CHUNK_STAT
 chunk that is at a constant while sitting in a candidate list -- the case `fill_list_to_compress()`
 guards against with `is_not_cst_val1()` -- so it is rare, not impossible.
 
-The candidate fix, `FIX_MATERIALISE_NO_WAIT_UNDER_FLAG`, follows from the handshake itself: a
-fast-path writer holds its flag and has passed check no. 2, so a mark it sees now belongs to a
-compressor that is **parked** on that flag; nothing can steal the chunk before `end_write()`, and
-the wait protects nothing. With it, the checker proves safety and liveness even with an
-**unbounded** compressor wait (26 and 191 executions). The flush replay path, which calls
-`create_value()` with no flag, keeps its wait; the model does not cover it (handshake 2).
+The fix follows from the handshake itself: a fast-path writer holds its flag and has passed
+check no. 2, so a mark it sees now belongs to a compressor that is **parked** on that flag;
+nothing can steal the chunk before `end_write()`, and the wait protects nothing.
+`wait_before_materialise()` now takes the caller's rank and returns at once when that rank's
+flag is on the chunk (`WriteCompressSyncPolicy::is_thread_writing_on()`, a relaxed load of the
+thread's own flag). The callers with no flag -- `alloc_chunk()`, the pre-allocation entry point
+usable from a parallel region, and a flush replay -- keep the wait, which the model does not
+cover (handshake 2). With the fix the checker proves safety and liveness even with an
+**unbounded** compressor wait (26 and 191 executions); `MUT_MATERIALISE_WAIT_UNDER_FLAG` is the
+wait as it was.
 
 ### 5.3 What the checker confirmed
 
@@ -172,7 +180,8 @@ the per-chunk marks, for 2 and 3 writers, whether the chunk starts compressed or
   simplifies is a line the checker does not see. The mapping table of section 3 is the thing to
   review when the source changes, and the mutations are the guard against a model that proves
   nothing.
-- **Bounds.** 2 to 3 writers, one chunk, one pass, one write each. A bug that needs two passes or
+- **Bounds.** Up to 5 writers, one chunk, one pass, one write each (5 writers with
+  materialisation: 9,637 executions, 7 s). A bug that needs two passes or
   a chunk recycled twice is outside.
 - **`membarrier()`.** No language memory model has it. The checker verifies the symmetric shape;
   the asymmetric one rests on section 4.2 and on `membarrier(2)`'s contract. GenMC also treats

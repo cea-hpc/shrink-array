@@ -77,6 +77,15 @@ par la bibliothèque liée : `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
 [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) comment lectures, écritures et compression
 tournent ensemble.
 
+**Vérifié, pas seulement testé.** La poignée de main entre les écrivains d'éléments et la passe de
+compression est vérifiée par model checking : un modèle réduit ([formal/](formal/)) en est exploré
+exhaustivement par [GenMC](https://github.com/MPI-SWS/genmc) sous le modèle mémoire C11 (RC11 et
+IMM) jusqu'à 5 écrivains, sans écriture perdue, sans accès à un tampon rendu et sans attente non
+bornée, et le modèle refuse sept mutations, dont cinq bugs que la bibliothèque a eus. La forme à
+`membarrier()` repose sur l'argument de la section 4.2 de
+[docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) ; les deux autres poignées
+de main ne sont pas encore modélisées ([docs/formal_models_fr.md](docs/formal_models_fr.md)).
+
 ## En chiffres
 
 `shrink_bench` ([examples/shrink_bench](examples/shrink_bench), `--mode perf`) : des tableaux

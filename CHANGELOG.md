@@ -56,8 +56,9 @@ the tag's checksum to the recipe.
   (`formal/`, `docs/formal_models.md`): the protocol as shipped verified under
   RC11 and IMM, every known bug of its history refused as a mutation, and two
   findings -- the `SHRINK_SMALL_CHUNK` gate's relaxed load of `hard_inflight_`
-  (F1) and the materialisation wait against a parked compressor (F2), each
-  with a candidate fix the checker accepts. New ctest label `formal`.
+  (F1) and the materialisation wait against a parked compressor (F2), both
+  fixed (see Fixed), the library as it was refused as two more mutations.
+  New ctest label `formal`.
 - One log for both libraries (`chunk/log.h`, built on
   `fast_allocators/internal/log_core.h`): every message has a level and a
   channel, `CHUNK_LOG` (default `warn`) says which are written, e.g.
@@ -152,6 +153,17 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `SHRINK_SMALL_CHUNK` builds (no per-chunk mark): the write-path gate read
+  `hard_inflight_` relaxed, so a writer that saw a pass over could still load
+  the chunk's old buffer -- the one the pass had just returned -- and write
+  into it. The load is acquire. Found by the GenMC model (`formal/`).
+- A writer materialising a chunk that a pass marked right after the writer's
+  gate check spun on the mark while the pass, parked, waited for that
+  writer's flag: both stalled for the whole `CHUNK_COMPRESS_MAX_YIELDS`
+  budget, then the pass was abandoned. A fast-path writer no longer waits
+  before materialising: the pass holding the mark is parked on its flag and
+  cannot steal (`wait_before_materialise()` takes the caller's rank;
+  `WriteCompressSyncPolicy::is_thread_writing_on()`). Found by the model.
 - A "wait" line of the re-chunk decider ended with a stray `0` when the array
   had no back-off.
 - An invariant failure inside a program's log sink, while the log was reading

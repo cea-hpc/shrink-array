@@ -354,7 +354,10 @@ profil du moteur d'écriture.
 
 Les builds sans marques (`SHRINK_SMALL_CHUNK`, faute de place dans l'en-tête du chunk ;
 `chunk_config::use_chunk_steal_mark = false`) gardent la porte globale : l'écrivain regarde
-`hard_inflight_`, et le compresseur attend tous les écrivains.
+`hard_inflight_` (une lecture *acquire*, appariée au décrément de `finish()` : un écrivain qui voit
+une passe terminée doit aussi voir le `values` qu'elle a installé, sans quoi il écrit dans le
+tampon qu'elle a rendu -- [formal_models_fr.md](formal_models_fr.md), F1), et le compresseur
+attend tous les écrivains.
 
 ### 5.4 Compresseur et vidage des écritures différées
 
@@ -413,9 +416,14 @@ besoin : aucune lecture utilisateur ne tourne alors. Au-delà de `CHUNK_READ_REC
 Matérialiser un chunk (`create_value`) ne demande pas de poignée de main : le tampon est
 **rempli avant d'être publié**, et la publication est un seul CAS de la constante vers le
 tampon. Un lecteur voit l'ancienne constante ou le tampon complet, jamais un tampon à moitié
-rempli ; le perdant du CAS recycle son tampon. La seule précaution : attendre qu'aucun
+rempli ; le perdant du CAS recycle son tampon. La seule précaution, pour un appelant qui ne
+tient pas de drapeau d'écrivain (`alloc_chunk`, un rejeu de flush) : attendre qu'aucun
 compresseur ne puisse voler **ce** chunk (sa marque, ou `stealing_inflight_` sans marques),
-sans quoi l'allocation pourrait reprendre le bloc qu'une passe est en train de rendre.
+sans quoi l'allocation pourrait reprendre le bloc qu'une passe est en train de rendre. Un
+écrivain du chemin rapide n'attend pas : une marque qu'il voit après son regard n° 2 appartient
+à une passe **parquée** sur son propre drapeau, qui ne vole rien avant `end_write` ; attendre
+ferait s'attendre les deux jusqu'à épuisement du budget de yields du compresseur
+([formal_models_fr.md](formal_models_fr.md), F2).
 
 ---
 

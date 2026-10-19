@@ -12,7 +12,7 @@ qu'ils ont prouvé et ce qu'ils ont trouvé.
 
 ## 1. Ce qu'un modèle prouve, et ce qu'il ne prouve pas
 
-Un modèle réduit est un programme de 2 à 4 threads et d'un chunk. Le vérificateur énumère
+Un modèle réduit est un programme de quelques threads (jusqu'à 5 écrivains et une passe) et d'un chunk. Le vérificateur énumère
 **toutes** les exécutions que le modèle mémoire autorise -- chaque entrelacement, chaque choix
 de lecture qu'un processeur faible pourrait faire -- et signale une assertion violée, un accès à
 une mémoire libérée ou (avec `--check-liveness`) une boucle d'attente qui ne finit jamais. Là où
@@ -21,7 +21,7 @@ vérificateur le trouve à la première exécution qui le montre, en une fractio
 « aucun » sinon.
 
 Ce que « aucun » veut dire a des limites, listées en section 6 : le modèle est une réduction (la
-fidélité est le risque), il est borné (2 à 3 écrivains), et C11 n'a pas de `membarrier()`. La
+fidélité est le risque), il est borné (jusqu'à 5 écrivains), et C11 n'a pas de `membarrier()`. La
 façon de faire confiance à un modèle est de le **calibrer** : lui donner les bugs que la
 bibliothèque a vraiment eus, sous forme de mutations du modèle, et vérifier que le vérificateur
 les refuse tous. La section 4 est cette calibration.
@@ -95,23 +95,26 @@ RC11 et sous IMM (identiques). « Exécutions » est le nombre d'exécutions com
 
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
-| le protocole tel que livré, marques, départ sur tampon | passe | passe | 21 |
-| tel que livré, marques, départ sur constante | passe | passe | 116 |
-| tel que livré, 3 écrivains | passe | passe | 120 |
-| tel que livré, vivacité, attente bornée du compresseur | passe | passe | 42 |
-| tel que livré, vivacité, départ sur constante, attente bornée | passe | passe | 116 |
-| `NO_MARKS` tel que livré (lecture relaxed de `hard_inflight_`) -- **F1** | passe | **accès à une mémoire libérée** | 5 |
-| `NO_MARKS` + `FIX_NO_MARKS_ACQUIRE` | passe | passe | 21 |
-| attente non bornée du compresseur, départ sur constante -- **F2** | échoue | **violation de vivacité** | 4 |
-| attente non bornée + `FIX_MATERIALISE_NO_WAIT_UNDER_FLAG`, vivacité | passe | passe | 26 |
+| le protocole du source, marques, départ sur tampon | passe | passe | 21 |
+| source, marques, départ sur constante (les écrivains matérialisent) | passe | passe | 26 |
+| source, marques, 3 écrivains ; départ sur constante, 3 écrivains | passe | passe | 120 ; 191 |
+| source, sans marques (`SHRINK_SMALL_CHUNK`) ; départ sur constante ; 3 écrivains | passe | passe | 21 ; 82 ; 120 |
+| source, vivacité, attente **non bornée** du compresseur, départ sur tampon ou constante | passe | passe | 21 ; 26 |
+| source, vivacité, départ sur constante, 3 écrivains ; attente bornée (la bibliothèque) | passe | passe | 191 ; 82 |
+| source, vivacité, 5 écrivains, départ sur tampon ; sur constante | passe | passe | 3 938 ; 9 637 |
 | `MUT_NO_CHECK2` : pas de regard sur la porte après l'annonce | échoue | écriture perdue | -- |
 | `SHAPE_ASYMMETRIC_NAKED` : forme asymétrique sans `membarrier()` | échoue | accès à une mémoire libérée | -- |
 | `MUT_NO_FENCE_COMPRESSOR` : le compresseur annonce sans sa barrière | échoue | accès à une mémoire libérée | -- |
 | `MUT_WAIT_ON_HARD` : la matérialisation attend sur `hard_inflight_` (le triangle du 5.3) | échoue | violation de vivacité | 5 |
 | `MUT_RELAXED_MARK` : la marque relaxed au lieu de release/acquire (5.3) | échoue | accès à une mémoire libérée | 8 |
+| `MUT_NO_MARKS_RELAXED_GATE` : la porte sans marques d'avant **F1** (lecture relaxed) | échoue | **accès à une mémoire libérée** | 5 |
+| `MUT_MATERIALISE_WAIT_UNDER_FLAG` : l'attente de matérialisation d'avant **F2**, attente non bornée du compresseur | échoue | **violation de vivacité** | 4 |
+| la même avec l'attente bornée de la bibliothèque : sûre, un arrêt seulement | passe | passe | 116 |
 
-Toutes les mutations sont refusées, et le protocole tel que livré passe dans toutes ses
-configurations sauf une. Le verdict sur `MUT_RELAXED_MARK` mérite un mot : la section 5.3 dit que
+Toutes les mutations sont refusées, et le protocole du source passe dans toutes ses
+configurations. Les trois dernières lignes sont les deux comportements que ce travail a changés
+dans le source (section 5) : la bibliothèque d'avant est refusée, la bibliothèque d'aujourd'hui
+passe. Le verdict sur `MUT_RELAXED_MARK` mérite un mot : la section 5.3 dit que
 la marque « a besoin de sa propre paire release/acquire » et qu'une lecture relaxed a été
 « confirmée par TSan » -- TSan ne modélise pas les barrières, cette confirmation seule aurait pu
 être un artefact du build symétrique. Le vérificateur tranche : l'acquire *est* porteur, et la
@@ -122,10 +125,10 @@ libérée. L'acquire s'apparie avec le release de `steal_unmark()` et emporte le
 
 ## 5. Constats
 
-### 5.1 F1 : la porte sans marques lit `hard_inflight_` en relaxed
+### 5.1 F1 : la porte sans marques lisait `hard_inflight_` en relaxed (corrigé)
 
 Dans le build `SHRINK_SMALL_CHUNK` (pas de marque par chunk, `chunk_config::use_chunk_steal_mark`
-faux), `CompressionManager::must_defer_write()` est `hard_inflight_.load(relaxed) > 0`. Le
+faux), `CompressionManager::must_defer_write()` était `hard_inflight_.load(relaxed) > 0`. Le
 vérificateur trouve cette exécution : la passe va jusqu'au bout -- marque, `start()`, parcours,
 CAS de `values` vers la constante, tampon rendu, `finish()` -- et c'est seulement ensuite que le
 regard n° 2 de l'écrivain lit `hard_inflight_`, revenu à zéro. L'écrivain continue ; son
@@ -138,18 +141,19 @@ La marque par chunk n'a pas ce trou parce que `steal_unmark()` est une écriture
 après un `ldar` ultérieur de `values` ; sur x86 les deux lectures restent dans l'ordre et le trou
 est fermé par le matériel.
 
-Le correctif candidat, `FIX_NO_MARKS_ACQUIRE`, tient en un mot : `memory_order_acquire` sur cette
-lecture. Il s'apparie avec le RMW `seq_cst` de `finish()`, de sorte qu'un écrivain qui voit la
-passe terminée voit aussi le `values` qu'elle a installé, et prend le chemin de la constante (la
-matérialisation). Le vérificateur l'accepte à 2 et 3 écrivains. Ce build est un réglage de
+Le correctif tient en un mot : `memory_order_acquire` sur cette lecture
+(`compression_manager.h`). Il s'apparie avec le RMW `seq_cst` de `finish()`, de sorte qu'un
+écrivain qui voit la passe terminée voit aussi le `values` qu'elle a installé, et prend le chemin
+de la constante (la matérialisation). Le vérificateur l'accepte à 2 et 3 écrivains ;
+`MUT_NO_MARKS_RELAXED_GATE` est la ligne telle qu'elle était. Ce build est un réglage de
 développeur ([reglages_developpeur_fr.md](reglages_developpeur_fr.md)), pas une bibliothèque
 livrée ; le build par défaut n'est pas touché.
 
-### 5.2 F2 : un écrivain qui matérialise et un compresseur parqué s'attendent
+### 5.2 F2 : un écrivain qui matérialise et un compresseur parqué s'attendaient (corrigé)
 
-La section 5.6 dit que `wait_before_materialise()` « est un no-op en pratique : un écrivain du
-chemin rapide n'arrive jamais ici avec le chunk marqué (la porte l'a arrêté) ». Le modèle montre
-la fenêtre que la phrase saute : la marque peut arriver **entre** le regard n° 2 et
+Le commentaire de `wait_before_materialise()` disait qu'elle « est un no-op en pratique : un
+écrivain du chemin rapide n'arrive jamais ici avec le chunk marqué (la porte l'a arrêté) ». Le
+modèle montre la fenêtre que la phrase sautait : la marque peut arriver **entre** le regard n° 2 et
 `wait_before_materialise()`. Un écrivain passe le regard n° 2 sur un chunk comprimé, trouve
 `values` à la constante et entre dans `create_value()` ; la passe marque le chunk et se parque dans
 `start()`, à attendre les drapeaux qui pointent vers un chunk marqué -- celui de cet écrivain.
@@ -161,13 +165,16 @@ abandonnée (le compteur de porte des abandons sur attente trop longue, dans le 
 candidats -- le cas dont `fill_list_to_compress()` se garde avec `is_not_cst_val1()` -- donc c'est
 rare, pas impossible.
 
-Le correctif candidat, `FIX_MATERIALISE_NO_WAIT_UNDER_FLAG`, découle du handshake lui-même : un
-écrivain du chemin rapide tient son drapeau et a passé le regard n° 2, donc une marque qu'il voit
-maintenant appartient à un compresseur **parqué** sur ce drapeau ; rien ne peut voler le chunk
-avant `end_write()`, et l'attente ne protège rien. Avec lui, le vérificateur prouve sûreté et
-vivacité même avec une attente **non bornée** du compresseur (26 et 191 exécutions). Le chemin de
-rejeu du flush, qui appelle `create_value()` sans drapeau, garde son attente ; le modèle ne le
-couvre pas (handshake 2).
+Le correctif découle du handshake lui-même : un écrivain du chemin rapide tient son drapeau et a
+passé le regard n° 2, donc une marque qu'il voit maintenant appartient à un compresseur
+**parqué** sur ce drapeau ; rien ne peut voler le chunk avant `end_write()`, et l'attente ne
+protège rien. `wait_before_materialise()` prend désormais le rang de l'appelant et rend la main
+aussitôt quand le drapeau de ce rang est sur le chunk (`WriteCompressSyncPolicy::is_thread_writing_on()`,
+une lecture relaxed du propre drapeau du thread). Les appelants sans drapeau -- `alloc_chunk()`,
+le point d'entrée de préallocation utilisable depuis une région parallèle, et un rejeu du flush --
+gardent l'attente, que le modèle ne couvre pas (handshake 2). Avec le correctif, le vérificateur
+prouve sûreté et vivacité même avec une attente **non bornée** du compresseur (26 et 191
+exécutions) ; `MUT_MATERIALISE_WAIT_UNDER_FLAG` est l'attente telle qu'elle était.
 
 ### 5.3 Ce que le vérificateur a confirmé
 
@@ -184,7 +191,8 @@ parte comprimé ou matérialisé.
   modèle simplifie est une ligne que le vérificateur ne voit pas. La table de correspondance de la
   section 3 est ce qu'il faut relire quand le source change, et les mutations sont la garde contre
   un modèle qui ne prouve rien.
-- **Bornes.** 2 à 3 écrivains, un chunk, une passe, une écriture chacun. Un bug qui demande deux
+- **Bornes.** Jusqu'à 5 écrivains, un chunk, une passe, une écriture chacun (5 écrivains avec
+  matérialisation : 9 637 exécutions, 7 s). Un bug qui demande deux
   passes ou un chunk recyclé deux fois est hors champ.
 - **`membarrier()`.** Aucun modèle mémoire de langage ne l'a. Le vérificateur vérifie la forme
   symétrique ; l'asymétrique repose sur la section 4.2 et sur le contrat de `membarrier(2)`. GenMC

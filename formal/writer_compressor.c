@@ -78,13 +78,13 @@
  *                              stealing_inflight -- the "triangle" the document forbids
  *                              (section 5.3, "Why two counters"). A liveness violation.
  *   -DMUT_NO_FENCE_COMPRESSOR  the compressor announces without its heavy barrier.
- *
- * CANDIDATE FIXES (not mutations: changes the model suggests, see docs/formal_models.md):
- *   -DFIX_NO_MARKS_ACQUIRE     F1, NO_MARKS only: must_defer_write() loads hard_inflight with
- *                              acquire instead of relaxed.
- *   -DFIX_MATERIALISE_NO_WAIT_UNDER_FLAG
- *                              F2: a fast-path writer does not spin on the mark before
- *                              materialising (it holds its flag: the compressor is parked).
+ *   -DMUT_NO_MARKS_RELAXED_GATE
+ *                              NO_MARKS only: must_defer_write() loads hard_inflight relaxed, as
+ *                              the library did before the model (docs/formal_models.md, F1).
+ *   -DMUT_MATERIALISE_WAIT_UNDER_FLAG
+ *                              a fast-path writer spins on the mark before materialising even
+ *                              though it holds its flag, as the library did before the model
+ *                              (F2): with an unbounded compressor wait, a liveness violation.
  *
  * Build for GenMC:   genmc [--check-liveness] -- -DSHAPE_SYMMETRIC writer_compressor.c
  * Build natively:    cc -O2 -pthread -DNATIVE writer_compressor.c && ./a.out   (stress, weak oracle)
@@ -238,12 +238,12 @@ __attribute__((unused)) static bool any_writing(void)   /* any_thread_writing():
 static bool must_defer_write(void)                      /* compression_manager.h must_defer_write() */
 {
 #ifdef NO_MARKS
-    #ifdef FIX_NO_MARKS_ACQUIRE
-    /* The candidate fix (see README, finding F1): acquire pairs with finish()'s seq_cst RMW,
-       so a writer that sees the pass over also sees the `values` it installed. */
-    return atomic_load_explicit(&hard_inflight, memory_order_acquire) > 0;
+    #ifdef MUT_NO_MARKS_RELAXED_GATE
+    return atomic_load_explicit(&hard_inflight, memory_order_relaxed) > 0;   /* before F1 */
     #else
-    return atomic_load_explicit(&hard_inflight, memory_order_relaxed) > 0;   /* as shipped */
+    /* Acquire pairs with finish()'s seq_cst RMW: a writer that sees the pass over also sees
+       the `values` it installed (F1). */
+    return atomic_load_explicit(&hard_inflight, memory_order_acquire) > 0;
     #endif
 #else
     return steal_marked();
@@ -269,7 +269,7 @@ static bool cas_install(atomic_int* expected_cst, atomic_int* buffer)
 }
 
 /* create_value(): wait_before_materialise(), allocate + fill, publish by one CAS. */
-static atomic_int* materialise(void)
+static atomic_int* materialise(int r)
 {
 #if defined(NO_MARKS)
     #ifdef MUT_WAIT_ON_HARD
@@ -277,13 +277,20 @@ static atomic_int* materialise(void)
     #else
     while (is_stealing()) {}                            /* stealing_inflight_ only, never hard_ */
     #endif
-#elif defined(FIX_MATERIALISE_NO_WAIT_UNDER_FLAG)
-    /* Candidate fix (README, F2): a fast-path writer holds its flag and passed check #2, so
-       a mark it sees now belongs to a PARKED compressor that is waiting for this very flag:
-       nothing can steal this chunk before end_write(). No wait. (A flush replay, which holds
-       no flag, would still have to wait: not modelled here.) */
 #else
-    while (steal_marked()) {}                           /* this chunk's mark */
+    /* wait_before_materialise(): a caller whose flag is on THIS chunk does not wait -- it
+       passed check #2, so a mark it sees now belongs to a PARKED compressor waiting for that
+       very flag; nothing can steal the chunk before end_write() (F2). A caller with no flag
+       (alloc_chunk(), a flush replay) spins on the mark: not modelled here. */
+    #ifdef MUT_MATERIALISE_WAIT_UNDER_FLAG
+    const bool own_session = false;                     /* before F2: always wait */
+    #else
+    const bool own_session = atomic_load_explicit(&flag[r], memory_order_relaxed) == &chunk;
+    #endif
+    if (!own_session)
+    {
+        while (steal_marked()) {}                       /* this chunk's mark */
+    }
 #endif
     atomic_int* b = alloc_zero_buffer();
     if (!cas_install(cst1, b))
@@ -316,7 +323,7 @@ static void* writer(void* arg)                          /* write_with_optional_l
         atomic_int* vals = values_load();
         if (vals == cst1)
         {
-            vals = materialise();                       /* perform_core_assignment(): materialise then reload */
+            vals = materialise(r);                      /* perform_core_assignment(): materialise then reload */
         }
 #ifdef NATIVE
         assert(vals != atomic_load_explicit(&returned_buffer, memory_order_seq_cst)); /* P1 */
