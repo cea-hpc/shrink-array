@@ -692,6 +692,35 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
+     * @brief Counter mode: compress the owning chunk if its zero count says it
+     *        is all zero -- what the write bringing the count to chunk_size()
+     *        does (perform_core_assignment), for a BULK store that bypassed it.
+     *
+     * @details Call after resync_nb_val_eq_zero(). Pins the ambient geometry and
+     *          allocator set the free routes by, as the write path does.
+     *          Always false when counters are compiled out (fast block
+     *          compression: the pass folds the chunk).
+     * @return true when the chunk was folded: its buffer is gone.
+     */
+    [[nodiscard]] bool fold_if_full_zero() const
+    {
+        if constexpr (chunk_config::use_compression_with_counter)
+        {
+            if (chunk.is_not_cst_val1() && chunk.is_full_zero(this->chunk_size()))
+            {
+                if constexpr (build_config::chunk_dynamic)
+                {
+                    shrink_array::set_thread_chunk_size(this->chunk_size());
+                    shrink_array::set_thread_alloc_key(this->alloc_key());
+                }
+                this->manage_full_zero();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * @brief Add `v` to this element in place.
      * @tparam U Type of the operand.
      * @param v Operand to add.
