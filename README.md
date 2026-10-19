@@ -75,13 +75,14 @@ library you link: `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
 [docs/algo_chunk2.md](docs/algo_chunk2.md) how reads, writes and compression run side by side.
 
-**Checked, not only tested.** The handshake between element writers and the compression pass is
-model-checked: a reduced model of it ([formal/](formal/)) is explored exhaustively by
-[GenMC](https://github.com/MPI-SWS/genmc) under the C11 memory model (RC11 and IMM) for up to 5
-writers, with no lost write, no use-after-free and no unbounded wait, and the model refuses seven
-mutations, five of them bugs the library once had. The `membarrier()` shape rests on the argument
-of [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) section 4.2; the other two
-handshakes are not modelled yet ([docs/formal_models.md](docs/formal_models.md)).
+**Checked, not only tested.** The handshakes between element writers, the compression pass and the
+deferred-write flush are model-checked: reduced models of them ([formal/](formal/)) are explored
+exhaustively by [GenMC](https://github.com/MPI-SWS/genmc) under the C11 memory model (RC11 and
+IMM) for up to 5 writers, with no lost write, no use-after-free, no data race and no unbounded
+wait, and the models refuse ten mutations, six of them bugs the library once had. The
+`membarrier()` shape rests on the argument of
+[docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) section 4.2; the readers /
+buffer-reclamation handshake is not modelled yet ([docs/formal_models.md](docs/formal_models.md)).
 
 ## In numbers
 

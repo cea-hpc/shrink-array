@@ -426,7 +426,7 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
     }
 
     const auto& sh_inf  = *Proxy2<T>::share_info_array;
-    const int   num_tab = sh_inf.get_num_tab(const_cast<void*>(this->registry_key()));
+    const int   num_tab = sh_inf.get_num_tab(this->registry_key());
 
     // Classification. written(ind) is true for a MATERIALISED chunk (`values !=
     // cst_val1 && is_not_cst_val2(ind)`, as Chunk::written()); !written(ind)
@@ -1076,10 +1076,10 @@ void ArrayChunk2<T, ind_type>::compress_int(pmp::Team& team)
             int       is_inside = -1; // the candidate-list flag exists in fast-block builds only
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                is_inside = static_cast<int>(shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
-                                                 shrink_array::Proxy2<T>::share_info_array->get_num_tab(
-                                                     const_cast<void*>(this->registry_key())))[ind]
-                                                 .load(std::memory_order_acquire));
+                is_inside = static_cast<int>(
+                    shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
+                        shrink_array::Proxy2<T>::share_info_array->get_num_tab(this->registry_key()))[ind]
+                        .load(std::memory_order_acquire));
             }
             int count = -1; // the counters exist in counter builds only
             if constexpr (chunk_config::use_compression_with_counter)

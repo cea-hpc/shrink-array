@@ -248,8 +248,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     {
         if constexpr (!is_bool_like_v<T>)
         {
-            auto* key = const_cast<void*>(this->registry_key());
-            return Proxy2<T>::share_info_array->get_second_value(key);
+            return Proxy2<T>::share_info_array->get_second_value(this->registry_key());
         }
         else
         {
