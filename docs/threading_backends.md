@@ -306,15 +306,74 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    - Left as they are: the `omp critical` of `deferred_path_validation` and
      `blk_allocator_validation` sit in `omp parallel` regions, serial in a
      pool build (the latter tests OpenMP's critical reentrancy itself).
-8. (later, on demand) **TBB backend** for the library's own loops, inside the
-   application's arena, `static_partitioner`; the adaptor of section 2.
+8. **TBB**: the adaptor of section 2 (8a), then, on demand, a TBB backend for
+   the library's own loops, inside the application's arena,
+   `static_partitioner` (8b).
+   *8a done*: `chunk/tbb_adaptor.h`, header-only (the library does not link
+   TBB; the program that includes it does).
+   - `shrink_array::tbb::parallel_for` takes the forms of
+     `oneapi::tbb::parallel_for` with the same arguments -- a range and a body,
+     or first, last [, step] and a function of the index, then a partitioner
+     and / or a `task_group_context` -- and runs them as one phase:
+     `begin_parallel_phase()` before every piece of the range a thread runs
+     (TBB has no hook at the start of a task; a thread that runs several
+     pieces begins again, which the phase guard allows in an application
+     phase), `finalize_parallel_phase()` once the TBB call returned, also
+     when the body threw. The index forms run on a `blocked_range` of the
+     iteration numbers: one begin per piece, not per index.
+     `shrink_array::tbb::phase_body(body)` is the wrapper itself, for a
+     `oneapi::tbb::parallel_for` nested in the body. A step that is not
+     positive is refused with `std::invalid_argument`, as TBB does, before
+     any phase opens. The adaptor's own calls are qualified: unqualified,
+     argument-dependent lookup also finds `oneapi::tbb::parallel_for`
+     (`blocked_range` is TBB's), which wins the overload resolution and
+     skips both ends of the phase -- the harness's first run caught it in
+     the index form.
+   - Backends: pool (each TBB thread takes a rank of the registry, as the
+     `std::thread`s of 7c; the flush and the pass of the finalize run on the
+     pool) and serial (the body over the whole range on the calling thread,
+     without TBB: the library is not thread-safe there). OpenMP refuses it
+     at compile time, when it is called: OpenMP numbers only its own
+     threads.
+   - CMake `CHUNK_WITH_TBB` (OFF): `find_package(TBB)` and the harness,
+     `tbb_validation` (pool and serial builds, every variant and geometry, 1
+     and 8 threads, in a `task_arena` of that many threads): each
+     partitioner (auto, simple with a small grain, static), the index form
+     with steps 1 and 3, compression and forced deferrals in the phase, a
+     nested `oneapi::tbb::parallel_for`, a throwing body, a narrower arena;
+     the arrays against `std::vector`s after every phase, one rank per thread
+     all phase long and distinct between threads, the application phase
+     open in the pieces and closed after the call. Mutations: the adaptor
+     without its finalize (the phase stays open) or without its begin (the
+     pieces run outside the phase) fails it, at 1 and 8 threads.
+   - TSan: the harness needs a oneTBB built with TSan (its CMake:
+     `-DTBB_SANITIZE=thread`). With an uninstrumented libtbb TSan sees no
+     hand-off between tasks, and it reports TBB's own scheduling and every
+     value one task passes to another (hundreds of reports on the first
+     loop). Against an instrumented oneTBB 2021.11: no report (Chunk2 and
+     Chunk2A, 8 threads), while a plain counter incremented in the pieces is
+     reported at once. `compile_all_gnu.sh` gives the pool TSan build TBB
+     only from `CHUNK_TBB_TSAN_DIR`, the package directory of such a build.
+   - The registry must hold every TBB thread alive at once and the calling
+     thread: `chunk_thread_capacity()` (the hardware threads, the team size,
+     `CHUNK_THREAD_CAPACITY`) covers TBB's default arena; a wider
+     `task_arena` needs `CHUNK_THREAD_CAPACITY`. TBB's workers keep their rank
+     until they exit (at the end of the program): the ranks stay dense.
+   *8b, open*: the B loops have no barrier inside and map onto
+   `oneapi::tbb::parallel_for` (`static_partitioner`) in the caller's arena.
+   The C teams do not: TBB guarantees no concurrency between tasks, so a
+   `Team::barrier()` among n tasks deadlocks when fewer than n threads
+   come (a `global_control` limit, workers held by another arena). The teams
+   would keep the pool's `std::jthread`s, which run at serial points only,
+   while TBB's workers are idle.
 
 ## 4. Rules for the branch
 
 - The OpenMP backend stays the default and the reference: at every step the
   OpenMP build gives the same results (validations, shrink_bench checksums)
   and the same timings within noise (`multi_launch_stress.py` before/after).
-- No new dependency for the default build; TBB only behind an option.
+- No new dependency for the default build; TBB only behind an option
+  (`CHUNK_WITH_TBB`).
 - The library never starts threads of its own while the application's
   threads are active (oversubscription): its parallel work runs at serial
   points, on the backend of the application's runtime when there is one.

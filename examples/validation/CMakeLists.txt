@@ -126,6 +126,16 @@
 #                           the join; the array equals a std::vector after
 #                           every phase, the ranks of a phase are distinct,
 #                           in_parallel() is true during the phase only.
+#   tbb_validation          CHUNK_WITH_TBB, pool and serial builds: arrays
+#                           written from a TBB program through
+#                           shrink_array::tbb::parallel_for -- each
+#                           partitioner, the index form, compression and
+#                           deferred writes in the phase, a nested
+#                           parallel_for, a body that throws, a narrower
+#                           task_arena; the array equals a std::vector after
+#                           every phase, every thread keeps one rank, distinct
+#                           from the others', in_parallel() is true in the
+#                           pieces only.
 #   iterator_validation     the read-only const_iterator is random access:
 #                           jumps (it + n, it[n], it2 - it1, orderings) on
 #                           and around chunk boundaries, a ++/-- right after
@@ -251,6 +261,10 @@ function(validation_harness_executable tgt libbase vmacro geom)
   target_include_directories(${tgt} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(${tgt} PRIVATE ${libbase}_${geom})
   validation_variant_defs(${tgt} ${vmacro} ${geom})
+  # tbb_validation: a TBB program (CHUNK_WITH_TBB); the library itself does not link TBB.
+  if ("tbb_validation" IN_LIST ARGN)
+    target_link_libraries(${tgt} PRIVATE TBB::tbb)
+  endif()
   if (RECHUNK_TRACE_POOL AND "rechunk_validation" IN_LIST ARGN)
     target_compile_definitions(${tgt} PRIVATE RECHUNK_TRACE_POOL)
   endif()
@@ -353,6 +367,14 @@ foreach(_geom IN LISTS _rt_geometries)
     # geometry, at 1 and 8 threads.
     if (CHUNK_THREADS_BACKEND STREQUAL "pool")
       list(APPEND _group std_thread_validation)
+    endif()
+    # tbb_validation: arrays driven from a TBB program through
+    # shrink_array::tbb::parallel_for (chunk/tbb_adaptor.h): every partitioner,
+    # the index form, work in the phase, a nested parallel_for, a body that
+    # throws. CHUNK_WITH_TBB builds, pool and serial backends (an OpenMP build
+    # refuses the adaptor), every variant and geometry, at 1 and 8 threads.
+    if (CHUNK_WITH_TBB AND NOT CHUNK_THREADS_BACKEND STREQUAL "openmp")
+      list(APPEND _group tbb_validation)
     endif()
     # read_reclaim_validation: a read or a compound op against an in-region
     # pass that releases the buffer, and a pass that must not erase another

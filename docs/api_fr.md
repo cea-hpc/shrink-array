@@ -68,8 +68,10 @@ les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propre
   l'autre valeur, sans plantage ni message.
 - *Ce qui est refusé, dans tous les builds* : un appel dans une région parallèle du thread
   appelant, pendant un re-chunk, ou quand l'index des secondes valeurs est dégradé (elle renvoie
-  0). Les threads que l'appel ne voit pas ne sont pas détectés : un pool `std::thread` ou TBB,
-  ou une équipe OpenMP lancée par un autre thread hôte.
+  0). Les threads que l'appel ne voit pas ne sont pas détectés : un pool `std::thread` ou TBB
+  hors du contrat de phase, ou une équipe OpenMP lancée par un autre thread hôte. Sous le
+  backend pool, les threads de l'application sont vus entre `begin_parallel_phase()` et
+  `finalize_parallel_phase()` : l'appel y est refusé.
 - *Ce qui le détecte* : les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent sur toute
   recherche ou tout enregistrement de seconde valeur qui chevauche une libération. Faites
   tourner l'application une fois dans un build de contrôle avec ses appels de libération ; les
@@ -133,11 +135,18 @@ effet sinon, et dans les builds séquentiels.
 | `finalize_parallel_phase_only_flush()` + `finalize_parallel_phase_after_flush()` | la même chose, en deux : la première dans la région (elle émet une barrière), la seconde après |
 | `finalize_barrier_phase()` | dans une région, après un `omp barrier` explicite : rend les écritures d'avant visibles après |
 | `parallel_phase([n,] body)` | à la place des deux premiers : une région parallèle (`n` threads, ou ceux du runtime) qui exécute `body` sur chaque thread, avec `begin_parallel_phase()` avant et `finalize_parallel_phase()` après la région ; le partage du travail (`omp for`) va dans `body` |
+| `tbb::parallel_for(...)` | un programme TBB, backend pool ou série (`chunk/tbb_adaptor.h`) : les arguments de `oneapi::tbb::parallel_for`, avec `begin_parallel_phase()` avant chaque morceau et `finalize_parallel_phase()` après l'appel |
 
 Un `begin_parallel_phase()` sans `finalize_parallel_phase()` depuis la région précédente arrête
 le programme, dans tous les builds. Les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent
 aussi sur une écriture différée dans une région par un thread qui n'a pas appelé
 `begin_parallel_phase()`.
+
+Les threads propres de l'application (`std::thread`, TBB) demandent le backend pool
+(`CHUNK_THREADS=pool`) : chaque thread qui écrit appelle `begin_parallel_phase()` avant sa
+première écriture, et un seul thread appelle `finalize_parallel_phase()` une fois qu'ils se sont
+arrêtés. `shrink_array::tbb::parallel_for` fait les deux appels pour une boucle TBB ; l'en-tête
+est installé avec les autres, et le programme lie TBB lui-même (la bibliothèque, non).
 
 ## 7. Taille de chunk adaptative (bibliothèques `_dyn`)
 

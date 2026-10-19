@@ -229,6 +229,27 @@ fi
 # OMP OFF). Release, for the OpenMP-vs-pool timings, and CHECK_OPTIM, for the
 # validations -- std_thread_validation among them, the arrays driven from the
 # application's own std::threads.
+#
+# oneTBB, for the validation of the TBB adaptor (tbb_validation,
+# chunk/tbb_adaptor.h) in the pool builds that have the validations: on when
+# oneTBB is in the environment -- TBBROOT, which oneAPI's vars.sh sets (and
+# `spack load intel-oneapi-tbb` through it) -- or forced by CHUNK_WITH_TBB=1;
+# CHUNK_WITH_TBB=0 leaves it out. The library itself never links TBB.
+# The TSan build takes TBB only from CHUNK_TBB_TSAN_DIR, the CMake directory
+# of a oneTBB built with TSan (its CMake: -DTBB_SANITIZE=thread; the package
+# dir is <prefix>/lib/cmake/TBB, or lib64): an uninstrumented libtbb hides
+# the hand-off of every task from TSan, which then reports TBB's own
+# scheduling and every value passed from one task to another.
+if [ "${CHUNK_WITH_TBB:-}" = "1" ] || { [ -z "${CHUNK_WITH_TBB:-}" ] && [ -n "${TBBROOT:-}" ]; }; then
+    TBB_CMAKE_OPT="-DCHUNK_WITH_TBB=ON"
+else
+    TBB_CMAKE_OPT=""
+fi
+if [ -n "${CHUNK_TBB_TSAN_DIR:-}" ] && [ "${CHUNK_WITH_TBB:-}" != "0" ]; then
+    TBB_TSAN_CMAKE_OPT="-DCHUNK_WITH_TBB=ON -DTBB_DIR=$CHUNK_TBB_TSAN_DIR"
+else
+    TBB_TSAN_CMAKE_OPT=""
+fi
 if skip_release; then
     echo "[debug-only] skipping gnu pool"
 else
@@ -241,7 +262,7 @@ if skip_release; then
     echo "[debug-only] skipping gnu pool with check"
 else
     compile_with_cmake "$build_rep/cmake-build-pool-gnu-check${ICF_SUFFIX}/$arch" \
-      "-DCHUNK_THREADS=pool -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+      "-DCHUNK_THREADS=pool -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_CMAKE_OPT" \
       "gnu pool with check (no openmp)"
 fi
 
@@ -352,7 +373,7 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-thread-sanitiz
 # not a barrier the tool missed. The run for std_thread_validation:
 # OMP_NUM_THREADS=8 (the pool's team size, and the harness's thread count).
 compile_with_cmake "$build_rep/cmake-build-pool-gnu-relwithdebinfo-thread-sanitizer${ICF_SUFFIX}/$arch" \
-  "-DCHUNK_THREADS=pool -DCHECK_OPTIM=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "-DCHUNK_THREADS=pool -DCHECK_OPTIM=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_TSAN_CMAKE_OPT" \
   "gnu relwithdebinfo pool thread sanitizer"
 
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-have-aggressive-compression${ICF_SUFFIX}/$arch" \

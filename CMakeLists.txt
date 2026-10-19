@@ -132,6 +132,24 @@ else()
     set(CHUNK_THREADED ON)
 endif()
 message(STATUS "Threading backend: ${CHUNK_THREADS_BACKEND}")
+
+# ── oneTBB (optional) ─────────────────────────────────────────────────────────
+# CHUNK_WITH_TBB: build what needs oneTBB, i.e. the validation of the TBB
+# adaptor (chunk/tbb_adaptor.h, shrink_array::tbb::parallel_for). The adaptor
+# is header-only and installed with the other headers: the library never
+# links TBB, the program that includes the adaptor does. The adaptor serves
+# the pool and serial backends (an OpenMP build refuses it), so the harness is
+# registered there only. Off by default: no new dependency for the default
+# build.
+option(CHUNK_WITH_TBB "Build the TBB adaptor's validation (needs oneTBB; the library does not link it)" OFF)
+if(CHUNK_WITH_TBB)
+    find_package(TBB REQUIRED)
+    if(CHUNK_THREADS_BACKEND STREQUAL "openmp")
+        message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is not built (OpenMP backend)")
+    else()
+        message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is built")
+    endif()
+endif()
 if(OMP)
     find_package(OpenMP 4.5 REQUIRED)
     set(CMAKE_LIBRARY_PATH /usr/local/lib/x86_64-unknown-linux-gnu ${CMAKE_LIBRARY_PATH})

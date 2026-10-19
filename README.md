@@ -163,9 +163,9 @@ Two development branches, not in a release yet:
 
 - **`threads` -- OpenMP becomes optional.** The library's own parallel work goes through a
   backend chosen at build time: OpenMP (unchanged), a pool of C++ threads (std::jthread), or serial;
-  no OpenMP pragma is left outside one backend file. The pool backend runs today with the
-  application on one thread; arrays driven from the application's own `std::thread`s (or TBB)
-  come next. Plan and status:
+  no OpenMP pragma is left outside one backend file. With the pool backend the arrays can be
+  driven from the application's own `std::thread`s, and from a TBB program through
+  `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`). Plan and status:
   [docs/threading_backends.md](https://github.com/cea-hpc/shrink-array/blob/threads/docs/threading_backends.md).
 - **`cpp23` -- C++23 and `mdspan`.** A multidimensional view on any array: `f[i, j]` goes
   through the same write proxy, and a tiled layout (16 x 16 tiles for 256-element chunks) makes

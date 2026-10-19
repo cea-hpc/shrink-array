@@ -167,9 +167,10 @@ Deux branches de développement, pas encore dans une version :
 
 - **`threads` -- OpenMP devient facultatif.** Le travail parallèle de la bibliothèque passe par
   un backend choisi à la compilation : OpenMP (inchangé), un pool de threads C++ (std::jthread), ou série ;
-  il ne reste aucun pragma OpenMP hors d'un seul fichier de backend. Le backend pool tourne
-  aujourd'hui avec l'application sur un seul thread ; les tableaux pilotés depuis les propres
-  `std::thread` de l'application (ou TBB) viennent ensuite. Plan et avancement (en anglais) :
+  il ne reste aucun pragma OpenMP hors d'un seul fichier de backend. Avec le backend pool, les
+  tableaux peuvent être pilotés depuis les propres `std::thread` de l'application, et depuis un
+  programme TBB via `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`). Plan et
+  avancement (en anglais) :
   [docs/threading_backends.md](https://github.com/cea-hpc/shrink-array/blob/threads/docs/threading_backends.md).
 - **`cpp23` -- C++23 et `mdspan`.** Une vue multidimensionnelle sur n'importe quel tableau :
   `f[i, j]` passe par le même proxy d'écriture, et une disposition en tuiles (tuiles de 16 x 16
