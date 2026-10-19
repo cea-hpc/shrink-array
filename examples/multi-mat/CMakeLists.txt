@@ -91,6 +91,14 @@ endfunction()
 multi_mat_md_test(multi_mat_md_tiles multi-mat-md --chunk-mode tiles)
 multi_mat_md_test(multi_mat_md_elements multi-mat-md --chunk-mode elements)
 multi_mat_md_test(multi_mat_md_rows multi-mat-md --chunk-mode rows)
+# The team splits the cells of all the boxes at once (ComputeLoopsMd.h): at
+# 16 threads on small boxes no thread may write more than 1.25 times the mean
+# (split material by material, most of the team sat idle).
+add_test(NAME multi_mat_md_balance
+         COMMAND multi-mat-md --nx 480 --ny 480 --mat 20 --iter 12 --option 1 --pc-chunk 4 --seed 5
+                 --max-imbalance 1.25)
+set_property(TEST multi_mat_md_balance PROPERTY ENVIRONMENT OMP_NUM_THREADS=16)
+set_property(TEST multi_mat_md_balance PROPERTY SKIP_RETURN_CODE 77)
 
 if (CHUNK_HAVE_OMPT)
     add_executable(multi-mat-md-embedded ${_mm_md_sources} manage_ompt.cpp)

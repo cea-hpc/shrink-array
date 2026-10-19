@@ -112,6 +112,12 @@ inline constexpr bool chunk_stats = shrink_array::chunk_config::stats;
     return CHUNK_PMP_MAX_THREADS;
 }
 
+/// @brief Threads of the calling thread's team (1 outside a region).
+[[nodiscard]] inline int team_size() noexcept
+{
+    return CHUNK_PMP_NUM_THREADS;
+}
+
 /// @brief Rank of the calling thread in its team (0 outside a region).
 [[nodiscard]] inline int thread_rank() noexcept
 {

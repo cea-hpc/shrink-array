@@ -91,10 +91,13 @@ the tag's checksum to the recipe.
   one go for the reduction), `elements` cell by cell in the same layout,
   `rows` cell by cell row-major. 1600 x 1600, 50 chunk materials, 2 threads:
   663 MiB peak in tiles, 1847 MiB row-major, 3912 MiB all `std::vector`;
-  the same result in all four. `--verify` replays the run serially and
+  the same result in all four. The team splits the cells of all the boxes
+  at once, tile by tile (row by row in `rows`): at 64 threads the most
+  loaded thread writes 1.01 times the mean, where an `omp for` per box left
+  49 threads idle (7.8 times). `--verify` replays the run serially and
   compares every array and the result; tests `multi_mat_md_tiles`,
-  `multi_mat_md_elements`, `multi_mat_md_rows` (and `multi_mat_md_embedded`
-  with an OMPT tool).
+  `multi_mat_md_elements`, `multi_mat_md_rows`, `multi_mat_md_balance`
+  (`--max-imbalance`), and `multi_mat_md_embedded` with an OMPT tool.
 
 ### Changed
 

@@ -34,11 +34,13 @@
  * Usage: multi-mat-md [--nx N] [--ny N] [--mat N] [--iter N] [--option 1-4]
  *        [--chunk-rate P] [--pc-chunk P] [--pc-vector P] [--freq-rtz N]
  *        [--freq-compress N] [--interface N] [--chunk-mode tiles|elements|rows]
- *        [--seed S] [--verify] [--verbose]
- * Exit 0; 1 when --verify finds a difference; 2 on a bad argument; 77 when
+ *        [--seed S] [--verify] [--max-imbalance R] [--verbose]
+ * Exit 0; 1 when --verify finds a difference, or when the most loaded
+ * thread wrote more than R times the mean; 2 on a bad argument; 77 when
  * no mdspan is available (ctest: skipped).
  */
 
+#include <algorithm> // std::max
 #include <chrono>    // std::chrono::steady_clock
 #include <cmath>     // std::round, std::sqrt
 #include <cstdio>    // stderr
@@ -130,6 +132,10 @@ bool SimuMd::parse(int argc, char** argv)
             else if (key == "--seed")
             {
                 seed = static_cast<unsigned>(std::stoul(val()));
+            }
+            else if (key == "--max-imbalance")
+            {
+                max_imbalance = std::stod(val());
             }
             else if (key == "--verify")
             {
@@ -298,6 +304,30 @@ void print_stats(const SimuMd& s, const MM& mm_algo)
     }
 }
 
+/// @brief How evenly the threads shared the writes: the most loaded thread
+///        against the mean (1: even), and the threads that wrote at all.
+/// @return That ratio (1 when nothing was written).
+double print_balance(const SimuMd& s)
+{
+    long most  = 0;
+    long total = 0;
+    int  busy  = 0;
+    for (const auto& w : s.work)
+    {
+        most = std::max(most, w.cells);
+        total += w.cells;
+        busy += w.cells != 0 ? 1 : 0;
+    }
+    if (total != 0)
+    {
+        std::println("\nWrites per thread : most loaded / mean {:.2f}, {} of {} threads wrote",
+                     static_cast<double>(most) * static_cast<double>(s.work.size()) / static_cast<double>(total), busy,
+                     s.work.size());
+        return static_cast<double>(most) * static_cast<double>(s.work.size()) / static_cast<double>(total);
+    }
+    return 1;
+}
+
 /// @brief The run with the policies of @p mm_algo: the iterations in one
 ///        parallel region, then the stats and the replay.
 template <typename MM>
@@ -311,6 +341,7 @@ int run(SimuMd& s, const MM& mm_algo, const char* chunk_policy)
     std::println("Elapsed time create arrays : {:g}s",
                  std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
 
+    s.work.assign(static_cast<std::size_t>(multi_mat::max_threads()), {});
     double value = 0;
     t0           = std::chrono::steady_clock::now();
     #pragma omp parallel reduction(+ : value)
@@ -321,6 +352,7 @@ int run(SimuMd& s, const MM& mm_algo, const char* chunk_policy)
     const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 
     print_stats(s, mm_algo);
+    const double imbalance = print_balance(s);
     std::println("\nResult = {:.6e}", value);
     std::println("\nElapsed time  : {:.2f}s (initialisation {:.2f}s, writes {:.2f}s, reads {:.2f}s, compression passes "
                  "{:.2f}s)\n",
@@ -333,9 +365,14 @@ int run(SimuMd& s, const MM& mm_algo, const char* chunk_policy)
     }
 
     int rc = 0;
+    if (s.max_imbalance > 0 && imbalance > s.max_imbalance)
+    {
+        std::println("balance: FAILED, most loaded / mean {:.2f} above {:.2f}", imbalance, s.max_imbalance);
+        rc = 1;
+    }
     if (s.check)
     {
-        rc = s.verify(mm_algo, value) == 0 ? 0 : 1;
+        rc = s.verify(mm_algo, value) == 0 ? rc : 1;
     }
 
     if constexpr (multi_mat::chunk_stats)

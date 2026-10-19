@@ -206,6 +206,14 @@ the loop.
 | `elements` | `layout_tiled` | cell by cell, `f[i, j]` |
 | `rows` | row-major `md::view` | cell by cell, `f[i, j]` |
 
+The team splits the cells of all the boxes at once, by weight, tile by tile (row by row of a
+box in `rows`, where a chunk is a piece of a row); every thread computes the same split, with no
+communication, and a tile goes to one thread only. Split box by box, an `omp for` per material,
+a box of 113 rows has 8 rows of tiles: at 64 threads only 15 threads wrote and the most loaded
+did 7.8 times the mean (35 times at 288 threads). Split at once: 1.01 at 64 threads, 1.07 at
+288 (3200 x 3200, 50 materials, counted on 2 cores). The run prints that ratio;
+`--max-imbalance` makes it a check (test `multi_mat_md_balance`).
+
 1600 x 1600 mesh, 50 materials all in chunk arrays, 100 iterations, boxes up to 113 x 113
 (`--pc-chunk 0.5`), the same boxes for every line (`--seed 3`); Release, GCC 14, kokkos/mdspan,
 2 threads on a 2-core container (orders of magnitude):
@@ -264,4 +272,4 @@ reports as skipped.
 | `examples/validation/mdspan_submdspan_validation.cpp` | sub-views of a row-major view (block, row, column, read-only, `fill_box`) and of a tiled view (aligned, ending at the extent, a sub-view of a sub-view; the tile operations on it, serially and in a parallel phase); every variant at 1 and 8 threads, and `mdspan_submdspan_misaligned` (a tiled slice off the tiles stops) |
 | `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, every multiple of 64 to 4096), `layout_tiled_dyn` against `layout_tiled` index by index and through their sub-views, `tiled_view_dyn`'s tile per chunk, the tile operations on a tile per chunk, a 3 x 5 tile and one beyond the inline buffer; every variant at the default size and at dyn (a re-chunk under the view), 1 and 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | the comparisons of sections 2 and 3, and the cost of the multi-index; `mdspan_tiles 4096` for a larger field |
-| `examples/multi-mat/main_md.cpp`, `LoopsMd.h`, `ComputeLoopsMd.h`, `SimuMd.h` | `multi-mat-md`, the multi-material mock in 2D (section 3); tests `multi_mat_md_tiles`, `multi_mat_md_elements`, `multi_mat_md_rows` (`--verify`) |
+| `examples/multi-mat/main_md.cpp`, `LoopsMd.h`, `ComputeLoopsMd.h`, `SimuMd.h` | `multi-mat-md`, the multi-material mock in 2D (section 3); tests `multi_mat_md_tiles`, `multi_mat_md_elements`, `multi_mat_md_rows` (`--verify`), `multi_mat_md_balance` |

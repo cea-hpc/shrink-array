@@ -42,8 +42,14 @@
  * of a box at least a chunk wide. The tile policy then reads and writes a
  * tile in one go, and a uniform tile in O(1).
  *
- * Every operation is called by every thread of the region and shares its
- * work without a barrier (`omp for nowait`), as the loops of Loops.h.
+ * An operation works on a Part of a box, the unit ComputeLoopsMd.h deals
+ * to the threads across all the materials at once: a run of tiles of one
+ * row of tiles (a band), or, for a policy with `row_parts` (row-major chunk
+ * arrays, where a chunk is a piece of a row), a run of whole rows of the
+ * box. Either way two threads never share a tile -- what the tile
+ * operations require in a parallel region -- nor, row-major, write the same
+ * piece of row at once. Nothing is work-shared in here: the caller has
+ * already split the work.
  */
 
 #include "chunk/mdspan.h" // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
@@ -101,6 +107,46 @@ inline constexpr auto tile_shape = smd::tile_shape<2>(shrink_array::static_chunk
 
 /// @brief The tiled layout of the chunk materials.
 using layout_tiles = smd::layout_tiled<tile_shape[0], tile_shape[1]>;
+
+/// @brief Rows of a band: the tile's height, bands aligned on the tiles.
+inline constexpr int band_rows = static_cast<int>(tile_shape[0]);
+
+/// @brief Columns of a tile column: the tile's width.
+inline constexpr int tile_cols = static_cast<int>(tile_shape[1]);
+
+/// @brief A piece of a box: rows [row_first, row_last) and tile columns
+///        [c_first, c_last) (columns [c_first * tile_cols, c_last * tile_cols)),
+///        clipped to the box. A part of tiles is one band: row_first is a
+///        multiple of band_rows, row_last the next one.
+struct Part
+{
+    int row_first = 0;
+    int row_last  = 0;
+    int c_first   = 0;
+    int c_last    = 0;
+};
+
+/// @brief The bands box @p b touches: [first, last).
+[[nodiscard]] inline std::array<int, 2> bands_of(const Box& b) noexcept
+{
+    return {b.i0 / band_rows, (b.i1() - 1) / band_rows + 1};
+}
+
+/// @brief The tile columns box @p b touches: [first, last).
+[[nodiscard]] inline std::array<int, 2> tile_cols_of(const Box& b) noexcept
+{
+    return {b.j0 / tile_cols, (b.j1() - 1) / tile_cols + 1};
+}
+
+/// @brief The cells of box @p b in part @p p, as a box.
+[[nodiscard]] inline Box cells_of(const Box& b, const Part& p) noexcept
+{
+    const int i0 = std::max(b.i0, p.row_first);
+    const int i1 = std::min(b.i1(), p.row_last);
+    const int j0 = std::max(b.j0, p.c_first * tile_cols);
+    const int j1 = std::min(b.j1(), p.c_last * tile_cols);
+    return {i0, j0, i1 - i0, j1 - j0};
+}
 
 /// @brief Elements a chunk array needs for an @p nx x @p ny tiled view (the
 ///        last tiles padded).
@@ -174,32 +220,32 @@ BoxWrite<View, Fn, Hint> write(const View& f, Fn fn, Hint hint)
 }
 
 /**
- * @brief The cell loops over a box, through `f[i, j]`: rows shared by the
- *        team, the columns of a row in order -- under `omp simd` when
- *        @p Simd (the std::vector path; on a chunk array an element access
- *        is a proxy, not a lane).
+ * @brief The cell loops over a box, through `f[i, j]`: the rows of the
+ *        bands in order, the columns of a row in order -- under `omp simd`
+ *        when @p Simd (the std::vector path; on a chunk array an element
+ *        access is a proxy, not a lane).
  */
 template <bool Simd>
 struct CellLoops
 {
-    /// @brief Every write of @p ws on the cells of @p b.
+    /// @brief Every write of @p ws on the cells of part @p p of box @p b.
     template <typename... Ws>
-    void write_box(const Box& b, const Ws&... ws) const
+    void write_box(const Box& b, const Part& p, const Ws&... ws) const
     {
-    #pragma omp for schedule(static) nowait
-        for (int i = b.i0; i < b.i1(); ++i)
+        const Box c = cells_of(b, p);
+        for (int i = c.i0; i < c.i1(); ++i)
         {
             if constexpr (Simd)
             {
     #pragma omp simd
-                for (int j = b.j0; j < b.j1(); ++j)
+                for (int j = c.j0; j < c.j1(); ++j)
                 {
                     ((ws.f[i, j] = ws.fn(i, j)), ...);
                 }
             }
             else
             {
-                for (int j = b.j0; j < b.j1(); ++j)
+                for (int j = c.j0; j < c.j1(); ++j)
                 {
                     ((ws.f[i, j] = ws.fn(i, j)), ...);
                 }
@@ -207,36 +253,43 @@ struct CellLoops
         }
     }
 
-    /// @brief The cells of @p b set to 0 in every view of @p fs.
+    /// @brief The cells of part @p p of box @p b set to 0 in every view of @p fs.
     template <typename... Views>
-    void zero_box(const Box& b, const Views&... fs) const
+    void zero_box(const Box& b, const Part& p, const Views&... fs) const
     {
-        write_box(b, write(fs, [](int, int) { return 0.; })...);
+        write_box(b, p, write(fs, [](int, int) { return 0.; })...);
     }
 
     /**
      * @brief `red += fn(fr[i, j], t0[i, j], t1[i, j], t2[i, j])` over the
-     *        cells of @p b; @p red is the calling thread's accumulator.
+     *        cells of part @p p of box @p b; @p red is the calling thread's
+     *        accumulator.
      */
     template <typename Fn, typename VF, typename V0, typename V1, typename V2>
-    void
-    reduce_box(const Box& b, double& red, const Fn& fn, const VF& fr, const V0& t0, const V1& t1, const V2& t2) const
+    void reduce_box(const Box&  b,
+                    const Part& p,
+                    double&     red,
+                    const Fn&   fn,
+                    const VF&   fr,
+                    const V0&   t0,
+                    const V1&   t1,
+                    const V2&   t2) const
     {
-    #pragma omp for schedule(static) nowait
-        for (int i = b.i0; i < b.i1(); ++i)
+        const Box c = cells_of(b, p);
+        for (int i = c.i0; i < c.i1(); ++i)
         {
             double s = 0;
             if constexpr (Simd)
             {
     #pragma omp simd reduction(+ : s)
-                for (int j = b.j0; j < b.j1(); ++j)
+                for (int j = c.j0; j < c.j1(); ++j)
                 {
                     s += fn(fr[i, j], t0[i, j], t1[i, j], t2[i, j]);
                 }
             }
             else
             {
-                for (int j = b.j0; j < b.j1(); ++j)
+                for (int j = c.j0; j < c.j1(); ++j)
                 {
                     s += fn(fr[i, j], t0[i, j], t1[i, j], t2[i, j]);
                 }
@@ -250,7 +303,8 @@ struct CellLoops
 ///        vector's data, cell loops under `omp simd`.
 struct LoopsMdVector : CellLoops<true>
 {
-    static constexpr const char* name = "std::vector, row-major mdspan, cell loops (omp simd)";
+    static constexpr bool        row_parts = false; ///< parts of tiles
+    static constexpr const char* name      = "std::vector, row-major mdspan, cell loops (omp simd)";
 
     /// @brief The nx x ny view of @p v (read-only when @p v is const).
     template <typename Vec>
@@ -264,7 +318,10 @@ struct LoopsMdVector : CellLoops<true>
 ///        a chunk is a piece of a row.
 struct LoopsMdRows : CellLoops<false>
 {
-    static constexpr const char* name = "chunk arrays, row-major md::view, cell loops f[i, j]";
+    /// Parts of whole rows: a chunk is a piece of a row, two threads on two
+    /// tile columns of one row would write the same chunk at once.
+    static constexpr bool        row_parts = true;
+    static constexpr const char* name      = "chunk arrays, row-major md::view, cell loops f[i, j]";
 
     template <typename Vec>
     auto view(Vec& v, int nx, int ny) const
@@ -277,7 +334,8 @@ struct LoopsMdRows : CellLoops<false>
 ///        the layout of LoopsMdTiles with the access of LoopsMdRows.
 struct LoopsMdTilesElements : CellLoops<false>
 {
-    static constexpr const char* name = "chunk arrays, tiled md::tiled_view, cell loops f[i, j]";
+    static constexpr bool        row_parts = false; ///< parts of tiles: a tile is a chunk
+    static constexpr const char* name      = "chunk arrays, tiled md::tiled_view, cell loops f[i, j]";
 
     template <typename Vec>
     auto view(Vec& v, int nx, int ny) const
@@ -289,10 +347,9 @@ struct LoopsMdTilesElements : CellLoops<false>
 /**
  * @brief The chunk materials in tiles, walked tile by tile
  *        (chunk/mdspan_tile_ops.h).
- * @details The tiles a box touches are, row of tiles by row of tiles, a run
- *          of consecutive tile numbers: each thread takes whole rows of
- *          tiles (`omp for` over them), so no two threads share a tile, nor
- *          a chunk -- what the tile operations require in a parallel region.
+ * @details A part is a run of consecutive tiles of one row of tiles, hence
+ *          of consecutive tile numbers: the range overloads of the tile
+ *          operations take it as it is.
  *          - write_box: md::update_tiles; a tile is read once, the cells of
  *            the box changed in the buffer, written back in one go, as one
  *            constant when it came out uniform. With a hint, a tile inside
@@ -305,7 +362,8 @@ struct LoopsMdTilesElements : CellLoops<false>
  */
 struct LoopsMdTiles
 {
-    static constexpr const char* name = "chunk arrays, tiled md::tiled_view, tile loops (update_tiles, fill_box)";
+    static constexpr bool        row_parts = false; ///< parts of tiles: what the tile operations need
+    static constexpr const char* name      = "chunk arrays, tiled md::tiled_view, tile loops (update_tiles, fill_box)";
 
     static constexpr int         te0        = static_cast<int>(tile_shape[0]);
     static constexpr int         te1        = static_cast<int>(tile_shape[1]);
@@ -317,78 +375,42 @@ struct LoopsMdTiles
         return smd::tiled_view<tile_shape[0], tile_shape[1]>(array_of(v), nx, ny);
     }
 
-    /// @brief The tiles box @p b touches: rows of tiles [r0, r1), columns
-    ///        [c0, c1); `per_row` tiles in a row of the view.
-    struct TileRange
-    {
-        int r0;
-        int r1;
-        int c0;
-        int c1;
-        int per_row;
-
-        /// @brief Tile numbers [first, last) of row @p r of the range.
-        [[nodiscard]] int first(int r) const noexcept
-        {
-            return r * per_row + c0;
-        }
-        [[nodiscard]] int last(int r) const noexcept
-        {
-            return r * per_row + c1;
-        }
-    };
-
+    /// @brief Tiles in a row of tiles of view @p f.
     template <typename View>
-    static TileRange tiles_of(const Box& b, const View& f) noexcept
+    static int per_row(const View& f) noexcept
     {
-        const int ny = static_cast<int>(f.extent(1));
-        return {b.i0 / te0, (b.i1() - 1) / te0 + 1, b.j0 / te1, (b.j1() - 1) / te1 + 1, (ny + te1 - 1) / te1};
+        return (static_cast<int>(f.extent(1)) + te1 - 1) / te1;
     }
 
     template <typename... Ws>
-    void write_box(const Box& b, const Ws&... ws) const
+    void write_box(const Box& b, const Part& p, const Ws&... ws) const
     {
-        if (b.h <= 0 || b.w <= 0)
-        {
-            return;
-        }
-        const TileRange tr = tiles_of(b, first_view(ws...));
-    #pragma omp for schedule(static) nowait
-        for (int r = tr.r0; r < tr.r1; ++r)
-        {
-            (write_tiles(b, ws, tr.first(r), tr.last(r)), ...);
-        }
+        const int k0 = (p.row_first / band_rows) * per_row(first_view(ws...));
+        (write_tiles(b, ws, k0 + p.c_first, k0 + p.c_last), ...);
     }
 
     template <typename... Views>
-    void zero_box(const Box& b, const Views&... fs) const
+    void zero_box(const Box& b, const Part& p, const Views&... fs) const
     {
-        if (b.h <= 0 || b.w <= 0)
-        {
-            return;
-        }
-        const TileRange tr = tiles_of(b, first_view_of(fs...));
-    #pragma omp for schedule(static) nowait
-        for (int r = tr.r0; r < tr.r1; ++r)
-        {
-            (smd::fill_box(fs, b.lo(), b.hi(), 0., tr.first(r), tr.last(r)), ...);
-        }
+        const int k0 = (p.row_first / band_rows) * per_row(first_view_of(fs...));
+        (smd::fill_box(fs, b.lo(), b.hi(), 0., k0 + p.c_first, k0 + p.c_last), ...);
     }
 
     template <typename Fn, typename VF, typename V0, typename V1, typename V2>
-    void
-    reduce_box(const Box& b, double& red, const Fn& fn, const VF& fr, const V0& t0, const V1& t1, const V2& t2) const
+    void reduce_box(const Box&  b,
+                    const Part& p,
+                    double&     red,
+                    const Fn&   fn,
+                    const VF&   fr,
+                    const V0&   t0,
+                    const V1&   t1,
+                    const V2&   t2) const
     {
-        if (b.h <= 0 || b.w <= 0)
-        {
-            return;
-        }
-        const TileRange tr = tiles_of(b, fr);
-    #pragma omp for schedule(static) nowait
-        for (int r = tr.r0; r < tr.r1; ++r)
+        const int r  = p.row_first / band_rows;
+        const int k0 = r * per_row(fr);
         {
             std::array<Tile, 4> tl;
-            for (int k = tr.first(r); k < tr.last(r); ++k)
+            for (int k = k0 + p.c_first; k < k0 + p.c_last; ++k)
             {
                 load(fr, k, tl[0]);
                 load(t0, k, tl[1]);
@@ -397,7 +419,7 @@ struct LoopsMdTiles
 
                 // The cells of the box in tile k, in tile coordinates.
                 const int oi = r * te0;
-                const int oj = (k - r * tr.per_row) * te1;
+                const int oj = (k - k0) * te1;
                 const int ia = std::max(b.i0, oi) - oi;
                 const int ib = std::min(b.i1(), oi + te0) - oi;
                 const int ja = std::max(b.j0, oj) - oj;

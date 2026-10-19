@@ -49,6 +49,69 @@
 namespace multi_mat::md
 {
 
+template <typename BoxOf, typename RowParts>
+void SimuMd::dealParts(const BoxOf& box_of, const RowParts& row_parts, std::vector<Share>& mine) const
+{
+    const long nth = multi_mat::team_size();
+    const long me  = multi_mat::thread_rank();
+
+    long total = 0;
+    for (int mat = 0; mat < nbmat; ++mat)
+    {
+        const Box b = box_of(mat);
+        total += static_cast<long>(b.h) * b.w;
+    }
+    const long lo = total * me / nth;       // this thread's cells: [lo, hi)
+    const long hi = total * (me + 1) / nth; // in the order (material, row, column)
+
+    mine.clear();
+    long acc = 0; // cells before the current unit
+    for (int mat = 0; mat < nbmat && acc < hi; ++mat)
+    {
+        const Box  b    = box_of(mat);
+        const auto cols = tile_cols_of(b);
+        if (row_parts(mat))
+        {
+            // Units of one row of the box: this thread's run of rows.
+            Part run{-1, -1, cols[0], cols[1]};
+            for (int i = b.i0; i < b.i1() && acc < hi; ++i)
+            {
+                if (acc >= lo) // the row starts in this thread's share
+                {
+                    run.row_first = run.row_first < 0 ? i : run.row_first;
+                    run.row_last  = i + 1;
+                }
+                acc += b.w;
+            }
+            if (run.row_first >= 0)
+            {
+                mine.push_back({mat, run});
+            }
+            continue;
+        }
+        // Units of one tile: this thread's run of tiles in each band.
+        const auto bands = bands_of(b);
+        for (int r = bands[0]; r < bands[1] && acc < hi; ++r)
+        {
+            Part run{r * band_rows, (r + 1) * band_rows, -1, -1};
+            for (int c = cols[0]; c < cols[1] && acc < hi; ++c)
+            {
+                const Box cell = cells_of(b, Part{run.row_first, run.row_last, c, c + 1});
+                if (acc >= lo) // the tile starts in this thread's share
+                {
+                    run.c_first = run.c_first < 0 ? c : run.c_first;
+                    run.c_last  = c + 1;
+                }
+                acc += static_cast<long>(cell.h) * cell.w;
+            }
+            if (run.c_first >= 0)
+            {
+                mine.push_back({mat, run});
+            }
+        }
+    }
+}
+
 template <typename LOOPS, typename LOOPSCHUNK>
 void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double& value)
 {
@@ -57,14 +120,29 @@ void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double
     const Box  mesh{0, 0, nx, ny};
     const auto t_start = std::chrono::steady_clock::now();
 
+    // This thread's parts, rebuilt for every phase whose boxes change: the
+    // team splits the cells of all the materials at once, tile by tile, not
+    // material by material (a box of a few rows of tiles would leave most of
+    // the team idle).
+    std::vector<Share> mine;
+    // The unit of a material's parts: its policy's (LoopsMd.h).
+    const auto row_parts = [](int mat) { return dispatch.isChunk(mat) ? LOOPSCHUNK::row_parts : LOOPS::row_parts; };
+    mine.reserve(static_cast<std::size_t>(nbmat));
+    const int me = multi_mat::thread_rank();
+
     // Every array zero over the whole mesh, as multi-mat's initialisation.
-    mm_algo.loop(0, nbmat,
-                 [&](int, const auto& get_mat_vec, const auto& loops)
-                 {
-                     loops.zero_box(mesh, loops.view(get_mat_vec(tabs[0]), nx, ny),
-                                    loops.view(get_mat_vec(tabs[1]), nx, ny), loops.view(get_mat_vec(tabs[2]), nx, ny),
-                                    loops.view(get_mat_vec(frac), nx, ny));
-                 });
+    dealParts([&mesh](int) { return mesh; }, row_parts, mine);
+    for (const Share& sh : mine)
+    {
+        mm_algo.loop(sh.mat, sh.mat + 1,
+                     [&](int, const auto& get_mat_vec, const auto& loops)
+                     {
+                         loops.zero_box(mesh, sh.part, loops.view(get_mat_vec(tabs[0]), nx, ny),
+                                        loops.view(get_mat_vec(tabs[1]), nx, ny),
+                                        loops.view(get_mat_vec(tabs[2]), nx, ny),
+                                        loops.view(get_mat_vec(frac), nx, ny));
+                     });
+    }
 
     #pragma omp barrier
     multi_mat::barrier_phase();
@@ -97,59 +175,74 @@ void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double
             }
         };
 
+        // This thread's parts of this iteration's boxes: the writes and the
+        // reads below take the same.
+        dealParts([&bx, it](int mat) { return bx[it, mat]; }, row_parts, mine);
+        for (const Share& sh : mine)
+        {
+            const Box c = cells_of(bx[it, sh.mat], sh.part);
+            work[static_cast<std::size_t>(me)].cells += static_cast<long>(c.h) * c.w;
+        }
+
         // Writes: the box of every material.
-        mm_algo.loop(0, nbmat,
-                     [&](int mat, const auto& get_mat_vec, const auto& loops)
-                     {
-                         const Box b = bx[it, mat];
-
-                         const auto f0 = loops.view(get_mat_vec(tabs[0]), nx, ny);
-                         const auto f1 = loops.view(get_mat_vec(tabs[1]), nx, ny);
-                         const auto f2 = loops.view(get_mat_vec(tabs[2]), nx, ny);
-                         const auto fr = loops.view(get_mat_vec(frac), nx, ny);
-
-                         if (it % freq_rtz == 0)
+        for (const Share& sh : mine)
+        {
+            mm_algo.loop(sh.mat, sh.mat + 1,
+                         [&](int mat, const auto& get_mat_vec, const auto& loops)
                          {
-                             loops.zero_box(b, f0, f1, f2, fr);
-                         }
-                         else
-                         {
-                             const double t = static_cast<double>(it);
-                             loops.write_box(b, write(f0, [this, t](int i, int j) { return cellNumber(i, j) + t; }),
-                                             write(f1, [this, t](int i, int j) { return 2 * cellNumber(i, j) + t; }),
-                                             write(f2, [this, t](int i, int j) { return 3 * cellNumber(i, j) + t; }),
-                                             // 1 inside the box, a ramp along its sides: on a chunk
-                                             // material in tiles, a tile of the interior already at 1
-                                             // is left alone (the hint), compressed.
-                                             write(
-                                                 fr, [this, &b](int i, int j) { return presenceFraction(b, i, j); },
-                                                 [this, &b](const auto& o, const auto& e)
-                                                 { return fractionOnTile(b, o, e); }));
-                         }
-                     });
+                             const Box b = bx[it, mat];
+
+                             const auto f0 = loops.view(get_mat_vec(tabs[0]), nx, ny);
+                             const auto f1 = loops.view(get_mat_vec(tabs[1]), nx, ny);
+                             const auto f2 = loops.view(get_mat_vec(tabs[2]), nx, ny);
+                             const auto fr = loops.view(get_mat_vec(frac), nx, ny);
+
+                             if (it % freq_rtz == 0)
+                             {
+                                 loops.zero_box(b, sh.part, f0, f1, f2, fr);
+                             }
+                             else
+                             {
+                                 const double t = static_cast<double>(it);
+                                 loops.write_box(
+                                     b, sh.part, write(f0, [this, t](int i, int j) { return cellNumber(i, j) + t; }),
+                                     write(f1, [this, t](int i, int j) { return 2 * cellNumber(i, j) + t; }),
+                                     write(f2, [this, t](int i, int j) { return 3 * cellNumber(i, j) + t; }),
+                                     // 1 inside the box, a ramp along its sides: on a chunk
+                                     // material in tiles, a tile of the interior already at 1
+                                     // is left alone (the hint), compressed.
+                                     write(
+                                         fr, [this, &b](int i, int j) { return presenceFraction(b, i, j); },
+                                         [this, &b](const auto& o, const auto& e) { return fractionOnTile(b, o, e); }));
+                             }
+                         });
+        }
 
     #pragma omp barrier
         multi_mat::barrier_phase(); // the reads below see the writes above (manual executable only)
         lap(time_write);
 
         // Reads: the gadget computation, five times, on read-only views.
-        mm_algo.loop(0, nbmat,
-                     [&](int mat, const auto& get_mat_vec, const auto& loops)
-                     {
-                         const Box  b  = bx[it, mat];
-                         const auto c0 = loops.view(std::as_const(get_mat_vec(tabs[0])), nx, ny);
-                         const auto c1 = loops.view(std::as_const(get_mat_vec(tabs[1])), nx, ny);
-                         const auto c2 = loops.view(std::as_const(get_mat_vec(tabs[2])), nx, ny);
-                         const auto cf = loops.view(std::as_const(get_mat_vec(frac)), nx, ny);
-
-                         for (int p = 0; p < 5; ++p)
+        for (const Share& sh : mine)
+        {
+            mm_algo.loop(sh.mat, sh.mat + 1,
+                         [&](int mat, const auto& get_mat_vec, const auto& loops)
                          {
-                             const double val = static_cast<double>(p);
-                             loops.reduce_box(
-                                 b, value, [val](double fr, double a, double bb, double c)
-                                 { return gadget(fr, a, bb, c, val); }, cf, c0, c1, c2);
-                         }
-                     });
+                             const Box  b  = bx[it, mat];
+                             const auto c0 = loops.view(std::as_const(get_mat_vec(tabs[0])), nx, ny);
+                             const auto c1 = loops.view(std::as_const(get_mat_vec(tabs[1])), nx, ny);
+                             const auto c2 = loops.view(std::as_const(get_mat_vec(tabs[2])), nx, ny);
+                             const auto cf = loops.view(std::as_const(get_mat_vec(frac)), nx, ny);
+
+                             for (int p = 0; p < 5; ++p)
+                             {
+                                 const double val = static_cast<double>(p);
+                                 loops.reduce_box(
+                                     b, sh.part, value, [val](double fr, double a, double bb, double c)
+                                     { return gadget(fr, a, bb, c, val); }, cf, c0, c1, c2);
+                             }
+                         });
+        }
 
         // The next writes (or the compression pass) after every read.
     #pragma omp barrier

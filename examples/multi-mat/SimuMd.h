@@ -79,9 +79,10 @@ struct SimuMd
 
     ChunkMode chunk_mode = ChunkMode::tiles;
 
-    unsigned seed    = 0;     ///< Seed of the draws; 0: std::random_device
-    bool     verbose = false; ///< Per-iteration prints
-    bool     check   = false; ///< Replay serially and compare (verify())
+    unsigned seed          = 0;     ///< Seed of the draws; 0: std::random_device
+    bool     verbose       = false; ///< Per-iteration prints
+    bool     check         = false; ///< Replay serially and compare (verify())
+    double   max_imbalance = 0; ///< Fail when the most loaded thread wrote more than this times the mean (0: no check)
 
     // ── State ────────────────────────────────────────────────────────────
 
@@ -116,12 +117,41 @@ struct SimuMd
     ///        sized for the layout of the chunk mode.
     void createTabs();
 
+    /// @brief Cells a thread wrote (resets included), one per thread, padded:
+    ///        the balance of the deal (dealParts()).
+    struct alignas(64) WorkSlot
+    {
+        long cells = 0;
+    };
+    std::vector<WorkSlot> work;
+
     /// @brief The box of every material at every iteration.
     void computeDistribution();
 
     /// @brief Elements every array holds: the tiled size in a tiled chunk
     ///        mode (the last tiles padded), nx * ny row-major.
     [[nodiscard]] std::size_t storageSize() const;
+
+    /// @brief A part of material mat's box: a thread's share of it.
+    struct Share
+    {
+        int  mat;
+        Part part;
+    };
+
+    /**
+     * @brief This thread's parts of the boxes `box_of(mat)`: the team splits
+     *        the cells of every material's box at once, by weight.
+     * @details A material's unit is a tile, or a row of its box when
+     *          `row_parts(mat)` (LoopsMd.h). In the order (material, row,
+     *          column), thread t of T takes the units whose first cell falls
+     *          in [W t / T, W (t + 1) / T), W the cells of all the boxes: one
+     *          Share per run of consecutive units (tiles of one band, or rows).
+     *          Every thread computes the same split, with no communication;
+     *          a unit goes to one thread only.
+     */
+    template <typename BoxOf, typename RowParts>
+    void dealParts(const BoxOf& box_of, const RowParts& row_parts, std::vector<Share>& mine) const;
 
     /**
      * @brief The iterations. Called by every thread of a parallel region.
