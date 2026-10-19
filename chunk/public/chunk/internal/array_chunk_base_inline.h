@@ -82,13 +82,14 @@ std::expected<void, ChunkSizeError>
 ArrayChunkBase<Derived>::try_set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept
 {
     // Same rule as rechunk_to() (this is also its path on an empty array):
-    // a power of two or a multiple of 64 (is_valid_chunk_size). Refused,
-    // geometry kept. A static build has its compiled size only.
+    // check_chunk_size, a power of two or a multiple of 64 and at most
+    // cst_buffer_size -- a wider chunk reads the shared constant buffers out
+    // of bounds. Refused, geometry kept. A static build has its compiled size only.
     if constexpr (build_config::chunk_dynamic)
     {
-        if (!is_valid_chunk_size(new_chunk_size))
+        if (const auto ok = check_chunk_size(new_chunk_size); !ok) [[unlikely]]
         {
-            return std::unexpected(ChunkSizeError::not_pow2_or_x64);
+            return ok;
         }
     }
     else if (new_chunk_size != static_chunk_size)

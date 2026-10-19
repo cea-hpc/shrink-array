@@ -598,6 +598,8 @@ int check_non_pow2_refused(const char* label)
     empty.rechunk_to(48u);
     empty.set_chunk_size(96u);
     expect_refused("empty.try_set_chunk_size(96)", empty.try_set_chunk_size(96u), ChunkSizeError::not_pow2_or_x64);
+    expect_refused("empty.try_set_chunk_size(2 * cst_buffer_size)", empty.try_set_chunk_size(2u * cst_buffer_size),
+                   ChunkSizeError::exceeds_buffer);
     if (empty.chunk_size() != e0)
     {
         println("[{}/{}] FAIL: empty array: geometry {} -> {}", variant_name(), label, e0, empty.chunk_size());

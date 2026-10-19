@@ -63,6 +63,13 @@ the tag's checksum to the recipe.
   no event, where it was recorded as performed. `rechunk_to(0)` is now a
   refusal with its warning, where it returned silently.
 
+### Fixed (cpp23)
+
+- `set_chunk_size(n)` / `try_set_chunk_size(n)` refuse a size wider than
+  `cst_buffer_size` (`exceeds_buffer`), as `rechunk_to()` does: they accepted
+  it on an empty array, whose chunks then read the shared constant buffers
+  out of bounds.
+
 ### Added
 
 - One log for both libraries (`chunk/log.h`, built on
