@@ -136,17 +136,18 @@ def all_execs(root, target, a):
 
 
 def default_out_base():
-    """Where the output directories go without --out: the CCC work area when
-    there is one, else ~/omp_speedup -- never the source tree (shrink_gui runs
-    it from python/)."""
-    work = os.path.join("/ccc/work/contXXX/project", os.environ.get("USER", ""))
-    return os.path.join(work if os.path.isdir(work) else os.path.expanduser("~"), "omp_speedup")
+    """Where the output directories go without --out: the CCC work area
+    ($CCCWORKDIR) when there is one, else ~/omp_speedup -- never the source tree
+    (shrink_gui runs it from python/)."""
+    work = os.environ.get("CCCWORKDIR", "")
+    return os.path.join(work if work and os.path.isdir(work) else os.path.expanduser("~"), "omp_speedup")
 
 
 def default_oracle_dir(target):
     """bench_and_test.py's oracle of @p target: <output dir>/<arch>/oracle/<config>,
-    its default output dir being $CCCWORKDIR/bench_results."""
-    base = os.path.join("/ccc/work/contXXX/project", os.environ.get("USER", ""), "bench_results")
+    its default output dir being $CCCWORKDIR/bench_results (else the cwd)."""
+    work = os.environ.get("CCCWORKDIR", "")
+    base = os.path.join(work, "bench_results") if work and os.path.isdir(work) else os.getcwd()
     return os.path.join(base, platform.machine(), "oracle", "cmake-build-" + target)
 
 
