@@ -14,8 +14,9 @@ name = "inti"                    # how the interface names the machine
 host = "inti"                    # the ssh host (ssh -fNM <host> beforehand)
 repo = "~/shrink-array"          # the shrink-array repository there
 runs_dir = "~/shrink_runs"       # where the window keeps its runs there
-# Where compile_all.sh puts its cmake-build-* trees ($USER expands there):
-# the "Choisir…" of --exec looks in it, and {build_root} in [defaults] is it.
+# Where compile_all.sh puts its cmake-build-* trees ($CCCWORKDIR, the TGCC
+# work area, expands there): the "Choisir…" of --exec looks in it, and
+# {build_root} in [defaults] is it.
 build_root = "$CCCWORKDIR/shrink-array"
 partition = "gh200-bxi"          # the partition selected at first start
 

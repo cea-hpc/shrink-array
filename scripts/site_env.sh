@@ -13,7 +13,7 @@
 #   CHUNK_SITE              cea when /ccc/products exists, else local
 #   CHUNK_SRC_DIR           the repository (from this script's location)
 #   CHUNK_BUILD_REP         where the cmake-build-<name>/<arch> trees go:
-#                             cea   $CCCWORKDIR/shrink-array
+#                             cea   $CCCWORKDIR/shrink-array (the TGCC work area)
 #                             local the repository itself (as CLion does)
 #   CHUNK_GCC_TOOLCHAIN_DIR the libstdc++ that clang / icpx / nvc++ use:
 #                             cea   /ccc/products/gcc-15.2.0/system/default
@@ -48,7 +48,9 @@ chunk_local_gcc() {
 }
 
 if [ "$CHUNK_SITE" = cea ]; then
-    : "${CHUNK_BUILD_REP:=$CCCWORKDIR/shrink-array}"
+    # Not under the sources in ~ (quota): stop rather than guess when the TGCC
+    # environment did not set CCCWORKDIR.
+    : "${CHUNK_BUILD_REP:=${CCCWORKDIR:?site_env.sh: CCCWORKDIR unset, set CHUNK_BUILD_REP}/shrink-array}"
     : "${CHUNK_GCC_TOOLCHAIN_DIR:=/ccc/products/gcc-15.2.0/system/default}"
 else
     : "${CHUNK_BUILD_REP:=$CHUNK_SRC_DIR}"
