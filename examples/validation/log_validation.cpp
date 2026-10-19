@@ -31,7 +31,8 @@
 //      that logs itself, back to the default sink;
 //   5. CHUNK_LOG_FIRST_N and CHUNK_LOG_POW2 count right;
 //   6. a message longer than line_max is cut, with "...";
-//   7. no allocation on the path of a message (operator new is counted);
+//   7. no allocation on the path of a message (operator new is counted;
+//      under TSan, through the sanitizer's malloc hook);
 //   8. 8 threads writing to the default sink at once: every line in the file
 //      whole, none lost;
 //   9. the fatal level, each case in a child (this executable re-run with
@@ -72,18 +73,58 @@ using logging::Channel;
 using logging::Level;
 
 // --- Allocation counter (check 7) -------------------------------------------
+// TSan's runtime brings its own operator new / operator delete (clang links
+// libclang_rt.tsan_cxx.a --whole-archive): replacing them there is a duplicate
+// symbol at link time. Under TSan the counter is the sanitizer's malloc hook,
+// called for every user allocation, operator new included; elsewhere, the
+// replaceable global operator new below. The choice is the file-scope
+// definition of operator new itself, hence the preprocessor.
+#if defined(__SANITIZE_THREAD__)
+    #define LOG_VALIDATION_TSAN 1
+#elif defined(__has_feature)
+    #if __has_feature(thread_sanitizer)
+        #define LOG_VALIDATION_TSAN 1
+    #endif
+#endif
+
 namespace
 {
 std::atomic<long> g_news{0};
 thread_local bool g_counting = false;
-} // namespace
 
-void* operator new(std::size_t n)
+void count_allocation() noexcept
 {
     if (g_counting)
     {
         g_news.fetch_add(1, std::memory_order_relaxed);
     }
+}
+} // namespace
+
+#ifdef LOG_VALIDATION_TSAN
+// Declared here rather than through <sanitizer/allocator_interface.h>, which
+// not every toolchain installs (the symbol is in the runtime of both clang and
+// GCC).
+extern "C" int __sanitizer_install_malloc_and_free_hooks(void (*malloc_hook)(const volatile void*, std::size_t),
+                                                         void (*free_hook)(const volatile void*));
+
+namespace
+{
+void on_malloc(const volatile void* /*p*/, std::size_t /*n*/)
+{
+    count_allocation();
+}
+
+void on_free(const volatile void* /*p*/) {}
+
+// Installed before main; a failure leaves the counter at 0, which check 7's
+// first check ("the counter counts") reports.
+[[maybe_unused]] const int g_hooks_installed = __sanitizer_install_malloc_and_free_hooks(on_malloc, on_free);
+} // namespace
+#else
+void* operator new(std::size_t n)
+{
+    count_allocation();
     if (void* p = std::malloc(n == 0 ? 1 : n))
     {
         return p;
@@ -100,6 +141,7 @@ void operator delete(void* p, std::size_t /*n*/) noexcept
 {
     std::free(p);
 }
+#endif
 
 namespace
 {
