@@ -223,11 +223,11 @@ compté sur 2 cœurs). Le calcul affiche ce rapport ; `--max-imbalance` en fait 
 
 Maillage 1600 x 1600, 50 matériaux tous en tableaux chunk, 100 itérations, rectangles jusqu'à
 113 x 113 (`--pc-chunk 0.5`), les mêmes rectangles pour chaque ligne (`--seed 3`) ; Release,
-GCC 14, kokkos/mdspan, 2 threads sur un conteneur à 2 cœurs (ordres de grandeur) :
+GCC 14, kokkos/mdspan, 2 threads sur un conteneur à 2 cœurs (ordres de grandeur : ± 20 % d'un lancement à l'autre là-dessus) :
 
 | | chunks écrits, champs / fraction | mémoire max | temps | dont écritures / lectures |
 |---|---|---|---|---|
-| `--chunk-mode tiles` | 16,7 % / 12,5 % | 663 Mio | 3,45 s | 0,35 s / 1,77 s |
+| `--chunk-mode tiles` | 16,7 % / 12,5 % | 663 Mio | 2,29 s | 0,35 s / 1,82 s |
 | `--chunk-mode elements` | 16,7 % / 12,5 % | 659 Mio | 4,36 s | 0,68 s / 2,36 s |
 | `--chunk-mode rows` | 46,1 % / 46,1 % | 1847 Mio | 4,14 s | 1,01 s / 1,96 s |
 | tout en `std::vector` (`--option 2`) | -- | 3912 Mio | 1,90 s | 0,12 s / 1,55 s |
@@ -236,8 +236,8 @@ Les quatre affichent le même résultat. Ligne par ligne, un rectangle plus étr
 laisse écrit chaque chunk qu'il traverse, et la fraction ne se comprime jamais à l'intérieur ;
 en tuiles, seules restent les tuiles le long des bords. Le temps qui reste après les écritures
 et les lectures est l'initialisation, qui remet à zéro chaque tableau sur tout le maillage comme
-la version 1D (environ 1,2 s sur les tableaux chunk : un `fill_range` sur des chunks déjà
-compressés à la valeur parcourt encore leurs éléments en v1 et en Chunk2). `--verify` rejoue le
+la version 1D : en tuiles un `fill_box` de chunks déjà à 0, qui n'écrit rien (0,01 s) ; cellule
+par cellule (`elements`, `rows`), une écriture par cellule (environ 1,2 s). `--verify` rejoue le
 calcul en série sur des vecteurs simples et compare chaque tableau cellule par cellule ainsi que
 le résultat (sortie 1 sur une différence) ; les tests `multi_mat_md_tiles`, `multi_mat_md_elements` et `multi_mat_md_rows` le lancent en petit.
 Les options sont décrites en tête de `main_md.cpp`.

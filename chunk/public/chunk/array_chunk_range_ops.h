@@ -359,6 +359,47 @@ template <typename Arr, typename Chunk>
 }
 
 /**
+ * @brief Is this chunk compressed at @p v already -- every element reads @p v
+ *        with no buffer? Then a fill of @p v over any part of it has nothing
+ *        to do.
+ *
+ * @details v1: at first_value. Chunk2 (non-bool): at first_value, or at the
+ *          array's second value (index @p ind2). Other variants: false (their
+ *          whole-chunk path is fill_constant_st, Chunk2A; bool and Bit keep
+ *          their own paths).
+ *          A state read, as materialised(): in fill_range_mt the caller also
+ *          checks that no deferred write is pending on the chunk.
+ */
+template <typename Arr, typename Chunk>
+[[nodiscard]] bool holds_constant(const Arr&                                       arr,
+                                  const Chunk&                                     ch,
+                                  [[maybe_unused]] int                             ind2,
+                                  [[maybe_unused]] const typename Arr::value_type& v) noexcept
+{
+    using T = typename Arr::value_type;
+    if constexpr (!raw_fillable_v<T> || is_packed_bit_v<T>)
+    {
+        return false;
+    }
+    else if constexpr (is_v1_v<Arr>)
+    {
+        return v == static_cast<T>(Chunk::first_value) && ch.is_cst_val1();
+    }
+    else if constexpr (is_v2_v<Arr> && requires { arr.get_second_value(); })
+    {
+        if (ch.is_cst_val1())
+        {
+            return v == static_cast<T>(Chunk::first_value);
+        }
+        return ind2 >= 0 && ch.is_cst_val2(ind2) && v == static_cast<T>(arr.get_second_value());
+    }
+    else
+    {
+        return false;
+    }
+}
+
+/**
  * @brief Queue the chunk holding element @p i for the next compression pass.
  *
  * @details The raw stores of the bulk paths below go straight into a
@@ -480,6 +521,8 @@ void packed_chunk_store(Arr&         arr,
  *            chunk constant outright. A materialised chunk releases its buffer;
  *            an already-constant one costs nothing. No allocation either way
  *            (v1; Chunk2A below).
+ *          - v1 at first_value, Chunk2 at either of its constants, and @p v
+ *            that constant (whole chunk or part of it): nothing to do, O(1).
  *          - Chunk2A, fully covered, any value: the chunk takes @p v as its
  *            constant by state alone (Chunk2A::fill_constant_st): a
  *            materialised chunk releases its buffer, a compressed one
@@ -555,18 +598,29 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
 
         // ── Whole chunk set to the compressible constant: no storage needed ──
         //
-        // v1 only. Chunk2A's clear_st also takes the compression state, which
-        // this loop must not synthesise (as rechunk_refill); the other variants
-        // take the paths below, without the free-the-buffer shortcut.
-        // Require BOTH spellings: Chunk2's clear_st(int num_compress_value, int
-        // ind) accepts (thr, n) by conversion and would take a THREAD RANK as
-        // the constant to compress to. Only v1 offers both.
-        constexpr bool can_release = requires(chunk_type& chunk, int thr, unsigned int count) {
-            chunk.clear_st(thr, count);
-        } && requires(chunk_type& chunk) { chunk.clear_st(); };
+        // v1 only, named by its chunk type (internal::is_v1_v), not by the
+        // clear_st spellings it offers: Chunk2's clear_st(int num_compress_value,
+        // int ind) accepts (thr, n) by conversion and would take a THREAD RANK
+        // as the constant to compress to, and v1 has one spelling per build
+        // (OpenMP policy: clear_st(thr, n); serial: clear_st()) -- a test
+        // asking for both was false everywhere and the shortcut never ran.
+        // Chunk2A takes fill_constant_st below; Chunk2 the paths below.
+        constexpr bool can_release = internal::is_v1_v<Arr> && internal::raw_fillable_v<T> && !is_packed_bit_v<T>;
 
         if constexpr (can_release)
         {
+            if constexpr (build_config::use_openmp)
+            {
+                static_assert(
+                    requires(chunk_type& chunk, int thr, unsigned int count) { chunk.clear_st(thr, count); },
+                    "fill_range: v1's OpenMP policy no longer offers clear_st(thr, n_elems)");
+            }
+            else
+            {
+                static_assert(
+                    requires(chunk_type& chunk) { chunk.clear_st(); },
+                    "fill_range: v1's serial policy no longer offers clear_st()");
+            }
             if (whole && value_is_cst1)
             {
                 if (!ch.is_cst_val1())
@@ -626,6 +680,15 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
                     ch.fill_constant_st(get_thr_rank_fast(), static_cast<int>(ci), arr.num_tab, value);
                     continue;
                 }
+            }
+
+            // ── Already that constant: nothing to write ──────────────────────
+            // v1 at first_value, Chunk2 at either constant (whole or part of
+            // the chunk). The arming loop below would walk every element of the
+            // range through the proxy to find that no write materialises it.
+            if (internal::holds_constant(arr, ch, ind2, static_cast<T>(value)))
+            {
+                continue;
             }
 
             // ── Arm, then bulk-store ────────────────────────────────────────
@@ -739,8 +802,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             const auto src_at = [&](std::size_t i)
             { return static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first))); };
             internal::packed_chunk_store(arr, ch, c_begin, lo, hi, S, ind2, src_at,
-                                         [&](bits::word_t* w, std::size_t a, std::size_t b)
-                                         {
+                                         [&](bits::word_t* w, std::size_t a, std::size_t b) {
                                              bits::store_bit_range(w, a, b, [&](std::size_t bi)
                                                                    { return static_cast<bool>(src_at(c_begin + bi)); });
                                          });
@@ -899,8 +961,10 @@ void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::s
  *            6. retire;
  *            7. queue the chunk as a compression candidate when it can be
  *               uniform (the pass drops it if it is not).
- *          A chunk that is not materialised is first materialised through the
- *          element path, outside any session (a proxy write inside a session
+ *          A fill (@p Constant) of the constant a v1 or Chunk2 chunk already
+ *          holds, with no deferred write pending on it, skips the span
+ *          (holds_constant). A chunk that is not materialised is first
+ *          materialised through the element path, outside any session (a proxy write inside a session
  *          would re-announce and then clear this thread's writer flag).
  *          A chunk is never RELEASED here: another thread may be writing other
  *          elements of the same chunk, into that very buffer.
@@ -992,6 +1056,18 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
             const std::size_t hi      = last < c_end ? last : c_end;
 
             auto& ch = arr.chunk_ref(ci);
+
+            // A fill of the constant the chunk already holds: nothing to write
+            // (v1, Chunk2; see holds_constant). Not with deferred writes pending
+            // on the chunk: one of this thread's on the span would replay after
+            // and win -- the element path, below, erases those.
+            if constexpr (Constant)
+            {
+                if (!ch.pending_any() && holds_constant(arr, ch, ind2, static_cast<T>(value_at(lo))))
+                {
+                    continue;
+                }
+            }
 
             // Materialise through the element path, outside any session.
             std::size_t i = lo;

@@ -22,8 +22,9 @@
 // fill_range compresses a fully covered Chunk2A chunk at once, whatever the
 // value (Chunk2A::compress, as the rechunk fold): no chunk of the range is
 // left materialised, the buffer of one is back in the pool before the next is
-// armed. Guards, on every variant: the values read back. On Chunk2A: no
-// covered chunk stays materialised, from each starting state.
+// armed. v1 does the same for a fill of first_value. Guards, on every variant:
+// the values read back. On Chunk2A: no covered chunk stays materialised, from
+// each starting state; on v1, after a fill of first_value.
 //
 //   fresh     all chunks at first_value, filled with a plain value;
 //   second    all compressed at V (a second value), filled with W;
@@ -34,6 +35,9 @@
 //   distinct  one value per chunk (each chunk its own second value), then
 //             first_value everywhere: the second-value registry takes and gives
 //             back every value (the teardown checks the registry is empty).
+//   constant  a fresh array filled with first_value, whole and in part, then
+//             fill_range_mt from every thread: nothing to write, no chunk
+//             materialised, on every variant.
 //
 // Exit 0 = every check holds. Any thread count (fill_range is serial: called
 // outside any region).
@@ -46,7 +50,7 @@
 #include "chunk/array_chunk.h"           // ArrayChunk
 #include "chunk/array_chunk2.h"          // ArrayChunk2
 #include "chunk/array_chunk2A.h"         // ArrayChunk2A
-#include "chunk/array_chunk_range_ops.h" // fill_range
+#include "chunk/array_chunk_range_ops.h" // fill_range, fill_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_chunk2*
@@ -139,10 +143,12 @@ void expect_values(const char* scenario, const Array<double>& a, auto want)
     fails += bad ? 1 : 0;
 }
 
-// Chunk2A only: the covered chunks [c0, c1) are all compressed.
-void expect_compressed(const char* scenario, const Array<double>& a, long c0, long c1)
+// The covered chunks [c0, c1) are all compressed: on Chunk2A whatever the
+// value, on v1 after a fill of first_value (@p first_value_fill).
+void expect_compressed(const char* scenario, const Array<double>& a, long c0, long c1, bool first_value_fill = false)
 {
-    if constexpr (chunk_config::use_chunk2a)
+    constexpr bool v1 = !chunk_config::use_chunk2a && !chunk_config::use_chunk2;
+    if (chunk_config::use_chunk2a || (v1 && first_value_fill))
     {
         const long m = materialised(a, c0, c1);
         if (m != 0)
@@ -182,7 +188,7 @@ int run(int /*argc*/, char** /*argv*/)
         }
         fill_range(a, 0, static_cast<std::size_t>(N), w);
         expect_values(name, a, [w](long) { return w; });
-        expect_compressed(name, a, 0, kChunks);
+        expect_compressed(name, a, 0, kChunks, w == 0.0);
     }
 
     // varied: materialised with varied values, filled with W.
@@ -223,7 +229,39 @@ int run(int /*argc*/, char** /*argv*/)
         expect_compressed("distinct", a, 0, kChunks);
         fill_range(a, 0, static_cast<std::size_t>(N), 0.0);
         expect_values("distinct", a, [](long) { return 0.0; });
-        expect_compressed("distinct", a, 0, kChunks);
+        expect_compressed("distinct", a, 0, kChunks, true);
+    }
+
+    // constant: first_value over chunks already at first_value -- serially,
+    // whole and in part, then from every thread in a phase.
+    {
+        Array<double> a(static_cast<int>(N));
+        fill_range(a, 0, static_cast<std::size_t>(N), 0.0);
+        fill_range(a, static_cast<std::size_t>(S / 2), static_cast<std::size_t>(N - S / 2), 0.0);
+#pragma omp parallel
+        {
+            if constexpr (build_config::has_not_ompt)
+            {
+                shrink_array::begin_parallel_phase();
+            }
+#pragma omp for schedule(static)
+            for (long c = 0; c < kChunks; ++c)
+            {
+                fill_range_mt(a, static_cast<std::size_t>(c * S + S / 4), static_cast<std::size_t>((c + 1) * S), 0.0);
+            }
+        }
+        if constexpr (build_config::has_not_ompt)
+        {
+            shrink_array::finalize_parallel_phase();
+        }
+        expect_values("constant", a, [](long) { return 0.0; });
+        const long m = materialised(a, 0, kChunks);
+        if (m != 0)
+        {
+            println("[{}/constant] FAIL {} chunk(s) materialised by a fill of the constant they hold", variant_name(),
+                    m);
+            ++fails;
+        }
     }
 
     release_chunk_pools();

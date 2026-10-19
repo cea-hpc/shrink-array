@@ -216,11 +216,11 @@ did 7.8 times the mean (35 times at 288 threads). Split at once: 1.01 at 64 thre
 
 1600 x 1600 mesh, 50 materials all in chunk arrays, 100 iterations, boxes up to 113 x 113
 (`--pc-chunk 0.5`), the same boxes for every line (`--seed 3`); Release, GCC 14, kokkos/mdspan,
-2 threads on a 2-core container (orders of magnitude):
+2 threads on a 2-core container (orders of magnitude: ± 20 % from one run to the next there):
 
 | | chunks written, fields / fraction | peak memory | time | of which writes / reads |
 |---|---|---|---|---|
-| `--chunk-mode tiles` | 16.7 % / 12.5 % | 663 MiB | 3.45 s | 0.35 s / 1.77 s |
+| `--chunk-mode tiles` | 16.7 % / 12.5 % | 663 MiB | 2.29 s | 0.35 s / 1.82 s |
 | `--chunk-mode elements` | 16.7 % / 12.5 % | 659 MiB | 4.36 s | 0.68 s / 2.36 s |
 | `--chunk-mode rows` | 46.1 % / 46.1 % | 1847 MiB | 4.14 s | 1.01 s / 1.96 s |
 | all in `std::vector` (`--option 2`) | -- | 3912 MiB | 1.90 s | 0.12 s / 1.55 s |
@@ -228,9 +228,9 @@ did 7.8 times the mean (35 times at 288 threads). Split at once: 1.01 at 64 thre
 All four print the same result. Row-major, a box narrower than a chunk leaves every chunk it
 crosses written, and the fraction never compresses inside it; in tiles only the tiles along the
 sides stay. The time left after the writes and the reads is the initialisation, which zeroes
-every array over the whole mesh as the 1D version does (about 1.2 s on the chunk arrays: a
-`fill_range` over chunks already compressed at the value still walks their elements on v1 and
-Chunk2). `--verify` replays the run serially on plain vectors and compares every array cell by
+every array over the whole mesh as the 1D version does: in tiles a `fill_box` of chunks already
+at 0, which writes nothing (0.01 s); cell by cell (`elements`, `rows`), a write per cell
+(about 1.2 s). `--verify` replays the run serially on plain vectors and compares every array cell by
 cell and the result (exit 1 on a difference); the tests `multi_mat_md_tiles`, `multi_mat_md_elements` and `multi_mat_md_rows` run it small.
 The options are listed at the top of `main_md.cpp`.
 

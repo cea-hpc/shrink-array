@@ -182,6 +182,19 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `fill_range` on v1 compresses a whole chunk filled with first_value at once
+  again (its buffer released), and passes over a chunk already at first_value:
+  the guard of that shortcut asked for both spellings of `Chunk::clear_st`,
+  and since the OpenMP / serial policy split each build has only one, so it
+  never ran -- every element went through the proxy. The guard is now the
+  variant (`internal::is_v1_v`), with a `static_assert` on the spelling of the
+  build. `fill_range` and `fill_range_mt` also pass over a v1 or Chunk2 chunk
+  already compressed at the value, whole or in part (`fill_range_mt`: with no
+  deferred write pending on it): 2 to 9 ns per element before, about 0.01 ns
+  now (2.56 M doubles, 2 threads). `fill_range_constant_validation` checks v1
+  after a fill of first_value, and a new scenario `constant` (a fill of the
+  constant the chunks hold, serial and from every thread: nothing
+  materialised).
 - A "wait" line of the re-chunk decider ended with a stray `0` when the array
   had no back-off.
 - An invariant failure inside a program's log sink, while the log was reading

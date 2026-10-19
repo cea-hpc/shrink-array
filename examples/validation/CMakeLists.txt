@@ -103,7 +103,10 @@
 #                           from every starting state (first value, second
 #                           value, materialised, partial range, one value per
 #                           chunk), and on Chunk2A leaves no covered chunk
-#                           materialised: it compresses each at once.
+#                           materialised: it compresses each at once (v1
+#                           too, for a fill of first_value). A fill of the
+#                           constant the chunks hold, serial or from every
+#                           thread, materialises nothing.
 #   copy_range_constant_validation  copy_range over whole chunks reads back
 #                           its source from every starting state (uniform per
 #                           chunk, mixed, uniform but for one element the
