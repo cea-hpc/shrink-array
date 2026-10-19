@@ -312,10 +312,11 @@ def setup_outputs(args):
     else:
         # Default OUTSIDE the source tree: run outputs (oracle, CSV, logs,
         # memory_mo.txt) must not pile up in python/. Use the CCC work area
-        # when present; fall back to the cwd elsewhere (local workstation).
-        _ccc_work = f"/ccc/work/contXXX/project/{os.environ.get('USER', '')}"
+        # ($CCCWORKDIR, set by the TGCC environment) when present; fall back to
+        # the cwd elsewhere (local workstation).
+        _ccc_work = os.environ.get("CCCWORKDIR", "")
         out_dir = (os.path.join(_ccc_work, "bench_results")
-                   if os.path.isdir(_ccc_work) else os.getcwd())
+                   if _ccc_work and os.path.isdir(_ccc_work) else os.getcwd())
     # Separate run outputs by architecture. aarch64 and x86_64 runs commonly
     # share a build_root and are launched with the SAME --output-dir; without an
     # arch level they write the same bench_summary.csv / bench_errors.log and,
