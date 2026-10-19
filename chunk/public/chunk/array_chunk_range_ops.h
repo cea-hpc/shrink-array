@@ -1091,14 +1091,19 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
             }
             else
             {
-                v0               = static_cast<buf_value_t>(static_cast<T>(value_at(i)));
-                buf[i - c_begin] = v0;
+                // Copy, then compare: two loops the compiler vectorises (a
+                // short-circuit `same && v == v0` in the copy kept both scalar).
+                for (std::size_t k = i; k < hi; ++k)
+                {
+                    buf[k - c_begin] = static_cast<buf_value_t>(static_cast<T>(value_at(k)));
+                }
+                v0                  = buf[i - c_begin];
+                unsigned int differ = 0;
                 for (std::size_t k = i + 1; k < hi; ++k)
                 {
-                    const auto v     = static_cast<buf_value_t>(static_cast<T>(value_at(k)));
-                    buf[k - c_begin] = v;
-                    same             = same && (v == v0);
+                    differ |= static_cast<unsigned int>(!(buf[k - c_begin] == v0));
                 }
+                same = differ == 0;
             }
             const auto at = [&](std::size_t o) -> buf_value_t
             {
@@ -1158,9 +1163,14 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                     }
                     else
                     {
-                        for (std::size_t k = i; k < hi; ++k)
+                        // One block store (a fill or a copy of the span's values).
+                        if constexpr (Constant)
                         {
-                            dst[k - c_begin] = at(k - c_begin);
+                            std::fill(dst + (i - c_begin), dst + (hi - c_begin), static_cast<T>(v0));
+                        }
+                        else
+                        {
+                            std::copy(buf + (i - c_begin), buf + (hi - c_begin), dst + (i - c_begin));
                         }
                         // Do not read elements this span does not own: other
                         // writers store them PLAIN here (only Chunk2A's are

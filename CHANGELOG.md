@@ -169,6 +169,12 @@ the tag's checksum to the recipe.
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.
+- `copy_range_mt` and `transform_range_mt` (and the tile writes of
+  `md::update_tiles` inside a region) store a chunk span in one block copy and
+  compare its values in a loop the compiler vectorises: the copy into the
+  span buffer tested `same && v == v0` element by element, which kept both
+  loops scalar. 1.7 times faster in cache (4 arrays of 64 K doubles,
+  1 thread), about 1.3 times out of cache (2.56 M doubles, v1).
 
 ### Deprecated
 
