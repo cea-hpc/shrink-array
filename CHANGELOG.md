@@ -52,15 +52,14 @@ the tag's checksum to the recipe.
 
 ### Added
 
-- Reduced models of the writer / compressor and compressor / flush
-  handshakes, checked by GenMC (`formal/`, `docs/formal_models.md`): the
-  protocols of the source verified under RC11 and IMM, every known bug of
-  their history refused as a mutation (the lost replay of a flush without
-  the compressor's second look among them), and two findings -- the
-  `SHRINK_SMALL_CHUNK` gate's relaxed load of `hard_inflight_` (F1) and the
-  materialisation wait against a parked compressor (F2), both fixed (see
-  Fixed), the library as it was refused as two more mutations. New ctest
-  label `formal`.
+- Reduced models of the three lock-free handshakes -- writer / compressor,
+  compressor / flush, readers / buffer reclamation -- checked by GenMC
+  (`formal/`, `docs/formal_models.md`): the protocols of the source verified
+  under RC11 and IMM, thirteen mutations refused (six of them the library as
+  it once was, the lost replay without the compressor's second look among
+  them), three findings fixed (see Fixed: F1, F2, F4) and one recorded as
+  open, F3, a C++20 release-sequence hole on back-to-back reads that the
+  hardware mappings close. New ctest label `formal`.
 - One log for both libraries (`chunk/log.h`, built on
   `fast_allocators/internal/log_core.h`): every message has a level and a
   channel, `CHUNK_LOG` (default `warn`) says which are written, e.g.
@@ -166,6 +165,11 @@ the tag's checksum to the recipe.
   before materialising: the pass holding the mark is parked on its flag and
   cannot steal (`wait_before_materialise()` takes the caller's rank;
   `WriteCompressSyncPolicy::is_thread_writing_on()`). Found by the model.
+- A reader past `CHUNK_READ_RECLAIM_SLOTS` announced itself with a seq_cst
+  increment alone; by C11 that is not an announce (store buffering against
+  the pass's acquire load of the counter), though the AArch64 and x86
+  mappings make it one. It is followed by the light fence of the slot path.
+  Found by the GenMC model (`formal/`).
 - A "wait" line of the re-chunk decider ended with a stray `0` when the array
   had no back-off.
 - An invariant failure inside a program's log sink, while the log was reading

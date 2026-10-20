@@ -89,4 +89,23 @@ run ok    "MUT_NO_FIRST_LOOK, 2 writers"                     -- -DMUT_NO_FIRST_L
 run ok    "MUT_NO_POSTCHECK (post-store confirmation: a second line)" -- -DMUT_NO_POSTCHECK $M2
 run ok    "MUT_NO_POSTCHECK, 2 writers"                      -- -DMUT_NO_POSTCHECK -DNWRITERS=2 $M2
 
+M3=reader_reclaim.c
+echo "== handshake 3: readers <-> buffer reclamation ($M3) =="
+run ok    "source, 2 readers, one read each"                 --check-liveness -- $M3
+run ok    "source, 3 readers"                                --check-liveness -- -DNREADERS=3 $M3
+run ok    "source, overflow reader (F4 fence in place)"      --check-liveness -- -DOVERFLOW_READER $M3
+echo "-- finding F3: back-to-back reads, the source as it is, and the two ways out --"
+run error "source, 2 reads per reader: C11 release-sequence hole (F3)" -- -DNREADS=2 $M3
+run ok    "FIX_ENTER_RELEASE, 2 reads"                       --check-liveness -- -DNREADS=2 -DFIX_ENTER_RELEASE $M3
+run ok    "FIX_ENTER_RELEASE, 3 reads"                       --check-liveness -- -DNREADS=3 -DFIX_ENTER_RELEASE $M3
+run ok    "FIX_ENTER_RELEASE, 3 readers x 2 reads"           --check-liveness -- -DNREADERS=3 -DNREADS=2 -DFIX_ENTER_RELEASE $M3
+run ok    "MUT_WAIT_FOR_EVEN, 2 reads (the pass-side way out)" --check-liveness -- -DNREADS=2 -DMUT_WAIT_FOR_EVEN $M3
+run ok    "FIX_ENTER_RELEASE + overflow reader, 2 reads"     --check-liveness -- -DOVERFLOW_READER -DNREADS=2 -DFIX_ENTER_RELEASE $M3
+echo "-- mutations: each must be refused --"
+run error "MUT_NO_GRACE (the hazard itself)"                 -- -DMUT_NO_GRACE $M3
+run error "MUT_NO_HEAVY_BARRIER"                             -- -DMUT_NO_HEAVY_BARRIER $M3
+run error "MUT_LEAVE_RELAXED (the even store must be release)" -- -DMUT_LEAVE_RELAXED $M3
+run error "SHAPE_ASYMMETRIC_NAKED (reader without its fence)" -- -DSHAPE_ASYMMETRIC_NAKED $M3
+run error "MUT_OVERFLOW_NO_FENCE (F4, before)"               -- -DOVERFLOW_READER -DMUT_OVERFLOW_NO_FENCE $M3
+
 exit $fail

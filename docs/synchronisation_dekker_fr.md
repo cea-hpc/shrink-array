@@ -405,6 +405,11 @@ grâce** (la technique de RCU et des schémas à époques) :
   chaque numéro : un lecteur pair a fini avant, ou chargera `values` après la barrière et verra
   la constante ; un lecteur impair peut tenir un ancien pointeur, et le récupérateur attend que
   son numéro change. Puis les tampons sont rendus, comme avant.
+  son numéro change. Puis les tampons sont rendus, comme avant. (Un numéro passé à la valeur
+  impaire de la lecture suivante est une écriture *relaxed* : en C++20 elle ne synchronise avec
+  rien, et seuls les mappings matériels ordonnent la lecture précédente avant la libération --
+  une réserve consignée comme F3 dans [formal_models_fr.md](formal_models_fr.md), en attente
+  d'une mesure.)
 
 Un `membarrier` par **passe**, pas par chunk ; l'attente ne porte que sur les lectures déjà en
 vol (quelques nanosecondes, sauf préemption). Les passes faites entre deux régions n'en ont pas
