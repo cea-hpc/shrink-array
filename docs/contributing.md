@@ -71,6 +71,9 @@ The source checks run with the others (`ctest -R check_`):
 
 - **C++20.** The `cpp23` branch carries the same code with C++23 required.
 - **English** for code, comments and commit messages.
+- **No fixup commit is pushed.** A `fixup!`, `squash!` or `amend!` commit is squashed into its
+  target before the push (`git rebase -i --autosquash origin/<branch>`): once published it can
+  only stay. The CI refuses a push that brings one.
 - **clang-format** with the repository's `.clang-format`, on the lines you touch.
 - **Constants are snake_case**, as the standard library's (`std::dynamic_extent`):
   `cst_buffer_size`, not `kCstBufferSize` nor `CST_BUFFER_SIZE`. UPPER_CASE is for macros

@@ -41,6 +41,48 @@ jobs:
           done
           exit $status
 
+  # A fixup!/squash!/amend! commit is squashed into its target before the
+  # push (git rebase -i --autosquash), not published: once pushed it can only
+  # stay. Only the commits this push or pull request brings are looked at, not
+  # the ones already on another branch (a merge of develop into threads brings
+  # commits develop has already passed).
+  commit-hygiene:
+    name: No fixup commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: New commits carry no fixup!/squash!/amend!
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            range="origin/$BASE_REF..HEAD"
+            others=""
+          else
+            # A new branch, or a force push: no usable "before", the branch alone.
+            if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              range="$BEFORE..HEAD"
+            else
+              range="HEAD"
+            fi
+            others=$(git for-each-ref --format='%(refname)' refs/remotes/origin |
+                     grep -v -x -e "refs/remotes/origin/$BRANCH" -e refs/remotes/origin/HEAD || true)
+          fi
+          bad=$(git log --no-merges --format='%h %s' $range ${others:+--not $others} |
+                grep -E '^[0-9a-f]+ (fixup|squash|amend)! ' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::commits to squash before pushing (git rebase -i --autosquash):"
+            echo "$bad"
+            exit 1
+          fi
+          echo "no fixup commit in $range"
+
   build-test:
     name: gcc 14, OMP=${{ matrix.omp }}
     runs-on: ubuntu-24.04

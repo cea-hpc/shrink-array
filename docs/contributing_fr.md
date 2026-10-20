@@ -71,6 +71,9 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 
 - **C++20.** La branche `cpp23` porte le même code avec C++23 obligatoire.
 - **Anglais** pour le code, les commentaires et les messages de commit.
+- **Aucun commit de fixup n'est poussé.** Un commit `fixup!`, `squash!` ou `amend!` est fusionné
+  dans sa cible avant le push (`git rebase -i --autosquash origin/<branche>`) : une fois publié,
+  il ne peut plus que rester. La CI refuse un push qui en apporte un.
 - **clang-format** avec le `.clang-format` du dépôt, sur les lignes que vous touchez.
 - **Les constantes sont en snake_case**, comme celles de la bibliothèque standard
   (`std::dynamic_extent`) : `cst_buffer_size`, pas `kCstBufferSize` ni `CST_BUFFER_SIZE`. Les
