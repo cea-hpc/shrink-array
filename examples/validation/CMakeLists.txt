@@ -587,6 +587,11 @@ target_link_libraries(log_validation PRIVATE Threads::Threads)
 if (OMP)
   target_link_libraries(log_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
 endif()
+# ... and for the library's backend: the pool's macro, which the chunk:: targets
+# carry PUBLIC, but this target links none of them.
+if (CHUNK_THREADS_BACKEND STREQUAL "pool")
+  target_compile_definitions(log_validation PRIVATE FAST_ALLOC_PMP_POOL=1)
+endif()
 chunk_require_cxx20(log_validation PRIVATE)
 add_test(NAME log_validation COMMAND log_validation)
 set_property(TEST log_validation PROPERTY LABELS validation)
