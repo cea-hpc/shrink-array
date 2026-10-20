@@ -507,7 +507,7 @@ computation would hold the compressor off and a proxy write would clear the anno
 The queuing decision looks at the piece's own values: all equal, and a value the variant
 can compress (a fill is such a piece, so the rule is `fill_range_mt`'s).
 
-**Two points specific to Chunk2**, fixed in September 2026, which previously justified
+**Three points specific to Chunk2**, fixed in September 2026, which previously justified
 keeping it on the element-by-element path:
 
 - the test "is this chunk materialised?" must call `written(ind)` with the array's second
@@ -515,29 +515,36 @@ keeping it on the element-by-element path:
   is reserved for `bool` and returns `false` for other types;
 - queuing (`internal::queue_for_compression`) must **load the second value** before
   adding the chunk (`set_info_on_chunk()`), since Chunk2's lists are indexed by
-  it. Without that, the chunks landed in the list of `T{}`, which no pass drains.
+  it. Without that, the chunks landed in the list of `T{}`, which no pass drains;
+- in counter mode (the serial builds), a direct store must **recount** the chunk's two
+  counters, `nb_val_eq_first_value` and `nb_val_eq_second_value`, which Proxy2 otherwise
+  keeps up to date one write at a time (`internal::resync_counters`, as for v1's count of
+  zeros).
 
 Only `bool` (bit-packed chunks) stays on the element-by-element path.
 
-**The queuing decision in `fill_range_mt`** reads, to know whether the chunk may be
-uniform, three elements (0, S/2, S−1) that other threads may be writing.
-Chunk2A writes these elements as relaxed atomics (`relaxed_element.h`:
-`fill_span_relaxed_edges`, `may_be_uniform_relaxed`), which makes the read safe; for
-types without lock-free atomics, and for Chunk and Chunk2, these are plain reads.
+**The queuing decision in the `_mt` forms** never reads an element another thread may be
+writing, except on Chunk2A. For Chunk and Chunk2 it looks only at the piece's own values: all
+equal, and the first value (Chunk), or the first or second value (Chunk2), as the
+element-by-element path decides. Chunk2A reads three elements (0, S/2, S−1) to know whether the
+chunk may be uniform: it writes these elements as relaxed atomics (`relaxed_element.h`:
+`fill_span_relaxed_edges`, `may_be_uniform_relaxed`), which makes the read safe; for types
+without lock-free atomics, it queues only a piece covering the whole chunk with one value. The
+single-threaded forms (`fill_range`, `copy_range`) read those three elements plainly
+(`may_be_uniform`): no other thread writes the array during the call.
 
-**Open points (September 2026).**
-
-- With the direct path open to Chunk2, `bench_and_test.py` reported on Grace (8 threads and
-  more) wrong values **after compression**: `rechunk_validation_chunk2_dyn`
-  (`scale-64-to-tgt`, POST-FAIL) and the check mode of `shrink_bench_chunk2_256`
-  ("is_cst_val2 should be not"). Not reproduced on a single-core machine, nor in a
-  second run on the cluster; the lead is a pass that compresses a chunk queued
-  by a direct copy while another thread's direct, unannounced writes are still
-  reaching it. The known fallback: exclude Chunk2 from `internal::raw_fillable_v`.
-- TSan reports, for Chunk and Chunk2 in `fill_range_mt`, the plain read of the three
-  elements above against another thread's write on the same chunk. The fix
-  considered: decide on the written **value** (the first value for Chunk, the first or
-  the second for Chunk2), like the element-by-element path, without reading anything.
+**The wrong values of September 2026.** With the direct path open to Chunk2,
+`bench_and_test.py` reported on Grace wrong values **after compression**:
+`rechunk_validation_chunk2_dyn` (`scale-64-to-tgt`, POST-FAIL) and the check mode of
+`shrink_bench_chunk2_256` ("is_cst_val2 should be not"). Not a race between threads:
+the re-chunk test fails identically on a single core in the serial Debug build, and the
+failing Grace configurations were the serial ones. The cause was the counters of the third
+point above: the direct paths (`fill_range`, `copy_range`, used by the re-chunk's rebuild)
+stored past them, the stale counts reached the chunk size on a mixed chunk, and the pass
+folded it to the first value, losing every element of the second. Since then the direct
+stores recount the counters, and the `_mt` forms write inside a session announced to the
+compressor (steps 3 to 6 above), on Chunk2 as on the other variants. Excluding Chunk2 from
+`internal::raw_fillable_v`, the fallback considered at the time, is not needed.
 
 ---
 
