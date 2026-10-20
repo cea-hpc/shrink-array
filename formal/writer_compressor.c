@@ -28,8 +28,10 @@
  *   announce_write()              write_compress_sync_policy.h  announce_write()
  *   end_write()                   write_compress_sync_policy.h  end_write()
  *   any_writing_on_marked()       write_compress_sync_policy.h  any_thread_writing_on_marked()
+ *   any_writing()                 write_compress_sync_policy.h  any_thread_writing()
  *   hard_inflight, stealing       compression_manager.h         hard_inflight_, stealing_inflight_
  *   must_defer_write()            compression_manager.h         must_defer_write()
+ *   is_stealing()                 compression_manager.h         is_hard_compression_inflight()
  *   compressor_start()/finish()   compression_manager_inline.h  start(), finish()
  *   heavy_barrier()               write_compress_sync_policy.h  dekker::heavy_barrier()
  *   mark / steal_mark*()          chunk_base.h                  steal_mark_, steal_mark(), steal_marked(), steal_unmark()
@@ -58,6 +60,9 @@
  *                              4.2 and of membarrier(2)'s own contract, not a checker result.
  *
  * CONFIGURATIONS:
+ *   -DNO_MARKS                 the SHRINK_SMALL_CHUNK build: no per-chunk mark, the writer
+ *                              looks at hard_inflight, the compressor waits for all writers,
+ *                              materialisation waits on stealing_inflight.
  *   -DINIT_CONSTANT            the chunk starts at the constant (writers materialise it);
  *                              default: it starts with an all-zero buffer (a candidate).
  *   -DBOUNDED_COMPRESSOR_WAIT  the compressor gives up after one failed look (the
@@ -69,7 +74,13 @@
  *   -DMUT_NO_CHECK2            the writer does not look at the gate after its announce.
  *   -DMUT_RELAXED_MARK         steal_mark()/steal_marked() relaxed instead of release/acquire
  *                              (section 5.3, "Why the mark is read with acquire").
+ *   -DMUT_WAIT_ON_HARD         NO_MARKS only: materialisation waits on hard_inflight instead of
+ *                              stealing_inflight -- the "triangle" the document forbids
+ *                              (section 5.3, "Why two counters"). A liveness violation.
  *   -DMUT_NO_FENCE_COMPRESSOR  the compressor announces without its heavy barrier.
+ *   -DMUT_NO_MARKS_RELAXED_GATE
+ *                              NO_MARKS only: must_defer_write() loads hard_inflight relaxed, as
+ *                              the library did before the model (docs/formal_models.md, F1).
  *   -DMUT_MATERIALISE_WAIT_UNDER_FLAG
  *                              a fast-path writer spins on the mark before materialising even
  *                              though it holds its flag, as the library did before the model
@@ -199,7 +210,7 @@ static void heavy_barrier(void)                         /* dekker::heavy_barrier
 #endif
 }
 
-static bool any_writing_on_marked(void) /* any_thread_writing_on_marked(): acquire loads */
+__attribute__((unused)) static bool any_writing_on_marked(void) /* any_thread_writing_on_marked(): acquire loads */
 {
     for (int i = 0; i < NWRITERS; ++i)
     {
@@ -212,9 +223,36 @@ static bool any_writing_on_marked(void) /* any_thread_writing_on_marked(): acqui
     return false;
 }
 
-__attribute__((unused)) static bool must_defer_write(void) /* compression_manager.h must_defer_write() */
+__attribute__((unused)) static bool any_writing(void)   /* any_thread_writing(): acquire loads */
 {
+    for (int i = 0; i < NWRITERS; ++i)
+    {
+        if (atomic_load_explicit(&flag[i], memory_order_acquire) != NULL)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool must_defer_write(void)                      /* compression_manager.h must_defer_write() */
+{
+#ifdef NO_MARKS
+    #ifdef MUT_NO_MARKS_RELAXED_GATE
+    return atomic_load_explicit(&hard_inflight, memory_order_relaxed) > 0;   /* before F1 */
+    #else
+    /* Acquire pairs with finish()'s seq_cst RMW: a writer that sees the pass over also sees
+       the `values` it installed (F1). */
+    return atomic_load_explicit(&hard_inflight, memory_order_acquire) > 0;
+    #endif
+#else
     return steal_marked();
+#endif
+}
+
+__attribute__((unused)) static bool is_stealing(void)   /* is_hard_compression_inflight(): seq_cst */
+{
+    return atomic_load_explicit(&stealing_inflight, memory_order_seq_cst) > 0;
 }
 
 /* ───────────────────────── the writer ───────────────────────── */
@@ -233,12 +271,18 @@ static bool cas_install(atomic_int* expected_cst, atomic_int* buffer)
 /* create_value(): wait_before_materialise(), allocate + fill, publish by one CAS. */
 static atomic_int* materialise(int r)
 {
+#if defined(NO_MARKS)
+    #ifdef MUT_WAIT_ON_HARD
+    while (atomic_load_explicit(&hard_inflight, memory_order_seq_cst) > 0) {}   /* THE TRIANGLE */
+    #else
+    while (is_stealing()) {}                            /* stealing_inflight_ only, never hard_ */
+    #endif
+#else
     /* wait_before_materialise(): a caller whose flag is on THIS chunk does not wait -- it
        passed check #2, so a mark it sees now belongs to a PARKED compressor waiting for that
        very flag; nothing can steal the chunk before end_write() (F2). A caller with no flag
        (alloc_chunk(), a flush replay) spins on the mark: not modelled here. */
     #ifdef MUT_MATERIALISE_WAIT_UNDER_FLAG
-    (void)r;
     const bool own_session = false;                     /* before F2: always wait */
     #else
     const bool own_session = atomic_load_explicit(&flag[r], memory_order_relaxed) == &chunk;
@@ -247,6 +291,7 @@ static atomic_int* materialise(int r)
     {
         while (steal_marked()) {}                       /* this chunk's mark */
     }
+#endif
     atomic_int* b = alloc_zero_buffer();
     if (!cas_install(cst1, b))
     {
@@ -304,14 +349,19 @@ static bool compressor_start(void)                      /* CompressionManagerOmp
     heavy_barrier();
 
     /* bounded wait for the writer window */
+#ifdef NO_MARKS
+    #define window_shut() any_writing()
+#else
+    #define window_shut() any_writing_on_marked()
+#endif
 #ifdef BOUNDED_COMPRESSOR_WAIT
-    if (any_writing_on_marked())                                  /* the yield budget, reduced to "one look" */
+    if (window_shut())                                  /* the yield budget, reduced to "one look" */
     {
         atomic_fetch_sub_explicit(&hard_inflight, 1, memory_order_seq_cst);
         return false;
     }
 #else
-    while (any_writing_on_marked()) {}
+    while (window_shut()) {}
 #endif
 
     atomic_fetch_add_explicit(&stealing_inflight, 1, memory_order_seq_cst); /* parked -> stealing */
