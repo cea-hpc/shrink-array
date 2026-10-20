@@ -71,7 +71,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    `StaticConstArray::ladder_mutex()`, the advisor's two `omp atomic` are
    relaxed `std::atomic_ref::fetch_add`. Left for step 5: the ladder takes its
    lock only when `FAST_ALLOC_PMP_IN_PARALLEL_REGION`, an OpenMP query.
-3. **B**: `pmp::parallel_for` / `pmp::parallel_reduce` in `PMP_CHUNK.h`,
+3. **B**: `pmp::parallel_for` and a reduction in `PMP_CHUNK.h`,
    OpenMP implementation (same `schedule`, same `if` thresholds), the B sites
    converted. `fast_allocators` gets the same through `pmp_alloc.h`. *Done*:
    one implementation, `fast_allocators/internal/pmp_loops.h` (namespace
@@ -79,7 +79,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    as `shrink_array::pmp`): `parallel_for`, `parallel_for_local` (a per-thread
    state, the release of a shrink) and `parallel_sum<T, N>` (the only
    reduction the sites need: N counters, `reduction(+ : acc[:N])`); a general
-   `parallel_reduce` waits for a site that needs another operator. Options:
+   reduction waits for a site that needs another operator. Options:
    `use_team` (the `if` clause: false still opens a team of one, so the OMPT
    callbacks fire as before), `num_threads`, `schedule` (`static_blocks`,
    `static_chunks(c)`, `dynamic(c)`). The loops that had no `schedule` clause
