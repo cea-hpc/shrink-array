@@ -59,8 +59,8 @@ name of the model stands for one place of the source, with the same memory order
 | model | source (`chunk/public/chunk/internal/`) |
 |---|---|
 | `flag[r]`, `announce_write()`, `end_write()` | `write_compress_sync_policy.h`: `WritingFlag::v`, `announce_write()`, `end_write()` |
-| `any_writing_on_marked()` | `write_compress_sync_policy.h`: `any_thread_writing_on_marked()` |
-| `hard_inflight`, `stealing_inflight`, `must_defer_write()` | `compression_manager.h`: `hard_inflight_`, `stealing_inflight_`, `must_defer_write()` |
+| `any_writing_on_marked()`, `any_writing()` | `write_compress_sync_policy.h`: `any_thread_writing_on_marked()`, `any_thread_writing()` |
+| `hard_inflight`, `stealing_inflight`, `must_defer_write()`, `is_stealing()` | `compression_manager.h`: `hard_inflight_`, `stealing_inflight_`, `must_defer_write()`, `is_hard_compression_inflight()` |
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h`: `start()`, `finish()`; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h`: `steal_mark_` and its three verbs |
 | `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h`: `values`, `values_load()`, `compare_and_swap_gen()`; `chunk2A_std.h`: `try_mark_cst_and_get_old()` |
@@ -74,13 +74,12 @@ never silently lost; **P3**, with `--check-liveness`, every spin loop terminates
 
 The model has the two **shapes** of section 4 of the synchronisation document. `SHAPE_SYMMETRIC`
 (the default) is what the checker can verify: C11 has no `membarrier()`. `SHAPE_ASYMMETRIC_NAKED`
-is the asymmetric shape with the writer's plain store and *no* `membarrier()` on the other side: it
-must fail, and its failure is exactly what the system call repairs. The asymmetric-to-symmetric
+is the asymmetric shape with the writer's plain store and *no* `membarrier()` on the other side:
+it must fail, and its failure is exactly what the system call repairs. The asymmetric-to-symmetric
 reduction is the argument of section 4.2 and of `membarrier(2)`'s own contract, not a checker
-result. The **configurations** are `INIT_CONSTANT` (the chunk starts compressed, the writers
-materialise it; the default is an all-zero buffer, a candidate for the pass),
-`BOUNDED_COMPRESSOR_WAIT` (the `CHUNK_COMPRESS_MAX_YIELDS` budget reduced to its effect: one look,
-then give up) and `NWRITERS`.
+result. The **configurations** are `INIT_CONSTANT` (the chunk starts compressed, the writers materialise it;
+the default is an all-zero buffer, a candidate for the pass), `BOUNDED_COMPRESSOR_WAIT` (the
+`CHUNK_COMPRESS_MAX_YIELDS` budget reduced to its effect: one look, then give up) and `NWRITERS`.
 
 ## 4. The calibration
 
@@ -98,13 +97,14 @@ under IMM (identical). "Executions" is the number of complete executions the che
 | `MUT_NO_CHECK2`: no look at the gate after the announce | fail | lost write | -- |
 | `SHAPE_ASYMMETRIC_NAKED`: asymmetric shape without `membarrier()` | fail | access to freed memory | -- |
 | `MUT_NO_FENCE_COMPRESSOR`: the compressor announces without its barrier | fail | access to freed memory | -- |
+| `MUT_WAIT_ON_HARD`: materialisation waits on `hard_inflight_` (the triangle of 5.3) | fail | liveness violation | 5 |
 | `MUT_RELAXED_MARK`: the mark relaxed instead of release/acquire (5.3) | fail | access to freed memory | 8 |
 | `MUT_MATERIALISE_WAIT_UNDER_FLAG`: the materialisation wait before **F2**, unbounded compressor wait | fail | **liveness violation** | 4 |
 | the same with the library's bounded wait: safe, a stall only | pass | pass | 116 |
 
 Every mutation is refused, and the protocol of the source passes in every configuration. The
-last two lines are the behaviour this work changed in handshake 1 (F2, section 7): the
-library as it was before is refused, the library as it is passes. The verdict on
+last two lines are the behaviour this work changed in the source (section 7, F2): the library as
+it was before is refused, the library as it is passes. The verdict on
 `MUT_RELAXED_MARK` is worth a word: section 5.3 says the mark "needs its own
 release/acquire pair" and that a relaxed read was "confirmed by TSan" -- TSan does not model
 fences, so that confirmation alone could have been an artefact of the symmetric build. The checker
@@ -178,11 +178,11 @@ library as it was before this work (section 7): refused as it was, passing as it
 
 ## 7. Findings
 
-### 7.1 F1: the gate without marks read `hard_inflight_` relaxed (closed: the build is removed)
+### 7.1 F1: the gate of the build without marks read `hard_inflight_` relaxed (closed: the build was removed)
 
-In the `SHRINK_SMALL_CHUNK` build (no per-chunk mark, `chunk_config::use_chunk_steal_mark`
-false), `CompressionManager::must_defer_write()` was `hard_inflight_.load(relaxed) > 0`. The
-checker finds this execution: the pass runs to completion -- mark, `start()`, scan, CAS of
+The `SHRINK_SMALL_CHUNK` build -- 8-byte chunks, no per-chunk mark, a global gate -- had
+`CompressionManager::must_defer_write()` as `hard_inflight_.load(relaxed) > 0`. The checker,
+on the model's configuration of that build, found this execution: the pass runs to completion -- mark, `start()`, scan, CAS of
 `values` to the constant, buffer returned, `finish()` -- and only then the writer's check no. 2
 reads `hard_inflight_`, which is back to zero. The writer proceeds; its `values_load()`
 (acquire) is not ordered after the pass's CAS, since nothing synchronised with it, and returns the
@@ -193,12 +193,12 @@ release store and `steal_marked()` an acquire load. On AArch64 the relaxed `ldr`
 may be satisfied after a later `ldar` of `values`; on x86 the two loads stay in order and the hole
 is closed by the hardware.
 
-The fix was one word: `memory_order_acquire` on that load, pairing with the `seq_cst` RMW of
-`finish()`, so that a writer that sees the pass over also sees the `values` it installed; the
-checker accepted it with 2 and 3 writers. The build itself was then removed rather than kept
-under a second model: no test or CI job built it, and every threaded build has the marks. The
-model's configuration without marks and its two mutations (the relaxed gate as it was, and the
-triangle of 5.3) went with it. The default build was never affected.
+The fix was one word, `memory_order_acquire` on that load, and the checker accepted it with 2
+and 3 writers. The build was then **removed** instead (CHANGELOG, *Removed*): a `-D` define no
+test or build script exercised, failing its own harnesses, and a second write protocol to keep
+correct. Every threaded build has the marks now (`chunk_config::use_chunk_steal_mark`), and the
+model's configuration of the removed build went with it: this section is the record of the
+finding, and `synchronisation_dekker.md` section 5.3 keeps a line on it.
 
 ### 7.2 F2: a materialising writer and a parked compressor waited for each other (fixed)
 
@@ -227,7 +227,8 @@ wait as it was.
 
 ### 7.3 What the checker confirmed
 
-The rules of section 6 of the synchronisation document hold in the model: the
+The rules of section 6 of the synchronisation document hold in the model: the two counters must
+stay two (`MUT_WAIT_ON_HARD` is the triangle, found as a liveness violation in 5 executions); the
 compressor's barrier and the writer's look after its announce are each load-bearing; the
 asymmetric shape is unsound without `membarrier()`; and the protocol as shipped is correct, with
 the per-chunk marks, for 2 and 3 writers, whether the chunk starts compressed or materialised.

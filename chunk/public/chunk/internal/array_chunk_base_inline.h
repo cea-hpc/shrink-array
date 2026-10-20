@@ -25,7 +25,7 @@
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase, the class these bodies belong to
 #include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::CheckNaN
-#include "chunk/internal/chunk_size_policy.h"   // register_runtime_chunk_size / set_thread_chunk_size
+#include "chunk/internal/chunk_size_policy.h"   // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
 #include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools -- shrink_to_fit()
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
 #include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
@@ -81,15 +81,14 @@ template <typename Derived>
 void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept
 {
     // Same rule as rechunk_to() (this is also its path on an empty array):
-    // a power of two or a multiple of 64 (is_valid_chunk_size). Refused,
-    // geometry kept.
+    // chunk_size_error, a power of two or a multiple of 64 and at most
+    // cst_buffer_size -- a wider chunk reads the shared constant buffers out
+    // of bounds. Refused, geometry kept.
     if constexpr (build_config::chunk_dynamic)
     {
-        if (!is_valid_chunk_size(new_chunk_size))
+        if (const auto e = chunk_size_error(new_chunk_size)) [[unlikely]]
         {
-            CHUNK_LOG(warn, rechunk,
-                      "set_chunk_size({}) refused: a chunk size must be a power of two or a multiple of 64",
-                      new_chunk_size);
+            warn_chunk_size_refused("set_chunk_size", new_chunk_size, *e);
             return;
         }
     }

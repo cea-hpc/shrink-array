@@ -840,6 +840,8 @@ template <typename CtxType, typename LambdaBody>
 void ProxyBase<Derived, T, ChunkType>::enqueue_deferred_write(CtxType* ctx, LambdaBody&& body) const
 {
     using ArrayType = ArrayChunkFor_t<ChunkType>;
+    // This const guards the proxy, not the array: enqueueing marks the array's
+    // dirty bitset now, the write itself replays at the phase end.
     auto* arr       = static_cast<ArrayType*>(const_cast<void*>(ptr_on_array));
     arr->mark_chunk_dirty(ctx->num_chunk);
     increm_chunk_gate_deferred<ChunkType>();

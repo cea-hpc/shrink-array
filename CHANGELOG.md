@@ -164,6 +164,13 @@ the tag's checksum to the recipe.
   chunk with the per-chunk gates is not achievable cleanly (`chunk/config.h`).
 
 ### Fixed
+
+- `set_chunk_size()` accepted, on an empty array of a `_dyn` build, a size wider than
+  `cst_buffer_size` (e.g. twice it): the array's constant chunks then read the shared constant
+  buffers out of bounds. It checked only that the size is a power of two or a multiple of 64;
+  `rechunk_to()` and `set_active_chunk_size()` also checked the width. The three setters and
+  `ParamChunk::check_chunk_size()` now share one rule, `chunk_size_error()`, and refuse such a
+  size with a warning, geometry kept. Present in 0.1.2.
 - A writer materialising a chunk that a pass marked right after the writer's
   gate check spun on the mark while the pass, parked, waited for that
   writer's flag: both stalled for the whole `CHUNK_COMPRESS_MAX_YIELDS`

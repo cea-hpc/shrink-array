@@ -459,7 +459,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          registers the value allocators for @p new_chunk_size and records it
      *          as the calling thread's active size.
      *
-     * @param new_chunk_size the new chunk size (a power of two or a multiple of 64)
+     * @param new_chunk_size the new chunk size: a power of two or a multiple of
+     *        64, at most cst_buffer_size (chunk_size_error); refused otherwise,
+     *        with a warning, geometry kept
      * @warning Must be called on an empty container, before any
      *          resize/allocation, since it changes how indices map to chunks.
      */
