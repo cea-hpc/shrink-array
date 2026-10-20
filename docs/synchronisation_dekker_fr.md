@@ -400,7 +400,6 @@ grâce** (la technique de RCU et des schémas à époques) :
   **collectés** au lieu d'être libérés. En fin de passe, `heavy_barrier()`, puis lecture de
   chaque numéro : un lecteur pair a fini avant, ou chargera `values` après la barrière et verra
   la constante ; un lecteur impair peut tenir un ancien pointeur, et le récupérateur attend que
-  son numéro change. Puis les tampons sont rendus, comme avant.
   son numéro change. Puis les tampons sont rendus, comme avant. (L'écriture d'entrée est elle
   aussi un release : un numéro passé à la valeur impaire de la lecture suivante doit ordonner la
   lecture précédente avant la libération du tampon, et en C++20 une écriture relaxed après une

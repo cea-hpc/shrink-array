@@ -80,19 +80,9 @@ compression pass, the pass against the deferred-write flush, pure readers agains
 reclamation -- are model-checked: reduced models of them ([formal/](formal/)) are explored
 exhaustively by [GenMC](https://github.com/MPI-SWS/genmc) under the C11 memory model (RC11 and
 IMM), with no lost write, no use-after-free, no data race and no unbounded wait, and the models
-refuse fourteen mutations, seven of them the library as it once was. The `membarrier()` shape
+refuse twelve mutations, six of them the library as it once was. The `membarrier()` shape
 rests on the argument of [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md)
 section 4.2; everything else is the checker's ([docs/formal_models.md](docs/formal_models.md)).
-
-**Checked, not only tested.** The three lock-free handshakes -- element writers against the
-compression pass, the pass against the deferred-write flush, pure readers against buffer
-reclamation -- are model-checked: reduced models of them ([formal/](formal/)) are explored
-exhaustively by [GenMC](https://github.com/MPI-SWS/genmc) under the C11 memory model (RC11 and
-IMM), with no lost write, no use-after-free, no data race and no unbounded wait, and the models
-refuse eleven mutations, five of them the library as it once was. The `membarrier()` shape rests
-on the argument of [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) section 4.2,
-and one reservation on the readers' side -- a hole the C++20 standard has and the hardware
-mappings do not -- is recorded as F3 in [docs/formal_models.md](docs/formal_models.md).
 
 ## In numbers
 

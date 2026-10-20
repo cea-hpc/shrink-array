@@ -55,18 +55,11 @@ the tag's checksum to the recipe.
 - Reduced models of the three lock-free handshakes -- writer / compressor,
   compressor / flush, readers / buffer reclamation -- checked by GenMC
   (`formal/`, `docs/formal_models.md`): the protocols of the source verified
-  under RC11 and IMM, eleven mutations refused (five of them the library as
-  it once was, the lost replay without the compressor's second look among
-  them), two findings fixed (see Fixed: F2, F4), one closed by removing the
-  build it was in (F1, see Removed) and one recorded as open, F3, a C++20 release-sequence hole on back-to-back reads that the
-  hardware mappings close. New ctest label `formal`.
-- Reduced models of the three lock-free handshakes -- writer / compressor,
-  compressor / flush, readers / buffer reclamation -- checked by GenMC
-  (`formal/`, `docs/formal_models.md`): the protocols of the source verified
-  under RC11 and IMM, fourteen mutations refused (seven of them the library
+  under RC11 and IMM, twelve mutations refused (six of them the library
   as it once was, the lost replay without the compressor's second look
-  among them) and four findings, all fixed (see Fixed: F1 to F4). New ctest
-  label `formal`.
+  among them) and four findings: three fixed (see Fixed: F2 to F4), one
+  closed by removing the build it was in (F1, see Removed). New ctest label
+  `formal`.
 - One log for both libraries (`chunk/log.h`, built on
   `fast_allocators/internal/log_core.h`): every message has a level and a
   channel, `CHUNK_LOG` (default `warn`) says which are written, e.g.

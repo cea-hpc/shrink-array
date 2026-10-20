@@ -82,21 +82,10 @@ contre passe de compression, passe contre flush des écritures différées, lect
 réemploi des tampons -- sont vérifiées par model checking : des modèles réduits ([formal/](formal/))
 en sont explorés exhaustivement par [GenMC](https://github.com/MPI-SWS/genmc) sous le modèle
 mémoire C11 (RC11 et IMM), sans écriture perdue, sans accès à un tampon rendu, sans course de
-données et sans attente non bornée, et les modèles refusent quatorze mutations, dont sept états
+données et sans attente non bornée, et les modèles refusent douze mutations, dont six états
 passés de la bibliothèque. La forme à `membarrier()` repose sur l'argument de la section 4.2 de
 [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) ; tout le reste est au
 vérificateur ([docs/formal_models_fr.md](docs/formal_models_fr.md)).
-
-**Vérifié, pas seulement testé.** Les trois poignées de main sans verrou -- écrivains d'éléments
-contre passe de compression, passe contre flush des écritures différées, lecteurs purs contre
-réemploi des tampons -- sont vérifiées par model checking : des modèles réduits ([formal/](formal/))
-en sont explorés exhaustivement par [GenMC](https://github.com/MPI-SWS/genmc) sous le modèle
-mémoire C11 (RC11 et IMM), sans écriture perdue, sans accès à un tampon rendu, sans course de
-données et sans attente non bornée, et les modèles refusent onze mutations, dont cinq états passés
-de la bibliothèque. La forme à `membarrier()` repose sur l'argument de la section 4.2 de
-[docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md), et une réserve côté
-lecteurs -- un trou du standard C++20 que les mappings matériels n'ont pas -- est consignée comme
-F3 dans [docs/formal_models_fr.md](docs/formal_models_fr.md).
 
 ## En chiffres
 

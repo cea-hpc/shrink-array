@@ -399,7 +399,6 @@ period** (the technique of RCU and epoch-based schemes):
   **collected** instead of being freed. At the end of the pass, `heavy_barrier()`, then a read of
   each number: an even reader finished before, or will load `values` after the barrier and see
   the constant; an odd reader may hold an old pointer, and the reclaimer waits until
-  its number changes. Then the buffers are returned, as before.
   its number changes. Then the buffers are returned, as before. (The entry store is a release
   too: a number that has moved to the next read's odd value must order the previous read's load
   before the release of the buffer, and by C++20 a relaxed store after a release store of the
