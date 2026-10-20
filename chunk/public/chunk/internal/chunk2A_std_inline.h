@@ -511,7 +511,12 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
  *          - compressed: switch the constant in place. The second-value slot
  *            and the type are written first, then the values pointer: the
  *            order clear_int_st keeps. No CAS, no buffer allocated, filled,
- *            scanned and freed again.
+ *            scanned and freed again. Model-checked against the compression pass
+ *            (formal/switch_mt.c, docs/formal_models.md 6.1): safe because the switch
+ *            only touches a chunk that is not a buffer, which the pass only ever
+ *            changes by a CAS; load-bearing is the caller's precondition, that nobody
+ *            else materialises this chunk (the span covers all of it): the pointer is
+ *            stored, not swapped.
  *          The value the chunk held before stays registered; a chunk
  *          records no reference to it (reclaim_second_values() frees what no
  *          chunk points at any more).

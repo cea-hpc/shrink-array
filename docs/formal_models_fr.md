@@ -186,6 +186,40 @@ Le protocole tient, toutes les mutations sont refusées, et les deux lignes marq
 la bibliothèque telle qu'elle était avant ce travail (section 7) : refusée telle qu'elle était,
 passante telle qu'elle est.
 
+### 6.1 Un quatrième modèle : le changement de constante en place
+
+`formal/switch_mt.c` n'est pas une poignée de main de la section 5 du document Dekker : c'est le
+seul endroit où un écrivain change l'état d'un chunk sans le matérialiser. `internal::store_range_mt`,
+pour un morceau uniforme couvrant tout un chunk Chunk2A compressé, ouvre une session d'écriture
+(annonce, revérification, retrait) et appelle `Chunk2A::fill_constant_st`, dont la branche
+« compressé » écrit l'emplacement de la seconde valeur et le type, puis le pointeur `values` --
+pas de tampon, pas de CAS. Le modèle l'oppose à une passe de compression qui tient le même chunk
+dans sa liste de candidats. Le chunk est réduit à deux mots, `values` (la première constante, deux
+emplacements de seconde valeur, ou un tampon) et `meta` (la table de types et l'emplacement, une
+variable simple : le vérificateur y signale une course), et à une marque de vol. La passe est
+`make_block_compression` telle que le source la déroule : les trois chargements de
+`fill_list_to_compress` (`is_not_cst_val1`, `is_cst_val2`, le scan), puis `block_clear_common` : les
+métadonnées sont écrites **avant** le CAS de `try_mark_cst_and_get_old`, et un CAS qui échoue -- le
+chunk est déjà à une constante -- resynchronise `values` d'après les métadonnées (la « resynchro
+critique »). Trois propriétés sont assertées après les jointures : **P1**, le changement fait par
+l'écrivain est ce que le chunk contient ; **P2**, `values` et `meta` concordent ; **P3**, la passe ne
+libère qu'un tampon et un tampon que le chunk possède n'est pas perdu. Une plus forte,
+`STRICT_SCAN`, est l'isolation que la session est censée acheter : la passe ne scanne jamais un chunk
+qui n'est pas un tampon.
+
+| cas | attendu | verdict | exécutions |
+|---|---|---|---|
+| source : changement vers une seconde valeur ; vers la première ; chunk matérialisé ; les deux | passe | passe | 4 chacun |
+| les mêmes quatre sous `STRICT_SCAN` (isolation) | passe | passe | 4 chacun |
+| `MUT_NO_RECHECK`, `MUT_CHECK_FIRST`, `MUT_NO_WINDOW`, `MUT_NO_FENCE`, sous `STRICT_SCAN` | échoue | la passe scanne un non-tampon | 1 chacun |
+| les mêmes quatre sous P1-P3 seules | passe | passe | 4 ; 7 ; 5 ; 7 |
+| `MUT_RELAXED_VALUES` ; `MUT_META_AFTER` | passe | passe | 4 chacun |
+| `MUT_NO_BUF_CHECK` sur un chunk matérialisé | échoue | le tampon est écrasé | -- |
+| `SECOND_MATERIALISER` : un autre thread matérialise le chunk, le changement est un store | échoue | le tampon est écrasé | -- |
+| `SECOND_MATERIALISER`, le changement par CAS (non retenu) | passe | passe | 18 |
+
+Tout cela tient sous RC11 et sous IMM. Ce que dit le tableau est l'objet de la section 7.6.
+
 ## 7. Constats
 
 ### 7.1 F1 : la porte sans marques lisait `hard_inflight_` en relaxed (clos : le build est retiré)
@@ -287,6 +321,36 @@ verrouillé est une barrière complète, donc, comme F3, le trou est celui du st
 n'emprunte qu'avec plus d'un millier de threads lecteurs). Appliqué ; `MUT_OVERFLOW_NO_FENCE` est la
 ligne telle qu'elle était.
 
+### 7.6 La session n'est pas ce qui rend le changement sûr face à la passe
+
+Pas un défaut : un résultat que donne le modèle et que les commentaires du source ne disent pas.
+Qu'on retire un élément de la poignée de main du changement en place -- le regard sur la marque, la
+fenêtre, les barrières complètes, ou le regard sur la marque avant l'annonce -- et P1, P2 et P3
+tiennent encore ; seule la propriété d'isolation plus forte, `STRICT_SCAN`, s'en aperçoit. La raison
+tient en deux lignes du source. L'écrivain ne change que si `values` n'est pas un tampon
+(`materialised()`), et la passe ne change jamais `values` que d'un tampon vers une constante, par un
+CAS (`try_mark_cst_and_get_old`) : les deux n'agissent jamais sur le même état, et ce que l'un
+publie, l'autre l'acquiert. Une passe qui liste un chunk sur une vue périmée -- elle a chargé la
+première constante au départ, l'écrivain a changé, elle charge la seconde -- le ramène à la constante
+qu'elle a scannée, qui est celle que l'écrivain a installée : le CAS trouve une constante, rend
+`nullptr`, et la resynchro lit les métadonnées que la passe vient d'écrire, la même constante.
+
+Ce que la session achète, c'est donc l'isolation : la passe ne scanne pas un chunk pendant qu'on le
+réécrit, la propriété que brisent les mutations du tableau. La bibliothèque n'en a pas besoin pour sa
+sûreté aujourd'hui ; elle repose sur le fait que la cible du clear est la constante que le scan a
+vue. Un clear qui calculerait sa cible autrement rendrait la session porteuse -- les mutations sont
+le garde-fou. **Aucun changement au source**, et aucune suggestion de retirer la session : les
+modèles n'ont pas de lecteur (section 8), et c'est la même session que réclame le chemin des stores.
+
+Ce sur quoi le changement repose vraiment, c'est sa **précondition**. Le morceau couvre tous les
+éléments du chunk, donc aucun autre thread ne l'écrit dans la phase ; le changement est alors un
+store, pas un CAS. Qu'on la brise -- `SECOND_MATERIALISER`, un thread qui matérialise le chunk entre
+le regard de l'écrivain et son store -- et le store écrase le tampon que l'autre a installé, qui est
+perdu. Écrit en CAS, le changement passe (18 exécutions), pour un coût que personne ne paie
+aujourd'hui : deux threads qui écrivent les mêmes éléments d'un chunk, c'est une course de données de
+l'appelant avant d'être celle de la bibliothèque. Consigné ici pour qu'un futur appelant qui ne
+possède pas tout le chunk sache ce qu'il faut.
+
 ## 8. Limites
 
 - **Fidélité.** Le modèle est une réduction écrite à la main depuis le source : une ligne que le
@@ -302,6 +366,13 @@ ligne telle qu'elle était.
   traite aussi `atomic_signal_fence()` comme une barrière de thread, donc la barrière de
   compilateur de la forme asymétrique est laissée hors du modèle (l'IR que GenMC explore garde de
   toute façon l'ordre du programme).
+- **Le modèle du changement n'a pas de lecteur.** `MUT_RELAXED_VALUES` et `MUT_META_AFTER` passent
+  parce que personne ne lit les métadonnées ni l'emplacement de la seconde valeur d'un thread à
+  l'autre dans le modèle de la section 6.1 ; que le store release de `values` et l'ordre
+  emplacement, type, pointeur comptent pour un lecteur lui échappe, de même que
+  `reclaim_second_values()`, que la bibliothèque n'autorise que hors région parallèle. P1 et P2 ne
+  sont violées par aucune des mutations essayées : elles ne sont pas calibrées, seules P3 et
+  l'isolation ont un témoin.
 - **Modèle, pas matériel.** RC11 et IMM sont le modèle C11 et un raffinement de celui-ci, pas le
   modèle propre d'AArch64. Une exécution qu'ils interdisent est interdite sur tout compilateur et
   tout processeur conformes ; une exécution qu'ils autorisent peut être observable ou non sur
@@ -311,3 +382,6 @@ ligne telle qu'elle était.
 
 - Dartagnan sur les trois mêmes fichiers, sous le modèle AArch64 officiel : la dernière limite
   ci-dessus tombe pour la machine que vise la bibliothèque.
+- Un lecteur dans `formal/switch_mt.c` (`values_load()`, puis l'emplacement de la seconde valeur) :
+  il calibrerait P1 et P2 et dirait si le store release et l'ordre des trois écritures de
+  `fill_constant_st` comptent.

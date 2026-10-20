@@ -104,4 +104,33 @@ run ok    "MUT_ENTER_RELAXED, 1 read: the hole needs back-to-back reads" -- -DMU
 run ok    "MUT_WAIT_FOR_EVEN, 2 reads (the pass-side way out, not taken)" --check-liveness -- -DNREADS=2 -DMUT_WAIT_FOR_EVEN $M3
 run error "MUT_OVERFLOW_NO_FENCE (F4, before)"               -- -DOVERFLOW_READER -DMUT_OVERFLOW_NO_FENCE $M3
 
+M4=switch_mt.c
+echo "== the in-place constant switch: writer <-> compression pass ($M4) =="
+# The switch of Chunk2A::fill_constant_st against the pass, properties P1-P3 (docs/formal_models.md 6.1).
+run ok    "source, switch to a second value"                 -- $M4
+run ok    "source, switch to the first value"                -- -DTO_FIRST $M4
+run ok    "source, chunk materialised: left alone"           -- -DINIT_BUF $M4
+run ok    "source, materialised, first value"                -- -DTO_FIRST -DINIT_BUF $M4
+run ok    "isolation (STRICT_SCAN), second value"            -- -DSTRICT_SCAN $M4
+run ok    "isolation (STRICT_SCAN), first value"             -- -DSTRICT_SCAN -DTO_FIRST $M4
+run ok    "isolation (STRICT_SCAN), materialised"            -- -DSTRICT_SCAN -DINIT_BUF $M4
+run ok    "isolation (STRICT_SCAN), materialised, first value" -- -DSTRICT_SCAN -DTO_FIRST -DINIT_BUF $M4
+echo "-- mutations of the handshake: refused by the isolation property --"
+run error "MUT_NO_RECHECK, isolation"                        -- -DSTRICT_SCAN -DTO_FIRST -DMUT_NO_RECHECK $M4
+run error "MUT_CHECK_FIRST, isolation"                       -- -DSTRICT_SCAN -DTO_FIRST -DMUT_CHECK_FIRST $M4
+run error "MUT_NO_WINDOW, isolation"                         -- -DSTRICT_SCAN -DTO_FIRST -DMUT_NO_WINDOW $M4
+run error "MUT_NO_FENCE, isolation"                          -- -DSTRICT_SCAN -DTO_FIRST -DMUT_NO_FENCE $M4
+echo "-- the same mutations under P1-P3 alone, and the orders readers would need: must still pass (7.6) --"
+run ok    "MUT_NO_RECHECK, P1-P3"                            -- -DTO_FIRST -DMUT_NO_RECHECK $M4
+run ok    "MUT_CHECK_FIRST, P1-P3"                           -- -DTO_FIRST -DMUT_CHECK_FIRST $M4
+run ok    "MUT_NO_WINDOW, P1-P3"                             -- -DTO_FIRST -DMUT_NO_WINDOW $M4
+run ok    "MUT_NO_FENCE, P1-P3"                              -- -DTO_FIRST -DMUT_NO_FENCE $M4
+run ok    "MUT_RELAXED_VALUES (no reader in the model)"      -- -DTO_FIRST -DMUT_RELAXED_VALUES $M4
+run ok    "MUT_META_AFTER (no reader in the model)"          -- -DTO_FIRST -DMUT_META_AFTER $M4
+echo "-- what the switch does rest on --"
+run error "MUT_NO_BUF_CHECK on a materialised chunk (buffer lost)" -- -DINIT_BUF -DMUT_NO_BUF_CHECK $M4
+run error "SECOND_MATERIALISER: the span's precondition broken"    -- -DSECOND_MATERIALISER $M4
+run ok    "SECOND_MATERIALISER, switch by CAS (not taken)"   -- -DSECOND_MATERIALISER -DSWITCH_CAS $M4
+run ok    "switch by CAS, first value, materialised"         -- -DSWITCH_CAS -DTO_FIRST -DINIT_BUF $M4
+
 exit $fail

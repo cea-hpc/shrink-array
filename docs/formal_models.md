@@ -176,6 +176,38 @@ reads a value the chunk never held, and the grace period terminates.
 The protocol holds, every mutation is refused, and the two lines marked F3 and F4 are the
 library as it was before this work (section 7): refused as it was, passing as it is.
 
+### 6.1 A fourth model: the in-place constant switch
+
+`formal/switch_mt.c` is not a handshake of section 5 of the Dekker document: it is the one place
+where a writer changes a chunk's state without materialising it. `internal::store_range_mt`, for
+a uniform span covering the whole of a compressed Chunk2A chunk, opens a write session (announce,
+re-check, retire) and calls `Chunk2A::fill_constant_st`, whose compressed branch stores the
+second-value slot and the type, then the `values` pointer -- no buffer, no CAS. The model puts
+that against a compression pass that holds the same chunk in its candidate list. The chunk is
+reduced to two words, `values` (the first constant, two second-value slots, or a buffer) and
+`meta` (the type table and the slot, a plain variable: the checker reports a race on it), and a
+steal mark. The pass is `make_block_compression` as the source runs it: the three loads of
+`fill_list_to_compress` (`is_not_cst_val1`, `is_cst_val2`, the scan), then `block_clear_common`:
+the metadata is written **before** `try_mark_cst_and_get_old`'s CAS, and a failed CAS -- the chunk
+is already at a constant -- re-synchronises `values` from the metadata (the "critical re-sync").
+Three properties are asserted after the joins: **P1**, the switch the writer made is what the
+chunk holds; **P2**, `values` and `meta` agree; **P3**, the pass frees a buffer only and a buffer
+the chunk owns is not lost. A stronger one, `STRICT_SCAN`, is the isolation the session is meant to
+buy: the pass never scans a chunk that is not a buffer.
+
+| case | expected | verdict | executions |
+|---|---|---|---|
+| source: switch to a second value; to the first; chunk materialised; both | pass | pass | 4 each |
+| the same four under `STRICT_SCAN` (isolation) | pass | pass | 4 each |
+| `MUT_NO_RECHECK`, `MUT_CHECK_FIRST`, `MUT_NO_WINDOW`, `MUT_NO_FENCE`, under `STRICT_SCAN` | fail | the pass scans a non-buffer | 1 each |
+| the same four under P1-P3 alone | pass | pass | 4; 7; 5; 7 |
+| `MUT_RELAXED_VALUES`; `MUT_META_AFTER` | pass | pass | 4 each |
+| `MUT_NO_BUF_CHECK` on a materialised chunk | fail | the buffer is overwritten | -- |
+| `SECOND_MATERIALISER`: another thread materialises the chunk, the switch is a store | fail | the buffer is overwritten | -- |
+| `SECOND_MATERIALISER`, the switch a CAS (not taken) | pass | pass | 18 |
+
+All of it holds under RC11 and IMM. What the table says is the subject of section 7.6.
+
 ## 7. Findings
 
 ### 7.1 F1: the gate without marks read `hard_inflight_` relaxed (closed: the build is removed)
@@ -271,6 +303,34 @@ as on the slot path (a compiler barrier under `membarrier()`, a fence otherwise,
 program takes only with more than a thousand reader threads). Applied; `MUT_OVERFLOW_NO_FENCE` is
 the line as it was.
 
+### 7.6 The session is not what makes the switch safe against the pass
+
+Not a defect: a result the model gives that the source's comments do not say. Remove any element
+of the handshake of the in-place switch -- the look at the mark, the window, the full barriers, or
+the look at the mark before the announce -- and P1, P2 and P3 still hold; only the stronger isolation
+property of `STRICT_SCAN` notices. The reason is in two lines of the source. The writer switches
+only if `values` is not a buffer (`materialised()`), and the pass only ever changes `values` from
+a buffer to a constant, by a CAS (`try_mark_cst_and_get_old`): the two never act on the same
+state, and what one publishes the other acquires. A pass that lists a chunk on a stale view -- it
+loaded the first constant at the start, the writer switched, it loaded the second -- clears it to
+the constant it scanned, which is the one the writer installed: the CAS finds a constant, returns
+`nullptr`, and the re-sync reads the metadata the pass has just written, the same constant.
+
+What the session buys, then, is the isolation: the pass does not scan a chunk while it is
+rewritten, the property the mutations of the table break. The library does not need it for safety
+today; it rests on the clear's target being the constant the scan saw. A clear that computed its
+target some other way would make the session load-bearing -- the mutations are the guard. **No
+change to the source**, and no suggestion to remove the session: the models have no reader
+(section 8), and the same session is what the store path needs.
+
+What the switch does rest on is its **precondition**. The span covers every element of the chunk,
+so no other thread writes it in the phase; the switch is then a store, not a CAS. Break that --
+`SECOND_MATERIALISER`, a thread materialising the chunk between the writer's look and its store --
+and the store overwrites the buffer the other thread installed, which is lost. Written as a CAS the
+switch passes (18 executions), at a cost nobody pays today: two threads writing the same elements
+of a chunk is a data race of the caller's before it is the library's. Recorded here so that a
+future caller that does not own the whole chunk knows what it takes.
+
 ## 8. Limits
 
 - **Fidelity.** The model is a reduction written by hand from the source: a line the model
@@ -285,6 +345,12 @@ the line as it was.
   the asymmetric one rests on section 4.2 and on `membarrier(2)`'s contract. GenMC also treats
   `atomic_signal_fence()` as a thread fence, so the compiler barrier of the asymmetric shape is
   left out of the model (the IR GenMC explores keeps program order anyway).
+- **The switch model has no reader.** `MUT_RELAXED_VALUES` and `MUT_META_AFTER` pass because
+  nobody reads the metadata or the second-value slot across threads in section 6.1's model;
+  whether the release store of `values` and the order slot, type, pointer matter to a reader is
+  outside it, and so is `reclaim_second_values()`, which the library only allows outside a
+  parallel region. P1 and P2 are violated by none of the mutations tried: they are not
+  calibrated, only P3 and the isolation have a witness.
 - **Model, not hardware.** RC11 and IMM are the C11 model and a refinement of it, not AArch64's
   own model. An execution they forbid is forbidden on every conforming compiler and processor; one
   they allow may or may not be observable on Grace.
@@ -293,3 +359,6 @@ the line as it was.
 
 - Dartagnan on the same three files, under the official AArch64 model: the last limit above
   falls for the machine the library targets.
+- A reader in `formal/switch_mt.c` (`values_load()`, then the second-value slot): it would calibrate
+  P1 and P2 and say whether the release store and the order of the three writes of
+  `fill_constant_st` matter.

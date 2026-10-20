@@ -78,7 +78,8 @@ the tag's checksum to the recipe.
   under RC11 and IMM, twelve mutations refused (six of them the library
   as it once was, the lost replay without the compressor's second look
   among them) and four findings: three fixed (see Fixed: F2 to F4), one
-  closed by removing the build it was in (F1, see Removed). New ctest label
+  closed by removing the build it was in (F1, see Removed). A fourth model checks the in-place
+  constant switch of `store_range_mt` (`fill_constant_st`) against the pass. New ctest label
   `formal`.
 - One log for both libraries (`chunk/log.h`, built on
   `fast_allocators/internal/log_core.h`): every message has a level and a
