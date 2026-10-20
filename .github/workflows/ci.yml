@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: check_* scripts
         run: |
           status=0
@@ -56,11 +56,11 @@ jobs:
       # the runner's 16 GB, Ninja's default (cores + 2) does not.
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Toolchain
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
           g++-14 --version
           cmake --version
       - name: Configure
