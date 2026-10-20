@@ -50,9 +50,6 @@ run ok    "source, marks, buffer start"                      -- -DSHAPE_SYMMETRI
 run ok    "source, marks, constant start"                    -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT $M
 run ok    "source, marks, 3 writers"                         -- -DSHAPE_SYMMETRIC -DNWRITERS=3 $M
 run ok    "source, marks, constant start, 3 writers"         -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DNWRITERS=3 $M
-run ok    "source, no marks (SHRINK_SMALL_CHUNK)"            -- -DSHAPE_SYMMETRIC -DNO_MARKS $M
-run ok    "source, no marks, constant start"                 -- -DSHAPE_SYMMETRIC -DNO_MARKS -DINIT_CONSTANT -DBOUNDED_COMPRESSOR_WAIT $M
-run ok    "source, no marks, 3 writers"                      -- -DSHAPE_SYMMETRIC -DNO_MARKS -DNWRITERS=3 $M
 # Liveness: with the marks, even an UNBOUNDED compressor wait terminates (F2).
 run ok    "source, liveness, unbounded compressor wait"      --check-liveness -- -DSHAPE_SYMMETRIC $M
 run ok    "source, liveness, constant start, unbounded wait" --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT $M
@@ -65,10 +62,8 @@ echo "-- mutations: each must be refused --"
 run error "MUT_NO_CHECK2 (no look after the announce)"       -- -DSHAPE_SYMMETRIC -DMUT_NO_CHECK2 $M
 run error "SHAPE_ASYMMETRIC_NAKED (asymmetric, no membarrier)" -- -DSHAPE_ASYMMETRIC_NAKED $M
 run error "MUT_NO_FENCE_COMPRESSOR"                          -- -DSHAPE_SYMMETRIC -DMUT_NO_FENCE_COMPRESSOR $M
-run error "MUT_WAIT_ON_HARD, no marks (the triangle)"        --check-liveness -- -DSHAPE_SYMMETRIC -DNO_MARKS -DINIT_CONSTANT -DMUT_WAIT_ON_HARD $M
 run error "MUT_RELAXED_MARK (section 5.3: acquire is load-bearing)" -- -DSHAPE_SYMMETRIC -DMUT_RELAXED_MARK $M
-echo "-- the two behaviours the model changed in the source (docs/formal_models.md, F1 and F2) --"
-run error "MUT_NO_MARKS_RELAXED_GATE (F1, before)"           -- -DSHAPE_SYMMETRIC -DNO_MARKS -DMUT_NO_MARKS_RELAXED_GATE $M
+echo "-- the behaviour the model changed in the source (docs/formal_models.md, F2) --"
 run error "MUT_MATERIALISE_WAIT_UNDER_FLAG (F2, before), unbounded wait" --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DMUT_MATERIALISE_WAIT_UNDER_FLAG $M
 run ok    "MUT_MATERIALISE_WAIT_UNDER_FLAG, bounded wait: safe, stalls only" --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DMUT_MATERIALISE_WAIT_UNDER_FLAG -DBOUNDED_COMPRESSOR_WAIT $M
 
@@ -88,5 +83,24 @@ run ok    "MUT_NO_FIRST_LOOK (the early-out 'pairs with nothing')" -- -DMUT_NO_F
 run ok    "MUT_NO_FIRST_LOOK, 2 writers"                     -- -DMUT_NO_FIRST_LOOK -DNWRITERS=2 $M2
 run ok    "MUT_NO_POSTCHECK (post-store confirmation: a second line)" -- -DMUT_NO_POSTCHECK $M2
 run ok    "MUT_NO_POSTCHECK, 2 writers"                      -- -DMUT_NO_POSTCHECK -DNWRITERS=2 $M2
+
+M3=reader_reclaim.c
+echo "== handshake 3: readers <-> buffer reclamation ($M3) =="
+run ok    "source, 2 readers, one read each"                 --check-liveness -- $M3
+run ok    "source, 3 readers"                                --check-liveness -- -DNREADERS=3 $M3
+run ok    "source, overflow reader (F4 fence in place)"      --check-liveness -- -DOVERFLOW_READER $M3
+echo "-- finding F3: back-to-back reads, the source as it is, and the two ways out --"
+run error "source, 2 reads per reader: C11 release-sequence hole (F3)" -- -DNREADS=2 $M3
+run ok    "FIX_ENTER_RELEASE, 2 reads"                       --check-liveness -- -DNREADS=2 -DFIX_ENTER_RELEASE $M3
+run ok    "FIX_ENTER_RELEASE, 3 reads"                       --check-liveness -- -DNREADS=3 -DFIX_ENTER_RELEASE $M3
+run ok    "FIX_ENTER_RELEASE, 3 readers x 2 reads"           --check-liveness -- -DNREADERS=3 -DNREADS=2 -DFIX_ENTER_RELEASE $M3
+run ok    "MUT_WAIT_FOR_EVEN, 2 reads (the pass-side way out)" --check-liveness -- -DNREADS=2 -DMUT_WAIT_FOR_EVEN $M3
+run ok    "FIX_ENTER_RELEASE + overflow reader, 2 reads"     --check-liveness -- -DOVERFLOW_READER -DNREADS=2 -DFIX_ENTER_RELEASE $M3
+echo "-- mutations: each must be refused --"
+run error "MUT_NO_GRACE (the hazard itself)"                 -- -DMUT_NO_GRACE $M3
+run error "MUT_NO_HEAVY_BARRIER"                             -- -DMUT_NO_HEAVY_BARRIER $M3
+run error "MUT_LEAVE_RELAXED (the even store must be release)" -- -DMUT_LEAVE_RELAXED $M3
+run error "SHAPE_ASYMMETRIC_NAKED (reader without its fence)" -- -DSHAPE_ASYMMETRIC_NAKED $M3
+run error "MUT_OVERFLOW_NO_FENCE (F4, before)"               -- -DOVERFLOW_READER -DMUT_OVERFLOW_NO_FENCE $M3
 
 exit $fail

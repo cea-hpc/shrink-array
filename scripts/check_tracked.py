@@ -5,8 +5,8 @@
 
 A file written next to the others but never `git add`ed builds on the machine
 that has it and nowhere else: a clean clone fails to configure, to compile or
-to import. It happened four times (a validation harness, two documentation
-pages, a C++ header pair, a Python module), each found on another machine.
+to import. It keeps happening (a validation harness, two documentation pages,
+C++ headers, a Python module, GenMC models), each found on another machine.
 What the tracked sources name:
 
 1. a quoted `#include "x"` of chunk/, fast_allocators/ and examples/ (looked up
@@ -16,8 +16,9 @@ What the tracked sources name:
    `from .a import b`, `from ..a import b`);
 3. a source path written in a CMakeLists.txt (relative to it, or after
    ${PROJECT_SOURCE_DIR} / ${CMAKE_SOURCE_DIR} / ${CMAKE_CURRENT_SOURCE_DIR}),
-   and the validation harnesses, built as `<name>.cpp` from the names
-   examples/validation/CMakeLists.txt lists;
+   the validation harnesses, built as `<name>.cpp` from the names
+   examples/validation/CMakeLists.txt lists, and the GenMC models, built as
+   `<name>.c` from the names formal/CMakeLists.txt lists;
 4. a relative link of a Markdown file (`[text](other.md)`, `(../examples/x.cpp)`).
 
 A named file that exists but is untracked is an error (`git add` it); one that
@@ -39,6 +40,12 @@ CMAKE_PATH = re.compile(r'(?:\$\{(?:PROJECT_SOURCE_DIR|CMAKE_SOURCE_DIR|CMAKE_CU
                         r'[A-Za-z0-9_./-]+\.(?:h|hpp|cpp|c|py|cmake|in)\b')
 MD_LINK = re.compile(r"\]\(([^)#\s:]+)(?:#[^)]*)?\)")
 CMAKE_HARNESS = re.compile(r"^\s*(?:set\(_rt_harnesses|set\(_rt_dyn_harnesses|list\(APPEND _group)\s+([^)]*)\)?")
+CMAKE_MODELS = re.compile(r"^\s*set\(_formal_models\s+([^)]*)\)?")
+# CMakeLists.txt that build a source from a name it lists: (list pattern, suffix)
+CMAKE_NAME_LISTS = {
+    "examples/validation/CMakeLists.txt": (CMAKE_HARNESS, ".cpp", "harness"),
+    "formal/CMakeLists.txt": (CMAKE_MODELS, ".c", "model"),
+}
 INCLUDE_ROOTS = ("chunk/public", "fast_allocators/public", "third_party")
 CXX_DIRS = ("chunk", "fast_allocators", "examples")
 CXX_SUFFIXES = (".h", ".hpp", ".cpp", ".in")
@@ -115,7 +122,7 @@ def main():
                         p = base / name
                         verdict(f"{f}:{n}", f"from {m.group(1)} import {name}", [f"{p}.py", f"{p}/__init__.py"])
 
-    # 3. CMake source paths and the validation harnesses
+    # 3. CMake source paths, and the sources built from the names a CMakeLists.txt lists
     for f in sorted(t for t in tracked if t.endswith("CMakeLists.txt")):
         here = pathlib.PurePosixPath(f).parent
         for n, line in enumerate((root / f).read_text(encoding="utf-8", errors="replace").split("\n"), 1):
@@ -136,12 +143,13 @@ def main():
                 else:
                     p = here / tok
                 verdict(f"{f}:{n}", tok, [str(p)])
-            if f == "examples/validation/CMakeLists.txt":
-                h = CMAKE_HARNESS.match(code)
+            if f in CMAKE_NAME_LISTS:
+                pattern, suffix, kind = CMAKE_NAME_LISTS[f]
+                h = pattern.match(code)
                 if h:
                     for name in h.group(1).split():
                         if not name.startswith("$"):
-                            verdict(f"{f}:{n}", f"harness {name}", [f"{here}/{name}.cpp"])
+                            verdict(f"{f}:{n}", f"{kind} {name}", [f"{here}/{name}{suffix}"])
 
     # 4. relative Markdown links
     for f in sorted(t for t in tracked if t.endswith(".md")):

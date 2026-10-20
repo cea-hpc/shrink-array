@@ -155,6 +155,12 @@ class ReadSection
             else
             {
                 g_overflow_readers.fetch_add(1, std::memory_order_seq_cst);
+                // The announce needs its light side like the slot path: a seq_cst
+                // RMW followed by the acquire load of `values` is not a Dekker
+                // announce in C11 (store buffering against the reclaimer's acquire
+                // load of the counter), though it is on the AArch64 and x86
+                // mappings (formal/reader_reclaim.c, MUT_OVERFLOW_NO_FENCE).
+                light_fence();
             }
         }
     }

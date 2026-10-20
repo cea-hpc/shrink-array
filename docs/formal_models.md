@@ -18,7 +18,7 @@ could make -- and reports a violated assertion, an access to freed memory, or (w
 `multi_launch_stress.py` find a defect once in thousands of runs, the checker finds it in the
 first execution that exhibits it, in a fraction of a second, and says "none" otherwise.
 
-What "none" means has limits, listed in section 7: the model is a reduction (fidelity is the
+What "none" means has limits, listed in section 8: the model is a reduction (fidelity is the
 risk), it is bounded (up to 5 writers), and C11 has no `membarrier()`. The way to trust a model
 is to **calibrate** it: feed it the bugs the library really had, as mutations of the model, and
 check that the checker refuses every one of them. Section 4 is that calibration.
@@ -59,8 +59,8 @@ name of the model stands for one place of the source, with the same memory order
 | model | source (`chunk/public/chunk/internal/`) |
 |---|---|
 | `flag[r]`, `announce_write()`, `end_write()` | `write_compress_sync_policy.h`: `WritingFlag::v`, `announce_write()`, `end_write()` |
-| `any_writing_on_marked()`, `any_writing()` | `write_compress_sync_policy.h`: `any_thread_writing_on_marked()`, `any_thread_writing()` |
-| `hard_inflight`, `stealing_inflight`, `must_defer_write()`, `is_stealing()` | `compression_manager.h`: `hard_inflight_`, `stealing_inflight_`, `must_defer_write()`, `is_hard_compression_inflight()` |
+| `any_writing_on_marked()` | `write_compress_sync_policy.h`: `any_thread_writing_on_marked()` |
+| `hard_inflight`, `stealing_inflight`, `must_defer_write()` | `compression_manager.h`: `hard_inflight_`, `stealing_inflight_`, `must_defer_write()` |
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h`: `start()`, `finish()`; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h`: `steal_mark_` and its three verbs |
 | `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h`: `values`, `values_load()`, `compare_and_swap_gen()`; `chunk2A_std.h`: `try_mark_cst_and_get_old()` |
@@ -74,13 +74,13 @@ never silently lost; **P3**, with `--check-liveness`, every spin loop terminates
 
 The model has the two **shapes** of section 4 of the synchronisation document. `SHAPE_SYMMETRIC`
 (the default) is what the checker can verify: C11 has no `membarrier()`. `SHAPE_ASYMMETRIC_NAKED`
-is the asymmetric shape with the writer's plain store and *no* `membarrier()` on the other side:
-it must fail, and its failure is exactly what the system call repairs. The asymmetric-to-symmetric
+is the asymmetric shape with the writer's plain store and *no* `membarrier()` on the other side: it
+must fail, and its failure is exactly what the system call repairs. The asymmetric-to-symmetric
 reduction is the argument of section 4.2 and of `membarrier(2)`'s own contract, not a checker
-result. The **configurations** are `NO_MARKS` (the `SHRINK_SMALL_CHUNK` build: global gate on
-`hard_inflight_`), `INIT_CONSTANT` (the chunk starts compressed, the writers materialise it;
-the default is an all-zero buffer, a candidate for the pass), `BOUNDED_COMPRESSOR_WAIT` (the
-`CHUNK_COMPRESS_MAX_YIELDS` budget reduced to its effect: one look, then give up) and `NWRITERS`.
+result. The **configurations** are `INIT_CONSTANT` (the chunk starts compressed, the writers
+materialise it; the default is an all-zero buffer, a candidate for the pass),
+`BOUNDED_COMPRESSOR_WAIT` (the `CHUNK_COMPRESS_MAX_YIELDS` budget reduced to its effect: one look,
+then give up) and `NWRITERS`.
 
 ## 4. The calibration
 
@@ -92,21 +92,18 @@ under IMM (identical). "Executions" is the number of complete executions the che
 | the protocol of the source, marks, buffer start | pass | pass | 21 |
 | source, marks, constant start (the writers materialise) | pass | pass | 26 |
 | source, marks, 3 writers; constant start, 3 writers | pass | pass | 120; 191 |
-| source, no marks (`SHRINK_SMALL_CHUNK`); constant start; 3 writers | pass | pass | 21; 82; 120 |
 | source, liveness, **unbounded** compressor wait, buffer or constant start | pass | pass | 21; 26 |
 | source, liveness, constant start, 3 writers; bounded wait (the library) | pass | pass | 191; 82 |
 | source, liveness, 5 writers, buffer start; constant start | pass | pass | 3,938; 9,637 |
 | `MUT_NO_CHECK2`: no look at the gate after the announce | fail | lost write | -- |
 | `SHAPE_ASYMMETRIC_NAKED`: asymmetric shape without `membarrier()` | fail | access to freed memory | -- |
 | `MUT_NO_FENCE_COMPRESSOR`: the compressor announces without its barrier | fail | access to freed memory | -- |
-| `MUT_WAIT_ON_HARD`: materialisation waits on `hard_inflight_` (the triangle of 5.3) | fail | liveness violation | 5 |
 | `MUT_RELAXED_MARK`: the mark relaxed instead of release/acquire (5.3) | fail | access to freed memory | 8 |
-| `MUT_NO_MARKS_RELAXED_GATE`: the no-marks gate before **F1** (relaxed load) | fail | **access to freed memory** | 5 |
 | `MUT_MATERIALISE_WAIT_UNDER_FLAG`: the materialisation wait before **F2**, unbounded compressor wait | fail | **liveness violation** | 4 |
 | the same with the library's bounded wait: safe, a stall only | pass | pass | 116 |
 
 Every mutation is refused, and the protocol of the source passes in every configuration. The
-last three lines are the two behaviours this work changed in the source (section 6): the
+last two lines are the behaviour this work changed in handshake 1 (F2, section 7): the
 library as it was before is refused, the library as it is passes. The verdict on
 `MUT_RELAXED_MARK` is worth a word: section 5.3 says the mark "needs its own
 release/acquire pair" and that a relaxed read was "confirmed by TSan" -- TSan does not model
@@ -148,9 +145,39 @@ optimisation. The **post-store confirmation** is a second line of defence, not t
 the second look in place it is never needed, and without the second look it does not save the write
 (the pass's CAS can land after the confirmation's load).
 
-## 6. Findings
+## 6. The model of handshake 3: readers against buffer reclamation
 
-### 6.1 F1: the gate without marks read `hard_inflight_` relaxed (fixed)
+`formal/reader_reclaim.c` is section 5.5 (`internal/read_reclaim.h`). One chunk holding an
+all-zero buffer; NREADERS readers (2 by default, 3 checked) each doing NREADS pure reads (1 by
+default; 2 and 3 exercise the "wait for the sequence to move, not to be even" rule), through
+`ReadSection` as `element_at()` does: the odd entry store and the light fence, `values_load()`,
+the element load, the even exit store (release). One pass run inside a region steals the buffer
+(CAS to the constant), waits the grace period out as `PassScope` does -- heavy barrier, then each
+slot, odd ones until they move, then the overflow counter -- and recycles the block, modelled as a
+poison store (the value another chunk would put there) followed by the free. `OVERFLOW_READER`
+sends one reader down the shared-counter path of a program with more reader threads than
+`CHUNK_READ_RECLAIM_SLOTS`. The properties: a reader never dereferences a freed buffer, never
+reads a value the chunk never held, and the grace period terminates.
+
+| case | expected | verdict | executions |
+|---|---|---|---|
+| source, 2 readers; 3 readers; one read each, liveness checked | pass | pass | 25; 125 |
+| source, overflow reader (with the F4 fence) | pass | pass | 15 |
+| source, **2 reads per reader** -- **F3** | pass | **access to freed memory** | 19 |
+| `FIX_ENTER_RELEASE`, 2 reads; 3 reads; 3 readers x 2 reads; + overflow reader | pass | pass | 225; 1,089; 3,375; 90 |
+| `MUT_WAIT_FOR_EVEN`, 2 reads (the pass-side way out of F3) | pass | pass | 169 |
+| `MUT_NO_GRACE`: the pass frees without waiting | fail | access to freed memory | -- |
+| `MUT_NO_HEAVY_BARRIER`: the pass reads the slots without its barrier | fail | access to freed memory | -- |
+| `MUT_LEAVE_RELAXED`: the even exit store relaxed instead of release | fail | access to freed memory | -- |
+| `SHAPE_ASYMMETRIC_NAKED`: the reader without its fence (no `membarrier()`) | fail | access to freed memory | -- |
+| `MUT_OVERFLOW_NO_FENCE`: the overflow announce as it was -- **F4** | fail | access to freed memory | -- |
+
+The protocol holds for single reads and every mutation is refused; the one line that fails is
+the source itself under back-to-back reads, finding F3 of section 7.
+
+## 7. Findings
+
+### 7.1 F1: the gate without marks read `hard_inflight_` relaxed (closed: the build is removed)
 
 In the `SHRINK_SMALL_CHUNK` build (no per-chunk mark, `chunk_config::use_chunk_steal_mark`
 false), `CompressionManager::must_defer_write()` was `hard_inflight_.load(relaxed) > 0`. The
@@ -165,14 +192,14 @@ release store and `steal_marked()` an acquire load. On AArch64 the relaxed `ldr`
 may be satisfied after a later `ldar` of `values`; on x86 the two loads stay in order and the hole
 is closed by the hardware.
 
-The fix is one word: `memory_order_acquire` on that load (`compression_manager.h`). It pairs
-with the `seq_cst` RMW of `finish()`, so a writer that sees the pass over also sees the `values`
-it installed, and takes the constant path (materialisation). The checker accepts it with 2 and 3
-writers; `MUT_NO_MARKS_RELAXED_GATE` is the line as it was. The build is a developer setting
-([developer_settings.md](developer_settings.md)), not a shipped library; the default build is not
-affected.
+The fix was one word: `memory_order_acquire` on that load, pairing with the `seq_cst` RMW of
+`finish()`, so that a writer that sees the pass over also sees the `values` it installed; the
+checker accepted it with 2 and 3 writers. The build itself was then removed rather than kept
+under a second model: no test or CI job built it, and every threaded build has the marks. The
+model's configuration without marks and its two mutations (the relaxed gate as it was, and the
+triangle of 5.3) went with it. The default build was never affected.
 
-### 6.2 F2: a materialising writer and a parked compressor waited for each other (fixed)
+### 7.2 F2: a materialising writer and a parked compressor waited for each other (fixed)
 
 The comment of `wait_before_materialise()` said it was "a no-op in practice: a fast-path writer
 never gets here with the chunk marked (the gate stopped it)". The model shows the window the
@@ -197,22 +224,57 @@ cover (handshake 2). With the fix the checker proves safety and liveness even wi
 **unbounded** compressor wait (26 and 191 executions); `MUT_MATERIALISE_WAIT_UNDER_FLAG` is the
 wait as it was.
 
-### 6.3 What the checker confirmed
+### 7.3 What the checker confirmed
 
-The rules of section 6 of the synchronisation document hold in the model: the two counters must
-stay two (`MUT_WAIT_ON_HARD` is the triangle, found as a liveness violation in 5 executions); the
+The rules of section 6 of the synchronisation document hold in the model: the
 compressor's barrier and the writer's look after its announce are each load-bearing; the
 asymmetric shape is unsound without `membarrier()`; and the protocol as shipped is correct, with
 the per-chunk marks, for 2 and 3 writers, whether the chunk starts compressed or materialised.
 
-## 7. Limits
+### 7.4 F3: back-to-back reads and the C++20 release sequence (open)
+
+Having seen a slot odd, the pass waits for it to **move**, by design: waiting for it to be even
+would stall behind a reader whose reads follow one another. The value it then reads may be the
+**next read's odd entry**, a relaxed store. In C++20 a release store followed by a relaxed store of
+the same thread forms no release sequence (P0982R1 removed that case), so reading the odd entry
+synchronises with nothing: in the model, the previous read's element load and the pass's free are
+unordered, and GenMC reports the access. The reasoning of `read_reclaim.h` -- release on exit
+"lets the reclaimer trust an even value" -- is right for an even value and silent about an odd one.
+
+On the mappings the library runs on, the hole closes: on AArch64 the exit store is an `stlr`, the
+entry store a later `str` to the same address, and an observer of the later store observes the
+earlier one and everything the release ordered before it; on x86 every store is a release. So the
+code is right on every target shrink-array has, and wrong by the standard, in the same way the
+asymmetric `membarrier()` shape is right by the kernel's contract rather than by C11. Two ways to
+make it right by the standard, both accepted by the checker: `FIX_ENTER_RELEASE`, the odd entry
+store release instead of relaxed -- an `stlr` instead of an `str` on the read path of AArch64, to be
+measured with `examples/access_cost` on Grace before anything else; or `MUT_WAIT_FOR_EVEN`, the pass
+waiting for an even value, free on the read path and the stall the design refused. Not applied:
+the decision needs the measurement. Whichever is chosen, or if the hardware argument is kept, the
+sentence belongs next to the `membarrier()` one in `synchronisation_dekker.md`.
+
+### 7.5 F4: the overflow reader announced without its fence (fixed)
+
+A reader past `CHUNK_READ_RECLAIM_SLOTS` announces with `g_overflow_readers.fetch_add(seq_cst)`
+and then loads `values`; the pass, after its barrier, loads the counter with acquire. A seq_cst
+RMW followed by an acquire load is not a Dekker announce in C11: nothing puts the RMW and the
+pass's fence in one order with the two loads, and the checker finds the store-buffering execution
+-- the reader loads the old buffer while the pass reads the counter at zero and frees it. On
+AArch64 an `ldaddal` keeps a later `ldar` behind it and on x86 a locked RMW is a full barrier, so,
+as F3, the hole is the standard's; unlike F3 the fix is free: `light_fence()` after the increment,
+as on the slot path (a compiler barrier under `membarrier()`, a fence otherwise, on a path a
+program takes only with more than a thousand reader threads). Applied; `MUT_OVERFLOW_NO_FENCE` is
+the line as it was.
+
+## 8. Limits
 
 - **Fidelity.** The model is a reduction written by hand from the source: a line the model
   simplifies is a line the checker does not see. The mapping table of section 3 is the thing to
   review when the source changes, and the mutations are the guard against a model that proves
   nothing.
-- **Bounds.** Up to 5 writers (handshake 1; 3 for handshake 2, each with its own flush), one
-  chunk, one pass, one write each (5 writers with materialisation: 9,637 executions, 7 s). A bug that needs two passes or
+- **Bounds.** Up to 5 writers (handshake 1; 3 for handshake 2, each with its own flush; 3
+  readers and 3 reads each for handshake 3), one chunk, one pass, one write each (5 writers with
+  materialisation: 9,637 executions, 7 s). A bug that needs two passes or
   a chunk recycled twice is outside.
 - **`membarrier()`.** No language memory model has it. The checker verifies the symmetric shape;
   the asymmetric one rests on section 4.2 and on `membarrier(2)`'s contract. GenMC also treats
@@ -222,7 +284,9 @@ the per-chunk marks, for 2 and 3 writers, whether the chunk starts compressed or
   own model. An execution they forbid is forbidden on every conforming compiler and processor; one
   they allow may or may not be observable on Grace.
 
-## 8. Next steps
+## 9. Next steps
 
-- Handshake 3, readers against buffer reclamation (5.5): the current `ReadSection`, and the
-  grace period under design next to it, so that only a correct variant is measured.
+- F3: measure `FIX_ENTER_RELEASE` with `examples/access_cost` on Grace, then choose between it,
+  the pass-side wait for an even value, and a documented hardware argument.
+- Dartagnan on the same three files, under the official AArch64 model: the last limit above
+  falls for the machine the library targets.

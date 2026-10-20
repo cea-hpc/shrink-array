@@ -131,32 +131,24 @@ using fast_alloc::TCTypeAllocator;
 // ----------------------------------------------------------------------------
 // The read gate (reader_sync + ArrayChunkBase::sync_chunk) as a CRTP policy, in
 // the same style as Chunk2CounterPolicy / Proxy2CounterPolicy. Not `if
-// constexpr`: pending_ops_ / wait_for_availability / is_not_available exist in
+// constexpr`: pending_ops_ / wait_for_availability exist in
 // some builds only, and a discarded branch would still phase-1-look-up a
 // missing member. Each specialization names ONLY the members of its config.
 //
 //   None    (serial, !threaded)               : nothing can be pending -> no-op
-//   Coarse  (threaded + SHRINK_SMALL_CHUNK)   : no counter -> is_not_available()
 //   Precise (threaded + per-chunk pending_ops_): precise pending_ops_ load
 // ============================================================================
 enum class DeferReadGate : std::uint8_t
 {
     None,
-    Coarse,
     Precise
 };
 
-inline constexpr DeferReadGate defer_read_gate_mode = []
-{
-    if (!build_config::threaded)
-    {
-        return DeferReadGate::None;
-    }
-    return chunk_config::use_precise_pending_gate ? DeferReadGate::Precise : DeferReadGate::Coarse;
-}();
+inline constexpr DeferReadGate defer_read_gate_mode =
+    build_config::threaded ? DeferReadGate::Precise : DeferReadGate::None;
 
 template <typename Derived, DeferReadGate Mode = defer_read_gate_mode>
-class DeferredReadGate; // primary left undefined: only the 3 specializations exist
+class DeferredReadGate; // primary left undefined: only the 2 specializations exist
 
 // ── Pending-visibility protocol: THE invariants, in one place ────────────────
 // This policy is the single owner of every access to the per-chunk pending
@@ -174,11 +166,10 @@ class DeferredReadGate; // primary left undefined: only the 3 specializations ex
 //   pending_any()       gate side. ACQUIRE load > 0; pairs with the publish.
 //                       False can only mean "nothing pending on this chunk".
 //   read_gate_should_wait(i) / reader_sync(i)
-//                       read-side gates built on the above (or on the coarse
-//                       is_not_available() when the counter doesn't exist).
+//                       read-side gates built on the above.
 //   precise             constexpr: true iff the per-chunk counter exists, for
-//                       `if constexpr`-selecting counter-only stages (e.g.
-//                       wait_for_availability's own-rank fast stage).
+//                       `if constexpr`-selecting counter-only code (e.g.
+//                       the check-build asserts of array_chunk_base.h).
 //
 // Storage: the counter stays declared in ChunkBase, so the object layout (the
 // cache-line placement of `values`) does not depend on this policy. The policy
@@ -228,66 +219,6 @@ class DeferredReadGate<Derived, DeferReadGate::None>
     [[nodiscard]] bool static foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) noexcept
     {
         return false;
-    }
-};
-
-// OpenMP + SHRINK_SMALL_CHUNK: no per-chunk counter; the authoritative gate is
-// the (coarser) map-scan is_not_available().
-template <typename Derived>
-class DeferredReadGate<Derived, DeferReadGate::Coarse>
-{
-  public:
-    static constexpr bool precise = false;
-
-    // No counter: publish/retire are no-ops and pending_any() is constant false,
-    // so counter-only logic gated on it folds away.
-    /// @brief No-op: this build has no per-chunk pending counter.
-    /// @param thr Calling thread's rank; unused.
-    static void pending_publish([[maybe_unused]] int thr) noexcept {}
-
-    /// @brief No-op: this build has no per-chunk pending counter.
-    /// @param count Number of operations retired; unused.
-    static void pending_retire([[maybe_unused]] int32_t count) noexcept {}
-
-    /// @brief Always false: this build has no per-chunk pending counter to
-    ///        report on.
-    /// @return Always false.
-    [[nodiscard]] static bool pending_any() noexcept
-    {
-        return false;
-    }
-
-    // No counter, no owner: be CONSERVATIVE -- any pending element makes the
-    // direct write drain first. Correct but slow: SHRINK_SMALL_CHUNK is a perf
-    // anti-combination with the read-side sync.
-    /// @brief Conservative direct-write guard predicate.
-    /// @param thr Calling thread's rank; unused (no owner tracking in this mode).
-    /// @param i Element offset being written; unused -- the check is per-chunk.
-    /// @return Derived::is_not_available() -- the coarse, map-scan-based check.
-    [[nodiscard]] bool foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) const noexcept
-    {
-        return static_cast<const Derived&>(*this).is_not_available();
-    }
-
-    /// @brief Read-side gate check, using the coarse map-scan since no
-    ///        per-chunk counter exists in this build.
-    /// @param i Element offset being read; unused -- the check is per-chunk.
-    /// @return Derived::is_not_available().
-    [[nodiscard]] bool read_gate_should_wait([[maybe_unused]] int i) const noexcept
-    {
-        return static_cast<const Derived&>(*this).is_not_available();
-    }
-
-    /// @brief Drain this chunk if the coarse check says something might be
-    ///        pending on it.
-    /// @param i Element offset being read.
-    void reader_sync(int i) const noexcept
-    {
-        const auto& self = static_cast<const Derived&>(*this);
-        if (self.is_not_available())
-        {
-            self.wait_for_availability(i);
-        }
     }
 };
 
@@ -718,16 +649,9 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     ///        been applied (drains this chunk across all thread ranks).
     /// @param num Element offset being read; currently unused -- the drain is
     ///            per-chunk, not per-offset. Kept because the call sites have
-    ///            the offset in hand and the three DeferredReadGate modes must
-    ///            agree on one signature.
+    ///            the offset in hand and the DeferredReadGate modes must agree
+    ///            on one signature.
     void wait_for_availability(int num) const;
-
-    /// @brief Cheap, conservative pre-check for wait_for_availability(): true
-    ///        means SOME deferred op is pending somewhere (possibly not for
-    ///        this chunk); false is a precise guarantee that nothing is
-    ///        pending anywhere.
-    /// @return false only if it is certain nothing is pending anywhere.
-    [[nodiscard]] bool is_not_available() const;
 
     /// @brief Current per-thread deferred-ops array, or nullptr if it has not
     ///        been allocated yet (see ensure_deferred_array_initialized()).
@@ -1254,7 +1178,7 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     // reader_sync(i) -- the read-side visibility gate of the pure-read proxy
     // entry points -- is inherited from DeferredReadGate<Derived> above
-    // (None/Coarse/Precise per build).
+    // (None/Precise per build).
 
     // ========================================================================
     // Read-only operator[]
@@ -1727,18 +1651,16 @@ class ChunkBase : public CRTPSupport<Derived>,
     alignas(std::atomic<T*>) atomic_ptr_t values;
 
   public:
-#if !defined(SHRINK_SMALL_CHUNK) && FAST_ALLOC_PMP_THREADED
+#if FAST_ALLOC_PMP_THREADED
     /// Per-chunk count of deferred ops currently pending (enqueued but not yet
     /// drained), plus its owner tag: see DeferredReadGate<Derived, Precise>.
-    /// Present only where the deferred-op machinery exists: OpenMP builds, and
-    /// not under -DSHRINK_SMALL_CHUNK (which trades it, and steal_mark_, away
-    /// for 8-byte chunks). Protocol: see DeferredReadGate (publish before the
-    /// map insert, retire after the drain, acquire-loaded by the read gates).
+    /// Present only where the deferred-op machinery exists: threaded builds.
+    /// Protocol: see DeferredReadGate (publish before the map insert, retire
+    /// after the drain, acquire-loaded by the read gates).
     ///
     /// A `#if`, not `if constexpr`: gcc still phase-1-looks-up a member named in
     /// a discarded branch. Its readers live in DeferredReadGate<Precise>, which
-    /// is selected under the same condition (threaded &&
-    /// use_precise_pending_gate).
+    /// is selected under the same condition (threaded).
     std::atomic<int32_t> pending_ops_{0};
 
   private:
@@ -1756,8 +1678,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///
     /// Lives in the 4 bytes of padding after pending_ops_ (8 + 4 + 4: an OpenMP
     /// chunk stays at 16 bytes). Same \#if as pending_ops_, for the same gcc
-    /// phase-1 lookup reason; SHRINK_SMALL_CHUNK builds keep the global gate
-    /// (chunk_config::use_chunk_steal_mark).
+    /// phase-1 lookup reason (chunk_config::use_chunk_steal_mark).
     std::atomic<uint32_t> steal_mark_{0};
 
   public:
@@ -1806,8 +1727,8 @@ class ChunkBase : public CRTPSupport<Derived>,
         steal_mark_.store(0, std::memory_order_release);
     }
 #else
-    // No mark without OpenMP (no concurrent compressor) or under
-    // SHRINK_SMALL_CHUNK (no room): the write gate is the global one.
+    // No mark in a serial build (no concurrent compressor): the write gate
+    // is the global one.
     /// @brief No per-chunk mark in this configuration: never marked.
     [[nodiscard]] static constexpr bool steal_marked() noexcept
     {

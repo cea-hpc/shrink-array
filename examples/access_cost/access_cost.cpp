@@ -180,6 +180,15 @@ struct Sample
     double sum;
 };
 
+// One case's two runs. A plain aggregate, not std::pair: returning a pair by
+// value draws GCC's -Wpsabi note on AArch64 (C++17 passing of a type with an
+// empty base, changed in GCC 10.1).
+struct SamplePair
+{
+    Sample vec;
+    Sample arr;
+};
+
 // ── The cases, on a std::vector ──────────────────────────────────────────────
 Sample vec_read(const std::vector<double>& v)
 {
@@ -463,7 +472,7 @@ int main(int argc, char** argv)
             }
             note(c, 0, rep, sv.seconds);
             note(c, 1, rep, sa.seconds);
-            return std::pair<Sample, Sample>{sv, sa};
+            return SamplePair{sv, sa};
         };
 
         // read-varied

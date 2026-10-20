@@ -253,38 +253,24 @@ inline constexpr int no_second_value_index = -1;
 inline constexpr bool have_aggressive_compression = CHUNK_OPT_AGGRESSIVE_COMPRESSION != 0;
 
 /**
- * SHRINK_SMALL_CHUNK: chunk size vs read-gate precision trade-off.
- *
- * Default (undefined): each chunk carries a pending_ops_ counter (std::atomic<int32_t>)
- * and, in the 4 bytes of padding after it, the steal mark: 8 + 4 + 4, so every chunk of an
- * OpenMP build is 16 bytes. The read path then gates on THIS chunk's pending count, keeping
- * clean-chunk reads off flush_chunk_all_ranks (about 10% faster at high thread counts), and a
- * writer waits only when ITS chunk is being scanned.
- *
- * Defined (-DSHRINK_SMALL_CHUNK=ON): no counter, no mark -> 8-byte chunks, at the cost of the
- * coarse any_pending_ops() gate (any pending op anywhere makes a dirty-chunk read flush) and
- * of the global write/compress gate.
- *
- * An 8-byte precise-gate build is not achievable cleanly: a count cannot be bit-packed into
- * the `values` pointer, and an external per-array counter needs a chunk*->index lookup on
- * the flush side (which only holds the pointer).
- */
-#ifdef SHRINK_SMALL_CHUNK
-inline constexpr bool use_precise_pending_gate = false;
-#else
-inline constexpr bool use_precise_pending_gate = true;
-#endif
-
-/**
  * @brief Per-chunk exclusion for the compressor's pass (ChunkBase::steal_mark_).
+ *
+ * Each chunk of a threaded build carries a pending_ops_ counter (std::atomic<int32_t>) and, in
+ * the 4 bytes of padding after it, the steal mark: 8 + 4 + 4, so every chunk is 16 bytes. The
+ * read path gates on THIS chunk's pending count, keeping clean-chunk reads off
+ * flush_chunk_all_ranks (about 10% faster at high thread counts).
  *
  * A writer is kept off a chunk only while a compressor has it marked, and the compressor's
  * writer window (CompressionManager::start()) waits only for writers whose flag points to a
- * marked chunk -- nothing global on the write path. The mark uses the padding after
- * pending_ops_: without OpenMP or under SHRINK_SMALL_CHUNK neither exists, and every writer
- * is gated on hard_inflight_ for the whole pass.
+ * marked chunk -- nothing global on the write path. In a serial build neither field exists, and
+ * the write gate is hard_inflight_, which a single thread never contends.
+ *
+ * An 8-byte chunk with these gates is not achievable cleanly: a count cannot be bit-packed
+ * into the `values` pointer, and an external per-array counter needs a chunk*->index lookup on
+ * the flush side (which only holds the pointer). The 8-byte build without them
+ * (SHRINK_SMALL_CHUNK: coarse read gate, global write gate) was removed (CHANGELOG).
  */
-inline constexpr bool use_chunk_steal_mark = build_config::threaded && use_precise_pending_gate;
+inline constexpr bool use_chunk_steal_mark = build_config::threaded;
 
 /**
  * @brief Tuning Levels:

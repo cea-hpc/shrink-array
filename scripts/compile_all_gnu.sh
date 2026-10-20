@@ -156,6 +156,95 @@ export CXX="$gxx"
 arch="$(source /etc/os-release && echo ${ID^^}_${VERSION_ID}__$(uname -m))"
 
 # Cleaned-up calls: no more ambiguous quoting in the forwarded string
+# Launch order: longest first. A build gets its share of the cores when it is
+# launched and keeps it, so the builds that run alone at the end are the ones
+# launched last; started first, the long ones (the sanitizers, RelWithDebInfo
+# ahead of Debug: ~700 s against 65-480 s for the others on gh200) overlap the
+# short ones instead of trailing behind them. Then the releases, then Debug.
+
+# oneTBB, for the validation of the TBB adaptor (tbb_validation,
+# chunk/tbb_adaptor.h) in the pool builds that have the validations: on when
+# oneTBB is in the environment -- TBBROOT, which oneAPI's vars.sh sets (and
+# `spack load intel-oneapi-tbb` through it) -- or forced by CHUNK_WITH_TBB=1;
+# CHUNK_WITH_TBB=0 leaves it out. The library itself never links TBB.
+# The TSan build takes TBB only from CHUNK_TBB_TSAN_DIR, the CMake directory
+# of a oneTBB built with TSan (its CMake: -DTBB_SANITIZE=thread; the package
+# dir is <prefix>/lib/cmake/TBB, or lib64): an uninstrumented libtbb hides
+# the hand-off of every task from TSan, which then reports TBB's own
+# scheduling and every value passed from one task to another.
+if [ "${CHUNK_WITH_TBB:-}" = "1" ] || { [ -z "${CHUNK_WITH_TBB:-}" ] && [ -n "${TBBROOT:-}" ]; }; then
+    TBB_CMAKE_OPT="-DCHUNK_WITH_TBB=ON"
+else
+    TBB_CMAKE_OPT=""
+fi
+if [ -n "${CHUNK_TBB_TSAN_DIR:-}" ] && [ "${CHUNK_WITH_TBB:-}" != "0" ]; then
+    TBB_TSAN_CMAKE_OPT="-DCHUNK_WITH_TBB=ON -DTBB_DIR=$CHUNK_TBB_TSAN_DIR"
+else
+    TBB_TSAN_CMAKE_OPT=""
+fi
+
+# Sanitizers on OPTIMISED code (RelWithDebInfo, i.e. -O2 + -g).
+#
+# Why these exist: every other sanitizer flavour here is CMAKE_BUILD_TYPE=Debug,
+# so a bug that only shows up under optimisation is never seen by TSan or ASan --
+# their silence proves nothing about the -O2 binaries. That was exactly the case
+# for the std-alloc heap corruption ("corrupted size vs. prev_size" in
+# malloc_consolidate, from ChunkBase::alloc_values under a live rechunk): it does
+# not reproduce in Debug, and the Debug sanitizer builds had nothing to report.
+#
+# -O2 also changes what the tools see: inlining and reordering are part of the
+# failing behaviour, and dropped frame pointers would make the reports unusable
+# (chunk/CMakeLists.txt adds -fno-omit-frame-pointer for any SANITIZER build).
+#
+# Usage note: TSan's shadow memory scales with the thread count -- start these
+# at OMP_NUM_THREADS=8..16, not 249; a race shows up long before that.
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-thread-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu relwithdebinfo openmp std-alloc thread sanitizer"
+
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-address-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=address -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu relwithdebinfo openmp std-alloc address sanitizer"
+
+# Optimised TSan build with the switches of the *_check_* benchmark binaries:
+# fast allocator (default), HAVE_AGGRESSIVE_COMPRESSION, CHECK_OPTIM,
+# RelWithDebInfo so inlining and scheduling are the production ones (a race
+# that needs them does not show in a Debug build). GNU-specific caveat: libgomp is not TSan-instrumented, so TSan does not
+# see its barriers and reports a race at every parallel-region boundary (the
+# "destroy_after_flush vs flush_deferred" report is one). Read this build's
+# output next to the LLVM+libomp twin in compile_all.sh, whose runtime carries
+# the barrier annotations; a report that only the GNU build shows is a
+# barrier the tool did not see, a report both show is a bug.
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-thread-sanitizer-have-aggressive-compression${ICF_SUFFIX}/$arch" \
+  "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu relwithdebinfo openmp thread sanitizer have_aggressive_compression"
+
+# TSan on the pool backend, optimised, CHECK_OPTIM (the validations): unlike
+# libgomp the pool is standard C++ (std::atomic wait/notify, std::barrier), so
+# TSan sees every synchronisation of the library's teams -- a report here is
+# not a barrier the tool missed. The run for std_thread_validation:
+# OMP_NUM_THREADS=8 (the pool's team size, and the harness's thread count).
+compile_with_cmake "$build_rep/cmake-build-pool-gnu-relwithdebinfo-thread-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DCHUNK_THREADS=pool -DCHECK_OPTIM=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_TSAN_CMAKE_OPT" \
+  "gnu relwithdebinfo pool thread sanitizer"
+
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-thread-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu debug openmp thread sanitizer"
+
+# (No fast-allocator ASan build: with the fast allocator the chunk buffers
+# live inside the library's slab arenas, which ASan sees as a few large blocks
+# -- an overflow or use-after-free inside a slab goes unreported. ASan runs on
+# the std-alloc builds below, where every buffer is a real malloc.)
+
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc-thread-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu debug openmp std-alloc thread sanitizer"
+
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc-address-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=address -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu debug openmp std-alloc address sanitizer"
+
 if skip_release; then
     echo "[debug-only] skipping gnu openmp"
 else
@@ -229,27 +318,6 @@ fi
 # OMP OFF). Release, for the OpenMP-vs-pool timings, and CHECK_OPTIM, for the
 # validations -- std_thread_validation among them, the arrays driven from the
 # application's own std::threads.
-#
-# oneTBB, for the validation of the TBB adaptor (tbb_validation,
-# chunk/tbb_adaptor.h) in the pool builds that have the validations: on when
-# oneTBB is in the environment -- TBBROOT, which oneAPI's vars.sh sets (and
-# `spack load intel-oneapi-tbb` through it) -- or forced by CHUNK_WITH_TBB=1;
-# CHUNK_WITH_TBB=0 leaves it out. The library itself never links TBB.
-# The TSan build takes TBB only from CHUNK_TBB_TSAN_DIR, the CMake directory
-# of a oneTBB built with TSan (its CMake: -DTBB_SANITIZE=thread; the package
-# dir is <prefix>/lib/cmake/TBB, or lib64): an uninstrumented libtbb hides
-# the hand-off of every task from TSan, which then reports TBB's own
-# scheduling and every value passed from one task to another.
-if [ "${CHUNK_WITH_TBB:-}" = "1" ] || { [ -z "${CHUNK_WITH_TBB:-}" ] && [ -n "${TBBROOT:-}" ]; }; then
-    TBB_CMAKE_OPT="-DCHUNK_WITH_TBB=ON"
-else
-    TBB_CMAKE_OPT=""
-fi
-if [ -n "${CHUNK_TBB_TSAN_DIR:-}" ] && [ "${CHUNK_WITH_TBB:-}" != "0" ]; then
-    TBB_TSAN_CMAKE_OPT="-DCHUNK_WITH_TBB=ON -DTBB_DIR=$CHUNK_TBB_TSAN_DIR"
-else
-    TBB_TSAN_CMAKE_OPT=""
-fi
 if skip_release; then
     echo "[debug-only] skipping gnu pool"
 else
@@ -313,68 +381,6 @@ fi
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc${ICF_SUFFIX}/$arch" \
   "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug openmp std allocator"
-
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-thread-sanitizer${ICF_SUFFIX}/$arch" \
-  "-DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu debug openmp thread sanitizer"
-
-# (No fast-allocator ASan build: with the fast allocator the chunk buffers
-# live inside the library's slab arenas, which ASan sees as a few large blocks
-# -- an overflow or use-after-free inside a slab goes unreported. ASan runs on
-# the std-alloc builds below, where every buffer is a real malloc.)
-
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc-thread-sanitizer${ICF_SUFFIX}/$arch" \
-  "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu debug openmp std-alloc thread sanitizer"
-
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc-address-sanitizer${ICF_SUFFIX}/$arch" \
-  "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=address -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu debug openmp std-alloc address sanitizer"
-
-# Sanitizers on OPTIMISED code (RelWithDebInfo, i.e. -O2 + -g).
-#
-# Why these exist: every other sanitizer flavour above is CMAKE_BUILD_TYPE=Debug,
-# so a bug that only shows up under optimisation is never seen by TSan or ASan --
-# their silence proves nothing about the -O2 binaries. That was exactly the case
-# for the std-alloc heap corruption ("corrupted size vs. prev_size" in
-# malloc_consolidate, from ChunkBase::alloc_values under a live rechunk): it does
-# not reproduce in Debug, and the Debug sanitizer builds had nothing to report.
-#
-# -O2 also changes what the tools see: inlining and reordering are part of the
-# failing behaviour, and dropped frame pointers would make the reports unusable
-# (chunk/CMakeLists.txt adds -fno-omit-frame-pointer for any SANITIZER build).
-#
-# Usage note: TSan's shadow memory scales with the thread count -- start these
-# at OMP_NUM_THREADS=8..16, not 249; a race shows up long before that.
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-thread-sanitizer${ICF_SUFFIX}/$arch" \
-  "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu relwithdebinfo openmp std-alloc thread sanitizer"
-
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-address-sanitizer${ICF_SUFFIX}/$arch" \
-  "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=address -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu relwithdebinfo openmp std-alloc address sanitizer"
-
-# Optimised TSan build with the switches of the *_check_* benchmark binaries:
-# fast allocator (default), HAVE_AGGRESSIVE_COMPRESSION, CHECK_OPTIM,
-# RelWithDebInfo so inlining and scheduling are the production ones (a race
-# that needs them does not show in a Debug build). GNU-specific caveat: libgomp is not TSan-instrumented, so TSan does not
-# see its barriers and reports a race at every parallel-region boundary (the
-# "destroy_after_flush vs flush_deferred" report is one). Read this build's
-# output next to the LLVM+libomp twin in compile_all.sh, whose runtime carries
-# the barrier annotations; a report that only the GNU build shows is a
-# barrier the tool did not see, a report both show is a bug.
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-thread-sanitizer-have-aggressive-compression${ICF_SUFFIX}/$arch" \
-  "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu relwithdebinfo openmp thread sanitizer have_aggressive_compression"
-
-# TSan on the pool backend, optimised, CHECK_OPTIM (the validations): unlike
-# libgomp the pool is standard C++ (std::atomic wait/notify, std::barrier), so
-# TSan sees every synchronisation of the library's teams -- a report here is
-# not a barrier the tool missed. The run for std_thread_validation:
-# OMP_NUM_THREADS=8 (the pool's team size, and the harness's thread count).
-compile_with_cmake "$build_rep/cmake-build-pool-gnu-relwithdebinfo-thread-sanitizer${ICF_SUFFIX}/$arch" \
-  "-DCHUNK_THREADS=pool -DCHECK_OPTIM=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_TSAN_CMAKE_OPT" \
-  "gnu relwithdebinfo pool thread sanitizer"
 
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-have-aggressive-compression${ICF_SUFFIX}/$arch" \
   "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
