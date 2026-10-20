@@ -720,9 +720,10 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
  * pass (formal/writer_compressor.c, MUT_MATERIALISE_WAIT_UNDER_FLAG). The callers with no
  * flag keep the wait: alloc_chunk() (pre-allocation, usable from a parallel region) and a
  * flush replay, which never overlaps a stealer anyway (flush_deferred waits
- * stealing_inflight_ out and blocks start()). Builds without marks use the global
- * condition -- never a broad "compression active", which also counts flush-draining slow
- * paths and deadlocks from a flusher's write body.
+ * stealing_inflight_ out and blocks start()). Never a broad "compression active" as the
+ * condition: it also counts flush-draining slow paths, and deadlocks from a flusher's write
+ * body. (The serial build has no marks and no concurrent pass: the other branch is its
+ * no-op.)
  *
  * @param chunk    The chunk about to be materialised.
  * @param thr_rank The calling thread's rank: whose writer flag is consulted.
