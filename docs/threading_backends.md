@@ -345,6 +345,19 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    checksum of `--mode check --no_io` runs (with and without `--test_prealloc
    --test_stl`) is the same for the OpenMP build before the change, after it,
    and the pool build, at 1, 4 and 8 threads.
+   *Pool, v1's in-write block pass*: `ChunkFastCompPolicy::make_block_compression`
+   (chunk_std_inline.h) took its writer protection -- the steal marks and
+   `start()` / `finish()` -- only when `CHUNK_PMP_MAX_THREADS > 1`: a team of
+   one meant "no other writer". Under the pool backend the application's
+   threads write around a team of one, so with `OMP_NUM_THREADS=1` and two
+   application writers the pass folded a chunk another thread was writing
+   (lost writes, `got=0 expected=3.5`, 2 runs in 5 under TSan; TSan's race on
+   `is_constant_to`). The pass is now guarded when the team has more than one
+   thread or an application phase is open (`pmp::in_application_phase()`,
+   always false outside the pool backend: OpenMP unchanged), decided once for
+   the `start()` and its `finish()`. The harness `std_thread_validation` (chunk, 256, 1 thread)
+   under TSan: 6 runs of 6 clean, against 6 of 6 with races before. Chunk2
+   and Chunk2A take the protection in every threaded build.
 8. **TBB**: the adaptor of section 2 (8a), then, on demand, a TBB backend for
    the library's own loops, inside the application's arena,
    `static_partitioner` (8b).
