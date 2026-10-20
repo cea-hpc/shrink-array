@@ -25,6 +25,10 @@ The **public interface** that the version describes is:
 Everything under `internal/`, the benchmark, the harnesses and the scripts can change in any
 release.
 
+**Experimental until 1.0:** `chunk/mdspan.h` and `chunk/mdspan_tile_ops.h` (the `md::` views and
+tile operations). Their names and signatures may change in a MINOR release, the change then listed
+under Changed; the behaviour of the arrays behind a view keeps the policy above.
+
 | bump | when | examples |
 |---|---|---|
 | **MAJOR** | a change that can break a correct consumer: a public name, target, option or variable removed or renamed with no compatibility path, a changed contract | removing `ArrayChunk2::set_second_value`; dropping `chunk::chunk_v1` |
@@ -107,6 +111,10 @@ the tag's checksum to the recipe.
   compares every array and the result; tests `multi_mat_md_tiles`,
   `multi_mat_md_elements`, `multi_mat_md_rows`, `multi_mat_md_balance`
   (`--max-imbalance`), and `multi_mat_md_embedded` with an OMPT tool.
+- `md::mdspan_source` (`chunk/mdspan.h`): which `mdspan` the build uses and
+  whether it has `submdspan` (`"std::mdspan, no submdspan"`,
+  `"kokkos/mdspan, submdspan"`, ...); `mdspan_validation` and `mdspan_tiles`
+  print it.
 
 ### Changed
 
@@ -216,6 +224,11 @@ the tag's checksum to the recipe.
   pass). `fill_range_constant_validation`: Chunk2 checked after a fill of a
   constant (the old code leaves 40 of 40 chunks materialised), new scenario
   `second-value`.
+- `chunk/mdspan.h` and `chunk/mdspan_tile_ops.h` are declared experimental
+  until 1.0: their names and signatures may change in a MINOR release (the
+  versioning policy above, `docs/mdspan.md`, the headers). Checked on Clang 19
+  with libc++ 19, whose `std::mdspan` has no `submdspan`: every view and tile
+  harness passes, the `submdspan` ones are skipped.
 
 ### Deprecated
 
@@ -282,6 +295,11 @@ the tag's checksum to the recipe.
   had no back-off.
 - An invariant failure inside a program's log sink, while the log was reading
   its configuration, blocked instead of stopping the program.
+- The library did not compile with libc++ 19: `chunk_size_advisor.h` used
+  `std::views::enumerate`, which libc++ has from 20 only (an index loop now).
+- A harness that must stop, run where it has nothing to check (exit 77), was
+  reported failed: `expect_stop.cmake` reports it skipped
+  (`mdspan_submdspan_misaligned` without `submdspan`).
 
 ## 0.1.2 -- 2026-10-16
 

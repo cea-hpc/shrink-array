@@ -496,6 +496,7 @@ int main(int argc, char** argv)
     sa::ParamChunk::init_indexes(true);
     const long n   = argc > 1 ? std::atol(argv[1]) : 2048;
     int        bad = 0;
+    sa::println("mdspan_tiles: {}", sa::md::mdspan_source);
     sa::println("mdspan_tiles: {} x {} doubles ({:.1f} MiB as a std::vector), chunk size 256", n, n,
                 static_cast<double>(n) * static_cast<double>(n) * sizeof(double) / (1024.0 * 1024.0));
     {

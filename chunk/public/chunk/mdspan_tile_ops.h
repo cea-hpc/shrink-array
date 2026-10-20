@@ -47,6 +47,9 @@
  *          It covers the whole tile, padding included; t.extent is the part
  *          inside the view's extents.
  *
+ * @warning Experimental until 1.0, as chunk/mdspan.h: names and signatures may
+ *          change in a MINOR release (CHANGELOG.md, versioning policy).
+ *
  * @warning Concurrency. Callable inside a parallel region (in a phase, as any
  *          write), each thread on its own tiles (`#pragma omp for` over
  *          [0, tile_count(f)), then the range overloads). While a tile is read,

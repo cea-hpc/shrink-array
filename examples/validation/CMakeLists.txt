@@ -639,7 +639,8 @@ foreach(_vi RANGE ${_rt_nvar_last})
       add_test(NAME mdspan_submdspan_misaligned
                COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=misaligned
                        "-DEXPECT=a tiled sub-view takes ranges" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)
-      set_tests_properties(mdspan_submdspan_misaligned PROPERTIES LABELS validation)
+      set_tests_properties(mdspan_submdspan_misaligned PROPERTIES LABELS validation
+                           SKIP_REGULAR_EXPRESSION "expect_stop: skipped \\(exit 77\\)")
     endif()
   endif()
 endforeach()

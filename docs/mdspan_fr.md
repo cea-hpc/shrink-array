@@ -5,6 +5,12 @@
 > Octobre 2026. `chunk/mdspan.h` pose un `mdspan` C++23 sur un tableau de la bibliothèque. Le
 > tableau garde son rôle, le remplaçant de `std::vector` ; la vue ajoute `f[i, j]`.
 
+> **Expérimental jusqu'à la 1.0.** Les noms et signatures de `chunk/mdspan.h` et
+> `chunk/mdspan_tile_ops.h` peuvent changer dans une version MINOR -- une exception à la politique
+> de versions de [CHANGELOG.md](../CHANGELOG.md). Le comportement du tableau derrière une vue, lui,
+> ne change pas : une vue lit et écrit par l'`operator[]` et les opérations sur plages du tableau,
+> dont le contrat est stable.
+
 ***
 
 ## 1. Ce que c'est
@@ -255,6 +261,16 @@ Les options sont décrites en tête de `main_md.cpp`.
 bibliothèque exige déjà C++23. Le harness et la démo sortent avec 77 sans `mdspan`, ce que ctest
 compte comme sauté.
 
+`md::mdspan_source` dit lequel un build utilise, et s'il a `submdspan`
+(`"std::mdspan, no submdspan"`, `"kokkos/mdspan, submdspan"`, ...) ; `mdspan_validation` et
+`mdspan_tiles` l'affichent. Vérifié (octobre 2026) :
+
+| chaîne de compilation | `mdspan` | résultat |
+|---|---|---|
+| GCC 14, libstdc++ 14 + kokkos/mdspan | kokkos, `submdspan` | tous les harness |
+| Clang 19, libc++ 19 | `std::mdspan`, sans `submdspan` | les vues, les deux layouts en tuiles, les opérations sur tuiles, `mdspan_tiles`, `multi-mat-md` ; les harness `submdspan` sautés |
+| GCC 15, libstdc++ 15 | `std::mdspan`, sans `submdspan` | pas encore lancé |
+
 ## 5. Règles et limites
 
 - La vue ne possède pas le tableau : elle ne doit pas lui survivre. Après un `resize()`, refaire
@@ -274,7 +290,7 @@ compte comme sauté.
 
 | fichier | contenu |
 |---|---|
-| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::handle`, `md::layout_tiled` (et son `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
+| `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (et son `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | écritures par la vue et relecture linéaire, opérateurs composés, rang 3, vues en lecture seule, le mapping en tuiles (bijection, bourrage), une tuile uniforme est une suite uniforme ; toutes les variantes (un ctest chacune, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocs, étendues des tuiles sur les bords bourrés, tuiles uniformes, la mise à jour contre la formule élément par élément, les tuiles non touchées restent compressées, la mise à jour en parallèle ; toutes les variantes à 1 et 8 threads, et `mdspan_tile_ops_misaligned` (une tuile plus petite qu'un chunk refusée dans une région parallèle) |

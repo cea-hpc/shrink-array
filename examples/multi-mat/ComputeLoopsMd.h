@@ -210,10 +210,12 @@ void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double
                                      write(f2, [this, t](int i, int j) { return 3 * cellNumber(i, j) + t; }),
                                      // 1 inside the box, a ramp along its sides: on a chunk
                                      // material in tiles, a tile of the interior already at 1
-                                     // is left alone (the hint), compressed.
+                                     // is left alone (the hint), compressed. [&], not [this, &b]:
+                                     // clang warns on `this` in a generic lambda the cell
+                                     // policies never instantiate.
                                      write(
                                          fr, [this, &b](int i, int j) { return presenceFraction(b, i, j); },
-                                         [this, &b](const auto& o, const auto& e) { return fractionOnTile(b, o, e); }));
+                                         [&](const auto& o, const auto& e) { return fractionOnTile(b, o, e); }));
                              }
                          });
         }

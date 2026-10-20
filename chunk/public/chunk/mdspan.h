@@ -60,6 +60,12 @@
  *          sub-view is tiled again, its tiles still chunks
  *          (layout_tiled::mapping's submdspan_mapping).
  *
+ * @warning Experimental (until 1.0): the names and signatures of this header
+ *          and of chunk/mdspan_tile_ops.h may change in a MINOR release, an
+ *          exception to the versioning policy of CHANGELOG.md. The behaviour
+ *          of the array behind a view does not: a view goes through the
+ *          array's operator[] and range operations, whose contract is stable.
+ *
  * @warning Not a pointer: data_handle() is an md::handle -- the array's
  *          address and the index of the view's first element -- not a T*;
  *          *data_handle() is the array. Code that wants a contiguous T*
@@ -100,7 +106,8 @@
     #include <array>   // std::array (the tile extents, the tile strides)
     #include <cstddef> // std::size_t
     #include <type_traits> // std::remove_const_t, std::is_const_v, std::conditional_t, std::make_unsigned_t, std::is_convertible_v
-    #include <utility> // std::declval, std::index_sequence, std::pair
+    #include <string_view> // std::string_view (mdspan_source)
+    #include <utility>     // std::declval, std::index_sequence, std::pair
 
     #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (a tiled submdspan off the tiles)
 
@@ -108,6 +115,24 @@ namespace shrink_array::md
 {
 
 namespace mdns = SHRINK_ARRAY_MDSPAN_NS;
+
+/// @brief Where the mdspan in use comes from, and whether submdspan is there:
+///        "std::mdspan" or "kokkos/mdspan", then ", submdspan" or ", no
+///        submdspan". For a program or a harness to say which one it ran on.
+inline constexpr std::string_view mdspan_source =
+    #if defined(__cpp_lib_mdspan) && __cpp_lib_mdspan >= 202207L
+        #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    "std::mdspan, submdspan";
+        #else
+    "std::mdspan, no submdspan";
+        #endif
+    #else
+        #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    "kokkos/mdspan, submdspan";
+        #else
+    "kokkos/mdspan, no submdspan";
+        #endif
+    #endif
 
 /// @brief The index type of @p Array: the type of a.size() (as array_chunk_range_ops.h).
 template <typename Array>
@@ -389,8 +414,7 @@ class tiled_mapping_base
         grid_type             first{};
         grid_type             size{};
         grid_type             stride{};
-        [&]<std::size_t... K>(std::index_sequence<K...>)
-        {
+        [&]<std::size_t... K>(std::index_sequence<K...>) {
             (detail::tiled_slice<index_type>(slices, ext_.extent(K), first[K], size[K], stride[K]), ...);
         }(std::index_sequence_for<Slices...>{});
 
@@ -400,8 +424,8 @@ class tiled_mapping_base
             const index_type t   = self().tile_extent(r);
             const index_type end = first[r] + size[r];
             const bool       ok  = first[r] >= 0 && size[r] >= 0 && end <= ext_.extent(r) &&
-                                   (stride[r] == 1 || size[r] <= 1) && first[r] % t == 0 &&
-                                   (end % t == 0 || end == ext_.extent(r));
+                            (stride[r] == 1 || size[r] <= 1) && first[r] % t == 0 &&
+                            (end % t == 0 || end == ext_.extent(r));
             if (!ok) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("{}: submdspan slice {} = [{}, {}) (stride {}) of extent {}: a tiled sub-view "

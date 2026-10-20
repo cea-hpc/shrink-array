@@ -5,6 +5,12 @@
 > October 2026. `chunk/mdspan.h` puts a C++23 `mdspan` on top of an array of the library. The
 > array keeps its role, the drop-in replacement for `std::vector`; the view adds `f[i, j]`.
 
+> **Experimental until 1.0.** The names and signatures of `chunk/mdspan.h` and
+> `chunk/mdspan_tile_ops.h` may change in a MINOR release -- an exception to the versioning policy
+> of [CHANGELOG.md](../CHANGELOG.md). The behaviour of the array behind a view does not: a view
+> reads and writes through the array's `operator[]` and range operations, whose contract is
+> stable.
+
 ***
 
 ## 1. What it is
@@ -247,6 +253,16 @@ The options are listed at the top of `main_md.cpp`.
 library already requires C++23. The harness and the demo exit 77 without an `mdspan`, which ctest
 reports as skipped.
 
+`md::mdspan_source` says which one a build uses, and whether it has `submdspan`
+(`"std::mdspan, no submdspan"`, `"kokkos/mdspan, submdspan"`, ...); `mdspan_validation` and
+`mdspan_tiles` print it. Checked (October 2026):
+
+| toolchain | `mdspan` | result |
+|---|---|---|
+| GCC 14, libstdc++ 14 + kokkos/mdspan | kokkos, `submdspan` | every harness |
+| Clang 19, libc++ 19 | `std::mdspan`, no `submdspan` | the views, both tiled layouts, the tile operations, `mdspan_tiles`, `multi-mat-md`; the `submdspan` harnesses skipped |
+| GCC 15, libstdc++ 15 | `std::mdspan`, no `submdspan` | not yet run |
+
 ## 5. Rules and limits
 
 - The view does not own the array: it must not outlive it. After a `resize()`, make a new view;
@@ -266,7 +282,7 @@ reports as skipped.
 
 | file | contents |
 |---|---|
-| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
+| `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | writes through the view and linear read-back, compound operators, rank 3, read-only views, the tiled mapping (bijection, padding), a uniform tile is a uniform run; every variant (one ctest each, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocks, tile extents on padded edges, uniform tiles, the update against the element formula, untouched tiles stay compressed, the parallel update; every variant at 1 and 8 threads, and `mdspan_tile_ops_misaligned` (a tile smaller than a chunk refused in a parallel region) |

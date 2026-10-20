@@ -292,7 +292,7 @@ int main()
         println("mdspan_validation: {} failure(s)", fails);
         return 1;
     }
-    println("mdspan_validation: OK");
+    println("mdspan_validation: OK ({})", md::mdspan_source);
     return 0;
 }
 

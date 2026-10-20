@@ -640,8 +640,7 @@ struct ChunkSizeAdvisor
                             }
                         }
                     }
-                    const auto seg_of = [&](int64_t i)
-                    {
+                    const auto seg_of = [&](int64_t i) {
                         return std::upper_bound(seg_start.begin(), seg_start.end(), static_cast<uint32_t>(i)) -
                                seg_start.begin() - 1;
                     };
@@ -771,13 +770,16 @@ struct ChunkSizeAdvisor
     {
         println("── ChunkSizeAdvisor [{}] current S={}, meta={:.1f} B/chunk ──", name, rep.current_size,
                 rep.meta_bytes);
-        for (const auto& [i, row] : std::views::enumerate(rep.table))
+        // An index loop, not std::views::enumerate: libc++ has it from 20 only.
+        for (std::size_t i = 0; i < rep.table.size(); ++i)
         {
+            const auto& row = rep.table[i];
             println("   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size, row.n_chunks,
                     row.mat,
                     row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
-                    row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~", i == rep.cur ? " <- current" : "",
-                    i == rep.best ? "  ** BEST **" : "");
+                    row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~",
+                    static_cast<int>(i) == rep.cur ? " <- current" : "",
+                    static_cast<int>(i) == rep.best ? "  ** BEST **" : "");
         }
         println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
 
