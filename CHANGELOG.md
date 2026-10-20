@@ -72,15 +72,14 @@ the tag's checksum to the recipe.
 
 ### Added
 
-- Reduced models of the writer / compressor and compressor / flush
-  handshakes, checked by GenMC (`formal/`, `docs/formal_models.md`): the
-  protocols of the source verified under RC11 and IMM, every known bug of
-  their history refused as a mutation (the lost replay of a flush without
-  the compressor's second look among them), and two findings -- the
-  `SHRINK_SMALL_CHUNK` gate's relaxed load of `hard_inflight_` (F1) and the
-  materialisation wait against a parked compressor (F2), both fixed (see
-  Fixed), the library as it was refused as two more mutations. New ctest
-  label `formal`.
+- Reduced models of the three lock-free handshakes -- writer / compressor,
+  compressor / flush, readers / buffer reclamation -- checked by GenMC
+  (`formal/`, `docs/formal_models.md`): the protocols of the source verified
+  under RC11 and IMM, twelve mutations refused (six of them the library
+  as it once was, the lost replay without the compressor's second look
+  among them) and four findings: three fixed (see Fixed: F2 to F4), one
+  closed by removing the build it was in (F1, see Removed). New ctest label
+  `formal`.
 - One log for both libraries (`chunk/log.h`, built on
   `fast_allocators/internal/log_core.h`): every message has a level and a
   channel, `CHUNK_LOG` (default `warn`) says which are written, e.g.
@@ -206,6 +205,17 @@ the tag's checksum to the recipe.
   0.3.0. They are developer settings ([docs/developer_settings.md](docs/developer_settings.md)),
   outside the versioning policy; the deprecation period is a courtesy to the scripts that set them.
 
+### Removed
+
+- The `SHRINK_SMALL_CHUNK` build (a `-D` compiler define, no CMake option): 8-byte chunks with
+  no per-chunk pending counter and no steal mark, hence a coarse read gate (any pending op
+  anywhere made a dirty-chunk read flush) and a global write gate on `hard_inflight_`. No test
+  or CI job built it, and it was a second write protocol to model-check. Its gate also had a
+  hole, up to 0.1.2: it read `hard_inflight_` relaxed, so on AArch64 a writer that saw a pass
+  over could still load the buffer that pass had just returned and write into it (F1 in
+  `docs/formal_models.md`, found by the GenMC model). An OpenMP chunk is 16 bytes; an 8-byte
+  chunk with the per-chunk gates is not achievable cleanly (`chunk/config.h`).
+
 ### Fixed
 
 - `fill_range` on v1 compresses a whole chunk filled with first_value at once
@@ -221,10 +231,6 @@ the tag's checksum to the recipe.
   after a fill of first_value, and a new scenario `constant` (a fill of the
   constant the chunks hold, serial and from every thread: nothing
   materialised).
-- `SHRINK_SMALL_CHUNK` builds (no per-chunk mark): the write-path gate read
-  `hard_inflight_` relaxed, so a writer that saw a pass over could still load
-  the chunk's old buffer -- the one the pass had just returned -- and write
-  into it. The load is acquire. Found by the GenMC model (`formal/`).
 - A writer materialising a chunk that a pass marked right after the writer's
   gate check spun on the mark while the pass, parked, waited for that
   writer's flag: both stalled for the whole `CHUNK_COMPRESS_MAX_YIELDS`
@@ -232,6 +238,18 @@ the tag's checksum to the recipe.
   before materialising: the pass holding the mark is parked on its flag and
   cannot steal (`wait_before_materialise()` takes the caller's rank;
   `WriteCompressSyncPolicy::is_thread_writing_on()`). Found by the model.
+- The odd entry store of a read section was relaxed. The reclaimer, having
+  seen a slot odd, waits for it to move, and may then read the next read's
+  entry; by C++20 that relaxed store synchronised with nothing, so only the
+  AArch64 and x86 mappings kept the previous read's load before the free of
+  the buffer. It is a release store: +1.9 % on access_cost's worst read case
+  at 1 thread on Grace, within the spread, nothing measurable at 64. Found
+  by the GenMC model (`formal/`).
+- A reader past `CHUNK_READ_RECLAIM_SLOTS` announced itself with a seq_cst
+  increment alone; by C11 that is not an announce (store buffering against
+  the pass's acquire load of the counter), though the AArch64 and x86
+  mappings make it one. It is followed by the light fence of the slot path.
+  Found by the GenMC model (`formal/`).
 - A "wait" line of the re-chunk decider ended with a stray `0` when the array
   had no back-off.
 - An invariant failure inside a program's log sink, while the log was reading

@@ -599,12 +599,11 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         }
         else
         {
-            // Acquire, paired with finish()'s seq_cst decrement: a writer that
-            // sees a pass OVER here also sees the `values` that pass installed.
-            // Relaxed, it could see the counter back at zero yet load the old
-            // buffer -- the one the pass had just returned -- and write into it
-            // (formal/writer_compressor.c, MUT_NO_MARKS_RELAXED_GATE). The marks
-            // have no such hole: steal_unmark() is a release store.
+            // Serial build only (no marks without OpenMP): no concurrent
+            // compressor. Acquire, paired with finish()'s seq_cst decrement,
+            // as when the SHRINK_SMALL_CHUNK build ran this gate under threads
+            // (docs/formal_models.md, F1): a writer that sees a pass OVER also
+            // sees the `values` that pass installed.
             return hard_inflight_.load(std::memory_order_acquire) > 0;
         }
     }

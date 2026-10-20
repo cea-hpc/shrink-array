@@ -1353,8 +1353,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             // pending counter, below.
             if (self.is_chunk_dirty(num_chunk)) [[unlikely]]
             {
-                // Precise per-chunk gate, or the coarse is_not_available()
-                // fallback under SHRINK_SMALL_CHUNK (DeferredReadGate, chunk_base.h).
+                // Precise per-chunk gate (DeferredReadGate, chunk_base.h).
                 if (chunk_t.read_gate_should_wait(offset)) [[unlikely]]
                 {
                     chunk_t.wait_for_availability(offset);

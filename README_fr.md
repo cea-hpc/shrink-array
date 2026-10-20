@@ -77,16 +77,15 @@ par la bibliothèque liée : `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
 [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) comment lectures, écritures et compression
 tournent ensemble.
 
-**Vérifié, pas seulement testé.** Les poignées de main entre les écrivains d'éléments, la passe de
-compression et le flush des écritures différées sont vérifiées par model checking : des modèles
-réduits ([formal/](formal/)) en sont explorés exhaustivement par
-[GenMC](https://github.com/MPI-SWS/genmc) sous le modèle mémoire C11 (RC11 et IMM) jusqu'à 5
-écrivains, sans écriture perdue, sans accès à un tampon rendu, sans course de données et sans
-attente non bornée, et les modèles refusent dix mutations, dont six bugs que la bibliothèque a eus.
-La forme à `membarrier()` repose sur l'argument de la section 4.2 de
-[docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) ; la poignée de main
-lecteurs / réemploi des tampons n'est pas encore modélisée
-([docs/formal_models_fr.md](docs/formal_models_fr.md)).
+**Vérifié, pas seulement testé.** Les trois poignées de main sans verrou -- écrivains d'éléments
+contre passe de compression, passe contre flush des écritures différées, lecteurs purs contre
+réemploi des tampons -- sont vérifiées par model checking : des modèles réduits ([formal/](formal/))
+en sont explorés exhaustivement par [GenMC](https://github.com/MPI-SWS/genmc) sous le modèle
+mémoire C11 (RC11 et IMM), sans écriture perdue, sans accès à un tampon rendu, sans course de
+données et sans attente non bornée, et les modèles refusent douze mutations, dont six états
+passés de la bibliothèque. La forme à `membarrier()` repose sur l'argument de la section 4.2 de
+[docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) ; tout le reste est au
+vérificateur ([docs/formal_models_fr.md](docs/formal_models_fr.md)).
 
 ## En chiffres
 

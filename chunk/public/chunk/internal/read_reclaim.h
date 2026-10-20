@@ -30,11 +30,12 @@
  *
  * @par The protocol
  *  - READER (ReadSection, around element_at's load + dereference): a per-thread
- *    sequence number, odd while a read is in flight. Entry: a plain store of
+ *    sequence number, odd while a read is in flight. Entry: a release store of
  *    the odd value, then the LIGHT side of the asymmetric Dekker (a compiler
  *    barrier when membarrier() is registered, a seq_cst fence otherwise).
- *    Exit: a release store of the next even value -- it orders the element
- *    load before it, which is what lets the reclaimer trust an even value.
+ *    Exit: a release store of the next even value. Both releases order the
+ *    element load before them: the reclaimer trusts an even value, and, after
+ *    waiting for an odd slot to move, the next odd one as well.
  *  - RECLAIMER (PassScope, around a pass run inside a region): every buffer the
  *    pass releases is collected instead of freed. At the end of the pass,
  *    dekker::heavy_barrier() (membarrier: every running thread of the process
@@ -149,12 +150,27 @@ class ReadSection
             {
                 slot_ = s;
                 seq_  = s->seq.load(std::memory_order_relaxed) + 1; // odd
-                s->seq.store(seq_, std::memory_order_relaxed);
+                // RELEASE, not relaxed: the reclaimer, having seen this slot odd, waits
+                // for it to MOVE, and the value it then reads may be THIS store -- the
+                // next read's entry. Release orders the previous read's element load
+                // before it; relaxed, by C++20 (no release sequence through a later
+                // relaxed store of the same thread), it would order nothing, and only
+                // the AArch64 / x86 mappings would keep that load before the free. An
+                // stlr instead of an str: +1.9 % on access_cost's worst read case at 1
+                // thread on Grace, within its spread, nothing measurable at 64
+                // (formal/reader_reclaim.c, MUT_ENTER_RELAXED; docs/formal_models.md F3).
+                s->seq.store(seq_, std::memory_order_release);
                 light_fence();
             }
             else
             {
                 g_overflow_readers.fetch_add(1, std::memory_order_seq_cst);
+                // The announce needs its light side like the slot path: a seq_cst
+                // RMW followed by the acquire load of `values` is not a Dekker
+                // announce in C11 (store buffering against the reclaimer's acquire
+                // load of the counter), though it is on the AArch64 and x86
+                // mappings (formal/reader_reclaim.c, MUT_OVERFLOW_NO_FENCE).
+                light_fence();
             }
         }
     }
