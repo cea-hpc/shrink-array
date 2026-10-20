@@ -206,6 +206,16 @@ the tag's checksum to the recipe.
   `copy_range_constant_validation`: cases `same-first`, `same-part`,
   `same-second` and `prefix`, the materialised chunks checked on every
   variant.
+- `fill_range` on Chunk2 compresses a chunk it covers whole with one of the
+  array's constants (first_value or its second value) at once, as v1 does for
+  first_value: a materialised chunk releases its buffer through the pass's own
+  clear (`clear_st(num, ind)`), with nothing stored, scanned or queued; a
+  chunk compressed at the other constant is armed, then compressed rather than
+  queued. 2.56 M doubles over materialised chunks: 0.85-1.1 -> 0.08-0.15 ns
+  per element, and no chunk left materialised (100 % before, until the next
+  pass). `fill_range_constant_validation`: Chunk2 checked after a fill of a
+  constant (the old code leaves 40 of 40 chunks materialised), new scenario
+  `second-value`.
 
 ### Deprecated
 

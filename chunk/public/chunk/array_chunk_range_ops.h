@@ -554,6 +554,10 @@ void packed_chunk_store(Arr&         arr,
  *            (v1; Chunk2A below).
  *          - v1 at first_value, Chunk2 at either of its constants, and @p v
  *            that constant (whole chunk or part of it): nothing to do, O(1).
+ *          - Chunk2, fully covered, @p v one of its constants: a materialised
+ *            chunk releases its buffer at once (clear_st, the pass's clear);
+ *            one compressed at the other constant is armed, then compressed
+ *            at once rather than queued.
  *          - Chunk2A, fully covered, any value: the chunk takes @p v as its
  *            constant by state alone (Chunk2A::fill_constant_st): a
  *            materialised chunk releases its buffer, a compressed one
@@ -613,6 +617,22 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
     }
 
     const bool value_is_cst1 = (value == static_cast<T>(chunk_type::first_value));
+
+    // Chunk2: which of the array's constants the value is -- 0 the first, 1
+    // the second (index ind2), -1 neither. A whole chunk filled with one of
+    // them is compressed at once (below).
+    [[maybe_unused]] int chunk2_cst = -1;
+    if constexpr (internal::is_v2_v<Arr> && internal::raw_fillable_v<T> && requires { arr.get_second_value(); })
+    {
+        if (value_is_cst1)
+        {
+            chunk2_cst = 0;
+        }
+        else if (ind2 >= 0 && value == static_cast<T>(arr.get_second_value()))
+        {
+            chunk2_cst = 1;
+        }
+    }
 
     const std::size_t first_chunk = first / S;
     const std::size_t last_chunk  = (last - 1) / S;
@@ -722,6 +742,25 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
                 continue;
             }
 
+            // ── Chunk2, whole chunk, one of its constants: compressed at once ──
+            // A chunk that owns a buffer releases it through the pass's own
+            // clear (clear_st(num, ind2)), as v1 above: nothing stored, scanned
+            // or queued. owns_live_buffer(), not written(ind2): a chunk at the
+            // cst2 block of an earlier second value is not a buffer. A pass
+            // that still holds the chunk in its list skips it (compressed).
+            if constexpr (internal::is_v2_v<Arr> && requires { arr.get_second_value(); })
+            {
+                if (whole && chunk2_cst >= 0 && ch.owns_live_buffer())
+                {
+                    if constexpr (chunk_config::stats)
+                    {
+                        increm_chunk_compress_attempt<chunk_type>();
+                    }
+                    ch.clear_st(chunk2_cst, ind2);
+                    continue;
+                }
+            }
+
             // ── Arm, then bulk-store ────────────────────────────────────────
             // Real proxy writes until the chunk materialises: that allocates the
             // buffer and registers the compression bookkeeping. If the loop
@@ -751,6 +790,21 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             if (internal::fold_if_full(arr, ch, c_begin, S))
             {
                 continue;
+            }
+
+            // Chunk2, a whole chunk the arming took from its other constant to
+            // this one: compressed now rather than left to a pass.
+            if constexpr (internal::is_v2_v<Arr> && requires { arr.get_second_value(); })
+            {
+                if (whole && chunk2_cst >= 0 && ch.owns_live_buffer())
+                {
+                    if constexpr (chunk_config::stats)
+                    {
+                        increm_chunk_compress_attempt<chunk_type>();
+                    }
+                    ch.clear_st(chunk2_cst, ind2);
+                    continue;
+                }
             }
 
             // The chunk may be constant now: a fill of first_value, or on

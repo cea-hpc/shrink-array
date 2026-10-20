@@ -22,9 +22,10 @@
 // fill_range compresses a fully covered Chunk2A chunk at once, whatever the
 // value (Chunk2A::compress, as the rechunk fold): no chunk of the range is
 // left materialised, the buffer of one is back in the pool before the next is
-// armed. v1 does the same for a fill of first_value. Guards, on every variant:
-// the values read back. On Chunk2A: no covered chunk stays materialised, from
-// each starting state; on v1, after a fill of first_value.
+// armed. v1 does the same for a fill of first_value, Chunk2 for a fill of
+// either of its constants. Guards, on every variant: the values read back. On
+// Chunk2A: no covered chunk stays materialised, from each starting state; on
+// v1 and Chunk2, after a fill of one of their constants.
 //
 //   fresh     all chunks at first_value, filled with a plain value;
 //   second    all compressed at V (a second value), filled with W;
@@ -35,6 +36,10 @@
 //   distinct  one value per chunk (each chunk its own second value), then
 //             first_value everywhere: the second-value registry takes and gives
 //             back every value (the teardown checks the registry is empty).
+//   second-value  an array whose second value is 1.0: materialised chunks
+//             filled with 1.0, then chunks at first_value filled with 1.0 --
+//             compressed at once on Chunk2 and Chunk2A, not on v1 (1.0 is no
+//             constant of v1);
 //   constant  a fresh array filled with first_value, whole and in part, then
 //             fill_range_mt from every thread: nothing to write, no chunk
 //             materialised, on every variant.
@@ -125,6 +130,16 @@ long materialised(const Array<double>& a, long c0, long c1)
 
 int fails = 0;
 
+// Chunk2 and Chunk2A: register @p v as the array's second value (v1 has none).
+template <typename Arr>
+void maybe_set_second_value(Arr& a, double v)
+{
+    if constexpr (requires { a.set_second_value(v); })
+    {
+        a.set_second_value(v);
+    }
+}
+
 void expect_values(const char* scenario, const Array<double>& a, auto want)
 {
     long bad = 0;
@@ -144,11 +159,11 @@ void expect_values(const char* scenario, const Array<double>& a, auto want)
 }
 
 // The covered chunks [c0, c1) are all compressed: on Chunk2A whatever the
-// value, on v1 after a fill of first_value (@p first_value_fill).
-void expect_compressed(const char* scenario, const Array<double>& a, long c0, long c1, bool first_value_fill = false)
+// value, on v1 and Chunk2 after a fill of a constant of theirs
+// (@p constant_fill: first_value, or Chunk2's second value).
+void expect_compressed(const char* scenario, const Array<double>& a, long c0, long c1, bool constant_fill = false)
 {
-    constexpr bool v1 = !chunk_config::use_chunk2a && !chunk_config::use_chunk2;
-    if (chunk_config::use_chunk2a || (v1 && first_value_fill))
+    if (chunk_config::use_chunk2a || constant_fill)
     {
         const long m = materialised(a, c0, c1);
         if (m != 0)
@@ -230,6 +245,22 @@ int run(int /*argc*/, char** /*argv*/)
         fill_range(a, 0, static_cast<std::size_t>(N), 0.0);
         expect_values("distinct", a, [](long) { return 0.0; });
         expect_compressed("distinct", a, 0, kChunks, true);
+    }
+
+    // second-value: Chunk2's second constant (Chunk2A: any value; v1: none).
+    {
+        constexpr bool v1 = !chunk_config::use_chunk2a && !chunk_config::use_chunk2;
+        Array<double>  a(static_cast<int>(N));
+        maybe_set_second_value(a, 1.0);
+        region(N, [&](long i) { a[static_cast<int>(i)] = 0.5 * static_cast<double>(i % 7) + 1.0; });
+        fill_range(a, 0, static_cast<std::size_t>(N), 1.0);
+        expect_values("second-value/materialised", a, [](long) { return 1.0; });
+        expect_compressed("second-value/materialised", a, 0, kChunks, !v1);
+        fill_range(a, 0, static_cast<std::size_t>(N), 0.0); // back to first_value, compressed
+        expect_compressed("second-value/to-first", a, 0, kChunks, true);
+        fill_range(a, 0, static_cast<std::size_t>(N), 1.0); // from first_value: armed, then compressed
+        expect_values("second-value/from-first", a, [](long) { return 1.0; });
+        expect_compressed("second-value/from-first", a, 0, kChunks, !v1);
     }
 
     // constant: first_value over chunks already at first_value -- serially,
