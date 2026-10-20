@@ -167,30 +167,38 @@ parser.add_argument("--only-checksum", action="store_true",
 #   --exec chunk,chunk2a --size 64,dyn -> 4 binaries
 #   --all_exec                  -> the full matrix
 _VARIANTS = ["chunk", "chunk2", "chunk2a"]
+# The TBB bench (shrink_bench_tbb_<variant>_<size>, pool builds with
+# CHUNK_WITH_TBB): accepted by --exec by name, left out of 'all'.
+_TBB_VARIANTS = ["tbb_" + v for v in _VARIANTS]
 _SIZES         = ["64", "256", "1024", "dyn"]   # VALID choices (64 can still be asked with --size 64)
 _DEFAULT_SIZES = ["256", "1024", "dyn"]              # the sizes built by default (64 dropped)
 
-def _csv_choices(name, valid):
+def _csv_choices(name, valid, extra=()):
+    """Comma-separated values of valid (+ extra, which 'all' leaves out)."""
+    accepted = list(valid) + list(extra)
+
     def parse(value):
         if value == "all":
             return list(valid)
         items = [v.strip() for v in value.split(",") if v.strip()]
-        bad = [v for v in items if v not in valid]
+        bad = [v for v in items if v not in accepted]
         if bad:
             raise argparse.ArgumentTypeError(
                 f"{name}: invalid value(s) {', '.join(bad)} "
-                f"(valid: {', '.join(valid)}, or 'all', comma-separated)")
+                f"(valid: {', '.join(accepted)}, or 'all', comma-separated)")
         # dedupe, keep user order
         return list(dict.fromkeys(items))
     return parse
 
 parser.add_argument(
     "--exec",
-    type=_csv_choices("--exec", _VARIANTS),
+    type=_csv_choices("--exec", _VARIANTS, _TBB_VARIANTS),
     default=None,
-    metavar="{chunk,chunk2,chunk2a,all}[,...]",
+    metavar="{chunk,chunk2,chunk2a,tbb_chunk,tbb_chunk2,tbb_chunk2a,all}[,...]",
     help="Variant(s) to run, comma-separated or 'all'. Default: chunk2 alone "
-         "(historical behaviour) unless --all_exec is given."
+         "(historical behaviour) unless --all_exec is given. tbb_<variant>: the "
+         "TBB bench (shrink_bench_tbb_<variant>_<size>, pool builds with "
+         "CHUNK_WITH_TBB), by name only -- 'all' is the three variants."
 )
 parser.add_argument(
     "--size",

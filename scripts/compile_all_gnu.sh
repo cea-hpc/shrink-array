@@ -162,8 +162,9 @@ arch="$(source /etc/os-release && echo ${ID^^}_${VERSION_ID}__$(uname -m))"
 # ahead of Debug: ~700 s against 65-480 s for the others on gh200) overlap the
 # short ones instead of trailing behind them. Then the releases, then Debug.
 
-# oneTBB, for the validation of the TBB adaptor (tbb_validation,
-# chunk/tbb_adaptor.h) in the pool builds that have the validations: on when
+# oneTBB, for the TBB bench (shrink_bench_tbb_*: the release pool build, for
+# the timings) and the validation of the TBB adaptor (tbb_validation,
+# chunk/tbb_adaptor.h: the check build) in the pool builds: on when
 # oneTBB is in the environment -- TBBROOT, which oneAPI's vars.sh sets (and
 # `spack load intel-oneapi-tbb` through it) -- or forced by CHUNK_WITH_TBB=1;
 # CHUNK_WITH_TBB=0 leaves it out. The library itself never links TBB.
@@ -322,7 +323,7 @@ if skip_release; then
     echo "[debug-only] skipping gnu pool"
 else
     compile_with_cmake "$build_rep/cmake-build-pool-gnu${ICF_SUFFIX}/$arch" \
-      "-DCHUNK_THREADS=pool -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT" \
+      "-DCHUNK_THREADS=pool -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT $TBB_CMAKE_OPT" \
       "gnu pool (no openmp)"
 fi
 

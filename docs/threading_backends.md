@@ -411,13 +411,44 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      `CHUNK_THREAD_CAPACITY`) covers TBB's default arena; a wider
      `task_arena` needs `CHUNK_THREAD_CAPACITY`. TBB's workers keep their rank
      until they exit (at the end of the program): the ranks stay dense.
-   *8b, open*: the B loops have no barrier inside and map onto
-   `oneapi::tbb::parallel_for` (`static_partitioner`) in the caller's arena.
-   The C teams do not: TBB guarantees no concurrency between tasks, so a
-   `Team::barrier()` among n tasks deadlocks when fewer than n threads
-   come (a `global_control` limit, workers held by another arena). The teams
-   would keep the pool's `std::jthread`s, which run at serial points only,
-   while TBB's workers are idle.
+   *8b, not planned*: a TBB backend for the library's own work. The B loops
+   have no barrier inside and would map onto `oneapi::tbb::parallel_for`
+   (`static_partitioner`) in the caller's arena. The C teams would not: TBB
+   guarantees no concurrency between tasks, so a `Team::barrier()` among n
+   tasks deadlocks when fewer than n threads come (a `global_control` limit,
+   workers held by another arena), and the passes that matter (compression,
+   rechunk, drains) are C teams. They would stay on the pool's
+   `std::jthread`s, which run at serial points only, while TBB's workers are
+   idle. So the library has two threaded backends, OpenMP and pool, and a TBB
+   program uses the pool backend through the adaptor; the TBB bench (8c)
+   measures what that costs, and this decision is revisited only if it does.
+   *8c done*: the TBB bench, `shrink_bench_tbb_<variant>_<declination>` (pool
+   builds with `CHUNK_WITH_TBB`), from the sources of shrink_bench (7e).
+   - The bench's regions have no barrier: every loop and every single is
+     nowait (the two loops of the prealloc test that ended with one, right
+     before the end of their region, are nowait now). So a region can run as
+     `n` TBB tasks, one per virtual rank, that never wait for each other: a
+     task never blocks one that has not started, the way a barrier deadlocks
+     TBB. `bench_par.h` under `BENCH_PAR_TBB`: `region()` is a
+     `oneapi::tbb::parallel_for` over the ranks `[0, n)` (grain 1,
+     `static_partitioner`) in an arena of `CHUNK_PMP_MAX_THREADS` threads (the
+     backend's team size: `OMP_NUM_THREADS`, as the scripts set it); its
+     `Team` is the bench's own -- rank, size, `single(nowait)` and
+     `for_dynamic(nowait)` on per-region slots, no `barrier()`. The loop
+     macros share by the virtual rank, as under the pool.
+   - The phase protocol is the bench's own calls, unchanged: each task begins
+     the phase (`begin_parallel_phase()`, again for a thread that runs a
+     second rank, which the phase guard allows), and the serial
+     `finalize_parallel_phase()` after the region.
+   - The compression phase: a team region calls `compress()` on every thread,
+     a team-wide pass. TBB tasks are no team of the library, so there each
+     array is compressed once, at the serial point, where the pass runs on
+     the library's own team (`bench_par::team_regions`). The per-thread
+     checksum slots are indexed by the region's rank (`t.rank()`, a virtual
+     rank under TBB), no longer by the library's.
+   - `multi_launch_stress.py --exec tbb_chunk2a` runs it (by name only:
+     `all` stays the three variants); `compile_all_gnu.sh` builds it in the
+     release pool build when oneTBB is there.
 
 ## 4. Rules for the branch
 

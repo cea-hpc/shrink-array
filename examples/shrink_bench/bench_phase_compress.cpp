@@ -87,52 +87,68 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
             }
         }
 
-        bench_par::region(
-            [&]([[maybe_unused]] bench_par::Team& t)
+        // Every array's pass, each announced by say(name). Team regions (OpenMP,
+        // pool): every thread of the region calls compress(), a team-wide pass
+        // that shares the chunks out, and one of them prints. TBB tasks are no
+        // team of the library: each array is compressed once, at this serial
+        // point, where its pass runs on the library's own team.
+        const auto all = [&](auto&& say)
+        {
+            say("  tab1");
+            compress_one(tab1);
+            say("  tab2");
+            compress_one(tab2);
+            say("  tab3");
+            compress_one(tab3);
+            say("  tab4");
+            compress_one(tab4);
+            say("  tab5");
+            compress_one(tab5);
+            say("  tab_int");
+            compress_one(tab_int);
+            say("  tab_bool");
+            compress_one(tab_bool);
+            say("  tab_bool_bits");
+            compress_one(tab_bool_bits);
+            say(" tab_complex");
+            compress_one(tab_complex);
+            say(" tab_float");
+            compress_one(tab_float);
+            say(" tab_char");
+            compress_one(tab_char);
+            say(" tab_short");
+            compress_one(tab_short);
+            say(" tab_long");
+            compress_one(tab_long);
+            say(" tab_ulong");
+            compress_one(tab_ulong);
+            say(" tab_quant");
+            compress_one(tab_quant);
+            if (bench_arr.with_struct) // --no_struct
             {
-                t.single([&] { std::cout << "  tab1" << std::endl; }, bench_par::nowait);
-                compress_one(tab1);
-                t.single([&] { std::cout << "  tab2" << std::endl; }, bench_par::nowait);
-                compress_one(tab2);
-                t.single([&] { std::cout << "  tab3" << std::endl; }, bench_par::nowait);
-                compress_one(tab3);
-                t.single([&] { std::cout << "  tab4" << std::endl; }, bench_par::nowait);
-                compress_one(tab4);
-                t.single([&] { std::cout << "  tab5" << std::endl; }, bench_par::nowait);
-                compress_one(tab5);
-                t.single([&] { std::cout << "  tab_int" << std::endl; }, bench_par::nowait);
-                compress_one(tab_int);
-                t.single([&] { std::cout << "  tab_bool" << std::endl; }, bench_par::nowait);
-                compress_one(tab_bool);
-                t.single([&] { std::cout << "  tab_bool_bits" << std::endl; }, bench_par::nowait);
-                compress_one(tab_bool_bits);
-                t.single([&] { std::cout << " tab_complex" << std::endl; }, bench_par::nowait);
-                compress_one(tab_complex);
-                t.single([&] { std::cout << " tab_float" << std::endl; }, bench_par::nowait);
-                compress_one(tab_float);
-                t.single([&] { std::cout << " tab_char" << std::endl; }, bench_par::nowait);
-                compress_one(tab_char);
-                t.single([&] { std::cout << " tab_short" << std::endl; }, bench_par::nowait);
-                compress_one(tab_short);
-                t.single([&] { std::cout << " tab_long" << std::endl; }, bench_par::nowait);
-                compress_one(tab_long);
-                t.single([&] { std::cout << " tab_ulong" << std::endl; }, bench_par::nowait);
-                compress_one(tab_ulong);
-                t.single([&] { std::cout << " tab_quant" << std::endl; }, bench_par::nowait);
-                compress_one(tab_quant);
-                if (bench_arr.with_struct) // --no_struct
-                {
-                    t.single([&] { std::cout << " tab_point" << std::endl; }, bench_par::nowait);
-                    compress_one(tab_point);
-                    t.single([&] { std::cout << " tab_cell" << std::endl; }, bench_par::nowait);
-                    compress_one(tab_cell);
-                }
-                if (bench_arr.with_mask) // --no_mask
-                {
-                    t.single([&] { std::cout << " tab_mask" << std::endl; }, bench_par::nowait);
-                    compress_one(tab_mask);
-                }
-            });
+                say(" tab_point");
+                compress_one(tab_point);
+                say(" tab_cell");
+                compress_one(tab_cell);
+            }
+            if (bench_arr.with_mask) // --no_mask
+            {
+                say(" tab_mask");
+                compress_one(tab_mask);
+            }
+        };
+        if constexpr (bench_par::team_regions)
+        {
+            bench_par::region(
+                [&]([[maybe_unused]] bench_par::Team& t) {
+                    all([&](const char* name)
+                        { t.single([&] { std::cout << name << std::endl; }, bench_par::nowait); });
+                });
+        }
+        else
+        {
+            all([](const char* name) { std::cout << name << std::endl; });
+        }
 
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
     }

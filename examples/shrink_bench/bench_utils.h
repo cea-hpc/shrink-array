@@ -232,14 +232,15 @@ template <typename V>
 #if defined(__GNUC__) && !defined(__NVCOMPILER) && !defined(__clang__)
 __attribute__((optimize("O2")))
 #endif
-void calculate_checksum_0([[maybe_unused]] bench_par::Team& t, const V& vec, std::vector<uint64_t_padding>& checksum_thr)
+void calculate_checksum_0(bench_par::Team& t, const V& vec, std::vector<uint64_t_padding>& checksum_thr)
 {
     using T      = V::value_type;
     const Int nn = vec.size();
 
     constexpr T zero{};
 
-    auto& checksum = checksum_thr[CHUNK_PMP_THREAD_RANK];
+    // The rank in the region's team (a TBB task's virtual rank): one slot per share.
+    auto& checksum = checksum_thr[static_cast<std::size_t>(t.rank())];
 
     BENCH_FOR_STATIC_NOWAIT_SCALAR(t, k, 0, nn)
     {

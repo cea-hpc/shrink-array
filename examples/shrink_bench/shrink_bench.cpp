@@ -113,7 +113,7 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
             [&]([[maybe_unused]] bench_par::Team& t)
             {
                 begin_parallel_phase_g();
-                BENCH_FOR_STATIC(t, c, beg / step, ((end - 1) / step) + 1)
+                BENCH_FOR_STATIC_NOWAIT(t, c, beg / step, ((end - 1) / step) + 1)
                 {
                     if constexpr (build_config::threaded)
                     {
@@ -124,7 +124,6 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
                         a.alloc_chunk(c * step);
                     }
                 }
-                BENCH_END_FOR(t);
                 finalize_parallel_phase_only_flush_g();
             });
         finalize_parallel_phase_after_flush_g();
@@ -154,11 +153,10 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
         [&]([[maybe_unused]] bench_par::Team& t)
         {
             begin_parallel_phase_g();
-            BENCH_FOR_STATIC(t, i, beg, end)
+            BENCH_FOR_STATIC_NOWAIT(t, i, beg, end)
             {
                 a[i] = value_at(i);
             }
-            BENCH_END_FOR(t);
             finalize_parallel_phase_only_flush_g();
         });
     finalize_parallel_phase_after_flush_g();
