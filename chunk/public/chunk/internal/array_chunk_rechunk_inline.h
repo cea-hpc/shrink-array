@@ -246,24 +246,13 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         return;
     }
 
-    // A power of two or a multiple of 64 (is_valid_chunk_size). Refused, with
-    // a message in EVERY build: a caller bug, on a cold path.
-    if (!is_valid_chunk_size(new_size))
+    // A power of two or a multiple of 64, and at most cst_buffer_size: the
+    // shared constant buffers (cst_val1 / cst_val2) are that wide, and a wider
+    // chunk would read them out of bounds (chunk_size_error). Refused, with a
+    // message in EVERY build: a caller bug, on a cold path.
+    if (const auto e = chunk_size_error(new_size)) [[unlikely]]
     {
-        CHUNK_LOG(warn, rechunk, "rechunk_to({}) refused: a chunk size must be a power of two or a multiple of 64",
-                  new_size);
-        return;
-    }
-
-    // SAFETY: the shared constant buffers (cst_val1 / cst_val2) are sized
-    // cst_buffer_size (the dynamic-mode ceiling). A chunk wider than that
-    // would read those buffers out of bounds, so refuse the re-chunk.
-    // Raise CHUNK_DYN_MAX_SIZE if a legitimate geometry needs to be larger.
-    // Message in every build, as for an invalid size above.
-    if (new_size > cst_buffer_size)
-    {
-        CHUNK_LOG(warn, rechunk, "rechunk_to({}) refused: exceeds cst_buffer_size={} (raise CHUNK_DYN_MAX_SIZE)",
-                  new_size, shrink_array::cst_buffer_size);
+        warn_chunk_size_refused("rechunk_to", new_size, *e);
         return;
     }
 

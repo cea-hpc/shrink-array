@@ -22,7 +22,7 @@
 
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_dynamic
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size, static_chunk_shift, static_chunk_mask
-#include "chunk/internal/chunk_size_policy.h" // active_chunk_size
+#include "chunk/internal/chunk_size_policy.h" // active_chunk_size, chunk_size_error
 #include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
 #include "chunk/singleton.h"                  // SingletonChk
 #include "chunk/all_type_chunk.h"             // AllTypeChunk
@@ -191,7 +191,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
 
     /**
      * @brief Check that a candidate chunk size is valid: a power of two or a
-     *        multiple of 64 (is_valid_chunk_size).
+     *        multiple of 64, at most cst_buffer_size -- the rule of the setters
+     *        (chunk_size_error).
      *
      * @details The build checks CHUNK_SIZE with a static_assert; this helper is
      *          for a size obtained at run time (command line, config file).
@@ -202,7 +203,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      */
     static bool check_chunk_size(int chunk_size) noexcept
     {
-        return chunk_size > 0 && is_valid_chunk_size(static_cast<unsigned int>(chunk_size));
+        return chunk_size > 0 && !chunk_size_error(static_cast<unsigned int>(chunk_size));
     }
 
     /// @brief The former power-of-two-only check: chunk sizes may now also be multiples of 64.

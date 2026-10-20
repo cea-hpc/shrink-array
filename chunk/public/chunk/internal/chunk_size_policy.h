@@ -39,14 +39,15 @@
 
 #include <bit>         // std::has_single_bit
 #include <cstddef>     // std::size_t (func_p2.h uses size_t unqualified)
-#include <cstdint>     // std::uint64_t (DynamicChunkSize's divider)
+#include <cstdint>     // std::uint64_t (DynamicChunkSize's divider), std::uint8_t (ChunkSizeError)
+#include <optional>    // std::optional (chunk_size_error)
 #include <type_traits> // std::conditional_t, std::make_unsigned_t
 
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
 #include "chunk/internal/func_p2.h"           // log2int (constexpr, also usable at run time)
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size / static_chunk_shift / static_chunk_mask
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED (an invalid geometry)
-#include "chunk/log.h"                        // CHUNK_LOG (set_active_chunk_size's refusals)
+#include "chunk/log.h"                        // CHUNK_LOG (warn_chunk_size_refused)
 
 namespace shrink_array
 {
@@ -94,8 +95,28 @@ void register_runtime_chunk_size(unsigned int size);
     return std::has_single_bit(size) || (size != 0u && size % 64u == 0u);
 }
 
-// set_active_chunk_size() is at the end of the file: it checks the size
-// against cst_buffer_size, defined below.
+/// @brief Why a chunk size is refused (chunk_size_error()).
+enum class ChunkSizeError : std::uint8_t
+{
+    not_pow2_or_x64, ///< neither a power of two nor a multiple of 64 (0 included): is_valid_chunk_size
+    exceeds_buffer,  ///< wider than cst_buffer_size, the shared constant buffers: raise CHUNK_DYN_MAX_SIZE
+};
+
+/// @brief The reason @p e, in words.
+[[nodiscard]] constexpr const char* to_string(ChunkSizeError e) noexcept
+{
+    switch (e)
+    {
+        case ChunkSizeError::not_pow2_or_x64:
+            return "a chunk size must be a power of two or a multiple of 64";
+        case ChunkSizeError::exceeds_buffer:
+            return "exceeds cst_buffer_size (raise CHUNK_DYN_MAX_SIZE)";
+    }
+    return "?";
+}
+
+// chunk_size_error() and set_active_chunk_size() are at the end of the file:
+// they check the size against cst_buffer_size, defined below.
 
 /// @brief The process-wide active chunk size.
 [[nodiscard]] inline unsigned int active_chunk_size() noexcept
@@ -394,25 +415,51 @@ static_assert(!ActiveSizePolicy::is_dynamic || chunk_dyn_max_size >= static_chun
               "CHUNK_DYN_MAX_SIZE must be at least the starting chunk size: the shared constant buffers are read "
               "up to the chunk size");
 
-/// @brief Set the process-wide active chunk size and register it with register_runtime_chunk_size().
-/// @param size Chunk size, in elements: a power of two or a multiple of 64, at
-///        most cst_buffer_size. Refused otherwise, with a message in EVERY
-///        build, as rechunk_to() does: the next DynamicChunkSize would divide
-///        by 0 (set_divider), and a chunk wider than cst_buffer_size reads the
-///        shared constant buffers out of bounds. Geometry kept.
-inline void set_active_chunk_size(unsigned int size) noexcept
+/// @brief Why @p size cannot be a geometry of this build, or nothing if it can:
+///        is_valid_chunk_size(), and at most cst_buffer_size -- a chunk wider
+///        than that reads the shared constant buffers out of bounds.
+/// @details The one rule of every setter that takes a size (rechunk_to(),
+///          set_chunk_size(), set_active_chunk_size()) and of
+///          ParamChunk::check_chunk_size().
+[[nodiscard]] constexpr std::optional<ChunkSizeError> chunk_size_error(unsigned int size) noexcept
 {
     if (!is_valid_chunk_size(size)) [[unlikely]]
     {
-        CHUNK_LOG(warn, rechunk,
-                  "set_active_chunk_size({}) refused: a chunk size must be a power of two or a multiple of 64", size);
-        return;
+        return ChunkSizeError::not_pow2_or_x64;
     }
     if (size > cst_buffer_size) [[unlikely]]
     {
-        CHUNK_LOG(warn, rechunk,
-                  "set_active_chunk_size({}) refused: exceeds cst_buffer_size={} (raise CHUNK_DYN_MAX_SIZE)", size,
+        return ChunkSizeError::exceeds_buffer;
+    }
+    return std::nullopt;
+}
+
+/// @brief The warning of a setter that refuses a size: "@p who(@p size)
+///        refused: <reason>", channel rechunk, in every build (a caller bug,
+///        on a cold path).
+inline void warn_chunk_size_refused(const char* who, unsigned int size, ChunkSizeError e) noexcept
+{
+    if (e == ChunkSizeError::exceeds_buffer)
+    {
+        CHUNK_LOG(warn, rechunk, "{}({}) refused: exceeds cst_buffer_size={} (raise CHUNK_DYN_MAX_SIZE)", who, size,
                   cst_buffer_size);
+        return;
+    }
+    CHUNK_LOG(warn, rechunk, "{}({}) refused: {}", who, size, to_string(e));
+}
+
+/// @brief Set the process-wide active chunk size and register it with register_runtime_chunk_size().
+/// @param size Chunk size, in elements: a power of two or a multiple of 64, at
+///        most cst_buffer_size (chunk_size_error). Refused otherwise, with a
+///        message in EVERY build, as rechunk_to() does: the next
+///        DynamicChunkSize would divide by 0 (set_divider), and a chunk wider
+///        than cst_buffer_size reads the shared constant buffers out of
+///        bounds. Geometry kept.
+inline void set_active_chunk_size(unsigned int size) noexcept
+{
+    if (const auto e = chunk_size_error(size)) [[unlikely]]
+    {
+        warn_chunk_size_refused("set_active_chunk_size", size, *e);
         return;
     }
     g_active_chunk_size = size;
