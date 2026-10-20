@@ -701,6 +701,26 @@ foreach(_vi RANGE ${_rt_nvar_last})
 endforeach()
 
 
+# --- mdspan_copy_box_validation_<variant>: md::copy_box_out / md::copy_box_in
+# (chunk/mdspan_tile_ops.h) against the element path, on tiled, row-major and
+# sub-views, serially and from every thread of a phase, at 1 and 8 threads.
+foreach(_vi RANGE ${_rt_nvar_last})
+  list(GET _rt_variant_names   ${_vi} _vname)
+  list(GET _rt_variant_libbase ${_vi} _libbase)
+  list(GET _rt_variant_macro   ${_vi} _vmacro)
+  if (TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    set(_tgt mdspan_copy_box_validation_${_vname})
+    add_executable(${_tgt} mdspan_copy_box_validation.cpp)
+    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
+    validation_setup_target(${_tgt})
+    validation_add_test(${_tgt} ${_tgt} "" "1;8")
+    foreach(_nthr 1 8)
+      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
+    endforeach()
+  endif()
+endforeach()
+
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).
 shrink_stamp_directory_targets()

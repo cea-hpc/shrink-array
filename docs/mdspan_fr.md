@@ -141,6 +141,40 @@ le même champ sommé élément par élément, 1 thread, se lit à 2,8 ns par é
 3,3 ns par `f[i, j]` ligne par ligne et 3,5 ns par `f[i, j]` en tuiles (le mapping en tuiles
 divise par ses étendues de tuile constantes en arithmétique non signée : décalages et masques).
 
+### Un rectangle vers et depuis une mémoire contiguë : `md::copy_box_out`, `md::copy_box_in`
+
+Un halo MPI, un hyperslab HDF5, une bibliothèque qui attend un `T*` : un rectangle de la vue copié
+vers ou depuis un tampon contigu ligne par ligne aux étendues du rectangle, sans un `operator[]`
+par élément.
+
+```cpp
+std::vector<double> buf((hi[0] - lo[0]) * (hi[1] - lo[1]));
+md::copy_box_out(f, lo, hi, buf.data());   // buf[(i - lo[0]) * (hi[1] - lo[1]) + (j - lo[1])] = f[i, j]
+// ... MPI_Sendrecv(buf, ...) ...
+md::copy_box_in(f, lo, hi, buf.data());    // et retour
+```
+
+| appel | effet |
+|---|---|
+| `md::copy_box_out(f, lo, hi, dst)` | vue en tuiles : tuile par tuile, une tuile lue d'un bloc, une tuile uniforme un remplissage de sa part du rectangle. Vue à pas (`md::view`, une `submdspan`) : une lecture par ligne (`for_each_span`), élément par élément quand le dernier pas n'est pas 1 |
+| `md::copy_box_in(f, lo, hi, src)` | vue en tuiles : une tuile que le rectangle couvre est écrite d'un bloc sans lecture -- `fill_range` si ses valeurs sont une seule valeur (un chunk qui la tient déjà n'est pas touché, un compressé change de constante, un matérialisé est libéré là où la variante le peut) --, sinon `copy_range` ; une tuile qu'il traverse est mise à jour comme par `update_tiles`. Vue à pas : un `copy_range` par ligne |
+| `md::copy_box_out(f, lo, hi, dst, first, last)`, `md::copy_box_in(f, lo, hi, src, first, last)` | vue en tuiles, tuiles `[first, last)` seulement, pour une boucle `#pragma omp for` sur `[0, md::tile_count(f))` ; une vue à pas se découpe chez l'appelant, chaque thread ses lignes |
+
+Le rectangle doit être contenu dans les étendues de la vue (un rectangle qui en sort arrête le
+programme : découpé, il changerait la forme du tampon). Dans une région parallèle, les règles des
+opérations sur tuiles s'appliquent : `copy_box_in` dans une phase, une tuile faite de chunks entiers.
+
+`examples/mdspan_tiles`, un rectangle de 1024 x 1024 dans un champ en tuiles de 2048 x 2048, contre
+la boucle élément par élément (`f[i, j]`, lignes partagées par l'équipe), Release, GCC 14,
+conteneur à 2 cœurs :
+
+| | threads | élément par élément | `copy_box_*` | rapport |
+|---|---|---|---|---|
+| sortie | 1 | 7,96 ms | 2,03 ms | x 3,9 |
+| sortie | 2 | 3,79 ms | 0,87 ms | x 4,4 |
+| entrée | 1 | 22,79 ms | 2,48 ms | x 9,2 |
+| entrée | 2 | 10,42 ms | 1,23 ms | x 8,5 |
+
 ### Sous-vues : `md::submdspan`
 
 `md::submdspan(f, tranches...)` est le `submdspan` du `mdspan` utilisé (`Kokkos::submdspan`, ou
@@ -292,8 +326,9 @@ compte comme sauté.
 |---|---|
 | `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (et son `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | écritures par la vue et relecture linéaire, opérateurs composés, rang 3, vues en lecture seule, le mapping en tuiles (bijection, bourrage), une tuile uniforme est une suite uniforme ; toutes les variantes (un ctest chacune, `mdspan_validation_<variant>`) |
-| `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::tile_count`, `md::tile` |
+| `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::fill_box`, `md::copy_box_out`, `md::copy_box_in`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocs, étendues des tuiles sur les bords bourrés, tuiles uniformes, la mise à jour contre la formule élément par élément, les tuiles non touchées restent compressées, la mise à jour en parallèle ; toutes les variantes à 1 et 8 threads, et `mdspan_tile_ops_misaligned` (une tuile plus petite qu'un chunk refusée dans une région parallèle) |
+| `examples/validation/mdspan_copy_box_validation.cpp` | `copy_box_out` / `copy_box_in` contre `f[i, j]` et une référence : rectangles alignés, non alignés, sur les bords bourrés, une ligne, une colonne, toute la vue, vide ; en tuiles (une tuile par chunk, 16 x 16), ligne par ligne, rang 3, une `submdspan` et une colonne ; des tuiles entières copiées uniformes restent compressées ; tuile par tuile et tranche de lignes par tranche dans une phase parallèle ; toutes les variantes à 1 et 8 threads |
 | `examples/validation/mdspan_submdspan_validation.cpp` | sous-vues d'une vue ligne par ligne (bloc, ligne, colonne, lecture seule, `fill_box`) et d'une vue en tuiles (alignée, finissant à l'étendue, sous-vue d'une sous-vue ; les opérations sur tuiles dessus, en série et en phase parallèle) ; toutes les variantes à 1 et 8 threads, et `mdspan_submdspan_misaligned` (une tranche en tuiles hors des tuiles arrête le programme) |
 | `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, tous les multiples de 64 jusqu'à 4096), `layout_tiled_dyn` contre `layout_tiled` indice par indice et par leurs sous-vues, la tuile par chunk de `tiled_view_dyn`, les opérations sur tuiles sur une tuile par chunk, une tuile 3 x 5 et une au-delà du tampon local ; toutes les variantes à la taille par défaut et en dyn (un rechunk sous la vue), 1 et 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | les comparaisons des sections 2 et 3, et le coût du multi-indice ; `mdspan_tiles 4096` pour un champ plus grand |

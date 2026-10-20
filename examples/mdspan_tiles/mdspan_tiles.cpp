@@ -38,7 +38,9 @@
  *          64 rectangles painted over the field, element by element against
  *          md::fill_box (each thread on its own slice of the tiles); and the
  *          price of the multi-index alone: a sum through a[k], f[i, j]
- *          row-major and f[i, j] in tiles.
+ *          row-major and f[i, j] in tiles. Between the two, a box of half the
+ *          field each way copied out to a buffer and back in, element by
+ *          element against md::copy_box_out / md::copy_box_in.
  *
  *          Usage: mdspan_tiles [n]   (an n x n field, 2048 by default)
  *          Exit 0, 1 when a layout does not read back the field, 77 when
@@ -51,14 +53,15 @@
 #include <cmath>     // std::sin, std::abs
 #include <cstdlib>   // std::atol
 #include <utility>   // std::as_const
+#include <vector>    // std::vector (the box buffers)
 
-#include "chunk/array_chunk2A.h"   // ArrayChunk2A
-#include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/internal/print.h"  // shrink_array::println
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/mdspan.h"          // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/PMP_CHUNK.h"       // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
-#include "chunk/mdspan_tile_ops.h" // md::for_each_tile, md::update_tiles, md::fill_box
+#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/mdspan_tile_ops.h" // md::for_each_tile, md::update_tiles, md::fill_box, md::copy_box_out, md::copy_box_in
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
@@ -410,6 +413,172 @@ void paint(long n, int& bad)
     sa::println("  materialised at the end of the phase: element {}, tile {}; after one more pass: {} and {}", m_elem,
                 m_tile, count(e).materialised, count(t).materialised);
 }
+
+// A box of half the field each way copied out to a contiguous buffer and back
+// in, element by element (f[i, j], rows shared by the team) against
+// md::copy_box_out / md::copy_box_in (tiles shared by the team), on the tiled
+// field and on the row-major one (each thread its slice of rows).
+void box_copy(long n, int& bad)
+{
+    const std::array<long, 2> lo{n / 4, n / 4};
+    const std::array<long, 2> hi{3 * n / 4, 3 * n / 4};
+    const long                w  = hi[1] - lo[1];
+    const long                ne = (hi[0] - lo[0]) * w;
+    std::vector<double>       e_out(static_cast<std::size_t>(ne));
+    std::vector<double>       t_out(static_cast<std::size_t>(ne), -1.0);
+
+    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::ArrayChunk2A<double> t(size);
+    fill_tiled<16, 16>(t, n);
+    auto       ft = sa::md::tiled_view<16, 16>(t, n, n);
+    const auto ct = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(ft);
+    const long nt = sa::md::tile_count(ft);
+
+    // Out.
+    auto        t0 = std::chrono::steady_clock::now();
+    #pragma omp parallel for schedule(static)
+    for (long i = lo[0]; i < hi[0]; ++i)
+    {
+        for (long j = lo[1]; j < hi[1]; ++j)
+        {
+            e_out[static_cast<std::size_t>((i - lo[0]) * w + (j - lo[1]))] = ct[i, j];
+        }
+    }
+    const double o_elem = seconds_since(t0);
+    t0                  = std::chrono::steady_clock::now();
+    #pragma omp parallel for schedule(static)
+    for (long k = 0; k < nt; ++k)
+    {
+        sa::md::copy_box_out(ct, lo, hi, t_out.data(), static_cast<int>(k), static_cast<int>(k + 1));
+    }
+    const double o_tile = seconds_since(t0);
+    if (t_out != e_out)
+    {
+        sa::println("box copy: copy_box_out differs from the element loop");
+        ++bad;
+    }
+
+    // In: the buffer shifted by one, written back, element by element into one
+    // field and by copy_box_in into another.
+    std::vector<double> src(e_out);
+    for (double& v : src)
+    {
+        v += 1.0;
+    }
+    sa::ArrayChunk2A<double> e(size);
+    fill_tiled<16, 16>(e, n);
+    auto fe = sa::md::tiled_view<16, 16>(e, n, n);
+    t0      = std::chrono::steady_clock::now();
+    sa::parallel_phase(
+        [&]
+        {
+    #pragma omp for schedule(static)
+            for (long i = lo[0]; i < hi[0]; ++i)
+            {
+                for (long j = lo[1]; j < hi[1]; ++j)
+                {
+                    fe[i, j] = src[static_cast<std::size_t>((i - lo[0]) * w + (j - lo[1]))];
+                }
+            }
+        });
+    const double i_elem = seconds_since(t0);
+    t0                  = std::chrono::steady_clock::now();
+    sa::parallel_phase(
+        [&]
+        {
+    #pragma omp for schedule(static)
+            for (long k = 0; k < nt; ++k)
+            {
+                sa::md::copy_box_in(ft, lo, hi, src.data(), static_cast<int>(k), static_cast<int>(k + 1));
+            }
+        });
+    const double i_tile = seconds_since(t0);
+    const auto   ce     = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(fe);
+    long         wrong  = 0;
+    for (long i = 0; i < n; ++i)
+    {
+        for (long j = 0; j < n; ++j)
+        {
+            wrong += ce[i, j] != ct[i, j] ? 1 : 0;
+        }
+    }
+    if (wrong != 0)
+    {
+        sa::println("box copy: {} cells differ between the element loop and copy_box_in", wrong);
+        ++bad;
+    }
+    sa::println("box out, tiles element {:8.2f} ms   copy_box_out {:8.2f} ms   (x {:.1f})", 1e3 * o_elem, 1e3 * o_tile,
+                o_elem / o_tile);
+    sa::println("box in,  tiles element {:8.2f} ms   copy_box_in  {:8.2f} ms   (x {:.1f})", 1e3 * i_elem, 1e3 * i_tile,
+                i_elem / i_tile);
+
+    // Row-major: each thread its slice of the box's rows.
+    sa::ArrayChunk2A<double> r(n * n);
+    auto                     fr = sa::md::view(r, n, n);
+    sa::parallel_phase(
+        [&]
+        {
+    #pragma omp for schedule(static)
+            for (long i = 0; i < n; ++i)
+            {
+                for (long j = 0; j < n; ++j)
+                {
+                    fr[i, j] = cell(i, j, n);
+                }
+            }
+        });
+    sa::ArrayChunk2A<double>::make_block_compression();
+    const auto cr = sa::md::view(std::as_const(r), n, n);
+    t0            = std::chrono::steady_clock::now();
+    #pragma omp parallel
+    {
+        const long nth = CHUNK_PMP_NUM_THREADS;
+        const long me  = CHUNK_PMP_THREAD_RANK;
+        const long r0  = lo[0] + (hi[0] - lo[0]) * me / nth;
+        const long r1  = lo[0] + (hi[0] - lo[0]) * (me + 1) / nth;
+        if (r0 < r1)
+        {
+            sa::md::copy_box_out(cr, std::array<long, 2>{r0, lo[1]}, std::array<long, 2>{r1, hi[1]},
+                                 t_out.data() + (r0 - lo[0]) * w);
+        }
+    }
+    const double o_rows = seconds_since(t0);
+    if (t_out != e_out)
+    {
+        sa::println("box copy: row-major copy_box_out differs from the tiled one");
+        ++bad;
+    }
+    t0 = std::chrono::steady_clock::now();
+    sa::parallel_phase(
+        [&]
+        {
+            const long nth = CHUNK_PMP_NUM_THREADS;
+            const long me  = CHUNK_PMP_THREAD_RANK;
+            const long r0  = lo[0] + (hi[0] - lo[0]) * me / nth;
+            const long r1  = lo[0] + (hi[0] - lo[0]) * (me + 1) / nth;
+            if (r0 < r1)
+            {
+                sa::md::copy_box_in(fr, std::array<long, 2>{r0, lo[1]}, std::array<long, 2>{r1, hi[1]},
+                                    src.data() + (r0 - lo[0]) * w);
+            }
+        });
+    const double i_rows  = seconds_since(t0);
+    long         wrong_r = 0;
+    for (long i = lo[0]; i < hi[0]; ++i)
+    {
+        for (long j = lo[1]; j < hi[1]; ++j)
+        {
+            wrong_r += cr[i, j] != src[static_cast<std::size_t>((i - lo[0]) * w + (j - lo[1]))] ? 1 : 0;
+        }
+    }
+    if (wrong_r != 0)
+    {
+        sa::println("box copy: row-major copy_box_in, {} cells wrong", wrong_r);
+        ++bad;
+    }
+    sa::println("box out, row-major copy_box_out {:8.2f} ms; box in, row-major copy_box_in {:8.2f} ms", 1e3 * o_rows,
+                1e3 * i_rows);
+}
 } // namespace
 
 // The price of the multi-index: one sum of the same field read as a[k], as
@@ -509,6 +678,7 @@ int main(int argc, char** argv)
     }
     kernels(n, bad);
     paint(n, bad);
+    box_copy(n, bad);
     index_cost(n, bad);
     sa::release_chunk_pools();
     sa::destroy_block_chunk();

@@ -20,7 +20,9 @@
  * @brief Tile by tile over a tiled mdspan view (chunk/mdspan.h): for_each_tile()
  *        reads, update_tiles() reads and writes back, a uniform tile in O(1);
  *        fill_box() sets a box of a view (tiled or row-major) to one value by
- *        runs instead of elements.
+ *        runs instead of elements; copy_box_out() / copy_box_in() copy a box
+ *        to / from contiguous row-major memory (an MPI halo, an HDF5
+ *        hyperslab, a library that wants a T*), tile by tile or row by row.
  *
  * @details f[i, j] pays an operator[] per element. With layout_tiled, a tile is
  *          a run of consecutive elements -- one chunk when the tile has
@@ -65,7 +67,7 @@
 
 #if SHRINK_ARRAY_HAS_MDSPAN
 
-    #include <algorithm>   // std::copy, std::fill, std::equal, std::all_of, std::min, std::max, std::clamp
+    #include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
     #include <array>       // std::array (the tile buffer, the tile coordinates)
     #include <concepts>    // std::invocable, std::same_as, std::integral
     #include <cstddef>     // std::size_t
@@ -825,6 +827,517 @@ void fill_box(const View&                        f,
         }
     }
     runs.flush();
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A box in and out of contiguous memory: copy_box_out(), copy_box_in()
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace detail
+{
+/// @brief The box [@p blo, @p bhi) of @p f in its index type, checked to lie
+///        inside the view's extents (a clipped box would change the buffer's
+///        shape: refused, not clipped). @return false when the box is empty.
+template <typename View, typename I>
+bool checked_box(const View&                                          f,
+                 const std::array<I, View::rank()>&                   blo,
+                 const std::array<I, View::rank()>&                   bhi,
+                 std::array<typename View::index_type, View::rank()>& lo,
+                 std::array<typename View::index_type, View::rank()>& hi,
+                 const char*                                          who)
+{
+    using Index    = typename View::index_type;
+    bool non_empty = true;
+    for (std::size_t r = 0; r < View::rank(); ++r)
+    {
+        const auto l = static_cast<long long>(blo[r]);
+        const auto h = static_cast<long long>(bhi[r]);
+        const auto e = static_cast<long long>(f.extent(r));
+        if (l < 0 || l > h || h > e) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("{}: the box [{}, {}) of dimension {} does not lie inside the view's extent {}", who,
+                                   l, h, r, e);
+        }
+        lo[r]     = static_cast<Index>(l);
+        hi[r]     = static_cast<Index>(h);
+        non_empty = non_empty && l < h;
+    }
+    return non_empty;
+}
+
+/// @brief Row-major strides of a buffer of extents @p ext.
+template <typename Index, std::size_t R>
+std::array<std::size_t, R> row_major_strides(const std::array<Index, R>& ext)
+{
+    std::array<std::size_t, R> s{};
+    std::size_t                acc = 1;
+    for (std::size_t r = R; r-- > 0;)
+    {
+        s[r] = acc;
+        acc *= static_cast<std::size_t>(ext[r]);
+    }
+    return s;
+}
+
+/// @brief Offset of multi-index @p idx in a row-major buffer whose element 0
+///        is @p origin, strides @p s.
+template <typename Index, std::size_t R>
+std::size_t
+offset_in(const std::array<Index, R>& idx, const std::array<Index, R>& origin, const std::array<std::size_t, R>& s)
+{
+    std::size_t o = 0;
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        o += static_cast<std::size_t>(idx[r] - origin[r]) * s[r];
+    }
+    return o;
+}
+
+/// @brief @p fn(idx) for the first cell of every row of [@p lo, @p hi): idx
+///        walks every dimension but the last, idx[R - 1] == lo[R - 1].
+template <typename Index, std::size_t R, typename Fn>
+void for_each_row(const std::array<Index, R>& lo, const std::array<Index, R>& hi, Fn&& fn)
+{
+    std::array<Index, R> i = lo;
+    while (true)
+    {
+        fn(std::as_const(i));
+        std::size_t r = R - 1;
+        while (r-- > 0)
+        {
+            if (++i[r] < hi[r])
+            {
+                break;
+            }
+            i[r] = lo[r];
+        }
+        if (r == static_cast<std::size_t>(-1))
+        {
+            break;
+        }
+    }
+}
+
+/// @brief @p fn(k) for every tile k in [@p first, @p last) that box [@p lo,
+///        @p hi) of tiled view @p f touches, in storage order.
+template <typename View, typename Fn>
+void for_each_tile_of_box(const View&                                                f,
+                          const std::array<typename View::index_type, View::rank()>& lo,
+                          const std::array<typename View::index_type, View::rank()>& hi,
+                          typename View::index_type                                  first,
+                          typename View::index_type                                  last,
+                          Fn&&                                                       fn)
+{
+    using Index         = typename View::index_type;
+    constexpr auto R    = View::rank();
+    const auto     dims = tiles_per_dim(f);
+    Index          nt   = 1;
+    for (const auto d : dims)
+    {
+        nt *= d;
+    }
+    last = std::min(last, nt);
+    if (first >= last)
+    {
+        return;
+    }
+    std::array<Index, R> tlo{};
+    std::array<Index, R> thi{};
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        const auto te = f.mapping().tile_extent(static_cast<typename View::rank_type>(r));
+        tlo[r]        = lo[r] / te;
+        thi[r]        = (hi[r] - 1) / te + 1;
+    }
+    // Tiles [first, last) are rows of tiles in storage order: only those rows
+    // of the box are walked (as fill_box).
+    Index rest = 1;
+    for (std::size_t r = 1; r < R; ++r)
+    {
+        rest *= dims[r];
+    }
+    tlo[0] = std::max(tlo[0], first / rest);
+    thi[0] = std::min(thi[0], (last - 1) / rest + 1);
+    if (tlo[0] >= thi[0])
+    {
+        return;
+    }
+    for_each_row(tlo, thi,
+                 [&](const std::array<Index, R>& c0)
+                 {
+                     std::array<Index, R> c = c0;
+                     for (c[R - 1] = tlo[R - 1]; c[R - 1] < thi[R - 1]; ++c[R - 1])
+                     {
+                         Index k = 0;
+                         for (std::size_t r = 0; r < R; ++r)
+                         {
+                             k = k * dims[r] + c[r];
+                         }
+                         if (k >= first && k < last)
+                         {
+                             fn(k);
+                         }
+                     }
+                 });
+}
+
+/// @brief The part of tile @p t inside box [@p lo, @p hi): [ilo, ihi).
+template <typename Tile, typename Index, std::size_t R>
+void tile_box(const Tile&                 t,
+              const std::array<Index, R>& lo,
+              const std::array<Index, R>& hi,
+              std::array<Index, R>&       ilo,
+              std::array<Index, R>&       ihi)
+{
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        ilo[r] = std::max(lo[r], t.origin[r]);
+        ihi[r] = std::min(hi[r], static_cast<Index>(t.origin[r] + t.extent[r]));
+    }
+}
+
+/// @brief The extents of a tile of @p f, and their row-major strides.
+template <typename View>
+std::array<std::size_t, View::rank()> tile_strides(const View& f)
+{
+    std::array<typename View::index_type, View::rank()> te{};
+    for (std::size_t r = 0; r < View::rank(); ++r)
+    {
+        te[r] = f.mapping().tile_extent(static_cast<typename View::rank_type>(r));
+    }
+    return row_major_strides(te);
+}
+} // namespace detail
+
+/**
+ * @brief Copy box [@p lo, @p hi) of tiled view @p f into @p dst, restricted
+ *        to tiles [@p first, @p last): @p dst is a row-major buffer of the
+ *        box's extents (hi - lo), element (i, j, ...) of the box at
+ *        ((i - lo[0]) * (hi[1] - lo[1]) + (j - lo[1])) ...
+ *
+ * @details Tile by tile: a tile is read in one go (a block copy), a uniform
+ *          one costs a fill of its part of the box. The tile range is for a
+ *          `#pragma omp for` over [0, tile_count(f)): each thread writes the
+ *          rows of @p dst its tiles hold, disjoint from the others'.
+ * @pre   The box lies inside the view's extents (checked: a mismatch stops
+ *        the program). @p dst holds at least the box's element count. Read
+ *        rules of for_each_tile(): in a parallel region a tile is whole
+ *        chunks, and no thread writes these tiles meanwhile.
+ * @warning Experimental until 1.0 (see the file).
+ */
+template <tiled_view_of_array View, std::integral I>
+void copy_box_out(const View&                        f,
+                  const std::array<I, View::rank()>& box_lo,
+                  const std::array<I, View::rank()>& box_hi,
+                  detail::value_of<View>*            dst,
+                  typename View::index_type          first,
+                  typename View::index_type          last)
+{
+    using T                = detail::value_of<View>;
+    using Index            = typename View::index_type;
+    constexpr auto       R = View::rank();
+    std::array<Index, R> lo{};
+    std::array<Index, R> hi{};
+    if (!detail::checked_box(f, box_lo, box_hi, lo, hi, "md::copy_box_out"))
+    {
+        return;
+    }
+    const auto& a = *f.data_handle();
+    detail::check_tile_on_chunks(a, f.mapping().tile_elements(), "md::copy_box_out");
+    std::array<Index, R> ext{};
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        ext[r] = hi[r] - lo[r];
+    }
+    const auto                   bs   = detail::row_major_strides(ext);
+    const auto                   ts   = detail::tile_strides(f);
+    const auto                   dims = detail::tiles_per_dim(f);
+    detail::tile_buffer<View, T> buf(f);
+    T                            cst{};
+    detail::for_each_tile_of_box(
+        f, lo, hi, first, last,
+        [&](Index k)
+        {
+            const auto           t = detail::tile_at(f, dims, k);
+            std::array<Index, R> ilo{};
+            std::array<Index, R> ihi{};
+            detail::tile_box(t, lo, hi, ilo, ihi);
+            const bool uniform = detail::gather(a, detail::tile_storage(f, t), buf, cst, /*lazy=*/true);
+            const auto n       = static_cast<std::size_t>(ihi[R - 1] - ilo[R - 1]);
+            detail::for_each_row(ilo, ihi,
+                                 [&](const std::array<Index, R>& idx)
+                                 {
+                                     T* d = dst + detail::offset_in(idx, lo, bs);
+                                     if (uniform)
+                                     {
+                                         std::fill_n(d, n, cst);
+                                     }
+                                     else
+                                     {
+                                         std::copy_n(buf.data() + detail::offset_in(idx, t.origin, ts), n, d);
+                                     }
+                                 });
+        });
+}
+
+/// @brief copy_box_out() over every tile of @p f.
+template <tiled_view_of_array View, std::integral I>
+void copy_box_out(const View&                        f,
+                  const std::array<I, View::rank()>& lo,
+                  const std::array<I, View::rank()>& hi,
+                  detail::value_of<View>*            dst)
+{
+    copy_box_out(f, lo, hi, dst, typename View::index_type{0}, tile_count(f));
+}
+
+/**
+ * @brief Copy row-major buffer @p src, of the extents of box [@p lo, @p hi),
+ *        into that box of tiled view @p f, restricted to tiles [@p first,
+ *        @p last).
+ *
+ * @details A tile the box covers is written in one go, from the buffer, with
+ *          no read of the tile: fill_range() when its values are one value
+ *          (a chunk already at it is left alone, a compressed one switches,
+ *          a materialised one is released where the variant can), else
+ *          copy_range() -- the _mt forms inside a parallel region. The cells
+ *          of its padding take the value of its first cell, so a uniform part
+ *          of the box gives a uniform tile. A tile the box crosses is updated
+ *          as update_tiles() does (read, its cells of the box changed, written
+ *          back only if changed). The tile range is for a `#pragma omp for`
+ *          over [0, tile_count(f)), each thread on its own tiles, in a phase.
+ * @pre   The box lies inside the view's extents (checked). @p src holds the
+ *        box's element count and does not alias the array. Write rules of
+ *        update_tiles(): in a parallel region, within a phase, a tile whole
+ *        chunks.
+ * @warning Experimental until 1.0 (see the file).
+ */
+template <tiled_view_of_array View, std::integral I>
+    requires(!std::is_const_v<typename View::element_type>)
+void copy_box_in(const View&                        f,
+                 const std::array<I, View::rank()>& box_lo,
+                 const std::array<I, View::rank()>& box_hi,
+                 const detail::value_of<View>*      src,
+                 typename View::index_type          first,
+                 typename View::index_type          last)
+{
+    using T                = detail::value_of<View>;
+    using Index            = typename View::index_type;
+    constexpr auto       R = View::rank();
+    std::array<Index, R> lo{};
+    std::array<Index, R> hi{};
+    if (!detail::checked_box(f, box_lo, box_hi, lo, hi, "md::copy_box_in"))
+    {
+        return;
+    }
+    auto& a = *f.data_handle();
+    detail::check_tile_on_chunks(a, f.mapping().tile_elements(), "md::copy_box_in");
+    std::array<Index, R> ext{};
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        ext[r] = hi[r] - lo[r];
+    }
+    const auto                                   bs   = detail::row_major_strides(ext);
+    const auto                                   ts   = detail::tile_strides(f);
+    const auto                                   dims = detail::tiles_per_dim(f);
+    const std::size_t                            N    = static_cast<std::size_t>(f.mapping().tile_elements());
+    detail::tile_buffer<View, T>                 buf(f);
+    detail::range_writer<detail::array_of<View>> out{a};
+    detail::for_each_tile_of_box(
+        f, lo, hi, first, last,
+        [&](Index k)
+        {
+            const auto           t = detail::tile_at(f, dims, k);
+            std::array<Index, R> ilo{};
+            std::array<Index, R> ihi{};
+            detail::tile_box(t, lo, hi, ilo, ihi);
+            const auto n     = static_cast<std::size_t>(ihi[R - 1] - ilo[R - 1]);
+            bool       whole = true;
+            bool       pad   = false;
+            for (std::size_t r = 0; r < R; ++r)
+            {
+                whole = whole && ilo[r] == t.origin[r] && ihi[r] == t.origin[r] + t.extent[r];
+                pad   = pad || t.extent[r] != f.mapping().tile_extent(static_cast<typename View::rank_type>(r));
+            }
+            const auto copy_rows = [&](T* tile_data)
+            {
+                detail::for_each_row(ilo, ihi,
+                                     [&](const std::array<Index, R>& idx) {
+                                         std::copy_n(src + detail::offset_in(idx, lo, bs), n,
+                                                     tile_data + detail::offset_in(idx, t.origin, ts));
+                                     });
+            };
+            if (!whole)
+            {
+                update_tiles(f, k, k + 1, [&](const auto&, auto b) { copy_rows(b.data_handle()); });
+                return;
+            }
+            if (pad)
+            {
+                std::fill(buf.begin(), buf.end(), src[detail::offset_in(ilo, lo, bs)]);
+            }
+            copy_rows(buf.data());
+            const std::size_t s  = detail::tile_storage(f, t);
+            const T           v0 = buf[0];
+            if (std::all_of(buf.begin() + 1, buf.end(), [&v0](const T& x) { return x == v0; }))
+            {
+                out.fill(s, s + N, v0);
+            }
+            else
+            {
+                out.copy(s, s + N, buf.data());
+            }
+        });
+}
+
+/// @brief copy_box_in() over every tile of @p f.
+template <tiled_view_of_array View, std::integral I>
+    requires(!std::is_const_v<typename View::element_type>)
+void copy_box_in(const View&                        f,
+                 const std::array<I, View::rank()>& lo,
+                 const std::array<I, View::rank()>& hi,
+                 const detail::value_of<View>*      src)
+{
+    copy_box_in(f, lo, hi, src, typename View::index_type{0}, tile_count(f));
+}
+
+/**
+ * @brief Copy box [@p lo, @p hi) of a strided view @p f (md::view(), or a
+ *        submdspan of one) into row-major buffer @p dst of the box's extents.
+ * @details One read per row of the box when the last stride is 1
+ *          (for_each_span: a block copy per materialised chunk, a fill per
+ *          compressed one), element by element otherwise. Callable in a
+ *          parallel region, each thread on its own box.
+ * @pre   The box lies inside the view's extents (checked).
+ * @warning Experimental until 1.0 (see the file).
+ */
+template <typename View, std::integral I>
+    requires(View::mapping_type::is_always_strided() &&
+             (std::same_as<typename View::accessor_type, accessor<typename View::accessor_type::array_type>> ||
+              std::same_as<typename View::accessor_type, accessor<const typename View::accessor_type::array_type>>))
+void copy_box_out(const View&                        f,
+                  const std::array<I, View::rank()>& box_lo,
+                  const std::array<I, View::rank()>& box_hi,
+                  detail::value_of<View>*            dst)
+{
+    using T                = detail::value_of<View>;
+    using Index            = typename View::index_type;
+    constexpr auto       R = View::rank();
+    std::array<Index, R> lo{};
+    std::array<Index, R> hi{};
+    if (!detail::checked_box(f, box_lo, box_hi, lo, hi, "md::copy_box_out"))
+    {
+        return;
+    }
+    const auto&          a = *f.data_handle();
+    std::array<Index, R> ext{};
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        ext[r] = hi[r] - lo[r];
+    }
+    const auto bs   = detail::row_major_strides(ext);
+    const auto base = static_cast<std::size_t>(f.data_handle().base);
+    const auto at   = [&f, base](const std::array<Index, R>& i)
+    { return base + static_cast<std::size_t>(std::apply([&f](auto... x) { return f.mapping()(x...); }, i)); };
+    const bool rows = f.stride(R - 1) == 1;
+    const auto n    = static_cast<std::size_t>(ext[R - 1]);
+    detail::for_each_row(lo, hi,
+                         [&](const std::array<Index, R>& idx)
+                         {
+                             T* d = dst + detail::offset_in(idx, lo, bs);
+                             if (rows)
+                             {
+                                 std::size_t k = 0;
+                                 struct Visitor
+                                 {
+                                     T*           d;
+                                     std::size_t& k;
+                                     void         operator()(std::span<const T> s) const
+                                     {
+                                         std::copy(s.begin(), s.end(), d + k);
+                                         k += s.size();
+                                     }
+                                     void operator()(const T& v, std::size_t m) const
+                                     {
+                                         std::fill_n(d + k, m, v);
+                                         k += m;
+                                     }
+                                 };
+                                 const std::size_t s0 = at(idx);
+                                 for_each_span(a, s0, s0 + n, Visitor{d, k});
+                             }
+                             else
+                             {
+                                 std::array<Index, R> i = idx;
+                                 for (std::size_t j = 0; j < n; ++j, ++i[R - 1])
+                                 {
+                                     d[j] = static_cast<T>(
+                                         std::as_const(a)[static_cast<index_of<detail::array_of<View>>>(at(i))]);
+                                 }
+                             }
+                         });
+}
+
+/**
+ * @brief Copy row-major buffer @p src, of the extents of box [@p lo, @p hi),
+ *        into that box of a writable strided view @p f.
+ * @details One range op per row of the box when the last stride is 1
+ *          (copy_range(), copy_range_mt() inside a parallel region: a row
+ *          that covers a chunk with one value makes it that constant where
+ *          the variant can), element by element otherwise. Callable in a
+ *          phase, each thread on its own box; rows of two threads may share
+ *          a chunk, which copy_range_mt() allows.
+ * @pre   The box lies inside the view's extents (checked). @p src does not
+ *        alias the array.
+ * @warning Experimental until 1.0 (see the file).
+ */
+template <typename View, std::integral I>
+    requires(View::mapping_type::is_always_strided() && !std::is_const_v<typename View::element_type> &&
+             std::same_as<typename View::accessor_type, accessor<typename View::accessor_type::array_type>>)
+void copy_box_in(const View&                        f,
+                 const std::array<I, View::rank()>& box_lo,
+                 const std::array<I, View::rank()>& box_hi,
+                 const detail::value_of<View>*      src)
+{
+    using Index            = typename View::index_type;
+    constexpr auto       R = View::rank();
+    std::array<Index, R> lo{};
+    std::array<Index, R> hi{};
+    if (!detail::checked_box(f, box_lo, box_hi, lo, hi, "md::copy_box_in"))
+    {
+        return;
+    }
+    auto&                a = *f.data_handle();
+    std::array<Index, R> ext{};
+    for (std::size_t r = 0; r < R; ++r)
+    {
+        ext[r] = hi[r] - lo[r];
+    }
+    const auto bs   = detail::row_major_strides(ext);
+    const auto base = static_cast<std::size_t>(f.data_handle().base);
+    const auto at   = [&f, base](const std::array<Index, R>& i)
+    { return base + static_cast<std::size_t>(std::apply([&f](auto... x) { return f.mapping()(x...); }, i)); };
+    const bool                                   rows = f.stride(R - 1) == 1;
+    const auto                                   n    = static_cast<std::size_t>(ext[R - 1]);
+    detail::range_writer<detail::array_of<View>> out{a};
+    detail::for_each_row(lo, hi,
+                         [&](const std::array<Index, R>& idx)
+                         {
+                             const auto* s = src + detail::offset_in(idx, lo, bs);
+                             if (rows)
+                             {
+                                 const std::size_t s0 = at(idx);
+                                 out.copy(s0, s0 + n, s);
+                             }
+                             else
+                             {
+                                 std::array<Index, R> i = idx;
+                                 for (std::size_t j = 0; j < n; ++j, ++i[R - 1])
+                                 {
+                                     a[static_cast<index_of<detail::array_of<View>>>(at(i))] = s[j];
+                                 }
+                             }
+                         });
 }
 
 } // namespace shrink_array::md

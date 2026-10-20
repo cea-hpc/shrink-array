@@ -115,6 +115,16 @@ the tag's checksum to the recipe.
   whether it has `submdspan` (`"std::mdspan, no submdspan"`,
   `"kokkos/mdspan, submdspan"`, ...); `mdspan_validation` and `mdspan_tiles`
   print it.
+- `md::copy_box_out(f, lo, hi, dst)` and `md::copy_box_in(f, lo, hi, src)`
+  (`chunk/mdspan_tile_ops.h`, experimental): a box of a view copied to or
+  from a contiguous row-major buffer of its extents -- an MPI halo, an HDF5
+  hyperslab, a library that wants a `T*`. Tiled view: tile by tile (a tile
+  read in one go, a uniform one a fill; a tile the box covers written in one
+  go with no read, as one constant when uniform), with `[first, last)` tile
+  range overloads for an `omp for`. Strided view: a range op per row. 1024 x
+  1024 box of a 2048 x 2048 tiled field, against `f[i, j]`: out x 3.9 to 4.4,
+  in x 8.5 to 9.2 (`mdspan_tiles`). Harness `mdspan_copy_box_validation`
+  (every variant, 1 and 8 threads).
 
 ### Changed
 
