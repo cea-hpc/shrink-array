@@ -1482,8 +1482,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // bool chunks (bit-packed) and anything not covered above: tiled
         // element transcription through the proxy (no raw-fill).
         const ind_type     total = self().m_size;
-        constexpr ind_type TILE  = ind_type{1} << 20;
-        const ind_type     bsz   = total < TILE ? total : TILE;
+        constexpr ind_type tile  = ind_type{1} << 20;
+        const ind_type     bsz   = total < tile ? total : tile;
         std::vector<T>     buf(static_cast<std::size_t>(bsz));
         for (ind_type base = 0; base < total; base += bsz)
         {

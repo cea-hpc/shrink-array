@@ -107,7 +107,7 @@
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 #include "chunk/internal/print.h"     // shrink_array::println
 #if CHUNK_OPT_STATS
-    #include "chunk/internal/chunk_stats.h" // CHUNK_STATS_N_VARIANT, reduce_chunk_stats
+    #include "chunk/internal/chunk_stats.h" // chunk_stats_n_variant, reduce_chunk_stats
 #endif
 
 #include "chunk/internal/test_hooks.h" // force_defer_every
@@ -163,9 +163,9 @@ void maybe_set_second_value(Arr& a, const Val& v)
     }
 }
 
-// Runs of kRun elements alternate constant 0 / second constant / varied, so
+// Runs of run_len elements alternate constant 0 / second constant / varied, so
 // that the pass between regions has blocks to collapse.
-constexpr long kRun = 2048;
+constexpr long run_len = 2048;
 
 // The values regions 6 and 7 write: 0 among them, so some writes are the
 // constant a still-compressed chunk holds (the early-outs).
@@ -469,7 +469,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
 #pragma omp for
         for (long i = 0; i < N; ++i)
         {
-            const long run = (i / kRun) % 3;
+            const long run = (i / run_len) % 3;
             const T    v   = run == 0 ? T(0) : run == 1 ? sc.second : static_cast<T>((i % 23) + 1);
             arr[i]         = static_cast<T>((i % 23) + 1);
             arr[i]         = v;
@@ -479,7 +479,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     end_phase();
     for (long i = 0; i < N; ++i)
     {
-        const long run = (i / kRun) % 3;
+        const long run = (i / run_len) % 3;
         ref[i]         = run == 0 ? T(0) : run == 1 ? sc.second : static_cast<T>((i % 23) + 1);
         ref_other[i]   = static_cast<T>(i % 13);
     }
@@ -660,8 +660,8 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     // block b-1 in the second loop waits for it with acquire and overwrites
     // it. The first loop never waits, so every flag is eventually set.
     {
-        constexpr long                B  = 1000; // not a chunk multiple: blocks straddle chunks
-        const long                    nb = (N + B - 1) / B;
+        constexpr long                block_len = 1000; // not a chunk multiple: blocks straddle chunks
+        const long                    nb        = (N + block_len - 1) / block_len;
         std::vector<std::atomic<int>> ready(nb);
         for (auto& r : ready)
         {
@@ -673,7 +673,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
 #pragma omp for schedule(static, 1) nowait
             for (long b = 0; b < nb; ++b)
             {
-                for (long i = b * B; i < std::min(N, (b + 1) * B); ++i)
+                for (long i = b * block_len; i < std::min(N, (b + 1) * block_len); ++i)
                 {
                     arr[i] = waw_value<T>(i);
                 }
@@ -687,7 +687,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
                 {
                     std::this_thread::yield();
                 }
-                for (long i = b * B; i < std::min(N, (b + 1) * B); ++i)
+                for (long i = b * block_len; i < std::min(N, (b + 1) * block_len); ++i)
                 {
                     arr[i] = waw_value<T>(i + 5);
                     if constexpr (!std::is_same_v<T, bool>)
@@ -851,7 +851,7 @@ int run(int argc, char** argv)
     if (test_hooks::force_defer_compiled && test_hooks::force_defer_every > 0)
     {
         long deferred = 0;
-        for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
+        for (int v = 0; v < chunk_stats_n_variant; ++v)
         {
             deferred += reduce_chunk_stats(v).gate_deferred;
         }

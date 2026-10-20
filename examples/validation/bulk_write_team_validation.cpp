@@ -22,7 +22,7 @@
 // (release_chunk_range on a team); and ArrayChunk2A's operator== (on a team,
 // stopping at a difference).
 //
-// The arrays have far more chunks than kParallelInitMinChunks, so outside a
+// The arrays have far more chunks than parallel_init_min_chunks, so outside a
 // region every one of these runs on a team -- through parallel_phase(): in a
 // check build without OMPT, a write deferred by a thread that did not begin
 // the phase fails the phase protocol. Each result is compared element by

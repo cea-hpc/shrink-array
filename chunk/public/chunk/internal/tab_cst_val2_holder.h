@@ -114,15 +114,15 @@ inline bool cst2_thp_advise() noexcept
  * @note The chain is append-only between clears and reclaims
  *       (GlobalVecHolder::reclaim_unmarked() rebuilds it packed), so
  *       occupancy is contiguous:
- *       `slots[0 .. used)` are set and `slots[used .. SIZE)` are null. Several
+ *       `slots[0 .. used)` are set and `slots[used .. slots_per_segment)` are null. Several
  *       loops here rely on that rather than null-checking every slot.
  */
 template <typename T>
 struct Segment
 {
-    static constexpr int SIZE = 64; ///< Slots per segment.
+    static constexpr int slots_per_segment = 64; ///< Slots per segment.
 
-    std::array<T*, SIZE> slots{};        ///< The slots, one per registered value.
+    std::array<T*, slots_per_segment> slots{};        ///< The slots, one per registered value.
     int                  used = 0;       ///< How many leading slots are occupied.
     Segment*             next = nullptr; ///< Next block, or null at the tail.
 };
@@ -320,15 +320,15 @@ class GlobalVecHolder
     // out of the slot, or loads `values` twice around a test, returns something plausible.
     // Re-run rechunk_validation_*, a TSan pass and a --mode check run whenever it is touched.
     //
-    // Capacity: ONE bound, kRegionUsable = min(CHUNK_CST_VAL2_REGION_BYTES, kMaxIds x kIdStride),
+    // Capacity: ONE bound, region_usable = min(CHUNK_CST_VAL2_REGION_BYTES, max_ids x id_stride),
     // used by the reservation, the range test (region_end) and region_alloc()'s abort. Running
     // out aborts: a fallback array outside the region would break the range test.
 #ifndef CHUNK_CST_VAL2_REGION_BYTES
     #define CHUNK_CST_VAL2_REGION_BYTES (std::size_t{2} << 30U)
 #endif
 
-    static constexpr std::size_t kRegionBytes = CHUNK_CST_VAL2_REGION_BYTES;
-    static constexpr std::size_t kIdStride    = 64; ///< One cache line per identifier (see region_init()).
+    static constexpr std::size_t region_bytes = CHUNK_CST_VAL2_REGION_BYTES;
+    static constexpr std::size_t id_stride    = 64; ///< One cache line per identifier (see region_init()).
 
   public:
     // ── Value->pointer index (lock-free readers, single writer under lock) ──
@@ -363,15 +363,15 @@ class GlobalVecHolder
     ///
     /// @details One cache line per identifier (region_init()'s stride), so the region
     ///          alone would allow 33 M. Capped by CHUNK_CST_VAL2_MAX_IDS because
-    ///          value_by_id[kMaxIds + 1] is then the binding cost (256 MiB of address
+    ///          value_by_id[max_ids + 1] is then the binding cost (256 MiB of address
     ///          space per type for a double at 33 M). The default leaves ample headroom
     ///          over real workloads.
 #ifndef CHUNK_CST_VAL2_MAX_IDS
     #define CHUNK_CST_VAL2_MAX_IDS (std::size_t{4} << 20U)
 #endif
-    static constexpr std::size_t kMaxIds =
-        (kRegionBytes / kIdStride) < CHUNK_CST_VAL2_MAX_IDS ? (kRegionBytes / kIdStride) : CHUNK_CST_VAL2_MAX_IDS;
-    static_assert(kMaxIds < std::size_t{0xFFFFFFFFu}, "an identifier must fit id_of_ptr()'s uint32_t");
+    static constexpr std::size_t max_ids =
+        (region_bytes / id_stride) < CHUNK_CST_VAL2_MAX_IDS ? (region_bytes / id_stride) : CHUNK_CST_VAL2_MAX_IDS;
+    static_assert(max_ids < std::size_t{0xFFFFFFFFu}, "an identifier must fit id_of_ptr()'s uint32_t");
 
     /// @brief The registered users (#ref_count): the live ArrayChunk2A<T>
     ///        holding a reference. For checks at a quiescent point.
@@ -411,10 +411,10 @@ class GlobalVecHolder
     }
 
     /// @brief Identifiers this type can hand out: region_alloc()'s bound
-    ///        (kMaxIds, the region, or CHUNK_CST_VAL2_ID_LIMIT once read).
+    ///        (max_ids, the region, or CHUNK_CST_VAL2_ID_LIMIT once read).
     [[nodiscard]] static std::size_t id_capacity() noexcept
     {
-        const std::size_t region_ids = kRegionUsable / region_stride;
+        const std::size_t region_ids = region_usable / region_stride;
         return id_limit < region_ids ? id_limit : region_ids;
     }
 
@@ -608,7 +608,7 @@ class GlobalVecHolder
         Segment<T>* last  = first;
         for (T* slot : kept)
         {
-            if (last->used == Segment<T>::SIZE)
+            if (last->used == Segment<T>::slots_per_segment)
             {
                 last->next = new Segment<T>();
                 last       = last->next;
@@ -667,14 +667,14 @@ class GlobalVecHolder
     static char* region_alloc(std::size_t bytes)
     {
         const std::size_t off = region_used.fetch_add(bytes, std::memory_order_relaxed);
-        // ONE capacity: what value_by_id can hold (kRegionUsable, lowered by
+        // ONE capacity: what value_by_id can hold (region_usable, lowered by
         // CHUNK_CST_VAL2_ID_LIMIT); alloc_chunk() writes value_by_id[id] for every slot
         // carved here, so a slot past it would be a write past the table. Warn once at half.
         const std::size_t cap_bytes =
-            (bytes != 0 && id_limit * bytes < kRegionUsable) ? id_limit * bytes : kRegionUsable;
+            (bytes != 0 && id_limit * bytes < region_usable) ? id_limit * bytes : region_usable;
         const char* limiting =
-            (kMaxIds * kIdStride) < kRegionBytes ? "CHUNK_CST_VAL2_MAX_IDS" : "CHUNK_CST_VAL2_REGION_BYTES";
-        if (id_limit < kMaxIds)
+            (max_ids * id_stride) < region_bytes ? "CHUNK_CST_VAL2_MAX_IDS" : "CHUNK_CST_VAL2_REGION_BYTES";
+        if (id_limit < max_ids)
         {
             limiting = "CHUNK_CST_VAL2_ID_LIMIT";
         }
@@ -696,8 +696,8 @@ class GlobalVecHolder
             CHUNK_INVARIANT_FAILED("[cst_val2] second-value identifiers exhausted: {} of {}, bound by {} "
                                    "(CHUNK_CST_VAL2_MAX_IDS={}, CHUNK_CST_VAL2_REGION_BYTES={} MiB). Raise it, or "
                                    "reduce the number of DISTINCT second values the workload registers.",
-                                   off / bytes, cap_bytes / (bytes != 0 ? bytes : 1), limiting, kMaxIds,
-                                   kRegionBytes >> 20U);
+                                   off / bytes, cap_bytes / (bytes != 0 ? bytes : 1), limiting, max_ids,
+                                   region_bytes >> 20U);
         }
         return region_begin.load(std::memory_order_relaxed) + off;
     }
@@ -741,7 +741,7 @@ class GlobalVecHolder
         }
         const size_t mask = table->cap - 1;
         const size_t slot = index_hash(v) & mask;
-        for (int probe = 0; probe < INDEX_MAX_PROBE; ++probe)
+        for (int probe = 0; probe < index_max_probe; ++probe)
         {
             T* entry = table->slots[(slot + probe) & mask].load(std::memory_order_acquire);
             if (entry == nullptr)
@@ -762,7 +762,7 @@ class GlobalVecHolder
      * @details A plain release store suffices: it pairs with the acquire load
      *          in index_lookup(), so a lock-free reader that sees the pointer
      *          also sees the value_by_id[] entry written before publication.
-     * @note Giving up after #INDEX_MAX_PROBE sets #index_degraded rather than
+     * @note Giving up after #index_max_probe sets #index_degraded rather than
      *       failing: the value IS registered in the chain, just not indexed.
      */
     static void index_publish(in_t<T> v, T* ptr) noexcept
@@ -778,7 +778,7 @@ class GlobalVecHolder
         {
             const size_t mask = table->cap - 1;
             const size_t slot = index_hash(v) & mask;
-            for (int probe = 0; probe < INDEX_MAX_PROBE; ++probe)
+            for (int probe = 0; probe < index_max_probe; ++probe)
             {
                 const size_t idx = (slot + probe) & mask;
                 const T*     cur = table->slots[idx].load(std::memory_order_acquire);
@@ -924,7 +924,7 @@ class GlobalVecHolder
         if (nb_segs > 1)
         {
             std::cout << "[cst_val2] " << nb_val2 << " distinct second values across " << nb_segs
-                      << " segments (capacity " << nb_segs * Segment<T>::SIZE
+                      << " segments (capacity " << nb_segs * Segment<T>::slots_per_segment
                       << "), index_degraded=" << index_degraded.load(std::memory_order_relaxed) << "\n";
         }
 
@@ -992,7 +992,7 @@ class GlobalVecHolder
     /// @note constexpr, not set by region_init(): a pointer <-> identifier
     ///       conversion (id_of_ptr, slot_id, on Chunk2A's constant-2 reads)
     ///       is then a shift by 6, not a 64-bit `div` by a global.
-    static constexpr std::size_t region_stride = kIdStride;
+    static constexpr std::size_t region_stride = id_stride;
 
     /// @brief The value registered under each identifier, contiguous: what
     ///        a chunk's second value is read through on every write of a
@@ -1000,13 +1000,13 @@ class GlobalVecHolder
     ///        for the values a run actually uses. Zero-initialised static
     ///        storage: the pages of identifiers never handed out are never
     ///        touched. Index 0 is "no second value" and stays T{}.
-    static inline std::array<T, kMaxIds + 1> value_by_id{};
+    static inline std::array<T, max_ids + 1> value_by_id{};
 
   private:
     /// @brief What is reserved and carved: exactly the identifiers
     ///        value_by_id can hold. 256 MiB per type with the defaults.
-    static constexpr std::size_t kRegionUsable =
-        (kMaxIds * kIdStride) < kRegionBytes ? (kMaxIds * kIdStride) : kRegionBytes;
+    static constexpr std::size_t region_usable =
+        (max_ids * id_stride) < region_bytes ? (max_ids * id_stride) : region_bytes;
 
 #ifndef CHUNK_CST_VAL2_INDEX_LOG2
     static constexpr int chunk_cst_val2_index_loc = 18;
@@ -1015,8 +1015,8 @@ class GlobalVecHolder
     static constexpr int chunk_cst_val2_index_loc = CHUNK_CST_VAL2_INDEX_LOG2;
 #endif
 
-    static constexpr size_t INDEX_CAP       = size_t{1} << chunk_cst_val2_index_loc; ///< Initial capacity.
-    static constexpr int    INDEX_MAX_PROBE = 64; ///< Bounded; giving up means fallback.
+    static constexpr size_t index_cap       = size_t{1} << chunk_cst_val2_index_loc; ///< Initial capacity.
+    static constexpr int    index_max_probe = 64;                                    ///< Bounded; giving up means fallback.
 
     /// @brief Reserve the region. Idempotent; called by init().
     static void region_init()
@@ -1029,11 +1029,11 @@ class GlobalVecHolder
         // region, so any dereference of a second-value pointer faults instead
         // of reading a plausible zero. Otherwise RW (never touched either).
         const int prot = build_config::use_mm_protect ? PROT_NONE : (PROT_READ | PROT_WRITE);
-        void*     raw  = mmap(nullptr, kRegionUsable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        void*     raw  = mmap(nullptr, region_usable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (raw == MAP_FAILED) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("[cst_val2] cannot reserve the second-value region ({} MiB): {}",
-                                   kRegionUsable >> 20U, std::strerror(errno));
+                                   region_usable >> 20U, std::strerror(errno));
         }
         // CHUNK_THP (experimental, off by default): advice only. Not under
         // MM_PROTECT, where the region stays PROT_NONE.
@@ -1041,10 +1041,10 @@ class GlobalVecHolder
         {
             if (cst2_thp_advise())
             {
-                (void)madvise(raw, kRegionUsable, MADV_HUGEPAGE);
+                (void)madvise(raw, region_usable, MADV_HUGEPAGE);
             }
         }
-        // Every slot is carved at a multiple of region_stride (kIdStride),
+        // Every slot is carved at a multiple of region_stride (id_stride),
         // which is what turns a slot pointer into a small identifier and back
         // (TabCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
         // in the region, so a slot only has to give each identifier a distinct
@@ -1052,13 +1052,13 @@ class GlobalVecHolder
         if (char* expected = nullptr;
             region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
         {
-            region_end     = static_cast<char*>(raw) + kRegionUsable;
-            const auto lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
-            id_limit       = (lim >= 1 && lim < kMaxIds) ? lim : kMaxIds; // lowers only
+            region_end     = static_cast<char*>(raw) + region_usable;
+            const auto lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", max_ids);
+            id_limit       = (lim >= 1 && lim < max_ids) ? lim : max_ids; // lowers only
         }
         else
         {
-            munmap(raw, kRegionUsable); // lost the race: the winner's region stands
+            munmap(raw, region_usable); // lost the race: the winner's region stands
         }
     }
 
@@ -1117,7 +1117,7 @@ class GlobalVecHolder
     static IndexTable* index_grow() noexcept
     {
         const IndexTable* old = index_tab.load(std::memory_order_relaxed);
-        const std::size_t cap = old == nullptr ? INDEX_CAP : old->cap * 2;
+        const std::size_t cap = old == nullptr ? index_cap : old->cap * 2;
         auto              nt  = std::make_unique<IndexTable>(cap);
         if (old != nullptr)
         {
@@ -1156,7 +1156,7 @@ class GlobalVecHolder
         tail = nullptr; // drop cached tail; next cold-path append re-seeds from head
         // Single-threaded by contract, so this is the one point where the
         // superseded generations can go: no reader holds any of them. The
-        // live table goes too; the next publish starts again at INDEX_CAP.
+        // live table goes too; the next publish starts again at index_cap.
         index_tab.store(nullptr, std::memory_order_release);
         index_generations.clear();
     }
@@ -1168,10 +1168,10 @@ class GlobalVecHolder
     static inline char*                    region_end = nullptr; ///< One past the reservation.
     static inline std::atomic<std::size_t> region_used{0};       ///< Bump offset, in bytes.
 
-    /// @brief The identifiers region_alloc() hands out: kMaxIds, or fewer
+    /// @brief The identifiers region_alloc() hands out: max_ids, or fewer
     ///        under CHUNK_CST_VAL2_ID_LIMIT (read once in region_init(); it
     ///        can only lower the bound -- the way a test reaches it).
-    static inline std::size_t id_limit = kMaxIds;
+    static inline std::size_t id_limit = max_ids;
 
     /// @brief Identifiers freed by reclaim_unmarked(), handed out again by
     ///        take_free_slot() before the region's bump pointer moves.
@@ -1318,7 +1318,7 @@ class TabCstVal2Holder
      *
      * @details Same conversion, but returns T{} rather than indexing out of
      *          bounds if @p ptr is not where the caller thought. A pointer that
-     *          passes is_cst_val2_ptr() can only yield an id in [1, kMaxIds],
+     *          passes is_cst_val2_ptr() can only yield an id in [1, max_ids],
      *          so this never fires in a correct call -- it guards a pointer
      *          that was not range-tested, where a compare is cheaper than a
      *          crash.
@@ -1330,7 +1330,7 @@ class TabCstVal2Holder
             return T{};
         }
         const std::uint32_t id = id_of_ptr(ptr);
-        if (id == 0u || id > global_vec_holder::kMaxIds)
+        if (id == 0u || id > global_vec_holder::max_ids)
         {
             return T{};
         }
@@ -1449,7 +1449,7 @@ class TabCstVal2Holder
         // first free slot is last_seg->used (or slot 0 of a fresh segment).
         // create() guarantees head is never nullptr here.
         segment_t* seg = last_seg;
-        if (seg->used == segment_t::SIZE)
+        if (seg->used == segment_t::slots_per_segment)
         {
             seg = global_vec_holder::append_segment(last_seg);
         }

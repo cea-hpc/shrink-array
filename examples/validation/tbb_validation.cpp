@@ -124,8 +124,8 @@ void maybe_set_second_value(Arr& a, const Val& v)
     }
 }
 
-/// Runs of kRun elements: a whole number of chunks at every geometry built.
-constexpr long kRun = 4096;
+/// Runs of run_len elements: a whole number of chunks at every geometry built.
+constexpr long run_len = 4096;
 
 template <typename T>
 struct Scenario
@@ -138,7 +138,7 @@ struct Scenario
 template <typename T>
 T value_at(const Scenario<T>& sc, long i, int p)
 {
-    switch ((i / kRun + p) % 3)
+    switch ((i / run_len + p) % 3)
     {
         case 0:
             return T(0);
@@ -295,7 +295,7 @@ int range_form(const char* label, long N, int phases, part k, const Scenario<T>&
                 shrink_array::tbb::parallel_for(blocked_range<long>(0, N), body);
                 break;
             case part::simple:
-                shrink_array::tbb::parallel_for(blocked_range<long>(0, N, kRun / 4), body,
+                shrink_array::tbb::parallel_for(blocked_range<long>(0, N, run_len / 4), body,
                                                 oneapi::tbb::simple_partitioner{});
                 break;
             case part::fixed:
@@ -338,7 +338,7 @@ int index_form(const char* label, long N, int phases, long step, const Scenario<
         // The piece check once per index here: the index form has no piece hook.
         auto f = [&](long i)
         {
-            if (i % kRun == 0)
+            if (i % run_len == 0)
             {
                 rec.piece();
             }
@@ -428,7 +428,7 @@ int in_phase_work(const char* label, long N, int nt, int phases, const Scenario<
                     }
                     for (long i = 0; i < n_own / 3; ++i)
                     {
-                        a[i] = value_at(sc, i + kRun, p + 1);
+                        a[i] = value_at(sc, i + run_len, p + 1);
                     }
                     for (long i = b; i < e; i += 5)
                     {
@@ -454,7 +454,7 @@ int in_phase_work(const char* label, long N, int nt, int phases, const Scenario<
             auto& r = own_ref[static_cast<std::size_t>(t)];
             for (long i = 0; i < n_own; ++i)
             {
-                r[static_cast<std::size_t>(i)] = i < n_own / 3 ? value_at(sc, i + kRun, p + 1) : value_at(sc, i, p);
+                r[static_cast<std::size_t>(i)] = i < n_own / 3 ? value_at(sc, i + run_len, p + 1) : value_at(sc, i, p);
             }
             ok = compare("in-phase own", label, p, own[static_cast<std::size_t>(t)], r);
         }
@@ -545,7 +545,7 @@ int throwing_body(const char* label, long N, const Scenario<T>& sc)
     bool        caught = false;
     try
     {
-        shrink_array::tbb::parallel_for(blocked_range<long>(0, N, kRun),
+        shrink_array::tbb::parallel_for(blocked_range<long>(0, N, run_len),
                                         [&](const blocked_range<long>& r)
                                         {
                                             for (long i = r.begin(); i != r.end(); ++i)

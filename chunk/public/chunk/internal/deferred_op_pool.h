@@ -216,7 +216,7 @@ struct DeferredByteAllocSlot
     using Alloc = fast_alloc::TCTypeAllocator<std::byte>;
     /// deferred_pools_outlive_thread, made dependent on T: the branch not
     /// taken below is then not checked (it names the other member's type).
-    static constexpr bool kHeap = deferred_pools_outlive_thread && sizeof(T) > 0;
+    static constexpr bool on_heap = deferred_pools_outlive_thread && sizeof(T) > 0;
 
     DeferredByteAllocSlot() = default;
     // Owns its allocator (inline, or on the heap until the thread exits).
@@ -228,7 +228,7 @@ struct DeferredByteAllocSlot
     /// Pool backend: the thread exits; its allocator waits for the phase end.
     ~DeferredByteAllocSlot()
     {
-        if constexpr (kHeap)
+        if constexpr (on_heap)
         {
             if (heap_ != nullptr)
             {
@@ -242,7 +242,7 @@ struct DeferredByteAllocSlot
     /// @brief This thread's byte allocator for T.
     [[nodiscard]] Alloc& alloc()
     {
-        if constexpr (kHeap)
+        if constexpr (on_heap)
         {
             if (heap_ == nullptr) [[unlikely]]
             {
@@ -260,7 +260,7 @@ struct DeferredByteAllocSlot
 
   private:
     /// The allocator, in the thread_local itself (OpenMP, serial).
-    [[no_unique_address]] std::conditional_t<kHeap, detail::NoInlineAlloc, Alloc> inline_{};
+    [[no_unique_address]] std::conditional_t<on_heap, detail::NoInlineAlloc, Alloc> inline_{};
     Alloc* heap_ = nullptr; ///< pool backend: the allocator, on the heap
 };
 

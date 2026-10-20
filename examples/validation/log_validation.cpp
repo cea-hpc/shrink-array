@@ -389,17 +389,17 @@ void check_no_allocation()
 // --- 8 ----------------------------------------------------------------------
 void check_threads()
 {
-    constexpr int kThreads = 8;
-    constexpr int kLines   = 2000;
+    constexpr int n_threads = 8;
+    constexpr int n_lines   = 2000;
     logging::configure("warn,general=info");
     {
         std::vector<std::thread> team;
-        for (int t = 0; t < kThreads; ++t)
+        for (int t = 0; t < n_threads; ++t)
         {
             team.emplace_back(
                 [t]
                 {
-                    for (int i = 0; i < kLines; ++i)
+                    for (int i = 0; i < n_lines; ++i)
                     {
                         CHUNK_LOG(info, general, "thread {} line {} {}", t, i, std::string_view{"padding-padding"});
                     }
@@ -410,7 +410,7 @@ void check_threads()
             th.join();
         }
     }
-    std::array<int, kThreads> seen{};
+    std::array<int, n_threads> seen{};
     int                       broken = 0;
     for (const auto& l : read_lines(g_log_path))
     {
@@ -422,7 +422,7 @@ void check_threads()
         int        i   = -1;
         const auto pos = l.find("] thread ");
         if (pos == std::string::npos || std::sscanf(l.c_str() + pos, "] thread %d line %d", &t, &i) != 2 || t < 0 ||
-            t >= kThreads || !l.ends_with(" padding-padding"))
+            t >= n_threads || !l.ends_with(" padding-padding"))
         {
             ++broken;
             continue;
@@ -433,7 +433,7 @@ void check_threads()
     bool all = true;
     for (const int s : seen)
     {
-        all &= (s == kLines);
+        all &= (s == n_lines);
     }
     check(all, "threads: every line of every thread in the file");
     logging::configure("warn");
@@ -548,10 +548,10 @@ std::size_t count(const std::string& s, std::string_view what)
 
 void check_fatal(const char* self)
 {
-    constexpr int kAbort = 134; // 128 + SIGABRT, as the shell reports it
+    constexpr int abort_status = 134; // 128 + SIGABRT, as the shell reports it
 
     auto r = run_child(self, 0);
-    check(r.status == kAbort, "fatal: CHUNK_INVARIANT_FAILED aborts");
+    check(r.status == abort_status, "fatal: CHUNK_INVARIANT_FAILED aborts");
     check(count(r.out, "In file '") == 1 && r.out.find("Inside function: ") != std::string::npos,
           "fatal: location block on stderr");
     check(r.out.find("value 7 complex (1-2i) bytes 0x0100000002000000") != std::string::npos,
@@ -566,11 +566,11 @@ void check_fatal(const char* self)
     }
 
     r = run_child(self, 1);
-    check(r.status == kAbort && count(r.out, "In file '") == 1 && count(r.out, "--- Execution Backtrace ---") == 1,
+    check(r.status == abort_status && count(r.out, "In file '") == 1 && count(r.out, "--- Execution Backtrace ---") == 1,
           "fatal: 8 threads failing at once give one report");
 
     r = run_child(self, 2);
-    check(r.status == kAbort && r.out.find("SINK fatal: to the sink 42") != std::string::npos &&
+    check(r.status == abort_status && r.out.find("SINK fatal: to the sink 42") != std::string::npos &&
               r.out.find("--- Execution Backtrace ---") != std::string::npos,
           "fatal: the record reaches the program's sink, after the block");
 
@@ -578,11 +578,11 @@ void check_fatal(const char* self)
     // The first record the sink sees is the deprecation warning of
     // CHUNK_RECHUNK_TRACE_MEM (inherited from main), written while the
     // configuration is read: the failure must not wait on that read.
-    check(r.status == kAbort && r.out.find("failure inside the sink, on \"") != std::string::npos,
+    check(r.status == abort_status && r.out.find("failure inside the sink, on \"") != std::string::npos,
           "fatal: a failure inside the sink stops, even during the configuration (no deadlock: timeout 60 s)");
 
     r = run_child(self, 5);
-    check(r.status == kAbort && r.out.find("[CRITICAL_FAILURE] allocator failure 6") != std::string::npos &&
+    check(r.status == abort_status && r.out.find("[CRITICAL_FAILURE] allocator failure 6") != std::string::npos &&
               r.out.find("--- Execution Backtrace ---") != std::string::npos &&
               r.log.find("[shrink_array][general][F][") != std::string::npos,
           "FAST_ALLOC_FATAL: the same fatal report (block, backtrace, CHUNK_LOG_FILE)");
@@ -590,7 +590,7 @@ void check_fatal(const char* self)
     r = run_child(self, 4);
     if constexpr (shrink_array::build_config::any_check)
     {
-        check(r.status == kAbort && r.out.find("[drain] check failed 5") != std::string::npos &&
+        check(r.status == abort_status && r.out.find("[drain] check failed 5") != std::string::npos &&
                   r.out.find("carried on") == std::string::npos,
               "CHUNK_CHECK_FAILED stops a check build");
     }

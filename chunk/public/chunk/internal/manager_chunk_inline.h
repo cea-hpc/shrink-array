@@ -495,10 +495,10 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         // leaves re-enqueues (a write_body can enqueue a new op); destroying the storage with
         // them would leave op_ptrs into freed slabs (use-after-free). At this synchronisation
         // point re-enqueues converge; the bound only guards against non-termination.
-        constexpr int kMaxDrainPasses = 1024;
+        constexpr int max_drain_passes = 1024;
         bool          any_left        = true;
         int           pass            = 0;
-        for (; any_left && pass < kMaxDrainPasses; ++pass)
+        for (; any_left && pass < max_drain_passes; ++pass)
         {
             // No op queued on any rank: no region. Exact here -- outside any team, after its
             // join, every enqueue's increment is visible to this acquire sum, and every op in a
@@ -533,11 +533,11 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
             any_left = pass_flushed;
         }
 
-        if (pass >= kMaxDrainPasses)
+        if (pass >= max_drain_passes)
         {
             CHUNK_CHECK_FAILED(drain,
                                "flush_all_deferred hit {} passes without settling -- possible runaway re-enqueue",
-                               kMaxDrainPasses);
+                               max_drain_passes);
         }
 
         have_flushed |= local_flushed;

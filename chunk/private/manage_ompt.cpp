@@ -98,13 +98,13 @@ char g_ompt_refused[128] = "";
 // runtime has shut its threads down.
 namespace
 {
-constexpr int kOmptKinds    = 11; // ompt_sync_region_t values 1..10
-constexpr int kOmptMaxSlots = 1024;
+constexpr int ompt_kinds     = 11; // ompt_sync_region_t values 1..10
+constexpr int ompt_max_slots = 1024;
 
 bool g_ompt_stats = false;
 
 /// Per [kind][endpoint: 0 begin, 1 end].
-using OmptCounters = std::array<std::array<std::atomic<std::uint64_t>, 2>, kOmptKinds>;
+using OmptCounters = std::array<std::array<std::atomic<std::uint64_t>, 2>, ompt_kinds>;
 
 struct alignas(128) OmptSyncSlot
 {
@@ -115,7 +115,7 @@ struct alignas(128) OmptSyncSlot
     OmptCounters flush_ns;
 };
 
-std::array<OmptSyncSlot, kOmptMaxSlots> g_ompt_slots;
+std::array<OmptSyncSlot, ompt_max_slots> g_ompt_slots;
 std::atomic<int>                        g_ompt_next_slot{0};
 thread_local OmptSyncSlot*              t_ompt_slot = nullptr;
 
@@ -124,7 +124,7 @@ OmptSyncSlot* ompt_my_slot() noexcept
     if (t_ompt_slot == nullptr)
     {
         const int slot_idx = g_ompt_next_slot.fetch_add(1, std::memory_order_relaxed); // once per thread
-        if (slot_idx >= kOmptMaxSlots)
+        if (slot_idx >= ompt_max_slots)
         {
             return nullptr;
         }
@@ -175,11 +175,11 @@ void ompt_finalize(ompt_data_t*)
         return;
     }
     // CHUNK_OMPT_STATS asked for it: a report, written whatever CHUNK_LOG says.
-    const int nslots = std::min(g_ompt_next_slot.load(std::memory_order_acquire), kOmptMaxSlots);
+    const int nslots = std::min(g_ompt_next_slot.load(std::memory_order_acquire), ompt_max_slots);
     CHUNK_LOG_ALWAYS(ompt, "sync: {} threads seen. Per sync-region kind and endpoint, summed over threads:", nslots);
     CHUNK_LOG_ALWAYS(ompt, "sync: {:<27} {:<5} {:>12} {:>12} {:>12} {:>12} {:>10} {:>10}", "kind", "end", "calls",
                      "flush_tried", "skip_flag", "flushed", "flush_ms", "max_thr_ms");
-    for (int k = 0; k < kOmptKinds; ++k)
+    for (int k = 0; k < ompt_kinds; ++k)
     {
         for (int e = 0; e < 2; ++e)
         {
@@ -369,7 +369,7 @@ void on_barrier_end(ompt_sync_region_t    kind,
     if (g_ompt_stats) [[unlikely]]
     {
         slot = ompt_my_slot();
-        k    = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < kOmptKinds) ? static_cast<int>(kind) : 0;
+        k    = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < ompt_kinds) ? static_cast<int>(kind) : 0;
         ep   = endpoint == ompt_scope_begin ? 0 : 1;
         if (slot)
         {

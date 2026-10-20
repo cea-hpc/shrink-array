@@ -175,7 +175,7 @@ void maybe_set_second_value(Arr& a, const Val& v)
 
 // A multiple of every geometry the harness is built at: a run is a whole
 // number of chunks.
-constexpr long kRun = 4096;
+constexpr long run_len = 4096;
 
 template <typename T>
 struct Scenario
@@ -218,7 +218,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
 #pragma omp for
         for (long i = 0; i < N; ++i)
         {
-            const long run = (i / kRun) % 3;
+            const long run = (i / run_len) % 3;
             if (run == 0)
             {
                 arr[i] = T{};
@@ -232,7 +232,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
     end_phase();
     for (long i = 0; i < N; ++i)
     {
-        const long run = (i / kRun) % 3;
+        const long run = (i / run_len) % 3;
         if (run == 0)
         {
             ref[i] = T{};
@@ -284,7 +284,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
     if (bad)
     {
         println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {})", variant_name(), label,
-                bad, N, first, first / csz, first % csz, (first / kRun) % 3);
+                bad, N, first, first / csz, first % csz, (first / run_len) % 3);
     }
     else
     {

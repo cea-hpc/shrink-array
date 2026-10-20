@@ -405,7 +405,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     // The old tables are kept, not freed -- a reader may still be walking a
     // span of one -- so their memory (64, 128, 256... pointers: less than the
     // last table again) lives as long as the registry.
-    static constexpr std::size_t kFirstTableSize = 64;
+    static constexpr std::size_t first_table_size = 64;
 
     /// @brief Store @p manager in the next slot, growing the table if it is
     ///        full, and publish it. Called with registry_mutex_ held.

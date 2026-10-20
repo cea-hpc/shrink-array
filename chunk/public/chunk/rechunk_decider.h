@@ -155,7 +155,7 @@ class RechunkDecider
   private:
     struct Hist
     {
-        static constexpr int kVisited = 8;
+        static constexpr int n_visited = 8;
 
         unsigned last_best_size   = 0;
         int      stable_count     = 0;
@@ -168,11 +168,11 @@ class RechunkDecider
         // Multi-step anti-reversal: ring of the last sizes this array OCCUPIED, with
         // the tick it left them. Blocks re-chunking BACK to any of them within
         // anti_reversal_ticks (last_from_size alone misses multi-step oscillations).
-        // kVisited covers the geometry ladder (16..1024 = 7 rungs) with headroom.
-        std::array<unsigned, kVisited> visited_size{};
-        std::array<int, kVisited>      visited_tick = []
+        // n_visited covers the geometry ladder (16..1024 = 7 rungs) with headroom.
+        std::array<unsigned, n_visited> visited_size{};
+        std::array<int, n_visited>      visited_tick = []
         {
-            std::array<int, kVisited> ticks{};
+            std::array<int, n_visited> ticks{};
             ticks.fill(-1000000000);
             return ticks;
         }();

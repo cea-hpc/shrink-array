@@ -34,7 +34,7 @@ namespace shrink_array
 // Per-variant (chunk/chunk2/chunk2a) x per-thread counter table. Each thread
 // bumps its own cache-line-aligned slot on the hot path (no atomics); the
 // end-of-run report reduces over threads. See chunk_stats.h.
-std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, CHUNK_STATS_N_VARIANT> __chunk_stats;
+std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant> __chunk_stats;
 #endif
 
 // No #ifdef _OPENMP here. The bodies below are members of

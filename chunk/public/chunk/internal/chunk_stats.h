@@ -49,7 +49,7 @@ namespace shrink_array
 {
 
 /// @brief Number of chunk variants tracked: chunk (0), chunk2 (1), chunk2a (2).
-inline constexpr int CHUNK_STATS_N_VARIANT = 3;
+inline constexpr int chunk_stats_n_variant = 3;
 
 /// @brief Upper bound on threads. Generous fixed size so the counter table
 ///        is a plain static array (no init-order/alloc concerns). Override
@@ -59,7 +59,7 @@ inline constexpr int CHUNK_STATS_N_VARIANT = 3;
 #endif
 
 /// @brief Display name for each variant, indexed by stat_variant.
-inline constexpr std::array<std::string_view, CHUNK_STATS_N_VARIANT> chunk_variant_name = {"chunk", "chunk2",
+inline constexpr std::array<std::string_view, chunk_stats_n_variant> chunk_variant_name = {"chunk", "chunk2",
                                                                                            "chunk2a"};
 
 #if CHUNK_OPT_STATS
@@ -123,7 +123,7 @@ struct alignas(64) ChunkStatsThr
 inline const std::chrono::steady_clock::time_point __chunk_stats_t0 = std::chrono::steady_clock::now();
 
 /// @brief [variant][thread] counter table. Defined once in chunk_std.cpp.
-extern std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, CHUNK_STATS_N_VARIANT> __chunk_stats;
+extern std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant> __chunk_stats;
 
 /**
  * @brief Current thread's counter slot for a variant.
@@ -431,9 +431,9 @@ inline void init_all_stats() noexcept
  *          map is fine. Static builds (chunk_dynamic == false) never touch it:
  *          every array has the same compile-time size.
  */
-inline std::array<std::mutex, CHUNK_STATS_N_VARIANT> __chunk_size_dist_mutex;
+inline std::array<std::mutex, chunk_stats_n_variant> __chunk_size_dist_mutex;
 /// @brief See __chunk_size_dist_mutex.
-inline std::array<std::map<unsigned int, long>, CHUNK_STATS_N_VARIANT> __chunk_size_dist;
+inline std::array<std::map<unsigned int, long>, chunk_stats_n_variant> __chunk_size_dist;
 
 /**
  * @brief Record one array's current chunk size in the end-of-life size

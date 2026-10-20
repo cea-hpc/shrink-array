@@ -94,8 +94,8 @@ constexpr const char* variant_name()
     }
 }
 
-constexpr int kN       = 1 << 18;
-constexpr int kRegions = 6;
+constexpr int n_items   = 1 << 18;
+constexpr int n_regions = 6;
 
 /// Region r's value of element i: a third of the chunks constant (they
 /// compress between regions), the rest varied.
@@ -138,10 +138,10 @@ long helper_sum = 0;
 /// std::vector does.
 long regions(Bracket how)
 {
-    Array<int>       a(kN);
-    std::vector<int> ref(kN, 0);
+    Array<int>       a(n_items);
+    std::vector<int> ref(n_items, 0);
     helper_sum = 0;
-    for (int r = 0; r < kRegions; ++r)
+    for (int r = 0; r < n_regions; ++r)
     {
         auto body = [&]
         {
@@ -150,7 +150,7 @@ long regions(Bracket how)
             // (CGOpenMPInlinedRegionInfo::getContextValue; GCC accepts it).
             const int cs = sched(r);
 #pragma omp for schedule(static, cs) reduction(+ : helper_sum)
-            for (int i = 0; i < kN; ++i)
+            for (int i = 0; i < n_items; ++i)
             {
                 const int v = value(r, i);
                 a[i]        = v;
@@ -197,16 +197,16 @@ long regions(Bracket how)
     }
     long        bad = 0;
     const auto& ca  = std::as_const(a);
-    for (int i = 0; i < kN; ++i)
+    for (int i = 0; i < n_items; ++i)
     {
         bad += (ca[i] != ref[i]) ? 1 : 0;
     }
     if (how == Bracket::helper)
     {
         long want = 0;
-        for (int r = 0; r < kRegions; ++r)
+        for (int r = 0; r < n_regions; ++r)
         {
-            for (int i = 0; i < kN; ++i)
+            for (int i = 0; i < n_items; ++i)
             {
                 want += value(r, i);
             }
@@ -230,26 +230,26 @@ struct Case
     const char* must_print;         ///< nullptr: must run to the end, values right
 };
 
-constexpr const char* kTwice    = "begin_parallel_phase() twice in the same phase";
-constexpr const char* kDeferred = "deferred write in a parallel region by thread";
-constexpr const char* kInRegion = "release_chunk_pools() called inside a parallel region";
+constexpr const char* msg_twice     = "begin_parallel_phase() twice in the same phase";
+constexpr const char* msg_deferred  = "deferred write in a parallel region by thread";
+constexpr const char* msg_in_region = "release_chunk_pools() called inside a parallel region";
 
-const Case kCases[] = {
+const Case case_table[] = {
     {"brackets by hand", Bracket::by_hand, false, false, nullptr},
     {"parallel_phase()", Bracket::helper, false, false, nullptr},
     {"only_flush / after_flush pair", Bracket::split, false, false, nullptr},
     {"begin in a nested region", Bracket::nested_begin, false, false, nullptr},
     {"begin outside any region", Bracket::begin_serial, false, false, nullptr},
-    {"finalize forgotten", Bracket::no_finalize, false, false, kTwice},
-    {"begin forgotten (deferred write)", Bracket::no_begin, false, true, kDeferred},
-    {"release_chunk_pools() in a region", Bracket::by_hand, true, true, kInRegion},
+    {"finalize forgotten", Bracket::no_finalize, false, false, msg_twice},
+    {"begin forgotten (deferred write)", Bracket::no_begin, false, true, msg_deferred},
+    {"release_chunk_pools() in a region", Bracket::by_hand, true, true, msg_in_region},
 };
-constexpr int kNbCases = static_cast<int>(sizeof kCases / sizeof kCases[0]);
+constexpr int nb_cases = static_cast<int>(sizeof case_table / sizeof case_table[0]);
 
 /// The child: run case @p k; 0 when every element read back right.
 int child(int k)
 {
-    const Case& c = kCases[k];
+    const Case& c = case_table[k];
     if (c.teardown_in_region)
     {
 #pragma omp parallel
@@ -267,7 +267,7 @@ int child(int k)
 /// The parent: run case @p k in a child, check what happened.
 int check_case(const char* self, int k)
 {
-    const Case&       c   = kCases[k];
+    const Case&       c   = case_table[k];
     const std::string log = "/tmp/phase_protocol_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
     const std::string cmd = validation::self_command(self) + " --case " + std::to_string(k) + " > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
@@ -316,11 +316,11 @@ int run(int argc, char** argv)
     println("=== phase_protocol_validation [variant = {}]  check build: {} ===", variant_name(),
             build_config::any_check ? "yes" : "no");
     int fails = 0;
-    for (int k = 0; k < kNbCases; ++k)
+    for (int k = 0; k < nb_cases; ++k)
     {
-        if (kCases[k].check_build_only && !build_config::any_check)
+        if (case_table[k].check_build_only && !build_config::any_check)
         {
-            println("[{}/phase-protocol] {:<36} skipped (check builds only)", variant_name(), kCases[k].name);
+            println("[{}/phase-protocol] {:<36} skipped (check builds only)", variant_name(), case_table[k].name);
             continue;
         }
         fails += check_case(argv[0], k);

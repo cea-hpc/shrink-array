@@ -64,13 +64,13 @@ template <typename T>
 class Materialisations
 {
   private:
-    static constexpr unsigned kKeys = 128; ///< key slots per rank (key % kKeys)
+    static constexpr unsigned key_slots = 128; ///< key slots per rank (key % key_slots)
 
   public:
     /// @brief One rank's counters, one per key slot.
     struct alignas(128) RankSlot
     {
-        std::array<long, kKeys> n; ///< materialisations per key slot
+        std::array<long, key_slots> n; ///< materialisations per key slot
     };
 
     /// @brief One materialisation of array @p key on rank @p thr (rank-local).
@@ -81,7 +81,7 @@ class Materialisations
         {
             return;
         }
-        ++slots_[static_cast<std::size_t>(thr)].n[key % kKeys];
+        ++slots_[static_cast<std::size_t>(thr)].n[key % key_slots];
     }
 
     /// @brief All ranks' materialisations of array @p key (quiescent point).
@@ -94,7 +94,7 @@ class Materialisations
         long s = 0;
         for (const RankSlot& slot : slots_)
         {
-            s += slot.n[key % kKeys];
+            s += slot.n[key % key_slots];
         }
         return s;
     }

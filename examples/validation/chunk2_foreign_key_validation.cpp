@@ -79,10 +79,10 @@ namespace
 using Arr = ArrayChunk2<double>;
 using Ind = Arr::ind_type;
 
-constexpr long   kChunksA = 512;  ///< chunks of `a`
-constexpr long   kChunksB = 4096; ///< chunks of `b`
-constexpr double kValA    = 1.0;  ///< `a`'s second value
-constexpr double kValB    = 2.0;  ///< `b`'s second value, and what `a` holds
+constexpr long   chunks_a = 512;  ///< chunks of `a`
+constexpr long   chunks_b = 4096; ///< chunks of `b`
+constexpr double val_a    = 1.0;  ///< `a`'s second value
+constexpr double val_b    = 2.0;  ///< `b`'s second value, and what `a` holds
 
 void begin_phase()
 {
@@ -152,30 +152,30 @@ int run(int /*argc*/, char** /*argv*/)
         Arr        a;
         Arr        b;
         const long S = static_cast<long>(a.chunk_size());
-        a.resize(static_cast<Ind>(kChunksA * S));
-        b.resize(static_cast<Ind>(kChunksB * S));
-        a.set_second_value(kValA);
-        b.set_second_value(kValB);
+        a.resize(static_cast<Ind>(chunks_a * S));
+        b.resize(static_cast<Ind>(chunks_b * S));
+        a.set_second_value(val_a);
+        b.set_second_value(val_b);
         const Arr& ca   = a;
         const Arr& cb   = b;
         const int  team = CHUNK_PMP_MAX_THREADS;
         println("=== chunk2_foreign_key_validation  chunk_size={}  threads={}  a: {} chunks of {:g} (declares "
                 "{:g})  b: {} chunks (declares {:g}) ===",
-                S, team, kChunksA, kValB, kValA, kChunksB, kValB);
+                S, team, chunks_a, val_b, val_a, chunks_b, val_b);
 
         // `a` = 2.0 everywhere, `b` = 2.0 everywhere and compressed to it.
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (long i = 0; i < kChunksA * S; ++i)
+            for (long i = 0; i < chunks_a * S; ++i)
             {
-                a[static_cast<Ind>(i)] = kValB;
+                a[static_cast<Ind>(i)] = val_b;
             }
 #pragma omp for schedule(static)
-            for (long i = 0; i < kChunksB * S; ++i)
+            for (long i = 0; i < chunks_b * S; ++i)
             {
-                b[static_cast<Ind>(i)] = kValB;
+                b[static_cast<Ind>(i)] = val_b;
             }
         }
         end_phase();
@@ -186,14 +186,14 @@ int run(int /*argc*/, char** /*argv*/)
             b.compress();
         }
         end_phase();
-        const long b_compressed0 = compressed(cb, kChunksB, S);
+        const long b_compressed0 = compressed(cb, chunks_b, S);
 
         // The stress: own chunks of `b` toggled, own offsets of `a` rewritten.
         const char*  env_s   = std::getenv("FK_SECONDS");
         const double seconds = env_s ? std::atof(env_s) : 2.0;
         // `b`'s constant: the pointer every compressed chunk of `b` holds.
         const double* const b_cst       = cb.chunk_ref(0).values_load();
-        const long          a_on_b_cst0 = pointing_at(ca, kChunksA, b_cst);
+        const long          a_on_b_cst0 = pointing_at(ca, chunks_a, b_cst);
         std::atomic<long>   toggles{0};
 #pragma omp parallel
         {
@@ -208,14 +208,14 @@ int run(int /*argc*/, char** /*argv*/)
                 for (int r = 0; r < 256; ++r)
                 {
                     // `b`: a chunk of this thread's, materialised then constant again.
-                    const long cbk = me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(kChunksB / n)) * n;
+                    const long cbk = me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_b / n)) * n;
                     const Ind  b0  = static_cast<Ind>(cbk * S);
                     b[b0]          = 3.0;
-                    b[b0]          = kValB;
+                    b[b0]          = val_b;
                     // `a`: an element of this thread's, rewritten to the same 2.0.
-                    const long cak = static_cast<long>(rng.next() % static_cast<std::uint64_t>(kChunksA));
+                    const long cak = static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_a));
                     const long off = me % S;
-                    a[static_cast<Ind>(cak * S + off)] = kValB;
+                    a[static_cast<Ind>(cak * S + off)] = val_b;
                     ++local;
                 }
             }
@@ -223,11 +223,11 @@ int run(int /*argc*/, char** /*argv*/)
         }
         end_phase();
 
-        const long a_compressed = pointing_at(ca, kChunksA, b_cst);
-        const long b_compressed = compressed(cb, kChunksB, S);
+        const long a_compressed = pointing_at(ca, chunks_a, b_cst);
+        const long b_compressed = compressed(cb, chunks_b, S);
         println("[chunk2/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; a: {} "
                 "of {} chunks on b's constant before the stress, {} after",
-                toggles.load(), seconds, b_compressed0, kChunksB, b_compressed, a_on_b_cst0, kChunksA, a_compressed);
+                toggles.load(), seconds, b_compressed0, chunks_b, b_compressed, a_on_b_cst0, chunks_a, a_compressed);
         if (b_compressed0 == 0)
         {
             println("[chunk2/foreign-key] FAIL premise: `b` was not compressed to its second value");
@@ -242,19 +242,19 @@ int run(int /*argc*/, char** /*argv*/)
         }
 
         // A write into every chunk of `a` must not reach `b`.
-        for (long c = 0; c < kChunksA; ++c)
+        for (long c = 0; c < chunks_a; ++c)
         {
             a[static_cast<Ind>(c * S + (S - 1))] = 5.0;
         }
         long bad_b = 0;
         long bad_a = 0;
-        for (long i = 0; i < kChunksB * S; ++i)
+        for (long i = 0; i < chunks_b * S; ++i)
         {
-            bad_b += (cb[static_cast<Ind>(i)] != kValB) ? 1 : 0;
+            bad_b += (cb[static_cast<Ind>(i)] != val_b) ? 1 : 0;
         }
-        for (long i = 0; i < kChunksA * S; ++i)
+        for (long i = 0; i < chunks_a * S; ++i)
         {
-            const double want = (i % S == S - 1) ? 5.0 : kValB;
+            const double want = (i % S == S - 1) ? 5.0 : val_b;
             bad_a += (ca[static_cast<Ind>(i)] != want) ? 1 : 0;
         }
         if (bad_b != 0 || bad_a != 0)

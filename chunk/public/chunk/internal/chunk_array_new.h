@@ -34,14 +34,14 @@
 
 #include <cstddef> // std::size_t
 
-#include "chunk/internal/parallel_storage_init.h" // for_each_chunk, kParallelInitMinChunks
+#include "chunk/internal/parallel_storage_init.h" // for_each_chunk, parallel_init_min_chunks
 
 namespace shrink_array::chunk_array_new
 {
 
 /**
  * @brief Run @p init on each of the @p count chunks at @p v, on a team of its
- *        own from parallel_storage_init::kParallelInitMinChunks chunks on,
+ *        own from parallel_storage_init::parallel_init_min_chunks chunks on,
  *        outside a region (parallel_storage_init::for_each_chunk()).
  *
  * @details A memory-bound sweep (one store per chunk). Inside a parallel region

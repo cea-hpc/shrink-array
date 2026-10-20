@@ -28,7 +28,7 @@
  *   model                         source (chunk/public/chunk/internal/)
  *   ---------------------------   -------------------------------------------------------
  *   slot[r].seq                   read_reclaim.h  ReaderSlot::seq (odd while a read is in flight)
- *   overflow                      read_reclaim.h  g_overflow_readers (readers past kSlots)
+ *   overflow                      read_reclaim.h  g_overflow_readers (readers past slot_count)
  *   read_enter() / read_leave()   read_reclaim.h  ReadSection ctor / dtor
  *   light_fence()                 read_reclaim.h  light_fence(): the reader's side of the Dekker
  *   wait_for_readers()            read_reclaim.h  wait_for_readers(): heavy barrier, then the slots

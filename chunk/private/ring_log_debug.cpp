@@ -43,9 +43,9 @@ namespace shrink_array
 
 namespace
 {
-constexpr size_t RING_SIZE = size_t{1} << 24U;
+constexpr size_t ring_size = size_t{1} << 24U;
 
-std::vector<RingEntry> ring_buf(RING_SIZE);
+std::vector<RingEntry> ring_buf(ring_size);
 
 std::atomic<uint32_t> ring_head{0};
 
@@ -111,7 +111,7 @@ void ring_init()
 
 void ring_log(uint32_t tid, EventCode ev, uint32_t info)
 {
-    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
+    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (ring_size - 1);
     ring_buf[idx].ts   = now_cycles();
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
@@ -122,7 +122,7 @@ void ring_log(uint32_t tid, EventCode ev, uint32_t info)
 // Record an op-lifecycle event with the op's full address.
 void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr)
 {
-    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
+    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (ring_size - 1);
     ring_buf[idx].ts   = now_cycles();
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
@@ -132,7 +132,7 @@ void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr)
 
 void ring_log_start(uint32_t tid, EventCode ev, uint32_t info)
 {
-    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
+    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (ring_size - 1);
     ring_buf[idx].ts   = rdtsc_start();
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
@@ -142,7 +142,7 @@ void ring_log_start(uint32_t tid, EventCode ev, uint32_t info)
 
 void ring_log_end(uint32_t tid, EventCode ev, uint32_t info)
 {
-    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
+    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (ring_size - 1);
     ring_buf[idx].ts   = rdtsc_end();
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
@@ -230,12 +230,12 @@ const char* event_name(EventCode ev)
 void dump_ring()
 {
     const uint32_t head  = ring_head.load(std::memory_order_relaxed);
-    const uint32_t start = (head > RING_SIZE) ? (head - RING_SIZE) : 0;
+    const uint32_t start = (head > ring_size) ? (head - ring_size) : 0;
 
     std::cout << "\033[1m---- ring dump (last " << (head - start) << " entries) ----\033[0m\n";
     for (uint32_t i = start; i < head; ++i)
     {
-        const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
+        const RingEntry& entry = ring_buf[i & (ring_size - 1)];
         const char*      color = event_color(entry.ev);
         const char*      name  = event_name(entry.ev);
 
@@ -256,12 +256,12 @@ void dump_ring_for_addr(const void* target)
     const uint64_t target_addr = reinterpret_cast<uint64_t>(target);
     const uint64_t bmask       = ~static_cast<uint64_t>(0xffffULL);
     const uint32_t head        = ring_head.load(std::memory_order_relaxed);
-    const uint32_t start       = (head > RING_SIZE) ? (head - RING_SIZE) : 0;
+    const uint32_t start       = (head > ring_size) ? (head - ring_size) : 0;
 
     std::cout << "\033[1m---- ring dump: EXACT op addr 0x" << std::hex << target_addr << std::dec << " ----\033[0m\n";
     for (uint32_t i = start; i < head; ++i)
     {
-        const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
+        const RingEntry& entry = ring_buf[i & (ring_size - 1)];
         if (entry.addr != target_addr)
         {
             continue;
@@ -273,7 +273,7 @@ void dump_ring_for_addr(const void* target)
               << " (other offsets in same slab) ----\033[0m\n";
     for (uint32_t i = start; i < head; ++i)
     {
-        const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
+        const RingEntry& entry = ring_buf[i & (ring_size - 1)];
         if (entry.addr == 0)
         {
             continue;
@@ -342,10 +342,10 @@ bool is_stdout_tty()
 }
 
 // Change this to control how often to log in non-TTY mode (percent steps)
-constexpr int PROGRESS_PERCENT_STEP = 5;
+constexpr int progress_percent_step = 5;
 
 // Utility: print progress line (overwrites using '\r' when stdout is a TTY)
-// In non-TTY mode, emit full lines only when integer percent crosses PROGRESS_PERCENT_STEP or at completion
+// In non-TTY mode, emit full lines only when integer percent crosses progress_percent_step or at completion
 void print_progress_line(const std::string& icon,
                          const std::string& stage,
                          size_t             done,
@@ -366,7 +366,7 @@ void print_progress_line(const std::string& icon,
     else
     {
         // In non-interactive output (e.g. redirected to file), avoid flooding logs:
-        // print only every PROGRESS_PERCENT_STEP percent or at completion
+        // print only every progress_percent_step percent or at completion
         static int last_logged_pct = -1;
         bool       should_log      = false;
 
@@ -374,10 +374,10 @@ void print_progress_line(const std::string& icon,
         {
             should_log = true;
         }
-        else if (PROGRESS_PERCENT_STEP > 0)
+        else if (progress_percent_step > 0)
         {
-            // Log when crossing multiples of PROGRESS_PERCENT_STEP
-            const int bucket = (pct / PROGRESS_PERCENT_STEP) * PROGRESS_PERCENT_STEP;
+            // Log when crossing multiples of progress_percent_step
+            const int bucket = (pct / progress_percent_step) * progress_percent_step;
             if (bucket != last_logged_pct)
             {
                 last_logged_pct = bucket;
@@ -408,7 +408,7 @@ void print_progress_line(const std::string& icon,
 bool analyze_ring_sweep()
 {
     const uint32_t head          = ring_head.load(std::memory_order_relaxed);
-    const uint32_t start         = (head > RING_SIZE) ? (head - RING_SIZE) : 0;
+    const uint32_t start         = (head > ring_size) ? (head - ring_size) : 0;
     const uint64_t total_entries = (head > start) ? (head - start) : 0;
 
     // Stage 1: scan ring and build intervals
@@ -432,7 +432,7 @@ bool analyze_ring_sweep()
 
     for (uint32_t i = start; i < head; ++i)
     {
-        const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
+        const RingEntry& entry = ring_buf[i & (ring_size - 1)];
         last_ts                = std::max(last_ts, entry.ts);
 
         ThreadState& thr_state = state[entry.tid];
@@ -494,8 +494,8 @@ bool analyze_ring_sweep()
             return; // invalid
         }
         const uint64_t     dur             = end_ts - start_ts;
-        constexpr uint64_t MIN_INTERVAL_NS = 1000;
-        if (dur < MIN_INTERVAL_NS)
+        constexpr uint64_t min_interval_ns = 1000;
+        if (dur < min_interval_ns)
         {
             return; // ignore too-short fallback
         }

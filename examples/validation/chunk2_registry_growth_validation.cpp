@@ -39,7 +39,7 @@
 //
 //   1. `a` declares 1.0, is written 1.0 everywhere and compressed: every chunk
 //      at its second value (premise, checked).
-//   2. kOthers arrays are created, each declaring a NEW second value: the
+//   2. n_others arrays are created, each declaring a NEW second value: the
 //      registry grows past several vector capacities. Each one is written to
 //      its value and compressed too.
 //   3. Every element of every array is read back: its own value, exactly.
@@ -74,8 +74,8 @@ namespace
 using Arr = ArrayChunk2<double>;
 using Ind = Arr::ind_type;
 
-constexpr int kChunks = 64; ///< chunks of `a`
-constexpr int kOthers = 40; ///< arrays declaring a new second value each: several vector growths
+constexpr int n_chunks = 64; ///< chunks of `a`
+constexpr int n_others = 40; ///< arrays declaring a new second value each: several vector growths
 
 void begin_phase()
 {
@@ -159,23 +159,23 @@ int run(int /*argc*/, char** /*argv*/)
     {
         Arr        a;
         const long S = static_cast<long>(a.chunk_size());
-        a.resize(static_cast<Ind>(kChunks * S));
+        a.resize(static_cast<Ind>(n_chunks * S));
         a.set_second_value(1.0);
         println("=== chunk2_registry_growth_validation  chunk_size={}  threads={}  others={} ===", S,
-                CHUNK_PMP_MAX_THREADS, kOthers);
+                CHUNK_PMP_MAX_THREADS, n_others);
 
         // 1. `a` compressed to its second value.
         fill_and_compress(a, 1.0);
         if (const int m = materialised(a); m != 0)
         {
             println("[chunk2/registry] FAIL premise: {} of {} chunks of `a` still materialised after the pass", m,
-                    kChunks);
+                    n_chunks);
             ++fails;
         }
 
         // 2. New second values, one per array: the registry grows.
         std::vector<std::unique_ptr<Arr>> others;
-        for (int k = 0; k < kOthers; ++k)
+        for (int k = 0; k < n_others; ++k)
         {
             others.push_back(std::make_unique<Arr>(static_cast<Ind>(4 * S)));
             others.back()->set_second_value(2.0 + k);
@@ -184,7 +184,7 @@ int run(int /*argc*/, char** /*argv*/)
 
         // 3. Everything reads back.
         long bad = check_all("a", a, 1.0);
-        for (int k = 0; k < kOthers; ++k)
+        for (int k = 0; k < n_others; ++k)
         {
             bad += check_all("other", *others[static_cast<std::size_t>(k)], 2.0 + k);
         }
@@ -197,8 +197,8 @@ int run(int /*argc*/, char** /*argv*/)
         }
         else
         {
-            println("[chunk2/registry] OK: {} arrays, {} second values, every element reads back", kOthers + 1,
-                    kOthers + 1);
+            println("[chunk2/registry] OK: {} arrays, {} second values, every element reads back", n_others + 1,
+                    n_others + 1);
         }
 
         // 4. `a` materialised and compressed again: still recognised.

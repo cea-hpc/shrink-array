@@ -230,7 +230,7 @@ inline void leave_application_phase() noexcept
     {
         return -1;
     }
-    return lvl <= pool::kMaxFrames ? s.frames[lvl - 1].size : 1;
+    return lvl <= pool::max_frames ? s.frames[lvl - 1].size : 1;
 #else
     return lvl == 0 ? 1 : -1;
 #endif
@@ -252,7 +252,7 @@ inline void leave_application_phase() noexcept
     {
         return -1;
     }
-    return lvl <= pool::kMaxFrames ? s.frames[lvl - 1].rank : 0;
+    return lvl <= pool::max_frames ? s.frames[lvl - 1].rank : 0;
 #else
     return lvl == 0 ? 0 : -1;
 #endif

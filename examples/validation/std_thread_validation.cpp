@@ -134,8 +134,8 @@ void maybe_set_second_value(Arr& a, const Val& v)
     }
 }
 
-/// Runs of kRun elements: a whole number of chunks at every geometry built.
-constexpr long kRun = 4096;
+/// Runs of run_len elements: a whole number of chunks at every geometry built.
+constexpr long run_len = 4096;
 
 template <typename T>
 struct Scenario
@@ -148,7 +148,7 @@ struct Scenario
 template <typename T>
 T value_at(const Scenario<T>& sc, long i, int p)
 {
-    switch ((i / kRun + p) % 3)
+    switch ((i / run_len + p) % 3)
     {
         case 0:
             return T(0);
@@ -453,7 +453,7 @@ int in_phase_work(const char* label, long N, int nt, int phases, const Scenario<
                     }
                     for (long i = 0; i < n_own / 3; ++i)
                     {
-                        a[i] = value_at(sc, i + kRun, p + 1); // re-materialise part of what the pass folded
+                        a[i] = value_at(sc, i + run_len, p + 1); // re-materialise part of what the pass folded
                     }
                     // Every 5th element of the SAME share, rewritten (the thread's own
                     // elements: two threads never write one element in a phase).
@@ -487,7 +487,7 @@ int in_phase_work(const char* label, long N, int nt, int phases, const Scenario<
             auto& r = own_ref[static_cast<std::size_t>(t)];
             for (long i = 0; i < n_own; ++i)
             {
-                r[static_cast<std::size_t>(i)] = i < n_own / 3 ? value_at(sc, i + kRun, p + 1) : value_at(sc, i, p);
+                r[static_cast<std::size_t>(i)] = i < n_own / 3 ? value_at(sc, i + run_len, p + 1) : value_at(sc, i, p);
             }
             ok = compare(label, p, own[static_cast<std::size_t>(t)], r);
         }
@@ -541,7 +541,7 @@ int cross_rank_frees(const char* label, long N, int nt, int phases, const Scenar
     {
         if (i < n_own / 2)
         {
-            return (i / kRun) % 2 == 0 ? T(0) : sc.second;
+            return (i / run_len) % 2 == 0 ? T(0) : sc.second;
         }
         return sc.varied(i, p + 1);
     };
@@ -568,7 +568,7 @@ int cross_rank_frees(const char* label, long N, int nt, int phases, const Scenar
                     auto& next = own[static_cast<std::size_t>((t + 1) % nt)];
                     for (long i = 0; i < n_own / 2; ++i)
                     {
-                        next[i] = (i / kRun) % 2 == 0 ? T(0) : sc.second;
+                        next[i] = (i / run_len) % 2 == 0 ? T(0) : sc.second;
                     }
                     next.compress(); // frees buffers of rank t + 1's slabs, on this thread
                     for (long i = n_own / 2; i < n_own; ++i)

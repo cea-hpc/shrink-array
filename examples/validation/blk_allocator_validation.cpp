@@ -50,7 +50,7 @@ using shrink_array::println;
 namespace
 {
 
-constexpr std::size_t kSizes[] = {1,   3,   4,    5,    8,    16,    24,    63,    64,    65,     100,
+constexpr std::size_t test_sizes[] = {1,   3,   4,    5,    8,    16,    24,    63,    64,    65,     100,
                                   512, 513, 1000, 4096, 4097, 32768, 65535, 65536, 65537, 100000, std::size_t{1} << 20};
 
 unsigned char pattern(std::size_t id, std::size_t k)
@@ -97,9 +97,9 @@ void check_sizes()
     bool ok_blk  = true;
     bool ok_tab  = true;
     bool aligned = true;
-    for (std::size_t i = 0; i < std::size(kSizes); ++i)
+    for (std::size_t i = 0; i < std::size(test_sizes); ++i)
     {
-        const std::size_t n = kSizes[i];
+        const std::size_t n = test_sizes[i];
         void*             p = fast_alloc::BlkAllocator::alloc_block(n);
         if (p == nullptr)
         {
@@ -138,16 +138,16 @@ void check_huge()
         println("  [skip] sizes past 2 GiB / 4 GiB (set BLK_HUGE=1)");
         return;
     }
-    constexpr std::size_t kGiB    = std::size_t{1} << 30;
-    constexpr std::size_t kWin    = 4096; // bytes checked at each end
-    const std::size_t     sizes[] = {2 * kGiB - 64, 2 * kGiB + 64, 4 * kGiB + 64};
+    constexpr std::size_t gib     = std::size_t{1} << 30;
+    constexpr std::size_t window  = 4096; // bytes checked at each end
+    const std::size_t     sizes[] = {2 * gib - 64, 2 * gib + 64, 4 * gib + 64};
 
     const auto ends_ok = [](void* p, std::size_t n, std::size_t id)
     {
         auto* b = static_cast<unsigned char*>(p);
-        fill(b, kWin, id);
-        fill(b + n - kWin, kWin, id + 1);
-        return intact(b, kWin, id) && intact(b + n - kWin, kWin, id + 1);
+        fill(b, window, id);
+        fill(b + n - window, window, id + 1);
+        return intact(b, window, id) && intact(b + n - window, window, id + 1);
     };
 
     bool ok_blk = true;
@@ -171,26 +171,26 @@ void check_huge()
 /// @brief Many live blocks at once: no two overlap; then reuse after free.
 void check_distinct()
 {
-    constexpr std::size_t kN = 3000;
+    constexpr std::size_t n_items = 3000;
     for (int round = 0; round < 2; ++round)
     {
-        std::vector<void*>       blk(kN);
-        std::vector<void*>       tab(kN);
-        std::vector<std::size_t> sz(kN);
-        for (std::size_t j = 0; j < kN; ++j)
+        std::vector<void*>       blk(n_items);
+        std::vector<void*>       tab(n_items);
+        std::vector<std::size_t> sz(n_items);
+        for (std::size_t j = 0; j < n_items; ++j)
         {
-            sz[j]  = kSizes[j % 20]; // up to 65537: the ladder and its fallback
+            sz[j]  = test_sizes[j % 20]; // up to 65537: the ladder and its fallback
             blk[j] = fast_alloc::BlkAllocator::alloc_block(sz[j]);
             tab[j] = fast_alloc::BlkAllocator::alloc_tab(sz[j]);
             fill(blk[j], sz[j], 2 * j);
             fill(tab[j], sz[j], 2 * j + 1);
         }
         bool ok = true;
-        for (std::size_t j = 0; j < kN; ++j)
+        for (std::size_t j = 0; j < n_items; ++j)
         {
             ok = ok && intact(blk[j], sz[j], 2 * j) && intact(tab[j], sz[j], 2 * j + 1);
         }
-        for (std::size_t j = 0; j < kN; ++j)
+        for (std::size_t j = 0; j < n_items; ++j)
         {
             fast_alloc::BlkAllocator::free_block(blk[j], sz[j]);
             fast_alloc::BlkAllocator::free_tab(tab[j]);
@@ -209,7 +209,7 @@ void check_parallel()
         std::vector<void*> live;
         for (int it = 0; it < 2000; ++it)
         {
-            const std::size_t n  = kSizes[static_cast<std::size_t>(it) % 20];
+            const std::size_t n  = test_sizes[static_cast<std::size_t>(it) % 20];
             const std::size_t id = static_cast<std::size_t>(it) * 97u;
             void* p = (it % 2) ? fast_alloc::BlkAllocator::alloc_tab(n) : fast_alloc::BlkAllocator::alloc_block(n);
             fill(p, n, id);
@@ -245,7 +245,7 @@ void check_inside_caller_critical()
     {
         for (int it = 0; it < 200; ++it)
         {
-            const std::size_t n  = kSizes[static_cast<std::size_t>(it) % 20];
+            const std::size_t n  = test_sizes[static_cast<std::size_t>(it) % 20];
             const std::size_t id = static_cast<std::size_t>(it) * 131u;
 #pragma omp critical
             {

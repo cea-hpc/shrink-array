@@ -848,6 +848,11 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_includes
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_includes.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_includes PROPERTY LABELS validation)
+    # Constants are snake_case; UPPER_CASE is for macros, and no k-prefix
+    # (scripts/check_naming.py).
+    add_test(NAME check_naming
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_naming.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_naming PROPERTY LABELS validation)
     # Every source file carries its license: the Apache block for C++, SPDX
     # lines for scripts and build files, the upstream SPDX line for the vendored
     # headers (scripts/check_headers.py; --fix repairs).

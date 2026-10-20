@@ -61,6 +61,7 @@ The source checks run with the others (`ctest -R check_`):
 | test | rule |
 |---|---|
 | `check_includes` | every `#include` says why it is there; system and project headers are not mixed in one block |
+| `check_naming` | every `constexpr` variable, and every constant with a `k` prefix, has a snake_case name |
 | `check_headers` | every C++ file opens with the Apache license header (years up to date) and carries no IDE `Created by` stamp; scripts and build files (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) carry `# Copyright ... CEA` and `# SPDX-License-Identifier: Apache-2.0`; the vendored headers, their upstream SPDX line; `scripts/check_headers.py --fix` repairs |
 | `check_raw_reads` | every raw read of a chunk buffer in the library says why it is safe |
 | `check_tracked` | every file the sources name (a quoted `#include`, a relative Python import, a CMake source or harness, a Markdown link) is tracked by git, not only present on the disk |
@@ -70,7 +71,14 @@ The source checks run with the others (`ctest -R check_`):
 
 - **C++20.** The `cpp23` branch carries the same code with C++23 required.
 - **English** for code, comments and commit messages.
+- **No fixup commit is pushed.** A `fixup!`, `squash!` or `amend!` commit is squashed into its
+  target before the push (`git rebase -i --autosquash origin/<branch>`): once published it can
+  only stay. The CI refuses a push that brings one.
 - **clang-format** with the repository's `.clang-format`, on the lines you touch.
+- **Constants are snake_case**, as the standard library's (`std::dynamic_extent`):
+  `cst_buffer_size`, not `kCstBufferSize` nor `CST_BUFFER_SIZE`. UPPER_CASE is for macros
+  (`CHUNK_SIZE`): a constant spelled like one reads as one, and may meet one. `check_naming`
+  enforces it.
 - **No preprocessor where `if constexpr` works.** The rules that decide which `#ifdef` can go,
   and the ones that must stay, are written at the top of `examples/shrink_bench/bench_config.h`.
 - **Comments state the rule, not the story.** Write why the code is the way it is, and what

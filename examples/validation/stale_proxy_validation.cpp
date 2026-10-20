@@ -84,7 +84,7 @@ constexpr const char* variant_name()
     }
 }
 
-constexpr long kN = 4096;
+constexpr long n_items = 4096;
 
 struct Case
 {
@@ -93,7 +93,7 @@ struct Case
     bool        dyn_only;  // rechunk_to exists in dynamic-geometry builds only
 };
 
-const Case kCases[] = {
+const Case case_table[] = {
     {"control: no rebuild", false, false},
     {"control: push_back within the capacity", false, false},
     {"control: fresh proxy after resize", false, false},
@@ -112,15 +112,15 @@ const Case kCases[] = {
     {"push_back beyond the capacity", true, false},
     {"rechunk_to", true, true},
 };
-constexpr int kNbCases = static_cast<int>(sizeof kCases / sizeof kCases[0]);
+constexpr int nb_cases = static_cast<int>(sizeof case_table / sizeof case_table[0]);
 
 /// The child: one case. A template so that rechunk_to, which a static build
 /// does not have, is only named in a discarded branch of a dependent call.
 template <typename A>
 static int run_case(int k)
 {
-    A    a(kN);
-    A    b(kN);
+    A    a(n_items);
+    A    b(n_items);
     auto p   = a.element_proxy(10); // the proxy itself: a[10] refuses to be named in check builds
     p        = 1;                   // armed and valid
     int sink = 0;
@@ -136,7 +136,7 @@ static int run_case(int k)
             }
             break;
         case 2:
-            a.resize(2 * kN);
+            a.resize(2 * n_items);
             {
                 auto q = a.element_proxy(10); // taken after the rebuild: valid
                 q      = 2;
@@ -148,27 +148,27 @@ static int run_case(int k)
         case 5:
         case 6:
         case 7:
-            a.resize(2 * kN);
+            a.resize(2 * n_items);
             break;
         case 4:
-            a.resize(kN / 2);
+            a.resize(n_items / 2);
             break;
         case 8:
-            a.reserve(static_cast<long>(a.capacity()) + 10 * kN);
+            a.reserve(static_cast<long>(a.capacity()) + 10 * n_items);
             break;
         case 9:
             a.clear();
-            a.resize(kN); // the element exists again; the proxy is still stale
+            a.resize(n_items); // the element exists again; the proxy is still stale
             break;
         case 10:
-            a.assign(kN, 3);
+            a.assign(n_items, 3);
             break;
         case 11:
             a.swap(b);
             break;
         case 12:
             a = std::move(b);
-            a.resize(kN);
+            a.resize(n_items);
             break;
         case 13:
             a = b;
@@ -227,7 +227,7 @@ static int run_child(int k)
 /// Re-runs this executable on case @p k and checks the outcome.
 static int check_case(const char* self, int k)
 {
-    const Case&       c   = kCases[k];
+    const Case&       c   = case_table[k];
     const std::string log = "/tmp/stale_proxy_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
     const std::string cmd = validation::self_command(self) + " --case " + std::to_string(k) + " > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
@@ -271,9 +271,9 @@ int run(int argc, char** argv)
     }
 
     int fails = 0;
-    for (int k = 0; k < kNbCases; ++k)
+    for (int k = 0; k < nb_cases; ++k)
     {
-        if (kCases[k].dyn_only && !build_config::chunk_dynamic)
+        if (case_table[k].dyn_only && !build_config::chunk_dynamic)
         {
             continue;
         }

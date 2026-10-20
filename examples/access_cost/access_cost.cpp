@@ -363,8 +363,8 @@ double minimum(const std::vector<double>& x)
     return *std::min_element(x.begin(), x.end());
 }
 
-constexpr const char* kCases[] = {"read-varied", "read-constant", "read-random", "write-varied", "write-fresh", "rmw"};
-constexpr int         kNCases  = static_cast<int>(sizeof(kCases) / sizeof(kCases[0]));
+constexpr const char* case_names[] = {"read-varied", "read-constant", "read-random", "write-varied", "write-fresh", "rmw"};
+constexpr int         n_cases      = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
 } // namespace
 
 int main(int argc, char** argv)
@@ -424,7 +424,7 @@ int main(int argc, char** argv)
     std::vector<double>    zeros(static_cast<std::size_t>(N), 0.);
 
     // [case][container 0 = vector, 1 = array] -> seconds per repetition
-    std::vector<double> t[kNCases][2];
+    std::vector<double> t[n_cases][2];
     long                sum_mismatch = 0;
     long                bad_elements = 0;
 
@@ -432,7 +432,7 @@ int main(int argc, char** argv)
     {
         if (vs != as)
         {
-            std::fprintf(stderr, "access_cost: %s: the array sums to %.17g, the vector to %.17g\n", kCases[c], as, vs);
+            std::fprintf(stderr, "access_cost: %s: the array sums to %.17g, the vector to %.17g\n", case_names[c], as, vs);
             ++sum_mismatch;
         }
     };
@@ -441,7 +441,7 @@ int main(int argc, char** argv)
         t[c][container].push_back(s);
         if (csv)
         {
-            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), S, CHUNK_PMP_MAX_THREADS, N, rep, kCases[c],
+            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), S, CHUNK_PMP_MAX_THREADS, N, rep, case_names[c],
                     container ? "array" : "vector", s, s * 1e9 / static_cast<double>(N));
         }
     };
@@ -528,12 +528,12 @@ int main(int argc, char** argv)
     {
         println("{:<14} {:>14} {:>14} {:>14} {:>14} {:>8}", "case", "vector med ns", "vector min ns", "array med ns",
                 "array min ns", "ratio");
-        for (int c = 0; c < kNCases; ++c)
+        for (int c = 0; c < n_cases; ++c)
         {
             const double per = 1e9 / static_cast<double>(N);
             const double vm  = median(t[c][0]) * per;
             const double am  = median(t[c][1]) * per;
-            println("{:<14} {:>14.3f} {:>14.3f} {:>14.3f} {:>14.3f} {:>8.2f}", kCases[c], vm, minimum(t[c][0]) * per,
+            println("{:<14} {:>14.3f} {:>14.3f} {:>14.3f} {:>14.3f} {:>8.2f}", case_names[c], vm, minimum(t[c][0]) * per,
                     am, minimum(t[c][1]) * per, vm > 0. ? am / vm : 0.);
         }
         println("(ns per element, wall clock / n; ratio = array median / vector median)");

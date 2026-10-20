@@ -42,12 +42,12 @@ struct Frame
 };
 
 /// @brief Levels whose team the queries can still name; deeper ones count, as a team of one.
-inline constexpr int kMaxFrames = 16;
+inline constexpr int max_frames = 16;
 
 /// @brief The calling thread's nesting: the frames of the teams it is in, innermost last.
 struct ThreadState
 {
-    std::array<Frame, kMaxFrames> frames{};         ///< frames[l - 1]: the team of level l.
+    std::array<Frame, max_frames> frames{};         ///< frames[l - 1]: the team of level l.
     int                           level        = 0; ///< Teams the thread is in, serialised ones included.
     int                           active_level = 0; ///< Those of more than one thread.
     /// The thread's rank in its innermost ACTIVE team (the one of more than one
@@ -62,7 +62,7 @@ struct ThreadState
     /// @brief The innermost team's frame; a team of one outside any.
     [[nodiscard]] Frame innermost() const noexcept
     {
-        return (level > 0 && level <= kMaxFrames) ? frames[level - 1] : Frame{};
+        return (level > 0 && level <= max_frames) ? frames[level - 1] : Frame{};
     }
 };
 
@@ -80,7 +80,7 @@ class FrameGuard
     FrameGuard(TeamCtx* ctx, int rank, int size) noexcept
     {
         auto& s = tls();
-        if (s.level < kMaxFrames)
+        if (s.level < max_frames)
         {
             s.frames[s.level] = Frame{.ctx = ctx, .rank = rank, .size = size};
         }

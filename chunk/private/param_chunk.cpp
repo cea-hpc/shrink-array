@@ -161,7 +161,7 @@ void ParamChunk::ChunkStats()
 {
     // Totals first, to filter the legend; then one block per active variant.
     ChunkStatsThr all{};
-    for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
+    for (int v = 0; v < chunk_stats_n_variant; ++v)
     {
         const ChunkStatsThr stats = reduce_chunk_stats(v);
         all.alloc += stats.alloc;
@@ -274,7 +274,7 @@ void ParamChunk::ChunkStats()
     }
     std::cout << "=================================================================\n";
 
-    for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
+    for (int v = 0; v < chunk_stats_n_variant; ++v)
     {
         const ChunkStatsThr stats = reduce_chunk_stats(v);
         // Skip a variant with no activity at all.
