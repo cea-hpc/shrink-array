@@ -39,8 +39,9 @@
 
 #include <bit>         // std::has_single_bit
 #include <cstddef>     // std::size_t (func_p2.h uses size_t unqualified)
-#include <cstdint>     // std::uint64_t (DynamicChunkSize's divider), std::uint8_t
+#include <cstdint>     // std::uint64_t (DynamicChunkSize's divider), std::uint8_t (ChunkSizeError)
 #include <expected>    // std::expected, std::unexpected (the try_ forms)
+#include <optional>    // std::optional (chunk_size_error)
 #include <type_traits> // std::conditional_t, std::make_unsigned_t
 
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
@@ -119,8 +120,8 @@ enum class ChunkSizeError : std::uint8_t
     return "?";
 }
 
-// set_active_chunk_size() is at the end of the file: it checks the size
-// against cst_buffer_size, defined below.
+// chunk_size_error() and set_active_chunk_size() are at the end of the file:
+// they check the size against cst_buffer_size, defined below.
 
 /// @brief The process-wide active chunk size.
 [[nodiscard]] inline unsigned int active_chunk_size() noexcept
@@ -419,18 +420,33 @@ static_assert(!ActiveSizePolicy::is_dynamic || chunk_dyn_max_size >= static_chun
               "CHUNK_DYN_MAX_SIZE must be at least the starting chunk size: the shared constant buffers are read "
               "up to the chunk size");
 
-/// @brief Whether @p size can be a geometry of this build: is_valid_chunk_size(),
-///        and at most cst_buffer_size -- a chunk wider than that reads the
-///        shared constant buffers out of bounds.
-[[nodiscard]] constexpr std::expected<void, ChunkSizeError> check_chunk_size(unsigned int size) noexcept
+/// @brief Why @p size cannot be a geometry of this build, or nothing if it can:
+///        is_valid_chunk_size(), and at most cst_buffer_size -- a chunk wider
+///        than that reads the shared constant buffers out of bounds.
+/// @details The one rule of every setter that takes a size (rechunk_to(),
+///          set_chunk_size(), set_active_chunk_size()) and of
+///          ParamChunk::check_chunk_size().
+[[nodiscard]] constexpr std::optional<ChunkSizeError> chunk_size_error(unsigned int size) noexcept
 {
     if (!is_valid_chunk_size(size)) [[unlikely]]
     {
-        return std::unexpected(ChunkSizeError::not_pow2_or_x64);
+        return ChunkSizeError::not_pow2_or_x64;
     }
     if (size > cst_buffer_size) [[unlikely]]
     {
-        return std::unexpected(ChunkSizeError::exceeds_buffer);
+        return ChunkSizeError::exceeds_buffer;
+    }
+    return std::nullopt;
+}
+
+/// @brief check_chunk_size(): chunk_size_error() as the error of the try_
+///        forms (try_rechunk_to(), try_set_chunk_size(),
+///        try_set_active_chunk_size()).
+[[nodiscard]] constexpr std::expected<void, ChunkSizeError> check_chunk_size(unsigned int size) noexcept
+{
+    if (const auto e = chunk_size_error(size)) [[unlikely]]
+    {
+        return std::unexpected(*e);
     }
     return {};
 }

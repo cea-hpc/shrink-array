@@ -62,6 +62,7 @@ echo "-- mutations: each must be refused --"
 run error "MUT_NO_CHECK2 (no look after the announce)"       -- -DSHAPE_SYMMETRIC -DMUT_NO_CHECK2 $M
 run error "SHAPE_ASYMMETRIC_NAKED (asymmetric, no membarrier)" -- -DSHAPE_ASYMMETRIC_NAKED $M
 run error "MUT_NO_FENCE_COMPRESSOR"                          -- -DSHAPE_SYMMETRIC -DMUT_NO_FENCE_COMPRESSOR $M
+run error "MUT_WAIT_ON_HARD (the triangle of 5.3)"            --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DMUT_WAIT_ON_HARD $M
 run error "MUT_RELAXED_MARK (section 5.3: acquire is load-bearing)" -- -DSHAPE_SYMMETRIC -DMUT_RELAXED_MARK $M
 echo "-- the behaviour the model changed in the source (docs/formal_models.md, F2) --"
 run error "MUT_MATERIALISE_WAIT_UNDER_FLAG (F2, before), unbounded wait" --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DMUT_MATERIALISE_WAIT_UNDER_FLAG $M

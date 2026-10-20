@@ -524,7 +524,7 @@ effacerait l'annonce. La décision de mise en file regarde les valeurs du morcea
 toutes égales, et d'une valeur que la variante sait comprimer (un remplissage est un tel
 morceau, la règle est donc celle de `fill_range_mt`).
 
-**Deux points propres à Chunk2**, corrigés en septembre 2026, qui justifiaient auparavant de
+**Trois points propres à Chunk2**, corrigés en septembre 2026, qui justifiaient auparavant de
 le laisser sur le chemin élément par élément :
 
 - le test « ce chunk est-il matérialisé ? » doit appeler `written(ind)` avec l'indice de
@@ -532,29 +532,38 @@ le laisser sur le chemin élément par élément :
   est réservé à `bool` et renvoie `false` pour les autres types ;
 - la mise en file (`internal::queue_for_compression`) doit **charger la seconde valeur** avant
   d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de Chunk2 sont indexées par
-  elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide.
+  elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
+- en mode compteur (les builds serial), une écriture directe doit **recompter** les deux
+  compteurs du chunk, `nb_val_eq_first_value` et `nb_val_eq_second_value`, que Proxy2 tient
+  sinon à jour écriture par écriture (`internal::resync_counters`, comme le compte des zéros de
+  v1).
 
 Seul `bool` (chunks compactés bit à bit) reste sur le chemin élément par élément.
 
-**La décision de mise en file dans `fill_range_mt`** lit, pour savoir si le chunk peut être
-uniforme, trois éléments (0, S/2, S−1) que d'autres threads peuvent être en train d'écrire.
-Chunk2A écrit ces éléments en atomiques relâchés (`relaxed_element.h` :
-`fill_span_relaxed_edges`, `may_be_uniform_relaxed`), ce qui rend la lecture sûre ; pour les
-types sans atomique sans verrou, et pour Chunk et Chunk2, ce sont des lectures ordinaires.
+**La décision de mise en file dans les formes `_mt`** ne lit jamais un élément qu'un autre
+thread peut être en train d'écrire, sauf sur Chunk2A. Pour Chunk et Chunk2, elle ne regarde que
+les valeurs du morceau lui-même : toutes égales, et égales à la première valeur (Chunk), ou à la
+première ou à la seconde (Chunk2), comme décide le chemin élément par élément. Chunk2A lit trois
+éléments (0, S/2, S−1) pour savoir si le chunk peut être uniforme : il écrit ces éléments en
+atomiques relâchés (`relaxed_element.h` : `fill_span_relaxed_edges`, `may_be_uniform_relaxed`),
+ce qui rend la lecture sûre ; pour les types sans atomique sans verrou, il ne met en file qu'un
+morceau qui couvre tout le chunk avec une seule valeur. Les formes à un seul thread
+(`fill_range`, `copy_range`) lisent ces trois éléments en lectures ordinaires (`may_be_uniform`)
+: aucun autre thread n'écrit le tableau pendant l'appel.
 
-**Points ouverts (septembre 2026).**
-
-- Avec le chemin direct ouvert à Chunk2, `bench_and_test.py` a signalé sur Grace (8 threads et
-  plus) des valeurs fausses **après compression** : `rechunk_validation_chunk2_dyn`
-  (`scale-64-to-tgt`, POST-FAIL) et le mode check de `shrink_bench_chunk2_256`
-  (« is_cst_val2 should be not »). Non reproduit sur une machine à un cœur, ni lors d'un
-  second passage sur le cluster ; la piste est une passe qui compresse un chunk mis en file
-  par une copie directe pendant que les écritures directes, non annoncées, d'un autre thread
-  y arrivent encore. Le repli connu : exclure Chunk2 de `internal::raw_fillable_v`.
-- TSan signale, pour Chunk et Chunk2 dans `fill_range_mt`, la lecture ordinaire des trois
-  éléments ci-dessus contre l'écriture d'un autre thread sur le même chunk. Le correctif
-  envisagé : décider sur la **valeur** écrite (la première valeur pour Chunk, la première ou
-  la seconde pour Chunk2), comme le chemin élément par élément, sans rien lire.
+**Les valeurs fausses de septembre 2026.** Avec le chemin direct ouvert à Chunk2,
+`bench_and_test.py` a signalé sur Grace des valeurs fausses **après compression** :
+`rechunk_validation_chunk2_dyn` (`scale-64-to-tgt`, POST-FAIL) et le mode check de
+`shrink_bench_chunk2_256` (« is_cst_val2 should be not »). Ce n'était pas une course entre
+threads : le test de re-chunk échoue à l'identique sur un seul cœur dans le build serial Debug,
+et les configurations en échec sur Grace étaient les serial. La cause était les compteurs du
+troisième point ci-dessus : les chemins directs (`fill_range`, `copy_range`, qu'utilise la
+reconstruction du re-chunk) écrivaient sans les mettre à jour, les comptes périmés atteignaient
+la taille du chunk sur un chunk mixte, et la passe le repliait sur la première valeur, perdant
+tous les éléments de la seconde. Depuis, les écritures directes recomptent les compteurs, et
+les formes `_mt` écrivent dans une session annoncée au compresseur (étapes 3 à 6 ci-dessus),
+sur Chunk2 comme sur les autres variantes. Exclure Chunk2 de `internal::raw_fillable_v`, le
+repli envisagé à l'époque, n'est pas nécessaire.
 
 ---
 

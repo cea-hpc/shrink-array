@@ -527,9 +527,10 @@ int check_range_ops(const char* label, long N)
 
 /// @brief A size that is neither a power of two nor a multiple of 64 (48, 96,
 ///        3, S + 1) is refused -- by rechunk_to() on a filled array and on an
-///        empty one, and by set_chunk_size() -- and geometry, content and the
-///        ambient size stay as they were. A legal re-chunk must still work
-///        afterwards.
+///        empty one, and by set_chunk_size() -- and so is, on the empty array,
+///        a valid size wider than cst_buffer_size (it would read the shared
+///        constant buffers out of bounds); geometry, content and the ambient
+///        size stay as they were. A legal re-chunk must still work afterwards.
 int check_non_pow2_refused(const char* label)
 {
     const std::string lab_s = pass_label(label);
@@ -600,6 +601,8 @@ int check_non_pow2_refused(const char* label)
     expect_refused("empty.try_set_chunk_size(96)", empty.try_set_chunk_size(96u), ChunkSizeError::not_pow2_or_x64);
     expect_refused("empty.try_set_chunk_size(2 * cst_buffer_size)", empty.try_set_chunk_size(2u * cst_buffer_size),
                    ChunkSizeError::exceeds_buffer);
+    empty.rechunk_to(2u * cst_buffer_size);
+    empty.set_chunk_size(2u * cst_buffer_size);
     if (empty.chunk_size() != e0)
     {
         println("[{}/{}] FAIL: empty array: geometry {} -> {}", variant_name(), label, e0, empty.chunk_size());
@@ -626,9 +629,9 @@ int check_non_pow2_refused(const char* label)
 
     if (!bad)
     {
-        println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays, try_ forms with their reason), content "
-                "and geometry kept, {} -> {} still works",
-                variant_name(), label, old_size + 1u, old_size, old_size * 2u);
+        println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays, try_ forms with their reason), {} on "
+                "the empty one, content and geometry kept, {} -> {} still works",
+                variant_name(), label, old_size + 1u, 2u * cst_buffer_size, old_size, old_size * 2u);
     }
     return bad ? 1 : 0;
 }
