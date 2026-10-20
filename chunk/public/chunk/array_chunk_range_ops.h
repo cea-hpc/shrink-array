@@ -365,22 +365,22 @@ template <typename Arr, typename Chunk>
 }
 
 /**
- * @brief Is this chunk compressed at @p v already -- every element reads @p v
- *        with no buffer? Then a fill of @p v over any part of it has nothing
- *        to do.
+ * @brief The constant a v1 or Chunk2 chunk is compressed at, if it is: every
+ *        element reads @p c, with no buffer.
  *
- * @details v1: at first_value. Chunk2 (non-bool): at first_value, or at the
- *          array's second value (index @p ind2). Other variants: false (their
- *          whole-chunk path is fill_constant_st, Chunk2A; bool and Bit keep
- *          their own paths).
+ * @details v1: first_value. Chunk2 (non-bool): first_value, or the array's
+ *          second value (index @p ind2). Other variants: false (their
+ *          whole-chunk paths are their own: fill_constant_st on Chunk2A; bool
+ *          and Bit element by element or word by word).
  *          A state read, as materialised(): in fill_range_mt the caller also
  *          checks that no deferred write is pending on the chunk.
+ * @return true and @p c set when the chunk is compressed; false otherwise.
  */
 template <typename Arr, typename Chunk>
-[[nodiscard]] bool holds_constant(const Arr&                                       arr,
-                                  const Chunk&                                     ch,
-                                  [[maybe_unused]] int                             ind2,
-                                  [[maybe_unused]] const typename Arr::value_type& v) noexcept
+[[nodiscard]] bool held_constant(const Arr&                                 arr,
+                                 const Chunk&                               ch,
+                                 [[maybe_unused]] int                       ind2,
+                                 [[maybe_unused]] typename Arr::value_type& c) noexcept
 {
     using T = typename Arr::value_type;
     if constexpr (!raw_fillable_v<T> || is_packed_bit_v<T>)
@@ -389,20 +389,39 @@ template <typename Arr, typename Chunk>
     }
     else if constexpr (is_v1_v<Arr>)
     {
-        return v == static_cast<T>(Chunk::first_value) && ch.is_cst_val1();
+        c = static_cast<T>(Chunk::first_value);
+        return ch.is_cst_val1();
     }
     else if constexpr (is_v2_v<Arr> && requires { arr.get_second_value(); })
     {
         if (ch.is_cst_val1())
         {
-            return v == static_cast<T>(Chunk::first_value);
+            c = static_cast<T>(Chunk::first_value);
+            return true;
         }
-        return ind2 >= 0 && ch.is_cst_val2(ind2) && v == static_cast<T>(arr.get_second_value());
+        if (ind2 >= 0 && ch.is_cst_val2(ind2))
+        {
+            c = static_cast<T>(arr.get_second_value());
+            return true;
+        }
+        return false;
     }
     else
     {
         return false;
     }
+}
+
+/**
+ * @brief Is this chunk compressed at @p v already -- every element reads @p v
+ *        with no buffer? Then a fill of @p v over any part of it has nothing
+ *        to do. See held_constant().
+ */
+template <typename Arr, typename Chunk>
+[[nodiscard]] bool holds_constant(const Arr& arr, const Chunk& ch, int ind2, const typename Arr::value_type& v) noexcept
+{
+    typename Arr::value_type c{};
+    return held_constant(arr, ch, ind2, c) && v == c;
 }
 
 /**
@@ -755,7 +774,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
  * @details Same per-chunk strategy as fill_range, minus the constant shortcut:
  *          the source values are not known to be uniform, so a chunk is set
  *          constant only when the arming loop finds every value to be the
- *          compressible constant. Chunk2A, a fully covered chunk: its source
+ *          compressible constant. A v1 or Chunk2 chunk compressed at c skips
+ *          the source elements equal to c before arming (a span equal to c
+ *          writes nothing). Chunk2A, a fully covered chunk: its source
  *          span is read first (three elements, then all of it if they agree);
  *          uniform, the chunk is set to that constant by state alone, as
  *          fill_range does (no buffer); mixed, it is copied and not queued.
@@ -864,6 +885,26 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             }
 
             std::size_t i = lo;
+
+            // ── v1 / Chunk2 compressed at c: the source elements equal to c
+            // are already right. Start at the first that is not -- a plain
+            // read of the source each, where the arming loop below writes
+            // each through the proxy -- and nothing to do if none is.
+            {
+                T c{};
+                if (internal::held_constant(arr, ch, ind2, c))
+                {
+                    while (i < hi && static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first))) == c)
+                    {
+                        ++i;
+                    }
+                    if (i == hi)
+                    {
+                        continue;
+                    }
+                }
+            }
+
             while (i < hi && !internal::materialised(arr, ch, ind2))
             {
                 arr[static_cast<ind_type>(i)] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first)));

@@ -33,7 +33,12 @@
 //      refuses it), and so does a chunk covered in part.
 //
 // The other variants queue the chunks for the pass: only property 1 is
-// checked there.
+// checked there, and
+//
+//   3. on v1 and Chunk2, a source equal to the constant a chunk is
+//      compressed at writes nothing: the chunk stays compressed (whole or in
+//      part, at the first constant or Chunk2's second); a source equal to it
+//      on a prefix only materialises the chunk from the first other value.
 //
 // WHAT IT EXERCISES -- an array of kChunks chunks plus a partial tail:
 //
@@ -47,6 +52,12 @@
 //                                 passes, the scan refuses): all keep a buffer
 //   partial     materialised   <- uniform, over [S/2, N - S/2)
 //   tail        first constant <- 3.0 over the whole array, partial last chunk
+//   same-first  first constant <- the first constant (0.0) everywhere, partial
+//               last chunk included: nothing materialised on any variant
+//   same-part   first constant <- 0.0 over [S/2, N - S/2): nothing materialised
+//   same-second second value   <- 1.0 everywhere: nothing on Chunk2 and Chunk2A
+//   prefix      first constant <- 0.0 on the first half of each chunk, plain
+//               values after: every chunk materialised, every element right
 //
 // The setup writes go through operator[] in a region (the pass between two
 // regions then runs as usual); the copies run outside any region
@@ -165,7 +176,9 @@ static long mismatches(const Array<double>& arr, long lo, long hi, Expect&& expe
     return bad;
 }
 
-static int report(const char* scase, long bad, int mat, int mat_expected)
+/// @brief The checks of a case: the read-back, and the chunks materialised
+///        when @p check_mat (Chunk2A always, the others for property 3).
+static int report(const char* scase, long bad, int mat, int mat_expected, bool check_mat)
 {
     int fails = 0;
     if (bad != 0)
@@ -173,7 +186,7 @@ static int report(const char* scase, long bad, int mat, int mat_expected)
         println("[{}/{}] FAIL: {} element(s) do not read back their source", variant_name(), scase, bad);
         ++fails;
     }
-    if (chunk_config::use_chunk2a && mat != mat_expected)
+    if (check_mat && mat != mat_expected)
     {
         println("[{}/{}] FAIL: {} chunk(s) materialised right after the copy, expected {}", variant_name(), scase, mat,
                 mat_expected);
@@ -232,8 +245,13 @@ int run(int /*argc*/, char** /*argv*/)
         long                lo;
         long                hi;
         int                 mat_expected;
-        int                 count_to; // chunks counted: [0, count_to)
+        int                 count_to;    // chunks counted: [0, count_to)
+        int                 mat_v1 = -1; // v1: chunks expected materialised, -1 unchecked
+        int                 mat_v2 = -1; // Chunk2: likewise
     };
+
+    // Half of each chunk at the first constant, then plain values.
+    const auto prefix = [S](long i) { return (i % S < S / 2) ? 0.0 : plain(i); };
 
     const std::vector<Case> cases = {
         {"fresh", Dst::fresh, source(Ntot, per_chunk), 0, N, 0, kChunks},
@@ -245,6 +263,10 @@ int run(int /*argc*/, char** /*argv*/)
         {"near", Dst::materialised, source(Ntot, near), 0, N, kChunks, kChunks},
         {"partial", Dst::materialised, source(Ntot, per_chunk), S / 2, N - S / 2, 2, kChunks},
         {"tail", Dst::fresh, source(Ntot, [](long) { return 3.0; }), 0, Ntot, 1, kChunks + 1},
+        {"same-first", Dst::fresh, source(Ntot, [](long) { return 0.0; }), 0, Ntot, 0, kChunks + 1, 0, 0},
+        {"same-part", Dst::fresh, source(Ntot, [](long) { return 0.0; }), S / 2, N - S / 2, 0, kChunks, 0, 0},
+        {"same-second", Dst::second, source(Ntot, [](long) { return 1.0; }), 0, N, 0, kChunks, -1, 0},
+        {"prefix", Dst::fresh, source(Ntot, prefix), 0, N, kChunks, kChunks, kChunks, kChunks},
     };
 
     for (const Case& c : cases)
@@ -285,7 +307,9 @@ int run(int /*argc*/, char** /*argv*/)
         const long bad =
             mismatches(a, 0, Ntot, [&](long i)
                        { return (i >= c.lo && i < c.hi) ? c.src[static_cast<std::size_t>(i)] : before(i); });
-        fails += report(c.name, bad, materialised(a, 0, c.count_to), c.mat_expected);
+        constexpr bool v1           = !chunk_config::use_chunk2a && !chunk_config::use_chunk2;
+        const int      mat_expected = chunk_config::use_chunk2a ? c.mat_expected : v1 ? c.mat_v1 : c.mat_v2;
+        fails += report(c.name, bad, materialised(a, 0, c.count_to), mat_expected, mat_expected >= 0);
         a.clear();
     }
 

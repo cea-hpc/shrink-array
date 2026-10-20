@@ -194,6 +194,17 @@ the tag's checksum to the recipe.
   2.9-3.2 ms. `constant_switch_validation`: the same switches from every
   thread, with the chunks materialised counted inside the region (64 per
   step before, 0 now).
+- `copy_range` on a v1 or Chunk2 chunk compressed at a constant c skips the
+  source elements equal to c before arming the chunk: a span equal to c
+  writes nothing, a span that starts with c materialises the chunk from its
+  first other value. They went through the proxy one by one (every write a
+  no-op): 2.56 M doubles, 1 thread, a source equal to the chunk's constant
+  3.5-7.4 -> 0.7 ns per element (v1 at first_value, Chunk2 at either
+  constant). `internal::held_constant()` gives the constant of a compressed
+  v1 / Chunk2 chunk (`holds_constant()` is built on it).
+  `copy_range_constant_validation`: cases `same-first`, `same-part`,
+  `same-second` and `prefix`, the materialised chunks checked on every
+  variant.
 
 ### Deprecated
 
