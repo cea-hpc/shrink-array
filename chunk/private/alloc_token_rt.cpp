@@ -70,11 +70,11 @@ struct Slot
     std::atomic<std::uint64_t> bytes{0};
 };
 
-constexpr unsigned    kSlotBits = 14;
-constexpr std::size_t kSlots    = 1uz << kSlotBits; ///< 16384 distinct types
-constexpr std::size_t kSlotMask = kSlots - 1;
+constexpr unsigned    slot_bits  = 14;
+constexpr std::size_t slot_count = 1uz << slot_bits; ///< 16384 distinct types
+constexpr std::size_t slot_mask  = slot_count - 1;
 
-std::array<Slot, kSlots> g_table; ///< Open addressing, linear probing, never resized.
+std::array<Slot, slot_count> g_table; ///< Open addressing, linear probing, never resized.
 
 std::atomic<std::uint64_t> g_dropped{0};       ///< Allocations that found the table full.
 std::atomic<std::uint64_t> g_dropped_bytes{0}; ///< ... and their bytes.
@@ -86,8 +86,8 @@ inline void note(std::uint64_t token, std::size_t bytes) noexcept
     const std::uint64_t key = token + 1;
     // Fibonacci hashing of the token to a slot: tokens are SipHash outputs,
     // already well spread, but token 0 and small ids must not all pile up.
-    std::size_t i = static_cast<std::size_t>((token * 0x9E3779B97F4A7C15ULL) >> (64 - kSlotBits));
-    for (std::size_t probe = 0; probe < kSlots; ++probe)
+    std::size_t i = static_cast<std::size_t>((token * 0x9E3779B97F4A7C15ULL) >> (64 - slot_bits));
+    for (std::size_t probe = 0; probe < slot_count; ++probe)
     {
         Slot&         slot = g_table[i];
         std::uint64_t k    = slot.key.load(std::memory_order_relaxed);
@@ -101,7 +101,7 @@ inline void note(std::uint64_t token, std::size_t bytes) noexcept
             slot.bytes.fetch_add(bytes, std::memory_order_relaxed);
             return;
         }
-        i = (i + 1) & kSlotMask;
+        i = (i + 1) & slot_mask;
     }
     g_dropped.fetch_add(1, std::memory_order_relaxed);
     g_dropped_bytes.fetch_add(bytes, std::memory_order_relaxed);
@@ -109,7 +109,7 @@ inline void note(std::uint64_t token, std::size_t bytes) noexcept
 
 /// @brief The typehashpointersplit boundary: tokens >= this belong to types
 ///        that contain pointers. (SIZE_MAX / 2, as in LLVM's AllocToken pass.)
-constexpr std::uint64_t kPointerHalf = UINT64_MAX / 2;
+constexpr std::uint64_t pointer_half = UINT64_MAX / 2;
 
 struct Entry
 {
@@ -118,7 +118,7 @@ struct Entry
     std::uint64_t bytes;
 };
 
-std::array<Entry, kSlots> g_entries; ///< Static so the report allocates nothing either.
+std::array<Entry, slot_count> g_entries; ///< Static so the report allocates nothing either.
 
 /// @brief Print the census on stderr. Runs after every C++ static destructor
 ///        (a .fini_array entry runs after the __cxa_atexit ones), so the
@@ -130,7 +130,7 @@ __attribute__((destructor)) void report()
     {
         if (std::strcmp(env, "all") == 0)
         {
-            top = kSlots;
+            top = slot_count;
         }
         else
         {
@@ -174,7 +174,7 @@ __attribute__((destructor)) void report()
     {
         const Entry& entry = g_entries[i];
         std::fprintf(stderr, "  0x%016llx  %-3s  %14llu  %18llu%s\n", static_cast<unsigned long long>(entry.token),
-                     entry.token >= kPointerHalf ? "yes" : "no", static_cast<unsigned long long>(entry.allocs),
+                     entry.token >= pointer_half ? "yes" : "no", static_cast<unsigned long long>(entry.allocs),
                      static_cast<unsigned long long>(entry.bytes),
                      entry.token == 0 ? "  untyped (C malloc/calloc/realloc)" : "");
     }

@@ -1880,7 +1880,11 @@ class TCTypeAllocatorEBC
 /// @details constexpr rather than a macro so it carries a type and scope; used
 ///          as a non-type template argument below and in StaticConstArray,
 ///          where an unsigned int constant expression is required.
-inline constexpr unsigned int SIZE_BLOCK = 1u << 20u; // 1048576
+inline constexpr unsigned int size_block = 1u << 20u; // 1048576
+
+/// @brief The former name of size_block, kept for programs that use it.
+[[deprecated("constants are snake_case: use fast_alloc::size_block")]] inline constexpr unsigned int SIZE_BLOCK =
+    size_block;
 
 } // namespace fast_alloc
 

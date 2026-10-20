@@ -164,29 +164,29 @@ void compress_in_region(Arr& a)
 }
 
 // ── The sorted pattern, by whole chunks ──────────────────────────────────────
-constexpr double kSecond = 1.0e9; ///< the second value (above every data value, whatever S)
-constexpr long   kC0     = 5;     ///< chunks [0, kC0): the first constant (0)
-constexpr long   kC1     = 12;    ///< chunks [kC0, kC1): runs of 3 equal values, rising
-constexpr long   kC2     = 18;    ///< chunks [kC1, kC2): the second value
-constexpr long   kChunks = 37;    ///< chunks [kC2, kChunks): strictly rising ...
-constexpr long   kTail   = 13;    ///< ... then a partial chunk of kTail elements
+constexpr double second_value = 1.0e9; ///< the second value (above every data value, whatever S)
+constexpr long   c0           = 5;     ///< chunks [0, c0): the first constant (0)
+constexpr long   c1           = 12;    ///< chunks [c0, c1): runs of 3 equal values, rising
+constexpr long   c2           = 18;    ///< chunks [c1, c2): the second value
+constexpr long   n_chunks     = 37;    ///< chunks [c2, n_chunks): strictly rising ...
+constexpr long   tail_len     = 13;    ///< ... then a partial chunk of tail_len elements
 
 double sorted_at(long i, long S)
 {
     const long c = i / S;
-    if (c < kC0)
+    if (c < c0)
     {
         return 0.0;
     }
-    if (c < kC1)
+    if (c < c1)
     {
-        return 10.0 + static_cast<double>((i - (kC0 * S)) / 3);
+        return 10.0 + static_cast<double>((i - (c0 * S)) / 3);
     }
-    if (c < kC2)
+    if (c < c2)
     {
-        return kSecond;
+        return second_value;
     }
-    return (2.0 * kSecond) + static_cast<double>(i - (kC2 * S));
+    return (2.0 * second_value) + static_cast<double>(i - (c2 * S));
 }
 
 /// @brief Write @p value(i) at every i in [0, N) from a parallel region, then
@@ -256,7 +256,7 @@ int check_premise(const Arr& a, long N)
     {
         folded += a.written(static_cast<Ind>(j * S)) ? 0 : 1;
     }
-    const long want = (chunk_config::use_chunk2 || chunk_config::use_chunk2a) ? kC0 + (kC2 - kC1) : kC0;
+    const long want = (chunk_config::use_chunk2 || chunk_config::use_chunk2a) ? c0 + (c2 - c1) : c0;
     if (folded < want)
     {
         r.fail("{} chunk(s) folded after the pass, expected at least {}: the jumps would not land in "
@@ -300,8 +300,8 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
     auto       at = [&](long i) { return ref[static_cast<std::size_t>(i)]; };
 
     const long pos[] = {
-        0,       1,         S - 1, S, S + 1, (kC0 * S) - 1, kC0 * S, (kC1 * S) - 1, kC1 * S, (kC2 * S) - 1,
-        kC2 * S, N - kTail, N - 1, N};
+        0,       1,         S - 1, S, S + 1, (c0 * S) - 1, c0 * S, (c1 * S) - 1, c1 * S, (c2 * S) - 1,
+        c2 * S, N - tail_len, N - 1, N};
     const long dl[] = {
         0, 1, -1, 2, -2, S - 1, -(S - 1), S, -S, S + 1, -(S + 1), (3 * S) + 7, -((3 * S) + 7), 11 * S, -(11 * S)};
 
@@ -424,7 +424,7 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
 /// @brief Values present, between, below and above the range.
 std::vector<double> queries(const std::vector<double>& ref)
 {
-    std::vector<double> q{-1.0, 0.0, 0.5, 10.0, kSecond - 0.5, kSecond, kSecond + 0.5, ref.back(), ref.back() + 1.0};
+    std::vector<double> q{-1.0, 0.0, 0.5, 10.0, second_value - 0.5, second_value, second_value + 0.5, ref.back(), ref.back() + 1.0};
     const std::size_t   step = std::max<std::size_t>(1, ref.size() / 1500);
     for (std::size_t i = 0; i < ref.size(); i += step)
     {
@@ -482,7 +482,7 @@ int search_mismatch(const Arr& a, const std::vector<double>& ref, double q, long
     return 0;
 }
 
-constexpr const char* kSearchName[] = {"",
+constexpr const char* search_names[] = {"",
                                        "std::lower_bound",
                                        "std::upper_bound",
                                        "std::equal_range.first",
@@ -505,7 +505,7 @@ int check_searches(const Arr& a, const std::vector<double>& ref)
         long want = 0;
         if (const int k = search_mismatch(a, ref, v, &got, &want))
         {
-            r.fail("{}({:g}) = {}, the std::vector gives {}", kSearchName[k], v, got, want);
+            r.fail("{}({:g}) = {}, the std::vector gives {}", search_names[k], v, got, want);
         }
     }
     return r.done(std::format("{} values x 11 searches agree with the std::vector", q.size()));
@@ -553,7 +553,7 @@ int check_reverse(const Arr& a, const std::vector<double>& ref)
     {
         r.fail("rend() - rbegin() = {}, expected {}", static_cast<long>(a.rend() - a.rbegin()), N);
     }
-    for (const long k : {0L, 1L, kTail - 1, kTail, kTail + 1, kTail + S, N - 1})
+    for (const long k : {0L, 1L, tail_len - 1, tail_len, tail_len + 1, tail_len + S, N - 1})
     {
         if (k >= 0 && k < N && a.rbegin()[k] != ref.rbegin()[k])
         {
@@ -617,7 +617,7 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
     }
 
     // for_each_span, whole range: spans only, then spans and runs. The
-    // compressed chunks [0, kC0) come as runs where the build reads by block.
+    // compressed chunks [0, c0) come as runs where the build reads by block.
     {
         std::vector<double> got;
         shrink_array::for_each_span(a,
@@ -633,14 +633,14 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
         {
             r.fail("for_each_span(array) with spans and runs differs from the reference ({} values)", got.size());
         }
-        if (!chunk_config::stats && !chunk_config::do_check && runs < kC0)
+        if (!chunk_config::stats && !chunk_config::do_check && runs < c0)
         {
-            r.fail("for_each_span(array): {} compressed chunks passed as runs, expected at least {}", runs, kC0);
+            r.fail("for_each_span(array): {} compressed chunks passed as runs, expected at least {}", runs, c0);
         }
     }
 
     // Sub-ranges around the boundaries: both destinations, both containers.
-    const long pos[] = {0, 1, S - 1, S, S + 1, (kC0 * S) - 1, kC0 * S, kC1 * S, (kC2 * S) - 1, N - kTail, N - 1, N};
+    const long pos[] = {0, 1, S - 1, S, S + 1, (c0 * S) - 1, c0 * S, c1 * S, (c2 * S) - 1, N - tail_len, N - 1, N};
     const long len[] = {0, 1, 2, 63, 64, 65, S - 1, S, S + 1, (3 * S) + 7, N};
     long       n     = 0;
     for (const long p : pos)
@@ -722,7 +722,7 @@ int check_sort_recipe(const std::vector<double>& ref)
     const long N = static_cast<long>(ref.size());
     Arr        b;
     b.resize(static_cast<Ind>(N));
-    maybe_set_second_value(b, kSecond);
+    maybe_set_second_value(b, second_value);
     fill(b, N, [&](long i) { return ref[static_cast<std::size_t>(N - 1 - i)]; }); // descending
     compress_in_region(b);
 
@@ -750,9 +750,9 @@ int run(int /*argc*/, char** /*argv*/)
     {
         Arr        a;
         const long S = static_cast<long>(a.chunk_size());
-        const long N = (kChunks * S) + kTail;
+        const long N = (n_chunks * S) + tail_len;
         a.resize(static_cast<Ind>(N));
-        maybe_set_second_value(a, kSecond);
+        maybe_set_second_value(a, second_value);
         // Every chunk materialised first (non-uniform content), then the sorted
         // pattern over it and a pass: the constant blocks are folded chunks.
         fill(a, N, [](long i) { return (i % 2) ? 2.5 : 3.5; });

@@ -92,7 +92,7 @@ constexpr const char* variant_name()
     }
 }
 
-constexpr long kChunks = 40;
+constexpr long n_chunks = 40;
 
 // One region writing what body(i) says, then the between-region pass.
 template <typename Fn>
@@ -179,16 +179,16 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
     const long S = static_cast<long>(Array<double>(1).chunk_size());
-    const long N = kChunks * S;
+    const long N = n_chunks * S;
     println("=== fill_range_constant_validation [variant = {}]  chunk_size={}  chunks={} ===", variant_name(), S,
-            kChunks);
+            n_chunks);
 
     // fresh: first_value everywhere, filled with a plain value.
     {
         Array<double> a(static_cast<int>(N));
         fill_range(a, 0, static_cast<std::size_t>(N), 2.5);
         expect_values("fresh", a, [](long) { return 2.5; });
-        expect_compressed("fresh", a, 0, kChunks);
+        expect_compressed("fresh", a, 0, n_chunks);
     }
 
     // second: compressed at V, filled with W; first: compressed at V, filled with 0.
@@ -203,7 +203,7 @@ int run(int /*argc*/, char** /*argv*/)
         }
         fill_range(a, 0, static_cast<std::size_t>(N), w);
         expect_values(name, a, [w](long) { return w; });
-        expect_compressed(name, a, 0, kChunks, w == 0.0);
+        expect_compressed(name, a, 0, n_chunks, w == 0.0);
     }
 
     // varied: materialised with varied values, filled with W.
@@ -212,7 +212,7 @@ int run(int /*argc*/, char** /*argv*/)
         region(N, [&](long i) { a[static_cast<int>(i)] = 0.5 * static_cast<double>(i % 7) + 1.0; });
         fill_range(a, 0, static_cast<std::size_t>(N), 9.0);
         expect_values("varied", a, [](long) { return 9.0; });
-        expect_compressed("varied", a, 0, kChunks);
+        expect_compressed("varied", a, 0, n_chunks);
     }
 
     // partial: [S/2, N - S/2): the two edge chunks are not covered.
@@ -224,8 +224,8 @@ int run(int /*argc*/, char** /*argv*/)
         fill_range(a, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), 4.0);
         expect_values("partial", a,
                       [&](long i) { return (i >= lo && i < hi) ? 4.0 : 0.5 * static_cast<double>(i % 7) + 1.0; });
-        expect_compressed("partial", a, 1, kChunks - 1);
-        if (materialised(a, 0, 1) + materialised(a, kChunks - 1, kChunks) != 2)
+        expect_compressed("partial", a, 1, n_chunks - 1);
+        if (materialised(a, 0, 1) + materialised(a, n_chunks - 1, n_chunks) != 2)
         {
             println("[{}/partial] FAIL an edge chunk (not covered) was compressed", variant_name());
             ++fails;
@@ -235,16 +235,16 @@ int run(int /*argc*/, char** /*argv*/)
     // distinct: one value per chunk, then first_value everywhere.
     {
         Array<double> a(static_cast<int>(N));
-        for (long c = 0; c < kChunks; ++c)
+        for (long c = 0; c < n_chunks; ++c)
         {
             fill_range(a, static_cast<std::size_t>(c * S), static_cast<std::size_t>((c + 1) * S),
                        100.0 + static_cast<double>(c));
         }
         expect_values("distinct", a, [S](long i) { return 100.0 + static_cast<double>(i / S); });
-        expect_compressed("distinct", a, 0, kChunks);
+        expect_compressed("distinct", a, 0, n_chunks);
         fill_range(a, 0, static_cast<std::size_t>(N), 0.0);
         expect_values("distinct", a, [](long) { return 0.0; });
-        expect_compressed("distinct", a, 0, kChunks, true);
+        expect_compressed("distinct", a, 0, n_chunks, true);
     }
 
     // second-value: Chunk2's second constant (Chunk2A: any value; v1: none).
@@ -255,12 +255,12 @@ int run(int /*argc*/, char** /*argv*/)
         region(N, [&](long i) { a[static_cast<int>(i)] = 0.5 * static_cast<double>(i % 7) + 1.0; });
         fill_range(a, 0, static_cast<std::size_t>(N), 1.0);
         expect_values("second-value/materialised", a, [](long) { return 1.0; });
-        expect_compressed("second-value/materialised", a, 0, kChunks, !v1);
+        expect_compressed("second-value/materialised", a, 0, n_chunks, !v1);
         fill_range(a, 0, static_cast<std::size_t>(N), 0.0); // back to first_value, compressed
-        expect_compressed("second-value/to-first", a, 0, kChunks, true);
+        expect_compressed("second-value/to-first", a, 0, n_chunks, true);
         fill_range(a, 0, static_cast<std::size_t>(N), 1.0); // from first_value: armed, then compressed
         expect_values("second-value/from-first", a, [](long) { return 1.0; });
-        expect_compressed("second-value/from-first", a, 0, kChunks, !v1);
+        expect_compressed("second-value/from-first", a, 0, n_chunks, !v1);
     }
 
     // constant: first_value over chunks already at first_value -- serially,
@@ -276,7 +276,7 @@ int run(int /*argc*/, char** /*argv*/)
                 shrink_array::begin_parallel_phase();
             }
 #pragma omp for schedule(static)
-            for (long c = 0; c < kChunks; ++c)
+            for (long c = 0; c < n_chunks; ++c)
             {
                 fill_range_mt(a, static_cast<std::size_t>(c * S + S / 4), static_cast<std::size_t>((c + 1) * S), 0.0);
             }
@@ -286,7 +286,7 @@ int run(int /*argc*/, char** /*argv*/)
             shrink_array::finalize_parallel_phase();
         }
         expect_values("constant", a, [](long) { return 0.0; });
-        const long m = materialised(a, 0, kChunks);
+        const long m = materialised(a, 0, n_chunks);
         if (m != 0)
         {
             println("[{}/constant] FAIL {} chunk(s) materialised by a fill of the constant they hold", variant_name(),

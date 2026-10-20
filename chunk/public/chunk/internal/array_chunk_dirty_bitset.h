@@ -109,8 +109,8 @@ class DirtyBitsetSupport<Derived, true>
      */
     void mark_chunk_dirty(int chunk_idx) noexcept
     {
-        const int      word_idx = chunk_idx >> kWordShift;
-        const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
+        const int      word_idx = chunk_idx >> word_shift;
+        const uint64_t bit_mask = 1ULL << (chunk_idx & bit_in_word_mask);
         auto&          word     = bitset_[word_idx].word;
         if ((word.load(std::memory_order_relaxed) & bit_mask) == 0)
         {
@@ -133,8 +133,8 @@ class DirtyBitsetSupport<Derived, true>
      */
     [[nodiscard]] bool is_chunk_dirty(int chunk_idx) const noexcept
     {
-        const int      word_idx = chunk_idx >> kWordShift;
-        const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
+        const int      word_idx = chunk_idx >> word_shift;
+        const uint64_t bit_mask = 1ULL << (chunk_idx & bit_in_word_mask);
 
         // Acquire: pairs with the acq_rel fetch_or of mark_chunk_dirty()
         return (bitset_[word_idx].word.load(std::memory_order_acquire) & bit_mask) != 0;
@@ -257,9 +257,9 @@ class DirtyBitsetSupport<Derived, true>
     // One bit per CHUNK, whatever the chunk size: 64 is the word width (64
     // chunks per word), not a chunk geometry -- chunk_idx >> 6 / & 63 are not
     // the shift / modulo of a 64-element chunk.
-    static constexpr int kChunksPerWord = 64;                 ///< Bits in a uint64_t word.
-    static constexpr int kWordShift     = 6;                  ///< log2(kChunksPerWord).
-    static constexpr int kBitInWordMask = kChunksPerWord - 1; ///< chunk_idx -> bit within its word.
+    static constexpr int chunks_per_word  = 64;                  ///< Bits in a uint64_t word.
+    static constexpr int word_shift       = 6;                   ///< log2(chunks_per_word).
+    static constexpr int bit_in_word_mask = chunks_per_word - 1; ///< chunk_idx -> bit within its word.
 
     /// @brief The "some bit was set since the last clear" flag: the padded word
     ///        right after the bits (so it moves and swaps with them).
@@ -272,7 +272,7 @@ class DirtyBitsetSupport<Derived, true>
     /** @brief Number of 64-bit words needed to hold @p nb_chunk bits (one per chunk). */
     [[nodiscard]] static constexpr int words_for(int nb_chunk) noexcept
     {
-        return (nb_chunk + kChunksPerWord - 1) / kChunksPerWord;
+        return (nb_chunk + chunks_per_word - 1) / chunks_per_word;
     }
 
     /// One bit per chunk, one cache line per 64 chunks, then the flag word.
@@ -281,7 +281,7 @@ class DirtyBitsetSupport<Derived, true>
     mutable parallel_storage_init::no_init_vector<PaddedDirtyWord> bitset_;
     int nb_words_{0}; ///< Words of bits in @ref bitset_ (its size - 1), so clearing needs no chunk count.
 
-    static_assert(kChunksPerWord == 1 << kWordShift, "kWordShift must be log2(kChunksPerWord)");
+    static_assert(chunks_per_word == 1 << word_shift, "word_shift must be log2(chunks_per_word)");
 };
 
 // ── Serial build: nothing at all ─────────────────────────────────────────────

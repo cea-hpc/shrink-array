@@ -102,7 +102,7 @@ constexpr const char* variant_name()
     }
 }
 
-constexpr long kBlk = 64;
+constexpr long blk = 64;
 
 // Value written by the element writers of round r at index i: mostly a
 // constant, so element-written chunks also come and go.
@@ -150,7 +150,7 @@ static int run_validation(long N, int rounds)
     std::vector<double> ref(static_cast<std::size_t>(N), 0.0);
     std::vector<double> src(static_cast<std::size_t>(N), 0.0); // copy rounds
     Array<double>       src_arr(N);                            // transform rounds: a chunked source
-    const long          nblk = (N + kBlk - 1) / kBlk;
+    const long          nblk = (N + blk - 1) / blk;
     long                bad  = 0;
 
     for (int r = 0; r < rounds && bad == 0; ++r)
@@ -189,8 +189,8 @@ static int run_validation(long N, int rounds)
                 {
                     continue;
                 }
-                const long lo  = b * kBlk;
-                const long hi  = lo + kBlk < N ? lo + kBlk : N;
+                const long lo  = b * blk;
+                const long hi  = lo + blk < N ? lo + blk : N;
                 const auto ulo = static_cast<std::size_t>(lo);
                 const auto uhi = static_cast<std::size_t>(hi);
                 if (mode == Mode::fill)
@@ -213,8 +213,8 @@ static int run_validation(long N, int rounds)
                 {
                     continue;
                 }
-                const long lo = b * kBlk;
-                const long hi = lo + kBlk < N ? lo + kBlk : N;
+                const long lo = b * blk;
+                const long hi = lo + blk < N ? lo + blk : N;
                 for (long i = lo; i < hi; ++i)
                 {
                     arr[i] = elem_value(i, r);
@@ -225,8 +225,8 @@ static int run_validation(long N, int rounds)
 
         for (long b = 0; b < nblk; ++b)
         {
-            const long lo = b * kBlk;
-            const long hi = lo + kBlk < N ? lo + kBlk : N;
+            const long lo = b * blk;
+            const long hi = lo + blk < N ? lo + blk : N;
             for (long i = lo; i < hi; ++i)
             {
                 const double bulk                = mode == Mode::fill   ? fill_v
@@ -280,12 +280,12 @@ static int run_validation(long N, int rounds)
 // alternating between neighbours, so no chunk is ever uniform -- a uniform
 // Chunk2A chunk compresses to its second value, and the timings would then
 // measure compression churn instead of writes.
-constexpr long kPerfBlk = 32;
+constexpr long perf_blk = 32;
 
 static void run_perf(long N)
 {
     Array<double>       arr(N);
-    const long          nblk = (N + kPerfBlk - 1) / kPerfBlk;
+    const long          nblk = (N + perf_blk - 1) / perf_blk;
     const auto          now  = [] { return std::chrono::steady_clock::now(); };
     double              t_el = 0;
     double              t_mt = 0;
@@ -303,8 +303,8 @@ static void run_perf(long N)
 #pragma omp for schedule(static, 1)
             for (long b = 0; b < nblk; ++b)
             {
-                const long   lo = b * kPerfBlk;
-                const long   hi = lo + kPerfBlk < N ? lo + kPerfBlk : N;
+                const long   lo = b * perf_blk;
+                const long   hi = lo + perf_blk < N ? lo + perf_blk : N;
                 const double x  = vb(b);
                 for (long i = lo; i < hi; ++i)
                 {
@@ -320,8 +320,8 @@ static void run_perf(long N)
 #pragma omp for schedule(static, 1)
             for (long b = 0; b < nblk; ++b)
             {
-                const long lo = b * kPerfBlk;
-                const long hi = lo + kPerfBlk < N ? lo + kPerfBlk : N;
+                const long lo = b * perf_blk;
+                const long hi = lo + perf_blk < N ? lo + perf_blk : N;
                 fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), vb(b) + 0.5);
             }
         }
@@ -339,8 +339,8 @@ static void run_perf(long N)
 #pragma omp for schedule(static, 1)
             for (long b = 0; b < nblk; ++b)
             {
-                const long lo = b * kPerfBlk;
-                const long hi = lo + kPerfBlk < N ? lo + kPerfBlk : N;
+                const long lo = b * perf_blk;
+                const long hi = lo + perf_blk < N ? lo + perf_blk : N;
                 for (long i = lo; i < hi; ++i)
                 {
                     arr[i] = src[static_cast<std::size_t>(i)];
@@ -355,8 +355,8 @@ static void run_perf(long N)
 #pragma omp for schedule(static, 1)
             for (long b = 0; b < nblk; ++b)
             {
-                const long lo = b * kPerfBlk;
-                const long hi = lo + kPerfBlk < N ? lo + kPerfBlk : N;
+                const long lo = b * perf_blk;
+                const long hi = lo + perf_blk < N ? lo + perf_blk : N;
                 copy_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), src.begin() + lo);
             }
         }

@@ -40,7 +40,7 @@
 //      part, at the first constant or Chunk2's second); a source equal to it
 //      on a prefix only materialises the chunk from the first other value.
 //
-// WHAT IT EXERCISES -- an array of kChunks chunks plus a partial tail:
+// WHAT IT EXERCISES -- an array of n_chunks chunks plus a partial tail:
 //
 //   fresh       first constant <- chunk c uniform at 10 + c
 //   mixed-dst   materialised   <- chunk c uniform at 10 + c
@@ -118,7 +118,7 @@ void maybe_set_second_value(Arr& a, const Val& v)
     }
 }
 
-constexpr int kChunks = 64;
+constexpr int n_chunks = 64;
 
 /// @brief Two values alternating: no chunk uniform.
 static double plain(long i)
@@ -216,11 +216,11 @@ int run(int /*argc*/, char** /*argv*/)
     ParamChunk::init_indexes(true);
 
     const long S    = static_cast<long>(Array<double>(1).chunk_size());
-    const long N    = kChunks * S;
+    const long N    = n_chunks * S;
     const long Ntot = N + S / 2; // a partial last chunk, never covered whole
 
     println("=== copy_range_constant_validation [variant = {}]  chunk_size={}  chunks={} ===", variant_name(), S,
-            kChunks);
+            n_chunks);
 
     int        fails = 0;
     const auto sz    = [](long x) { return static_cast<std::size_t>(x); };
@@ -254,19 +254,19 @@ int run(int /*argc*/, char** /*argv*/)
     const auto prefix = [S](long i) { return (i % S < S / 2) ? 0.0 : plain(i); };
 
     const std::vector<Case> cases = {
-        {"fresh", Dst::fresh, source(Ntot, per_chunk), 0, N, 0, kChunks},
-        {"mixed-dst", Dst::materialised, source(Ntot, per_chunk), 0, N, 0, kChunks},
-        {"second", Dst::second, source(Ntot, [](long) { return 1.0; }), 0, N, 0, kChunks},
-        {"zero", Dst::materialised, source(Ntot, [](long) { return 0.0; }), 0, N, 0, kChunks},
-        {"mixed-src", Dst::fresh, source(Ntot, plain), 0, N, kChunks, kChunks},
-        {"half", Dst::materialised, source(Ntot, half), 0, N, kChunks / 2, kChunks},
-        {"near", Dst::materialised, source(Ntot, near), 0, N, kChunks, kChunks},
-        {"partial", Dst::materialised, source(Ntot, per_chunk), S / 2, N - S / 2, 2, kChunks},
-        {"tail", Dst::fresh, source(Ntot, [](long) { return 3.0; }), 0, Ntot, 1, kChunks + 1},
-        {"same-first", Dst::fresh, source(Ntot, [](long) { return 0.0; }), 0, Ntot, 0, kChunks + 1, 0, 0},
-        {"same-part", Dst::fresh, source(Ntot, [](long) { return 0.0; }), S / 2, N - S / 2, 0, kChunks, 0, 0},
-        {"same-second", Dst::second, source(Ntot, [](long) { return 1.0; }), 0, N, 0, kChunks, -1, 0},
-        {"prefix", Dst::fresh, source(Ntot, prefix), 0, N, kChunks, kChunks, kChunks, kChunks},
+        {"fresh", Dst::fresh, source(Ntot, per_chunk), 0, N, 0, n_chunks},
+        {"mixed-dst", Dst::materialised, source(Ntot, per_chunk), 0, N, 0, n_chunks},
+        {"second", Dst::second, source(Ntot, [](long) { return 1.0; }), 0, N, 0, n_chunks},
+        {"zero", Dst::materialised, source(Ntot, [](long) { return 0.0; }), 0, N, 0, n_chunks},
+        {"mixed-src", Dst::fresh, source(Ntot, plain), 0, N, n_chunks, n_chunks},
+        {"half", Dst::materialised, source(Ntot, half), 0, N, n_chunks / 2, n_chunks},
+        {"near", Dst::materialised, source(Ntot, near), 0, N, n_chunks, n_chunks},
+        {"partial", Dst::materialised, source(Ntot, per_chunk), S / 2, N - S / 2, 2, n_chunks},
+        {"tail", Dst::fresh, source(Ntot, [](long) { return 3.0; }), 0, Ntot, 1, n_chunks + 1},
+        {"same-first", Dst::fresh, source(Ntot, [](long) { return 0.0; }), 0, Ntot, 0, n_chunks + 1, 0, 0},
+        {"same-part", Dst::fresh, source(Ntot, [](long) { return 0.0; }), S / 2, N - S / 2, 0, n_chunks, 0, 0},
+        {"same-second", Dst::second, source(Ntot, [](long) { return 1.0; }), 0, N, 0, n_chunks, -1, 0},
+        {"prefix", Dst::fresh, source(Ntot, prefix), 0, N, n_chunks, n_chunks, n_chunks, n_chunks},
     };
 
     for (const Case& c : cases)

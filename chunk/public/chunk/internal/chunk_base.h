@@ -233,7 +233,7 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
     static constexpr bool precise = true;
 
     /// @brief Publish a newly-enqueued deferred op: increment the per-chunk
-    ///        pending count and record this thread as the owner (kOwnerMulti
+    ///        pending count and record this thread as the owner (owner_multi
     ///        once a second rank publishes). Encoding: see the pending-word
     ///        note in the private section.
     /// @param thr Calling (publishing) thread's rank.
@@ -242,7 +242,7 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
         auto& pending = self.pending_ops_;
         {
             const uint32_t me =
-                (static_cast<uint32_t>(thr) + 1u < kOwnerMulti) ? static_cast<uint32_t>(thr) + 1u : kOwnerMulti;
+                (static_cast<uint32_t>(thr) + 1u < owner_multi) ? static_cast<uint32_t>(thr) + 1u : owner_multi;
             auto cur = static_cast<uint32_t>(pending.load(std::memory_order_acquire));
             for (;;)
             {
@@ -252,10 +252,10 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
                 // leaves the count inflated after an over-retire, so the gates
                 // stick and the drains run hyperactive.
                 const int32_t  cnt      = sign_extend_count(cur);
-                const uint32_t own      = cur >> kCountBits;
-                const uint32_t nown     = (cnt <= 0 || own == me) ? me : kOwnerMulti;
-                const uint32_t ncnt     = static_cast<uint32_t>(cnt + 1) & kCountMask;
-                const uint32_t nw       = (nown << kCountBits) | ncnt;
+                const uint32_t own      = cur >> count_bits;
+                const uint32_t nown     = (cnt <= 0 || own == me) ? me : owner_multi;
+                const uint32_t ncnt     = static_cast<uint32_t>(cnt + 1) & count_mask;
+                const uint32_t nw       = (nown << count_bits) | ncnt;
                 auto           expected = static_cast<int32_t>(cur);
                 if (pending.compare_exchange_weak(expected, static_cast<int32_t>(nw), std::memory_order_acq_rel,
                                                   std::memory_order_acquire))
@@ -279,9 +279,9 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
             {
                 const int32_t  cnt      = sign_extend_count(cur);
                 const int32_t  ncnt     = cnt - count;                              // may go NEGATIVE: two's
-                const uint32_t bits     = static_cast<uint32_t>(ncnt) & kCountMask; // complement in 20 bits
+                const uint32_t bits     = static_cast<uint32_t>(ncnt) & count_mask; // complement in 20 bits
                 const uint32_t nw       = (ncnt <= 0) ? bits                        // owner cleared while <= 0
-                                                      : ((cur >> kCountBits) << kCountBits) | bits;
+                                                      : ((cur >> count_bits) << count_bits) | bits;
                 auto           expected = static_cast<int32_t>(cur);
                 if (pending.compare_exchange_weak(expected, static_cast<int32_t>(nw), std::memory_order_acq_rel,
                                                   std::memory_order_acquire))
@@ -324,13 +324,13 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
     {
         {
             const auto w = static_cast<uint32_t>(self.pending_ops_.load(std::memory_order_acquire));
-            return sign_extend_count(w) > 0 && (w >> kCountBits) != static_cast<uint32_t>(thr) + 1u;
+            return sign_extend_count(w) > 0 && (w >> count_bits) != static_cast<uint32_t>(thr) + 1u;
         }
     }
     /// @brief Read-side gate check: does a reader need to wait/drain before
     ///        reading element `i`?
     /// @details Through pending_any(), never a raw `pending_ops_.load() > 0`:
-    ///          once a second rank publishes, the owner field is kOwnerMulti
+    ///          once a second rank publishes, the owner field is owner_multi
     ///          (0xFFF), bit 31 of the word is set, the raw int32 is NEGATIVE,
     ///          and a raw `> 0` gate opens while ops are pending -- the reader
     ///          then consumes the stale pre-op value.
@@ -352,15 +352,15 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
 
   private:
     // ── Pending word ────────────────────────────────────────────────────────
-    // [owner:12|count:20]. owner = publishing rank + 1, kOwnerMulti once a
+    // [owner:12|count:20]. owner = publishing rank + 1, owner_multi once a
     // second rank publishes while count > 0, cleared when count drops to <= 0;
     // foreign_pending() reads it. count is two's complement in 20 bits, read
     // through sign_extend_count(): an over-retire goes negative and self-heals
     // at the next publish, as a plain signed counter would. Never let it wrap
     // as an unsigned count: the gates would stay poisoned for good.
-    static constexpr uint32_t kCountBits  = 20;
-    static constexpr uint32_t kCountMask  = (uint32_t{1} << kCountBits) - 1;
-    static constexpr uint32_t kOwnerMulti = 0xFFFu;
+    static constexpr uint32_t count_bits  = 20;
+    static constexpr uint32_t count_mask  = (uint32_t{1} << count_bits) - 1;
+    static constexpr uint32_t owner_multi = 0xFFFu;
 
     /// @brief Sign-extend the low 20 bits of the pending word (the count is
     ///        stored as two's-complement inside those 20 bits).
@@ -368,7 +368,7 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
     /// @return The count, sign-extended to a full int32_t.
     [[nodiscard]] static constexpr int32_t sign_extend_count(uint32_t word) noexcept
     {
-        return static_cast<int32_t>(word << (32 - kCountBits)) >> (32 - kCountBits);
+        return static_cast<int32_t>(word << (32 - count_bits)) >> (32 - count_bits);
     }
 };
 
@@ -1070,7 +1070,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         unsigned int i = 0;
         while (i < count)
         {
-            const unsigned int block_end  = std::min(count, i + kScanBlock);
+            const unsigned int block_end  = std::min(count, i + scan_block);
             unsigned int       not_first  = 0;
             unsigned int       not_second = 0;
             for (unsigned int j = i; j < block_end; ++j)
@@ -1116,7 +1116,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         unsigned int i    = 0;
         while (i < count)
         {
-            const unsigned int block_end = std::min(count, i + kScanBlock);
+            const unsigned int block_end = std::min(count, i + scan_block);
             unsigned int       bad       = 0;
             for (unsigned int j = i; j < block_end; ++j)
             {
@@ -1755,7 +1755,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /// @brief Elements per branch-free block of the constant scans.
     ///        A quarter of a 256-element chunk: four early-exit points, and a
     ///        block long enough for the vector loop to matter.
-    static constexpr unsigned int kScanBlock = 64;
+    static constexpr unsigned int scan_block = 64;
 
     /// @brief Whether this chunk is currently materialised (not compressed
     ///        to a constant), at the granularity Derived supports.

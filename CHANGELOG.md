@@ -128,6 +128,10 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Constants are snake_case everywhere, as the standard library's; UPPER_CASE is left to
+  macros. 84 names change, all internal but one: `fast_alloc::SIZE_BLOCK` is now
+  `fast_alloc::size_block`, the former name kept as a deprecated alias. `check_naming` (a
+  source check, in ctest and the CI) keeps it so.
 - An invariant failure is reported by one thread only (when a race is seen by
   several threads at once, their reports no longer interleave), as one block
   on stderr followed by the backtrace, and its message is formatted without

@@ -91,7 +91,7 @@ constexpr const char* variant_name()
     }
 }
 
-constexpr int kChunks = 64;
+constexpr int n_chunks = 64;
 
 static int fails = 0;
 
@@ -124,7 +124,7 @@ static void phase(Array<double>& arr, long n, Fn&& body)
 /// @brief Chunks still holding a buffer.
 static int materialised(const Array<double>& arr);
 
-/// @brief phase() over chunks [0, kChunks), returning the chunks materialised
+/// @brief phase() over chunks [0, n_chunks), returning the chunks materialised
 ///        INSIDE the region, once every thread's writes are done -- before the
 ///        end-of-phase pass compresses what the writes left.
 template <typename Fn>
@@ -138,7 +138,7 @@ static int phase_count(Array<double>& arr, Fn&& body)
             begin_parallel_phase();
         }
 #pragma omp for schedule(static)
-        for (long c = 0; c < kChunks; ++c)
+        for (long c = 0; c < n_chunks; ++c)
         {
             body(c);
         }
@@ -175,7 +175,7 @@ static int materialised(const Array<double>& arr)
 {
     const long S = static_cast<long>(arr.chunk_size());
     int        n = 0;
-    for (int c = 0; c < kChunks; ++c)
+    for (int c = 0; c < n_chunks; ++c)
     {
         n += arr.written(static_cast<int>(c * S));
     }
@@ -187,7 +187,7 @@ static int materialised(const Array<double>& arr)
 template <typename Expect>
 static void check(const char* step, const Array<double>& arr, Expect&& expect, int mat_expected)
 {
-    const long N   = kChunks * static_cast<long>(arr.chunk_size());
+    const long N   = n_chunks * static_cast<long>(arr.chunk_size());
     long       bad = 0;
     for (long i = 0; i < N; ++i)
     {
@@ -212,7 +212,7 @@ static void check(const char* step, const Array<double>& arr, Expect&& expect, i
 }
 
 /// @brief Property 4, Chunk2A only: after reclaim_second_values() exactly the
-///        kChunks constants the chunks hold are in use, and every element
+///        n_chunks constants the chunks hold are in use, and every element
 ///        still reads @p expect(i). A template, so that the members Chunk2A
 ///        alone declares are named in a discarded branch only.
 template <typename Arr, typename Expect>
@@ -222,9 +222,9 @@ static void check_reclaim(const Arr& a, Expect&& expect)
     {
         (void)Arr::reclaim_second_values();
         const long in_use = static_cast<long>(Arr::second_value_stats().in_use());
-        if (in_use != kChunks)
+        if (in_use != n_chunks)
         {
-            println("[{}] FAIL  reclaim: {} second values in use, expected {}", variant_name(), in_use, kChunks);
+            println("[{}] FAIL  reclaim: {} second values in use, expected {}", variant_name(), in_use, n_chunks);
             ++fails;
         }
         else
@@ -244,15 +244,15 @@ int run(int /*argc*/, char** /*argv*/)
     ParamChunk::init_indexes(true);
 
     const long S  = static_cast<long>(Array<double>(1).chunk_size());
-    const long N  = kChunks * S;
+    const long N  = n_chunks * S;
     const auto sz = [](long x) { return static_cast<std::size_t>(x); };
 
-    println("=== constant_switch_validation [variant = {}]  chunk_size={}  chunks={} ===", variant_name(), S, kChunks);
+    println("=== constant_switch_validation [variant = {}]  chunk_size={}  chunks={} ===", variant_name(), S, n_chunks);
 
     // Chunk c at base + c, one value per chunk, by fill_range.
     const auto fill_per_chunk = [&](Array<double>& a, double base)
     {
-        for (long c = 0; c < kChunks; ++c)
+        for (long c = 0; c < n_chunks; ++c)
         {
             fill_range(a, sz(c * S), sz((c + 1) * S), base + static_cast<double>(c));
         }
@@ -277,10 +277,10 @@ int run(int /*argc*/, char** /*argv*/)
         check("fill: 30 -> 30 + c", a, per_chunk(30.0), 0);
 
         // 3: one element per chunk written through the proxy.
-        phase(a, kChunks, [&](long c) { a[static_cast<int>(c * S + 5)] = 99.0; });
+        phase(a, n_chunks, [&](long c) { a[static_cast<int>(c * S + 5)] = 99.0; });
         check(
             "write one element per chunk", a,
-            [S](long i) { return (i % S == 5) ? 99.0 : 30.0 + static_cast<double>(i / S); }, kChunks);
+            [S](long i) { return (i % S == 5) ? 99.0 : 30.0 + static_cast<double>(i / S); }, n_chunks);
         fill_per_chunk(a, 30.0);
         check("fill: back to 30 + c", a, per_chunk(30.0), 0);
 
@@ -318,16 +318,16 @@ int run(int /*argc*/, char** /*argv*/)
         const auto mixed = [S](long i) { return (i % 2) ? 2.5 : 70.0 + static_cast<double>(i / S); };
         source(mixed);
         copy_range(a, 0, sz(N), src.begin());
-        check("copy: 60 + c -> mixed", a, mixed, kChunks);
+        check("copy: 60 + c -> mixed", a, mixed, n_chunks);
         // A uniform span over a materialised chunk: released.
         source(per_chunk(80.0));
         copy_range(a, 0, sz(N), src.begin());
         check("copy: mixed -> 80 + c", a, per_chunk(80.0), 0);
 
-        phase(a, kChunks, [&](long c) { a[static_cast<int>(c * S + S - 1)] = -1.0; });
+        phase(a, n_chunks, [&](long c) { a[static_cast<int>(c * S + S - 1)] = -1.0; });
         check(
             "write one element per chunk", a,
-            [S](long i) { return (i % S == S - 1) ? -1.0 : 80.0 + static_cast<double>(i / S); }, kChunks);
+            [S](long i) { return (i % S == S - 1) ? -1.0 : 80.0 + static_cast<double>(i / S); }, n_chunks);
         a.clear();
     }
 
@@ -360,8 +360,8 @@ int run(int /*argc*/, char** /*argv*/)
         check("fill_mt: 130 + c -> first (in place)", a, at(0.0), 0);
 
         // A span short of its chunk: materialised (the element left is 0).
-        phase(a, kChunks, [&](long c) { fill_range_mt(a, sz(c * S + 1), sz((c + 1) * S), 7.0); });
-        check("fill_mt: first -> 0 then 7 (partial)", a, [S](long i) { return (i % S == 0) ? 0.0 : 7.0; }, kChunks);
+        phase(a, n_chunks, [&](long c) { fill_range_mt(a, sz(c * S + 1), sz((c + 1) * S), 7.0); });
+        check("fill_mt: first -> 0 then 7 (partial)", a, [S](long i) { return (i % S == 0) ? 0.0 : 7.0; }, n_chunks);
         // A uniform span over a materialised chunk: written, compressed by the
         // end-of-phase pass.
         (void)fill_mt(140.0);
@@ -370,10 +370,10 @@ int run(int /*argc*/, char** /*argv*/)
 
         // 3: a write into a switched chunk materialises it from its constant.
         check_in_region("fill_mt: 140 + c -> 150 + c", fill_mt(150.0));
-        phase(a, kChunks, [&](long c) { a[static_cast<int>(c * S + 3)] = -2.0; });
+        phase(a, n_chunks, [&](long c) { a[static_cast<int>(c * S + 3)] = -2.0; });
         check(
             "write one element per chunk", a,
-            [S](long i) { return (i % S == 3) ? -2.0 : 150.0 + static_cast<double>(i / S); }, kChunks);
+            [S](long i) { return (i % S == 3) ? -2.0 : 150.0 + static_cast<double>(i / S); }, n_chunks);
         a.clear();
     }
 

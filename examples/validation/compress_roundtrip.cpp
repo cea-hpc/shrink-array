@@ -137,10 +137,10 @@ void maybe_set_second_value(Arr& a, const Val& v)
     }
 }
 
-// Runs of kRun elements: 0 -> first constant, 1 -> second constant, 2 -> varied.
-// kRun is a multiple of every geometry the harness is built at, so a run is a
+// Runs of run_len elements: 0 -> first constant, 1 -> second constant, 2 -> varied.
+// run_len is a multiple of every geometry the harness is built at, so a run is a
 // whole number of chunks and the pass sees pure constant blocks.
-constexpr long kRun = 4096;
+constexpr long run_len = 4096;
 
 template <typename T>
 struct Scenario
@@ -182,7 +182,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
 #pragma omp for
         for (long i = 0; i < N; ++i)
         {
-            const long run = (i / kRun) % 3;
+            const long run = (i / run_len) % 3;
             if (run == 0)
             {
                 arr[i] = T(0);
@@ -222,7 +222,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     T    exp_first{};
     for (long i = 0; i < N; ++i)
     {
-        const long run      = (i / kRun) % 3;
+        const long run      = (i / run_len) % 3;
         T          expected = sc.varied(i);
         if (run == 0)
         {
@@ -255,7 +255,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     {
         println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {}) "
                 "got={:g} expected={:g}",
-                variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3, (double)got_first,
+                variant_name(), label, bad, N, first, first / csz, first % csz, (first / run_len) % 3, (double)got_first,
                 (double)exp_first);
     }
     else

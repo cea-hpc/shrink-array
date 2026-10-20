@@ -1,0 +1,122 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# The per-push CI: the source checks, then gcc 14 in an OpenMP and a serial
+# build with the check-mode switches (CHECK_OPTIM), the validation harnesses at
+# chunk size 256 (`check` target: ctest -L validation) and the native runs of
+# the GenMC models (ctest -L formal). The long builds -- sanitizers, _dyn,
+# clang, AArch64, GenMC itself -- belong to a nightly workflow, not here.
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop, threads, cpp23]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# A new push to a branch cancels the run still going on it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  source-checks:
+    name: Source checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: check_* scripts
+        run: |
+          status=0
+          for s in check_docs check_tracked check_raw_reads check_includes check_naming check_headers; do
+            echo "::group::$s"
+            python3 scripts/$s.py . || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+
+  # A fixup!/squash!/amend! commit is squashed into its target before the
+  # push (git rebase -i --autosquash), not published: once pushed it can only
+  # stay. Only the commits this push or pull request brings are looked at, not
+  # the ones already on another branch (a merge of develop into threads brings
+  # commits develop has already passed).
+  commit-hygiene:
+    name: No fixup commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: New commits carry no fixup!/squash!/amend!
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE_REF: ${{ github.base_ref }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            range="origin/$BASE_REF..HEAD"
+            others=""
+          else
+            # A new branch, or a force push: no usable "before", the branch alone.
+            if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              range="$BEFORE..HEAD"
+            else
+              range="HEAD"
+            fi
+            others=$(git for-each-ref --format='%(refname)' refs/remotes/origin |
+                     grep -v -x -e "refs/remotes/origin/$BRANCH" -e refs/remotes/origin/HEAD || true)
+          fi
+          bad=$(git log --no-merges --format='%h %s' $range ${others:+--not $others} |
+                grep -E '^[0-9a-f]+ (fixup|squash|amend)! ' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::commits to squash before pushing (git rebase -i --autosquash):"
+            echo "$bad"
+            exit 1
+          fi
+          echo "no fixup commit in $range"
+
+  build-test:
+    name: gcc 14, OMP=${{ matrix.omp }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        omp: [ON, OFF]
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      # A unity validation harness takes up to 6 GB to compile: two at once fit
+      # the runner's 16 GB, Ninja's default (cores + 2) does not.
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=${{ matrix.omp }}
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+      - name: GenMC models, native runs
+        run: |
+          targets=$(ninja -C build -t targets all | sed -n 's/^\(formal_native_[a-z_]*\):.*/\1/p' | sort -u)
+          cmake --build build --target $targets
+          ctest --test-dir build -L formal --output-on-failure

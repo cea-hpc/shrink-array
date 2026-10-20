@@ -410,7 +410,7 @@ class tiled_mapping_base
     constexpr std::pair<grid_type, std::size_t> sub_view(const char* who, Slices... slices) const
     {
         static_assert(sizeof...(Slices) == Extents::rank(), "md::layout_tiled: one slice per dimension");
-        constexpr std::size_t R = Extents::rank();
+        constexpr std::size_t rank = Extents::rank();
         grid_type             first{};
         grid_type             size{};
         grid_type             stride{};
@@ -419,7 +419,7 @@ class tiled_mapping_base
         }(std::index_sequence_for<Slices...>{});
 
         index_type which = 0; // the sub-view's first tile, in storage order
-        for (std::size_t r = 0; r < R; ++r)
+        for (std::size_t r = 0; r < rank; ++r)
         {
             const index_type t   = self().tile_extent(r);
             const index_type end = first[r] + size[r];

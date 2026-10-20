@@ -65,7 +65,7 @@ struct uint64_t_padding
     union
     {
         uint64_t value;
-        char     padding[CACHE_LINE_SIZE];
+        char     padding[cache_line_size];
     };
 };
 

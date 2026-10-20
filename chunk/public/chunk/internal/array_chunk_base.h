@@ -677,7 +677,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /**
      * @brief Call @p f(value) on every element of [@p first, @p last), in order.
      *
-     * @details One sync_chunk per chunk, then blocks of kBulkBlock elements
+     * @details One sync_chunk per chunk, then blocks of bulk_block elements
      *          copied under one read section each (ChunkBase::read_block), @p f
      *          called outside it. Stats and NaN-check builds read through the
      *          iterator, so every element still goes through the const operator[].
@@ -692,15 +692,15 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     template <typename F>
     void for_each_value(ind_type first, ind_type last, F&& f) const
     {
-        if constexpr (kBulkFast)
+        if constexpr (bulk_fast)
         {
-            std::array<T, kBulkBlock> buf;
+            std::array<T, bulk_block> buf;
             for_each_chunk_span(first, last,
                                 [&](const chunk_type& ch, int num_chunk, int lo, int hi)
                                 {
-                                    for (int j = lo; j < hi; j += kBulkBlock)
+                                    for (int j = lo; j < hi; j += bulk_block)
                                     {
-                                        const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
+                                        const int n = (hi - j) < bulk_block ? (hi - j) : bulk_block;
                                         ch.read_block(j, n, buf.data());
                                         check_no_write_during_bulk_read(ch, num_chunk, j);
                                         for (int k = 0; k < n; ++k)
@@ -745,7 +745,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @brief Call @p f(std::span<const T>) on [@p first, @p last), block by
      *        block, in order: the loop over the span can be vectorised.
      *
-     * @details for_each_value() by blocks of up to kBulkBlock elements. When @p f
+     * @details for_each_value() by blocks of up to bulk_block elements. When @p f
      *          is also callable as f(const T& v, std::size_t count), a compressed
      *          chunk is passed that way in O(1); other callables get it as spans.
      *          Stats and NaN-check builds fill blocks through the iterator and
@@ -762,15 +762,15 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     template <typename F>
     void for_each_span(ind_type first, ind_type last, F&& f) const
     {
-        std::array<T, kBulkBlock> buf;
-        if constexpr (kBulkFast)
+        std::array<T, bulk_block> buf;
+        if constexpr (bulk_fast)
         {
             for_each_chunk_span(first, last,
                                 [&](const chunk_type& ch, int num_chunk, int lo, int hi)
                                 {
-                                    for (int j = lo; j < hi; j += kBulkBlock)
+                                    for (int j = lo; j < hi; j += bulk_block)
                                     {
-                                        const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
+                                        const int n = (hi - j) < bulk_block ? (hi - j) : bulk_block;
                                         if constexpr (std::invocable<F&, const T&, std::size_t>)
                                         {
                                             // A compressed chunk stays so for the rest of the
@@ -799,7 +799,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                            [&](const T& x)
                            {
                                buf[n++] = x;
-                               if (n == kBulkBlock)
+                               if (n == bulk_block)
                                {
                                    f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
                                    n = 0;
@@ -828,14 +828,14 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     template <typename OutIt>
     OutIt read_range(ind_type first, ind_type last, OutIt out) const
     {
-        if constexpr (kBulkFast && std::is_same_v<OutIt, T*>)
+        if constexpr (bulk_fast && std::is_same_v<OutIt, T*>)
         {
             for_each_chunk_span(first, last,
                                 [&](const chunk_type& ch, int num_chunk, int lo, int hi)
                                 {
-                                    for (int j = lo; j < hi; j += kBulkBlock)
+                                    for (int j = lo; j < hi; j += bulk_block)
                                     {
-                                        const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
+                                        const int n = (hi - j) < bulk_block ? (hi - j) : bulk_block;
                                         ch.read_block(j, n, out);
                                         check_no_write_during_bulk_read(ch, num_chunk, j);
                                         out += n;
@@ -1184,7 +1184,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *
      * @details A team of its own when parallel_storage_init::use_own_team()
      *          accepts the chunk count (outside a region, from
-     *          kParallelInitMinChunks chunks), each chunk written by one
+     *          parallel_init_min_chunks chunks), each chunk written by one
      *          thread; the calling thread otherwise -- inside a region an
      *          orphaned `omp for` would write 1/N of the range. The team goes
      *          through parallel_phase(): without OMPT its threads begin the
@@ -1263,10 +1263,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
   private:
     /// @brief Elements per read section in the bulk reads (8 to 64 measure
     ///        alike; the larger, the fewer sections on long ranges).
-    static constexpr int kBulkBlock = 64;
+    static constexpr int bulk_block = 64;
     /// @brief Bulk reads by block only where per-element stats and NaN checks
     ///        do not rely on every element going through operator[].
-    static constexpr bool kBulkFast = !chunk_config::stats && !chunk_config::do_check;
+    static constexpr bool bulk_fast = !chunk_config::stats && !chunk_config::do_check;
 
     /// @brief Call @p fn(chunk, num_chunk, lo, hi) for each chunk the range
     ///        [first, last) touches -- offsets [lo, hi) in it -- after one

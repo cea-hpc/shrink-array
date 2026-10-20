@@ -51,7 +51,7 @@
 #include <atomic>      // std::atomic, for chunk/*
 #include <chrono>      // std::chrono, for chunk/*
 #include <complex>     // std::complex (complex_double)
-#include <cstddef>     // std::size_t (CACHE_LINE_SIZE)
+#include <cstddef>     // std::size_t (cache_line_size)
 #include <cstdint>     // std::uint64_t, for chunk/*
 #include <cstring>     // std::memcpy, for chunk/*
 #include <fstream>     // std::ifstream, for chunk/*
@@ -242,4 +242,4 @@ using complex_double = std::complex<double>;
 // Assumed cache line size (used for padding). Kept here rather than in
 // bench_config.h because it's a hardware/ABI-level constant, not a bench
 // mode knob.
-inline constexpr std::size_t CACHE_LINE_SIZE = 64;
+inline constexpr std::size_t cache_line_size = 64;

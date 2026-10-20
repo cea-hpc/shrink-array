@@ -36,7 +36,7 @@ void Chunk2Base<T, Derived>::block_clear_common(this Derived&        self,
                                                 SecondValueRef<T>    ptr_second_value,
                                                 [[maybe_unused]] T*  cst2_ptr)
 {
-    if constexpr (is_chunk2A_derived)
+    if constexpr (is_chunk2a_derived)
     {
         // 1. Update the metadata BEFORE the CAS.
         if (num_compress_value == 0)

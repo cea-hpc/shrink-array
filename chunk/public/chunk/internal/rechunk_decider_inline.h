@@ -216,7 +216,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     bool reverting = false;
     if (pol_.anti_reversal_ticks > 0)
     {
-        for (int i = 0; i < Hist::kVisited; ++i)
+        for (int i = 0; i < Hist::n_visited; ++i)
         {
             if (hist.visited_size[i] == best_sz && tick - hist.visited_tick[i] < pol_.anti_reversal_ticks)
             {
@@ -289,7 +289,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         // Record the size just left in the visited ring (multi-step anti-reversal).
         hist.visited_size[hist.visited_head] = cur_size;
         hist.visited_tick[hist.visited_head] = tick;
-        hist.visited_head                    = (hist.visited_head + 1) % Hist::kVisited;
+        hist.visited_head                    = (hist.visited_head + 1) % Hist::n_visited;
         hist.last_best_size                  = best_sz;
         // consider() re-chunks the array, unless dry-run.
     }

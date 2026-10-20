@@ -333,8 +333,8 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
     }
 
     // Smaller than a chunk at every geometry: several threads per chunk.
-    constexpr Int kBlk = 64;
-    const Int     nblk = (end_s - beg_s + kBlk - 1) / kBlk;
+    constexpr Int blk = 64;
+    const Int     nblk = (end_s - beg_s + blk - 1) / blk;
     // Every other run swaps the constants, so the same chunks go from one
     // constant to the other (and back) across the run.
     const bool swap = ((k / 5) & 1) != 0;
@@ -345,8 +345,8 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
 #pragma omp for schedule(static, 1) nowait
         for (Int b = 0; b < nblk; ++b)
         {
-            const auto lo = static_cast<std::size_t>(beg_s + (b * kBlk));
-            const auto hi = static_cast<std::size_t>(std::min(beg_s + ((b + 1) * kBlk), end_s));
+            const auto lo = static_cast<std::size_t>(beg_s + (b * blk));
+            const auto hi = static_cast<std::size_t>(std::min(beg_s + ((b + 1) * blk), end_s));
 
             // shrink_array:: spelled out: this file has no using-directive, and
             // the std::vector baseline resolves to vector_range_ops.h.

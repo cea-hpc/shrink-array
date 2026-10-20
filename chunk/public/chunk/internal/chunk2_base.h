@@ -190,10 +190,10 @@ class Chunk2Base : public ChunkBase<T, Derived>
             else
             {
                 // Path for Chunk2A or Bool (Non-indexed)
-                if constexpr (is_bool || is_chunk2A_derived)
+                if constexpr (is_bool || is_chunk2a_derived)
                 {
                     is_violating = self.is_cst_val2();
-                    if constexpr (is_chunk2A_derived)
+                    if constexpr (is_chunk2a_derived)
                     {
                         // A chunk compressed to a second constant reads from it
                         // through its values pointer; there is no other handle.
@@ -220,7 +220,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
     }
 
   private:
-    static constexpr bool is_chunk2A_derived = std::is_same_v<Derived, Chunk2A<T>>;
+    static constexpr bool is_chunk2a_derived = std::is_same_v<Derived, Chunk2A<T>>;
     static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, Chunk2<T>>;
 
     /// @brief Clear chunk and reset to constant value

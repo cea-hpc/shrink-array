@@ -129,8 +129,8 @@ void compress_in_region(Arr& a)
     end_phase();
 }
 
-constexpr double kPlain  = 1.0; ///< neither constant
-constexpr double kSecond = 2.0; ///< the arrays' second value
+constexpr double plain_value  = 1.0; ///< neither constant
+constexpr double second_value = 2.0; ///< the arrays' second value
 
 enum class Case
 {
@@ -166,30 +166,30 @@ int run_case(Case c)
     const long    S = static_cast<long>(a.chunk_size());
     const long    N = 3 * S;
     a.resize(static_cast<int>(N));
-    maybe_set_second_value(a, kSecond);
+    maybe_set_second_value(a, second_value);
 
     const auto lo = static_cast<std::size_t>(S);
     const auto hi = static_cast<std::size_t>(2 * S);
     if (c == Case::copy)
     {
-        const std::vector<double> src(static_cast<std::size_t>(S), kPlain);
+        const std::vector<double> src(static_cast<std::size_t>(S), plain_value);
         shrink_array::copy_range(a, lo, hi, src.begin());
     }
     else
     {
-        shrink_array::fill_range(a, lo, hi, kPlain);
+        shrink_array::fill_range(a, lo, hi, plain_value);
     }
 
     // The single proxied write of a constant: with a stale count, the one that
     // makes it reach chunk_size.
-    const double constant  = (c == Case::second) ? kSecond : 0.0;
+    const double constant  = (c == Case::second) ? second_value : 0.0;
     a[static_cast<int>(S)] = constant;
     compress_in_region(a);
 
     int bad = 0;
     for (long i = 0; i < N; ++i)
     {
-        const double want = (i < S || i >= 2 * S) ? 0.0 : (i == S ? constant : kPlain);
+        const double want = (i < S || i >= 2 * S) ? 0.0 : (i == S ? constant : plain_value);
         const double got  = std::as_const(a)[static_cast<int>(i)];
         if (got != want)
         {
@@ -224,21 +224,21 @@ int run_mul_zero_case()
     const long    S = static_cast<long>(a.chunk_size());
     const long    N = 3 * S;
     a.resize(static_cast<int>(N));
-    maybe_set_second_value(a, kSecond);
+    maybe_set_second_value(a, second_value);
 
-    shrink_array::fill_range(a, static_cast<std::size_t>(S), static_cast<std::size_t>(2 * S), kPlain);
-    a[static_cast<int>(S)] = kSecond;
+    shrink_array::fill_range(a, static_cast<std::size_t>(S), static_cast<std::size_t>(2 * S), plain_value);
+    a[static_cast<int>(S)] = second_value;
     a[static_cast<int>(S)] *= 0.0;
     for (long i = S + 1; i < 2 * S; ++i)
     {
-        a[static_cast<int>(i)] = kSecond;
+        a[static_cast<int>(i)] = second_value;
     }
     compress_in_region(a);
 
     int bad = 0;
     for (long i = 0; i < N; ++i)
     {
-        const double want = (i < S || i >= 2 * S || i == S) ? 0.0 : kSecond;
+        const double want = (i < S || i >= 2 * S || i == S) ? 0.0 : second_value;
         const double got  = std::as_const(a)[static_cast<int>(i)];
         if (got != want)
         {

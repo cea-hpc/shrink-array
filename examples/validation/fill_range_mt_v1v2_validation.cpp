@@ -73,8 +73,8 @@ using namespace shrink_array;
 static_assert(chunk_config::use_chunk && chunk_config::use_chunk2,
               "fill_range_mt_v1v2_validation is the two-variant build: link chunk_v1v2_<size>");
 
-constexpr double kSecond = 9.0; ///< the ArrayChunk2's declared second value
-constexpr double kOther  = 5.0; ///< a value neither array can compress to
+constexpr double second_value = 9.0; ///< the ArrayChunk2's declared second value
+constexpr double other_value  = 5.0; ///< a value neither array can compress to
 
 /// @brief Non-uniform content: two values alternating, so no chunk compresses.
 static double plain(long i)
@@ -182,28 +182,28 @@ int main(int argc, char** argv)
     {
         ArrayChunk<double> a(0);
         a.resize(static_cast<ArrayChunk<double>::ind_type>(nchunks * a.chunk_size()));
-        fails += run_case("ArrayChunk,  fill other value (5)", a, nchunks, kOther, omp ? nchunks : -1);
+        fails += run_case("ArrayChunk,  fill other value (5)", a, nchunks, other_value, omp ? nchunks : -1);
         a.clear();
     }
     {
         ArrayChunk2<double> a(0);
         a.resize(static_cast<ArrayChunk2<double>::ind_type>(nchunks * a.chunk_size()));
-        a.set_second_value(kSecond, false);
+        a.set_second_value(second_value, false);
         fails += run_case("ArrayChunk2, fill first value (0)", a, nchunks, 0.0, omp ? 0 : -1);
         a.clear();
     }
     {
         ArrayChunk2<double> a(0);
         a.resize(static_cast<ArrayChunk2<double>::ind_type>(nchunks * a.chunk_size()));
-        a.set_second_value(kSecond, false);
-        fails += run_case("ArrayChunk2, fill second value (9)", a, nchunks, kSecond, omp ? 0 : -1);
+        a.set_second_value(second_value, false);
+        fails += run_case("ArrayChunk2, fill second value (9)", a, nchunks, second_value, omp ? 0 : -1);
         a.clear();
     }
     {
         ArrayChunk2<double> a(0);
         a.resize(static_cast<ArrayChunk2<double>::ind_type>(nchunks * a.chunk_size()));
-        a.set_second_value(kSecond, false);
-        fails += run_case("ArrayChunk2, fill undeclared value (5)", a, nchunks, kOther, omp ? nchunks : -1);
+        a.set_second_value(second_value, false);
+        fails += run_case("ArrayChunk2, fill undeclared value (5)", a, nchunks, other_value, omp ? nchunks : -1);
         a.clear();
     }
 
