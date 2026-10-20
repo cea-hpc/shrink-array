@@ -327,9 +327,7 @@ counter, modified on every write, caused a storm of cache lines between cores.
 10. `finish()`: `stealing_inflight_--`, then `hard_inflight_--`.
 
 **Why two counters.** `hard_inflight_` counts all compressors between `start()` and
-`finish()`, **parked ones included**: without per-chunk marks, it is what writers look at,
-and a parked compressor pushes them aside, which opens its window (priority to the compressor; without
-it, compression starves and memory doubles). `stealing_inflight_` only counts those
+`finish()`, **parked ones included**. `stealing_inflight_` only counts those
 that have passed the gate and can steal a buffer. The materialisation of a chunk
 (`create_value`, via `wait_before_materialise`) and the flushes wait **only** for the
 stealing compressors (or the chunk's mark), **never** for the parked ones: a parked one waits for writers, a
@@ -352,11 +350,9 @@ had been set, and write during the scan (confirmed by TSan). On AArch64, it is a
 Never `seq_cst`: that read stalled behind the previous fence and dominated the
 write engine's profile.
 
-Builds without marks (`SHRINK_SMALL_CHUNK`, for lack of room in the chunk header;
-`chunk_config::use_chunk_steal_mark = false`) keep the global gate: the writer looks at
-`hard_inflight_` (an *acquire* load, paired with the decrement of `finish()`: a writer that sees
-a pass over must also see the `values` it installed, or it writes into the buffer that pass
-returned -- [formal_models.md](formal_models.md), F1), and the compressor waits for all writers.
+Every threaded build has the marks (`chunk_config::use_chunk_steal_mark`). The 8-byte build
+without them (`SHRINK_SMALL_CHUNK`: global gate on `hard_inflight_`, the compressor waiting for
+all writers) was removed; its gate is finding F1 of [formal_models.md](formal_models.md).
 
 ### 5.4 Compressor and deferred-write flush
 

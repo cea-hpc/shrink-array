@@ -63,8 +63,8 @@ tout à zéro. Chaque nom du modèle tient lieu d'un endroit du source, avec le 
 | modèle | source (`chunk/public/chunk/internal/`) |
 |---|---|
 | `flag[r]`, `announce_write()`, `end_write()` | `write_compress_sync_policy.h` : `WritingFlag::v`, `announce_write()`, `end_write()` |
-| `any_writing_on_marked()`, `any_writing()` | `write_compress_sync_policy.h` : `any_thread_writing_on_marked()`, `any_thread_writing()` |
-| `hard_inflight`, `stealing_inflight`, `must_defer_write()`, `is_stealing()` | `compression_manager.h` : `hard_inflight_`, `stealing_inflight_`, `must_defer_write()`, `is_hard_compression_inflight()` |
+| `any_writing_on_marked()` | `write_compress_sync_policy.h` : `any_thread_writing_on_marked()` |
+| `hard_inflight`, `stealing_inflight`, `must_defer_write()` | `compression_manager.h` : `hard_inflight_`, `stealing_inflight_`, `must_defer_write()` |
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h` : `start()`, `finish()` ; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h` : `steal_mark_` et ses trois verbes |
 | `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `chunk2A_std.h` : `try_mark_cst_and_get_old()` |
@@ -82,11 +82,10 @@ Le modèle a les deux **formes** de la section 4 du document de synchronisation.
 `SHAPE_ASYMMETRIC_NAKED` est la forme asymétrique avec l'écriture simple de l'écrivain et *sans*
 `membarrier()` en face : elle doit échouer, et son échec est exactement ce que l'appel système
 répare. La réduction de l'asymétrique au symétrique est l'argument de la section 4.2 et du contrat
-de `membarrier(2)`, pas un résultat du vérificateur. Les **configurations** sont `NO_MARKS` (le
-build `SHRINK_SMALL_CHUNK` : porte globale sur `hard_inflight_`), `INIT_CONSTANT` (le chunk part
-comprimé, les écrivains le matérialisent ; le défaut est un tampon tout à zéro, candidat pour la
-passe), `BOUNDED_COMPRESSOR_WAIT` (le budget `CHUNK_COMPRESS_MAX_YIELDS` réduit à son effet : un
-regard, puis abandon) et `NWRITERS`.
+de `membarrier(2)`, pas un résultat du vérificateur. Les **configurations** sont `INIT_CONSTANT`
+(le chunk part comprimé, les écrivains le matérialisent ; le défaut est un tampon tout à zéro,
+candidat pour la passe), `BOUNDED_COMPRESSOR_WAIT` (le budget `CHUNK_COMPRESS_MAX_YIELDS` réduit à
+son effet : un regard, puis abandon) et `NWRITERS`.
 
 ## 4. La calibration
 
@@ -98,22 +97,19 @@ RC11 et sous IMM (identiques). « Exécutions » est le nombre d'exécutions com
 | le protocole du source, marques, départ sur tampon | passe | passe | 21 |
 | source, marques, départ sur constante (les écrivains matérialisent) | passe | passe | 26 |
 | source, marques, 3 écrivains ; départ sur constante, 3 écrivains | passe | passe | 120 ; 191 |
-| source, sans marques (`SHRINK_SMALL_CHUNK`) ; départ sur constante ; 3 écrivains | passe | passe | 21 ; 82 ; 120 |
 | source, vivacité, attente **non bornée** du compresseur, départ sur tampon ou constante | passe | passe | 21 ; 26 |
 | source, vivacité, départ sur constante, 3 écrivains ; attente bornée (la bibliothèque) | passe | passe | 191 ; 82 |
 | source, vivacité, 5 écrivains, départ sur tampon ; sur constante | passe | passe | 3 938 ; 9 637 |
 | `MUT_NO_CHECK2` : pas de regard sur la porte après l'annonce | échoue | écriture perdue | -- |
 | `SHAPE_ASYMMETRIC_NAKED` : forme asymétrique sans `membarrier()` | échoue | accès à une mémoire libérée | -- |
 | `MUT_NO_FENCE_COMPRESSOR` : le compresseur annonce sans sa barrière | échoue | accès à une mémoire libérée | -- |
-| `MUT_WAIT_ON_HARD` : la matérialisation attend sur `hard_inflight_` (le triangle du 5.3) | échoue | violation de vivacité | 5 |
 | `MUT_RELAXED_MARK` : la marque relaxed au lieu de release/acquire (5.3) | échoue | accès à une mémoire libérée | 8 |
-| `MUT_NO_MARKS_RELAXED_GATE` : la porte sans marques d'avant **F1** (lecture relaxed) | échoue | **accès à une mémoire libérée** | 5 |
 | `MUT_MATERIALISE_WAIT_UNDER_FLAG` : l'attente de matérialisation d'avant **F2**, attente non bornée du compresseur | échoue | **violation de vivacité** | 4 |
 | la même avec l'attente bornée de la bibliothèque : sûre, un arrêt seulement | passe | passe | 116 |
 
 Toutes les mutations sont refusées, et le protocole du source passe dans toutes ses
-configurations. Les trois dernières lignes sont les deux comportements que ce travail a changés
-dans le source (section 7) : la bibliothèque d'avant est refusée, la bibliothèque d'aujourd'hui
+configurations. Les deux dernières lignes sont le comportement que ce travail a changé dans
+le handshake 1 (F2, section 7) : la bibliothèque d'avant est refusée, la bibliothèque d'aujourd'hui
 passe. Le verdict sur `MUT_RELAXED_MARK` mérite un mot : la section 5.3 dit que
 la marque « a besoin de sa propre paire release/acquire » et qu'une lecture relaxed a été
 « confirmée par TSan » -- TSan ne modélise pas les barrières, cette confirmation seule aurait pu
@@ -191,7 +187,7 @@ section 7.
 
 ## 7. Constats
 
-### 7.1 F1 : la porte sans marques lisait `hard_inflight_` en relaxed (corrigé)
+### 7.1 F1 : la porte sans marques lisait `hard_inflight_` en relaxed (clos : le build est retiré)
 
 Dans le build `SHRINK_SMALL_CHUNK` (pas de marque par chunk, `chunk_config::use_chunk_steal_mark`
 faux), `CompressionManager::must_defer_write()` était `hard_inflight_.load(relaxed) > 0`. Le
@@ -207,13 +203,13 @@ La marque par chunk n'a pas ce trou parce que `steal_unmark()` est une écriture
 après un `ldar` ultérieur de `values` ; sur x86 les deux lectures restent dans l'ordre et le trou
 est fermé par le matériel.
 
-Le correctif tient en un mot : `memory_order_acquire` sur cette lecture
-(`compression_manager.h`). Il s'apparie avec le RMW `seq_cst` de `finish()`, de sorte qu'un
-écrivain qui voit la passe terminée voit aussi le `values` qu'elle a installé, et prend le chemin
-de la constante (la matérialisation). Le vérificateur l'accepte à 2 et 3 écrivains ;
-`MUT_NO_MARKS_RELAXED_GATE` est la ligne telle qu'elle était. Ce build est un réglage de
-développeur ([reglages_developpeur_fr.md](reglages_developpeur_fr.md)), pas une bibliothèque
-livrée ; le build par défaut n'est pas touché.
+Le correctif tenait en un mot : `memory_order_acquire` sur cette lecture, appariée avec le RMW
+`seq_cst` de `finish()`, de sorte qu'un écrivain qui voit la passe terminée voit aussi le
+`values` qu'elle a installé ; le vérificateur l'acceptait à 2 et 3 écrivains. Le build a ensuite
+été retiré plutôt que gardé sous un second modèle : aucun test ni job de CI ne le construisait, et
+tout build multi-thread a les marques. La configuration du modèle sans marques et ses deux
+mutations (la porte relaxed telle qu'elle était, et le triangle du 5.3) sont parties avec lui. Le
+build par défaut n'a jamais été touché.
 
 ### 7.2 F2 : un écrivain qui matérialise et un compresseur parqué s'attendaient (corrigé)
 
@@ -244,9 +240,7 @@ exécutions) ; `MUT_MATERIALISE_WAIT_UNDER_FLAG` est l'attente telle qu'elle ét
 
 ### 7.3 Ce que le vérificateur a confirmé
 
-Les règles de la section 6 du document de synchronisation tiennent dans le modèle : les deux
-compteurs doivent rester deux (`MUT_WAIT_ON_HARD` est le triangle, trouvé comme violation de
-vivacité en 5 exécutions) ; la barrière du compresseur et le regard de l'écrivain après son
+Les règles de la section 6 du document de synchronisation tiennent dans le modèle : la barrière du compresseur et le regard de l'écrivain après son
 annonce sont chacun porteurs ; la forme asymétrique n'est pas sûre sans `membarrier()` ; et le
 protocole tel que livré est correct, avec les marques par chunk, à 2 et 3 écrivains, que le chunk
 parte comprimé ou matérialisé.

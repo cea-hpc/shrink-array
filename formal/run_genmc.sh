@@ -50,9 +50,6 @@ run ok    "source, marks, buffer start"                      -- -DSHAPE_SYMMETRI
 run ok    "source, marks, constant start"                    -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT $M
 run ok    "source, marks, 3 writers"                         -- -DSHAPE_SYMMETRIC -DNWRITERS=3 $M
 run ok    "source, marks, constant start, 3 writers"         -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DNWRITERS=3 $M
-run ok    "source, no marks (SHRINK_SMALL_CHUNK)"            -- -DSHAPE_SYMMETRIC -DNO_MARKS $M
-run ok    "source, no marks, constant start"                 -- -DSHAPE_SYMMETRIC -DNO_MARKS -DINIT_CONSTANT -DBOUNDED_COMPRESSOR_WAIT $M
-run ok    "source, no marks, 3 writers"                      -- -DSHAPE_SYMMETRIC -DNO_MARKS -DNWRITERS=3 $M
 # Liveness: with the marks, even an UNBOUNDED compressor wait terminates (F2).
 run ok    "source, liveness, unbounded compressor wait"      --check-liveness -- -DSHAPE_SYMMETRIC $M
 run ok    "source, liveness, constant start, unbounded wait" --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT $M
@@ -65,10 +62,8 @@ echo "-- mutations: each must be refused --"
 run error "MUT_NO_CHECK2 (no look after the announce)"       -- -DSHAPE_SYMMETRIC -DMUT_NO_CHECK2 $M
 run error "SHAPE_ASYMMETRIC_NAKED (asymmetric, no membarrier)" -- -DSHAPE_ASYMMETRIC_NAKED $M
 run error "MUT_NO_FENCE_COMPRESSOR"                          -- -DSHAPE_SYMMETRIC -DMUT_NO_FENCE_COMPRESSOR $M
-run error "MUT_WAIT_ON_HARD, no marks (the triangle)"        --check-liveness -- -DSHAPE_SYMMETRIC -DNO_MARKS -DINIT_CONSTANT -DMUT_WAIT_ON_HARD $M
 run error "MUT_RELAXED_MARK (section 5.3: acquire is load-bearing)" -- -DSHAPE_SYMMETRIC -DMUT_RELAXED_MARK $M
-echo "-- the two behaviours the model changed in the source (docs/formal_models.md, F1 and F2) --"
-run error "MUT_NO_MARKS_RELAXED_GATE (F1, before)"           -- -DSHAPE_SYMMETRIC -DNO_MARKS -DMUT_NO_MARKS_RELAXED_GATE $M
+echo "-- the behaviour the model changed in the source (docs/formal_models.md, F2) --"
 run error "MUT_MATERIALISE_WAIT_UNDER_FLAG (F2, before), unbounded wait" --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DMUT_MATERIALISE_WAIT_UNDER_FLAG $M
 run ok    "MUT_MATERIALISE_WAIT_UNDER_FLAG, bounded wait: safe, stalls only" --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT -DMUT_MATERIALISE_WAIT_UNDER_FLAG -DBOUNDED_COMPRESSOR_WAIT $M
 

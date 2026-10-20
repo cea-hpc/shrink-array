@@ -235,22 +235,19 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
 
     auto* chunk_ptr = static_cast<Derived*>(const_cast<ChunkDeferredOpsPolicy*>(this));
 
-    // ── Stage 1: drain OUR OWN rank only (counter builds only) ─────────────
+    // ── Stage 1: drain OUR OWN rank only ───────────────────────────────────
     // sync_chunk runs on the write operators too, so the dominant case is a thread re-touching
     // a chunk whose pending op is ITS OWN. Draining self_rank costs one (recursive, usually
     // uncontended) lock; do not go straight to the full walk, which makes every written element
-    // pay O(threads) lock traffic. Needs the per-chunk counter (pending_any()).
-    if constexpr (DeferredReadGate<Derived>::precise)
+    // pay O(threads) lock traffic. The per-chunk counter (pending_any()) says when it sufficed.
+    static_cast<void>(CompressionManager<T, Derived>::flush_chunk_all_ranks(chunk_ptr, /*self_only=*/true));
+    if (!chunk_ptr->pending_any())
     {
-        static_cast<void>(CompressionManager<T, Derived>::flush_chunk_all_ranks(chunk_ptr, /*self_only=*/true));
-        if (!chunk_ptr->pending_any())
-        {
-            return; // every pending op was ours — no cross-rank walk needed
-        }
+        return; // every pending op was ours — no cross-rank walk needed
     }
 
     // ── Stage 2: cross-thread flush ────────────────────────────────────────────
-    // Foreign ops remain (or no per-chunk counter): flush this chunk across ALL ranks under the
+    // Foreign ops remain: flush this chunk across ALL ranks under the
     // per-rank locks; an own-rank-only flush would lose other ranks' writes.
     // CHUNK_STATS: read_sync_cross / read_sync tells how often stage 1 was not enough.
     if constexpr (chunk_config::stats)
@@ -258,21 +255,6 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
         increm_chunk_read_sync_cross<Derived>();
     }
     static_cast<void>(CompressionManager<T, Derived>::flush_chunk_all_ranks(chunk_ptr));
-}
-
-template <typename T, typename Derived>
-bool ChunkDeferredOpsPolicy<T, Derived, true>::is_not_available() const
-{
-    // Cheap global filter: if NO rank has a pending op, the slot is available. One sharded-sum
-    // acquire load, the dominant early-out on the hot read path.
-    //
-    // Do NOT scan other ranks' maps here: arr[r] for r != self_rank races with a concurrent
-    // insert on rank r that can rehash the map's backing vector (use-after-free). Any pending
-    // op anywhere returns true, and wait_for_availability() does the authoritative per-chunk
-    // scan under the flush lock. Conservative (it may flush a chunk with no op), but a precise
-    // test cannot be done safely without a lock.
-
-    return CompressionManager<T, Derived>::any_pending_ops();
 }
 
 } // namespace shrink_array

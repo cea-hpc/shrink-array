@@ -36,8 +36,8 @@ range 8 booléens par octet dans un chunk matérialisé.
 ## 3. Ce que coûte un chunk
 
 Tout chunk coûte ses **métadonnées**, qu'il soit compressé ou non. Pour les trois variantes,
-l'objet chunk lui-même fait 16 octets dans un build OpenMP (8 avec `SHRINK_SMALL_CHUNK`, qui
-renonce aux portes de lecture et d'écriture par chunk). S'y ajoutent, par chunk :
+l'objet chunk lui-même fait 16 octets dans un build OpenMP (le pointeur, puis les portes de
+lecture et d'écriture par chunk). S'y ajoutent, par chunk :
 
 - un octet « déjà en liste de compression » (compression par bloc) ;
 - deux octets pour le *dirty bitset* du tableau (un bit par chunk, dans des mots de 64 bits

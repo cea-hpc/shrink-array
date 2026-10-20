@@ -327,9 +327,7 @@ d'écrivains, modifié à chaque écriture, provoquait une tempête de lignes de
 10. `finish()` : `stealing_inflight_--`, puis `hard_inflight_--`.
 
 **Pourquoi deux compteurs.** `hard_inflight_` compte tous les compresseurs entre `start()` et
-`finish()`, **garés compris** : sans marques par chunk, c'est lui que les écrivains regardent,
-et un compresseur garé les écarte, ce qui ouvre sa fenêtre (priorité au compresseur ; sans
-elle, la compression s'affame et la mémoire double). `stealing_inflight_` ne compte que ceux
+`finish()`, **garés compris**. `stealing_inflight_` ne compte que ceux
 qui ont passé la porte et peuvent voler un tampon. La matérialisation d'un chunk
 (`create_value`, via `wait_before_materialise`) et les vidages attendent **seulement** les
 voleurs (ou la marque du chunk), **jamais** les garés : un garé attend les écrivains, un
@@ -352,12 +350,10 @@ avait été posée, et écrire pendant le balayage (confirmé par TSan). Sur AAr
 Jamais `seq_cst` : cette lecture-là bloquait derrière la barrière précédente et dominait le
 profil du moteur d'écriture.
 
-Les builds sans marques (`SHRINK_SMALL_CHUNK`, faute de place dans l'en-tête du chunk ;
-`chunk_config::use_chunk_steal_mark = false`) gardent la porte globale : l'écrivain regarde
-`hard_inflight_` (une lecture *acquire*, appariée au décrément de `finish()` : un écrivain qui voit
-une passe terminée doit aussi voir le `values` qu'elle a installé, sans quoi il écrit dans le
-tampon qu'elle a rendu -- [formal_models_fr.md](formal_models_fr.md), F1), et le compresseur
-attend tous les écrivains.
+Tout build multi-thread a les marques (`chunk_config::use_chunk_steal_mark`). Le build à 8 octets
+qui s'en passait (`SHRINK_SMALL_CHUNK` : porte globale sur `hard_inflight_`, le compresseur
+attendant tous les écrivains) a été retiré ; sa porte est le constat F1 de
+[formal_models_fr.md](formal_models_fr.md).
 
 ### 5.4 Compresseur et vidage des écritures différées
 
