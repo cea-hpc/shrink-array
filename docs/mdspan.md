@@ -101,11 +101,12 @@ The block covers the whole tile, padding included: loop to `t.extent` where the 
 count. A uniform tile left unchanged by `update_tiles` is not written, so a kernel that leaves the
 background alone does not materialise it. A changed tile is written with `fill_range()` when it
 is uniform, else `copy_range()` (the serial range ops outside a parallel region, the `_mt` ones
-inside). Outside a parallel region, on Chunk2A, a tile of whole chunks that comes out uniform
-takes its constant without a buffer -- a compressed chunk switches constant in place
-(`fill_range`) -- and so does every uniform chunk of a tile that is not (`copy_range`). Otherwise a compressed chunk that changes
-is materialised for the write and queued: the end of the phase, or the next compression pass,
-compresses it again.
+inside). On Chunk2A, a compressed chunk whose part of the tile comes out uniform switches its
+constant in place, without a buffer, in a parallel region too (`fill_range_mt`, `copy_range_mt`,
+within the write session). Outside a region a materialised chunk that comes out uniform is
+compressed at once as well; inside, it is written and queued -- its buffer is freed by the end of
+the phase or the next compression pass, which wait out the readers. Otherwise a compressed chunk
+that changes is materialised for the write and queued, and the same pass compresses it again.
 
 In a parallel region each thread works on its own tiles, inside a phase for `update_tiles`, and a
 tile must be made of whole chunks: tile elements a multiple of `chunk_size()`, checked (a tile

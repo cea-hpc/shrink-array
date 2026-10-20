@@ -184,6 +184,17 @@ the tag's checksum to the recipe.
   span buffer tested `same && v == v0` element by element, which kept both
   loops scalar. 1.7 times faster in cache (4 arrays of 64 K doubles,
   1 thread), about 1.3 times out of cache (2.56 M doubles, v1).
+- `fill_range_mt` and `copy_range_mt` on Chunk2A switch a compressed chunk
+  that a uniform span covers whole to the span's value in place, as
+  `fill_range` does serially (`fill_constant_st`'s compressed branch, within
+  the write session: no buffer allocated, filled, queued and scanned by the
+  end-of-phase pass). A materialised chunk is still written and left to the
+  pass, which waits out the readers before freeing it. `md::update_tiles` and
+  `md::fill_box` inside a region inherit it: `mdspan_tiles 2048`, 2 threads,
+  the update by tile 3.1-4.3 -> 1.1-1.25 ms, the 64 rectangles 5.4-7.0 ->
+  2.9-3.2 ms. `constant_switch_validation`: the same switches from every
+  thread, with the chunks materialised counted inside the region (64 per
+  step before, 0 now).
 
 ### Deprecated
 

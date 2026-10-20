@@ -973,13 +973,21 @@ void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::s
  *            6. retire;
  *            7. queue the chunk as a compression candidate when it can be
  *               uniform (the pass drops it if it is not).
- *          A fill (@p Constant) of the constant a v1 or Chunk2 chunk already
- *          holds, with no deferred write pending on it, skips the span
- *          (holds_constant). A chunk that is not materialised is first
- *          materialised through the element path, outside any session (a proxy write inside a session
- *          would re-announce and then clear this thread's writer flag).
+ *          Before those steps, for a span whose values are all one value v:
+ *            - v is the constant a v1 or Chunk2 chunk already holds, no
+ *              deferred write pending on it: the span is skipped
+ *              (holds_constant);
+ *            - Chunk2A, the span covers the whole chunk and the chunk is
+ *              compressed: it switches to v in place (fill_constant_st's
+ *              compressed branch) within a session -- steps 1 to 4 and 6,
+ *              no buffer.
+ *          Otherwise a chunk that is not materialised is first materialised
+ *          through the element path, outside any session (a proxy write
+ *          inside a session would re-announce and then clear this thread's
+ *          writer flag).
  *          A chunk is never RELEASED here: another thread may be writing other
- *          elements of the same chunk, into that very buffer.
+ *          elements of the same chunk, into that very buffer, or reading it --
+ *          a compression pass frees it, after its grace period.
  *
  *          @p value_at is the CALLER's code (an iterator, a user operation):
  *          it never runs inside a session, where a read of a chunked array or
@@ -1069,49 +1077,26 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
 
             auto& ch = arr.chunk_ref(ci);
 
-            // A fill of the constant the chunk already holds: nothing to write
-            // (v1, Chunk2; see holds_constant). Not with deferred writes pending
-            // on the chunk: one of this thread's on the span would replay after
-            // and win -- the element path, below, erases those.
-            if constexpr (Constant)
-            {
-                if (!ch.pending_any() && holds_constant(arr, ch, ind2, static_cast<T>(value_at(lo))))
-                {
-                    continue;
-                }
-            }
-
-            // Materialise through the element path, outside any session.
-            std::size_t i = lo;
-            while (i < hi && !materialised(arr, ch, ind2))
-            {
-                arr[static_cast<ind_type>(i)] = static_cast<T>(value_at(i));
-                ++i;
-            }
-            if (i == hi)
-            {
-                continue;
-            }
-
             // The span's values (offsets into the chunk), and whether they are
-            // all one value: once, before the session.
+            // all one value: once, before any write -- the element path below
+            // stores them too, so value_at runs once per element.
             bool        same = true;
             buf_value_t v0{};
             if constexpr (Constant)
             {
-                v0 = static_cast<buf_value_t>(static_cast<T>(value_at(i)));
+                v0 = static_cast<buf_value_t>(static_cast<T>(value_at(lo)));
             }
             else
             {
                 // Copy, then compare: two loops the compiler vectorises (a
                 // short-circuit `same && v == v0` in the copy kept both scalar).
-                for (std::size_t k = i; k < hi; ++k)
+                for (std::size_t k = lo; k < hi; ++k)
                 {
                     buf[k - c_begin] = static_cast<buf_value_t>(static_cast<T>(value_at(k)));
                 }
-                v0                  = buf[i - c_begin];
+                v0                  = buf[lo - c_begin];
                 unsigned int differ = 0;
-                for (std::size_t k = i + 1; k < hi; ++k)
+                for (std::size_t k = lo + 1; k < hi; ++k)
                 {
                     differ |= static_cast<unsigned int>(!(buf[k - c_begin] == v0));
                 }
@@ -1129,6 +1114,62 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                     return buf[o];
                 }
             };
+
+            // A uniform span of the constant the chunk already holds: nothing
+            // to write (v1, Chunk2; see holds_constant). Not with deferred
+            // writes pending on the chunk: one of this thread's on the span
+            // would replay after and win -- the element path, below, erases
+            // those.
+            if constexpr (!is_packed_bit_v<T>)
+            {
+                if (same && !ch.pending_any() && holds_constant(arr, ch, ind2, static_cast<T>(v0)))
+                {
+                    continue;
+                }
+            }
+
+            // Chunk2A, a uniform span over the whole of a compressed chunk:
+            // the chunk switches its constant in place (fill_constant_st's
+            // compressed branch: second-value slot, type, values pointer), no
+            // buffer allocated, filled, queued and scanned again by a pass.
+            // The span covers every element, so no other thread writes this
+            // chunk in the phase; the session keeps a compressor off it, as
+            // for a store. A materialised chunk takes the store below (its
+            // buffer is freed by a pass, which waits out the readers).
+            if constexpr (is_v2a_v<Arr> && raw_fillable_v<T>)
+            {
+                if (same && lo == c_begin && hi == c_end && !materialised(arr, ch, ind2) && !ch.pending_any())
+                {
+                    if (Mgr::must_defer_write(ch))
+                    {
+                        Mgr::wait_out_compressor(ch);
+                    }
+                    Policy::announce_write(thr, &ch);
+                    const bool switched =
+                        !Mgr::must_defer_write(ch) && !ch.pending_any() && !materialised(arr, ch, ind2);
+                    if (switched)
+                    {
+                        ch.fill_constant_st(thr, static_cast<int>(ci), arr.num_tab, static_cast<T>(v0));
+                    }
+                    Policy::end_write(thr);
+                    if (switched)
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            // Materialise through the element path, outside any session.
+            std::size_t i = lo;
+            while (i < hi && !materialised(arr, ch, ind2))
+            {
+                arr[static_cast<ind_type>(i)] = static_cast<T>(at(i - c_begin));
+                ++i;
+            }
+            if (i == hi)
+            {
+                continue;
+            }
 
             bool done    = false;
             bool uniform = false;  // may the chunk be uniform? (step 7)
@@ -1202,7 +1243,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         }
                         else
                         {
-                            uniform = same && i == c_begin && hi == c_end;
+                            uniform = same && lo == c_begin && hi == c_end;
                         }
                     }
                     done = true;
@@ -1238,7 +1279,10 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
  *          keeps the per-element write path's guarantees by taking its steps
  *          once per chunk span: see internal::store_range_mt. Unlike
  *          fill_range, a chunk is never RELEASED here (a whole-chunk fill of
- *          the constant leaves it materialised and queued).
+ *          the constant leaves it materialised and queued). A chunk already
+ *          at the value is skipped (v1, Chunk2), and on Chunk2A a compressed
+ *          chunk covered whole switches its constant in place, as fill_range
+ *          does.
  *
  *          Chunk2A, Chunk2 and Chunk under OpenMP with fast block compression
  *          (ArrayChunkBits too: one atomic update per word); elsewhere (bool,

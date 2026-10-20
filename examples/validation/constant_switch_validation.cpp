@@ -36,6 +36,12 @@
 //      any more, keeps the others, and every element still reads back
 //      (Chunk2A; the old constants of a switched chunk record no reference).
 //
+// The same switches from every thread at once, in a phase, by fill_range_mt
+// and copy_range_mt (each thread on its own whole chunks): a compressed Chunk2A
+// chunk covered whole by a uniform span switches in place there too, within
+// the write session; a span that does not cover the chunk materialises it, and
+// a uniform span over a materialised chunk leaves it to the end-of-phase pass.
+//
 // The other variants take their own paths (materialise, queue): properties 1
 // and 3 are checked there.
 //
@@ -50,7 +56,7 @@
 #include "chunk/array_chunk.h"           // ArrayChunk
 #include "chunk/array_chunk2.h"          // ArrayChunk2
 #include "chunk/array_chunk2A.h"         // ArrayChunk2A
-#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
+#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, fill_range_mt, copy_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_chunk*
@@ -112,6 +118,55 @@ static void phase(Array<double>& arr, long n, Fn&& body)
     if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
     {
         arr.make_block_compression(); // a serial chunk2a has no between-region pass
+    }
+}
+
+/// @brief Chunks still holding a buffer.
+static int materialised(const Array<double>& arr);
+
+/// @brief phase() over chunks [0, kChunks), returning the chunks materialised
+///        INSIDE the region, once every thread's writes are done -- before the
+///        end-of-phase pass compresses what the writes left.
+template <typename Fn>
+static int phase_count(Array<double>& arr, Fn&& body)
+{
+    int in_region = 0;
+#pragma omp parallel
+    {
+        if constexpr (build_config::has_not_ompt)
+        {
+            begin_parallel_phase();
+        }
+#pragma omp for schedule(static)
+        for (long c = 0; c < kChunks; ++c)
+        {
+            body(c);
+        }
+#pragma omp single
+        in_region = materialised(arr);
+    }
+    if constexpr (build_config::has_not_ompt)
+    {
+        finalize_parallel_phase();
+    }
+    if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    {
+        arr.make_block_compression();
+    }
+    return in_region;
+}
+
+/// @brief Chunk2A in an OpenMP build: @p got chunks were materialised inside
+///        the region, where a switch in place leaves none.
+static void check_in_region(const char* step, int got)
+{
+    if constexpr (chunk_config::use_chunk2a && build_config::use_openmp)
+    {
+        if (got != 0)
+        {
+            println("[{}] FAIL  {}: {} chunk(s) materialised inside the region, expected 0", variant_name(), step, got);
+            ++fails;
+        }
     }
 }
 
@@ -273,6 +328,52 @@ int run(int /*argc*/, char** /*argv*/)
         check(
             "write one element per chunk", a,
             [S](long i) { return (i % S == S - 1) ? -1.0 : 80.0 + static_cast<double>(i / S); }, kChunks);
+        a.clear();
+    }
+
+    // ── From every thread: fill_range_mt, copy_range_mt ────────────────────
+    {
+        Array<double>       a(static_cast<int>(N));
+        std::vector<double> src(sz(N));
+        // Chunk c, whole, by the thread the loop gives it; returns the chunks
+        // materialised inside the region.
+        const auto fill_mt = [&](double base)
+        {
+            return phase_count(a, [&](long c)
+                               { fill_range_mt(a, sz(c * S), sz((c + 1) * S), base + static_cast<double>(c)); });
+        };
+
+        check_in_region("fill_mt: first -> 110 + c", fill_mt(110.0));
+        check("fill_mt: first -> 110 + c", a, per_chunk(110.0), 0);
+        check_in_region("fill_mt: 110 + c -> 120 + c", fill_mt(120.0));
+        check("fill_mt: 110 + c -> 120 + c (in place)", a, per_chunk(120.0), 0);
+        for (long i = 0; i < N; ++i)
+        {
+            src[sz(i)] = 130.0 + static_cast<double>(i / S);
+        }
+        check_in_region(
+            "copy_mt: 120 + c -> 130 + c",
+            phase_count(a, [&](long c) { copy_range_mt(a, sz(c * S), sz((c + 1) * S), src.begin() + c * S); }));
+        check("copy_mt: 120 + c -> 130 + c (in place)", a, per_chunk(130.0), 0);
+        check_in_region("fill_mt: 130 + c -> first",
+                        phase_count(a, [&](long c) { fill_range_mt(a, sz(c * S), sz((c + 1) * S), 0.0); }));
+        check("fill_mt: 130 + c -> first (in place)", a, at(0.0), 0);
+
+        // A span short of its chunk: materialised (the element left is 0).
+        phase(a, kChunks, [&](long c) { fill_range_mt(a, sz(c * S + 1), sz((c + 1) * S), 7.0); });
+        check("fill_mt: first -> 0 then 7 (partial)", a, [S](long i) { return (i % S == 0) ? 0.0 : 7.0; }, kChunks);
+        // A uniform span over a materialised chunk: written, compressed by the
+        // end-of-phase pass.
+        (void)fill_mt(140.0);
+        check("fill_mt: materialised -> 140 + c", a, per_chunk(140.0), 0);
+        check_reclaim(a, per_chunk(140.0));
+
+        // 3: a write into a switched chunk materialises it from its constant.
+        check_in_region("fill_mt: 140 + c -> 150 + c", fill_mt(150.0));
+        phase(a, kChunks, [&](long c) { a[static_cast<int>(c * S + 3)] = -2.0; });
+        check(
+            "write one element per chunk", a,
+            [S](long i) { return (i % S == 3) ? -2.0 : 150.0 + static_cast<double>(i / S); }, kChunks);
         a.clear();
     }
 
