@@ -40,7 +40,7 @@
 | [algo_chunk.md](algo_chunk.md) / [algo_chunk_fr.md](algo_chunk_fr.md) | Chunk (v1): compression to zero only, serial counters, pass threshold, sliced re-chunk |
 | [algo_chunk2a.md](algo_chunk2a.md) / [algo_chunk2a_fr.md](algo_chunk2a_fr.md) | Chunk2A: one second value per chunk, second-value registry, its own queueing criteria |
 | [synchronisation_dekker.md](synchronisation_dekker.md) / [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) | Dekker's algorithm, its symmetric and asymmetric (`membarrier`) shapes, and its three uses: writers ↔ compressors, flushes ↔ compressors, readers ↔ buffer reclaim |
-| [formal_models.md](formal_models.md) / [formal_models_fr.md](formal_models_fr.md) | the reduced models of the handshakes under GenMC: how to run them, the mutation calibration, the findings F1 and F2, the limits |
+| [formal_models.md](formal_models.md) / [formal_models_fr.md](formal_models_fr.md) | the reduced models of the handshakes under GenMC: how to run them, the mutation calibration, the findings F1 to F4, the limits |
 | [adaptive_rechunk.md](adaptive_rechunk.md) / [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) | advisor, decider, rebuild, per-array allocators, results and limits |
 | [environment_variables.md](environment_variables.md) / [variables_environnement_fr.md](variables_environnement_fr.md) | the user settings: environment variables, CMake options, variant and geometry |
 | [developer_settings.md](developer_settings.md) / [reglages_developpeur_fr.md](reglages_developpeur_fr.md) | the developers' switches, with their removal dates: tuning, traces, forced rechunks, benchmark, macros, debugging options, build scripts |

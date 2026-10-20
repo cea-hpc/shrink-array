@@ -162,18 +162,19 @@ reads a value the chunk never held, and the grace period terminates.
 | case | expected | verdict | executions |
 |---|---|---|---|
 | source, 2 readers; 3 readers; one read each, liveness checked | pass | pass | 25; 125 |
-| source, overflow reader (with the F4 fence) | pass | pass | 15 |
-| source, **2 reads per reader** -- **F3** | pass | **access to freed memory** | 19 |
-| `FIX_ENTER_RELEASE`, 2 reads; 3 reads; 3 readers x 2 reads; + overflow reader | pass | pass | 225; 1,089; 3,375; 90 |
-| `MUT_WAIT_FOR_EVEN`, 2 reads (the pass-side way out of F3) | pass | pass | 169 |
+| source, 2 reads per reader; 3 reads; 3 readers x 2 reads | pass | pass | 225; 1,089; 3,375 |
+| source, overflow reader; with 2 reads | pass | pass | 15; 90 |
+| `MUT_ENTER_RELAXED`, 2 reads: the odd entry store as it was -- **F3** | fail | **access to freed memory** | 19 |
+| `MUT_ENTER_RELAXED`, 1 read: the hole needs back-to-back reads | pass | pass | 25 |
+| `MUT_WAIT_FOR_EVEN`, 2 reads (the pass-side way out of F3, not taken) | pass | pass | 169 |
 | `MUT_NO_GRACE`: the pass frees without waiting | fail | access to freed memory | -- |
 | `MUT_NO_HEAVY_BARRIER`: the pass reads the slots without its barrier | fail | access to freed memory | -- |
 | `MUT_LEAVE_RELAXED`: the even exit store relaxed instead of release | fail | access to freed memory | -- |
 | `SHAPE_ASYMMETRIC_NAKED`: the reader without its fence (no `membarrier()`) | fail | access to freed memory | -- |
 | `MUT_OVERFLOW_NO_FENCE`: the overflow announce as it was -- **F4** | fail | access to freed memory | -- |
 
-The protocol holds for single reads and every mutation is refused; the one line that fails is
-the source itself under back-to-back reads, finding F3 of section 7.
+The protocol holds, every mutation is refused, and the two lines marked F3 and F4 are the
+library as it was before this work (section 7): refused as it was, passing as it is.
 
 ## 7. Findings
 
@@ -231,27 +232,31 @@ compressor's barrier and the writer's look after its announce are each load-bear
 asymmetric shape is unsound without `membarrier()`; and the protocol as shipped is correct, with
 the per-chunk marks, for 2 and 3 writers, whether the chunk starts compressed or materialised.
 
-### 7.4 F3: back-to-back reads and the C++20 release sequence (open)
+### 7.4 F3: back-to-back reads and the C++20 release sequence (fixed)
 
 Having seen a slot odd, the pass waits for it to **move**, by design: waiting for it to be even
 would stall behind a reader whose reads follow one another. The value it then reads may be the
 **next read's odd entry**, a relaxed store. In C++20 a release store followed by a relaxed store of
 the same thread forms no release sequence (P0982R1 removed that case), so reading the odd entry
-synchronises with nothing: in the model, the previous read's element load and the pass's free are
-unordered, and GenMC reports the access. The reasoning of `read_reclaim.h` -- release on exit
-"lets the reclaimer trust an even value" -- is right for an even value and silent about an odd one.
+synchronised with nothing: in the model, the previous read's element load and the pass's free
+were unordered, and GenMC reports the access (`MUT_ENTER_RELAXED` with 2 reads; with 1 read there
+is no next entry and the hole does not exist). The reasoning of `read_reclaim.h` -- release on
+exit "lets the reclaimer trust an even value" -- was right for an even value and silent about an
+odd one.
 
-On the mappings the library runs on, the hole closes: on AArch64 the exit store is an `stlr`, the
-entry store a later `str` to the same address, and an observer of the later store observes the
-earlier one and everything the release ordered before it; on x86 every store is a release. So the
-code is right on every target shrink-array has, and wrong by the standard, in the same way the
-asymmetric `membarrier()` shape is right by the kernel's contract rather than by C11. Two ways to
-make it right by the standard, both accepted by the checker: `FIX_ENTER_RELEASE`, the odd entry
-store release instead of relaxed -- an `stlr` instead of an `str` on the read path of AArch64, to be
-measured with `examples/access_cost` on Grace before anything else; or `MUT_WAIT_FOR_EVEN`, the pass
-waiting for an even value, free on the read path and the stall the design refused. Not applied:
-the decision needs the measurement. Whichever is chosen, or if the hardware argument is kept, the
-sentence belongs next to the `membarrier()` one in `synchronisation_dekker.md`.
+On the mappings the library runs on, the hole was closed anyway: on AArch64 the exit store is an
+`stlr`, the entry store a later `str` to the same address, and an observer of the later store
+observes the earlier one and everything the release ordered before it; on x86 every store is a
+release. So the code was right on every target shrink-array has, and wrong by the standard. Two
+ways to make it right by the standard, both accepted by the checker: the odd entry store release
+instead of relaxed -- an `stlr` instead of an `str` on the read path of AArch64 -- or
+`MUT_WAIT_FOR_EVEN`, the pass waiting for an even value, free on the read path and the stall the
+design refused. The first was measured on Grace with `examples/access_cost`, two builds of the
+same tree alternated over 5 rounds x 5 repetitions (the vector's times, the same code in both,
+within 0.6 %): at 1 thread `read-varied` +1.9 % with a 2-3 % spread, `read-constant` +0.6 %,
+`read-random` +0.0 %, the writes within their spread; at 64 threads nothing measurable. **Applied**:
+the entry store is release, the library is right by the standard for at most two percent on the
+worst read case, and `MUT_ENTER_RELAXED` is the store as it was.
 
 ### 7.5 F4: the overflow reader announced without its fence (fixed)
 
@@ -286,7 +291,5 @@ the line as it was.
 
 ## 9. Next steps
 
-- F3: measure `FIX_ENTER_RELEASE` with `examples/access_cost` on Grace, then choose between it,
-  the pass-side wait for an even value, and a documented hardware argument.
 - Dartagnan on the same three files, under the official AArch64 model: the last limit above
   falls for the machine the library targets.

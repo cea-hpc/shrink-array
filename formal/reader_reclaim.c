@@ -62,18 +62,19 @@
  *                              seq_cst RMW followed by an acquire load is not a Dekker announce in
  *                              C11 (it is on the AArch64 and x86 mappings).
  *
- * NOT A MUTATION, A FINDING (docs/formal_models.md, F3): with NREADS=2 the source as it is FAILS
- * the C11 model. The pass, having seen a slot odd, waits for it to MOVE; the value it then reads
- * may be the next read's odd entry, a RELAXED store. In C++20 a release store followed by a
- * relaxed store of the same thread is no release sequence, so nothing orders the previous
- * read's element load before the free. On the AArch64 and x86 mappings the coherence of the
- * slot and the release of the exit store do order it; the hole is the standard's. Candidate fix:
- *   -DFIX_ENTER_RELEASE        the odd entry store release instead of relaxed (an stlr instead of
- *                              an str on the read path of AArch64 -- to be measured).
- *   -DMUT_WAIT_FOR_EVEN        the other way out, on the pass's side: wait for an odd slot to
- *                              become EVEN (every even value is a release store). Passes, at no
- *                              read-path cost, but a reader doing back-to-back reads is odd most
- *                              of the time: the stall the design avoided.
+ *   -DMUT_ENTER_RELAXED        the odd entry store relaxed, as the library was before the model
+ *                              (docs/formal_models.md, F3). With NREADS=2 it FAILS: the pass,
+ *                              having seen a slot odd, waits for it to MOVE, and the value it then
+ *                              reads may be the next read's odd entry; in C++20 a release store
+ *                              followed by a relaxed store of the same thread is no release
+ *                              sequence, so nothing orders the previous read's element load before
+ *                              the free (the AArch64 and x86 mappings do; the standard does not).
+ *                              The entry store is release now: measured on Grace at +1.9 % on the
+ *                              worst read case at 1 thread, within the spread, nothing elsewhere.
+ *   -DMUT_WAIT_FOR_EVEN        the other way out of F3, on the pass's side: wait for an odd slot
+ *                              to become EVEN. Passes (every even value is a release store), but a
+ *                              reader doing back-to-back reads is odd most of the time: the stall
+ *                              the design avoided. Not taken.
  *
  * Build for GenMC:   genmc [--check-liveness] -- reader_reclaim.c
  * Build natively:    cc -O2 -pthread -DNATIVE reader_reclaim.c && ./a.out
@@ -147,10 +148,10 @@ static uint_fast64_t read_enter(int r)                  /* ReadSection::ReadSect
         return 0;
     }
     const uint_fast64_t s = atomic_load_explicit(&slot[r].seq, memory_order_relaxed) + 1; /* odd */
-#ifdef FIX_ENTER_RELEASE
-    atomic_store_explicit(&slot[r].seq, s, memory_order_release);  /* F3: the previous read's loads are ordered before it */
+#ifdef MUT_ENTER_RELAXED
+    atomic_store_explicit(&slot[r].seq, s, memory_order_relaxed);  /* before F3 */
 #else
-    atomic_store_explicit(&slot[r].seq, s, memory_order_relaxed);
+    atomic_store_explicit(&slot[r].seq, s, memory_order_release);  /* F3: the previous read's loads are ordered before it */
 #endif
     light_fence();
     return s;

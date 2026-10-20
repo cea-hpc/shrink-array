@@ -171,19 +171,20 @@ lit jamais une valeur que le chunk n'a jamais tenue, et la période de grâce se
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
 | source, 2 lecteurs ; 3 lecteurs ; une lecture chacun, vivacité vérifiée | passe | passe | 25 ; 125 |
-| source, lecteur en débordement (avec la barrière F4) | passe | passe | 15 |
-| source, **2 lectures par lecteur** -- **F3** | passe | **accès à une mémoire libérée** | 19 |
-| `FIX_ENTER_RELEASE`, 2 lectures ; 3 lectures ; 3 lecteurs × 2 lectures ; + débordement | passe | passe | 225 ; 1 089 ; 3 375 ; 90 |
-| `MUT_WAIT_FOR_EVEN`, 2 lectures (l'issue de F3 côté passe) | passe | passe | 169 |
+| source, 2 lectures par lecteur ; 3 lectures ; 3 lecteurs × 2 lectures | passe | passe | 225 ; 1 089 ; 3 375 |
+| source, lecteur en débordement ; avec 2 lectures | passe | passe | 15 ; 90 |
+| `MUT_ENTER_RELAXED`, 2 lectures : l'écriture impaire d'entrée telle qu'elle était -- **F3** | échoue | **accès à une mémoire libérée** | 19 |
+| `MUT_ENTER_RELAXED`, 1 lecture : le trou demande des lectures enchaînées | passe | passe | 25 |
+| `MUT_WAIT_FOR_EVEN`, 2 lectures (l'issue de F3 côté passe, non retenue) | passe | passe | 169 |
 | `MUT_NO_GRACE` : la passe libère sans attendre | échoue | accès à une mémoire libérée | -- |
 | `MUT_NO_HEAVY_BARRIER` : la passe lit les slots sans sa barrière | échoue | accès à une mémoire libérée | -- |
 | `MUT_LEAVE_RELAXED` : l'écriture paire de sortie relaxed au lieu de release | échoue | accès à une mémoire libérée | -- |
 | `SHAPE_ASYMMETRIC_NAKED` : le lecteur sans sa barrière (pas de `membarrier()`) | échoue | accès à une mémoire libérée | -- |
 | `MUT_OVERFLOW_NO_FENCE` : l'annonce de débordement telle qu'elle était -- **F4** | échoue | accès à une mémoire libérée | -- |
 
-Le protocole tient pour des lectures isolées et toutes les mutations sont refusées ; la seule
-ligne qui échoue est le source lui-même sous des lectures enchaînées, le constat F3 de la
-section 7.
+Le protocole tient, toutes les mutations sont refusées, et les deux lignes marquées F3 et F4 sont
+la bibliothèque telle qu'elle était avant ce travail (section 7) : refusée telle qu'elle était,
+passante telle qu'elle est.
 
 ## 7. Constats
 
@@ -245,29 +246,32 @@ annonce sont chacun porteurs ; la forme asymétrique n'est pas sûre sans `memba
 protocole tel que livré est correct, avec les marques par chunk, à 2 et 3 écrivains, que le chunk
 parte comprimé ou matérialisé.
 
-### 7.4 F3 : lectures enchaînées et la release sequence de C++20 (ouvert)
+### 7.4 F3 : lectures enchaînées et la release sequence de C++20 (corrigé)
 
 Ayant vu un slot impair, la passe attend qu'il **bouge**, à dessein : attendre qu'il soit pair
 bloquerait derrière un lecteur dont les lectures se suivent. La valeur qu'elle lit alors peut être
 l'**entrée impaire de la lecture suivante**, une écriture relaxed. En C++20, une écriture release
 suivie d'une écriture relaxed du même thread ne forme pas de release sequence (P0982R1 a retiré ce
-cas), donc lire l'entrée impaire ne synchronise avec rien : dans le modèle, la lecture d'élément
-précédente et le `free` de la passe ne sont pas ordonnés, et GenMC signale l'accès. Le raisonnement
-de `read_reclaim.h` -- le release de sortie « permet au récupérateur de se fier à une valeur paire »
--- est juste pour une valeur paire et muet sur une impaire.
+cas), donc lire l'entrée impaire ne synchronisait avec rien : dans le modèle, la lecture d'élément
+précédente et le `free` de la passe n'étaient pas ordonnés, et GenMC signale l'accès
+(`MUT_ENTER_RELAXED` à 2 lectures ; à 1 lecture il n'y a pas d'entrée suivante et le trou n'existe
+pas). Le raisonnement de `read_reclaim.h` -- le release de sortie « permet au récupérateur de se
+fier à une valeur paire » -- était juste pour une valeur paire et muet sur une impaire.
 
-Sur les mappings où la bibliothèque tourne, le trou se referme : sur AArch64 l'écriture de sortie
-est un `stlr`, celle d'entrée un `str` ultérieur à la même adresse, et qui observe la seconde
-observe la première et tout ce que le release a ordonné avant elle ; sur x86 toute écriture est un
-release. Le code est donc juste sur toutes les cibles de shrink-array, et faux au regard du
-standard, de la même façon que la forme asymétrique à `membarrier()` est juste par le contrat du
-noyau plutôt que par C11. Deux façons de le rendre juste au regard du standard, toutes deux
-acceptées par le vérificateur : `FIX_ENTER_RELEASE`, l'écriture impaire d'entrée en release au
-lieu de relaxed -- un `stlr` au lieu d'un `str` sur le chemin de lecture d'AArch64, à mesurer avec
-`examples/access_cost` sur Grace avant toute chose ; ou `MUT_WAIT_FOR_EVEN`, la passe attendant
-une valeur paire, gratuit sur le chemin de lecture et le stall que la conception a refusé. Non
-appliqué : la décision demande la mesure. Quel que soit le choix, ou si l'argument matériel est
-gardé, la phrase a sa place à côté de celle sur `membarrier()` dans `synchronisation_dekker_fr.md`.
+Sur les mappings où la bibliothèque tourne, le trou était refermé de toute façon : sur AArch64
+l'écriture de sortie est un `stlr`, celle d'entrée un `str` ultérieur à la même adresse, et qui
+observe la seconde observe la première et tout ce que le release a ordonné avant elle ; sur x86
+toute écriture est un release. Le code était donc juste sur toutes les cibles de shrink-array, et
+faux au regard du standard. Deux façons de le rendre juste au regard du standard, toutes deux
+acceptées par le vérificateur : l'écriture impaire d'entrée en release au lieu de relaxed -- un
+`stlr` au lieu d'un `str` sur le chemin de lecture d'AArch64 -- ou `MUT_WAIT_FOR_EVEN`, la passe
+attendant une valeur paire, gratuit sur le chemin de lecture et le stall que la conception a
+refusé. La première a été mesurée sur Grace avec `examples/access_cost`, deux builds du même arbre
+alternés sur 5 tours × 5 répétitions (les temps du vector, même code des deux côtés, à 0,6 % près) :
+à 1 thread `read-varied` +1,9 % pour un spread de 2-3 %, `read-constant` +0,6 %, `read-random`
++0,0 %, les écritures dans leur spread ; à 64 threads rien de mesurable. **Appliqué** : l'écriture
+d'entrée est release, la bibliothèque est juste au regard du standard pour au plus deux pour cent
+sur le pire cas de lecture, et `MUT_ENTER_RELAXED` est l'écriture telle qu'elle était.
 
 ### 7.5 F4 : le lecteur en débordement annonçait sans sa barrière (corrigé)
 
@@ -305,7 +309,5 @@ ligne telle qu'elle était.
 
 ## 9. Prochaines étapes
 
-- F3 : mesurer `FIX_ENTER_RELEASE` avec `examples/access_cost` sur Grace, puis choisir entre lui,
-  l'attente d'une valeur paire côté passe, et un argument matériel documenté.
 - Dartagnan sur les trois mêmes fichiers, sous le modèle AArch64 officiel : la dernière limite
   ci-dessus tombe pour la machine que vise la bibliothèque.
