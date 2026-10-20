@@ -82,7 +82,7 @@ void AllTypeChunk::publish_manager(std::unique_ptr<ManagerChunkInt> manager)
     {
         // Full (or none yet): a table twice as large, the published slots
         // copied, published before the count that will cover the new slot.
-        const std::size_t capacity = table_capacity_ == 0 ? kFirstTableSize : 2 * table_capacity_;
+        const std::size_t capacity = table_capacity_ == 0 ? first_table_size : 2 * table_capacity_;
         auto              table    = std::make_unique<ManagerChunkInt*[]>(capacity);
         if (table_capacity_ != 0)
         {

@@ -82,7 +82,7 @@ namespace shrink_array::read_reclaim
 inline constexpr bool enabled = build_config::use_openmp;
 
 /// @brief Reader slots: one per thread that has ever read, a cache line each.
-inline constexpr int kSlots = CHUNK_READ_RECLAIM_SLOTS;
+inline constexpr int slot_count = CHUNK_READ_RECLAIM_SLOTS;
 
 /// @brief One reader's sequence number, on a cache line of its own.
 struct alignas(64) ReaderSlot
@@ -90,10 +90,10 @@ struct alignas(64) ReaderSlot
     std::atomic<std::uint64_t> seq{0}; ///< Odd while a read is in flight.
 };
 
-inline std::array<ReaderSlot, kSlots> g_slots;     ///< The reader slots, claimed in order.
-inline std::atomic<int>               g_nslots{0}; ///< Slots claimed so far (may exceed kSlots).
-/// @brief Readers past kSlots: counted in one shared RMW (seq_cst), slow but
-///        correct. A program with more reader threads than kSlots raises
+inline std::array<ReaderSlot, slot_count> g_slots;     ///< The reader slots, claimed in order.
+inline std::atomic<int>               g_nslots{0}; ///< Slots claimed so far (may exceed slot_count).
+/// @brief Readers past slot_count: counted in one shared RMW (seq_cst), slow but
+///        correct. A program with more reader threads than slot_count raises
 ///        CHUNK_READ_RECLAIM_SLOTS.
 inline std::atomic<long>        g_overflow_readers{0};
 inline thread_local ReaderSlot* t_slot     = nullptr; ///< This thread's slot, once claimed.
@@ -107,7 +107,7 @@ inline ReaderSlot* claim_slot() noexcept
         return nullptr;
     }
     const int i = g_nslots.fetch_add(1, std::memory_order_acq_rel);
-    if (i < kSlots) [[likely]]
+    if (i < slot_count) [[likely]]
     {
         t_slot = &g_slots[i];
         return t_slot;
@@ -208,7 +208,7 @@ class ReadSection
 inline void wait_for_readers() noexcept
 {
     dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
-    const int         n    = std::min(g_nslots.load(std::memory_order_acquire), kSlots);
+    const int         n    = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
     const ReaderSlot* mine = t_slot;
     for (int i = 0; i < n; ++i)
     {

@@ -103,13 +103,13 @@ void initializeRNG(std::mt19937& rng, const std::string& seed_file_name)
 // -----------------------------------------------------------------------------
 double convert_memory(double memoryValue)
 {
-    constexpr double BYTE_TO_KB = 1.0 / 1024;
-    constexpr double KB_TO_MB   = 1.0 / 1024;
+    constexpr double byte_to_kb = 1.0 / 1024;
+    constexpr double kb_to_mb   = 1.0 / 1024;
 
     // A conversion, nothing else: no file I/O inside --mode perf's timed
     // loop. memory_consumption("end") writes memory_mo.txt, with the peak.
-    const double kilobytes = memoryValue * BYTE_TO_KB;
-    return kilobytes * KB_TO_MB;
+    const double kilobytes = memoryValue * byte_to_kb;
+    return kilobytes * kb_to_mb;
 }
 
 /// @brief The exact-peak sampler of the bench: started with the program
@@ -246,7 +246,7 @@ void memory_consumption(const std::string& msg)
             {
                 long live_bytes  = 0;
                 long live_chunks = 0;
-                for (Int v = 0; v < shrink_array::CHUNK_STATS_N_VARIANT; ++v)
+                for (Int v = 0; v < shrink_array::chunk_stats_n_variant; ++v)
                 {
                     const shrink_array::ChunkStatsThr t = shrink_array::reduce_chunk_stats(v);
                     live_bytes += t.bytes_alloc + t.bytes_reused - t.bytes_freed;

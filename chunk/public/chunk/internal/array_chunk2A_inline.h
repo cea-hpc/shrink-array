@@ -84,7 +84,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
             // a visible master-only cost on large arrays). Same pattern as
             // ArrayChunk2::rebuild_storage; serial inside a region (the caller
             // need not be the whole team) and below the one threshold,
-            // parallel_storage_init::kParallelInitMinChunks.
+            // parallel_storage_init::parallel_init_min_chunks.
             const auto init_chunk = [&](int i)
             {
                 Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);

@@ -73,9 +73,9 @@ namespace internal
 {
 /// Deferred-replay retries past which a check build fails and a release
 /// build warns (once per process).
-inline constexpr int kReplayRetryCap = 1000;
+inline constexpr int replay_retry_cap = 1000;
 /// Retries past which each further one yields the core first.
-inline constexpr int kReplayRetrySpin = 64;
+inline constexpr int replay_retry_spin = 64;
 
 /**
  * @brief One more turn of a deferred-replay retry loop (the `_async` bodies
@@ -83,8 +83,8 @@ inline constexpr int kReplayRetrySpin = 64;
  *
  * @details A retry means a compressor finished in between: progress was made,
  *          so the loop is NOT bounded in release (an abort would turn a
- *          contention spike into a lost run). Past kReplayRetrySpin the thread
- *          yields; at kReplayRetryCap a check build fails and a release build
+ *          contention spike into a lost run). Past replay_retry_spin the thread
+ *          yields; at replay_retry_cap a check build fails and a release build
  *          warns once per process and keeps going.
  *
  * @param retry_count the loop's counter, starting at 0
@@ -99,16 +99,16 @@ inline void replay_retry(int&                        retry_count,
                          int                         num,
                          const std::source_location& loc = std::source_location::current()) noexcept
 {
-    if (retry_count <= kReplayRetryCap)
+    if (retry_count <= replay_retry_cap)
     {
         ++retry_count;
     }
-    if (retry_count > kReplayRetryCap)
+    if (retry_count > replay_retry_cap)
     {
         if constexpr (build_config::any_check)
         {
             invariant_failed(loc, "{}: retry > {} on chunk={} num={} -- pathological contention?", where,
-                             kReplayRetryCap, chunk, num);
+                             replay_retry_cap, chunk, num);
         }
         else
         {
@@ -118,11 +118,11 @@ inline void replay_retry(int&                        retry_count,
                 CHUNK_LOG(warn, drain,
                           "{}: deferred replay retried more than {} times on chunk={} num={} (still retrying; reported "
                           "once per process)",
-                          where, kReplayRetryCap, static_cast<const void*>(chunk), num);
+                          where, replay_retry_cap, static_cast<const void*>(chunk), num);
             }
         }
     }
-    if (retry_count > kReplayRetrySpin)
+    if (retry_count > replay_retry_spin)
     {
         std::this_thread::yield();
     }
@@ -714,7 +714,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         // being written blind.
                         if (proxy.is_cst_val1() || proxy.is_cst_val2()) [[unlikely]]
                         {
-                            if (++retry_count > internal::kReplayRetryCap)
+                            if (++retry_count > internal::replay_retry_cap)
                             {
                                 CHUNK_INVARIANT_FAILED("[deferred2A write] chunk keeps reverting to cst before "
                                                        "store (chunk={}, num={}, values_before={}, cur_cst_val1={}, "

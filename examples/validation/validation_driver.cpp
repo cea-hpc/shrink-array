@@ -53,12 +53,12 @@ struct Harness
     int (*run)(int, char**);
 };
 
-const Harness kHarnesses[] = {
+const Harness harness_table[] = {
 #define VALIDATION_HARNESS(name) {#name, &validation::name::run},
 #include VALIDATION_HARNESS_LIST // one VALIDATION_HARNESS(name) per harness: its table entry
 #undef VALIDATION_HARNESS
 };
-constexpr int kNbHarnesses = static_cast<int>(sizeof kHarnesses / sizeof kHarnesses[0]);
+constexpr int nb_harnesses = static_cast<int>(sizeof harness_table / sizeof harness_table[0]);
 
 const char* g_running = nullptr; // the harness name given on the command line, if any
 
@@ -93,7 +93,7 @@ int main(int argc, char** argv)
 #endif
     if (argc > 1)
     {
-        for (const Harness& h : kHarnesses)
+        for (const Harness& h : harness_table)
         {
             if (std::strcmp(argv[1], h.name) == 0)
             {
@@ -103,13 +103,13 @@ int main(int argc, char** argv)
             }
         }
     }
-    if (kNbHarnesses == 1)
+    if (nb_harnesses == 1)
     {
-        return kHarnesses[0].run(argc, argv);
+        return harness_table[0].run(argc, argv);
     }
 
     std::fprintf(stderr, "usage: %s <harness> [args...]\nharnesses:\n", argv[0]);
-    for (const Harness& h : kHarnesses)
+    for (const Harness& h : harness_table)
     {
         std::fprintf(stderr, "  %s\n", h.name);
     }

@@ -138,7 +138,7 @@ void maybe_set_second_value(Arr& a, const Val& v)
     }
 }
 
-constexpr int kChunks = 100;
+constexpr int n_chunks = 100;
 
 /// @brief The "plain" content: two values alternating, so that no chunk is
 ///        uniform -- chunk2a takes any uniform run as a second constant of
@@ -148,13 +148,13 @@ static double plain(int i)
     return (i % 2) ? 2.5 : 3.5;
 }
 
-/// @brief The chunks of @p arr still holding a buffer, out of the kChunks
+/// @brief The chunks of @p arr still holding a buffer, out of the n_chunks
 ///        written (the array has one more, empty, that no phase touches).
 static int materialised(const Array<double>& arr)
 {
     const int S = static_cast<int>(arr.chunk_size());
     int       n = 0;
-    for (int j = 0; j < kChunks; ++j)
+    for (int j = 0; j < n_chunks; ++j)
     {
         n += arr.written(j * S);
     }
@@ -211,11 +211,11 @@ static int expect_after(Kind k)
         case Kind::first:
             return 0;
         case Kind::declared:
-            return chunk_config::use_chunk2or2a ? 0 : kChunks;
+            return chunk_config::use_chunk2or2a ? 0 : n_chunks;
         case Kind::other:
-            return chunk_config::use_chunk2a ? 0 : kChunks;
+            return chunk_config::use_chunk2a ? 0 : n_chunks;
         case Kind::plain:
-            return kChunks;
+            return n_chunks;
     }
     return -1;
 }
@@ -240,10 +240,10 @@ int run(int /*argc*/, char** /*argv*/)
 
     // The geometry this build runs at, read off a throwaway array.
     const int S = static_cast<int>(Array<double>(1).chunk_size());
-    const int N = kChunks * S;
+    const int N = n_chunks * S;
 
     println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(), S,
-            kChunks, CHUNK_PMP_MAX_THREADS);
+            n_chunks, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 

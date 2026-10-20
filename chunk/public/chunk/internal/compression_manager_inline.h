@@ -592,7 +592,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
 #ifndef CHUNK_COMPRESS_MAX_YIELDS
     #define CHUNK_COMPRESS_MAX_YIELDS 10000
 #endif
-    constexpr int kMaxYields = CHUNK_COMPRESS_MAX_YIELDS; // tune via -D
+    constexpr int max_yields = CHUNK_COMPRESS_MAX_YIELDS; // tune via -D
 
     // Wait HOLDING our hard increment, deliberately: the write-path gate consults
     // hard_inflight_, so a parked compressor steers new writers to the slow path and the
@@ -618,7 +618,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
         {
             std::this_thread::yield();
             spin = 0;
-            if (++yields > kMaxYields)
+            if (++yields > max_yields)
             {
                 // Give up: undo add_compression_active() (as the flush early-out does).
                 increm_chunk_gate_start_deferred<ChunkType>();
@@ -680,7 +680,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
 template <typename T, typename ChunkType, bool Enabled>
 void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::wait_out_compressor(const ChunkType& chunk) noexcept
 {
-    constexpr int kMaxYields = CHUNK_WRITE_WAIT_MAX_YIELDS;
+    constexpr int max_yields = CHUNK_WRITE_WAIT_MAX_YIELDS;
 
     int                         spin     = 0;
     int                         yields   = 0;
@@ -694,7 +694,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::wait_out_compressor(con
         {
             std::this_thread::yield();
             spin = 0;
-            if (++yields > kMaxYields)
+            if (++yields > max_yields)
             {
                 break; // budget spent: the caller defers
             }

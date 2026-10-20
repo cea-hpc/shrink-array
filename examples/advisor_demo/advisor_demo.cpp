@@ -32,7 +32,7 @@
 using namespace shrink_array;
 
 
-static constexpr int N = 1 << 22; // 4M elements
+static constexpr int n_elems = 1 << 22; // 4M elements
 
 // Mixed, size-sensitive pattern:
 //  [0,50%)   : zeros                          -> cst1 at every size
@@ -43,7 +43,7 @@ static constexpr int N = 1 << 22; // 4M elements
 //        -> pollutes 1 chunk in 64 at S=64, 1 in 4 at S=1024...
 static double value_at(int i)
 {
-    const double f = static_cast<double>(i) / N;
+    const double f = static_cast<double>(i) / n_elems;
     if (f < 0.5)
     {
         return (i % 4096 == 2048) ? 42.0 : 0.0;
@@ -62,7 +62,7 @@ static double value_at(int i)
 template <typename TAB>
 static void fill_and_compress(TAB& tab)
 {
-    for (int i = 0; i < N; ++i)
+    for (int i = 0; i < n_elems; ++i)
     {
         tab[i] = value_at(i);
     }
@@ -92,7 +92,7 @@ static Truth ground_truth(const ArrayChunk2A<double>& tab, double meta)
 
 int main()
 {
-    println("=== ChunkSizeAdvisor step-0 validation (N={} doubles) ===", N);
+    println("=== ChunkSizeAdvisor step-0 validation (n_elems={} doubles) ===", n_elems);
 
     // Mandatory library init: the block size and the allocator indexes for
     // the first size. Element types register themselves at their first array.
@@ -111,7 +111,7 @@ int main()
         set_thread_chunk_size(cs);
         ArrayChunk2A<double> tab(1); // proven pattern (test_multisize):
         tab.set_chunk_size(cs);      // register per-array size FIRST,
-        tab.resize(N);               // THEN size the geometry
+        tab.resize(n_elems);               // THEN size the geometry
         fill_and_compress(tab);
         if (meta == 0.)
         {
@@ -143,7 +143,7 @@ int main()
         set_thread_chunk_size(ref_size);
         ArrayChunk2A<double> ref(1);
         ref.set_chunk_size(ref_size);
-        ref.resize(N);
+        ref.resize(n_elems);
         fill_and_compress(ref);
         ChunkSizeAdvisor<double>::Options opt;
         opt.coarser_levels = 2;

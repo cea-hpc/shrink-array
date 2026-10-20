@@ -105,11 +105,11 @@ static_assert(sizeof(no_init_vector<char>) == sizeof(std::vector<char>));
 
 /// @brief Below this many bytes a vector's elements are constructed by the
 ///        calling thread: a team costs more than the faults it would share.
-inline constexpr std::size_t kFirstTouchMinBytes = std::size_t{2} << 20U;
+inline constexpr std::size_t first_touch_min_bytes = std::size_t{2} << 20U;
 
 /// @brief Chunk count from which a per-chunk init takes a team of its own:
 ///        below it, a team's start-up costs more. THE library threshold.
-inline constexpr int kParallelInitMinChunks = 500;
+inline constexpr int parallel_init_min_chunks = 500;
 
 /// @brief May this call open a team of its own? Outside a parallel region,
 ///        with at least two threads available.
@@ -123,10 +123,10 @@ inline bool can_open_team() noexcept
 }
 
 /// @brief Does a loop over @p n chunks take a team of its own? At least
-///        kParallelInitMinChunks of them, and can_open_team().
+///        parallel_init_min_chunks of them, and can_open_team().
 inline bool use_own_team(long n) noexcept
 {
-    return n >= kParallelInitMinChunks && can_open_team();
+    return n >= parallel_init_min_chunks && can_open_team();
 }
 
 /**
@@ -200,7 +200,7 @@ void for_each_chunk_in(int first, int last, MakeCtx&& make_ctx, Body&& body)
 
 /**
  * @brief Construct elements [@p first, @p last) of @p base with @p make(p): on a
- *        team of its own, static schedule, for kFirstTouchMinBytes or more
+ *        team of its own, static schedule, for first_touch_min_bytes or more
  *        outside a region; on the calling thread otherwise.
  * @details First touch of fresh storage: the pages land with the threads of
  *          the static per-chunk loops.
@@ -210,7 +210,7 @@ void construct_range(T* base, std::size_t first, std::size_t last, Make&& make)
 {
     if constexpr (build_config::use_openmp)
     {
-        if ((last - first) * sizeof(T) >= kFirstTouchMinBytes && can_open_team())
+        if ((last - first) * sizeof(T) >= first_touch_min_bytes && can_open_team())
         {
             const long lo = static_cast<long>(first);
             const long hi = static_cast<long>(last);

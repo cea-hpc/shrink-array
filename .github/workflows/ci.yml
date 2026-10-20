@@ -34,7 +34,7 @@ jobs:
       - name: check_* scripts
         run: |
           status=0
-          for s in check_docs check_tracked check_raw_reads check_includes check_headers; do
+          for s in check_docs check_tracked check_raw_reads check_includes check_naming check_headers; do
             echo "::group::$s"
             python3 scripts/$s.py . || status=1
             echo "::endgroup::"

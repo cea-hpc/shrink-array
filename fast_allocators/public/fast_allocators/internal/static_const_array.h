@@ -178,21 +178,21 @@ class StaticConstArray
     static void clearInfoFreeElt();
 
     /// @brief The ladder's buckets, smallest first: element sizes 4 << i bytes.
-    using Ladder = std::tuple<TCTypeAllocatorEBC<4, SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<8, SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<16, SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<32, SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<64, SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<128, SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<256, SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<512, SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<1024, 2 * SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<2048, 4 * SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<4096, 8 * SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<8192, 16 * SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<16384, 16 * SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<32768, 16 * SIZE_BLOCK>,
-                              TCTypeAllocatorEBC<65536, 32 * SIZE_BLOCK>>;
+    using Ladder = std::tuple<TCTypeAllocatorEBC<4, size_block>,
+                              TCTypeAllocatorEBC<8, size_block>,
+                              TCTypeAllocatorEBC<16, size_block>,
+                              TCTypeAllocatorEBC<32, size_block>,
+                              TCTypeAllocatorEBC<64, size_block>,
+                              TCTypeAllocatorEBC<128, size_block>,
+                              TCTypeAllocatorEBC<256, size_block>,
+                              TCTypeAllocatorEBC<512, size_block>,
+                              TCTypeAllocatorEBC<1024, 2 * size_block>,
+                              TCTypeAllocatorEBC<2048, 4 * size_block>,
+                              TCTypeAllocatorEBC<4096, 8 * size_block>,
+                              TCTypeAllocatorEBC<8192, 16 * size_block>,
+                              TCTypeAllocatorEBC<16384, 16 * size_block>,
+                              TCTypeAllocatorEBC<32768, 16 * size_block>,
+                              TCTypeAllocatorEBC<65536, 32 * size_block>>;
 
     /// @brief How many buckets the ladder has.
     static constexpr std::size_t n_buckets = std::tuple_size_v<Ladder>;

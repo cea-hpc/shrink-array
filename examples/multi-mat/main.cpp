@@ -60,11 +60,11 @@ using namespace shrink_array;
 ///        scripts that collect it.
 double convert_memory(double memoryValue)
 {
-    constexpr double BYTE_TO_KB = 1.0 / 1024;
-    constexpr double KB_TO_MB   = 1.0 / 1024;
+    constexpr double byte_to_kb = 1.0 / 1024;
+    constexpr double kb_to_mb   = 1.0 / 1024;
 
-    const double kilobytes = memoryValue * BYTE_TO_KB;
-    const double megabytes = kilobytes * KB_TO_MB;
+    const double kilobytes = memoryValue * byte_to_kb;
+    const double megabytes = kilobytes * kb_to_mb;
 
     std::ofstream fichier("memory_mo.txt");
 

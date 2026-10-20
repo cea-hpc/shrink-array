@@ -98,7 +98,7 @@ void end_phase()
 
 // A multiple of every chunk size the harness is built at: a run is whole chunks
 // (4096 * 3: every power of two up to 4096, and 192, 384, 768...).
-constexpr long kRun = 12288;
+constexpr long run_len = 12288;
 
 bool varied(long i)
 {
@@ -158,7 +158,7 @@ int round_trip(long N)
 #pragma omp for
         for (long i = 0; i < N; ++i)
         {
-            const long run = (i / kRun) % 3;
+            const long run = (i / run_len) % 3;
             if (run == 0)
             {
                 a[i] = false;
@@ -172,7 +172,7 @@ int round_trip(long N)
     end_phase();
     for (long i = 0; i < N; ++i)
     {
-        const long run = (i / kRun) % 3;
+        const long run = (i / run_len) % 3;
         if (run != 2)
         {
             ref[static_cast<std::size_t>(i)] = (run == 1);
@@ -192,7 +192,7 @@ int round_trip(long N)
     // Only the mixed runs (run % 3 == 2) stay materialised; runs are whole
     // chunks, so the share of written chunks is that of the mixed runs.
     const double written = a.stats_seq();
-    const long   n_runs  = N / kRun;
+    const long   n_runs  = N / run_len;
     const double expect  = 100.0 * static_cast<double>(n_runs / 3) / static_cast<double>(n_runs);
     if (written > expect + 1.0 || written < expect - 1.0)
     {
@@ -326,13 +326,13 @@ int logical_ops(long N)
 #pragma omp for
         for (long i = 0; i < N; ++i)
         {
-            a[i] = ((i / kRun) % 3 == 1) || ((i / kRun) % 3 == 2 && i % 2 == 0);
+            a[i] = ((i / run_len) % 3 == 1) || ((i / run_len) % 3 == 2 && i % 2 == 0);
         }
     }
     end_phase();
     for (long i = 0; i < N; ++i)
     {
-        ref[static_cast<std::size_t>(i)] = ((i / kRun) % 3 == 1) || ((i / kRun) % 3 == 2 && i % 2 == 0);
+        ref[static_cast<std::size_t>(i)] = ((i / run_len) % 3 == 1) || ((i / run_len) % 3 == 2 && i % 2 == 0);
     }
 
     for (int k = 0; k < 3; ++k)
@@ -401,7 +401,7 @@ int advisor_and_rechunk(long N)
     // is all true and second half mixed.
     const auto pattern = [S](long i)
     {
-        const long run = (i / kRun) % 3;
+        const long run = (i / run_len) % 3;
         if (run != 2)
         {
             return run == 1;
@@ -432,7 +432,7 @@ int advisor_and_rechunk(long N)
     }
     fails += compare(a, ref, "advisor setup") != 0;
 
-    const long mat_expected = (N / kRun) / 3 * (kRun / S);
+    const long mat_expected = (N / run_len) / 3 * (run_len / S);
     // The advisor does not evaluate below Options::min_size (64): at S=64 the
     // S/2 row exists only if asked for, so ask -- the finer path is what this
     // check is about. No change for S >= 128.
@@ -526,7 +526,7 @@ int bulk_ranges(long N)
     // A start with constant and mixed chunks.
     for (long i = 0; i < N; ++i)
     {
-        const bool v                     = ((i / kRun) % 3 == 1) || ((i / kRun) % 3 == 2 && varied(i));
+        const bool v                     = ((i / run_len) % 3 == 1) || ((i / run_len) % 3 == 2 && varied(i));
         a[i]                             = v;
         ref[static_cast<std::size_t>(i)] = v;
     }
@@ -719,8 +719,8 @@ int parallel_copy_transform(long N)
 int run(int argc, char** argv)
 {
     // 85 runs: whole runs and whole chunks at every size the harness is built at.
-    constexpr long kDefaultN = 85 * kRun;
-    const long     N         = argc > 1 ? shrink_array::arg_number<long>(argv[1], kDefaultN, "N") : kDefaultN;
+    constexpr long default_n = 85 * run_len;
+    const long     N         = argc > 1 ? shrink_array::arg_number<long>(argv[1], default_n, "N") : default_n;
     ParamChunk::init_indexes(true);
 
     println("=== bits_container_validation  N={}  threads={} ===", N, CHUNK_PMP_MAX_THREADS);

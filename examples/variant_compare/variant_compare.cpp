@@ -104,8 +104,8 @@ constexpr const char* variant_name()
 }
 
 /// The first value is 0; the second values, the first of them declared.
-constexpr double kSecond[]     = {9., 11., 13., 17., 19., 23., 29., 31.};
-constexpr int    kMaxConstants = static_cast<int>(sizeof(kSecond) / sizeof(kSecond[0]));
+constexpr double second_value[]     = {9., 11., 13., 17., 19., 23., 29., 31.};
+constexpr int    max_constants = static_cast<int>(sizeof(second_value) / sizeof(second_value[0]));
 
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 static void begin_phase()
@@ -164,7 +164,7 @@ static Role role(long chunk, int iter, int nconst)
     }
     if (r <= 4)
     {
-        return {0, kSecond[(h >> 8) % static_cast<std::uint64_t>(nconst)]};
+        return {0, second_value[(h >> 8) % static_cast<std::uint64_t>(nconst)]};
     }
     if (r == 5)
     {
@@ -209,13 +209,13 @@ int main(int argc, char** argv)
         else
         {
             std::fprintf(stderr, "usage: %s [--n N] [--iters I] [--constants K (1..%d)] [--verify]\n", argv[0],
-                         kMaxConstants);
+                         max_constants);
             return 2;
         }
     }
-    if (nconst < 1 || nconst > kMaxConstants || iters < 1 || N < 1 || N > 0x7fffffffL)
+    if (nconst < 1 || nconst > max_constants || iters < 1 || N < 1 || N > 0x7fffffffL)
     {
-        std::fprintf(stderr, "variant_compare: need 1 <= constants <= %d, iters >= 1, 1 <= n < 2^31\n", kMaxConstants);
+        std::fprintf(stderr, "variant_compare: need 1 <= constants <= %d, iters >= 1, 1 <= n < 2^31\n", max_constants);
         return 2;
     }
 
@@ -228,7 +228,7 @@ int main(int argc, char** argv)
             variant_name(), N, S, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
 
     Array<double> a(static_cast<int>(N));
-    maybe_declare_second_value(a, kSecond[0]);
+    maybe_declare_second_value(a, second_value[0]);
     std::vector<double> ref;
     if (verify)
     {
