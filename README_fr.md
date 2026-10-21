@@ -39,7 +39,9 @@ int main()
         const int                n = 1 << 24;
         sa::ArrayChunk2A<double> a(n);        // tous les éléments à 0.0, aucun tampon encore
 
-        sa::parallel_phase([&] {             // une région parallèle ; marque les phases sans OMPT
+        // parallel_phase ouvre la région `omp parallel` et y exécute la lambda, sur chaque
+        // thread ; le `omp for` partage la boucle entre cette équipe (voir plus bas)
+        sa::parallel_phase([&] {
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // la plage de 3.5 se compresse
@@ -52,6 +54,28 @@ int main()
     sa::destroy_block_chunk();
 }
 ```
+
+`parallel_phase()` reçoit le corps de la région parallèle sous forme de lambda. Le `#pragma omp
+parallel` est à l'intérieur : le `#pragma omp for` de la lambda est donc une directive de
+partage orpheline, qui se rattache à l'équipe ouverte par `parallel_phase()`. Autour de la
+région, elle marque aussi les frontières de phase où la bibliothèque fait son travail différé
+(les écritures mises en file sur des chunks compressés, la compression des chunks devenus
+uniformes). L'exemple n'a pas besoin d'OMPT : par défaut `parallel_phase()` fait ces appels
+elle-même, et dans un build OMPT (`CHUNK_OPT_OMPT`) c'est le runtime OpenMP qui les fait et
+`parallel_phase()` n'est plus qu'une région parallèle. Écrit à la main, sans OMPT, cela donne :
+
+```cpp
+#pragma omp parallel
+{
+    sa::begin_parallel_phase();      // chaque thread, avant sa première écriture
+#pragma omp for
+    for (int i = 0; i < n / 2; ++i)
+        a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+sa::finalize_parallel_phase();       // hors de la région : vider les écritures en file, compresser
+```
+
+Sans OpenMP, la lambda est simplement exécutée une fois, en série.
 
 Le lier à `chunk::chunk_v2a` (voir [Installer](#installer)). La version complète, qui vérifie
 ce qu'elle relit, est [examples/getting_started](examples/getting_started/getting_started.cpp) ;

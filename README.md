@@ -38,7 +38,9 @@ int main()
         const int                n = 1 << 24;
         sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer yet
 
-        sa::parallel_phase([&] {             // a parallel region; marks the phases without OMPT
+        // parallel_phase opens the `omp parallel` region and runs the lambda in it, on every
+        // thread; the `omp for` shares the loop over that team (see below)
+        sa::parallel_phase([&] {
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // the 3.5 run compresses
@@ -51,6 +53,28 @@ int main()
     sa::destroy_block_chunk();
 }
 ```
+
+`parallel_phase()` takes the body of the parallel region as a lambda. The `#pragma omp
+parallel` is inside it, so the `#pragma omp for` of the lambda is an orphaned worksharing
+directive: it binds to the team `parallel_phase()` opened. Around the region it also marks
+the phase boundaries the library defers its work to (the writes queued on compressed chunks,
+the compression of the chunks that became uniform). The example needs no OMPT: by default
+`parallel_phase()` makes those calls itself, and in an OMPT build (`CHUNK_OPT_OMPT`) the
+OpenMP runtime makes them and `parallel_phase()` is a plain parallel region. Written by hand,
+without OMPT, it is:
+
+```cpp
+#pragma omp parallel
+{
+    sa::begin_parallel_phase();      // every thread, before its first write
+#pragma omp for
+    for (int i = 0; i < n / 2; ++i)
+        a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+sa::finalize_parallel_phase();       // outside the region: flush the queued writes, compress
+```
+
+Without OpenMP the lambda simply runs once, serially.
 
 Link it with `chunk::chunk_v2a` (see [Install](#install)). The complete version, which checks
 what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp);
