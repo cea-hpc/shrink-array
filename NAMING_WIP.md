@@ -8,7 +8,7 @@ branch; delete it before merging.
 
 | commit | content |
 |---|---|
-| lot 1 | the names that read alike everywhere, renamed by word over code, docs and scripts (string literals, `#include` lines and file names left alone): camelCase functions, UPPER_CASE / PascalCase enumerators, snake_case aliases and concepts, `chunk2A` in snake_case names, `__debug_flag`. `getChunkList()` and `ParamChunk::ChunkStats()` keep a `[[deprecated]]` alias |
+| lot 1 | the names that read alike everywhere, renamed by word over code, docs and scripts (string literals, `#include` lines and file names left alone): camelCase functions, UPPER_CASE / PascalCase enumerators, snake_case aliases and concepts, `chunk2A` in snake_case names, the reserved debug flag (now `debug_flag`). `getChunkList()` and `ParamChunk::ChunkStats()` keep a `[[deprecated]]` alias |
 | lot 2 | the names whose meaning depends on scope, through clang-tidy `readability-identifier-naming`, then the uses it missed from the compiler's errors: `_` at the end of private / protected data members, parameters, short UPPER_CASE locals (`N` -> `n`, `S` -> `s`) |
 | lot 3 | what only an OpenMP build compiles, UPPER_CASE template parameters, reserved `__` names (-> `g_`), `check_naming` extended, `scripts/clang_tidy_naming.yaml`, the convention in `docs/contributing.md` |
 
