@@ -246,6 +246,13 @@ Avec OMPT, si le runtime n'a pas chargé l'outil de la bibliothèque (`OMP_TOOL=
 autre outil trouvé d'abord), les phases n'ont jamais lieu. La bibliothèque l'écrit sur stderr ;
 `CHUNK_REQUIRE_OMPT=1` arrête alors le programme.
 
+Avec OMPT, on peut aussi n'écrire aucune phase : de simples boucles `#pragma omp parallel for`,
+le même code que sur un `std::vector`.
+[`examples/getting_started/getting_started_ompt.cpp`](../examples/getting_started/getting_started_ompt.cpp)
+est le programme du §4 écrit ainsi : une même fonction remplit un `std::vector<double>` et un
+`ArrayChunk2A<double>`, et le programme vérifie qu'ils se relisent à l'identique. Il refuse de
+compiler contre une bibliothèque sans OMPT ; son test tourne avec `CHUNK_REQUIRE_OMPT=1`.
+
 **Les points séquentiels.** Tout ce qui reconstruit le stockage d'un tableau s'appelle hors de
 toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la capacité,
 `clear()`, `assign()`, `swap()`, l'affectation, `shrink_to_fit()`, `compress()`,

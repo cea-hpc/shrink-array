@@ -31,6 +31,27 @@ add_executable(getting_started getting_started.cpp)
 # built with) and -fopenmp when it was built with OpenMP.
 target_link_libraries(getting_started PRIVATE ${GETTING_STARTED_LIB})
 
+# getting_started_ompt.cpp: the same program with plain `omp parallel for`
+# loops, no parallel_phase(), checked against a std::vector. Only with the
+# OMPT tool (Clang, oneAPI): the runtime marks the phases. Its source refuses to
+# compile without it (static_assert), and its test stops on a runtime that did
+# not load the tool (CHUNK_REQUIRE_OMPT=1) instead of passing without phases.
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(_gs_ompt "${chunk_OMPT}")
+else()
+  set(_gs_ompt "${CHUNK_HAVE_OMPT}")
+endif()
+if (_gs_ompt)
+  add_executable(getting_started_ompt getting_started_ompt.cpp)
+  target_link_libraries(getting_started_ompt PRIVATE ${GETTING_STARTED_LIB})
+  if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    add_test(NAME getting_started_ompt COMMAND getting_started_ompt)
+    set_property(TEST getting_started_ompt PROPERTY ENVIRONMENT "CHUNK_REQUIRE_OMPT=1;OMP_NUM_THREADS=8")
+  endif()
+else()
+  message(STATUS "getting_started_ompt: not built (no OMPT tool: Clang or oneAPI, OMP=ON)")
+endif()
+
 if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_test(NAME getting_started COMMAND getting_started)
 endif()

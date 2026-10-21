@@ -77,6 +77,31 @@ sa::finalize_parallel_phase();       // hors de la région : vider les écriture
 
 Sans OpenMP, la lambda est simplement exécutée une fois, en série.
 
+**Avec OMPT, rien de la bibliothèque autour des boucles.** Dans un build OMPT (Clang, oneAPI : la
+bibliothèque embarque un outil OMPT, `CHUNK_OPT_OMPT`), le runtime OpenMP indique à la
+bibliothèque où chaque région commence et finit ; la boucle s'écrit donc comme pour un
+`std::vector` -- la même fonction remplit les deux :
+
+```cpp
+template <typename Array>
+void fill(Array& t, int n)
+{
+#pragma omp parallel for
+    for (int i = 0; i < n / 2; ++i)
+        t[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+
+std::vector<double>      v(n);
+sa::ArrayChunk2A<double> a(n);
+fill(v, n);                          // la référence
+fill(a, n);                          // la même boucle : ni parallel_phase(), ni appels de phase
+```
+
+[examples/getting_started/getting_started_ompt.cpp](examples/getting_started/getting_started_ompt.cpp)
+est ce programme, qui compare ensuite les deux tableaux élément par élément. Il demande un build
+OMPT : il ne compile pas contre une bibliothèque construite avec la libgomp de GCC, où les phases
+ne seraient jamais marquées.
+
 Le lier à `chunk::chunk_v2a` (voir [Installer](#installer)). La version complète, qui vérifie
 ce qu'elle relit, est [examples/getting_started](examples/getting_started/getting_started.cpp) ;
 [docs/getting_started_fr.md](docs/getting_started_fr.md) la commente pas à pas, puis les règles

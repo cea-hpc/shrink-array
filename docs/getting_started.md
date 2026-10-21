@@ -240,6 +240,13 @@ With OMPT, if the runtime did not load the library's tool (`OMP_TOOL=disabled`, 
 found first), the phases never happen. The library prints a warning on stderr;
 `CHUNK_REQUIRE_OMPT=1` makes it stop the program instead.
 
+With OMPT you may also write no phase at all: plain `#pragma omp parallel for` loops, the same
+code as on a `std::vector`.
+[`examples/getting_started/getting_started_ompt.cpp`](../examples/getting_started/getting_started_ompt.cpp)
+is the program of §4 written that way: one function fills a `std::vector<double>` and an
+`ArrayChunk2A<double>`, and the program checks that they read back the same. It refuses to
+compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1`.
+
 **Sequential points.** Everything that rebuilds an array's storage must be called outside any
 parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`,
 `assign()`, `swap()`, assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for

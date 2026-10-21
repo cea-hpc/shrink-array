@@ -76,6 +76,31 @@ sa::finalize_parallel_phase();       // outside the region: flush the queued wri
 
 Without OpenMP the lambda simply runs once, serially.
 
+**With OMPT, nothing of the library around the loops.** In an OMPT build (Clang, oneAPI: the
+library carries an OMPT tool, `CHUNK_OPT_OMPT`), the OpenMP runtime tells the library where
+each region begins and ends, so the loop is written as for a `std::vector` -- the same
+function fills both:
+
+```cpp
+template <typename Array>
+void fill(Array& t, int n)
+{
+#pragma omp parallel for
+    for (int i = 0; i < n / 2; ++i)
+        t[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+
+std::vector<double>      v(n);
+sa::ArrayChunk2A<double> a(n);
+fill(v, n);                          // the reference
+fill(a, n);                          // the same loop: no parallel_phase(), no phase calls
+```
+
+[examples/getting_started/getting_started_ompt.cpp](examples/getting_started/getting_started_ompt.cpp)
+is that program, which then compares the two arrays element by element. It needs an OMPT
+build: it does not compile against a library built with GCC's libgomp, where the phases would
+never be marked.
+
 Link it with `chunk::chunk_v2a` (see [Install](#install)). The complete version, which checks
 what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp);
 [docs/getting_started.md](docs/getting_started.md) walks through it, then through the rules

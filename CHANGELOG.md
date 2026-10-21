@@ -52,6 +52,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `examples/getting_started/getting_started_ompt.cpp`: the first program with
+  plain `#pragma omp parallel for` loops and no `parallel_phase()`, for an OMPT
+  build (Clang, oneAPI), checked element by element against the same function
+  run on a `std::vector` (ctest `getting_started_ompt`, OMPT builds only).
 - Reduced models of the three lock-free handshakes -- writer / compressor,
   compressor / flush, readers / buffer reclamation -- checked by GenMC
   (`formal/`, `docs/formal_models.md`): the protocols of the source verified
