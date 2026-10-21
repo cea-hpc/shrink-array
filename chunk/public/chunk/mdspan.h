@@ -303,7 +303,7 @@ class tiled_mapping_base
 
     /// @brief All the tiles, padding included: the array size the view needs
     ///        (from its offset 0: for a sub-view, up to its last tile).
-    constexpr index_type required_span_size() const noexcept
+    constexpr index_type required_span_size(this const Derived& self) noexcept
     {
         if constexpr (Extents::rank() == 0)
         {
@@ -312,18 +312,18 @@ class tiled_mapping_base
         index_type last = 0; // the last tile, in storage order
         for (rank_type r = 0; r < Extents::rank(); ++r)
         {
-            if (ntiles_[r] == 0)
+            if (self.ntiles_[r] == 0)
             {
                 return 0;
             }
-            last += (ntiles_[r] - 1) * tstride_[r];
+            last += (self.ntiles_[r] - 1) * self.tstride_[r];
         }
-        return (last + 1) * self().tile_elements();
+        return (last + 1) * self.tile_elements();
     }
 
     template <typename... Idx>
         requires(sizeof...(Idx) == Extents::rank())
-    constexpr index_type operator()(Idx... idx) const noexcept
+    constexpr index_type operator()(this const Derived& self, Idx... idx) noexcept
     {
         // Unsigned: the indices are non-negative (mdspan's precondition), and
         // a division of an unsigned by a power of two is a shift -- the signed
@@ -336,11 +336,11 @@ class tiled_mapping_base
         U                                   in    = 0; // the element in its tile, row-major
         for (rank_type r = 0; r < Extents::rank(); ++r)
         {
-            const auto t = static_cast<U>(self().tile_extent(r));
-            which += (i[r] / t) * static_cast<U>(tstride_[r]);
+            const auto t = static_cast<U>(self.tile_extent(r));
+            which += (i[r] / t) * static_cast<U>(self.tstride_[r]);
             in = in * t + i[r] % t;
         }
-        return static_cast<index_type>(which * static_cast<U>(self().tile_elements()) + in);
+        return static_cast<index_type>(which * static_cast<U>(self.tile_elements()) + in);
     }
 
     static constexpr bool is_always_unique() noexcept
@@ -359,16 +359,16 @@ class tiled_mapping_base
     {
         return true;
     }
-    constexpr bool is_exhaustive() const noexcept
+    constexpr bool is_exhaustive(this const Derived& self) noexcept
     {
         index_type s = 1; // a sub-view's tiles are spread over its parent's grid
         for (rank_type r = Extents::rank(); r-- > 0;)
         {
-            if (ext_.extent(r) % self().tile_extent(r) != 0 || tstride_[r] != s)
+            if (self.ext_.extent(r) % self.tile_extent(r) != 0 || self.tstride_[r] != s)
             {
                 return false;
             }
-            s *= ntiles_[r];
+            s *= self.ntiles_[r];
         }
         return true;
     }
@@ -382,18 +382,18 @@ class tiled_mapping_base
 
     /// @brief Extents @p e cut in the tiles of the derived mapping (set
     ///        before this runs), row-major over the tiles.
-    constexpr void init(const extents_type& e) noexcept
+    constexpr void init(this Derived& self, const extents_type& e) noexcept
     {
-        ext_ = e;
+        self.ext_ = e;
         for (rank_type r = 0; r < Extents::rank(); ++r)
         {
-            ntiles_[r] = (ext_.extent(r) + self().tile_extent(r) - 1) / self().tile_extent(r);
+            self.ntiles_[r] = (self.ext_.extent(r) + self.tile_extent(r) - 1) / self.tile_extent(r);
         }
         index_type s = 1;
         for (rank_type r = Extents::rank(); r-- > 0;)
         {
-            tstride_[r] = s;
-            s *= ntiles_[r];
+            self.tstride_[r] = s;
+            s *= self.ntiles_[r];
         }
     }
     constexpr void set_tile_strides(const grid_type& g) noexcept
@@ -407,7 +407,7 @@ class tiled_mapping_base
     ///        (it starts on a tile and ends on one or at the extent); a slice
     ///        off the tiles stops the program. @p who names the layout.
     template <typename... Slices>
-    constexpr std::pair<grid_type, std::size_t> sub_view(const char* who, Slices... slices) const
+    constexpr std::pair<grid_type, std::size_t> sub_view(this const Derived& self, const char* who, Slices... slices)
     {
         static_assert(sizeof...(Slices) == Extents::rank(), "md::layout_tiled: one slice per dimension");
         constexpr std::size_t rank = Extents::rank();
@@ -415,38 +415,33 @@ class tiled_mapping_base
         grid_type             size{};
         grid_type             stride{};
         [&]<std::size_t... K>(std::index_sequence<K...>) {
-            (detail::tiled_slice<index_type>(slices, ext_.extent(K), first[K], size[K], stride[K]), ...);
+            (detail::tiled_slice<index_type>(slices, self.ext_.extent(K), first[K], size[K], stride[K]), ...);
         }(std::index_sequence_for<Slices...>{});
 
         index_type which = 0; // the sub-view's first tile, in storage order
         for (std::size_t r = 0; r < rank; ++r)
         {
-            const index_type t   = self().tile_extent(r);
+            const index_type t   = self.tile_extent(r);
             const index_type end = first[r] + size[r];
-            const bool       ok  = first[r] >= 0 && size[r] >= 0 && end <= ext_.extent(r) &&
+            const bool       ok  = first[r] >= 0 && size[r] >= 0 && end <= self.ext_.extent(r) &&
                             (stride[r] == 1 || size[r] <= 1) && first[r] % t == 0 &&
-                            (end % t == 0 || end == ext_.extent(r));
+                            (end % t == 0 || end == self.ext_.extent(r));
             if (!ok) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("{}: submdspan slice {} = [{}, {}) (stride {}) of extent {}: a tiled sub-view "
                                        "takes ranges of stride 1 that start on a tile of {} and end on one or at the "
                                        "extent",
                                        who, r, static_cast<long long>(first[r]), static_cast<long long>(end),
-                                       static_cast<long long>(stride[r]), static_cast<long long>(ext_.extent(r)),
+                                       static_cast<long long>(stride[r]), static_cast<long long>(self.ext_.extent(r)),
                                        static_cast<long long>(t));
             }
-            which += (first[r] / t) * tstride_[r];
+            which += (first[r] / t) * self.tstride_[r];
         }
-        return {size, static_cast<std::size_t>(which) * static_cast<std::size_t>(self().tile_elements())};
+        return {size, static_cast<std::size_t>(which) * static_cast<std::size_t>(self.tile_elements())};
     }
     #endif
 
   private:
-    constexpr const Derived& self() const noexcept
-    {
-        return static_cast<const Derived&>(*this);
-    }
-
     extents_type ext_{};
     grid_type    ntiles_{};
     grid_type    tstride_{}; ///< see tile_strides()

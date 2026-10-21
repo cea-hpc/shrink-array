@@ -152,14 +152,13 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      *          -- the write then waits for the store to reach the cache. Same
      *          hazard as in set_info_on_chunk().
      */
-    [[nodiscard]] int armed_num_tab() const
+    [[nodiscard]] int armed_num_tab(this const Derived& self)
     {
-        // armed_inf_array() takes `this const Derived&`: no implicit downcast from *this
-        if (const inf_array_t* src = static_cast<const Derived&>(*this).armed_inf_array()) [[likely]]
+        if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
         {
             return src->num_tab;
         }
-        return unarmed_num_tab();
+        return self.unarmed_num_tab();
     }
 
     /// @brief armed_num_tab()'s unarmed path, out of line: inlined, the compiler
@@ -278,14 +277,13 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      *          -- the write then waits for the store to reach the cache. Same
      *          hazard as in set_info_on_chunk().
      */
-    [[nodiscard]] int armed_num_tab() const
+    [[nodiscard]] int armed_num_tab(this const Derived& self)
     {
-        // armed_inf_array() takes `this const Derived&`: no implicit downcast from *this
-        if (const inf_array_t* src = static_cast<const Derived&>(*this).armed_inf_array()) [[likely]]
+        if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
         {
             return src->num_tab;
         }
-        return unarmed_num_tab();
+        return self.unarmed_num_tab();
     }
 
     /// @brief armed_num_tab()'s unarmed path, out of line: inlined, the compiler
