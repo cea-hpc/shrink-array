@@ -340,6 +340,17 @@ if (CHUNK_BUILD_DYN)
                            ENVIRONMENT OMP_NUM_THREADS=8
                            FIXTURES_REQUIRED shrink_bench_oracle
                            RESOURCE_LOCK shrink_bench_oracle_files)
+      # The TBB bench against the same reference (pool builds with
+      # CHUNK_WITH_TBB): the arrays written from TBB's threads must hold what
+      # the std::vector run wrote.
+      if (TARGET shrink_bench_tbb_${_vname}_${_sz})
+        add_test(NAME shrink_bench_tbb_${_vname}_check_${_sz}
+                 COMMAND shrink_bench_tbb_${_vname}_${_sz} --mode check)
+        set_tests_properties(shrink_bench_tbb_${_vname}_check_${_sz} PROPERTIES
+                             ENVIRONMENT OMP_NUM_THREADS=8
+                             FIXTURES_REQUIRED shrink_bench_oracle
+                             RESOURCE_LOCK shrink_bench_oracle_files)
+      endif()
     endforeach()
   endforeach()
 endif()

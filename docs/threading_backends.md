@@ -449,7 +449,16 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      rank under TBB), no longer by the library's.
    - `multi_launch_stress.py --exec tbb_chunk2a` runs it (by name only:
      `all` stays the three variants); `compile_all_gnu.sh` builds it in the
-     release pool build when oneTBB is there.
+     release pool build when oneTBB is there. ctest:
+     `shrink_bench_tbb_<variant>_check_<size>`, `--mode check` against the
+     reference the `std::vector` run writes (fixture `shrink_bench_oracle`,
+     as the other check runs).
+   - Checked (gcc 13, CHECK_OPTIM): the array checksums of the TBB bench equal
+     the OpenMP bench's, chunk and chunk2a, 1, 4 and 8 threads; against the
+     reference files (the singles of the check pass, the critical section),
+     162 of 162 checksums at 8 and 64 threads; under TSan against a oneTBB
+     built with `-DTBB_SANITIZE=thread`, chunk and chunk2a at 1 and 8
+     threads: no report.
 
 ## 4. Rules for the branch
 
