@@ -207,9 +207,9 @@ void ArrayChunk2A<T, IndType>::clear()
                 const auto v0                        = ck.constant_value(csz);
                 summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
             }
-            const auto& sh_inf   = *Proxy2A<T>::share_info_array;
-            const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
-            report_size_prediction<T>(summary, csz, num_tab_, "chunk2a",
+            const auto& sh_inf    = *Proxy2A<T>::share_info_array;
+            const int   tab_index = sh_inf.get_num_tab(this->registry_key());
+            report_size_prediction<T>(summary, csz, tab_index, "chunk2a",
                                       sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
         }
     }
@@ -665,9 +665,9 @@ void ArrayChunk2A<T, IndType>::resize(IndType newsz)
     this->invalidate_proxies();
     const auto& sh_inf = *Proxy2A<T>::share_info_array;
 
-    const int      num_tab      = sh_inf.get_num_tab(this->registry_key());
-    const int      old_nb_chunk = nb_chunk_;
-    const IndType  old_size     = this->m_size_; // the stale-tail reset at the end
+    const int     num_tab      = sh_inf.get_num_tab(this->registry_key());
+    const int     old_nb_chunk = nb_chunk_;
+    const IndType old_size     = this->m_size_; // the stale-tail reset at the end
 
     Base2::resize_common(newsz);
     if (nb_chunk_ > 0)

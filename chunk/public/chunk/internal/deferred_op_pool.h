@@ -129,8 +129,8 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 ///        object type, found by AllocatorRegistry).
 struct FastAllocatorBase
 {
-    /// @param block_size bytes per block
-    explicit FastAllocatorBase(size_t block_size) noexcept : block_size(block_size) {}
+    /// @param block_bytes bytes per block
+    explicit FastAllocatorBase(size_t block_bytes) noexcept : block_size(block_bytes) {}
     virtual ~FastAllocatorBase() = default;
 
     // Polymorphic, held by unique_ptr in the registry: never copied or moved.
