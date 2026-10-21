@@ -373,13 +373,15 @@ Les options sont décrites en tête de `main_md.cpp`.
 
 | disponible | utilisé |
 |---|---|
-| `<mdspan>` avec `__cpp_lib_mdspan` (libstdc++ 15, libc++ 17 et suivantes) | `std::mdspan` |
+| `<mdspan>` avec `__cpp_lib_mdspan` (libstdc++ 16, libc++ 17 et suivantes ; libstdc++ 15 n'a pas `<mdspan>`) | `std::mdspan` |
 | sinon, `<mdspan/mdspan.hpp>` dans le chemin d'inclusion (l'implémentation de référence, kokkos/mdspan) | son `mdspan`, dans l'espace de noms qu'il déclare |
 | ni l'un ni l'autre | rien : l'en-tête définit seulement `SHRINK_ARRAY_HAS_MDSPAN` à 0 |
 
 `f[i, j]` demande l'indexation multidimensionnelle de C++23 (GCC 12, Clang 15 et suivants) ; la
 bibliothèque exige déjà C++23. Le harness et la démo sortent avec 77 sans `mdspan`, ce que ctest
-compte comme sauté.
+compte comme sauté. `md::submdspan` est le `std::submdspan` de la norme quand la bibliothèque
+l'a -- il est de C++26 (`__cpp_lib_submdspan` : libstdc++ 16 avec `-std=c++26`) --, sinon celui de
+kokkos/mdspan ; les layouts en tuiles leur donnent à tous deux leur `submdspan_mapping`.
 
 `md::mdspan_source` dit lequel un build utilise, et s'il a `submdspan`
 (`"std::mdspan, no submdspan"`, `"kokkos/mdspan, submdspan"`, ...) ; `mdspan_validation` et
@@ -389,7 +391,14 @@ compte comme sauté.
 |---|---|---|
 | GCC 14, libstdc++ 14 + kokkos/mdspan | kokkos, `submdspan` | tous les harness |
 | Clang 19, libc++ 19 | `std::mdspan`, sans `submdspan` | les vues, les deux layouts en tuiles, les opérations sur tuiles, `mdspan_tiles`, `multi-mat-md` ; les harness `submdspan` sautés |
-| GCC 15, libstdc++ 15 | `std::mdspan`, sans `submdspan` | pas encore lancé |
+| GCC 15, libstdc++ 15 + kokkos/mdspan | kokkos, `submdspan` | tous les harness |
+| GCC 15, libstdc++ 15 seule | aucun : libstdc++ 15 n'a pas `<mdspan>` | la bibliothèque et le reste se construisent ; tous les harness `mdspan`, `mdspan_tiles` et `multi-mat-md` sautés (sortie 77) |
+| GCC 16, libstdc++ 16, C++23 | `std::mdspan`, sans `submdspan` | tous les harness sauf ceux de `submdspan`, sautés |
+| GCC 16, libstdc++ 16, C++26 | `std::mdspan`, `std::submdspan` | tous les harness, y compris ceux de `submdspan` et le refus de la sous-vue mal alignée |
+
+GCC 15 et 16 sont ceux de conda-forge (15.3, 16.2), Debug, OpenMP. Avec CMake 3.28,
+`-DCMAKE_CXX_STANDARD=26` laisse le build en `gnu++23` (les cibles demandent `cxx_std_23`) : le
+passage en C++26 a transmis `-std=gnu++26` par un wrapper du compilateur.
 
 ## 5. Règles et limites
 

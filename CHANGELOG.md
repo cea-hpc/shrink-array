@@ -296,6 +296,12 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- docs/mdspan(_fr).md, `chunk/mdspan.h`: `std::mdspan` comes with
+  libstdc++ 16, not 15 (libstdc++ 15 has no `<mdspan>`: a GCC 15 build takes
+  kokkos/mdspan, or none). The checked toolchains now include GCC 15 (with
+  kokkos/mdspan, and alone: the `mdspan` harnesses skipped) and GCC 16 in
+  C++23 (`std::mdspan`) and C++26 (`std::submdspan`, which the tiled layouts
+  serve as kokkos's does).
 - `fill_range` on v1 compresses a whole chunk filled with first_value at once
   again (its buffer released), and passes over a chunk already at first_value:
   the guard of that shortcut asked for both spellings of `Chunk::clear_st`,

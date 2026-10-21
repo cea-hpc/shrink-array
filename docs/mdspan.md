@@ -360,13 +360,15 @@ The options are listed at the top of `main_md.cpp`.
 
 | available | used |
 |---|---|
-| `<mdspan>` with `__cpp_lib_mdspan` (libstdc++ 15, libc++ 17 and later) | `std::mdspan` |
+| `<mdspan>` with `__cpp_lib_mdspan` (libstdc++ 16, libc++ 17 and later; libstdc++ 15 has no `<mdspan>`) | `std::mdspan` |
 | otherwise, `<mdspan/mdspan.hpp>` on the include path (the reference implementation, kokkos/mdspan) | its `mdspan`, in the namespace it declares |
 | neither | nothing: the header only defines `SHRINK_ARRAY_HAS_MDSPAN` to 0 |
 
 `f[i, j]` needs the multidimensional subscript of C++23 (GCC 12, Clang 15 and later); the
 library already requires C++23. The harness and the demo exit 77 without an `mdspan`, which ctest
-reports as skipped.
+reports as skipped. `md::submdspan` is the standard's `std::submdspan` when the library has it
+-- it is C++26 (`__cpp_lib_submdspan`: libstdc++ 16 with `-std=c++26`) -- else kokkos/mdspan's;
+the tiled layouts give both their `submdspan_mapping`.
 
 `md::mdspan_source` says which one a build uses, and whether it has `submdspan`
 (`"std::mdspan, no submdspan"`, `"kokkos/mdspan, submdspan"`, ...); `mdspan_validation` and
@@ -376,7 +378,14 @@ reports as skipped.
 |---|---|---|
 | GCC 14, libstdc++ 14 + kokkos/mdspan | kokkos, `submdspan` | every harness |
 | Clang 19, libc++ 19 | `std::mdspan`, no `submdspan` | the views, both tiled layouts, the tile operations, `mdspan_tiles`, `multi-mat-md`; the `submdspan` harnesses skipped |
-| GCC 15, libstdc++ 15 | `std::mdspan`, no `submdspan` | not yet run |
+| GCC 15, libstdc++ 15 + kokkos/mdspan | kokkos, `submdspan` | every harness |
+| GCC 15, libstdc++ 15 alone | none: libstdc++ 15 has no `<mdspan>` | the library and the rest build; every `mdspan` harness, `mdspan_tiles` and `multi-mat-md` skipped (exit 77) |
+| GCC 16, libstdc++ 16, C++23 | `std::mdspan`, no `submdspan` | every harness but the `submdspan` ones, skipped |
+| GCC 16, libstdc++ 16, C++26 | `std::mdspan`, `std::submdspan` | every harness, the `submdspan` ones and the misaligned sub-view refused included |
+
+GCC 15 and 16 are conda-forge's (15.3, 16.2), Debug, OpenMP. With CMake 3.28,
+`-DCMAKE_CXX_STANDARD=26` leaves the build in `gnu++23` (the targets ask for `cxx_std_23`): the
+C++26 run passed `-std=gnu++26` through a compiler wrapper.
 
 ## 5. Rules and limits
 

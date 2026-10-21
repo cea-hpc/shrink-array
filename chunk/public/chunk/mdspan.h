@@ -41,7 +41,7 @@
  *          @endcode
  *
  *          The mdspan comes from <mdspan> (C++23, __cpp_lib_mdspan: libstdc++
- *          15, libc++ 17), else from the reference implementation
+ *          16, libc++ 17), else from the reference implementation
  *          (kokkos/mdspan, <mdspan/mdspan.hpp>) when it is on the include
  *          path. With neither, this header defines nothing but
  *          SHRINK_ARRAY_HAS_MDSPAN = 0.

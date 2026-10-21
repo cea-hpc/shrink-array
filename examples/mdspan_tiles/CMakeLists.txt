@@ -3,7 +3,7 @@
 # mdspan_tiles: one 2D field written through the mdspan view of
 # chunk/mdspan.h, row-major and in tiles of 16 x 16, over a chunk2A array of
 # chunk size 256; prints the chunks left materialised in each layout. Needs
-# <mdspan> (libstdc++ 15, libc++ 17) or kokkos/mdspan on the include path;
+# <mdspan> (libstdc++ 16, libc++ 17) or kokkos/mdspan on the include path;
 # without either it exits 77, which ctest reports as skipped.
 if (TARGET chunk_v2a_256)
     add_executable(mdspan_tiles mdspan_tiles.cpp)
