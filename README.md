@@ -128,10 +128,10 @@ rewrite 7 to 16 times depending on the variant; in a real code the computation a
 accesses absorbs part of it.
 
 Thread scaling, at three times the size (`--multiply 3`, 3·10⁹ elements: the 64-bit index
-builds `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cores), compute time against 4
-threads ([python/omp_speedup.py](python/omp_speedup.py)): every variant follows the ideal line
-up to 32 threads, reaches a speedup of 14 to 20 at 128 threads and stays between 12 and 18 up
-to 288, where `std::vector` falls back to about 8.
+builds `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cores), compute time against 1
+thread ([python/omp_speedup.py](python/omp_speedup.py)): every variant follows the ideal line
+up to 16 threads (a speedup of 14 there, 26 to 28 at 32), reaches 48 to 70 at 128 threads and
+stays between 43 and 66 up to 288, where `std::vector` falls back to about 26.
 
 ![OpenMP speedup of the int64 builds on Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
 

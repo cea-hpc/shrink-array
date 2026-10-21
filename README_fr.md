@@ -132,9 +132,9 @@ accès en absorbe une partie.
 
 Montée en threads, à trois fois la taille (`--multiply 3`, 3·10⁹ éléments : les builds à index
 64 bits `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cœurs), temps de calcul par rapport
-à 4 threads ([python/omp_speedup.py](python/omp_speedup.py)) : toutes les variantes suivent la
-droite idéale jusqu'à 32 threads, atteignent un speedup de 14 à 20 à 128 threads et restent
-entre 12 et 18 jusqu'à 288, là où `std::vector` retombe vers 8.
+à 1 thread ([python/omp_speedup.py](python/omp_speedup.py)) : toutes les variantes suivent la
+droite idéale jusqu'à 16 threads (un speedup de 14, puis 26 à 28 à 32), atteignent 48 à 70 à
+128 threads et restent entre 43 et 66 jusqu'à 288, là où `std::vector` retombe vers 26.
 
 ![Speedup OpenMP des builds int64 sur Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
 
