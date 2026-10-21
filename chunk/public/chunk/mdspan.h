@@ -103,8 +103,9 @@
 
 #if SHRINK_ARRAY_HAS_MDSPAN
 
-    #include <array>   // std::array (the tile extents, the tile strides)
-    #include <cstddef> // std::size_t
+    #include <array>    // std::array (the tile extents, the tile strides)
+    #include <concepts> // std::same_as (as_const)
+    #include <cstddef>  // std::size_t
     #include <type_traits> // std::remove_const_t, std::is_const_v, std::conditional_t, std::make_unsigned_t, std::is_convertible_v
     #include <string_view> // std::string_view (mdspan_source)
     #include <utility>     // std::declval, std::index_sequence, std::pair
@@ -659,6 +660,10 @@ constexpr std::size_t tiled_size(Ext... ext) noexcept
     return ((((static_cast<std::size_t>(ext) + Tile - 1) / Tile) * Tile) * ... * std::size_t{1});
 }
 
+/// @brief The view type of tiled_view<Tile...>() over @p Array.
+template <typename Array, std::size_t... Tile>
+using tiled_view_type = view_type<Array, layout_tiled<Tile...>, sizeof...(Tile)>;
+
 /**
  * @brief Tiled view of @p a (layout_tiled<Tile...>) with extents @p ext...;
  *        @p a must hold at least tiled_size<Tile...>(ext...) elements.
@@ -666,8 +671,9 @@ constexpr std::size_t tiled_size(Ext... ext) noexcept
 template <std::size_t... Tile, typename Array, typename... Ext>
 auto tiled_view(Array& a, Ext... ext)
 {
+    static_assert(sizeof...(Tile) == sizeof...(Ext), "tiled_view: one tile extent per dimension");
     using A  = std::remove_reference_t<Array>;
-    using VT = view_type<A, layout_tiled<Tile...>, sizeof...(Ext)>;
+    using VT = tiled_view_type<A, Tile...>;
     return VT(handle<A>(&a), typename VT::mapping_type(typename VT::extents_type(ext...)), accessor<A>{});
 }
 
@@ -780,6 +786,44 @@ auto tiled_view_dyn(Array& a, Ext... ext)
 {
     using Idx = index_of<std::remove_reference_t<Array>>;
     return tiled_view_dyn(a, tile_shape<sizeof...(Ext), Idx>(static_cast<std::size_t>(a.chunk_size())), ext...);
+}
+
+namespace detail
+{
+/// @brief An mdspan of this library: its accessor is md::accessor.
+template <typename View>
+concept view_of_array =
+    requires { typename View::accessor_type::array_type; } &&
+    (std::same_as<typename View::accessor_type, accessor<typename View::accessor_type::array_type>> ||
+     std::same_as<typename View::accessor_type, accessor<const typename View::accessor_type::array_type>>);
+} // namespace detail
+
+/**
+ * @brief The read-only view of @p f: the same extents, layout and offset over
+ *        `const Array`, whose f[i, j] is the value (the array's const
+ *        operator[]) -- row-major, tiled, a sub-view alike.
+ * @details std::as_const(f) does not do it: an mdspan is const on the surface
+ *          only, its element type and its reference stay writable. A view
+ *          already read-only is returned as it is.
+ * @code
+ * auto f = md::tiled_view<16, 16>(a, nx, ny);
+ * md::for_each_tile(md::as_const(f), ...);          // reads, in a region too
+ * md::stencil_tiles_mt(md::as_const(f), g, 1, ...); // the source of a stencil
+ * @endcode
+ */
+template <detail::view_of_array View>
+auto as_const(const View& f)
+{
+    using A = typename View::accessor_type::array_type;
+    if constexpr (std::is_const_v<typename View::element_type>)
+    {
+        return f;
+    }
+    else
+    {
+        return mdns::mdspan<const typename View::element_type, typename View::extents_type, typename View::layout_type,
+                            accessor<const A>>(f);
+    }
 }
 
     #if SHRINK_ARRAY_HAS_SUBMDSPAN

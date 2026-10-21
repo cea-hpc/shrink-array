@@ -41,7 +41,8 @@ auto cf = sa::md::view(ca, nx, ny);       // lecture seule : f[i, j] est un doub
 | `md::view(a, e0, e1, ...)` | un `mdspan` en `layout_right` (ligne par ligne) d'étendues `e0, e1, ...` ; leur produit ne doit pas dépasser `a.size()` |
 | `md::tiled_view<T0, T1, ...>(a, e0, e1, ...)` | un `mdspan` en `md::layout_tiled<T0, T1, ...>` : des tuiles de `T0 x T1 x ...` éléments rangées l'une après l'autre |
 | `md::tiled_size<T0, T1, ...>(e0, e1, ...)` | la taille de tableau qu'il faut à cette vue en tuiles, bourrage des dernières tuiles compris |
-| `md::view_type<Array, Layout, Rank>` | le type de ces vues ; `view_type<const Array, ...>` est celui en lecture seule, et se convertit depuis l'autre |
+| `md::view_type<Array, Layout, Rank>`, `md::tiled_view_type<Array, T0, T1, ...>` | le type de ces vues ; `view_type<const Array, ...>` est celui en lecture seule, et se convertit depuis l'autre |
+| `md::as_const(f)` | la vue en lecture seule de `f` : mêmes étendues, layout et décalage sur `const Array`, `f[i, j]` la valeur -- ligne par ligne, en tuiles ou sous-vue. `std::as_const(f)` ne le fait pas : un `mdspan` n'est const qu'en surface, son type d'élément reste modifiable |
 | `md::accessor<Array>`, `md::layout_tiled<...>` | l'accesseur et le layout, pour construire un `mdspan` à la main |
 
 ## 2. Les tuiles : pourquoi le layout compte pour la compression
@@ -78,7 +79,7 @@ la lit d'un coup (une copie de bloc, ou la constante d'un chunk compressé) et l
 
 auto f = sa::md::tiled_view<16, 16>(a, nx, ny);
 double s = 0;
-sa::md::for_each_tile(std::as_const(f),
+sa::md::for_each_tile(sa::md::as_const(f),
     [&](const auto& t, auto b) {                  // une tuile de plusieurs valeurs
         for (long i = 0; i < t.extent[0]; ++i)
             for (long j = 0; j < t.extent[1]; ++j) s += b[i, j];
@@ -177,7 +178,7 @@ et réécrit d'un bloc la tuile résultat d'un autre tableau.
 auto src = sa::md::tiled_view<16, 16>(a, nx, ny);   // lu
 auto dst = sa::md::tiled_view<16, 16>(b, nx, ny);   // écrit : un autre tableau
 sa::parallel_phase([&] {
-    sa::md::stencil_tiles_mt(std::as_const(src), dst, 1, sa::md::clamp_boundary{},
+    sa::md::stencil_tiles_mt(sa::md::as_const(src), dst, 1, sa::md::clamp_boundary{},
         [](const auto& t, const auto& in, auto out) {    // in[i, j], i dans [-1, 17)
             for (long i = 0; i < t.extent[0]; ++i)
                 for (long j = 0; j < t.extent[1]; ++j)
@@ -419,8 +420,8 @@ passage en C++26 a transmis `-std=gnu++26` par un wrapper du compilateur.
 
 | fichier | contenu |
 |---|---|
-| `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (et son `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
-| `examples/validation/mdspan_validation.cpp` | écritures par la vue et relecture linéaire, opérateurs composés, rang 3, vues en lecture seule, le mapping en tuiles (bijection, bourrage), une tuile uniforme est une suite uniforme ; toutes les variantes (un ctest chacune, `mdspan_validation_<variant>`) |
+| `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (et son `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::as_const`, `md::view_type`, `md::tiled_view_type`, `md::submdspan` |
+| `examples/validation/mdspan_validation.cpp` | écritures par la vue et relecture linéaire, opérateurs composés, rang 3, vues en lecture seule (`md::as_const` d'une vue ligne par ligne, en tuiles et d'une sous-vue), le mapping en tuiles (bijection, bourrage), une tuile uniforme est une suite uniforme ; toutes les variantes (un ctest chacune, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile(_mt)`, `md::update_tiles(_mt)`, `md::fill_box(_mt)`, `md::copy_box_out(_mt)`, `md::copy_box_in(_mt)`, `md::stencil_tiles(_mt)`, `md::halo_block`, `md::constant_boundary`, `md::clamp_boundary`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocs, étendues des tuiles sur les bords bourrés, tuiles uniformes, la mise à jour contre la formule élément par élément, les tuiles non touchées restent compressées, la mise à jour en parallèle ; les formes `_mt` (chaque tuile de la vue ou d'un rectangle visitée une fois et aucune autre, les tuiles d'un thread à une près de celles des autres, `fill_box_mt` sur vues en tuiles et ligne par ligne, dans une phase et hors région) ; toutes les variantes à 1 et 8 threads, et `mdspan_tile_ops_misaligned` (une tuile plus petite qu'un chunk refusée dans une région parallèle) |
 | `examples/validation/mdspan_copy_box_validation.cpp` | `copy_box_out` / `copy_box_in` contre `f[i, j]` et une référence : rectangles alignés, non alignés, sur les bords bourrés, une ligne, une colonne, toute la vue, vide ; en tuiles (une tuile par chunk, 16 x 16), ligne par ligne, rang 3, une `submdspan` et une colonne ; des tuiles entières copiées uniformes restent compressées ; tuile par tuile et tranche de lignes par tranche dans une phase parallèle ; les formes `_mt` sur chaque rectangle et chaque vue, et leur partage (chaque tuile du rectangle à un seul thread, aucun thread au-delà de W / T plus une tuile, parts des vues à pas formant une partition, bornes sur des frontières de chunk) ; toutes les variantes à 1 et 8 threads |

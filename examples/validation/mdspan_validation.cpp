@@ -18,8 +18,9 @@
 //
 //   - layout_right: f[i, j] = v lands in a[i * ny + j]; a[k] = v reads back
 //     through the view; compound operators and element-to-element copies go
-//     through the proxy; a 3D view; a read-only view (const array, and the
-//     conversion mdspan<T> -> mdspan<const T>).
+//     through the proxy; a 3D view; a read-only view (const array, the
+//     conversion mdspan<T> -> mdspan<const T>, md::as_const of a row-major,
+//     a tiled and a sub-view; md::tiled_view_type).
 //   - layout_tiled: the mapping is a bijection onto [0, required_span_size()),
 //     tile k covers elements [k * tile, (k + 1) * tile), with and without
 //     padding; writes through the tiled view read back through it; a uniform
@@ -30,7 +31,8 @@
 // the CHUNK_VARIANT_* macro of the target.
 
 #include <cstddef>     // std::size_t
-#include <type_traits> // std::conditional_t
+#include <type_traits> // std::conditional_t, std::is_same_v, std::remove_cvref_t
+#include <utility>     // std::as_const, std::pair (the sub-view)
 #include <vector>      // std::vector (the bijection check)
 
 #include "chunk/array_chunk.h"    // ArrayChunk
@@ -146,6 +148,51 @@ void row_major()
             expect(cf[i, j] == cg[i, j] && cf[i, j] == 2.0 * static_cast<double>(i * ny + j + 1), "const view", i, j);
         }
     }
+
+    // md::as_const: the same view over const Array; std::as_const leaves the
+    // element type writable (an mdspan is const on the surface only).
+    const auto ch = md::as_const(f);
+    static_assert(std::is_same_v<std::remove_const_t<decltype(ch)>, md::view_type<const Array<double>>>,
+                  "md::as_const gives view_type<const Array>");
+    static_assert(std::is_same_v<typename std::remove_cvref_t<decltype(std::as_const(f))>::element_type, double>,
+                  "std::as_const keeps the element writable");
+    static_assert(std::is_same_v<std::remove_const_t<decltype(md::as_const(ch))>, std::remove_const_t<decltype(ch)>>,
+                  "a read-only view is returned as it is");
+    Array<double> ta(static_cast<long>(md::tiled_size<16, 16>(nx, ny)));
+    auto          tf = md::tiled_view<16, 16>(ta, nx, ny);
+    static_assert(std::is_same_v<decltype(tf), md::tiled_view_type<Array<double>, 16, 16>>, "tiled_view_type");
+    const auto tc = md::as_const(tf);
+    static_assert(std::is_same_v<std::remove_const_t<decltype(tc)>, md::tiled_view_type<const Array<double>, 16, 16>>,
+                  "md::as_const of a tiled view");
+    for (long i = 0; i < nx; ++i)
+    {
+        for (long j = 0; j < ny; ++j)
+        {
+            tf[i, j] = static_cast<double>(i * 1000 + j);
+        }
+    }
+    for (long i = 0; i < nx; ++i)
+    {
+        for (long j = 0; j < ny; ++j)
+        {
+            const double x = ch[i, j];
+            const double y = f[i, j];
+            expect(x == y, "md::as_const of a row-major view", i, j);
+            expect(tc[i, j] == static_cast<double>(i * 1000 + j), "md::as_const of a tiled view", i, j);
+        }
+    }
+    #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    const auto sub = md::as_const(md::submdspan(f, std::pair{1, nx - 1}, std::pair{2, ny - 3}));
+    static_assert(std::is_const_v<typename decltype(sub)::element_type>, "md::as_const of a sub-view");
+    for (long i = 0; i + 2 < nx; ++i)
+    {
+        for (long j = 0; j + 5 < ny; ++j)
+        {
+            const double y = f[i + 1, j + 2];
+            expect(sub[i, j] == y, "md::as_const of a sub-view", i, j);
+        }
+    }
+    #endif
 }
 
 void rank3()

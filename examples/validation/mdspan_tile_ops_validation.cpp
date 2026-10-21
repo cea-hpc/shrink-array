@@ -190,11 +190,11 @@ void update_tiles_serial()
     {
         long n = 0;
         md::for_each_tile(
-            std::as_const(f), [](const auto&, auto) {}, [&](const auto&, double v) { n += v == 0.0 ? 1 : 0; });
+            md::as_const(f), [](const auto&, auto) {}, [&](const auto&, double v) { n += v == 0.0 ? 1 : 0; });
         return n;
     };
     long uniform_before = 0;
-    md::for_each_tile(std::as_const(f), [](const auto&, auto) {}, [&](const auto&, double) { ++uniform_before; });
+    md::for_each_tile(md::as_const(f), [](const auto&, auto) {}, [&](const auto&, double) { ++uniform_before; });
     const long zero_before = count_zero();
 
     long blocks = 0;
@@ -280,7 +280,7 @@ void update_tiles_serial()
         a.make_block_compression();
         long first_uniform = 0;
         md::for_each_tile(
-            std::as_const(f), 0, 1, [](const auto&, auto) {},
+            md::as_const(f), 0, 1, [](const auto&, auto) {},
             [&](const auto&, double v) { first_uniform += v == 5.0 ? 1 : 0; });
         expect(first_uniform == 1, "tile made uniform, compressed", first_uniform);
     }

@@ -146,8 +146,8 @@ Count run(const char* name, sa::ArrayChunk2A<double>& a, View f, long n, int& ba
     sa::ArrayChunk2A<double>::make_block_compression();
 
     // Read back through a read-only view (values, no proxy), converted from f.
-    const sa::md::view_type<const sa::ArrayChunk2A<double>, typename View::layout_type> cf    = f;
-    long                                                                                wrong = 0;
+    const auto cf    = sa::md::as_const(f);
+    long       wrong = 0;
     for (long i = 0; i < n; ++i)
     {
         for (long j = 0; j < n; ++j)
@@ -202,8 +202,8 @@ void kernels(long n, int& bad)
     fill_tiled<16, 16>(t, n);
     auto       fe     = sa::md::tiled_view<16, 16>(e, n, n);
     auto       ft     = sa::md::tiled_view<16, 16>(t, n, n);
-    const auto ce     = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(fe);
-    const auto ct     = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(ft);
+    const auto ce     = sa::md::as_const(fe);
+    const auto ct     = sa::md::as_const(ft);
     const long ntiles = sa::md::tile_count(ft);
 
     // The sum, best of reps.
@@ -414,15 +414,15 @@ void paint(long n, int& bad)
         });
     const double p_mt = seconds_since(t0);
 
-    const auto ce    = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(fe);
-    const auto ct    = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(ft);
+    const auto ce    = sa::md::as_const(fe);
+    const auto ct    = sa::md::as_const(ft);
     long       wrong = 0;
     for (long i = 0; i < n; ++i)
     {
         for (long j = 0; j < n; ++j)
         {
             wrong += ce[i, j] != ct[i, j] ? 1 : 0;
-            wrong += std::as_const(fm)[i, j] != ct[i, j] ? 1 : 0;
+            wrong += sa::md::as_const(fm)[i, j] != ct[i, j] ? 1 : 0;
         }
     }
     if (wrong != 0)
@@ -456,7 +456,7 @@ void box_copy(long n, int& bad)
     sa::ArrayChunk2A<double> t(size);
     fill_tiled<16, 16>(t, n);
     auto       ft = sa::md::tiled_view<16, 16>(t, n, n);
-    const auto ct = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(ft);
+    const auto ct = sa::md::as_const(ft);
     const long nt = sa::md::tile_count(ft);
 
     // Out.
@@ -518,7 +518,7 @@ void box_copy(long n, int& bad)
             }
         });
     const double i_tile = seconds_since(t0);
-    const auto   ce     = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(fe);
+    const auto   ce     = sa::md::as_const(fe);
     long         wrong  = 0;
     for (long i = 0; i < n; ++i)
     {
@@ -621,7 +621,7 @@ void box_copy_team(long n, int& bad)
     sa::ArrayChunk2A<double> t(size);
     fill_tiled<16, 16>(t, n);
     auto       ft = sa::md::tiled_view<16, 16>(t, n, n);
-    const auto ct = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(ft);
+    const auto ct = sa::md::as_const(ft);
     const long nt = sa::md::tile_count(ft);
 
     const auto best = [](auto&& body)
@@ -773,8 +773,7 @@ void stencil(long n, int& bad)
     const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
     sa::ArrayChunk2A<double> src(size);
     fill_tiled<16, 16>(src, n);
-    const auto cs = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(
-        sa::md::tiled_view<16, 16>(src, n, n));
+    const auto       cs = sa::md::as_const(sa::md::tiled_view<16, 16>(src, n, n));
     constexpr double nu = 0.2;
 
     const auto best = [](auto&& body)
@@ -850,10 +849,11 @@ void stencil(long n, int& bad)
     {
         for (long j = 0; j < n; ++j)
         {
-            const double x = std::as_const(fe)[i, j];
-            wrong += (std::abs(std::as_const(fb)[i, j] - x) > 1e-12 || std::abs(std::as_const(fu)[i, j] - x) > 1e-12)
-                         ? 1
-                         : 0;
+            const double x = sa::md::as_const(fe)[i, j];
+            wrong +=
+                (std::abs(sa::md::as_const(fb)[i, j] - x) > 1e-12 || std::abs(sa::md::as_const(fu)[i, j] - x) > 1e-12)
+                    ? 1
+                    : 0;
         }
     }
     if (wrong != 0)

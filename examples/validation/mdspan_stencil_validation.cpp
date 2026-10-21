@@ -40,7 +40,6 @@
 #include <cstddef>     // std::size_t
 #include <string_view> // std::string_view (the argument)
 #include <type_traits> // std::conditional_t
-#include <utility>     // std::as_const
 #include <vector>      // std::vector (the references)
 
 #include "chunk/array_chunk.h"     // ArrayChunk
@@ -239,10 +238,8 @@ void case_2d(const char* name, long size, Make&& make, long h, border b, how w, 
             field[static_cast<std::size_t>(i * ny + j)] = cell(i, j);
         }
     }
-    const auto  want = reference(field, h, b);
-    const auto& cf   = std::as_const(f);
-    const auto  src  = md::view_type<const Array<double>, typename decltype(f)::layout_type>(f);
-    (void)cf;
+    const auto want = reference(field, h, b);
+    const auto src  = md::as_const(f);
     if (b == border::clamp)
     {
         with_uniform ? run_stencil(w, src, g, h, md::clamp_boundary{}, keep_uniform)
@@ -259,7 +256,7 @@ void case_2d(const char* name, long size, Make&& make, long h, border b, how w, 
     {
         for (long j = 0; j < ny; ++j)
         {
-            const double x = std::as_const(g)[i, j];
+            const double x = md::as_const(g)[i, j];
             const double y = want[static_cast<std::size_t>(i * ny + j)];
             if (!(x == y || (x - y < 1e-12 && y - x < 1e-12)))
             {
@@ -269,7 +266,7 @@ void case_2d(const char* name, long size, Make&& make, long h, border b, how w, 
                 }
                 ++bad;
             }
-            src_bad += std::as_const(f)[i, j] != cell(i, j) ? 1 : 0;
+            src_bad += md::as_const(f)[i, j] != cell(i, j) ? 1 : 0;
         }
     }
     expect(bad == 0, name, bad, static_cast<long>(w) * 100 + static_cast<long>(b) * 10 + h);
@@ -359,7 +356,7 @@ void rank3()
         [&]
         {
             md::stencil_tiles_mt(
-                std::as_const(f), g, 1L, md::clamp_boundary{},
+                md::as_const(f), g, 1L, md::clamp_boundary{},
                 [](const auto& t, const auto& in, auto out)
                 {
                     for (long i = 0; i < t.extent[0]; ++i)
@@ -389,7 +386,7 @@ void rank3()
             {
                 const double want = at(i - 1, j, k) + at(i + 1, j, k) + at(i, j - 1, k) + at(i, j + 1, k) +
                                     at(i, j, k - 1) + at(i, j, k + 1) - 6 * at(i, j, k);
-                const double x = std::as_const(g)[i, j, k];
+                const double x = md::as_const(g)[i, j, k];
                 bad += (x - want > 1e-12 || want - x > 1e-12) ? 1 : 0;
             }
         }
@@ -402,7 +399,7 @@ int alias()
 {
     Array<double> a(static_cast<int>(md::tiled_size<16, 16>(nx, ny)));
     auto          f = md::tiled_view<16, 16>(a, nx, ny);
-    md::stencil_tiles(std::as_const(f), f, 1L, md::clamp_boundary{}, [](const auto&, const auto&, auto) {});
+    md::stencil_tiles(md::as_const(f), f, 1L, md::clamp_boundary{}, [](const auto&, const auto&, auto) {});
     println("mdspan_stencil_validation: a stencil from an array into itself was accepted");
     return 1;
 }

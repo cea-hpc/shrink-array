@@ -154,6 +154,14 @@ the tag's checksum to the recipe.
   2048 x 2048 field: x 7 to 10 against the element loop, x 11 to 23 with
   `on_uniform`. Harness `mdspan_stencil_validation` (every variant, 1 and 8
   threads) and `mdspan_stencil_alias` (a stencil in place refused).
+- `md::as_const(f)` (`chunk/mdspan.h`, experimental): the read-only view of
+  any view of this library -- row-major, tiled, a sub-view -- over `const
+  Array`, `f[i, j]` the value; `std::as_const(f)` leaves an mdspan's element
+  type writable. Replaces `md::view_type<const Array, Layout>(f)` in the
+  examples and the harnesses. `md::tiled_view_type<Array, T0, T1, ...>`, the
+  type of `md::tiled_view<T0, T1, ...>()`, as `md::tiled_dyn_view_type` is
+  `md::tiled_view_dyn()`'s; `md::tiled_view` checks it has one tile extent
+  per dimension.
 
 ### Changed
 

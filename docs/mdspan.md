@@ -41,7 +41,8 @@ auto cf = sa::md::view(ca, nx, ny);       // read-only: f[i, j] is a double
 | `md::view(a, e0, e1, ...)` | an `mdspan` in `layout_right` (row-major) of extents `e0, e1, ...`; their product must not exceed `a.size()` |
 | `md::tiled_view<T0, T1, ...>(a, e0, e1, ...)` | an `mdspan` in `md::layout_tiled<T0, T1, ...>`: tiles of `T0 x T1 x ...` elements stored one after the other |
 | `md::tiled_size<T0, T1, ...>(e0, e1, ...)` | the size the array needs for that tiled view, padding of the last tiles included |
-| `md::view_type<Array, Layout, Rank>` | the type of these views; `view_type<const Array, ...>` is the read-only one, and converts from the writable one |
+| `md::view_type<Array, Layout, Rank>`, `md::tiled_view_type<Array, T0, T1, ...>` | the type of these views; `view_type<const Array, ...>` is the read-only one, and converts from the writable one |
+| `md::as_const(f)` | the read-only view of `f`: same extents, layout and offset over `const Array`, `f[i, j]` the value -- row-major, tiled or a sub-view. `std::as_const(f)` is not that: an `mdspan` is const on the surface only, its element type stays writable |
 | `md::accessor<Array>`, `md::layout_tiled<...>` | the accessor and the layout, for building an `mdspan` by hand |
 
 ## 2. Tiles: why the layout matters for compression
@@ -77,7 +78,7 @@ it in one go (a block copy, or the constant of a compressed chunk) and writes it
 
 auto f = sa::md::tiled_view<16, 16>(a, nx, ny);
 double s = 0;
-sa::md::for_each_tile(std::as_const(f),
+sa::md::for_each_tile(sa::md::as_const(f),
     [&](const auto& t, auto b) {                  // a tile of several values
         for (long i = 0; i < t.extent[0]; ++i)
             for (long j = 0; j < t.extent[1]; ++j) s += b[i, j];
@@ -173,7 +174,7 @@ tile of another array back in one go.
 auto src = sa::md::tiled_view<16, 16>(a, nx, ny);   // read
 auto dst = sa::md::tiled_view<16, 16>(b, nx, ny);   // written: another array
 sa::parallel_phase([&] {
-    sa::md::stencil_tiles_mt(std::as_const(src), dst, 1, sa::md::clamp_boundary{},
+    sa::md::stencil_tiles_mt(sa::md::as_const(src), dst, 1, sa::md::clamp_boundary{},
         [](const auto& t, const auto& in, auto out) {    // in[i, j], i in [-1, 17)
             for (long i = 0; i < t.extent[0]; ++i)
                 for (long j = 0; j < t.extent[1]; ++j)
@@ -406,8 +407,8 @@ C++26 run passed `-std=gnu++26` through a compiler wrapper.
 
 | file | contents |
 |---|---|
-| `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
-| `examples/validation/mdspan_validation.cpp` | writes through the view and linear read-back, compound operators, rank 3, read-only views, the tiled mapping (bijection, padding), a uniform tile is a uniform run; every variant (one ctest each, `mdspan_validation_<variant>`) |
+| `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::as_const`, `md::view_type`, `md::tiled_view_type`, `md::submdspan` |
+| `examples/validation/mdspan_validation.cpp` | writes through the view and linear read-back, compound operators, rank 3, read-only views (`md::as_const` of a row-major, a tiled and a sub-view), the tiled mapping (bijection, padding), a uniform tile is a uniform run; every variant (one ctest each, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile(_mt)`, `md::update_tiles(_mt)`, `md::fill_box(_mt)`, `md::copy_box_out(_mt)`, `md::copy_box_in(_mt)`, `md::stencil_tiles(_mt)`, `md::halo_block`, `md::constant_boundary`, `md::clamp_boundary`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocks, tile extents on padded edges, uniform tiles, the update against the element formula, untouched tiles stay compressed, the parallel update; the `_mt` forms (each tile of the view or of a box visited once and no other, a thread's tiles within one of the others' count, `fill_box_mt` on tiled and row-major views, in a phase and outside any region); every variant at 1 and 8 threads, and `mdspan_tile_ops_misaligned` (a tile smaller than a chunk refused in a parallel region) |
 | `examples/validation/mdspan_copy_box_validation.cpp` | `copy_box_out` / `copy_box_in` against `f[i, j]` and a reference: boxes aligned, unaligned, on the padded edges, one row, one column, the whole view, empty; tiled (a tile per chunk, 16 x 16), row-major, rank 3, a `submdspan` and a column; whole tiles copied in uniform left compressed; tile by tile and row slice by row slice in a parallel phase; the `_mt` forms on every box and view, and their deal (each tile of the box to one thread, no thread above W / T plus a tile, strided shares a partition with their bounds on chunk boundaries); every variant at 1 and 8 threads |

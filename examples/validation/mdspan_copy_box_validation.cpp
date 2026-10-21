@@ -409,7 +409,7 @@ void parallel()
         }
         expect(mismatches_with(f, ref) == 0, "parallel tiled copy_box_in", mismatches_with(f, ref));
         std::vector<double> out(static_cast<std::size_t>(n), -1.0);
-        const auto&         cf = std::as_const(f);
+        const auto          cf = md::as_const(f);
     #pragma omp parallel for schedule(static)
         for (long k = 0; k < nt; ++k)
         {
