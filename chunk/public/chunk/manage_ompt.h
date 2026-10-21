@@ -67,6 +67,7 @@
  * by the rank IN the team: two teams started concurrently by different
  * host threads would share ranks 0..n-1, hence queues, and one team's
  * phase end would replay the other's writes in the middle of its region.
+ * Refused once an array exists, in every build (phase_guard::teams).
  *
  * @see all_type_chunk.cpp for the definitions.
  */
@@ -95,11 +96,16 @@ extern void begin_parallel_phase();
  *
  * Flushes every thread's deferred write queue, resets the deferred-op pools,
  * then drains the deferred-compression backlog (skipped in aggressive mode,
- * `chunk_config::have_aggressive_compression`, which compresses in-loop only).
+ * `chunk_config::aggressive_compression()`, which compresses in-loop only).
  *
  * All-in-one; use finalize_parallel_phase_only_flush() /
  * finalize_parallel_phase_after_flush() when the flush must happen while the
  * region is still open.
+ *
+ * @note Called inside a parallel region (a parallel_phase() nested in a phase:
+ *       a component's, a solver's), it does nothing: the enclosing phase is not
+ *       over, and its own end finalizes. Under OMPT likewise, a nested region's
+ *       end is not a phase boundary; only the outermost one is.
  */
 extern void finalize_parallel_phase();
 
@@ -123,7 +129,7 @@ extern void finalize_parallel_phase_only_flush();
  * Runs the post-flush cleanup that cannot happen inside the region: destroys
  * the buffers released by the flush, resets the deferred-op pools and drains
  * the deferred-compression backlog (again, unless
- * `chunk_config::have_aggressive_compression`).
+ * `chunk_config::aggressive_compression()`).
  *
  * @pre finalize_parallel_phase_only_flush() has run inside the region that
  *      just ended.

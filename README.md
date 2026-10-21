@@ -39,7 +39,9 @@ int main()
         const int                n = 1 << 24;
         sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer yet
 
-        sa::parallel_phase([&] {             // a parallel region; marks the phases without OMPT
+        // parallel_phase opens the `omp parallel` region and runs the lambda in it, on every
+        // thread; the `omp for` shares the loop over that team (see below)
+        sa::parallel_phase([&] {
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // the 3.5 run compresses
@@ -52,6 +54,53 @@ int main()
     sa::destroy_block_chunk();
 }
 ```
+
+`parallel_phase()` takes the body of the parallel region as a lambda. The `#pragma omp
+parallel` is inside it, so the `#pragma omp for` of the lambda is an orphaned worksharing
+directive: it binds to the team `parallel_phase()` opened. Around the region it also marks
+the phase boundaries the library defers its work to (the writes queued on compressed chunks,
+the compression of the chunks that became uniform). The example needs no OMPT: by default
+`parallel_phase()` makes those calls itself, and in an OMPT build (`CHUNK_OPT_OMPT`) the
+OpenMP runtime makes them and `parallel_phase()` is a plain parallel region. Written by hand,
+without OMPT, it is:
+
+```cpp
+#pragma omp parallel
+{
+    sa::begin_parallel_phase();      // every thread, before its first write
+#pragma omp for
+    for (int i = 0; i < n / 2; ++i)
+        a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+sa::finalize_parallel_phase();       // outside the region: flush the queued writes, compress
+```
+
+Without OpenMP the lambda simply runs once, serially.
+
+**With OMPT, nothing of the library around the loops.** In an OMPT build (Clang, oneAPI: the
+library carries an OMPT tool, `CHUNK_OPT_OMPT`), the OpenMP runtime tells the library where
+each region begins and ends, so the loop is written as for a `std::vector` -- the same
+function fills both:
+
+```cpp
+template <typename Array>
+void fill(Array& t, int n)
+{
+#pragma omp parallel for
+    for (int i = 0; i < n / 2; ++i)
+        t[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+
+std::vector<double>      v(n);
+sa::ArrayChunk2A<double> a(n);
+fill(v, n);                          // the reference
+fill(a, n);                          // the same loop: no parallel_phase(), no phase calls
+```
+
+[examples/getting_started/getting_started_ompt.cpp](examples/getting_started/getting_started_ompt.cpp)
+is that program, which then compares the two arrays element by element. It needs an OMPT
+build: it does not compile against a library built with GCC's libgomp, where the phases would
+never be marked.
 
 Link it with `chunk::chunk_v2a` (see [Install](#install)). The complete version, which checks
 what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp);
@@ -105,10 +154,10 @@ rewrite 7 to 16 times depending on the variant; in a real code the computation a
 accesses absorbs part of it.
 
 Thread scaling, at three times the size (`--multiply 3`, 3·10⁹ elements: the 64-bit index
-builds `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cores), compute time against 4
-threads ([python/omp_speedup.py](python/omp_speedup.py)): every variant follows the ideal line
-up to 32 threads, reaches a speedup of 14 to 20 at 128 threads and stays between 12 and 18 up
-to 288, where `std::vector` falls back to about 8.
+builds `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cores), compute time against 1
+thread ([python/omp_speedup.py](python/omp_speedup.py)): every variant follows the ideal line
+up to 16 threads (a speedup of 14 there, 26 to 28 at 32), reaches 48 to 70 at 128 threads and
+stays between 43 and 66 up to 288, where `std::vector` falls back to about 26.
 
 ![OpenMP speedup of the int64 builds on Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
 
@@ -155,8 +204,13 @@ The CMake options (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS
   `double(a[i])` to `printf`, `std::format` or `std::max`.
 - **Threads**: different elements need no synchronisation, even in the same chunk; anything that
   rebuilds the storage (`resize`, `shrink_to_fit`, `assign`, a re-chunk) is a sequential point.
-  Use the arrays from OpenMP threads, with `OMP_NUM_THREADS` set before the first array;
+  Use the arrays from OpenMP threads; a team larger than 256 threads and than the cores needs
+  `CHUNK_THREAD_CAPACITY` set before the first array;
   without OMPT (GCC's `libgomp`), open the regions with `parallel_phase()`.
+- **One per process**: the library's state -- type registries, allocators, per-thread
+  structures, the phase -- is the process's, shared by every part of the program that uses it:
+  one top-level team writing arrays at a time (nested regions are fine), the shutdown calls once
+  at the end ([docs/getting_started.md](docs/getting_started.md), section 5).
 - **Not there, by construction**: `data()` (a compressed chunk has no buffer), `T&` and mutable
   iterators, `insert` / `erase` in the middle.
 - **Faster bulk writes**: `fill_range`, `copy_range` and their `_mt` versions decide once per

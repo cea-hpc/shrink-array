@@ -78,6 +78,10 @@ the tag's checksum to the recipe.
   as TBB tasks. `multi_launch_stress.py --exec tbb_<variant>`.
 - Spack: variant `threads=openmp|pool|serial` (default `openmp`), and `+tbb`
   for the TBB examples (with `+examples threads=pool`).
+- `examples/getting_started/getting_started_ompt.cpp`: the first program with
+  plain `#pragma omp parallel for` loops and no `parallel_phase()`, for an OMPT
+  build (Clang, oneAPI), checked element by element against the same function
+  run on a `std::vector` (ctest `getting_started_ompt`, OMPT builds only).
 
 - Reduced models of the three lock-free handshakes -- writer / compressor,
   compressor / flush, readers / buffer reclamation -- checked by GenMC
@@ -106,6 +110,30 @@ the tag's checksum to the recipe.
   build runs the same regions, with the same clauses.
 - Spack: the variant `openmp` is replaced by `threads` (`+openmp` is now
   `threads=openmp`, `~openmp` `threads=serial`).
+- Aggressive compression is a run-time switch, `CHUNK_AGGRESSIVE_COMPRESSION=1`
+  (the CMake option `HAVE_AGGRESSIVE_COMPRESSION` only sets its default): every
+  site that reads it is a phase boundary, a teardown or a check-build audit.
+  `compile_all*.sh` no longer builds `omp-gnu-have-aggressive-compression`,
+  `omp-llvm-have-aggressive-compression` and `omp-gnu-debug-have-aggressive-compression`;
+  `bench_and_test.py` and `multi_launch_stress.py` run those names as the base
+  build with the variable set. The two optimised TSan builds lose the switch from
+  their name: `omp-gnu-relwithdebinfo-check-thread-sanitizer`,
+  `omp-llvm-relwithdebinfo-check-thread-sanitizer` (run them with the variable for
+  the same coverage).
+- The thread capacity (the ranks the per-thread structures are sized for) is at
+  least 256, besides `omp_get_max_threads()` and the cores: a team larger than
+  the node's cores -- a `num_threads()` clause, a component that picks its own
+  team, a job granted two cores -- no longer stops the program. About 1 KiB per
+  element type and per rank, built once; `CHUNK_THREAD_CAPACITY` still raises it.
+- Less compilation, the same measured binaries. The optimised builds carry
+  function names and line tables only (`-g1`), full `-g` where a debugger reads
+  locals (`CHECK_OPTIM`, sanitizers): `CHUNK_DEBUG_INFO` (auto, full, lines,
+  none). Same machine code; 20 to 27 % less compilation and 40 % less peak
+  memory on the bench and validation units. And `CHUNK_STATIC_SIZES` defaults
+  to `auto`: `256;1024`, but 256 alone (with dyn) in a Debug or sanitizer build
+  of this project, a third fewer libraries and executables there.
+  `bench_and_test.py` skips the sizes a configuration does not build. Existing
+  build directories keep their cached list: `compile_all.sh --fresh-cache`.
 - Constants are snake_case everywhere, as the standard library's; UPPER_CASE is left to
   macros. 84 names change, all internal but one: `fast_alloc::SIZE_BLOCK` is now
   `fast_alloc::size_block`, the former name kept as a deprecated alias. `check_naming` (a
@@ -206,6 +234,23 @@ the tag's checksum to the recipe.
   while another writer's uniform-chunk scan read it as a relaxed atomic -- a
   data race (found by TSan on the pool backend, present under OpenMP too).
   Same machine code on x86 and AArch64, so no value was wrong.
+- Two top-level OpenMP teams writing arrays at once -- opened by two host
+  threads, two components each on its own `std::thread` -- shared ranks 0..n-1
+  of the per-thread structures: one team's phase end replayed the other's
+  writes, and in a release build the values came out wrong, silently. The
+  second team now stops the program with a message, in every build once an
+  array exists: under OMPT when it begins (a `parallel_begin` callback counts
+  the top-level regions), without OMPT at its `begin_parallel_phase()`. Nested
+  regions are not concerned. New harness `concurrent_teams_validation`.
+- A parallel region nested in a phase -- a solver or BLAS call opening its own
+  region, a component calling `parallel_phase()` inside the program's -- ended
+  the phase at its own end: under OMPT the runtime reports every region's end,
+  and the library flushed every rank's deferred writes while the enclosing team
+  was still writing them (writes lost, crashes); without OMPT the nested
+  `parallel_phase()`'s `finalize_parallel_phase()` did the same. Only the
+  outermost region's end is a phase boundary now, and `finalize_parallel_phase()`
+  does nothing inside a region. `nested_region_validation` has the two cases,
+  with writes deferred when the nested regions end.
 
 - `set_chunk_size()` accepted, on an empty array of a `_dyn` build, a size wider than
   `cst_buffer_size` (e.g. twice it): the array's constant chunks then read the shared constant

@@ -9,7 +9,7 @@ from ..builds import (
 )
 from ..progress import CONFIG_W, VARIANT_W
 from ..runs import _append_error_now, effective_timeout, repro_line, run_cmd
-from ..settings import sanitizer_env_for
+from ..settings import config_env, sanitizer_env_for
 from ..term import _hms, bold, cyan, dim, green, red, yellow
 
 
@@ -81,7 +81,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
 
     n_pass = n_total = 0
     for cfg in args.configs:
-        san = sanitizer_env_for(cfg)
+        san = {**sanitizer_env_for(cfg), **config_env(cfg)}
         to  = effective_timeout(args.timeout, args.timeout_per_thread, args.check_threads)
         if not _oracle_ok(cfg):
             print(yellow(f"   {short_config_label(cfg)}: no complete oracle in "

@@ -55,7 +55,7 @@ The options that matter to a user:
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
 | `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `pool` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
-| `CHUNK_STATIC_SIZES` | `256;1024` | the compile-time chunk sizes built, one library per size and variant |
+| `CHUNK_STATIC_SIZES` | `auto` | the compile-time chunk sizes built, one library per size and variant; `auto`: `256;1024`, but `256` alone in a Debug or sanitizer build of this project (not of a project that includes it) |
 | `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen at run time, and can change (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
 
@@ -201,6 +201,47 @@ compression and materialisation are the library's business. Two accesses to the 
 element** from different threads must be ordered by your program (a barrier, a `critical`
 section, a lock, release/acquire atomics), exactly as on a `std::vector`.
 
+**With OMPT, the `std::vector` loop as it is.** With a library built with OMPT (Clang, oneAPI),
+the same OpenMP loop fills a `std::vector` and a compressed array: no `parallel_phase()`, no
+phase call. Linked as in §3, with `OpenMP::OpenMP_CXX` too:
+
+```cpp
+#include <cstdio>
+#include <utility>                 // std::as_const
+#include <vector>
+
+#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+
+namespace sa = shrink_array;
+
+template <typename Array>
+void fill(Array& t, int n)
+{
+#pragma omp parallel for
+    for (int i = 0; i < n / 2; ++i)
+        t[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+
+int main()
+{
+    const int n = 1 << 24;
+
+    std::vector<double>      v(n);
+    sa::ArrayChunk2A<double> a(n);
+    fill(v, n);                          // the reference
+    fill(a, n);                          // the same loop: no parallel_phase(), no phase calls
+
+    // Read through a const view: on a non-const array, a[i] is a write proxy.
+    const auto& ca  = std::as_const(a);
+    long        bad = 0;
+    for (int i = 0; i < n; ++i)
+        bad += (ca[i] != v[i]);
+
+    std::printf("%s: %ld element(s) differ out of %d\n", bad == 0 ? "OK" : "FAIL", bad, n);
+    return bad == 0 ? 0 : 1;
+}
+```
+
 **Phases, without OMPT.** When a writer meets a compression in progress on its chunk, the
 library **defers** its write and replays it later. It also compresses between parallel regions.
 With OMPT (Clang, oneAPI builds) the OpenMP runtime tells the library where regions begin and
@@ -241,15 +282,52 @@ With OMPT, if the runtime did not load the library's tool (`OMP_TOOL=disabled`, 
 found first), the phases never happen. The library prints a warning on stderr;
 `CHUNK_REQUIRE_OMPT=1` makes it stop the program instead.
 
+With OMPT you may also write no phase at all: plain `#pragma omp parallel for` loops, the same
+code as on a `std::vector`.
+[`examples/getting_started/getting_started_ompt.cpp`](../examples/getting_started/getting_started_ompt.cpp)
+is the program of §4 written that way: one function fills a `std::vector<double>` and an
+`ArrayChunk2A<double>`, and the program checks that they read back the same. It refuses to
+compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1`.
+
 **Sequential points.** Everything that rebuilds an array's storage must be called outside any
 parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`,
 `assign()`, `swap()`, assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for
 Chunk2, `set_second_value()`.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
-of cores)` threads (in a pool build, the team size: `CHUNK_NUM_THREADS`, else
-`OMP_NUM_THREADS`). A program that runs more threads than cores sets
-`CHUNK_THREAD_CAPACITY=<n>`; a thread beyond the capacity stops the program with a message.
+of cores, 256)` threads (in a pool build, the team size -- `CHUNK_NUM_THREADS`, else
+`OMP_NUM_THREADS` -- stands for `omp_get_max_threads()`; about 1 KiB per element type and per
+thread). A program that runs
+more threads than that sets `CHUNK_THREAD_CAPACITY=<n>`; a thread beyond the capacity stops the
+program with a message.
+
+**Next to other components.** The library keeps its state per process, not per array: the
+element-type registries, the allocators, Chunk2A's second-value registry, the per-thread
+structures and their capacity, the log settings, and the phase. Two parts of a program that use
+it without knowing of each other -- your code and a library built on shrink-array, say -- share
+all of it. What that asks of them:
+
+- **One phase at a time.** The per-thread queues are indexed by the rank in the team, and the
+  end of a phase drains every rank's queue. Two top-level OpenMP teams writing arrays at the
+  same time -- opened by two host threads, two components each on its own `std::thread` --
+  share ranks 0 to n-1, and one team's phase end replays the other's writes in the middle of
+  its region. Once an array exists, the second team stops the program with a message (OMPT:
+  when it begins; without OMPT: at its `begin_parallel_phase()`). Run such parts one after the
+  other, or in one team.
+- **Nested regions are fine.** A solver or a BLAS call that opens its own region inside a
+  phase, a component that calls `parallel_phase()` inside yours: only the outermost region's
+  end is a phase boundary, and `finalize_parallel_phase()` does nothing inside an active
+  region. The arrays may be written in a nested region while it is serialised
+  (`OMP_MAX_ACTIVE_LEVELS=1`, the default); with two active levels a write stops the program.
+- **The first array fixes the thread capacity** (above): at least 256 threads, or the cores, or
+  `OMP_NUM_THREADS`; a component that opens larger teams needs `CHUNK_THREAD_CAPACITY` set
+  before the first array.
+- **Process-wide calls.** `ParamChunk::init_indexes()` sets the allocation block size of the
+  whole process: one call, at the start, by the program (a later one leaves the arrays already
+  built intact). `release_chunk_pools()` and `destroy_block_chunk()` empty everyone's free
+  lists (an array still alive keeps what it needs): once, at the end of the program, or not at
+  all. `reclaim_second_values()` covers every array of a type; `CHUNK_LOG` and
+  `logging::set_sink()` are one setting for all.
 
 **Without OpenMP: your own threads, TBB.** A library built with `CHUNK_THREADS=pool` runs its own
 work on a pool of `std::jthread`s and takes writes from any thread of the program: `std::thread`,

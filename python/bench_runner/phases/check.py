@@ -8,6 +8,7 @@ import time
 from ..builds import ORACLE_EXE_KEY, ORACLE_MARKER, exe_fingerprint, oracle_dir, short_config_label
 from ..progress import _prog, get_progress_bar
 from ..runs import _append_error_now, effective_timeout, repro_line, run_cmd
+from ..settings import config_env
 from ..term import bold, cyan, green, red
 
 
@@ -84,7 +85,7 @@ def run_check_phase(args, plan, counter, errors):
                 )
                 sys.stdout.flush()
 
-                check_env = {"OMP_NUM_THREADS": str(args.check_threads)}
+                check_env = {"OMP_NUM_THREADS": str(args.check_threads), **config_env(cfg)}
                 check_cwd = oracle_dir(args.output_dir, cfg)
                 ok, _, code, err_tail, _ = run_cmd(
                     [exe], check_env,

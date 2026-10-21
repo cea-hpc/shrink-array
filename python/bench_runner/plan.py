@@ -9,7 +9,7 @@ from pathlib import Path
 from .builds import (
     CURRENT_MACHINE, ORACLE_MARKER, config_dir_present, exe_fingerprint, is_compression_only_config,
     is_omp_config, oracle_dir, oracle_exe_fingerprint, resolve_exe, short_config_label,
-    skip_variant_on_config,
+    size_not_built, skip_variant_on_config,
 )
 from .phases.fuzz import FUZZ_THREADS
 from .phases.stl import stl_representative_exes
@@ -220,6 +220,7 @@ def discover_binaries(args, perf_excluded):
     # running the vector variant on it.
     baseline_check_exe_of = {}
     missing_perf, missing_check = [], []
+    sizes_not_built = {}  # config -> sizes it does not build (CHUNK_STATIC_SIZES)
 
     for cfg in args.configs:
         if not args.skip_check:
@@ -230,6 +231,10 @@ def discover_binaries(args, perf_excluded):
             if skip_variant_on_config(var, cfg):
                 # e.g. vector on -have-aggressive-compression: identical binary
                 # to the base config, not re-run. Don't resolve or flag missing.
+                continue
+            if size_not_built(args.build_root, cfg, var):
+                # e.g. @1024 on a Debug or sanitizer build: 256 alone by default.
+                sizes_not_built.setdefault(cfg, set()).add(var.split("@", 1)[1])
                 continue
             if cfg in perf_excluded:
                 pass  # kept in CHECK, dropped from PERF (redundant with gnu-std-alloc)
@@ -254,6 +259,9 @@ def discover_binaries(args, perf_excluded):
     def _fmt(cfg, var):
         return f"[{short_config_label(cfg):40} / {var:10}]"
 
+    for cfg, sizes in sorted(sizes_not_built.items()):
+        print(dim(f"   ℹ️  {short_config_label(cfg)}: size(s) {', '.join(sorted(sizes))} "
+                  f"not built there (CHUNK_STATIC_SIZES), skipped"))
     for (cfg, var), p in sorted(perf_exes.items()):
         print(f"   ✅ perf  {_fmt(cfg, var)} → {p}")
     for (cfg, var), p in sorted(check_exes.items()):

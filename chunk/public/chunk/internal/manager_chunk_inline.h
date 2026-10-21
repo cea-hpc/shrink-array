@@ -547,13 +547,16 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         // if not, the compression pass (OMPT hook or GNU equivalent) skipped blocks. Check
         // builds only (under aggressive compression the set churns legitimately). Non-fatal:
         // a few stragglers are tolerable, a persistent residual is not.
-        if constexpr (build_config::any_check && !chunk_config::have_aggressive_compression)
+        if constexpr (build_config::any_check)
         {
-            if (self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
+            if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
             {
-                CHUNK_LOG(info, compress,
-                          "audit: blocks left to compress after final flush (non-aggressive) -- compression pass "
-                          "skipped some blocks. A few is benign; a recurring/large residual is not.");
+                if (self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
+                {
+                    CHUNK_LOG(info, compress,
+                              "audit: blocks left to compress after final flush (non-aggressive) -- compression pass "
+                              "skipped some blocks. A few is benign; a recurring/large residual is not.");
+                }
             }
         }
 

@@ -111,17 +111,29 @@ namespace shrink_array
  *          writer and flush flags) is sized ONCE when first built; sizing by
  *          omp_get_max_threads() would let a later omp_set_num_threads() index past
  *          the end, silently. Fixed at the first call: max(omp_get_max_threads(),
- *          omp_get_num_procs()), raised by CHUNK_THREAD_CAPACITY. A rank at or past it
- *          is an invariant failure (chunk_pmp_checked_rank). OpenMP gives no real upper
- *          bound (omp_get_thread_limit() is usually INT_MAX), hence the cores as default.
+ *          omp_get_num_procs(), capacity_floor), raised by CHUNK_THREAD_CAPACITY. A rank
+ *          at or past it is an invariant failure (chunk_pmp_checked_rank). OpenMP gives
+ *          no real upper bound (omp_get_thread_limit() is usually INT_MAX), hence the
+ *          cores as default -- and a floor, so that a team larger than the node's cores
+ *          (a `num_threads()` clause, a component that picks its own team, a job
+ *          granted a few cores) does not stop the program.
+ *
+ *          What a rank of capacity costs: the per-type, per-rank structures, about
+ *          1 KiB per element type (measured: 2.8 KiB per rank for three types, RSS,
+ *          from 2 to 4096 ranks), built once; the loops that look for work stop at the
+ *          highest rank seen (chunk_rank_bound), not at the capacity. Eight arrays of
+ *          32 MiB, each with its own allocator set: the same RSS from 2 to 1024.
+ *
  *          Pool backend: also the capacity of the rank registry the application's
  *          threads draw from (configured here, before its first use).
  */
+inline constexpr int capacity_floor = 256;
+
 [[nodiscard]] inline int chunk_thread_capacity() noexcept
 {
     static const int capacity = []
     {
-        int cap = std::max(::fast_alloc::pmp::max_threads(), ::fast_alloc::pmp::num_procs());
+        int cap = std::max({::fast_alloc::pmp::max_threads(), ::fast_alloc::pmp::num_procs(), capacity_floor});
         cap     = std::max(cap, shrink_array::env_number<int>("CHUNK_THREAD_CAPACITY", 0));
         if constexpr (::fast_alloc::pmp::backend == ::fast_alloc::pmp::backend_kind::pool)
         {

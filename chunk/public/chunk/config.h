@@ -19,6 +19,7 @@
 #include <bit>     // std::has_single_bit (dirty_word_align)
 #include <cstddef> // std::size_t
 #include <cstdint> // std::int64_t
+#include <cstdlib> // std::getenv (aggressive_compression)
 #include <atomic>  // g_ompt_suspended
 
 #include "chunk/build_options.h" // CHUNK_OPT_*: the options the library was built with (generated)
@@ -240,17 +241,37 @@ inline constexpr int no_second_value_index = -1;
 // Compression is always the embedded, incremental one.
 
 /**
- * @brief Aggressive compression mode toggle.
+ * @brief Aggressive compression mode: a RUN-TIME switch, read once.
  *
  * false (default): the deferred sweep runs at end-of-parallel-phase boundaries via
  * compress_chunk_to_compress_potentially(true): fewer, grouped events, faster.
  *
- * true: the sweep runs at scattered points during the parallel section. Slower, but
- * stresses the concurrent compression paths (MT-bug detection).
+ * true: no sweep between phases; compression happens during the parallel sections,
+ * on the in-loop path only. Slower, but stresses the concurrent compression paths
+ * (MT-bug detection): a validation mode, not a production one.
  *
- * Set via -DHAVE_AGGRESSIVE_COMPRESSION=ON at CMake configure time.
+ * CHUNK_AGGRESSIVE_COMPRESSION=1 (or 0) in the environment sets it for the run; the
+ * CMake option HAVE_AGGRESSIVE_COMPRESSION only changes its default. It used to be a
+ * compile-time switch, hence builds of their own: every site that reads it is a
+ * phase boundary, a teardown or a check-build audit, never a per-element path, so
+ * the run-time test costs nothing measurable.
  */
-inline constexpr bool have_aggressive_compression = CHUNK_OPT_AGGRESSIVE_COMPRESSION != 0;
+inline constexpr bool aggressive_compression_default = CHUNK_OPT_AGGRESSIVE_COMPRESSION != 0;
+
+/// @brief The aggressive-compression switch of this run (see above).
+[[nodiscard]] inline bool aggressive_compression() noexcept
+{
+    static const bool on = []
+    {
+        const char* env = std::getenv("CHUNK_AGGRESSIVE_COMPRESSION");
+        if (env == nullptr || env[0] == '\0')
+        {
+            return aggressive_compression_default;
+        }
+        return env[0] != '0';
+    }();
+    return on;
+}
 
 /**
  * @brief Per-chunk exclusion for the compressor's pass (ChunkBase::steal_mark_).

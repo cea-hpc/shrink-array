@@ -171,6 +171,26 @@ if(SHRINK_ARRAY_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build" FORCE)
 endif()
 
+# ── Static chunk sizes built ──────────────────────────────────────────────────
+# One library per (variant, size), and at the top level one shrink_bench and one
+# validation executable per (variant, size) too. "auto" (the default): 256;1024,
+# but 256 alone in a top-level Debug or sanitizer build -- with dyn
+# (CHUNK_BUILD_DYN), the runtime geometry, that is what those builds are for, and
+# a third less to compile. A consumer of this project always gets both sizes. An
+# explicit list wins. Declared here, before any subdirectory: chunk/, examples/ and
+# the bench read the resolved list.
+set(CHUNK_STATIC_SIZES "auto" CACHE STRING
+    "Compile-time chunk sizes built (semicolon list, powers of two or multiples of 64), or auto: 256;1024, 256 alone in a top-level Debug or sanitizer build")
+if(CHUNK_STATIC_SIZES STREQUAL "auto")
+    if(SHRINK_ARRAY_IS_TOP_LEVEL AND (CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT SANITIZER STREQUAL "none"))
+        set(CHUNK_STATIC_SIZES "256")
+    else()
+        set(CHUNK_STATIC_SIZES "256;1024")
+    endif()
+endif()
+# What was built, for python/bench_runner (builds.py: built_static_sizes).
+set(CHUNK_STATIC_SIZES_BUILT "${CHUNK_STATIC_SIZES}" CACHE INTERNAL "CHUNK_STATIC_SIZES as resolved")
+
 # ── OMPT detection (Clang/IntelLLVM only) ────────────────────────────────────
 if(OMP)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
@@ -301,6 +321,43 @@ if(NOT DEFINED CHUNK_DEBUG)
     endif()
 endif()
 
+# Debug information of the optimised builds (Release, RelWithDebInfo). Measured on
+# shrink_bench_chunk2a_256 (gcc, -O3): -g 157 s and 3.9 GB peak, -g1 116 s and
+# 2.5 GB; validation_chunk2a_256: 236 s / 5.1 GB against 192 s / 3.0 GB; and the
+# same machine code bit for bit (debug information does not change code
+# generation). -g1 keeps the function names and the line tables: perf, gdb
+# backtraces and crash reports, not the locals.
+#   auto   full where a debugger reads locals -- CHECK_OPTIM and sanitizer
+#          builds --, lines elsewhere (perf and stats builds)
+#   full   -g        lines  -g1 (nvc++: -g, it has no such level)
+#   none   -g0 (with Clang it also cancels the -gdwarf-4 added above, which on
+#          its own turns full debug information on)
+# Debug builds always get -g.
+set(CHUNK_DEBUG_INFO "auto" CACHE STRING "Debug information of the optimised builds: auto, full, lines, none")
+set_property(CACHE CHUNK_DEBUG_INFO PROPERTY STRINGS auto full lines none)
+set(_chunk_debug_info "${CHUNK_DEBUG_INFO}")
+if(_chunk_debug_info STREQUAL "auto")
+    if(CHECK_OPTIM OR NOT SANITIZER STREQUAL "none")
+        set(_chunk_debug_info "full")
+    else()
+        set(_chunk_debug_info "lines")
+    endif()
+endif()
+if(_chunk_debug_info STREQUAL "full")
+    set(_chunk_opt_g "-g")
+elseif(_chunk_debug_info STREQUAL "lines")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+        set(_chunk_opt_g "-g")
+    else()
+        set(_chunk_opt_g "-g1")
+    endif()
+elseif(_chunk_debug_info STREQUAL "none")
+    set(_chunk_opt_g "-g0")
+else()
+    message(FATAL_ERROR "CHUNK_DEBUG_INFO='${CHUNK_DEBUG_INFO}': auto, full, lines or none")
+endif()
+message(STATUS "Debug information of the optimised builds: ${_chunk_debug_info} (${_chunk_opt_g})")
+
 # Top level: in the cache, as before. Consumed by another project: plain
 # variables of this subtree -- the cache is the consumer's.
 if(SHRINK_ARRAY_IS_TOP_LEVEL)
@@ -309,16 +366,16 @@ if(SHRINK_ARRAY_IS_TOP_LEVEL)
         CACHE STRING "Debug flags" FORCE)
 
     set(CMAKE_CXX_FLAGS_RELEASE
-        "-O3 -g"
+        "-O3 ${_chunk_opt_g}"
         CACHE STRING "Release flags" FORCE)
 
     set(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-        "-O3 -g"
+        "-O3 ${_chunk_opt_g}"
         CACHE STRING "RelWithDebInfo flags" FORCE)
 else()
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g")
-    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${_chunk_opt_g}")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 ${_chunk_opt_g}")
 endif()
 
 # ── Runtime RPATH: embed the compiler's own runtime libraries ─────────────────

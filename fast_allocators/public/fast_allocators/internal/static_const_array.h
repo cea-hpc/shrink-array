@@ -21,20 +21,20 @@
  * @brief A ladder of fixed-size buckets, for allocations too small to deserve a
  *        slab allocator of their own.
  *
- * ::StaticConstArray holds fifteen ::TCTypeAllocatorEBC buckets, 4 bytes to
+ * fast_alloc::StaticConstArray holds fifteen fast_alloc::TCTypeAllocatorEBC buckets, 4 bytes to
  * 65536, and routes a request to the smallest one that fits. A larger request
  * is not an error: the lookup returns null and the caller falls back to malloc,
  * hence the free path's bool -- "the ladder took it" or "it was never mine".
  *
  * @par Who uses it
- * ::TypeAllocator, hence TCAllocator's `operator new` (slab HEADER objects, not
- * payloads; serial builds only, tc_allocator.cpp), and ::BlkAllocator, the entry
+ * fast_alloc::TypeAllocator, hence TCAllocator's `operator new` (slab HEADER objects, not
+ * payloads; serial builds only, tc_allocator.cpp), and fast_alloc::BlkAllocator, the entry
  * point for code outside the library.
  *
  * @par Threading
  * A bucket is not thread-safe: every ladder access inside a parallel region
  * holds ladder_mutex(). To keep frees from serialising, a freed block is
- * batched in a per-thread ::InfoFreeElt, released at once when the batch fills.
+ * batched in a per-thread fast_alloc::InfoFreeElt, released at once when the batch fills.
  *
  * Allocation and free hold the same mutex, so they exclude each other. It is
  * the ladder's own (it replaced `omp critical(fast_alloc_ladder)`, threads
@@ -154,8 +154,8 @@ class InfoFreeElt
  * @brief The bucket ladder itself, and the entry points that walk it.
  *
  * @details All static: one ladder per process. The class scopes the buckets and
- *          is the base of the front ends (::BlkAllocator by size,
- *          ::FixedSizeAllocator by type).
+ *          is the base of the front ends (fast_alloc::BlkAllocator by size,
+ *          fast_alloc::FixedSizeAllocator by type).
  *
  * @note The `*Int` methods are the bare lookup; the others add the size bound
  *       and, in a parallel region, the critical section. Call the outer ones.
@@ -429,7 +429,7 @@ struct BlkAllocator : public StaticConstArray
  *
  * @tparam ElemT The type whose `sizeof` is the block size.
  *
- * @details Same fallback as ::BlkAllocator. The size is a constant, so
+ * @details Same fallback as fast_alloc::BlkAllocator. The size is a constant, so
  *          bucket_index() folds.
  *
  *          The library's one instantiation is TypeAllocator<TCAllocator> (slab
@@ -488,7 +488,7 @@ class FixedSizeAllocator : private StaticConstArray
 /**
  * @brief The name the rest of the library allocates small objects through.
  *
- * @tparam T The object type. It selects the ::FixedSizeAllocator instantiation;
+ * @tparam T The object type. It selects the fast_alloc::FixedSizeAllocator instantiation;
  *         the size actually comes from the argument.
  *
  * @details Lets TCAllocator::operator new (tc_allocator.cpp, serial builds) use
@@ -519,7 +519,7 @@ struct TypeAllocator
  * @param sum_UsedSize Bytes ever carved out of a block.
  * @param sum_nn_ref Bytes currently handed out.
  * @param alloc_sz Bytes held in blocks, whether handed out or not.
- * @details Walks the ladder, then the registry of ::TCTypeAllocator instances.
+ * @details Walks the ladder, then the registry of fast_alloc::TCTypeAllocator instances.
  * @note Only a serial build fills the registry, so an OpenMP build reports
  *       the ladder alone.
  */

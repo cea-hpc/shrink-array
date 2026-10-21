@@ -21,7 +21,7 @@
 |---|---|---|
 | `CHUNK_LOG` | `warn` | quels messages de la bibliothèque sont écrits : des éléments séparés par des virgules, appliqués de gauche à droite ; un niveau seul (`off`, `error`, `warn`, `info`, `debug`, `trace`) règle tous les canaux, `canal=niveau` un seul (`general`, `env`, `alloc`, `arena`, `pool`, `rechunk`, `drain`, `compress`, `recycle`, `ledger`, `ompt`, `affinity`, `advisor`, `memory`). Exemple : `CHUNK_LOG=warn,rechunk=debug`. Une violation d'invariant est écrite quel que soit le réglage. Un programme peut aussi appeler `shrink_array::logging::configure()`, et confier les messages à son propre logger avec `shrink_array::logging::set_sink()` (`chunk/log.h`) |
 | `CHUNK_LOG_FILE` | stderr | fichier où les messages sont ajoutés ; `%p` est remplacé par le numéro du processus |
-| `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cœurs) | nombre de rangs pour lequel les structures par thread sont dimensionnées ; ne peut qu'augmenter le défaut (sursouscription). Un rang qui l'atteint ou la dépasse arrête le programme avec un message qui nomme cette variable |
+| `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cœurs, 256) | nombre de rangs pour lequel les structures par thread sont dimensionnées ; ne peut qu'augmenter le défaut (sursouscription). Un rang qui l'atteint ou la dépasse arrête le programme avec un message qui nomme cette variable |
 | `CHUNK_REQUIRE_OMPT` | — | builds OMPT : `1` arrête le programme si l'outil OMPT n'a pas été chargé par le runtime (sinon, un avertissement du journal), puisque les fins de phase n'auraient alors jamais lieu |
 | `CHUNK_RECHUNK_DRY_RUN` | — | `1` : le décideur du rechunk adaptatif analyse et journalise ce qu'il ferait (niveau info du canal `rechunk` du journal, qu'elle active), mais n'applique aucun rechunk (voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md)) |
 
@@ -31,7 +31,7 @@
 |---|---|---|
 | `OMP` | `OFF` | construire avec OpenMP |
 | `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `pool` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
-| `CHUNK_STATIC_SIZES` | `256;1024` | tailles de chunk statiques construites (cibles `_<taille>`) |
+| `CHUNK_STATIC_SIZES` | `auto` | tailles de chunk statiques construites (cibles `_<taille>`) ; `auto` : `256;1024`, `256` seule dans un build Debug ou sanitizer |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi une bibliothèque à géométrie dynamique (`_dyn`) par variante |
 | `CHUNK_STD_ALLOC` | `OFF` | allocateur standard pour les tampons de chunks au lieu de `fast_allocators` (utile sous ASan : chaque tampon est un vrai `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |

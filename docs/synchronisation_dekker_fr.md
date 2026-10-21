@@ -35,8 +35,8 @@ Sans précaution, l'entrelacement suivant perd une écriture, ou corrompt un aut
 Un verrou par chunk ou par tableau réglerait la question, mais à un prix inacceptable : il
 faudrait le prendre à **chaque** écriture, alors que le compresseur est **rare** (sur le banc
 de référence, la porte de compression ne s'ouvre parfois pas une seule fois). Il faut donc une
-exclusion mutuelle dont le côté fréquent ne coûte presque rien. C'est le rôle d'une poignée de
-main de type **Dekker**, et de sa variante **asymétrique**.
+exclusion mutuelle dont le côté fréquent ne coûte presque rien. C'est le rôle d'un protocole
+de type **Dekker**, et de sa variante **asymétrique**.
 
 ---
 
@@ -115,7 +115,7 @@ l'annonce du compresseur : l'écrivain prend le chemin lent. Jamais les deux.
 **Le coût.** Sur AArch64, l'écrivain paie `stlr` + `dmb ish` + `ldar` à **chaque** écriture
 d'élément (un `mfence` sur x86) : environ 70 % du temps de `write_with_optional_lock_impl`
 dans les profils. Mesuré sur `shrink_bench` chunk2a_256 à 6 threads x86 : +7 % de temps total
-par rapport à un moteur sans poignée de main, contre −7 % pour la version asymétrique.
+par rapport à un moteur sans protocole, contre −7 % pour la version asymétrique.
 
 La forme symétrique reste celle des builds **ThreadSanitizer** (TSan ne modélise pas
 `membarrier` et signalerait des courses qui n'existent pas) et des systèmes qui ne sont pas
@@ -233,14 +233,14 @@ bibliothèque qui n'ont pas d'autre raison d'être :
 
 ---
 
-## 5. Les trois poignées de main de la bibliothèque
+## 5. Les trois protocoles de la bibliothèque
 
 La même brique sert trois fois, entre des acteurs différents :
 
 | côté fréquent (léger) | côté rare (lourd) | ce qui est protégé |
 |---|---|---|
 | l'écrivain d'un élément | le compresseur | le tampon que le compresseur vole et rend |
-| — (le vidage est lui-même rare) | le compresseur ↔ le vidage des écritures différées | un rejeu d'écriture pendant une passe |
+| — (le vidage est lui-même rare) | le compresseur ↔ le vidage des écritures différées | l'application d'une écriture différée pendant une passe |
 | le lecteur d'un élément | la passe qui libère des tampons dans une région | le tampon qu'un lecteur est en train de lire |
 
 ### 5.1 Qui annonce quoi, qui regarde quoi
@@ -287,11 +287,11 @@ sequenceDiagram
    périmée ici est sans danger, le contrôle n° 2 est celui que la preuve couvre.
 2. **Annonce** : `announce_write(rang, &chunk)` (§4.1).
 3. **Contrôle n° 2** : `must_defer_write(chunk)`.
-   - Faux : la poignée de main est établie, aucun compresseur ne peut toucher `values` avant
+   - Faux : le protocole a abouti, aucun compresseur ne peut toucher `values` avant
      `end_write`. Le corps de l'écriture s'exécute (marquage pour la compression, puis
      écriture), puis `end_write` (un store *release* de `nullptr`).
    - Vrai : `end_write`, puis l'écriture est **différée** (capturée et mise dans la file du
-     rang, rejouée plus tard). Elle n'est jamais perdue.
+     rang, appliquée plus tard). Elle n'est jamais perdue.
 4. **Après l'écriture seulement**, si la liste de candidats du rang a franchi le seuil (rang
    « dangereux »), c'est ce thread qui lance la passe de compression
    (`run_slow_path(perform_compression)`), drapeau d'écrivain baissé.
@@ -357,9 +357,9 @@ attendant tous les écrivains) a été retiré ; sa porte est le constat F1 de
 
 ### 5.4 Compresseur et vidage des écritures différées
 
-Une écriture différée est **rejouée** plus tard par un vidage (`flush_deferred`,
-`flush_chunk_all_ranks`). Le rejeu écrit dans le tampon **sans** poignée de main d'écrivain
-(`in_flush_replay` : il est déjà dans une section exclusive), donc il doit lui-même exclure les
+Une écriture différée est **appliquée** plus tard par un vidage (`flush_deferred`,
+`flush_chunk_all_ranks`). L'application écrit dans le tampon **sans** le protocole des écrivains
+(`in_flush_replay` : elle est déjà dans une section exclusive), donc elle doit elle-même exclure les
 compresseurs :
 
 - **le vidage** : `announce_flush()` (`num_thread_flushing++` en `seq_cst`, puis
@@ -370,23 +370,23 @@ compresseurs :
 
 C'est ce **second regard** qui forme la paire de Dekker avec le vidage. Le premier, pris
 pendant que le compresseur n'était que garé, ne protège de rien : un vidage annoncé juste après
-a vu `stealing_inflight_ == 0` et rejoue déjà. Sans le second regard, le compresseur balayait
-la constante d'avant le rejeu, le rejeu écrivait, puis le CAS remettait le chunk sur la
-constante : l'écriture rejouée était perdue (une seconde valeur fausse à un indice de Chunk2A,
+a vu `stealing_inflight_ == 0` et applique déjà. Sans le second regard, le compresseur balayait
+la constante d'avant l'application, l'application écrivait, puis le CAS remettait le chunk sur la
+constante : l'écriture appliquée était perdue (une seconde valeur fausse à un indice de Chunk2A,
 une fois sur ~2 300 runs).
 
 Entre vidages, l'exclusion est plus classique : chaque rang a un verrou (`xflush_lock_rank`),
-pris par tout thread qui rejoue les opérations de ce rang. Un écrivain qui écrit directement
+pris par tout thread qui applique les opérations de ce rang. Un écrivain qui écrit directement
 dans un chunk où **ses propres** opérations sont en attente prend le verrou de son rang
-pendant son écriture : aucun rejeu concurrent de ses opérations ne peut alors passer, et elles
+pendant son écriture : aucune application concurrente de ses opérations ne peut alors passer, et elles
 restent en file.
 
 ### 5.5 Lecteurs et récupération des tampons
 
 Une lecture (`ChunkBase::element_at`) charge `values`, puis lit l'élément. Une passe de
 compression lancée **dans** une région parallèle (par un rang dangereux, ou un `compress()`
-appelé dans une région) vole et rend des tampons pendant que d'autres threads lisent. La
-poignée de main écrivain/compresseur n'attend que les écrivains : un lecteur entre son
+appelé dans une région) vole et rend des tampons pendant que d'autres threads lisent. Le
+protocole écrivain/compresseur n'attend que les écrivains : un lecteur entre son
 chargement et sa lecture pouvait lire un tampon déjà rendu et réutilisé.
 
 `internal/read_reclaim.h` applique la même brique asymétrique, sous la forme d'une **période de
@@ -413,11 +413,11 @@ besoin : aucune lecture utilisateur ne tourne alors. Au-delà de `CHUNK_READ_REC
 
 ### 5.6 La matérialisation
 
-Matérialiser un chunk (`create_value`) ne demande pas de poignée de main : le tampon est
+Matérialiser un chunk (`create_value`) ne demande pas de protocole : le tampon est
 **rempli avant d'être publié**, et la publication est un seul CAS de la constante vers le
 tampon. Un lecteur voit l'ancienne constante ou le tampon complet, jamais un tampon à moitié
 rempli ; le perdant du CAS recycle son tampon. La seule précaution, pour un appelant qui ne
-tient pas de drapeau d'écrivain (`alloc_chunk`, un rejeu de flush) : attendre qu'aucun
+tient pas de drapeau d'écrivain (`alloc_chunk`, l'application d'un flush) : attendre qu'aucun
 compresseur ne puisse voler **ce** chunk (sa marque, ou `stealing_inflight_` sans marques),
 sans quoi l'allocation pourrait reprendre le bloc qu'une passe est en train de rendre. Un
 écrivain du chemin rapide n'attend pas : une marque qu'il voit après son regard n° 2 appartient
@@ -430,8 +430,8 @@ ferait s'attendre les deux jusqu'à épuisement du budget de yields du compresse
 ## 6. Règles à respecter en modifiant ce code
 
 - **Toujours annoncer par les verbes de la politique** (`announce_write`, `announce_flush`).
-  `begin_write` et `begin_flush` sont privés : sans la barrière qui les suit, la poignée de main
-  est fausse sur les processeurs faiblement ordonnés.
+  `begin_write` et `begin_flush` sont privés : sans la barrière qui les suit, le protocole
+  est faux sur les processeurs faiblement ordonnés.
 - **Garder la barrière de compilateur** de la forme asymétrique, et l'ordre du programme
   annonce → regard.
 - **Toutes les attentes sont bornées, et chaque côté a une issue de repli** (différer,
@@ -447,7 +447,7 @@ ferait s'attendre les deux jusqu'à épuisement du budget de yields du compresse
   et sans `CHUNK_TEST_READ_DELAY_EVERY`, et sous ASan en std-alloc), puis une série
   `multi_launch_stress.py` : les défauts de ce code se manifestent une fois sur des milliers de
   runs.
-- **Le modèle réduit du handshake** ([formal_models_fr.md](formal_models_fr.md), `formal/`) doit
+- **Le modèle réduit du protocole** ([formal_models_fr.md](formal_models_fr.md), `formal/`) doit
   toujours passer sous GenMC avec ses mutations refusées : un changement d'atomique ou d'ordre ici
   est aussi un changement du modèle (sa table fait correspondre chaque nom à sa ligne du source).
 
@@ -474,7 +474,7 @@ avec la forme du protocole qui a tourné.
 
 | sujet | fichier |
 |---|---|
-| la poignée de main, les deux formes, la preuve | `internal/write_compress_sync_policy.h` (`dekker::`, `WriteCompressSyncPolicy`) |
+| le protocole, les deux formes, la preuve | `internal/write_compress_sync_policy.h` (`dekker::`, `WriteCompressSyncPolicy`) |
 | le choix de la forme | `config.h` (`chunk_config::asymmetric_dekker`, `tsan_build`) |
 | le côté écrivain | `internal/proxy_base_inline.h` (`write_with_optional_lock_impl`) |
 | le côté compresseur, les compteurs | `internal/compression_manager.h`, `internal/compression_manager_inline.h` (`start`, `finish`, `wait_out_compressor`) |

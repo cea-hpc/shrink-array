@@ -40,7 +40,9 @@ int main()
         const int                n = 1 << 24;
         sa::ArrayChunk2A<double> a(n);        // tous les éléments à 0.0, aucun tampon encore
 
-        sa::parallel_phase([&] {             // une région parallèle ; marque les phases sans OMPT
+        // parallel_phase ouvre la région `omp parallel` et y exécute la lambda, sur chaque
+        // thread ; le `omp for` partage la boucle entre cette équipe (voir plus bas)
+        sa::parallel_phase([&] {
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // la plage de 3.5 se compresse
@@ -53,6 +55,53 @@ int main()
     sa::destroy_block_chunk();
 }
 ```
+
+`parallel_phase()` reçoit le corps de la région parallèle sous forme de lambda. Le `#pragma omp
+parallel` est à l'intérieur : le `#pragma omp for` de la lambda est donc une directive de
+partage orpheline, qui se rattache à l'équipe ouverte par `parallel_phase()`. Autour de la
+région, elle marque aussi les frontières de phase où la bibliothèque fait son travail différé
+(les écritures mises en file sur des chunks compressés, la compression des chunks devenus
+uniformes). L'exemple n'a pas besoin d'OMPT : par défaut `parallel_phase()` fait ces appels
+elle-même, et dans un build OMPT (`CHUNK_OPT_OMPT`) c'est le runtime OpenMP qui les fait et
+`parallel_phase()` n'est plus qu'une région parallèle. Écrit à la main, sans OMPT, cela donne :
+
+```cpp
+#pragma omp parallel
+{
+    sa::begin_parallel_phase();      // chaque thread, avant sa première écriture
+#pragma omp for
+    for (int i = 0; i < n / 2; ++i)
+        a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+sa::finalize_parallel_phase();       // hors de la région : vider les écritures en file, compresser
+```
+
+Sans OpenMP, la lambda est simplement exécutée une fois, en série.
+
+**Avec OMPT, rien de la bibliothèque autour des boucles.** Dans un build OMPT (Clang, oneAPI : la
+bibliothèque embarque un outil OMPT, `CHUNK_OPT_OMPT`), le runtime OpenMP indique à la
+bibliothèque où chaque région commence et finit ; la boucle s'écrit donc comme pour un
+`std::vector` -- la même fonction remplit les deux :
+
+```cpp
+template <typename Array>
+void fill(Array& t, int n)
+{
+#pragma omp parallel for
+    for (int i = 0; i < n / 2; ++i)
+        t[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+
+std::vector<double>      v(n);
+sa::ArrayChunk2A<double> a(n);
+fill(v, n);                          // la référence
+fill(a, n);                          // la même boucle : ni parallel_phase(), ni appels de phase
+```
+
+[examples/getting_started/getting_started_ompt.cpp](examples/getting_started/getting_started_ompt.cpp)
+est ce programme, qui compare ensuite les deux tableaux élément par élément. Il demande un build
+OMPT : il ne compile pas contre une bibliothèque construite avec la libgomp de GCC, où les phases
+ne seraient jamais marquées.
 
 Le lier à `chunk::chunk_v2a` (voir [Installer](#installer)). La version complète, qui vérifie
 ce qu'elle relit, est [examples/getting_started](examples/getting_started/getting_started.cpp) ;
@@ -78,7 +127,7 @@ par la bibliothèque liée : `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
 [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) comment lectures, écritures et compression
 tournent ensemble.
 
-**Vérifié, pas seulement testé.** Les trois poignées de main sans verrou -- écrivains d'éléments
+**Vérifié, pas seulement testé.** Les trois protocoles sans verrou -- écrivains d'éléments
 contre passe de compression, passe contre flush des écritures différées, lecteurs purs contre
 réemploi des tampons -- sont vérifiées par model checking : des modèles réduits ([formal/](formal/))
 en sont explorés exhaustivement par [GenMC](https://github.com/MPI-SWS/genmc) sous le modèle
@@ -109,9 +158,9 @@ accès en absorbe une partie.
 
 Montée en threads, à trois fois la taille (`--multiply 3`, 3·10⁹ éléments : les builds à index
 64 bits `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cœurs), temps de calcul par rapport
-à 4 threads ([python/omp_speedup.py](python/omp_speedup.py)) : toutes les variantes suivent la
-droite idéale jusqu'à 32 threads, atteignent un speedup de 14 à 20 à 128 threads et restent
-entre 12 et 18 jusqu'à 288, là où `std::vector` retombe vers 8.
+à 1 thread ([python/omp_speedup.py](python/omp_speedup.py)) : toutes les variantes suivent la
+droite idéale jusqu'à 16 threads (un speedup de 14, puis 26 à 28 à 32), atteignent 48 à 70 à
+128 threads et restent entre 43 et 66 jusqu'à 288, là où `std::vector` retombe vers 26.
 
 ![Speedup OpenMP des builds int64 sur Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
 
@@ -158,9 +207,15 @@ Les options CMake (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS
   passer `double(a[i])` à `printf`, `std::format` ou `std::max`.
 - **Threads** : des éléments différents n'ont besoin d'aucune synchronisation, même dans le même
   chunk ; tout ce qui reconstruit le stockage (`resize`, `shrink_to_fit`, `assign`, un rechunk)
-  est un point séquentiel. Utiliser les tableaux depuis des threads OpenMP, avec
-  `OMP_NUM_THREADS` fixé avant le premier tableau ; sans OMPT (le `libgomp` de GCC), ouvrir les
+  est un point séquentiel. Utiliser les tableaux depuis des threads OpenMP ; une équipe de plus
+  de 256 threads et de plus que les cœurs demande `CHUNK_THREAD_CAPACITY` fixé avant le premier
+  tableau ; sans OMPT (le `libgomp` de GCC), ouvrir les
   régions par `parallel_phase()`.
+- **Un par processus** : l'état de la bibliothèque -- registres de types, allocateurs,
+  structures par thread, la phase -- est celui du processus, partagé par toutes les parties du
+  programme qui l'utilisent : une seule équipe de premier niveau qui écrit des tableaux à la fois
+  (les régions imbriquées ne posent pas de problème), les appels d'arrêt une fois à la fin
+  ([docs/getting_started_fr.md](docs/getting_started_fr.md), section 5).
 - **Absents, par construction** : `data()` (un chunk compressé n'a pas de tampon), `T&` et les
   itérateurs mutables, `insert` / `erase` au milieu.
 - **Écritures en masse plus rapides** : `fill_range`, `copy_range` et leurs versions `_mt`
@@ -195,7 +250,7 @@ Une branche de développement, pas encore dans une version :
 | comparer aux formats creux, aux compresseurs, aux grilles creuses | [docs/alternatives_fr.md](docs/alternatives_fr.md) |
 | comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) |
 | savoir pourquoi l'écriture n'a besoin d'aucun verrou | [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) |
-| vérifier un handshake avec un vérificateur de modèles | [docs/formal_models_fr.md](docs/formal_models_fr.md) |
+| vérifier un protocole avec un vérificateur de modèles | [docs/formal_models_fr.md](docs/formal_models_fr.md) |
 | utiliser les tailles de chunk dynamiques | [docs/rechunk_adaptatif_fr.md](docs/rechunk_adaptatif_fr.md) |
 | mesurer mémoire et temps sans se tromper | [docs/mesures_performance_fr.md](docs/mesures_performance_fr.md) |
 | soumettre et suivre des runs sur le calculateur depuis une fenêtre | [docs/shrink_gui_fr.md](docs/shrink_gui_fr.md) |

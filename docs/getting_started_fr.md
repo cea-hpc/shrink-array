@@ -58,7 +58,7 @@ Les options qui comptent pour un utilisateur :
 |---|---|---|
 | `OMP` | `OFF` | construire avec OpenMP. Un programme qui utilise les tableaux dans des régions OpenMP a besoin d'une bibliothèque construite avec |
 | `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `pool` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
-| `CHUNK_STATIC_SIZES` | `256;1024` | les tailles de chunk fixées à la compilation, une bibliothèque par taille et par variante |
+| `CHUNK_STATIC_SIZES` | `auto` | les tailles de chunk fixées à la compilation, une bibliothèque par taille et par variante ; `auto` : `256;1024`, mais `256` seule dans un build Debug ou sanitizer de ce projet (pas d'un projet qui l'inclut) |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi les bibliothèques dont la taille de chunk est choisie à l'exécution, et peut changer (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allouer les tampons des chunks avec l'allocateur standard plutôt qu'avec `fast_allocators`, fourni avec la bibliothèque (utile sous AddressSanitizer) |
 
@@ -206,8 +206,49 @@ compression et matérialisation sont l'affaire de la bibliothèque. Deux accès 
 une section `critical`, un verrou, des atomiques release/acquire), exactement comme sur un
 `std::vector`.
 
+**Avec OMPT, la boucle du `std::vector` telle quelle.** Avec une bibliothèque construite avec
+OMPT (Clang, oneAPI), la même boucle OpenMP remplit un `std::vector` et un tableau compressé :
+ni `parallel_phase()`, ni appel de phase. Lié comme au §3, avec `OpenMP::OpenMP_CXX` en plus :
+
+```cpp
+#include <cstdio>
+#include <utility>                 // std::as_const
+#include <vector>
+
+#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+
+namespace sa = shrink_array;
+
+template <typename Array>
+void fill(Array& t, int n)
+{
+#pragma omp parallel for
+    for (int i = 0; i < n / 2; ++i)
+        t[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+
+int main()
+{
+    const int n = 1 << 24;
+
+    std::vector<double>      v(n);
+    sa::ArrayChunk2A<double> a(n);
+    fill(v, n);                          // la référence
+    fill(a, n);                          // la même boucle : ni parallel_phase(), ni appels de phase
+
+    // Lire par une vue const : sur un tableau non const, a[i] est un proxy d'écriture.
+    const auto& ca  = std::as_const(a);
+    long        bad = 0;
+    for (int i = 0; i < n; ++i)
+        bad += (ca[i] != v[i]);
+
+    std::printf("%s: %ld element(s) differ out of %d\n", bad == 0 ? "OK" : "FAIL", bad, n);
+    return bad == 0 ? 0 : 1;
+}
+```
+
 **Les phases, sans OMPT.** Quand un écrivain rencontre une compression en cours sur son chunk,
-la bibliothèque **diffère** son écriture et la rejoue plus tard. Elle compresse aussi entre les
+la bibliothèque **diffère** son écriture et l'applique plus tard. Elle compresse aussi entre les
 régions parallèles. Avec OMPT (builds Clang, oneAPI), le runtime OpenMP lui signale le début et
 la fin des régions. Sans OMPT (libgomp de GCC), c'est le programme qui le fait :
 
@@ -223,7 +264,7 @@ shrink_array::finalize_parallel_phase();      // une fois, après la région
 Si on les oublie, rien n'échoue tout de suite. Avec la même équipe d'une région à l'autre, les
 valeurs restent justes, mais les passes de compression entre régions n'ont pas lieu : la
 mémoire reste plus haute qu'elle ne devrait. Quand la taille de l'équipe change d'une région à
-l'autre, un `finalize_parallel_phase()` oublié rejoue une écriture différée déjà libérée, et
+l'autre, un `finalize_parallel_phase()` oublié applique une écriture différée déjà libérée, et
 si les deux appels sont oubliés, des valeurs sont fausses, sans message. Le programme
 s'arrête, dans tous les builds, sur un `begin_parallel_phase()` sans
 `finalize_parallel_phase()` depuis la région précédente ; les builds de contrôle (Debug,
@@ -247,16 +288,52 @@ Avec OMPT, si le runtime n'a pas chargé l'outil de la bibliothèque (`OMP_TOOL=
 autre outil trouvé d'abord), les phases n'ont jamais lieu. La bibliothèque l'écrit sur stderr ;
 `CHUNK_REQUIRE_OMPT=1` arrête alors le programme.
 
+Avec OMPT, on peut aussi n'écrire aucune phase : de simples boucles `#pragma omp parallel for`,
+le même code que sur un `std::vector`.
+[`examples/getting_started/getting_started_ompt.cpp`](../examples/getting_started/getting_started_ompt.cpp)
+est le programme du §4 écrit ainsi : une même fonction remplit un `std::vector<double>` et un
+`ArrayChunk2A<double>`, et le programme vérifie qu'ils se relisent à l'identique. Il refuse de
+compiler contre une bibliothèque sans OMPT ; son test tourne avec `CHUNK_REQUIRE_OMPT=1`.
+
 **Les points séquentiels.** Tout ce qui reconstruit le stockage d'un tableau s'appelle hors de
 toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la capacité,
 `clear()`, `assign()`, `swap()`, l'affectation, `shrink_to_fit()`, `compress()`,
 `rechunk_to()`, et, pour Chunk2, `set_second_value()`.
 
 **Les threads.** Les structures par thread sont dimensionnées une fois pour
-`max(omp_get_max_threads(), nombre de cœurs)` threads (dans un build pool, la taille d'équipe :
-`CHUNK_NUM_THREADS`, sinon `OMP_NUM_THREADS`). Un programme qui lance plus de threads
-que de cœurs fixe `CHUNK_THREAD_CAPACITY=<n>` ; un thread au-delà de la capacité arrête le
-programme avec un message.
+`max(omp_get_max_threads(), nombre de cœurs, 256)` threads (dans un build pool, la taille
+d'équipe -- `CHUNK_NUM_THREADS`, sinon `OMP_NUM_THREADS` -- tient lieu de
+`omp_get_max_threads()` ; environ 1 Kio par type d'élément et par thread). Un programme qui lance plus de threads que cela fixe `CHUNK_THREAD_CAPACITY=<n>` ;
+un thread au-delà de la capacité arrête le programme avec un message.
+
+**À côté d'autres composants.** La bibliothèque garde son état par processus, pas par tableau :
+les registres de types d'éléments, les allocateurs, le registre des secondes valeurs de Chunk2A,
+les structures par thread et leur capacité, les réglages du log, et la phase. Deux parties d'un
+programme qui l'utilisent sans se connaître -- votre code et une bibliothèque construite sur
+shrink-array, par exemple -- partagent tout cela. Ce que cela leur demande :
+
+- **Une phase à la fois.** Les files par thread sont indexées par le rang dans l'équipe, et la
+  fin d'une phase vide la file de chaque rang. Deux équipes OpenMP de premier niveau qui écrivent
+  des tableaux en même temps -- ouvertes par deux threads hôtes, deux composants chacun sur son
+  `std::thread` -- partagent les rangs 0 à n-1, et la fin de phase de l'une rejoue les écritures
+  de l'autre au milieu de sa région. Dès qu'un tableau existe, la seconde équipe arrête le
+  programme avec un message (OMPT : à son début ; sans OMPT : à son `begin_parallel_phase()`).
+  Faire tourner ces parties l'une après l'autre, ou dans une même équipe.
+- **Les régions imbriquées ne posent pas de problème.** Un solveur ou un appel BLAS qui ouvre sa
+  propre région dans une phase, un composant qui appelle `parallel_phase()` dans la vôtre : seule
+  la fin de la région la plus externe est une frontière de phase, et `finalize_parallel_phase()`
+  ne fait rien dans une région active. Les tableaux peuvent être écrits dans une région imbriquée
+  tant qu'elle est sérialisée (`OMP_MAX_ACTIVE_LEVELS=1`, le défaut) ; avec deux niveaux actifs,
+  une écriture arrête le programme.
+- **Le premier tableau fixe la capacité en threads** (ci-dessus) : au moins 256 threads, ou les
+  cœurs, ou `OMP_NUM_THREADS` ; un composant qui ouvre des équipes plus grandes demande
+  `CHUNK_THREAD_CAPACITY` fixé avant le premier tableau.
+- **Des appels à l'échelle du processus.** `ParamChunk::init_indexes()` fixe la taille des blocs
+  d'allocation de tout le processus : un appel, au début, par le programme (un appel ultérieur
+  laisse intacts les tableaux déjà construits). `release_chunk_pools()` et `destroy_block_chunk()`
+  vident les listes libres de tout le monde (un tableau encore vivant garde ce qu'il lui faut) :
+  une fois, à la fin du programme, ou pas du tout. `reclaim_second_values()` couvre tous les
+  tableaux d'un type ; `CHUNK_LOG` et `logging::set_sink()` sont un seul réglage pour tous.
 
 **Sans OpenMP : vos propres threads, TBB.** Une bibliothèque construite avec
 `CHUNK_THREADS=pool` fait tourner son propre travail sur un pool de `std::jthread` et accepte les

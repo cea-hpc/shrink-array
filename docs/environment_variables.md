@@ -20,7 +20,7 @@
 |---|---|---|
 | `CHUNK_LOG` | `warn` | which messages of the library are written: comma-separated items, left to right; a bare level (`off`, `error`, `warn`, `info`, `debug`, `trace`) sets every channel, `channel=level` one (`general`, `env`, `alloc`, `arena`, `pool`, `rechunk`, `drain`, `compress`, `recycle`, `ledger`, `ompt`, `affinity`, `advisor`, `memory`). Example: `CHUNK_LOG=warn,rechunk=debug`. An invariant failure is written whatever the setting. A program can also call `shrink_array::logging::configure()` and hand the messages to its own logger with `shrink_array::logging::set_sink()` (`chunk/log.h`) |
 | `CHUNK_LOG_FILE` | stderr | file the messages are appended to; `%p` is replaced by the process id |
-| `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cores) | number of ranks the per-thread structures are sized for; can only raise the default (oversubscription). A rank at or past it stops the program with a message naming this variable |
+| `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cores, 256) | number of ranks the per-thread structures are sized for; can only raise the default (oversubscription). A rank at or past it stops the program with a message naming this variable |
 | `CHUNK_REQUIRE_OMPT` | — | OMPT builds: `1` aborts the program if the OMPT tool was not loaded by the runtime (otherwise, a warning of the log), since the end-of-phase events would then never happen |
 | `CHUNK_RECHUNK_DRY_RUN` | — | `1`: the adaptive re-chunk decider analyses and logs what it would do (level info of the log's channel `rechunk`, which it switches on), but applies no rechunk (see [adaptive_rechunk.md](adaptive_rechunk.md)) |
 
@@ -30,7 +30,7 @@
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP |
 | `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `pool` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
-| `CHUNK_STATIC_SIZES` | `256;1024` | static chunk sizes built (targets `_<size>`) |
+| `CHUNK_STATIC_SIZES` | `auto` | static chunk sizes built (targets `_<size>`); `auto`: `256;1024`, `256` alone in a Debug or sanitizer build |
 | `CHUNK_BUILD_DYN` | `ON` | also build a dynamic-geometry library (`_dyn`) per variant |
 | `CHUNK_STD_ALLOC` | `OFF` | standard allocator for the chunk buffers instead of `fast_allocators` (useful under ASan: each buffer is a real `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A: the second-value slot holds a 4-byte identifier instead of the value (less memory, +3% write time) |

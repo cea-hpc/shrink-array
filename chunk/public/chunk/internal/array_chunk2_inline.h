@@ -625,13 +625,16 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // See ArrayChunk2A::clear(): skip in aggressive mode; in the GNU build this
     // sweep scans without compressing (compress()'s clear paths are compiled
     // out), so it would be costly wasted work.
-    if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_aggressive_compression)
+    if constexpr (chunk_config::not_use_compression_with_ompt)
     {
-        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
-
-        if (ens_type_chunk.have_chunk_to_compress_potentially())
+        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            ens_type_chunk.compress_chunk_to_compress_potentially(false);
+            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+
+            if (ens_type_chunk.have_chunk_to_compress_potentially())
+            {
+                ens_type_chunk.compress_chunk_to_compress_potentially(false);
+            }
         }
     }
 
@@ -808,16 +811,19 @@ void ArrayChunk2<T, ind_type>::compress_int(pmp::Team& team)
     // the drain would un-queue the candidates and the self-heal below would
     // report them as never marked. `drained` qualifies that report.
     bool drained = false;
-    if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_aggressive_compression)
+    if constexpr (chunk_config::not_use_compression_with_ompt)
     {
-        if (!CHUNK_PMP_IN_PARALLEL_REGION)
+        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
+            if (!CHUNK_PMP_IN_PARALLEL_REGION)
             {
-                ens_type_chunk.compress_chunk_to_compress_potentially(true);
+                const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
+                if (ens_type_chunk.have_chunk_to_compress_potentially())
+                {
+                    ens_type_chunk.compress_chunk_to_compress_potentially(true);
+                }
+                drained = true;
             }
-            drained = true;
         }
     }
 
