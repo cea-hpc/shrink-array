@@ -247,7 +247,7 @@ int main()
 ```
 
 **Les phases, sans OMPT.** Quand un écrivain rencontre une compression en cours sur son chunk,
-la bibliothèque **diffère** son écriture et la rejoue plus tard. Elle compresse aussi entre les
+la bibliothèque **diffère** son écriture et l'applique plus tard. Elle compresse aussi entre les
 régions parallèles. Avec OMPT (builds Clang, oneAPI), le runtime OpenMP lui signale le début et
 la fin des régions. Sans OMPT (libgomp de GCC), c'est le programme qui le fait :
 
@@ -263,7 +263,7 @@ shrink_array::finalize_parallel_phase();      // une fois, après la région
 Si on les oublie, rien n'échoue tout de suite. Avec la même équipe d'une région à l'autre, les
 valeurs restent justes, mais les passes de compression entre régions n'ont pas lieu : la
 mémoire reste plus haute qu'elle ne devrait. Quand la taille de l'équipe change d'une région à
-l'autre, un `finalize_parallel_phase()` oublié rejoue une écriture différée déjà libérée, et
+l'autre, un `finalize_parallel_phase()` oublié applique une écriture différée déjà libérée, et
 si les deux appels sont oubliés, des valeurs sont fausses, sans message. Le programme
 s'arrête, dans tous les builds, sur un `begin_parallel_phase()` sans
 `finalize_parallel_phase()` depuis la région précédente ; les builds de contrôle (Debug,

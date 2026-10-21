@@ -47,7 +47,7 @@ Que lancer, selon ce que touche la modification :
 
 | modification | lancer au moins |
 |---|---|
-| moteur d'écriture, poignée de main de Dekker, gestionnaire de compression, écritures différées | `deferred_path_validation`, `read_reclaim_validation` (aussi avec `CHUNK_TEST_READ_DELAY_EVERY`, et sous ASan dans un build std-alloc), les builds TSan, `multi_launch_stress.py` |
+| moteur d'écriture, protocole de Dekker, gestionnaire de compression, écritures différées | `deferred_path_validation`, `read_reclaim_validation` (aussi avec `CHUNK_TEST_READ_DELAY_EVERY`, et sous ASan dans un build std-alloc), les builds TSan, `multi_launch_stress.py` |
 | marquage pour la compression, les passes | `mark_path_validation`, `compress_roundtrip`, le banc en mode check |
 | allocateurs, listes de réutilisation, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, le build avec registre des blocs (ledger) (`--with-ledger`), ASan dans un build std-alloc |
 | rechunk, géométrie dynamique | `rechunk_validation`, `dyn_geometry_validation`, le banc avec `CHUNK_FORCE_RECHUNK_TOGGLE=1` |
@@ -91,7 +91,7 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   sans avertissement (`ctest -R check_doxygen` quand Doxygen est installé).
 - **Code sans verrou** : suivre les règles de [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md)
   §6, et écrire l'argument d'ordonnancement à côté de chaque atomique qui en a besoin.
-  Quand la modification touche un handshake, lancer aussi `formal/run_genmc.sh`
+  Quand la modification touche un protocole, lancer aussi `formal/run_genmc.sh`
   ([formal_models_fr.md](formal_models_fr.md)).
 
 ## 4. Affirmations de performance

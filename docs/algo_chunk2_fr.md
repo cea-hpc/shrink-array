@@ -199,7 +199,7 @@ set_info_second_value_ind();   // second_value et ind, depuis le miroir
 
 // 2. second_value sur un chunk à cst_val2, ou sur un élément qui la contient déjà :
 //    rien à faire -- sauf si des écritures différées sont en attente sur le chunk
-//    (une ancienne opération rejouée plus tard écraserait la valeur laissée en place)
+//    (une ancienne opération appliquée plus tard écraserait la valeur laissée en place)
 if (!chunk.pending_any())
     if (v == second_value && (values_loc == chunk.get_cst_val2(ind) || values_loc[num] == second_value))
         return v;
@@ -207,7 +207,7 @@ if (!chunk.pending_any())
 // 3. sinon : le corps de l'écriture, confié au moteur d'écriture
 auto body = [this, &v] { mark_for_compression_if_needed(v); perform_core_assignment(v); };
 const bool deferred = write_with_optional_lock_with_set_ptr(body);
-if (deferred) { /* capturer l'opération pour la rejouer plus tard (7.3) */ }
+if (deferred) { /* capturer l'opération pour l'appliquer plus tard (7.3) */ }
 ```
 
 ### 6.3 Le corps : `perform_core_assignment`
@@ -245,7 +245,7 @@ le chemin d'écriture courant** : elle repose sur trois mécanismes.
 Toutes les écritures passent par `ProxyBase::write_with_optional_lock_impl`
 (`proxy_base_inline.h`). Le danger à éviter : un thread écrit dans le tampon d'un chunk
 pendant qu'un compresseur le vole et le rend à la liste de réutilisation. Le moteur applique
-une poignée de main de type **Dekker** entre écrivains et compresseurs
+un protocole de type **Dekker** entre écrivains et compresseurs
 (`WriteCompressSyncPolicy`), sans aucun verrou :
 
 - **côté écrivain (fréquent, léger)** : le thread publie l'adresse du chunk qu'il écrit dans
@@ -268,11 +268,11 @@ sont détaillés dans [synchronisation_dekker_fr.md](synchronisation_dekker_fr.m
 
 ```mermaid
 flowchart TD
-    A["Proxy2::assign_impl : corps prêt"] --> B{"rejeu d'une opération<br/>différée en cours ?"}
+    A["Proxy2::assign_impl : corps prêt"] --> B{"application d'une opération<br/>différée en cours ?"}
     B -->|oui| B1["exécuter le corps directement"]
     B -->|non| C{"opérations différées<br/>en attente sur le chunk ?"}
     C -->|"d'autres threads"| C1["les appliquer (reader_sync)"]
-    C -->|"les siennes"| C2["bloquer leur rejeu pendant l'écriture"]
+    C -->|"les siennes"| C2["bloquer leur application pendant l'écriture"]
     C -->|non| D
     C1 --> D
     C2 --> D
@@ -290,7 +290,7 @@ flowchart TD
 
 Quand un compresseur est en cours sur le chunk et que l'attente bornée n'a pas suffi,
 l'écriture n'est pas perdue : elle est **capturée** (un contexte alloué dans un pool, qui
-contient la position et l'opérande) et placée dans la file du thread. Elle sera **rejouée**
+contient la position et l'opérande) et placée dans la file du thread. Elle sera **appliquée**
 plus tard :
 
 - par une **lecture** du chunk (barrière de lecture, section 5) ;
@@ -299,8 +299,8 @@ plus tard :
   vidage en série qui n'ouvre une région que s'il reste des opérations ;
 - dans le chemin d'écriture lui-même, quand la file d'un thread dépasse un seuil.
 
-Le rejeu fige la géométrie de l'opération (en géométrie dynamique, un chunk est matérialisé à
-**sa** taille, pas à celle du thread qui rejoue).
+L'application fige la géométrie de l'opération (en géométrie dynamique, un chunk est matérialisé à
+**sa** taille, pas à celle du thread qui l'applique).
 
 En fin de phase, le « dirty bitset » de chaque tableau (le filtre de la barrière de lecture,
 section 5) est remis à zéro. Chaque bitset porte un mot supplémentaire, « au moins un bit a
@@ -312,7 +312,7 @@ de phase : ~21 s d'un run de ~30 s sur AMD Milan (GNU, 64 threads).
 ### 7.4 Les rappels OMPT
 
 Avec OMPT, la bibliothèque s'accroche au runtime OpenMP : `on_implicit_task` (cache du rang
-du thread), `on_barrier_end` et `on_parallel_end` (rejeu des opérations différées et passes de
+du thread), `on_barrier_end` et `on_parallel_end` (application des opérations différées et passes de
 compression). Sans OMPT (libgomp), le code appelant encadre ses régions par
 `begin_parallel_phase()` / `finalize_parallel_phase()`, et le travail de fin de région est fait
 par le **maître**, après la région : c'est là qu'une étape séquentielle coûteuse se voit
@@ -381,7 +381,7 @@ parallèle.
 
 ```mermaid
 flowchart TD
-    A["liste (rang, second_value)"] --> B["handshake compresseur<br/>(CompressionManager::start)"]
+    A["liste (rang, second_value)"] --> B["protocole du compresseur<br/>(CompressionManager::start)"]
     B --> C["pour chaque entrée : figer la taille<br/>du chunk (n_elems de l'entrée)"]
     C --> D["fill_list_to_compress : parcourir le chunk"]
     D -->|"tout = first_value"| E["liste ll_compt1"]
