@@ -477,7 +477,7 @@ class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     using Base::derived;
     using Base::is_bool;
     using Base::is_not_bool;
-    using Base::values;
+    using Base::values_;
 
     /// @brief The single candidate list of a serial build.
     static TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially() noexcept
@@ -546,9 +546,9 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
 
     using Base::allocator_data;
     using Base::first_value;
-    using Base::values;
+    using Base::values_;
 
-    using tab_cst_val2_holder = TabCstVal2Holder<T>;
+    using Holder = TabCstVal2Holder<T>;
 
     // block_clear / clear_st / clear / clear_int_st / create_value* live on
     // Chunk2AOmpPolicy, one specialisation per mode (see above). Both declare
@@ -588,7 +588,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
      */
     void init_after_constructor() noexcept
     {
-        Base::values = Base::get_cst_val1();
+        Base::values_ = Base::get_cst_val1();
     }
 
     /**
@@ -622,12 +622,12 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     {
         if (*ptr_type_cst == is_val1)
         {
-            Base::values = Base::get_cst_val1();
+            Base::values_ = Base::get_cst_val1();
             return;
         }
         if constexpr (is_not_bool)
         {
-            T* cst_val2_ptr = tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
+            T* cst_val2_ptr = Holder::find_cst_val2_ptr(ptr_second_value.get());
             if constexpr (build_config::any_check)
             {
                 if (cst_val2_ptr == nullptr)
@@ -637,11 +637,11 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                                      "chunk's second value");
                 }
             }
-            Base::values = cst_val2_ptr;
+            Base::values_ = cst_val2_ptr;
         }
         else
         {
-            Base::values = tab_cst_val2_holder::m_ptr.data();
+            Base::values_ = Holder::m_ptr.data();
         }
     }
 
@@ -738,7 +738,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     }
     static bool have_chunk_to_compress(int max_thr);
 
-    static void make_block_compression(int thr, Proxy2A<T>* proxy2A);
+    static void make_block_compression(int thr, Proxy2A<T>* proxy2a);
 
   private:
     using ChunkType              = Chunk2A;

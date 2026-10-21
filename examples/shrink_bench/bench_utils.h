@@ -255,9 +255,9 @@ void calculate_checksum_0(const V& vec, std::vector<Uint64Padding>& checksum_thr
 template <typename V>
 struct VectorChecksum
 {
-    /// @brief Keep a reference to @p vec_ and size checksum_thr to CHUNK_PMP_MAX_THREADS zeroed slots.
-    /// @param vec_ Container to checksum.
-    VectorChecksum(const V& vec_) : vec(vec_)
+    /// @brief Keep a reference to @p container and size checksum_thr to CHUNK_PMP_MAX_THREADS zeroed slots.
+    /// @param container Container to checksum.
+    VectorChecksum(const V& container) : vec(container)
     {
         checksum_thr.resize(CHUNK_PMP_MAX_THREADS, 0);
     }

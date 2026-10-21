@@ -518,7 +518,7 @@ void read_check_binary_file(Int                ind,
                     bool        te = true;
                     for (UInt p = 0; p < data_check.chunk_size(); ++p)
                     {
-                        if (chunk_t.values[p] != v)
+                        if (chunk_t.values_[p] != v)
                         {
                             te = false;
                             break;
@@ -532,11 +532,11 @@ void read_check_binary_file(Int                ind,
                     else
                     {
                         bool       all_equal = true;
-                        const auto first     = chunk_t.values[0];
+                        const auto first     = chunk_t.values_[0];
 
                         for (UInt p = 1; p < data_check.chunk_size(); ++p)
                         {
-                            if (chunk_t.values[p] != first)
+                            if (chunk_t.values_[p] != first)
                             {
                                 all_equal = false;
                                 break;
@@ -550,7 +550,7 @@ void read_check_binary_file(Int                ind,
                         else
                         {
                             std::cerr << "All values of chunk (compacted):\n";
-                            const T* vals = chunk_t.values; // atomic<T*> implicit load or plain ptr
+                            const T* vals = chunk_t.values_; // atomic<T*> implicit load or plain ptr
                             log_values_compacted([](const std::string& m) { std::cerr << m; }, format_val, vals,
                                                  data_check.chunk_size());
                         }
@@ -666,7 +666,7 @@ void read_check_binary_file(Int                ind,
                     const Int num = k % static_cast<Int>(data_check.chunk_size());
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
                     const auto& chunk_t = data_check.get_chunk_list()[num_chunk];
-                    using ValueType     = decltype(chunk_t.values); // infer the type
+                    using ValueType     = decltype(chunk_t.values_); // infer the type
 
                     T* raw_ptr = nullptr;
 
@@ -678,7 +678,7 @@ void read_check_binary_file(Int                ind,
                     else
                     {
                         // It's a raw pointer
-                        raw_ptr = chunk_t.values;
+                        raw_ptr = chunk_t.values_;
                     }
                     auto addr = reinterpret_cast<std::uintptr_t>(raw_ptr);
 
@@ -843,7 +843,7 @@ void read_check_binary_file(Int                ind,
 
                     T* raw_ptr = nullptr;
 
-                    using ValueType = decltype(chunk_t.values);
+                    using ValueType = decltype(chunk_t.values_);
 
                     if constexpr (is_atomic_pointer<ValueType>::value)
                     {
@@ -853,10 +853,10 @@ void read_check_binary_file(Int                ind,
                     else
                     {
                         // It's a raw pointer
-                        raw_ptr = chunk_t.values;
+                        raw_ptr = chunk_t.values_;
                     }
 
-                    auto               addr_values_member = reinterpret_cast<std::uintptr_t>(&chunk_t.values);
+                    auto               addr_values_member = reinterpret_cast<std::uintptr_t>(&chunk_t.values_);
                     std::ostringstream oss_member;
                     oss_member << "0x" << std::hex << addr_values_member;
                     const std::string s_member = oss_member.str();
@@ -894,11 +894,11 @@ void read_check_binary_file(Int                ind,
                     // into a single `if constexpr`.
                     const Int num_chunk = k / static_cast<Int>(data_check.chunk_size());
 
-                    if (const auto& chunk_t = data_check.chunk_list[num_chunk]; chunk_t.is_cst_val1() && value != zero)
+                    if (const auto& chunk_t = data_check.chunk_list_[num_chunk]; chunk_t.is_cst_val1() && value != zero)
                     {
                         log_message("\nis_cst_val1 should be not !\n");
                         {
-                            const T* vals = chunk_t.values;
+                            const T* vals = chunk_t.values_;
                             log_values_compacted(log_message, format_val, vals, data_check.chunk_size());
                         }
                     }
@@ -926,7 +926,7 @@ void read_check_binary_file(Int                ind,
 
                         for (UInt p = 0; p < data_check.chunk_size(); p++)
                         {
-                            if (chunk_t.values[p] != zero)
+                            if (chunk_t.values_[p] != zero)
                             {
                                 test_zero = false;
                             }
@@ -936,7 +936,7 @@ void read_check_binary_file(Int                ind,
                         {
                             log_message("chunk values contain : ");
                             {
-                                const T* vals = chunk_t.values;
+                                const T* vals = chunk_t.values_;
                                 log_values_compacted(log_message, format_val, vals, data_check.chunk_size());
                             }
                         }
@@ -955,11 +955,11 @@ void read_check_binary_file(Int                ind,
                     else
                     {
                         bool       all_equal = true;
-                        const auto first_v   = chunk_t.values[0];
+                        const auto first_v   = chunk_t.values_[0];
 
                         for (UInt i = 1; i < data_check.chunk_size(); ++i)
                         {
-                            if (chunk_t.values[i] != first_v)
+                            if (chunk_t.values_[i] != first_v)
                             {
                                 all_equal = false;
                                 break;
@@ -976,7 +976,7 @@ void read_check_binary_file(Int                ind,
                         {
                             log_message("All values of chunk (compacted):\n");
                             {
-                                const T* vals = chunk_t.values;
+                                const T* vals = chunk_t.values_;
                                 log_values_compacted(log_message, format_val, vals, data_check.chunk_size());
                             }
                         }

@@ -169,22 +169,22 @@ constexpr long   c2           = 18;    ///< chunks [c1, c2): the second value
 constexpr long   n_chunks     = 37;    ///< chunks [c2, n_chunks): strictly rising ...
 constexpr long   tail_len     = 13;    ///< ... then a partial chunk of tail_len elements
 
-double sorted_at(long i, long S)
+double sorted_at(long i, long s)
 {
-    const long c = i / S;
+    const long c = i / s;
     if (c < c0)
     {
         return 0.0;
     }
     if (c < c1)
     {
-        return 10.0 + static_cast<double>((i - (c0 * S)) / 3);
+        return 10.0 + static_cast<double>((i - (c0 * s)) / 3);
     }
     if (c < c2)
     {
         return second_value;
     }
-    return (2.0 * second_value) + static_cast<double>(i - (c2 * S));
+    return (2.0 * second_value) + static_cast<double>(i - (c2 * s));
 }
 
 /// @brief Write @p value(i) at every i in [0, N) from a parallel region, then
@@ -195,13 +195,13 @@ double sorted_at(long i, long S)
 ///          there, and compress() only audits. The harness runs that pass
 ///          itself there, as mark_path_validation does.
 template <typename Fn>
-void fill(Arr& a, long N, Fn&& value)
+void fill(Arr& a, long n, Fn&& value)
 {
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static)
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             a[static_cast<Ind>(i)] = value(i);
         }
@@ -245,14 +245,14 @@ struct Report
 
 /// @brief Chunks folded to a constant: expected at least the first-constant
 ///        block, plus the second-value block where the variant has one.
-int check_premise(const Arr& a, long N)
+int check_premise(const Arr& a, long n)
 {
     Report     r{"premise"};
-    const long S      = static_cast<long>(a.chunk_size());
+    const long s      = static_cast<long>(a.chunk_size());
     long       folded = 0;
-    for (long j = 0; j * S < N; ++j)
+    for (long j = 0; j * s < n; ++j)
     {
-        folded += a.written(static_cast<Ind>(j * S)) ? 0 : 1;
+        folded += a.written(static_cast<Ind>(j * s)) ? 0 : 1;
     }
     const long want = (chunk_config::use_chunk2 || chunk_config::use_chunk2a) ? c0 + (c2 - c1) : c0;
     if (folded < want)
@@ -262,7 +262,7 @@ int check_premise(const Arr& a, long N)
                folded, want);
     }
     char msg[128];
-    std::snprintf(msg, sizeof msg, "%ld of %ld chunks folded (chunk_size=%ld)", folded, (N + S - 1) / S, S);
+    std::snprintf(msg, sizeof msg, "%ld of %ld chunks folded (chunk_size=%ld)", folded, (n + s - 1) / s, s);
     return r.done(msg);
 }
 
@@ -270,23 +270,23 @@ int check_premise(const Arr& a, long N)
 int check_content(const Arr& a, const std::vector<double>& ref)
 {
     Report     r{"content"};
-    const long N = static_cast<long>(ref.size());
+    const long n = static_cast<long>(ref.size());
     if (!std::equal(a.begin(), a.end(), ref.begin(), ref.end()))
     {
         r.fail("the sequential read differs from the reference");
     }
     const It b = a.begin();
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         if (b[i] != ref[static_cast<std::size_t>(i)])
         {
             r.fail("begin()[{}] = {:g}, expected {:g}", i, b[i], ref[static_cast<std::size_t>(i)]);
         }
     }
-    if (a.end() - a.begin() != N || std::distance(a.begin(), a.end()) != N)
+    if (a.end() - a.begin() != n || std::distance(a.begin(), a.end()) != n)
     {
         r.fail("end() - begin() = {}, std::distance = {}, expected {}", static_cast<long>(a.end() - a.begin()),
-               static_cast<long>(std::distance(a.begin(), a.end())), N);
+               static_cast<long>(std::distance(a.begin(), a.end())), n);
     }
     return r.done("sequential read, it[i] everywhere, end() - begin()");
 }
@@ -295,18 +295,18 @@ int check_content(const Arr& a, const std::vector<double>& ref)
 int check_jumps(const Arr& a, const std::vector<double>& ref)
 {
     Report     r{"jumps"};
-    const long S  = static_cast<long>(a.chunk_size());
-    const long N  = static_cast<long>(ref.size());
+    const long s  = static_cast<long>(a.chunk_size());
+    const long n  = static_cast<long>(ref.size());
     auto       at = [&](long i) { return ref[static_cast<std::size_t>(i)]; };
 
     const long pos[] = {
-        0,       1,         S - 1, S, S + 1, (c0 * S) - 1, c0 * S, (c1 * S) - 1, c1 * S, (c2 * S) - 1,
-        c2 * S, N - tail_len, N - 1, N};
+        0,     1, s - 1, s, s + 1, (c0 * s) - 1, c0 * s, (c1 * s) - 1, c1 * s, (c2 * s) - 1, c2 * s, n - tail_len,
+        n - 1, n};
     const long dl[] = {
-        0, 1, -1, 2, -2, S - 1, -(S - 1), S, -S, S + 1, -(S + 1), (3 * S) + 7, -((3 * S) + 7), 11 * S, -(11 * S)};
+        0, 1, -1, 2, -2, s - 1, -(s - 1), s, -s, s + 1, -(s + 1), (3 * s) + 7, -((3 * s) + 7), 11 * s, -(11 * s)};
 
     const It b = a.begin();
-    long     n = 0;
+    long     count = 0;
     for (const long k : pos)
     {
         const It it = b + k;
@@ -314,18 +314,18 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
         {
             r.fail("(begin() + {}) - begin() = {}", k, static_cast<long>(it - b));
         }
-        if (k < N && *it != at(k))
+        if (k < n && *it != at(k))
         {
             r.fail("*(begin() + {}) = {:g}, expected {:g}", k, *it, at(k));
         }
         for (const long d : dl)
         {
             const long t = k + d;
-            if (t < 0 || t > N)
+            if (t < 0 || t > n)
             {
                 continue;
             }
-            ++n;
+            ++count;
             const It j1 = it + d;
             const It j2 = d + it;
             It       j3 = it;
@@ -346,27 +346,27 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
             {
                 r.fail("from {} by {}: the ordering disagrees with the indices", k, d);
             }
-            if (t < N && (*j1 != at(t) || it[d] != at(t)))
+            if (t < n && (*j1 != at(t) || it[d] != at(t)))
             {
                 r.fail("from {} by {}: *(it + d) = {:g}, it[d] = {:g}, expected {:g}", k, d, *j1, it[d], at(t));
             }
             // The cursor after a seek: a step forward and back from it.
-            if (t + 1 < N)
+            if (t + 1 < n)
             {
-                It s = j1;
-                ++s;
-                if (*s != at(t + 1) || s - b != t + 1)
+                It moved = j1;
+                ++moved;
+                if (*moved != at(t + 1) || moved - b != t + 1)
                 {
-                    r.fail("from {} by {} then ++: {:g}, expected {:g}", k, d, *s, at(t + 1));
+                    r.fail("from {} by {} then ++: {:g}, expected {:g}", k, d, *moved, at(t + 1));
                 }
             }
             if (t >= 1)
             {
-                It s = j1;
-                --s;
-                if (*s != at(t - 1) || s - b != t - 1)
+                It moved = j1;
+                --moved;
+                if (*moved != at(t - 1) || moved - b != t - 1)
                 {
-                    r.fail("from {} by {} then --: {:g}, expected {:g}", k, d, *s, at(t - 1));
+                    r.fail("from {} by {} then --: {:g}, expected {:g}", k, d, *moved, at(t - 1));
                 }
             }
         }
@@ -382,7 +382,7 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
         m3 += -1;
         for (const long k : pos)
         {
-            if (k < 1 || k > N)
+            if (k < 1 || k > n)
             {
                 continue;
             }
@@ -412,14 +412,14 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
         r.fail("*(end() - 1) = {:g}, expected {:g}", *(a.end() - 1), ref.back());
     }
     It adv = a.begin();
-    std::advance(adv, N - 1);
+    std::advance(adv, n - 1);
     if (*adv != ref.back())
     {
         r.fail("std::advance(begin(), N - 1) reads {:g}, expected {:g}", *adv, ref.back());
     }
 
     char msg[96];
-    std::snprintf(msg, sizeof msg, "%ld jumps read and stepped from, end() - 1, std::advance", n);
+    std::snprintf(msg, sizeof msg, "%ld jumps read and stepped from, end() - 1, std::advance", count);
     return r.done(msg);
 }
 
@@ -547,19 +547,19 @@ int check_parallel_searches(const Arr& a, const std::vector<double>& ref)
 int check_reverse(const Arr& a, const std::vector<double>& ref)
 {
     Report     r{"reverse"};
-    const long S = static_cast<long>(a.chunk_size());
-    const long N = static_cast<long>(ref.size());
+    const long s = static_cast<long>(a.chunk_size());
+    const long n = static_cast<long>(ref.size());
     if (!std::equal(a.rbegin(), a.rend(), ref.rbegin(), ref.rend()))
     {
         r.fail("the reverse read differs from the reference");
     }
-    if (a.rend() - a.rbegin() != N)
+    if (a.rend() - a.rbegin() != n)
     {
-        r.fail("rend() - rbegin() = {}, expected {}", static_cast<long>(a.rend() - a.rbegin()), N);
+        r.fail("rend() - rbegin() = {}, expected {}", static_cast<long>(a.rend() - a.rbegin()), n);
     }
-    for (const long k : {0L, 1L, tail_len - 1, tail_len, tail_len + 1, tail_len + S, N - 1})
+    for (const long k : {0L, 1L, tail_len - 1, tail_len, tail_len + 1, tail_len + s, n - 1})
     {
-        if (k >= 0 && k < N && a.rbegin()[k] != ref.rbegin()[k])
+        if (k >= 0 && k < n && a.rbegin()[k] != ref.rbegin()[k])
         {
             r.fail("rbegin()[{}] = {:g}, expected {:g}", k, a.rbegin()[k], ref.rbegin()[k]);
         }
@@ -595,15 +595,15 @@ struct SpanCollector
 int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
 {
     Report     r{"bulk-reads"};
-    const long S  = static_cast<long>(a.chunk_size());
-    const long N  = static_cast<long>(ref.size());
+    const long s  = static_cast<long>(a.chunk_size());
+    const long n  = static_cast<long>(ref.size());
     const auto sz = [](long v) { return static_cast<std::size_t>(v); };
 
     // Whole range, both containers, through the same call.
     for (int pass = 0; pass < 2; ++pass)
     {
         std::vector<double> got;
-        got.reserve(sz(N));
+        got.reserve(sz(n));
         const auto push = [&got](double x) { got.push_back(x); };
         if (pass == 0)
         {
@@ -624,8 +624,8 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
     // compressed chunks [0, c0) come as runs where the build reads by block.
     {
         std::vector<double> got;
-        shrink_array::for_each_span(a,
-                                    [&got](std::span<const double> s) { got.insert(got.end(), s.begin(), s.end()); });
+        shrink_array::for_each_span(a, [&got](std::span<const double> span)
+                                    { got.insert(got.end(), span.begin(), span.end()); });
         if (got != ref)
         {
             r.fail("for_each_span(array) with a span-only callable differs from the reference ({} values)", got.size());
@@ -644,17 +644,17 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
     }
 
     // Sub-ranges around the boundaries: both destinations, both containers.
-    const long pos[] = {0, 1, S - 1, S, S + 1, (c0 * S) - 1, c0 * S, c1 * S, (c2 * S) - 1, N - tail_len, N - 1, N};
-    const long len[] = {0, 1, 2, 63, 64, 65, S - 1, S, S + 1, (3 * S) + 7, N};
-    long       n     = 0;
+    const long pos[] = {0, 1, s - 1, s, s + 1, (c0 * s) - 1, c0 * s, c1 * s, (c2 * s) - 1, n - tail_len, n - 1, n};
+    const long len[] = {0, 1, 2, 63, 64, 65, s - 1, s, s + 1, (3 * s) + 7, n};
+    long       count = 0;
     for (const long p : pos)
     {
         for (const long l : len)
         {
             const long first = p;
             const long last  = p + l; // may pass N: clamped
-            const long want  = std::max(0L, std::min(last, N) - first);
-            ++n;
+            const long want  = std::max(0L, std::min(last, n) - first);
+            ++count;
 
             std::vector<double> buf(sz(want) + 1, -1.0);
             double* const       end_a = shrink_array::read_range(a, sz(first), sz(last), buf.data());
@@ -699,15 +699,15 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
 
     // Every thread reads its own slice at once (odd slice length: the slices
     // cut chunks in the middle).
-    std::vector<double> par(sz(N), -1.0);
-    const long          slice = (S / 2) + 3;
+    std::vector<double> par(sz(n), -1.0);
+    const long          slice = (s / 2) + 3;
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(dynamic, 1)
-        for (long s = 0; s < N; s += slice)
+        for (long lo = 0; lo < n; lo += slice)
         {
-            shrink_array::read_range(a, sz(s), sz(s + slice), par.data() + s);
+            shrink_array::read_range(a, sz(lo), sz(lo + slice), par.data() + lo);
         }
     }
     end_phase();
@@ -717,7 +717,7 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
     }
 
     char msg[128];
-    std::snprintf(msg, sizeof msg, "%ld sub-ranges, both containers, T* and back_inserter, parallel slices", n);
+    std::snprintf(msg, sizeof msg, "%ld sub-ranges, both containers, T* and back_inserter, parallel slices", count);
     return r.done(msg);
 }
 
@@ -725,11 +725,11 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
 int check_sort_recipe(const std::vector<double>& ref)
 {
     Report     r{"sort-recipe"};
-    const long N = static_cast<long>(ref.size());
+    const long n = static_cast<long>(ref.size());
     Arr        b;
-    b.resize(static_cast<Ind>(N));
+    b.resize(static_cast<Ind>(n));
     maybe_set_second_value(b, second_value);
-    fill(b, N, [&](long i) { return ref[static_cast<std::size_t>(N - 1 - i)]; }); // descending
+    fill(b, n, [&](long i) { return ref[static_cast<std::size_t>(n - 1 - i)]; }); // descending
     compress_in_region(b);
 
     std::vector<double> tmp(b.begin(), b.end());
@@ -737,7 +737,7 @@ int check_sort_recipe(const std::vector<double>& ref)
     b.assign(tmp.begin(), tmp.end());
     compress_in_region(b);
 
-    if (static_cast<long>(b.size()) != N || !std::equal(b.begin(), b.end(), ref.begin(), ref.end()))
+    if (static_cast<long>(b.size()) != n || !std::equal(b.begin(), b.end(), ref.begin(), ref.end()))
     {
         r.fail("copy, std::sort, assign() does not give the sorted content back");
     }
@@ -755,24 +755,24 @@ int run(int /*argc*/, char** /*argv*/)
     int fails = 0;
     {
         Arr        a;
-        const long S = static_cast<long>(a.chunk_size());
-        const long N = (n_chunks * S) + tail_len;
-        a.resize(static_cast<Ind>(N));
+        const long s = static_cast<long>(a.chunk_size());
+        const long n = (n_chunks * s) + tail_len;
+        a.resize(static_cast<Ind>(n));
         maybe_set_second_value(a, second_value);
         // Every chunk materialised first (non-uniform content), then the sorted
         // pattern over it and a pass: the constant blocks are folded chunks.
-        fill(a, N, [](long i) { return (i % 2) ? 2.5 : 3.5; });
-        fill(a, N, [S](long i) { return sorted_at(i, S); });
+        fill(a, n, [](long i) { return (i % 2) ? 2.5 : 3.5; });
+        fill(a, n, [s](long i) { return sorted_at(i, s); });
         compress_in_region(a);
 
-        std::vector<double> ref(static_cast<std::size_t>(N));
-        for (long i = 0; i < N; ++i)
+        std::vector<double> ref(static_cast<std::size_t>(n));
+        for (long i = 0; i < n; ++i)
         {
-            ref[static_cast<std::size_t>(i)] = sorted_at(i, S);
+            ref[static_cast<std::size_t>(i)] = sorted_at(i, s);
         }
 
         const Arr& ca = a;
-        fails += check_premise(ca, N);
+        fails += check_premise(ca, n);
         fails += check_content(ca, ref);
         fails += check_jumps(ca, ref);
         fails += check_searches(ca, ref);

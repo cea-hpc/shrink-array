@@ -38,38 +38,38 @@ inline void TCSlab<Links>::alloc_block()
     // The rounding rule lives in slab_bytes_for(): the owning pool applies the
     // same one at init(), so it can resolve a pointer to its slab without a
     // slab to ask (TCSlabPool::slab_bytes_).
-    BlockAllocator = slab_bytes_for(BlockAllocator);
+    block_allocator = slab_bytes_for(block_allocator);
 
-    BlockSize = static_cast<int>((BlockAllocator - sizeof(void*)) / ElementSize);
+    block_size = static_cast<int>((block_allocator - sizeof(void*)) / element_size);
 
     // Not even one element fits next to the back-pointer: the first one would
     // overwrite it. Nothing to round to -- refuse, with the sizes.
-    if (BlockSize < 1) [[unlikely]]
+    if (block_size < 1) [[unlikely]]
     {
         FAST_ALLOC_FATAL("TCAllocator: element of {} bytes does not fit in a slab of {} bytes (back-pointer included)",
-                         ElementSize, BlockAllocator);
+                         element_size, block_allocator);
     }
 
     if constexpr (side_links)
     {
-        if (BlockSize > free_list_end - 1)
+        if (block_size > free_list_end - 1)
         {
-            BlockSize = free_list_end - 1;
+            block_size = free_list_end - 1;
         }
 
-        tab_first_free_.resize(static_cast<std::size_t>(BlockSize));
+        tab_first_free_.resize(static_cast<std::size_t>(block_size));
     }
 
     // From the slab's own arena, never glibc: arena addresses are never returned to the OS
     // and the op, ctx and value arenas are disjoint, so a freed op slab's address can never
     // be reobtained by the value pool. owner_rank (set before init()): a slab the rank
     // recycled comes back to it first (SlabArena::allocate).
-    data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator, owner_rank));
+    data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(block_allocator, block_allocator, owner_rank));
 
     if (data == nullptr) [[unlikely]]
     {
         FAST_ALLOC_FATAL("slab arena (kind {}) failed to allocate {} bytes", static_cast<int>(arena_kind),
-                         BlockAllocator);
+                         block_allocator);
     }
 
     // NOTE: no memset, fresh slab or recycled. The pool makes no promise about element
@@ -77,7 +77,7 @@ inline void TCSlab<Links>::alloc_block()
     // the op pool still considers live, and it makes the whole slab resident at once instead
     // of page by page as elements are handed out.
 
-    *reinterpret_cast<TCSlab**>(data + BlockAllocator - sizeof(void*)) = this;
+    *reinterpret_cast<TCSlab**>(data + block_allocator - sizeof(void*)) = this;
 
     first_free = free_list_end;
 }
@@ -93,40 +93,40 @@ inline void TCSlab<Links>::destroy()
 
     // Back to the slab's own arena's free-list, never to glibc: the address
     // stays inside that arena.
-    fast_alloc::arena_for(arena_kind).deallocate(static_cast<void*>(data), BlockAllocator);
+    fast_alloc::arena_for(arena_kind).deallocate(static_cast<void*>(data), block_allocator);
 }
 
 template <FreeLinks Links>
-inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
+inline void TCSlab<Links>::init(int elem_size, uintptr_t block_bytes)
 {
     if constexpr (!side_links)
     {
         // The free list is threaded THROUGH freed elements (free_block() writes the next
         // index, an int, into the element's first bytes): an element must hold an aligned int.
         // ElementSize is a run-time value, so this is a release check, once per slab.
-        if (std::cmp_less(ElementSize_, sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0) [[unlikely]]
+        if (std::cmp_less(elem_size, sizeof(int)) || elem_size % static_cast<int>(alignof(int)) != 0) [[unlikely]]
         {
             FAST_ALLOC_FATAL("TCAllocator: element size {} bytes cannot hold the free-list index (an int: {} bytes, "
                              "aligned on {})",
-                             ElementSize_, sizeof(int), alignof(int));
+                             elem_size, sizeof(int), alignof(int));
         }
     }
 
-    ElementSize    = ElementSize_;
-    BlockAllocator = BlockAllocator_;
+    element_size    = elem_size;
+    block_allocator = block_bytes;
 
-    Log2ElementSize = std::bit_width(static_cast<unsigned int>(ElementSize)) - 1;
+    log2_element_size_ = std::bit_width(static_cast<unsigned int>(element_size)) - 1;
 
     // num_block()'s magic is exact for offsets below 2^32 only. Slabs are a
     // few MiB; a release check, once per slab, like the one above.
-    if (slab_bytes_for(BlockAllocator_) > (std::uintptr_t{1} << 32)) [[unlikely]]
+    if (slab_bytes_for(block_bytes) > (std::uintptr_t{1} << 32)) [[unlikely]]
     {
         FAST_ALLOC_FATAL("TCAllocator: slab of {} bytes: num_block() indexes offsets below 4 GiB only",
-                         slab_bytes_for(BlockAllocator_));
+                         slab_bytes_for(block_bytes));
     }
     // Unused (and 0, the +1 wrapping) for an element size of 1: a power of
     // two, num_block_pow2() takes it.
-    element_magic_ = UINT64_MAX / static_cast<std::uint64_t>(ElementSize) + 1u;
+    element_magic_ = UINT64_MAX / static_cast<std::uint64_t>(element_size) + 1u;
 
     alloc_block();
 }
@@ -142,7 +142,7 @@ inline void* TCSlab<Links>::alloc() noexcept
         // slab's own rank: no atomic needed.
         if (backptr_dropped) [[unlikely]]
         {
-            *reinterpret_cast<TCSlab**>(data + BlockAllocator - sizeof(void*)) = this;
+            *reinterpret_cast<TCSlab**>(data + block_allocator - sizeof(void*)) = this;
             backptr_dropped                                                    = false;
         }
     }
@@ -152,13 +152,13 @@ inline void* TCSlab<Links>::alloc() noexcept
 
     if (first_free != free_list_end)
     {
-        elem_ptr   = data + (static_cast<std::ptrdiff_t>(first_free) * ElementSize);
+        elem_ptr   = data + (static_cast<std::ptrdiff_t>(first_free) * element_size);
         first_free = link(first_free); // the link is read before the element is handed out
     }
     else
     {
-        elem_ptr = data + (static_cast<std::ptrdiff_t>(UsedSize) * ElementSize);
-        ++UsedSize;
+        elem_ptr = data + (static_cast<std::ptrdiff_t>(used_size) * element_size);
+        ++used_size;
     }
 
     return elem_ptr;
@@ -167,10 +167,10 @@ inline void* TCSlab<Links>::alloc() noexcept
 template <FreeLinks Links>
 inline void TCSlab<Links>::free_block(int i) noexcept
 {
-    if (i == (UsedSize - 1))
+    if (i == (used_size - 1))
     {
         link(i) = free_list_end;
-        --UsedSize;
+        --used_size;
     }
     else
     {

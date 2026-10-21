@@ -129,8 +129,8 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 ///        object type, found by AllocatorRegistry).
 struct FastAllocatorBase
 {
-    /// @param block_size_ bytes per block
-    explicit FastAllocatorBase(size_t block_size_) noexcept : block_size(block_size_) {}
+    /// @param block_size bytes per block
+    explicit FastAllocatorBase(size_t block_size) noexcept : block_size(block_size) {}
     virtual ~FastAllocatorBase() = default;
 
     // Polymorphic, held by unique_ptr in the registry: never copied or moved.
@@ -214,7 +214,7 @@ struct DeferredFreeListSlot
  * @brief Per-thread pool allocator for objects of type T.
  * Uses a calculated number of blocks based on the global granularity config.
  */
-template <typename T, fast_alloc::ArenaKind Arena = fast_alloc::ArenaKind::Op>
+template <typename T, fast_alloc::ArenaKind Arena = fast_alloc::ArenaKind::op>
 class FastAllocatorConcrete : public FastAllocatorBase
 {
   public:
@@ -473,13 +473,13 @@ struct arena_of_tag;
 template <>
 struct arena_of_tag<OpTag>
 {
-    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Op;
+    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::op;
 };
 /// @brief Context allocators: the Ctx arena.
 template <>
 struct arena_of_tag<CtxTag>
 {
-    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Ctx;
+    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::ctx;
 };
 
 /**

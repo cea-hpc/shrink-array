@@ -271,7 +271,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     /// @brief This proxy's entry in #tab_is_inside_chunk_list_to_compress, or
     ///        null before set_ptr_is_inside_chunk_list_to_compress() runs.
-    std::atomic<char>* ptr_is_inside_chunk_list_to_compress = nullptr;
+    std::atomic<char>* ptr_is_inside_chunk_list_to_compress_ = nullptr;
 
     /**
      * @brief Per-tab array of atomic flags indicating whether each chunk is marked for compression.
@@ -331,7 +331,7 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport
     // Management members
     static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
     static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
-    std::atomic<char>*                              ptr_is_inside_chunk_list_to_compress;
+    std::atomic<char>*                              ptr_is_inside_chunk_list_to_compress_;
     static inline constinit internal::Immortal<std::vector<ChunkFlagRowT>>
                                               tab_is_inside_chunk_list_to_compress_storage_{};
     static inline std::vector<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
@@ -450,7 +450,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
                     "write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
                     "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
                     "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
-                    ptr_on_array, num_chunk, num);
+                    ptr_on_array_, num_chunk_, num_);
             }
         }
     }
@@ -460,7 +460,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Record which array this proxy points into. @see get_num_tab
     void set_num_tab(int nt) noexcept
     {
-        num_tab = nt;
+        num_tab_ = nt;
     }
 
     // ========================================================================
@@ -470,7 +470,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Is the chunk compressed to its single first value?
     [[nodiscard]] bool is_cst_val1() const noexcept
     {
-        return chunk.is_cst_val1();
+        return chunk_.is_cst_val1();
     }
 
     /// @brief is_cst_val1() judged from an already-loaded value pointer.
@@ -478,13 +478,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        that has one in hand, and keeps the whole test on ONE snapshot.
     [[nodiscard]] bool is_cst_val1(const T* values_loc) const noexcept
     {
-        return chunk.is_cst_val1(values_loc);
+        return chunk_.is_cst_val1(values_loc);
     }
 
     /// @brief Complement of is_cst_val1().
     [[nodiscard]] bool is_not_cst_val1() const noexcept
     {
-        return !chunk.is_cst_val1();
+        return !chunk_.is_cst_val1();
     }
 
     /// @brief Would writing @p v leave the chunk compressed exactly as it is?
@@ -500,19 +500,19 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          acquire load of the chunk header, constant-false in a serial build.
     [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(InT<T> v) const noexcept
     {
-        return v == static_cast<T>(ChunkType::first_value) && is_cst_val1() && !chunk.pending_any();
+        return v == static_cast<T>(ChunkType::first_value) && is_cst_val1() && !chunk_.pending_any();
     }
 
     /// @brief is_cst_val1_and_v_equal_first_value() from a loaded value pointer.
     [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(const T* values_loc, InT<T> v) const noexcept
     {
-        return v == static_cast<T>(ChunkType::first_value) && is_cst_val1(values_loc) && !chunk.pending_any();
+        return v == static_cast<T>(ChunkType::first_value) && is_cst_val1(values_loc) && !chunk_.pending_any();
     }
 
     /// @brief Point this proxy at an already-known candidate flag.
     void set_ptr_is_inside_chunk_list_to_compress(std::atomic<char>* pt) noexcept
     {
-        ptr_is_inside_chunk_list_to_compress = pt;
+        ptr_is_inside_chunk_list_to_compress_ = pt;
     }
     /**
      * @brief Set up pointer to this chunk's compression tracking flag
@@ -521,8 +521,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
     void set_ptr_is_inside_chunk_list_to_compress() noexcept
     {
-        ptr_is_inside_chunk_list_to_compress =
-            &FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab][num_chunk];
+        ptr_is_inside_chunk_list_to_compress_ =
+            &FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab_][num_chunk_];
     }
 
     /// @brief add_to_compression_list() on the calling thread's own list.
@@ -542,21 +542,21 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         static_assert(chunk_config::use_compression_with_counter || sizeof(T) == 0,
                       "raw_elem(): serial counter mode only -- no concurrent pass may release the buffer");
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
+        return elem_get(static_cast<const T*>(values_), static_cast<std::size_t>(num_));
     }
 
     /// @brief This element, written raw: `values[num] = v`, or an atomic RMW
     ///        of its word for Bit. No sync, no check.
     void raw_elem_set(InT<T> v) const noexcept
     {
-        elem_set(static_cast<T*>(values), static_cast<std::size_t>(num), static_cast<T>(v));
+        elem_set(static_cast<T*>(values_), static_cast<std::size_t>(num_), static_cast<T>(v));
     }
 
     /// @brief Write @p v straight through #values, with no synchronisation.
     /// @pre The chunk is materialised and the caller holds the write path.
     void store_value(InT<T> v) const noexcept
     {
-        store_value_at(values, v);
+        store_value_at(values_, v);
     }
 
     /// @brief store_value() through a pointer the caller has already loaded.
@@ -577,21 +577,21 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // write then races scan_constants()/read_value_scan()).
         if constexpr (build_config::any_check && chunk_config::use_chunk_steal_mark)
         {
-            if (chunk.steal_committed()) [[unlikely]]
+            if (chunk_.steal_committed()) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num);
+                CHUNK_INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num_);
             }
         }
         // Chunk2A: the marking filter of another writer may be reading this
         // element -- relaxed atomic store, see relaxed_element.h.
         if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
         {
-            internal::store_element_relaxed(vals + num, static_cast<T>(v));
+            internal::store_element_relaxed(vals + num_, static_cast<T>(v));
         }
         else
         {
             // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
-            elem_set(vals, static_cast<std::size_t>(num), static_cast<T>(v));
+            elem_set(vals, static_cast<std::size_t>(num_), static_cast<T>(v));
         }
     }
 
@@ -609,7 +609,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // read_pure(). Not raw for a Chunk2A second constant (see
         // internal::element_of()): the compression decision must see the
         // constant, not 0.
-        return read_values_at(values);
+        return read_values_at(values_);
     }
     /// @brief read_values() through a pointer the caller has already loaded.
     /// @param vals The chunk's values pointer, loaded inside the write session;
@@ -619,7 +619,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // TEST KNOB (test_hooks.h), as in ChunkBase::element_at: widens
         // the load -> dereference window. Compiled out by default.
         test_hooks::maybe_read_delay();
-        return internal::element_of(vals, static_cast<std::size_t>(num));
+        return internal::element_of(vals, static_cast<std::size_t>(num_));
     }
     /// @brief read_values() for a pre-check made BEFORE the write session
     ///        (the `0 * x` shortcut of the compound operations): inside a
@@ -640,7 +640,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          not been applied. Use read_pure() unless you know otherwise.
     [[nodiscard]] T load_value() const noexcept
     {
-        return chunk.read_value(num);
+        return chunk_.read_value(num_);
     }
 
     /**
@@ -731,14 +731,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        AcquireValuesRef, read with acquire on every use.
     /// @warning A REFERENCE, captured at construction. The chunk may reallocate
     ///          under it, so a write path must reload through it, never cache it.
-    AtomicPtrRefT values;
+    AtomicPtrRefT values_;
 
-    const int  num;   ///< Offset of this element WITHIN its chunk.
-    ChunkType& chunk; ///< The chunk that owns the element.
+    const int  num_;   ///< Offset of this element WITHIN its chunk.
+    ChunkType& chunk_; ///< The chunk that owns the element.
 
-    mutable const void* ptr_on_array; ///< The array the chunk belongs to.
-    mutable int         num_chunk;    ///< Index of the chunk within that array.
-    mutable int         num_tab = -1; ///< Index of the array in the registry; -1 until armed.
+    mutable const void* ptr_on_array_; ///< The array the chunk belongs to.
+    mutable int         num_chunk_;    ///< Index of the chunk within that array.
+    mutable int         num_tab_ = -1; ///< Index of the array in the registry; -1 until armed.
 
     // Frozen chunk geometry for the deferred-replay path.
     // 0 means "not armed" -> chunk_size() falls back to the live ptr_on_array
@@ -759,7 +759,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     using FastCompPolicy::compression_mgr;
     using FastCompPolicy::derived;
-    using FastCompPolicy::ptr_is_inside_chunk_list_to_compress;
+    using FastCompPolicy::ptr_is_inside_chunk_list_to_compress_;
 
     /**
      * @brief Modulo struct for compound modulo operation
@@ -792,8 +792,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ptr_on_array and num_chunk are set before use (see the @note); left
     // unset here on purpose, this constructor runs on every element access.
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
-    explicit ProxyBase(AtomicPtrRefT values_, int num_, ChunkType& chunk_) noexcept
-        : values(values_), num(num_), chunk(chunk_)
+    explicit ProxyBase(AtomicPtrRefT values, int num, ChunkType& chunk) noexcept
+        : values_(values), num_(num), chunk_(chunk)
     {
     }
 
@@ -823,7 +823,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Index of this element's chunk within its array.
     [[nodiscard]] int get_num_chunk() const noexcept
     {
-        return num_chunk;
+        return num_chunk_;
     }
 
     /**
@@ -846,19 +846,19 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Offset of this element within its chunk.
     [[nodiscard]] int get_num() const noexcept
     {
-        return num;
+        return num_;
     }
 
     /// @brief Index of this element's array in the proxy registry.
     [[nodiscard]] int get_num_tab() const noexcept
     {
-        return num_tab;
+        return num_tab_;
     }
 
     /// @brief The chunk that owns this element.
     [[nodiscard]] ChunkType& get_chunk() const noexcept
     {
-        return chunk;
+        return chunk_;
     }
 
     /// @brief Queue this chunk as a compression candidate in @p vec_tuple.
@@ -870,8 +870,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[nodiscard]] T read_pure() const noexcept
     {
         check_not_stale();
-        chunk.reader_sync(num);
-        return chunk.read_value(num); // read_value accounts the read in stats
+        chunk_.reader_sync(num_);
+        return chunk_.read_value(num_); // read_value accounts the read in stats
     }
     // ========================================================================
     // Common metadata management
@@ -892,29 +892,29 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Arm the proxy with its array and chunk index; the table number
     ///        is left unresolved (set_num_tab() looks it up).
     /// @param array_ptr The owning array (its registry key).
-    /// @param num_chunk_ Chunk index within that array.
-    void set_this_and_num_chunk(const void* array_ptr, int num_chunk_) const noexcept
+    /// @param num_chunk Chunk index within that array.
+    void set_this_and_num_chunk(const void* array_ptr, int num_chunk) const noexcept
     {
-        ptr_on_array = array_ptr;
-        num_chunk    = num_chunk_;
-        num_tab      = -1; // not armed: set_num_tab() looks the registry up
+        ptr_on_array_ = array_ptr;
+        num_chunk_    = num_chunk;
+        num_tab_      = -1; // not armed: set_num_tab() looks the registry up
     }
 
     /// @brief Same, with the array's own table number, so the write path
     ///        needs no registry lookup.
     /// @param array_ptr  pointer to the array
-    /// @param num_chunk_ chunk index
-    /// @param num_tab_   the array's num_tab (ArrayChunkBase::num_tab), the
+    /// @param num_chunk chunk index
+    /// @param num_tab   the array's num_tab (ArrayChunkBase::num_tab), the
     ///                   value it registered under its address
     /// @note Avoids the registry lookup (share_info_array->get_num_tab, a
     ///       linear scan or hash probe) on every write, a measurable cost. The
     ///       value is checked against the registry under any_check
     ///       (Proxy2A::set_num_tab).
-    void set_this_and_num_chunk(const void* array_ptr, int num_chunk_, int num_tab_) const noexcept
+    void set_this_and_num_chunk(const void* array_ptr, int num_chunk, int num_tab) const noexcept
     {
-        ptr_on_array = array_ptr;
-        num_chunk    = num_chunk_;
-        num_tab      = num_tab_;
+        ptr_on_array_ = array_ptr;
+        num_chunk_    = num_chunk;
+        num_tab_      = num_tab;
     }
 
     /// @brief Compare the element's value with @p v. Reads through read_pure().
@@ -1356,9 +1356,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief Record the chunk index alone. @see set_this_and_num_chunk
-    void set_num_chunk(int num_chunk_) const noexcept
+    void set_num_chunk(int num_chunk) const noexcept
     {
-        num_chunk = num_chunk_;
+        num_chunk_ = num_chunk;
     }
 
     /// @brief enqueue_deferred_write() for a compound arithmetic operation,

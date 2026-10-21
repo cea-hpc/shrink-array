@@ -103,7 +103,7 @@ bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
     // swap the member AND make the registry agree (get_num_tab(registry_key())
     // -> the new row).
     using std::swap;
-    swap(self().num_tab, tmp.num_tab);
+    swap(self().num_tab_, tmp.num_tab_);
     return proxy_type::share_info_array->swap_keys(self().registry_key(), tmp.registry_key());
 }
 

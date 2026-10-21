@@ -44,7 +44,7 @@ class GlobalStatsChunkList
     /// @brief Record one element type's figures under @p name.
     void record(const std::string& name, long somme, int max_chunks, size_t elem_size)
     {
-        all_stats[name] = {.allocated_chunks = somme, .threshold_per_thr = max_chunks, .element_size = elem_size};
+        all_stats_[name] = {.allocated_chunks = somme, .threshold_per_thr = max_chunks, .element_size = elem_size};
     }
 
     /**
@@ -52,7 +52,7 @@ class GlobalStatsChunkList
      */
     void print() const
     {
-        if (all_stats.empty())
+        if (all_stats_.empty())
         {
             return;
         }
@@ -66,20 +66,20 @@ class GlobalStatsChunkList
         long double total_metadata_mem = 0;
         const int   nb_threads         = CHUNK_PMP_MAX_THREADS;
 
-        std::cout << "\n" << tc.CYAN << std::string(total_width, '=') << tc.reset << "\n";
-        std::cout << tc.BOLD << tc.CYAN << std::string((total_width - 35) / 2, ' ')
+        std::cout << "\n" << tc.cyan << std::string(total_width, '=') << tc.reset << "\n";
+        std::cout << tc.bold << tc.cyan << std::string((total_width - 35) / 2, ' ')
                   << "GLOBAL COMPRESSION LISTS MONITORING" << tc.reset << "\n";
-        std::cout << tc.white << " Configuration: " << tc.BOLD << nb_threads << tc.reset << tc.white
+        std::cout << tc.white << " Configuration: " << tc.bold << nb_threads << tc.reset << tc.white
                   << " active threads" << tc.reset << "\n";
-        std::cout << tc.CYAN << std::string(total_width, '=') << tc.reset << "\n";
+        std::cout << tc.cyan << std::string(total_width, '=') << tc.reset << "\n";
 
-        std::cout << tc.BOLD << std::left << std::setw(col_type) << "Chunk Type Instance" << std::right
+        std::cout << tc.bold << std::left << std::setw(col_type) << "Chunk Type Instance" << std::right
                   << std::setw(col_data) << "Allocated Chunks" << std::right << std::setw(col_list)
                   << "Op-List Capacity" << std::right << std::setw(col_mem) << "List Memory" << tc.reset << "\n";
 
         std::cout << std::string(total_width, '-') << "\n";
 
-        for (const auto& [name, stats] : all_stats)
+        for (const auto& [name, stats] : all_stats_)
         {
             const long        total_list_capacity = static_cast<long>(nb_threads) * stats.threshold_per_thr;
             const long double type_list_bytes     = static_cast<long double>(total_list_capacity) * stats.element_size;
@@ -87,15 +87,15 @@ class GlobalStatsChunkList
 
             std::cout << std::left << std::setw(col_type) << name << tc.green << std::right << std::setw(col_data)
                       << stats.allocated_chunks << tc.reset << tc.yellow << std::right << std::setw(col_list)
-                      << total_list_capacity << tc.reset << tc.RED << std::right << std::setw(col_mem)
+                      << total_list_capacity << tc.reset << tc.red << std::right << std::setw(col_mem)
                       << format_memory(type_list_bytes) << tc.reset << "\n";
         }
 
         std::cout << std::string(total_width, '-') << "\n";
-        std::cout << tc.BOLD << "AGGREGATED METADATA OVERHEAD:" << tc.reset << "\n";
-        std::cout << std::left << std::setw(40) << " Total footprint for tracking lists" << ": " << tc.BOLD << tc.green
+        std::cout << tc.bold << "AGGREGATED METADATA OVERHEAD:" << tc.reset << "\n";
+        std::cout << std::left << std::setw(40) << " Total footprint for tracking lists" << ": " << tc.bold << tc.green
                   << format_memory(total_metadata_mem) << tc.reset << "\n";
-        std::cout << tc.CYAN << std::string(total_width, '=') << tc.reset << "\n\n";
+        std::cout << tc.cyan << std::string(total_width, '=') << tc.reset << "\n\n";
     }
 
   private:
@@ -129,7 +129,7 @@ class GlobalStatsChunkList
         return oss.str();
     }
 
-    std::map<std::string, TypeStats> all_stats;
+    std::map<std::string, TypeStats> all_stats_;
 };
 
 } // namespace shrink_array

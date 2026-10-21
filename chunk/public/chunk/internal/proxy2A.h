@@ -92,9 +92,9 @@ class PointerMapChunk2A
      */
     [[nodiscard]] int get_num_tab(const void* key) const noexcept
     {
-        if (!using_big)
+        if (!using_big_)
         {
-            for (const auto& [k, tab] : small)
+            for (const auto& [k, tab] : small_)
             {
                 if (k == key)
                 {
@@ -102,15 +102,15 @@ class PointerMapChunk2A
                 }
             }
             CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
-                                   static_cast<const void*>(this), small.size(), key);
+                                   static_cast<const void*>(this), small_.size(), key);
         }
 
-        if (const auto it = big.find(key); it != big.end())
+        if (const auto it = big_.find(key); it != big_.end())
         {
             return it->second;
         }
         CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), big.size(), key);
+                               static_cast<const void*>(this), big_.size(), key);
     }
 
     /**
@@ -123,13 +123,13 @@ class PointerMapChunk2A
      */
     void erase(const void* key) noexcept
     {
-        if (!using_big)
+        if (!using_big_)
         {
-            for (auto it = small.begin(); it != small.end(); ++it)
+            for (auto it = small_.begin(); it != small_.end(); ++it)
             {
                 if (it->first == key)
                 {
-                    small.erase(it);
+                    small_.erase(it);
                     return;
                 }
             }
@@ -140,7 +140,7 @@ class PointerMapChunk2A
             // calls this and is noexcept: fail with the key instead.
             try
             {
-                big.erase(key);
+                big_.erase(key);
             }
             catch (const std::exception& e)
             {
@@ -158,24 +158,24 @@ class PointerMapChunk2A
      */
     void insert(const void* key, int num_tab)
     {
-        if (!using_big)
+        if (!using_big_)
         {
-            small.emplace_back(key, num_tab);
+            small_.emplace_back(key, num_tab);
 
-            if (small.size() > SmallN)
+            if (small_.size() > SmallN)
             {
-                using_big = true;
-                big.reserve(small.size());
-                for (const auto& [k, tab] : small)
+                using_big_ = true;
+                big_.reserve(small_.size());
+                for (const auto& [k, tab] : small_)
                 {
-                    big[k] = tab;
+                    big_[k] = tab;
                 }
-                small.clear();
+                small_.clear();
             }
         }
         else
         {
-            big[key] = num_tab;
+            big_[key] = num_tab;
         }
     }
 
@@ -189,9 +189,9 @@ class PointerMapChunk2A
      */
     bool set_num_tab(const void* key, int new_num_tab) noexcept
     {
-        if (!using_big)
+        if (!using_big_)
         {
-            for (auto& [k, tab] : small)
+            for (auto& [k, tab] : small_)
             {
                 if (k == key)
                 {
@@ -202,8 +202,8 @@ class PointerMapChunk2A
             return false;
         }
 
-        const auto it = big.find(key);
-        if (it == big.end())
+        const auto it = big_.find(key);
+        if (it == big_.end())
         {
             return false;
         }
@@ -224,9 +224,9 @@ class PointerMapChunk2A
         int  nb = 0;
         bool fa = false;
         bool fb = false;
-        if (!using_big)
+        if (!using_big_)
         {
-            for (const auto& [k, tab] : small)
+            for (const auto& [k, tab] : small_)
             {
                 if (k == key_a)
                 {
@@ -243,7 +243,7 @@ class PointerMapChunk2A
             {
                 return false;
             }
-            for (auto& [k, tab] : small)
+            for (auto& [k, tab] : small_)
             {
                 if (k == key_a)
                 {
@@ -257,9 +257,9 @@ class PointerMapChunk2A
             return true;
         }
 
-        const auto ia = big.find(key_a);
-        const auto ib = big.find(key_b);
-        if (ia == big.end() || ib == big.end())
+        const auto ia = big_.find(key_a);
+        const auto ib = big_.find(key_b);
+        if (ia == big_.end() || ib == big_.end())
         {
             return false;
         }
@@ -275,16 +275,16 @@ class PointerMapChunk2A
     template <typename F>
     void for_each_key(F&& func) const
     {
-        if (!using_big)
+        if (!using_big_)
         {
-            for (const auto& [k, tab] : small)
+            for (const auto& [k, tab] : small_)
             {
                 func(k);
             }
         }
         else
         {
-            for (const auto& [k, tab] : big)
+            for (const auto& [k, tab] : big_)
             {
                 func(k);
             }
@@ -292,9 +292,9 @@ class PointerMapChunk2A
     }
 
   private:
-    std::vector<std::pair<const void*, int>>       small;
-    ankerl::unordered_dense::map<const void*, int> big;
-    bool                                           using_big = false;
+    std::vector<std::pair<const void*, int>>       small_;
+    ankerl::unordered_dense::map<const void*, int> big_;
+    bool                                           using_big_ = false;
 };
 
 /*!
@@ -426,7 +426,7 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
         }
     }
 
-    SecondValueRef<T> ptr_second_value; ///< this chunk's slot in tab_second_value[num_tab]
+    SecondValueRef<T> ptr_second_value_; ///< this chunk's slot in tab_second_value[num_tab]
 
   private:
     /*!
@@ -454,9 +454,9 @@ class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool
 
     /// @brief Forward the element reference, index and chunk to Proxy2Base.
     /// @param v Reference to the chunk's values.
-    /// @param num_ Index of the element in the chunk.
-    /// @param chunk_ Owning chunk.
-    explicit ProxySpec2A(ValuesTypeRef v, int num_, ChunkType& chunk_) noexcept : Base2(v, num_, chunk_) {}
+    /// @param num Index of the element in the chunk.
+    /// @param chunk Owning chunk.
+    explicit ProxySpec2A(ValuesTypeRef v, int num, ChunkType& chunk) noexcept : Base2(v, num, chunk) {}
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
@@ -606,14 +606,14 @@ class Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<T
     using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
     using Base = ProxyBase<Derived, T, ChunkType>;
-    using Base::chunk;
+    using Base::chunk_;
 
     using BaseSpec::BaseSpec;
 
     /// @brief The single candidate list of a serial build (Chunk2AOmpPolicy<false>).
     TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially() const noexcept
     {
-        return chunk.get_vec_tuple_to_compress_potentially();
+        return chunk_.get_vec_tuple_to_compress_potentially();
     }
 };
 /**
@@ -654,12 +654,12 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
 
     /**
      * @brief Construct a Proxy2A for OpenMP build (atomic reference to values).
-     * @param values_ reference to array pointer (atomic)
-     * @param num_ index within array
-     * @param chunk_ owning chunk
+     * @param values reference to array pointer (atomic)
+     * @param num index within array
+     * @param chunk owning chunk
      */
-    explicit Proxy2A(BaseFastCompPolicy::ValuesTypeRef values_, int num_, Chunk2A<T>& chunk_) noexcept
-        : Proxy2AFastCompPolicy<Proxy2A, T, Chunk2A<T>, chunk_config::use_fast_block_compression>(values_, num_, chunk_)
+    explicit Proxy2A(BaseFastCompPolicy::ValuesTypeRef values, int num, Chunk2A<T>& chunk) noexcept
+        : Proxy2AFastCompPolicy<Proxy2A, T, Chunk2A<T>, chunk_config::use_fast_block_compression>(values, num, chunk)
     {
     }
 
@@ -711,20 +711,20 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     {
         // Armed by the array's operator[]: nothing to look up. A proxy armed otherwise
         // (replay reconstruction, only the array pointer set) resolves it through the registry.
-        if (num_tab >= 0) [[likely]]
+        if (num_tab_ >= 0) [[likely]]
         {
             if constexpr (build_config::any_check)
             {
-                if (num_tab != share_info_array->get_num_tab(ptr_on_array))
+                if (num_tab_ != share_info_array->get_num_tab(ptr_on_array_))
                 {
                     CHUNK_INVARIANT_FAILED(
-                        "Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}", num_tab,
-                        ptr_on_array);
+                        "Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}", num_tab_,
+                        ptr_on_array_);
                 }
             }
             return;
         }
-        num_tab = share_info_array->get_num_tab(ptr_on_array);
+        num_tab_ = share_info_array->get_num_tab(ptr_on_array_);
     }
 
     /**
@@ -790,16 +790,16 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     using ManagerChunk2A = ManagerChunk<Chunk2A, T>;
 
     using Base::read_values;
-    using Base::values;
+    using Base::values_;
 
-    using Base::chunk; ///< owning chunk
-    using Base::num;
+    using Base::chunk_; ///< owning chunk
+    using Base::num_;
 
-    using Base::ptr_on_array; ///< pointer to array (for tab lookup)
+    using Base::ptr_on_array_; ///< pointer to array (for tab lookup)
 
-    using Base::num_tab; ///< tab index for this array
+    using Base::num_tab_; ///< tab index for this array
 
-    using Base::num_chunk; ///< chunk index
+    using Base::num_chunk_; ///< chunk index
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
@@ -814,7 +814,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     /// @brief Is this proxy's chunk compressed to its second value?
     [[nodiscard]] bool is_cst_val2() const noexcept
     {
-        return chunk.is_cst_val2();
+        return chunk_.is_cst_val2();
     }
 
     // The candidate-list accessors live on the Proxy2AFastCompPolicy specialisations.
@@ -852,7 +852,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         }
         if constexpr (is_not_bool)
         {
-            chunk.create_value(is_cst_val2(), ptr_second_value);
+            chunk_.create_value(is_cst_val2(), ptr_second_value);
         }
         else
         {
@@ -871,7 +871,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         }
         if constexpr (is_bool)
         {
-            chunk.create_value_bool(is_cst_val2());
+            chunk_.create_value_bool(is_cst_val2());
         }
         else
         {
@@ -958,15 +958,15 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         }
         else
         {
-            const int S = static_cast<int>(this->chunk_size());
-            if (S < 3) [[unlikely]]
+            const int s = static_cast<int>(this->chunk_size());
+            if (s < 3) [[unlikely]]
             {
                 return true;
             }
-            const int i  = this->num;
+            const int i  = this->num_;
             const int r0 = (i == 0) ? 1 : 0;
-            const int r1 = (i == S - 1) ? S - 2 : S - 1;
-            return this->chunk.read_value_scan_relaxed(r0) == v && this->chunk.read_value_scan_relaxed(r1) == v;
+            const int r1 = (i == s - 1) ? s - 2 : s - 1;
+            return this->chunk_.read_value_scan_relaxed(r0) == v && this->chunk_.read_value_scan_relaxed(r1) == v;
         }
     }
 
@@ -1036,7 +1036,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     template <typename U, typename Op>
     void apply_compound_operation(Op op, InT<U> v) noexcept; // InT: see assign_impl
 
-    char* ptr_type_cst = nullptr; ///< pointer into tab_type_cst_val[num_tab]
+    char* ptr_type_cst_ = nullptr; ///< pointer into tab_type_cst_val[num_tab]
 };
 
 /// @brief Write the element's value, read through proxy.read_values(), to @p os.

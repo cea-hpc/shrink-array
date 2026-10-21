@@ -167,10 +167,10 @@ class ScopedRingLog
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            tid     = get_tid();
-            payload = payload_value;
-            ended   = false;
-            ring_log_start(tid, BeginEvent, payload);
+            tid_     = get_tid();
+            payload_ = payload_value;
+            ended_   = false;
+            ring_log_start(tid_, BeginEvent, payload_);
         }
     }
 
@@ -182,14 +182,14 @@ class ScopedRingLog
         {
             if constexpr (!Manual)
             {
-                ring_log_end(tid, EndEvent, payload); // end, not start
+                ring_log_end(tid_, EndEvent, payload_); // end, not start
             }
             else
             {
                 // Manual mode: stop (in check builds only) if the user forgot to call .end()
                 if constexpr (build_config::any_check)
                 {
-                    if (!ended)
+                    if (!ended_)
                     {
                         CHUNK_INVARIANT_FAILED("ScopedRingLog<Manual>: end() not called before destruction "
                                                "(BEGIN_EVENT={})",
@@ -211,18 +211,18 @@ class ScopedRingLog
     {
         if constexpr (chunk_config::ring_log_debug && Manual)
         {
-            if (!ended)
+            if (!ended_)
             {
-                ring_log_end(tid, EndEvent, payload);
-                ended = true;
+                ring_log_end(tid_, EndEvent, payload_);
+                ended_ = true;
             }
         }
     }
 
   private:
-    [[maybe_unused]] uint32_t tid;
-    [[maybe_unused]] uint32_t payload;
-    [[maybe_unused]] bool     ended;
+    [[maybe_unused]] uint32_t tid_;
+    [[maybe_unused]] uint32_t payload_;
+    [[maybe_unused]] bool     ended_;
 };
 
 // Convenience aliases

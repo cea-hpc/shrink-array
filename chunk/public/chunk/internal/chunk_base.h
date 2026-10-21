@@ -140,12 +140,12 @@ using fast_alloc::TCTypeAllocator;
 // ============================================================================
 enum class DeferReadGate : std::uint8_t
 {
-    None,
+    none,
     precise
 };
 
 inline constexpr DeferReadGate defer_read_gate_mode =
-    build_config::use_openmp ? DeferReadGate::precise : DeferReadGate::None;
+    build_config::use_openmp ? DeferReadGate::precise : DeferReadGate::none;
 
 template <typename Derived, DeferReadGate Mode = defer_read_gate_mode>
 class DeferredReadGate; // primary left undefined: only the 2 specializations exist
@@ -179,7 +179,7 @@ class DeferredReadGate; // primary left undefined: only the 2 specializations ex
 // Serial build: the deferred-op machinery does not exist, nothing is ever
 // pending, so the gate is a pure no-op (and names no OpenMP-only member).
 template <typename Derived>
-class DeferredReadGate<Derived, DeferReadGate::None>
+class DeferredReadGate<Derived, DeferReadGate::none>
 {
   public:
     static constexpr bool precise = false;
@@ -574,7 +574,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
   public:
     using UnorderedMapDeferredOperations = ankerl::unordered_dense::map<int, DeferredOpPtr>;
     // per-thread map type: maps Derived* (chunk pointer) -> unique_ptr<map<num, op>>
-    using per_thread_map = ska::flat_hash_map<Derived*, std::unique_ptr<UnorderedMapDeferredOperations>>;
+    using PerThreadMap = ska::flat_hash_map<Derived*, std::unique_ptr<UnorderedMapDeferredOperations>>;
 
     /// @brief Atomic CAS of values from expected constant pointer to a new buffer.
     /// @param values_loc  New buffer to install on success.
@@ -656,9 +656,9 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     /// @brief Current per-thread deferred-ops array, or nullptr if it has not
     ///        been allocated yet (see ensure_deferred_array_initialized()).
     /// @return Pointer to the per-thread map array, or nullptr.
-    static per_thread_map* get_deferred_ops() noexcept
+    static PerThreadMap* get_deferred_ops() noexcept
     {
-        return DeferredOpsStorage<per_thread_map>::instance().get();
+        return DeferredOpsStorage<PerThreadMap>::instance().get();
     }
 
   private:
@@ -670,7 +670,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
         {
             return;
         }
-        DeferredOpsStorage<per_thread_map>::instance().allocate();
+        DeferredOpsStorage<PerThreadMap>::instance().allocate();
     }
 };
 
@@ -743,7 +743,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
         // Value arena, explicitly: TCAllocator defaults to the Op arena, and a
         // value pool sharing it with the deferred-op pool lets a freed slab of
         // one be reobtained by the other, corrupting both pools' slab lists.
-        allocator->set_arena(fast_alloc::ArenaKind::Value);
+        allocator->set_arena(fast_alloc::ArenaKind::value);
         allocator->init(static_cast<size_t>(Derived::storage_units(size)), static_cast<uintptr_t>(block_size), -1);
         allocator_pool_serial_->emplace(size, std::move(allocator));
     }
@@ -938,11 +938,11 @@ class ChunkBase : public CRTPSupport<Derived>,
     {
         if constexpr (build_config::use_openmp)
         {
-            return values.load(std::memory_order_acquire);
+            return values_.load(std::memory_order_acquire);
         }
         else
         {
-            return values;
+            return values_;
         }
     }
 
@@ -953,11 +953,11 @@ class ChunkBase : public CRTPSupport<Derived>,
         CHUNK_CHECK_VALUES_PTR_C(new_values, "values_store", this);
         if constexpr (build_config::use_openmp)
         {
-            values.store(new_values, std::memory_order_release);
+            values_.store(new_values, std::memory_order_release);
         }
         else
         {
-            values = new_values;
+            values_ = new_values;
         }
     }
 
@@ -1299,7 +1299,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @return Proxy object for lazy write
     ProxyType operator[](int i) noexcept
     {
-        return ProxyType(values, i, derived());
+        return ProxyType(values_, i, derived());
     }
 
     // ========================================================================
@@ -1647,7 +1647,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     // ========================================================================
 
     /// Pointer to chunk data (atomic if OpenMP enabled)
-    alignas(std::atomic<T*>) AtomicPtrT values;
+    alignas(std::atomic<T*>) AtomicPtrT values_;
 
   public:
 #if defined(_OPENMP)

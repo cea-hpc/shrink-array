@@ -248,12 +248,12 @@ void Simu::compute_loops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
                                  auto& tab0_ind = get_mat_vec(tabs[0]);
                                  using V        = std::remove_reference_t<decltype(tab0_ind)>;
 
-                                 using vec_chunk_real = VectChunk<double>;
+                                 using VecChunkReal = VectChunk<double>;
 
                                  // Compression only exists for 'chunk' arrays: `if constexpr` keeps the call out
                                  // of the std::vector instantiation.
 
-                                 if constexpr (std::is_same_v<V, vec_chunk_real>)
+                                 if constexpr (std::is_same_v<V, VecChunkReal>)
                                  {
                                      auto& tab1_ind = get_mat_vec(tabs[1]);
                                      auto& tab2_ind = get_mat_vec(tabs[2]);

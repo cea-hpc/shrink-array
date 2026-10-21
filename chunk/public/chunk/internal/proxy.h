@@ -62,7 +62,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
      */
     void insert(void* key, int num_tab)
     {
-        vec.emplace_back(key, num_tab);
+        vec_.emplace_back(key, num_tab);
     }
 
     /**
@@ -73,7 +73,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
      */
     [[nodiscard]] int get_num_tab(const void* key) const noexcept
     {
-        for (const auto& [k, v] : vec)
+        for (const auto& [k, v] : vec_)
         {
             if (k == key)
             {
@@ -82,7 +82,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
         }
 
         CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
     }
 
     /**
@@ -108,7 +108,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
     // Storage: a std::vector (PointerMapChunk2 uses a std::deque, see there).
     using Linear = PointerMapLinear<InfArrayT, std::vector<std::pair<const void*, InfArrayT>>>;
     /// Brings the base's storage back into this class's scope (dependent base).
-    using Linear::vec;
+    using Linear::vec_;
 };
 
 /**
@@ -119,7 +119,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 {
   public:
     using ChunkType     = Chunk<T>;
-    using manager_chunk = ManagerChunk<Chunk, T>;
+    using Manager       = ManagerChunk<Chunk, T>;
     using Base          = ProxyBase<Derived, T, ChunkType>;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
@@ -146,7 +146,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     auto& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
-        return manager_chunk::chunk_to_compress_potentially_thr[thr];
+        return Manager::chunk_to_compress_potentially_thr[thr];
     }
 
     /**
@@ -362,7 +362,7 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
 {
   public:
     using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
-    using ProxyBase<Derived, T, Chunk<T>>::chunk;
+    using ProxyBase<Derived, T, Chunk<T>>::chunk_;
 
   protected:
     /// @brief Nothing to record on the chunk without fast block compression.
@@ -377,7 +377,7 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
      */
     void manage_full_zero() const
     {
-        chunk.clear_st();
+        chunk_.clear_st();
     }
 };
 
@@ -420,7 +420,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::add_to_compression_list;
     using Base::set_num_tab;
 
-    using Base::ptr_is_inside_chunk_list_to_compress; ///< Per-chunk compression flag pointer
+    using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
     using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
@@ -435,21 +435,21 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     };
 
   private:
-    using manager_chunk = ManagerChunk<Chunk, T>;
+    using Manager = ManagerChunk<Chunk, T>;
 
     using Base::read_values;
-    using Base::values;
+    using Base::values_;
 
-    using Base::num;
+    using Base::num_;
     /// Reference to the associated chunk.
     ///
-    using Base::chunk; ///< owning chunk
+    using Base::chunk_; ///< owning chunk
 
-    using Base::num_tab; ///< tab index for this array
+    using Base::num_tab_; ///< tab index for this array
 
     using Base::chunk_size_frozen_; ///< non-zero on a proxy rebuilt from a replay context
-    using Base::num_chunk;          ///< chunk index
-    using Base::ptr_on_array;       ///< pointer to array (for tab lookup)
+    using Base::num_chunk_;         ///< chunk index
+    using Base::ptr_on_array_;      ///< pointer to array (for tab lookup)
 
     using Base::arithmetic_assign;
 
@@ -471,7 +471,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] bool is_cst_val() const noexcept
     {
-        return chunk.is_cst_val1();
+        return chunk_.is_cst_val1();
     }
 
     /**
@@ -487,7 +487,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
             shrink_array::set_thread_chunk_size(this->chunk_size());
             shrink_array::set_thread_alloc_key(this->alloc_key());
         }
-        chunk.create_value();
+        chunk_.create_value();
     }
 
     /**
@@ -576,7 +576,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename U>
     [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& v) const noexcept
     {
-        return v == zero && is_cst_val() && !chunk.pending_any();
+        return v == zero && is_cst_val() && !chunk_.pending_any();
     }
 
     /**
@@ -624,13 +624,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 
     /**
      * @brief Construct a proxy for element `num_` of `chunk_`.
-     * @param values_ Reference to the chunk's values pointer.
-     * @param num_ Element offset within the chunk.
-     * @param chunk_ Owning chunk.
+     * @param values Reference to the chunk's values pointer.
+     * @param num Element offset within the chunk.
+     * @param chunk Owning chunk.
      */
-    explicit Proxy(ValuesTypeRef values_, int num_, Chunk<T>& chunk_) noexcept : FastCompPolicy(values_, num_, chunk_)
-    {
-    }
+    explicit Proxy(ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept : FastCompPolicy(values, num, chunk) {}
 
     Proxy(const Proxy& other)     = default;
     Proxy(Proxy&& other) noexcept = default;
@@ -667,7 +665,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] bool is_not_cst_val() const noexcept
     {
-        return chunk.is_not_cst_val1();
+        return chunk_.is_not_cst_val1();
     }
 
     /**
@@ -688,7 +686,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     void resync_nb_val_eq_zero(CounterValueT n_zeros) const noexcept
     {
-        chunk.set_nb_val_eq_zero(n_zeros);
+        chunk_.set_nb_val_eq_zero(n_zeros);
     }
 
     /**
@@ -706,7 +704,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     {
         if constexpr (chunk_config::use_compression_with_counter)
         {
-            if (chunk.is_not_cst_val1() && chunk.is_full_zero(this->chunk_size()))
+            if (chunk_.is_not_cst_val1() && chunk_.is_full_zero(this->chunk_size()))
             {
                 if constexpr (build_config::chunk_dynamic)
                 {
@@ -832,24 +830,24 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
             // chunk_size_frozen_ != 0: a replay proxy whose ptr_on_array may
             // dangle (see ProxyBase::chunk_size_frozen_) -- never dereference it;
             // it runs inside a flush, so go straight to the gated read.
-            if (chunk_size_frozen_ == 0U && ptr_on_array != nullptr) [[likely]]
+            if (chunk_size_frozen_ == 0U && ptr_on_array_ != nullptr) [[likely]]
             {
                 using ArrayType = ArrayChunkForT<ChunkType>;
-                if (!static_cast<const ArrayType*>(ptr_on_array)->is_chunk_dirty(num_chunk)) [[likely]]
+                if (!static_cast<const ArrayType*>(ptr_on_array_)->is_chunk_dirty(num_chunk_)) [[likely]]
                 {
                     // A pure read, like element_at: inside a ReadSection, or a
                     // pass in the region may release the buffer between the
                     // pointer load and the element load (read_reclaim.h).
                     const read_reclaim::ReadSection section;
                     // raw-read: inside a read_reclaim::ReadSection
-                    return values[num];
+                    return values_[num_];
                 }
             }
             return Base::read_pure();
         }
 
         // raw-read: serial build (no OpenMP, no concurrent pass)
-        return values[num];
+        return values_[num_];
     }
 
     // No address, and do not add operator T&(): `tab[nc] = val` would route

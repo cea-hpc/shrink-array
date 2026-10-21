@@ -53,21 +53,21 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     friend Base;
 
     using Base::add_to_compression_list;
-    using Base::chunk;
+    using Base::chunk_;
     using Base::derived;
     using Base::is_cst_val1;
     using Base::is_not_cst_val1;
-    using Base::num;
-    using Base::num_chunk;
-    using Base::num_tab;
-    using Base::values;
+    using Base::num_;
+    using Base::num_chunk_;
+    using Base::num_tab_;
+    using Base::values_;
 
     using typename Base::AtomicPtrRefT;
     using ValuesTypeRef = AtomicPtrRefT;
 
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
-    using Base::ptr_is_inside_chunk_list_to_compress;
+    using Base::ptr_is_inside_chunk_list_to_compress_;
     using Base::tab_is_inside_chunk_list_to_compress;
 
     // ========================================================================
@@ -198,11 +198,11 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
   protected:
     /**
      * @brief Construct a proxy for element `num_` of `chunk_`.
-     * @param values_ Reference to the chunk's values pointer.
-     * @param num_ Element offset within the chunk.
-     * @param chunk_ Owning chunk.
+     * @param values Reference to the chunk's values pointer.
+     * @param num Element offset within the chunk.
+     * @param chunk Owning chunk.
      */
-    explicit Proxy2Base(ValuesTypeRef values_, int num_, ChunkType& chunk_) noexcept : Base(values_, num_, chunk_) {}
+    explicit Proxy2Base(ValuesTypeRef values, int num, ChunkType& chunk) noexcept : Base(values, num, chunk) {}
 
     /**
      * @brief Negation of is_cst_val2().

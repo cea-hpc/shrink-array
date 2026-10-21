@@ -141,10 +141,10 @@ void Proxy2A<T>::set_info_on_chunk() noexcept
 
     Base::set_ptr_is_inside_chunk_list_to_compress();
 
-    ptr_type_cst = &tab_type_cst_val[num_tab][num_chunk];
+    ptr_type_cst_ = &tab_type_cst_val[num_tab_][num_chunk_];
     if constexpr (is_not_bool)
     {
-        BaseSpec::ptr_second_value = BaseSpec::get_tab_second_value(num_tab, num_chunk);
+        BaseSpec::ptr_second_value_ = BaseSpec::get_tab_second_value(num_tab_, num_chunk_);
     }
 }
 
@@ -159,7 +159,7 @@ void Proxy2A<T>::set_ptr_second_value() noexcept
 {
     if constexpr (is_not_bool)
     {
-        BaseSpec::ptr_second_value = BaseSpec::get_tab_second_value(num_tab, num_chunk);
+        BaseSpec::ptr_second_value_ = BaseSpec::get_tab_second_value(num_tab_, num_chunk_);
     }
 }
 
@@ -173,7 +173,7 @@ void Proxy2A<T>::mark_for_compression_if_needed(InT<T> new_value, [[maybe_unused
     {
         // Called BEFORE the store (handle_no_bool_assignment): the memory check
         // must expect the old value -- see mark_for_compression_before_store.
-        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value, Chunk2A<T>::first_value,
+        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value_.get(), new_value, Chunk2A<T>::first_value,
                                                  vals);
     }
     else
@@ -190,7 +190,7 @@ void Proxy2A<T>::mark_for_compression_if_needed_with_value(InT<T> old_value, InT
 {
     if constexpr (is_not_bool)
     {
-        Base2::mark_for_compression_if_needed(BaseSpec::ptr_second_value.get(), old_value, new_value,
+        Base2::mark_for_compression_if_needed(BaseSpec::ptr_second_value_.get(), old_value, new_value,
                                               Chunk2A<T>::first_value);
     }
     else
@@ -357,7 +357,7 @@ void Proxy2A<T>::ensure_writable_storage()
     // and the second value are left -- set_info_on_chunk() redid both lookups.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        ptr_type_cst = &tab_type_cst_val[num_tab][num_chunk];
+        ptr_type_cst_ = &tab_type_cst_val[num_tab_][num_chunk_];
         set_ptr_second_value();
     }
     else
@@ -380,22 +380,22 @@ void Proxy2A<T>::ensure_writable_storage()
     {
         if (is_val2)
         {
-            chunk.create_value(true, BaseSpec::ptr_second_value);
+            chunk_.create_value(true, BaseSpec::ptr_second_value_);
         }
         else if (Base::is_cst_val1())
         {
-            chunk.create_value(false, BaseSpec::ptr_second_value);
+            chunk_.create_value(false, BaseSpec::ptr_second_value_);
         }
     }
     else
     {
         if (is_val2)
         {
-            chunk.create_value_bool(true);
+            chunk_.create_value_bool(true);
         }
         else if (Base::is_cst_val1())
         {
-            chunk.create_value_bool(false);
+            chunk_.create_value_bool(false);
         }
     }
 }
@@ -470,22 +470,22 @@ void Proxy2A<T>::perform_core_assignment(T* vals, InT<T> v) const
     {
         if constexpr (is_not_bool)
         {
-            create_value(BaseSpec::ptr_second_value);
+            create_value(BaseSpec::ptr_second_value_);
         }
         else
         {
             create_value_bool();
         }
-        vals = chunk.values_load();
+        vals = chunk_.values_load();
     };
 
-    const bool is_cst2 = chunk.is_cst_val2_ptr_of(vals);
+    const bool is_cst2 = chunk_.is_cst_val2_ptr_of(vals);
 
     if constexpr (is_not_bool)
     {
-        if (v == static_cast<T>(BaseSpec::ptr_second_value.get()))
+        if (v == static_cast<T>(BaseSpec::ptr_second_value_.get()))
         {
-            if (is_cst2 || Base::read_values_at(vals) == BaseSpec::ptr_second_value.get())
+            if (is_cst2 || Base::read_values_at(vals) == BaseSpec::ptr_second_value_.get())
             {
                 return;
             }
@@ -493,7 +493,7 @@ void Proxy2A<T>::perform_core_assignment(T* vals, InT<T> v) const
             {
                 materialise();
 
-                Base::store_value_at(vals, BaseSpec::ptr_second_value.get());
+                Base::store_value_at(vals, BaseSpec::ptr_second_value_.get());
 
                 return;
             }
@@ -529,7 +529,7 @@ void Proxy2A<T>::perform_core_assignment(T* vals, InT<T> v) const
 
     if constexpr (build_config::do_check)
     {
-        global_check_write_nan(v, num);
+        global_check_write_nan(v, num_);
     }
 }
 // ========================================================================
@@ -553,7 +553,7 @@ void Proxy2A<T>::handle_no_bool_assignment(InT<T> v)
         // write session no compressor can change it, and no writer once it is
         // not a constant. A concurrent materialisation is what
         // perform_core_assignment() reloads after.
-        T* const vals = chunk.values_load();
+        T* const vals = chunk_.values_load();
 
         // With fast block compression the engine already armed num_tab and the
         // queued-flag pointer (write_with_optional_lock_with_set_ptr).
@@ -565,12 +565,12 @@ void Proxy2A<T>::handle_no_bool_assignment(InT<T> v)
         set_ptr_second_value();
 
         // Second value onto a cst_val2 chunk: nothing to do.
-        if (chunk.is_cst_val2_ptr_of(vals) && v == static_cast<T>(BaseSpec::ptr_second_value.get()))
+        if (chunk_.is_cst_val2_ptr_of(vals) && v == static_cast<T>(BaseSpec::ptr_second_value_.get()))
         {
             return;
         }
 
-        ptr_type_cst = &tab_type_cst_val[num_tab][num_chunk];
+        ptr_type_cst_ = &tab_type_cst_val[num_tab_][num_chunk_];
 
         mark_for_compression_if_needed(v, vals);
 
@@ -591,7 +591,7 @@ void Proxy2A<T>::handle_bool_assignment(InT<T> v)
     if constexpr (is_bool)
     {
         // One load of the values pointer, as in handle_no_bool_assignment().
-        T* const vals = chunk.values_load();
+        T* const vals = chunk_.values_load();
 
         // Armed by the write engine with the fast block compression: see
         // handle_no_bool_assignment().
@@ -601,12 +601,12 @@ void Proxy2A<T>::handle_bool_assignment(InT<T> v)
             Base::set_ptr_is_inside_chunk_list_to_compress();
         }
 
-        if (chunk.is_cst_val2_ptr_of(vals) && v)
+        if (chunk_.is_cst_val2_ptr_of(vals) && v)
         {
             return;
         }
 
-        ptr_type_cst = &tab_type_cst_val[num_tab][num_chunk];
+        ptr_type_cst_ = &tab_type_cst_val[num_tab_][num_chunk_];
 
         mark_for_compression_if_needed(v, vals);
 
@@ -652,7 +652,7 @@ T Proxy2A<T>::assign_impl(InT<U> v) noexcept
             // behind the large-operand operator='s `const U&`.
             using CtxType = ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, Proxy2A<T>>;
 
-            auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array);
+            auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array_);
 
             auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
             {
@@ -897,11 +897,11 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, Modify
 
     if constexpr (is_not_bool)
     {
-        const bool will_be_not_second_value = (v_new_truncated != BaseSpec::ptr_second_value.get()) && cst_val2;
+        const bool will_be_not_second_value = (v_new_truncated != BaseSpec::ptr_second_value_.get()) && cst_val2;
 
         if (will_be_not_second_value)
         {
-            chunk.create_value(true, BaseSpec::ptr_second_value);
+            chunk_.create_value(true, BaseSpec::ptr_second_value_);
 
             modify_fn(op);
         }
@@ -919,12 +919,12 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, Modify
 
         if (will_be_not_second_value)
         {
-            chunk.create_value_bool(true);
+            chunk_.create_value_bool(true);
             modify_fn(op);
         }
         else if (Base::is_not_cst_val2())
         {
-            chunk.assert_writable_buffer(chunk.values_load());
+            chunk_.assert_writable_buffer(chunk_.values_load());
 
             Base::store_value(v_new_truncated);
             mark_for_compression_if_needed_with_value(v_old, v_new_truncated);
@@ -1127,7 +1127,7 @@ void Proxy2A<T>::execute_inplace_operation(ModifyFn modify_fn)
 
     ensure_writable_storage();
 
-    internal::modify_element<Chunk2A<T>, T>(values, num, modify_fn);
+    internal::modify_element<Chunk2A<T>, T>(values_, num_, modify_fn);
 
     mark_for_compression_if_needed_with_value(v_old, read_values());
 }
@@ -1213,7 +1213,7 @@ void Proxy2A<T>::apply_compound_operation(Op op, InT<U> v) noexcept
 
     // Apply any foreign deferred write to this offset before reading v_old, so
     // the RMW cannot clobber it (see arithmetic_assign). Outside begin_write.
-    chunk.reader_sync(num);
+    chunk_.reader_sync(num_);
 
     // Outside the write session: read under a ReadSection, or a pass may release
     // (and a materialisation zero-fill) the buffer between the pointer and the

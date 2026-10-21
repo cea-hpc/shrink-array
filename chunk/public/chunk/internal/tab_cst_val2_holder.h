@@ -1220,7 +1220,7 @@ template <typename T>
 class TabCstVal2Holder
 {
   public:
-    using global_vec_holder = GlobalVecHolder<T>;
+    using VecHolder = GlobalVecHolder<T>;
 
     /**
      * @brief The slot for @p second_v, registering it if new.
@@ -1242,7 +1242,7 @@ class TabCstVal2Holder
     {
         // Up to the record in the second-value table, which the reclaim's mark
         // scans: a reclaim must not run in between (LookupGuard).
-        const typename global_vec_holder::LookupGuard in_flight;
+        const typename VecHolder::LookupGuard         in_flight;
         T*                                            buf = find_or_register(second_v);
         ptr_second_value.set_from_array(buf);
         return buf;
@@ -1266,22 +1266,22 @@ class TabCstVal2Holder
     ///          teardown -- never on the element write path.
     [[nodiscard]] static T* find_cst_val2_ptr(InT<T> second_v)
     {
-        using gvh = GlobalVecHolder<T>;
-        const typename gvh::LookupGuard in_flight; // holds an index generation / the chain
-        if (T* hit = gvh::index_lookup(second_v)) [[likely]]
+        using Gvh = GlobalVecHolder<T>;
+        const typename Gvh::LookupGuard in_flight; // holds an index generation / the chain
+        if (T* hit = Gvh::index_lookup(second_v)) [[likely]]
         {
             return hit;
         }
-        if (!gvh::index_degraded.load(std::memory_order_relaxed))
+        if (!Gvh::index_degraded.load(std::memory_order_relaxed))
         {
             return nullptr;
         }
-        const std::scoped_lock lk(gvh::insert_mutex);
-        for (const Segment<T>* seg = gvh::head.load(std::memory_order_acquire); seg != nullptr; seg = seg->next)
+        const std::scoped_lock lk(Gvh::insert_mutex);
+        for (const Segment<T>* seg = Gvh::head.load(std::memory_order_acquire); seg != nullptr; seg = seg->next)
         {
             for (int i = 0; i < seg->used; ++i)
             {
-                if (gvh::value_of_ptr(seg->slots[i]) == second_v)
+                if (Gvh::value_of_ptr(seg->slots[i]) == second_v)
                 {
                     return seg->slots[i];
                 }
@@ -1297,7 +1297,7 @@ class TabCstVal2Holder
     ///          guarantees GlobalVecHolder::head is non-null.
     static void create()
     {
-        global_vec_holder::init();
+        VecHolder::init();
     }
 
     // ── Identifiers: a slot's index in the region, 1-based; 0 = none ──────
@@ -1308,10 +1308,8 @@ class TabCstVal2Holder
     /// @brief Identifier of the slot @p ptr (must lie in the region).
     [[nodiscard]] static std::uint32_t id_of_ptr(const T* ptr) noexcept
     {
-        const char* base = global_vec_holder::region_begin.load(std::memory_order_relaxed);
-        return static_cast<std::uint32_t>((reinterpret_cast<const char*>(ptr) - base) /
-                                          global_vec_holder::region_stride) +
-               1u;
+        const char* base = VecHolder::region_begin.load(std::memory_order_relaxed);
+        return static_cast<std::uint32_t>((reinterpret_cast<const char*>(ptr) - base) / VecHolder::region_stride) + 1u;
     }
     /**
      * @brief value_of_ptr() with the identifier range checked.
@@ -1330,17 +1328,17 @@ class TabCstVal2Holder
             return T{};
         }
         const std::uint32_t id = id_of_ptr(ptr);
-        if (id == 0u || id > global_vec_holder::max_ids)
+        if (id == 0u || id > VecHolder::max_ids)
         {
             return T{};
         }
-        return global_vec_holder::value_by_id[id];
+        return VecHolder::value_by_id[id];
     }
 
     /// @brief The value registered under @p id; T{} for 0.
     [[nodiscard]] static T value_of_id(std::uint32_t id) noexcept
     {
-        return global_vec_holder::value_by_id[id]; // [0] is T{}
+        return VecHolder::value_by_id[id]; // [0] is T{}
     }
 
     /**
@@ -1351,7 +1349,7 @@ class TabCstVal2Holder
      */
     static void clear(int& nb_val2)
     {
-        global_vec_holder::clear_if_last(nb_val2);
+        VecHolder::clear_if_last(nb_val2);
     }
 
     /// @brief The identifier for @p v, registering its slot if it is new;
@@ -1379,14 +1377,14 @@ class TabCstVal2Holder
     static T* alloc_chunk(T val)
     {
         // A reclaimed identifier first; the region only when none is free.
-        T* buf = global_vec_holder::take_free_slot();
+        T* buf = VecHolder::take_free_slot();
         if (buf == nullptr)
         {
-            buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
+            buf = reinterpret_cast<T*>(VecHolder::region_alloc(VecHolder::region_stride));
         }
         // Before the slot can be published: a reader gets the identifier only from a
         // slot written after this returns.
-        global_vec_holder::value_by_id[id_of_ptr(buf)] = val;
+        VecHolder::value_by_id[id_of_ptr(buf)] = val;
         return buf;
     }
 
@@ -1396,49 +1394,48 @@ class TabCstVal2Holder
      */
     [[nodiscard]] static T* find_or_register(InT<T> second_v)
     {
-        const typename global_vec_holder::LookupGuard in_flight; // check builds; nests in the callers'
+        const typename VecHolder::LookupGuard in_flight; // check builds; nests in the callers'
         // ── Hot path, lock-free ───────────────────────────────────────────
-        if (T* hit = global_vec_holder::index_lookup(second_v)) [[likely]]
+        if (T* hit = VecHolder::index_lookup(second_v)) [[likely]]
         {
             return hit;
         }
 
         // ── Cold path, under the insert lock ──────────────────────────────
-        const std::scoped_lock lk(global_vec_holder::insert_mutex);
+        const std::scoped_lock lk(VecHolder::insert_mutex);
 
         // Double-check: another thread may have inserted second_v since our miss. The
         // index is single-writer under this lock, so it is authoritative here.
-        if (T* hit = global_vec_holder::index_lookup(second_v)) [[likely]]
+        if (T* hit = VecHolder::index_lookup(second_v)) [[likely]]
         {
             return hit;
         }
 
         // Only if the index ever overflowed its probe budget (index_degraded) can a
         // registered value be unindexed: then, and only then, scan the chain to avoid a duplicate.
-        const bool degraded = global_vec_holder::index_degraded.load(std::memory_order_relaxed);
+        const bool degraded = VecHolder::index_degraded.load(std::memory_order_relaxed);
 
-        SegmentT* last_seg = global_vec_holder::tail;
+        SegmentT* last_seg = VecHolder::tail;
         if (last_seg == nullptr) [[unlikely]]
         {
             // First append after a clear: re-seed the cached tail from head.
-            last_seg = global_vec_holder::head.load(std::memory_order_acquire);
+            last_seg = VecHolder::head.load(std::memory_order_acquire);
             while (last_seg->next != nullptr)
             {
                 last_seg = last_seg->next;
             }
-            global_vec_holder::tail = last_seg;
+            VecHolder::tail = last_seg;
         }
 
         if (degraded) [[unlikely]]
         {
-            for (const SegmentT* seg = global_vec_holder::head.load(std::memory_order_acquire); seg != nullptr;
-                 seg                 = seg->next)
+            for (const SegmentT* seg = VecHolder::head.load(std::memory_order_acquire); seg != nullptr; seg = seg->next)
             {
                 for (int i = 0; i < seg->used; ++i)
                 {
-                    if (global_vec_holder::value_of_ptr(seg->slots[i]) == second_v)
+                    if (VecHolder::value_of_ptr(seg->slots[i]) == second_v)
                     {
-                        global_vec_holder::index_publish(second_v, seg->slots[i]);
+                        VecHolder::index_publish(second_v, seg->slots[i]);
                         return seg->slots[i];
                     }
                 }
@@ -1451,13 +1448,13 @@ class TabCstVal2Holder
         SegmentT* seg = last_seg;
         if (seg->used == SegmentT::slots_per_segment)
         {
-            seg = global_vec_holder::append_segment(last_seg);
+            seg = VecHolder::append_segment(last_seg);
         }
 
         T* buf                = alloc_chunk(second_v); // value_by_id[] BEFORE publication
         seg->slots[seg->used] = buf;
         ++seg->used;
-        global_vec_holder::index_publish(second_v, buf); // release: readers see the value
+        VecHolder::index_publish(second_v, buf); // release: readers see the value
         return buf;
     }
 };

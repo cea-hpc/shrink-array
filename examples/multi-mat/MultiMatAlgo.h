@@ -103,7 +103,7 @@ class MultiMatAlgo
     template <typename MA>
     static auto& get_mat_vec_dir(const MA& gdr, int mat)
     {
-        using Vec = MA::vec_dir;
+        using Vec = MA::VecDir;
 
         return *(static_cast<Vec*>(gdr[mat]));
     }
@@ -112,7 +112,7 @@ class MultiMatAlgo
     template <typename MA>
     static auto& get_mat_vec_chunk(const MA& gdr, int mat)
     {
-        using Vec = MA::vec_chunk;
+        using Vec = MA::VecChunk;
 
         return *(static_cast<Vec*>(gdr[mat]));
     }

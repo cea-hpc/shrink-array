@@ -1048,7 +1048,7 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value_serial_impl(bool        ne
         }
     };
 
-    values = Base::allocate_chunk_internal(0, init_func);
+    values_ = Base::allocate_chunk_internal(0, init_func);
 }
 
 template <typename T, typename Derived>
@@ -1103,7 +1103,7 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_st(int ind)
 {
     Base::debug_check_written(ind);
 
-    Base::free_values(values);
+    Base::free_values(values_);
     derived().init_values_cst_val1();
 
     if constexpr (chunk_config::use_compression_with_counter)
@@ -1139,7 +1139,7 @@ void Chunk2OmpPolicy<T, Derived, false>::block_clear(int num_compress_value, int
     // CHUNK_STATS: as the OpenMP block_clear above.
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
-    Base::free_values(values);
+    Base::free_values(values_);
 
     derived().init_values_cst_val(num_compress_value, ind);
     if constexpr (chunk_config::use_compression_with_counter)
@@ -1204,7 +1204,7 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(int num_compress_value, in
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
 
-    Base::free_values(values);
+    Base::free_values(values_);
 
     if (num_compress_value == 0)
     {

@@ -819,7 +819,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return (static_cast<std::uint64_t>(key) << 32U) | size;
     }
 
-    const int max_thr = CHUNK_PMP_THREAD_CAPACITY;
+    const int max_thr_ = CHUNK_PMP_THREAD_CAPACITY;
 
     /// @brief Chunk2: the second-value lists sweep_rank() drains, snapshotted
     ///        serially by sweep_prepare().

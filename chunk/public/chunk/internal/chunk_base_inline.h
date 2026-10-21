@@ -133,7 +133,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     ensure_deferred_array_initialized();
 
     // Cached per thread: no guard check per call; the singleton outlives every thread.
-    thread_local auto* storage = &DeferredOpsStorage<per_thread_map>::instance();
+    thread_local auto* storage = &DeferredOpsStorage<PerThreadMap>::instance();
 
     auto* arr = storage->get(); // simple acquire load, always fresh
 
@@ -157,7 +157,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     // so an escaping exception would be a silent std::terminate: report where instead.
     try
     {
-        per_thread_map& thread_map = arr[thr_rank];
+        PerThreadMap& thread_map = arr[thr_rank];
 
         auto& ops_map_ptr = thread_map[chunk_ptr];
 

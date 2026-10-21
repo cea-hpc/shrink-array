@@ -260,7 +260,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // (allocator_pool_serial_) routes each allocation to the right size, so the
     // old and new geometries coexist during the refill.
 
-    const ind_type total = self().m_size;
+    const ind_type total = self().m_size_;
     if (total <= 0)
     {
         self().set_chunk_size(new_size); // legal on an empty array
@@ -401,15 +401,15 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    identity hook: Chunk / Chunk2A swap the num_tab member, Chunk2
         //    resolves num_tab from the registry and must NOT swap it.
         using std::swap;
-        swap(self().chunk_list, tmp.chunk_list);
+        swap(self().chunk_list_, tmp.chunk_list_);
         // The new storage was built under tmp's own affinity key (its slabs);
         // the key travels with the storage. self keeps tmp's key from here on,
         // tmp takes the old one and dies with it: its clear_core() drains that
         // key's lists and the old slabs empty.
         swap(self().alloc_key_, tmp.alloc_key_);
         self().swap_dirty_bitset(tmp);
-        swap(self().m_size, tmp.m_size);
-        swap(self().nb_chunk, tmp.nb_chunk);
+        swap(self().m_size_, tmp.m_size_);
+        swap(self().nb_chunk_, tmp.nb_chunk_);
         swap(self().size_policy_, tmp.size_policy_);
         self().invalidate_proxies();
 
@@ -596,8 +596,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     // cst1" == "not yet materialised" for every variant.
     if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a)
     {
-        const ind_type total = self().m_size;
-        const int      n_new = tmp.nb_chunk;
+        const ind_type total = self().m_size_;
+        const int      n_new = tmp.nb_chunk_;
         // Geometry is per-array (this.size_=old, tmp.size_=new), so operator[]
         // maps correctly without the global. Only alloc_chunk_count()
         // (= thread_chunk_size(), TLS) needs the size, set per thread below.
@@ -715,7 +715,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             [[maybe_unused]] const T* cst2_src     = nullptr;
             for (int oc = old_first; oc <= old_last; ++oc)
             {
-                const auto& och = self().chunk_list[static_cast<std::size_t>(oc)];
+                const auto& och = self().chunk_list_[static_cast<std::size_t>(oc)];
                 if constexpr (chunk_config::use_chunk2a)
                 {
                     if (och.is_cst_val1())
@@ -789,9 +789,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // instantiates this file (array_chunk2.cpp), and the name
                     // would be looked up even in a discarded branch.
                     const T    v   = static_cast<T>(std::as_const(self())[base]);
-                    auto&      nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
-                    const auto psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab, new_chunk);
-                    char*      ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab][new_chunk];
+                    auto&      nch = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
+                    const auto psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
+                    char*      ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
                     (void)nch.find_or_set_ind_cst_val2(v, psv);
                     chunk_type::set_cst_val_to_cst_val2(ptc);
                     nch.init_values_cst_val(ptc, psv);
@@ -829,7 +829,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 std::size_t k = 0;
                 for (int oc = old_first; oc <= old_last; ++oc)
                 {
-                    const auto&    och     = self().chunk_list[static_cast<std::size_t>(oc)];
+                    const auto&    och     = self().chunk_list_[static_cast<std::size_t>(oc)];
                     const ind_type oc_base = static_cast<ind_type>(oc) * static_cast<ind_type>(old_size);
                     const ind_type lo      = base > oc_base ? base : oc_base;
                     const ind_type oc_end  = oc_base + static_cast<ind_type>(old_size);
@@ -993,8 +993,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 if (all_folded)
                 {
                     ++tally.folded;
-                    auto& nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
-                    nch.compress(get_thr_rank_fast(), new_chunk, tmp.num_tab,
+                    auto& nch = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
+                    nch.compress(get_thr_rank_fast(), new_chunk, tmp.num_tab_,
                                  /*apply=*/true, ChunkElems{static_cast<unsigned>(new_size)});
                     // Every source chunk WAS a constant here, so a refusal means
                     // the span merged constants that differ -- the genuine cost
@@ -1096,11 +1096,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // first boundary.
         std::vector<unsigned char>      recycle_held;
         std::vector<std::vector<void*>> recycle_scratch;
-        using slice_clock   = std::chrono::steady_clock;
-        const auto slice_ms = [](slice_clock::time_point a, slice_clock::time_point b)
+        using SliceClock    = std::chrono::steady_clock;
+        const auto slice_ms = [](SliceClock::time_point a, SliceClock::time_point b)
         { return std::chrono::duration<double, std::milli>(b - a).count(); };
-        slice_clock::time_point slice_t0{}; // written by the master, read after barriers
-        slice_clock::time_point slice_t1{}; // written in a single, read after its barrier
+        SliceClock::time_point slice_t0{}; // written by the master, read after barriers
+        SliceClock::time_point slice_t1{}; // written in a single, read after its barrier
 
         // g_in_rechunk_rebuild is held across the WHOLE sliced loop, drains
         // included: it suppresses the OMPT parallel-end finalize, and a slice
@@ -1141,7 +1141,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             std::atomic<long long> setup_max{0};
             std::atomic<int>       n{0};
         } sp;
-        const auto sp_ns = [](slice_clock::time_point a, slice_clock::time_point b) noexcept -> long long
+        const auto sp_ns = [](SliceClock::time_point a, SliceClock::time_point b) noexcept -> long long
         { return std::chrono::duration_cast<std::chrono::nanoseconds>(b - a).count(); };
         const auto sp_max = [](std::atomic<long long>& a, long long v) noexcept
         {
@@ -1150,9 +1150,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             {
             }
         };
-        slice_clock::time_point sp_a{};
-        slice_clock::time_point sp_b{}; // master, past the closing barrier
-        slice_clock::time_point sp_d{}; // master, past the boundary
+        SliceClock::time_point sp_a{};
+        SliceClock::time_point sp_b{}; // master, past the closing barrier
+        SliceClock::time_point sp_d{}; // master, past the boundary
         if (sp_on)
         {
             internal::g_slice_count = n_slices;
@@ -1169,11 +1169,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 sp.work_sum.store(0, std::memory_order_relaxed);
                 sp.setup_max.store(0, std::memory_order_relaxed);
                 sp.n.store(0, std::memory_order_relaxed);
-                sp_a = slice_clock::now();
+                sp_a = SliceClock::now();
             }
 #pragma omp parallel
             {
-                const slice_clock::time_point sp_e = sp_on ? slice_clock::now() : slice_clock::time_point{};
+                const SliceClock::time_point sp_e = sp_on ? SliceClock::now() : SliceClock::time_point{};
                 // Apply the rebuild's arming writes DIRECTLY, never via the
                 // deferred path: deferred arming writes would fill tmp's op map,
                 // and a rehash frees bucket storage an enqueued op still targets
@@ -1187,7 +1187,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 RebuildTally                  tally; // this thread's fold counts for this slice
                                                      // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
                                                      // (internal::rebuild_schedule).
-                const slice_clock::time_point sp_w0 = sp_on ? slice_clock::now() : slice_clock::time_point{};
+                const SliceClock::time_point sp_w0 = sp_on ? SliceClock::now() : SliceClock::time_point{};
                 // nowait + the explicit barrier below: the same closing barrier,
                 // with each thread's loop end observable (rechunk=debug).
 #pragma omp for schedule(runtime) nowait
@@ -1197,7 +1197,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 }
                 if (sp_on)
                 {
-                    const auto sp_w1 = slice_clock::now();
+                    const auto sp_w1 = SliceClock::now();
                     sp_max(sp.entry_max, sp_ns(sp_a, sp_e));
                     sp_max(sp.loop_end_max, sp_ns(sp_a, sp_w1));
                     sp_max(sp.work_max, sp_ns(sp_w0, sp_w1));
@@ -1219,7 +1219,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 {
                     if (sp_on)
                     {
-                        sp_b = slice_clock::now();
+                        sp_b = SliceClock::now();
                     }
                 }
 
@@ -1240,7 +1240,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         {
                             if (trace_on)
                             {
-                                slice_t0 = slice_clock::now();
+                                slice_t0 = SliceClock::now();
                             }
                         }
                         ManagerT::drain_reuse_list_for_size_team(static_cast<unsigned int>(old_size), team_drain);
@@ -1261,7 +1261,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                             // the leftovers' madvise as "madvise".
 #pragma omp single
                             {
-                                const auto sc0 = trace_on ? slice_clock::now() : slice_clock::time_point{};
+                                const auto sc0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
                                 if (trace_on)
                                 {
                                     internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
@@ -1282,7 +1282,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 // shootdown on every CPU each) become one.
                                 if (trace_on)
                                 {
-                                    slice_t1 = slice_clock::now();
+                                    slice_t1 = SliceClock::now();
                                     internal::g_slice_madvise_ms += slice_ms(sc0, slice_t1);
                                 }
                             } // implicit barrier: recycle_held is clear
@@ -1325,7 +1325,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                                 if (trace_on)
                                 {
-                                    internal::g_slice_collect_ms += slice_ms(slice_t1, slice_clock::now());
+                                    internal::g_slice_collect_ms += slice_ms(slice_t1, SliceClock::now());
                                 }
                             } // implicit barrier: the next slice allocates from the recycled slabs
                         }
@@ -1333,7 +1333,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         {
 #pragma omp single
                             {
-                                const auto sc0 = trace_on ? slice_clock::now() : slice_clock::time_point{};
+                                const auto sc0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
                                 if (trace_on)
                                 {
                                     internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
@@ -1354,12 +1354,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 {
                                     chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
                                 }
-                                const auto sc1 = trace_on ? slice_clock::now() : slice_clock::time_point{};
+                                const auto sc1 = trace_on ? SliceClock::now() : SliceClock::time_point{};
                                 sweep.flush();
                                 if (trace_on)
                                 {
                                     internal::g_slice_collect_ms += slice_ms(sc0, sc1);
-                                    internal::g_slice_madvise_ms += slice_ms(sc1, slice_clock::now());
+                                    internal::g_slice_madvise_ms += slice_ms(sc1, SliceClock::now());
                                 }
                                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                             } // implicit barrier: the next slice starts on emptied slabs
@@ -1370,13 +1370,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 {
                     if (sp_on)
                     {
-                        sp_d = slice_clock::now();
+                        sp_d = SliceClock::now();
                     }
                 }
             }
             if (sp_on)
             {
-                const auto   sp_post = slice_clock::now();
+                const auto   sp_post = SliceClock::now();
                 const double e_ms    = static_cast<double>(sp.entry_max.load(std::memory_order_relaxed)) * 1e-6;
                 const double l_ms    = static_cast<double>(sp.loop_end_max.load(std::memory_order_relaxed)) * 1e-6;
                 const int    n_thr   = std::max(1, sp.n.load(std::memory_order_relaxed));
@@ -1413,14 +1413,14 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // for the next allocations (SlabArena::allocate() takes them first).
             if (internal::g_rechunk_recycle && n_slices > 1 && !internal::g_rechunk_keep_recycled)
             {
-                const auto a0 = trace_on ? slice_clock::now() : slice_clock::time_point{};
+                const auto a0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
                 chunk_type::get_chunk_allocator(0, old_key_refill)
                     .advise_recycled_slabs(internal::g_rechunk_keep_recycled_bytes);
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (trace_on)
                 {
-                    internal::g_slice_madvise_ms += slice_ms(a0, slice_clock::now());
+                    internal::g_slice_madvise_ms += slice_ms(a0, SliceClock::now());
                 }
             }
         }
@@ -1443,7 +1443,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             long n_mat = 0;
             for (int c = 0; c < n_new; ++c)
             {
-                const auto& ch         = tmp.chunk_list[static_cast<std::size_t>(c)];
+                const auto& ch         = tmp.chunk_list_[static_cast<std::size_t>(c)];
                 bool        compressed = ch.is_cst_val1();
                 if constexpr (chunk_config::use_chunk2a)
                 {

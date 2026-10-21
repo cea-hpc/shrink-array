@@ -152,12 +152,12 @@ inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_
  *          against the array's second value, as Proxy2 counts it.
  */
 template <typename Arr, typename Chunk, typename T>
-void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, unsigned int S)
+void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, unsigned int s)
 {
     if constexpr (track_zeros_v<Arr>)
     {
         CounterValueT nz = 0;
-        for (unsigned int k = 0; k < S; ++k)
+        for (unsigned int k = 0; k < s; ++k)
         {
             if (dst[k] == static_cast<T>(Chunk::first_value))
             {
@@ -171,7 +171,7 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
         const T         sv = static_cast<T>(arr.get_second_value());
         CounterValueT   n1 = 0;
         CounterValueT   n2 = 0;
-        for (unsigned int k = 0; k < S; ++k)
+        for (unsigned int k = 0; k < s; ++k)
         {
             if (dst[k] == static_cast<T>(Chunk::first_value))
             {
@@ -204,14 +204,14 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
  *         not read it again.
  */
 template <typename Arr, typename Chunk>
-[[nodiscard]] bool fold_if_full(Arr& arr, Chunk& ch, std::size_t c_begin, unsigned int S)
+[[nodiscard]] bool fold_if_full(Arr& arr, Chunk& ch, std::size_t c_begin, unsigned int s)
 {
     if constexpr (track_chunk2_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
     {
         using ind_type    = decltype(arr.size());
         using T           = typename Arr::value_type;
-        const bool first  = ch.is_full_first_value(S);
-        const bool second = !first && ch.is_full_second_value(S) &&
+        const bool first  = ch.is_full_first_value(s);
+        const bool second = !first && ch.is_full_second_value(s) &&
                             !(static_cast<T>(arr.get_second_value()) == static_cast<T>(Chunk::first_value));
         if (!first && !second)
         {
@@ -227,7 +227,7 @@ template <typename Arr, typename Chunk>
         {
             // The ambient geometry and allocator set the free routes by, as the
             // write path pins them (Proxy2::execute_simple_operation).
-            shrink_array::set_thread_chunk_size(S);
+            shrink_array::set_thread_chunk_size(s);
             shrink_array::set_thread_alloc_key(proxy.alloc_key());
         }
         if (first)
@@ -251,13 +251,13 @@ template <typename Arr, typename Chunk>
         (void)arr;
         (void)ch;
         (void)c_begin;
-        (void)S;
+        (void)s;
     }
     return false;
 }
 
 /**
- * @brief Can the chunk whose buffer is @p dst (@p S elements) be uniform?
+ * @brief Can the chunk whose buffer is @p dst (@p s elements) be uniform?
  * @details NECESSARY condition only -- first, middle and last element equal.
  *          A uniform chunk always passes; a chunk that fails cannot be
  *          compressed, so queueing it would only cost the next pass a full
@@ -265,9 +265,9 @@ template <typename Arr, typename Chunk>
  *          scans onto the writers' slow path).
  */
 template <typename T>
-[[nodiscard]] bool may_be_uniform(const T* dst, unsigned int S) noexcept
+[[nodiscard]] bool may_be_uniform(const T* dst, unsigned int s) noexcept
 {
-    return S == 0 || (dst[0] == dst[S / 2] && dst[0] == dst[S - 1]);
+    return s == 0 || (dst[0] == dst[s / 2] && dst[0] == dst[s - 1]);
 }
 
 /**
@@ -276,14 +276,14 @@ template <typename T>
  *          chunk store them concurrently (relaxed_element.h).
  */
 template <typename T>
-[[nodiscard]] bool may_be_uniform_relaxed(const T* dst, unsigned int S) noexcept
+[[nodiscard]] bool may_be_uniform_relaxed(const T* dst, unsigned int s) noexcept
 {
-    if (S == 0)
+    if (s == 0)
     {
         return true;
     }
     const T v0 = load_element_relaxed(dst);
-    return v0 == load_element_relaxed(dst + (S / 2)) && v0 == load_element_relaxed(dst + S - 1);
+    return v0 == load_element_relaxed(dst + (s / 2)) && v0 == load_element_relaxed(dst + s - 1);
 }
 
 /**
@@ -296,28 +296,28 @@ template <typename T>
  *          bulk of the fill still vectorises.
  */
 template <typename T>
-void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t S, T v) noexcept
+void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t s, T v) noexcept
 {
     // Ascending for S >= 4; for a smaller S the out-of-order or duplicate
-    // entries are skipped by `s < o`, and S - 2 wrapping for S == 1 by `s >= o_hi`.
-    const std::array<std::size_t, 5> shared = {0, 1, S / 2, S - 2, S - 1};
+    // entries are skipped by `edge < o`, and S - 2 wrapping for S == 1 by `edge >= o_hi`.
+    const std::array<std::size_t, 5> shared = {0, 1, s / 2, s - 2, s - 1};
     std::size_t                      o      = o_lo;
-    for (const std::size_t s : shared)
+    for (const std::size_t edge : shared)
     {
-        if (s < o)
+        if (edge < o)
         {
             continue;
         }
-        if (s >= o_hi)
+        if (edge >= o_hi)
         {
             break;
         }
-        for (; o < s; ++o)
+        for (; o < edge; ++o)
         {
             dst[o] = v;
         }
-        store_element_relaxed(dst + s, v);
-        o = s + 1;
+        store_element_relaxed(dst + edge, v);
+        o = edge + 1;
     }
     for (; o < o_hi; ++o)
     {
@@ -435,7 +435,7 @@ void packed_chunk_store(Arr&         arr,
                         std::size_t  c_begin,
                         std::size_t  lo,
                         std::size_t  hi,
-                        unsigned int S,
+                        unsigned int s,
                         int          ind2,
                         ValueAt&&    value_at,
                         StoreBits&&  store_bits)
@@ -460,10 +460,10 @@ void packed_chunk_store(Arr&         arr,
         // Counter mode (serial builds): the element write that brings a count
         // to S compresses the chunk on the spot (manage_full_*), and there is
         // no pass to queue for -- so do what that last write would have done.
-        const auto ones = static_cast<CounterValueT>(bits::count_ones(w, S));
-        ch.set_nb_val_eq_first_value(static_cast<CounterValueT>(S) - ones);
+        const auto ones = static_cast<CounterValueT>(bits::count_ones(w, s));
+        ch.set_nb_val_eq_first_value(static_cast<CounterValueT>(s) - ones);
         ch.set_nb_val_eq_second_value(ones);
-        if (ones == static_cast<CounterValueT>(S))
+        if (ones == static_cast<CounterValueT>(s))
         {
             arr.element_proxy(static_cast<ind_type>(c_begin)).manage_full_second_value();
         }
@@ -472,7 +472,7 @@ void packed_chunk_store(Arr&         arr,
             arr.element_proxy(static_cast<ind_type>(c_begin)).manage_full_first_value();
         }
     }
-    else if (bits::scan_words(w, S) != bits::Uniform::mixed)
+    else if (bits::scan_words(w, s) != bits::Uniform::mixed)
     {
         queue_for_compression(arr, c_begin);
     }
@@ -531,7 +531,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
         arr.flush_pending_deferred_ops(/*force=*/true);
     }
 
-    const unsigned int S     = arr.chunk_size();
+    const unsigned int s     = arr.chunk_size();
     const InT<T>       value = static_cast<T>(v);
     const int          ind2  = internal::second_value_index(arr); // Chunk2's written(ind)
 
@@ -540,18 +540,18 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
     // not from whichever array wrote last (see Proxy::create_value).
     if constexpr (build_config::chunk_dynamic)
     {
-        set_thread_chunk_size(S);
+        set_thread_chunk_size(s);
     }
 
     const bool value_is_cst1 = (value == static_cast<T>(chunk_type::first_value));
 
-    const std::size_t first_chunk = first / S;
-    const std::size_t last_chunk  = (last - 1) / S;
+    const std::size_t first_chunk = first / s;
+    const std::size_t last_chunk  = (last - 1) / s;
 
     for (std::size_t ci = first_chunk; ci <= last_chunk; ++ci)
     {
-        const std::size_t c_begin = ci * S;
-        const std::size_t c_end   = c_begin + S;
+        const std::size_t c_begin = ci * s;
+        const std::size_t c_end   = c_begin + s;
         const std::size_t lo      = first > c_begin ? first : c_begin;
         const std::size_t hi      = last < c_end ? last : c_end;
         const bool        whole   = (lo == c_begin) && (hi == c_end);
@@ -585,7 +585,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
                     }
                     if constexpr (build_config::use_openmp)
                     {
-                        ch.clear_st(get_thr_rank_fast(), S); // frees the buffer, marks cst1
+                        ch.clear_st(get_thr_rank_fast(), s); // frees the buffer, marks cst1
                     }
                     else
                     {
@@ -606,7 +606,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             }
             const bool bit = static_cast<bool>(value);
             internal::packed_chunk_store(
-                arr, ch, c_begin, lo, hi, S, ind2, [&](std::size_t) { return static_cast<T>(value); },
+                arr, ch, c_begin, lo, hi, s, ind2, [&](std::size_t) { return static_cast<T>(value); },
                 [bit](bits::WordT* w, std::size_t a, std::size_t b) { bits::fill_bit_range(w, a, b, bit); });
         }
         // ── Variants whose second-value state lives in the proxy ─────────────
@@ -643,9 +643,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             }
 
             // Restore the per-chunk counters the bulk store bypassed.
-            internal::resync_counters(arr, ch, c_begin, dst, S);
+            internal::resync_counters(arr, ch, c_begin, dst, s);
             // Serial builds: the chunk is constant now -> folded here (no pass).
-            if (internal::fold_if_full(arr, ch, c_begin, S))
+            if (internal::fold_if_full(arr, ch, c_begin, s))
             {
                 continue;
             }
@@ -657,7 +657,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             {
                 compressible_value = compressible_value || value == static_cast<T>(arr.get_second_value());
             }
-            if (compressible_value && internal::may_be_uniform(dst, S))
+            if (compressible_value && internal::may_be_uniform(dst, s))
             {
                 internal::queue_for_compression(arr, c_begin);
             }
@@ -699,21 +699,21 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         arr.flush_pending_deferred_ops(/*force=*/true);
     }
 
-    const unsigned int S    = arr.chunk_size();
+    const unsigned int s    = arr.chunk_size();
     const int          ind2 = internal::second_value_index(arr); // Chunk2's written(ind)
 
     if constexpr (build_config::chunk_dynamic)
     {
-        set_thread_chunk_size(S);
+        set_thread_chunk_size(s);
     }
 
-    const std::size_t first_chunk = first / S;
-    const std::size_t last_chunk  = (last - 1) / S;
+    const std::size_t first_chunk = first / s;
+    const std::size_t last_chunk  = (last - 1) / s;
 
     for (std::size_t ci = first_chunk; ci <= last_chunk; ++ci)
     {
-        const std::size_t c_begin = ci * S;
-        const std::size_t c_end   = c_begin + S;
+        const std::size_t c_begin = ci * s;
+        const std::size_t c_end   = c_begin + s;
         const std::size_t lo      = first > c_begin ? first : c_begin;
         const std::size_t hi      = last < c_end ? last : c_end;
 
@@ -724,7 +724,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             // ArrayChunkBits: the source read once per element, stored 64 at a time.
             const auto src_at = [&](std::size_t i)
             { return static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first))); };
-            internal::packed_chunk_store(arr, ch, c_begin, lo, hi, S, ind2, src_at,
+            internal::packed_chunk_store(arr, ch, c_begin, lo, hi, s, ind2, src_at,
                                          [&](bits::WordT* w, std::size_t a, std::size_t b)
                                          {
                                              bits::store_bit_range(w, a, b, [&](std::size_t bi)
@@ -757,15 +757,15 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
                 dst[k - c_begin] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(k - first)));
             }
 
-            internal::resync_counters(arr, ch, c_begin, dst, S); // as fill_range
-            if (internal::fold_if_full(arr, ch, c_begin, S)) // serial builds: as fill_range
+            internal::resync_counters(arr, ch, c_begin, dst, s); // as fill_range
+            if (internal::fold_if_full(arr, ch, c_begin, s))     // serial builds: as fill_range
             {
                 continue;
             }
 
             // The source is not known to be uniform: the pass decides -- for
             // the chunks that can be.
-            if (internal::may_be_uniform(dst, S))
+            if (internal::may_be_uniform(dst, s))
             {
                 internal::queue_for_compression(arr, c_begin);
             }
@@ -804,26 +804,26 @@ namespace internal
  *        runs between them plain.
  */
 template <typename T, typename At>
-void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t S, At&& at) noexcept
+void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t s, At&& at) noexcept
 {
-    const std::array<std::size_t, 5> shared = {0, 1, S / 2, S - 2, S - 1};
+    const std::array<std::size_t, 5> shared = {0, 1, s / 2, s - 2, s - 1};
     std::size_t                      o      = o_lo;
-    for (const std::size_t s : shared)
+    for (const std::size_t edge : shared)
     {
-        if (s < o)
+        if (edge < o)
         {
             continue;
         }
-        if (s >= o_hi)
+        if (edge >= o_hi)
         {
             break;
         }
-        for (; o < s; ++o)
+        for (; o < edge; ++o)
         {
             dst[o] = at(o);
         }
-        store_element_relaxed(dst + s, at(s));
-        o = s + 1;
+        store_element_relaxed(dst + edge, at(edge));
+        o = edge + 1;
     }
     for (; o < o_hi; ++o)
     {
@@ -905,11 +905,11 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
         // bool, not Bit, for ArrayChunkBits: a Bit is a packed reference type.
         using BufValueT = std::conditional_t<is_packed_bit_v<T>, bool, T>;
 
-        const unsigned int S    = arr.chunk_size();
+        const unsigned int s    = arr.chunk_size();
         const int          ind2 = second_value_index(arr); // Chunk2's written(ind)
         if constexpr (build_config::chunk_dynamic)
         {
-            set_thread_chunk_size(S);
+            set_thread_chunk_size(s);
         }
         const int thr = get_thr_rank_fast();
 
@@ -923,21 +923,21 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
         {
             thread_local std::unique_ptr<BufValueT[]>   tl_buf;
             thread_local unsigned int                   tl_cap = 0;
-            if (tl_cap < S)
+            if (tl_cap < s)
             {
-                tl_buf = std::make_unique_for_overwrite<BufValueT[]>(S);
-                tl_cap = S;
+                tl_buf = std::make_unique_for_overwrite<BufValueT[]>(s);
+                tl_cap = s;
             }
             buf = tl_buf.get();
         }
 
-        const std::size_t first_chunk = first / S;
-        const std::size_t last_chunk  = (last - 1) / S;
+        const std::size_t first_chunk = first / s;
+        const std::size_t last_chunk  = (last - 1) / s;
 
         for (std::size_t ci = first_chunk; ci <= last_chunk; ++ci)
         {
-            const std::size_t c_begin = ci * S;
-            const std::size_t c_end   = c_begin + S;
+            const std::size_t c_begin = ci * s;
+            const std::size_t c_end   = c_begin + s;
             const std::size_t lo      = first > c_begin ? first : c_begin;
             const std::size_t hi      = last < c_end ? last : c_end;
 
@@ -1022,13 +1022,13 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         // elements, and write the ones this span reads.
                         if constexpr (Constant)
                         {
-                            fill_span_relaxed_edges(dst, i - c_begin, hi - c_begin, S, static_cast<T>(v0));
+                            fill_span_relaxed_edges(dst, i - c_begin, hi - c_begin, s, static_cast<T>(v0));
                         }
                         else
                         {
-                            store_span_relaxed_edges(dst, i - c_begin, hi - c_begin, S, at);
+                            store_span_relaxed_edges(dst, i - c_begin, hi - c_begin, s, at);
                         }
-                        uniform = may_be_uniform_relaxed(dst, S); // buffer pinned by the session
+                        uniform = may_be_uniform_relaxed(dst, s); // buffer pinned by the session
                     }
                     else
                     {

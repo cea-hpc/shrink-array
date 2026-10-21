@@ -328,10 +328,10 @@ bool ManagerChunk<ChunkT, T>::sweep_mops_up([[maybe_unused]] bool apply) const
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunkParallelImpl<ChunkT, T, true>::resize_all_list_block_free_thr()
 {
-    using mgr        = ManagerChunk<ChunkT, T>;
-    const auto& self = static_cast<const mgr&>(*this);
+    using Mgr        = ManagerChunk<ChunkT, T>;
+    const auto& self = static_cast<const Mgr&>(*this);
 
-    mgr::resize_list_block_free_thr(self.max_thr);
+    Mgr::resize_list_block_free_thr(self.max_thr);
 }
 
 /**
@@ -461,8 +461,8 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::destroy_after_flush(bool in_para
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunkParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_parallel, bool& have_flushed)
 {
-    using mgr        = ManagerChunk<ChunkT, T>;
-    const auto& self = static_cast<const mgr&>(*this);
+    using Mgr        = ManagerChunk<ChunkT, T>;
+    const auto& self = static_cast<const Mgr&>(*this);
 
     using Storage = DeferredOpsStorage<typename ChunkT<T>::per_thread_map>;
     auto& storage = Storage::instance();
@@ -585,8 +585,8 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_paral
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunkParallelImpl<ChunkT, T, true>::alloc_chunk_allocator_thr()
 {
-    using mgr        = ManagerChunk<ChunkT, T>;
-    const auto& self = static_cast<const mgr&>(*this);
+    using Mgr        = ManagerChunk<ChunkT, T>;
+    const auto& self = static_cast<const Mgr&>(*this);
 
     // std-alloc: allocator_data is NullValueAllocator (no per-thread array to build).
     if constexpr (build_config::use_openmp && build_config::use_fast_alloc)
@@ -616,12 +616,12 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]]
     // so instantiating this call in a std build would fail return-type deduction.
     if constexpr (build_config::use_fast_alloc)
     {
-        using mgr         = ManagerChunk<ChunkT, T>;
-        const int max_thr = static_cast<const mgr&>(*this).max_thr;
+        using Mgr         = ManagerChunk<ChunkT, T>;
+        const int max_thr = static_cast<const Mgr&>(*this).max_thr;
 
         // Also recorded here: an array may be created before any runtime size is registered,
         // and register_alloc_key() needs the slab budget.
-        mgr::registered_block_size_ = block_size;
+        Mgr::registered_block_size_ = block_size;
 
         constexpr int v = std::max(static_cast<int>(8 / sizeof(T)), 1);
 
@@ -650,7 +650,7 @@ void ManagerChunkParallelImpl<ChunkT, T, false>::init_allocator(int block_size) 
     // default, so a value pool never shares slabs with the deferred-op pool
     // (see register_chunk_size_serial in chunk_base.h; this is the static /
     // unregistered-size fallback allocator).
-    ChunkT<T>::allocator_data->set_arena(fast_alloc::ArenaKind::Value);
+    ChunkT<T>::allocator_data->set_arena(fast_alloc::ArenaKind::value);
     ChunkT<T>::allocator_data->init(ChunkT<T>::storage_units(shrink_array::alloc_chunk_count()), block_size, -1);
 }
 
@@ -673,9 +673,9 @@ void ManagerChunkParallelImpl<ChunkT, T, false>::init_allocator(int block_size) 
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunkDynImpl<ChunkT, T, true>::register_chunk_size(unsigned int size, [[maybe_unused]] int block_size)
 {
-    using mgr                   = ManagerChunk<ChunkT, T>;
-    const int this_thr          = static_cast<const mgr&>(*this).max_thr;
-    mgr::registered_block_size_ = block_size; // for register_alloc_key()
+    using Mgr                   = ManagerChunk<ChunkT, T>;
+    const int this_thr          = static_cast<const Mgr&>(*this).max_thr_;
+    Mgr::registered_block_size_ = block_size; // for register_alloc_key()
 
     if constexpr (build_config::use_fast_alloc)
     {
@@ -695,7 +695,7 @@ void ManagerChunkDynImpl<ChunkT, T, true>::register_chunk_size(unsigned int size
     // Without it the by-size lookup falls back to the (non-OMP: unsized) legacy list:
     // drain_reuse_list_for_size reads a garbage vector and buffers of different geometries
     // get mixed (overflow in init_block). max_thr is CHUNK_PMP_MAX_THREADS (1 in non-OMP).
-    mgr::register_free_list_size(size, this_thr);
+    Mgr::register_free_list_size(size, this_thr);
 }
 
 /**
@@ -787,27 +787,27 @@ struct PtrLess
 template <template <typename> typename ChunkT, typename T>
 std::size_t ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_prepare()
 {
-    using mgr        = ManagerChunk<ChunkT, T>;
-    const auto& self = static_cast<const mgr&>(*this);
+    using Mgr        = ManagerChunk<ChunkT, T>;
+    const auto& self = static_cast<const Mgr&>(*this);
 
     auto nb = static_cast<std::size_t>(std::max(1, self.max_thr));
-    nb      = std::max(nb, mgr::get_list_block_free_thr().size());
+    nb      = std::max(nb, Mgr::get_list_block_free_thr().size());
     if constexpr (build_config::chunk_dynamic)
     {
-        for (const auto& size_kv : *mgr::list_block_free_thr_by_size_)
+        for (const auto& size_kv : *Mgr::list_block_free_thr_by_size_)
         {
             nb = std::max(nb, size_kv.second.size());
         }
     }
 
-    for (const auto& key_kv : *mgr::list_block_free_thr_keyed_)
+    for (const auto& key_kv : *Mgr::list_block_free_thr_keyed_)
     {
         nb = std::max(nb, key_kv.second.size());
     }
-    mgr::teardown_to_free_.assign(nb, std::vector<T*>{});
+    Mgr::teardown_to_free_.assign(nb, std::vector<T*>{});
     // One repeat list per address slice, and the slices are the team, whose
     // size is only known inside the region: max_thr bounds it.
-    mgr::teardown_repeats_.assign(std::max(nb, static_cast<std::size_t>(CHUNK_PMP_MAX_THREADS)),
+    Mgr::teardown_repeats_.assign(std::max(nb, static_cast<std::size_t>(CHUNK_PMP_MAX_THREADS)),
                                   std::vector<internal::TeardownRepeat<T>>{});
     return nb;
 }
@@ -834,8 +834,8 @@ std::size_t ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_pre
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int bucket)
 {
-    using mgr     = ManagerChunk<ChunkT, T>;
-    auto& to_free = mgr::teardown_to_free_;
+    using Mgr     = ManagerChunk<ChunkT, T>;
+    auto& to_free = Mgr::teardown_to_free_;
 
     if (bucket < 0 || static_cast<std::size_t>(bucket) >= to_free.size())
     {
@@ -846,7 +846,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int
 
     // RAW default list container, NOT the size-aware overload. It may be smaller than max_thr
     // (see allocate_chunk_internal): an unsized slot has nothing to drain.
-    if (auto& legacy = mgr::get_list_block_free_thr(); bucket_idx < legacy.size())
+    if (auto& legacy = Mgr::get_list_block_free_thr(); bucket_idx < legacy.size())
     {
         auto& lbf = legacy[bucket_idx].list;
         // std-alloc (svalloc/malloc) owns each block, so it must be freed on
@@ -863,7 +863,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int
     // end the final geometry's buffers would leak otherwise. All variants.
     if constexpr (build_config::chunk_dynamic)
     {
-        for (auto& size_kv : *mgr::list_block_free_thr_by_size_)
+        for (auto& size_kv : *Mgr::list_block_free_thr_by_size_)
         {
             if (bucket_idx >= size_kv.second.size())
             {
@@ -879,7 +879,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int
     }
     // The keyed lists (per-array affinity) are screened the same way: a block
     // parked there is a block like any other, just filed under its array.
-    for (auto& key_kv : *mgr::list_block_free_thr_keyed_)
+    for (auto& key_kv : *Mgr::list_block_free_thr_keyed_)
     {
         if (bucket_idx >= key_kv.second.size())
         {
@@ -911,8 +911,8 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_sort([[may
         return;
     }
 
-    using mgr     = ManagerChunk<ChunkT, T>;
-    auto& to_free = mgr::teardown_to_free_;
+    using Mgr     = ManagerChunk<ChunkT, T>;
+    auto& to_free = Mgr::teardown_to_free_;
 
     if (bucket < 0 || static_cast<std::size_t>(bucket) >= to_free.size())
     {
@@ -957,15 +957,15 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
         return;
     }
 
-    using mgr           = ManagerChunk<ChunkT, T>;
-    const auto& to_free = mgr::teardown_to_free_;
+    using Mgr           = ManagerChunk<ChunkT, T>;
+    const auto& to_free = Mgr::teardown_to_free_;
     const auto  less    = internal::PtrLess<T>{};
 
     if (slice < 0 || nslices <= 0 || slice >= nslices)
     {
         return;
     }
-    if (static_cast<std::size_t>(slice) >= mgr::teardown_repeats_.size())
+    if (static_cast<std::size_t>(slice) >= Mgr::teardown_repeats_.size())
     {
         // A team larger than max_thr: prepare() could not size for it.
         CHUNK_LOG(warn, pool, "teardown dedup: slice {} of {} has no repeat list, skipped", slice, nslices);
@@ -1033,7 +1033,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
     }
     std::ranges::make_heap(heap, greater);
 
-    auto&       repeats     = mgr::teardown_repeats_[static_cast<std::size_t>(slice)];
+    auto&       repeats     = Mgr::teardown_repeats_[static_cast<std::size_t>(slice)];
     const T*    prev        = nullptr;
     std::size_t prev_bucket = 0;
     bool        have        = false;
@@ -1083,8 +1083,8 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_thr(int bucket)
 {
-    using mgr     = ManagerChunk<ChunkT, T>;
-    auto& to_free = mgr::teardown_to_free_;
+    using Mgr     = ManagerChunk<ChunkT, T>;
+    auto& to_free = Mgr::teardown_to_free_;
 
     if (bucket < 0 || static_cast<std::size_t>(bucket) >= to_free.size())
     {
@@ -1094,7 +1094,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_thr(int bu
     auto&      blocks     = to_free[bucket_idx];
 
     std::unordered_set<T*> skip;
-    for (const auto& per_slice : mgr::teardown_repeats_)
+    for (const auto& per_slice : Mgr::teardown_repeats_)
     {
         for (const auto& rep : per_slice)
         {
@@ -1137,11 +1137,11 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_thr(int bu
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunkParallelImpl<ChunkT, T, true>::delete_list_block_chunk_free_itself()
 {
-    using mgr = ManagerChunk<ChunkT, T>;
+    using Mgr = ManagerChunk<ChunkT, T>;
 
     if constexpr (IsChunk2Or2A<ChunkT, T>)
     {
-        mgr::list_block_free_thr.clear();
+        Mgr::list_block_free_thr.clear();
     }
     else
     {

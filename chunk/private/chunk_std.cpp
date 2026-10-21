@@ -111,21 +111,21 @@ template struct ChunkPoolParallelInterface<build_config::use_openmp, AllTypeChun
 // need_load_balance_list_block_free() link in both models -- doing nothing
 // where there is nothing to do.
 
-using chunk_pools = ChunkPoolParallelInterface<>;
+using ChunkPools = ChunkPoolParallelInterface<>;
 
 bool need_load_balance_list_block_free()
 {
-    return chunk_pools::need_load_balance_list_block_free();
+    return ChunkPools::need_load_balance_list_block_free();
 }
 
 void load_balance_list_block_free()
 {
-    chunk_pools::load_balance_list_block_free();
+    ChunkPools::load_balance_list_block_free();
 }
 
 void clear_all_list_block_free_thr()
 {
-    chunk_pools::clear_all_list_block_free_thr();
+    ChunkPools::clear_all_list_block_free_thr();
 }
 
 // The teardown verbs that pull structures from under the arrays -- the
@@ -141,7 +141,7 @@ void delete_list_block_chunk_free_itself()
     {
         return;
     }
-    chunk_pools::delete_list_block_chunk_free_itself();
+    ChunkPools::delete_list_block_chunk_free_itself();
 }
 
 void delete_chunk_allocator()
@@ -150,7 +150,7 @@ void delete_chunk_allocator()
     {
         return;
     }
-    chunk_pools::delete_chunk_allocator();
+    ChunkPools::delete_chunk_allocator();
 }
 
 namespace
@@ -176,10 +176,10 @@ void release_chunk_pools()
     teardown_outside_region("release_chunk_pools");
     if (internal::live_array_count() > 0)
     {
-        chunk_pools::clear_all_list_block_free_thr(); // the parked buffers only
+        ChunkPools::clear_all_list_block_free_thr(); // the parked buffers only
         return;
     }
-    chunk_pools::release_chunk_pools();
+    ChunkPools::release_chunk_pools();
 }
 
 /// @copydoc shrink_array::compress_now_and_trim_pools

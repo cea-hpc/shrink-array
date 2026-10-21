@@ -119,14 +119,14 @@ static int expected_before_inner(long i, int round)
 /// opens a nested region that writes again, then writes after it.
 static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
 {
-    const long N = static_cast<long>(ref.size());
+    const long n = static_cast<long>(ref.size());
     for (int round = 0; round < rounds; ++round)
     {
 #pragma omp parallel num_threads(4)
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (long i = 0; i < N; ++i)
+            for (long i = 0; i < n; ++i)
             {
                 a[i] = expected_before_inner(i, round);
             }
@@ -134,7 +134,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
             // A nested region per thread, over this thread's own slice (the
             // static schedule gives the same slice as above).
 #pragma omp for schedule(static)
-            for (long b = 0; b < N / 1024; ++b)
+            for (long b = 0; b < n / 1024; ++b)
             {
 #pragma omp parallel num_threads(2)
                 {
@@ -160,7 +160,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
             }
         }
         end_phase();
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             ref[i] = expected_before_inner(i, round);
             if (i % 7 == 0)
@@ -176,7 +176,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
     }
 
     long fails = 0;
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const int v = a[i];
         if (v != ref[i])
@@ -229,9 +229,9 @@ static int run_body(int argc, char** argv)
     chunk_pmp_set_max_active_levels(nested_active ? 2 : 1);
     ParamChunk::init_indexes(true);
 
-    const long       N = 1L << 16;
-    Array<int>       a(N);
-    std::vector<int> ref(N, 0);
+    const long       n = 1L << 16;
+    Array<int>       a(n);
+    std::vector<int> ref(n, 0);
 
     println("=== nested_region_validation [variant = {}]  outer team 4, nested regions {} ===", variant_name(),
             nested_active ? "ACTIVE (--nested-active)" : "serialised");

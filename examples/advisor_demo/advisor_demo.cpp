@@ -77,10 +77,10 @@ struct Truth
 
 static Truth ground_truth(const ArrayChunk2A<double>& tab, double meta)
 {
-    Truth t{tab.nb_chunk, 0, 0.};
+    Truth t{tab.nb_chunk_, 0, 0.};
     for (long long j = 0; j < t.chunks; ++j)
     {
-        const auto& c = tab.chunk_list[j];
+        const auto& c = tab.chunk_list_[j];
         if (!c.is_cst_val1() && !c.is_cst_val2())
         {
             ++t.mat;

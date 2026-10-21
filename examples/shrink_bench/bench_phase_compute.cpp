@@ -525,8 +525,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab3[i] = std::fmod(static_cast<double>(tab3[i]), 1e6);
                     tab5[i] = std::fmod(static_cast<double>(tab5[i]), 1e6);
                     {
-                        const ComplexDouble _cb = tab_complex[i];
-                        tab_complex[i]          = ComplexDouble(std::fmod(_cb.real(), 1e6), std::fmod(_cb.imag(), 1e6));
+                        const ComplexDouble cb = tab_complex[i];
+                        tab_complex[i]         = ComplexDouble(std::fmod(cb.real(), 1e6), std::fmod(cb.imag(), 1e6));
                     }
 
                     if (tab2[i] >= 0)

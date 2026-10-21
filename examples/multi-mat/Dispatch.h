@@ -30,27 +30,27 @@ class Dispatch
     /// @brief Room for @p sz materials, all std::vector until set().
     void create(int sz)
     {
-        tab_chunk.resize(sz);
+        tab_chunk_.resize(sz);
     }
 
     /// @brief The kinds, one per material.
     void set(const std::vector<bool>& t)
     {
-        tab_chunk = t;
+        tab_chunk_ = t;
     }
 
     /// @brief Is material @p i kept in chunk arrays?
     [[nodiscard]] bool is_chunk(int i) const
     {
-        return tab_chunk[i];
+        return tab_chunk_[i];
     }
 
     /// @brief Is material @p i kept in std::vectors?
     [[nodiscard]] bool is_vector(int i) const
     {
-        return !tab_chunk[i];
+        return !tab_chunk_[i];
     }
 
   private:
-    std::vector<bool> tab_chunk; ///< true: chunk arrays; false: std::vector
+    std::vector<bool> tab_chunk_; ///< true: chunk arrays; false: std::vector
 };

@@ -55,21 +55,21 @@ class ConditionalCounter
     {
         if constexpr (Enabled)
         {
-            ++value;
+            ++value_;
         }
     }
     void operator--() noexcept
     {
         if constexpr (Enabled)
         {
-            --value;
+            --value_;
         }
     }
     void operator=(CounterValueT v) noexcept
     {
         if constexpr (Enabled)
         {
-            value = v;
+            value_ = v;
         }
     }
 
@@ -77,7 +77,7 @@ class ConditionalCounter
     {
         if constexpr (Enabled)
         {
-            return value;
+            return value_;
         }
         else
         {
@@ -87,7 +87,7 @@ class ConditionalCounter
     /// @}
 
   private:
-    [[no_unique_address]] std::conditional_t<Enabled, CounterValueT, std::monostate> value{};
+    [[no_unique_address]] std::conditional_t<Enabled, CounterValueT, std::monostate> value_{};
 };
 
 } // namespace shrink_array

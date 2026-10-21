@@ -44,7 +44,7 @@ InfoFreeElt::InfoFreeElt()
         tab_ptr = svalloc<VoidMaxFreeElt>(max_thr);
 
         compt    = svcalloc<int>(max_thr);
-        somme_sz = svcalloc<int>(max_thr);
+        somme_sz_ = svcalloc<int>(max_thr);
 
         nb_thr = max_thr;
     }
@@ -61,7 +61,7 @@ InfoFreeElt::~InfoFreeElt()
     svfree(tab_sz);
 
     svfree(compt);
-    svfree(somme_sz);
+    svfree(somme_sz_);
 
     // An ordinary global, unlike the ladder and the arenas, which are never
     // destroyed: a ladder free in a region, or a parallel_end flush, may still
@@ -72,7 +72,7 @@ InfoFreeElt::~InfoFreeElt()
     tab_ptr  = nullptr;
     tab_sz   = nullptr;
     compt    = nullptr;
-    somme_sz = nullptr;
+    somme_sz_ = nullptr;
     nb_thr   = 0;
 }
 
@@ -132,7 +132,7 @@ class ManageTCTypeAllocator
     {
         if constexpr (!alloc_config::use_openmp)
         {
-            set_allocator.insert(ptr_tcallocator); // serial builds only: no concurrent insert
+            set_allocator_.insert(ptr_tcallocator); // serial builds only: no concurrent insert
         }
     }
 
@@ -141,7 +141,7 @@ class ManageTCTypeAllocator
     {
         if constexpr (!alloc_config::use_openmp)
         {
-            set_allocator.erase(ptr_tcallocator); // serial builds only: no concurrent erase
+            set_allocator_.erase(ptr_tcallocator); // serial builds only: no concurrent erase
         }
     }
 
@@ -149,7 +149,7 @@ class ManageTCTypeAllocator
     /// @details Adds nothing in an OpenMP build; the set is empty by design.
     void add_allocated_size(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const
     {
-        for (const VTCTypeAllocator* inst : set_allocator)
+        for (const VTCTypeAllocator* inst : set_allocator_)
         {
             inst->add_allocated_size(sum_used_size, sum_nn_ref, alloc_sz);
         }
@@ -160,7 +160,7 @@ class ManageTCTypeAllocator
     // OpenMP, where the allocators are not enrolled.
     using SetAllocatorT = std::set<VTCTypeAllocator*>;
 
-    SetAllocatorT set_allocator;
+    SetAllocatorT set_allocator_;
 };
 
 

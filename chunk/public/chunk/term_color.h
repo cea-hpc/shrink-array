@@ -28,11 +28,11 @@ namespace shrink_array
 struct TermColor
 {
     const char* reset;   ///< Reset all attributes (SGR 0).
-    const char* BOLD;    ///< Bold (SGR 1).
-    const char* RED;     ///< Red foreground.
+    const char* bold;    ///< Bold (SGR 1).
+    const char* red;     ///< Red foreground.
     const char* green;   ///< Green foreground.
     const char* yellow;  ///< Yellow foreground.
-    const char* CYAN;    ///< Cyan foreground.
+    const char* cyan;    ///< Cyan foreground.
     const char* white;   ///< White foreground.
     const char* magenta; ///< Magenta foreground.
 };
@@ -45,11 +45,11 @@ inline const TermColor tc = []() noexcept
     const bool i = isatty(STDOUT_FILENO) != 0;
     return TermColor{
         .reset   = i ? "\033[0m" : "",
-        .BOLD    = i ? "\033[1m" : "",
-        .RED     = i ? "\033[31m" : "",
+        .bold    = i ? "\033[1m" : "",
+        .red     = i ? "\033[31m" : "",
         .green   = i ? "\033[32m" : "",
         .yellow  = i ? "\033[33m" : "",
-        .CYAN    = i ? "\033[36m" : "",
+        .cyan    = i ? "\033[36m" : "",
         .white   = i ? "\033[37m" : "",
         .magenta = i ? "\033[35m" : "",
     };

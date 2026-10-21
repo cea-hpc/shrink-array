@@ -84,7 +84,7 @@ class InfoFreeElt
     /// @brief Batch capacity, in blocks. The other bound is 4 MiB of payload.
     static constexpr int max_free_elt = 10000;
 
-    int* somme_sz{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
+    int* somme_sz_{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
 
   public:
     using IntMaxFreeElt  = std::array<int, max_free_elt>;   ///< One rank's batched sizes.
@@ -120,12 +120,12 @@ class InfoFreeElt
     {
         int& ref_compt = compt[thr_rank];
 
-        if ((ref_compt < max_free_elt && somme_sz[thr_rank] < 4 * 1024 * 1024))
+        if ((ref_compt < max_free_elt && somme_sz_[thr_rank] < 4 * 1024 * 1024))
         {
             tab_ptr[thr_rank][ref_compt] = ptr;
             tab_sz[thr_rank][ref_compt]  = sz;
 
-            somme_sz[thr_rank] += sz;
+            somme_sz_[thr_rank] += sz;
 
             ref_compt++;
             return false;
@@ -137,7 +137,7 @@ class InfoFreeElt
     /// @brief Forget the batch. Call only after its blocks have been released.
     void reset(int thr_rank) noexcept
     {
-        somme_sz[thr_rank] = compt[thr_rank] = 0;
+        somme_sz_[thr_rank] = compt[thr_rank] = 0;
     }
 
     VoidMaxFreeElt* tab_ptr{nullptr}; ///< Per rank: the batched blocks.

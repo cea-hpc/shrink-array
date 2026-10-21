@@ -62,12 +62,12 @@ class ManagerChunk;
  *          released in the destructor.
  *
  * @tparam T        stored element type
- * @tparam ind_type index type used for sizes and element positions
+ * @tparam IndType index type used for sizes and element positions
  */
-template <ArrayChunkElement T, typename ind_type>
-class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
-                     public ParallelSupport2A<ArrayChunk2A<T, ind_type>>,
-                     public RechunkHooks<ArrayChunk2A<T, ind_type>>
+template <ArrayChunkElement T, typename IndType>
+class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
+                     public ParallelSupport2A<ArrayChunk2A<T, IndType>>,
+                     public RechunkHooks<ArrayChunk2A<T, IndType>>
 {
   public:
     using ManagerChunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as manager_type.
@@ -87,13 +87,13 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using proxy_type   = Base2::proxy_type;   ///< Proxy2A<T>, the write proxy of the non-const accessors.
     using value_type   = T;                   ///< Stored element type.
 
-    using Base2::chunk_list;
-    using Base2::m_size;
-    using Base2::nb_chunk;
+    using Base2::chunk_list_;
+    using Base2::m_size_;
+    using Base2::nb_chunk_;
     using Base2::resize;
 
     using Base::nb_tab;
-    using Base::num_tab;
+    using Base::num_tab_;
     using Base::size_policy_;
 
     // Mode-specific members of the mixins. Required: ArrayChunkBase re-exports RechunkSupport's
@@ -109,7 +109,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit ArrayChunk2A(ind_type sz = 0)
+    explicit ArrayChunk2A(IndType sz = 0)
     {
         if constexpr (build_config::use_openmp)
         {
@@ -151,7 +151,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    ArrayChunk2A(It first, It last) : ArrayChunk2A(static_cast<ind_type>(std::distance(first, last)))
+    ArrayChunk2A(It first, It last) : ArrayChunk2A(static_cast<IndType>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
@@ -206,9 +206,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @param i element index
      * @return false while that chunk is still compressed to a constant
      */
-    [[nodiscard]] bool written(ind_type i) const noexcept
+    [[nodiscard]] bool written(IndType i) const noexcept
     {
-        return chunk_list[this->chunk_index_of(i)].written();
+        return chunk_list_[this->chunk_index_of(i)].written();
     }
 
     /**
@@ -218,7 +218,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list keeps its capacity.
      */
-    void resize(ind_type newsz);
+    void resize(IndType newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) (a shrinking resize()). Same
@@ -235,7 +235,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @note Fills [0, count), not only the new elements: Base2::resize(count, val) has
      *       std::vector::resize semantics, so this goes through ArrayChunkBase::assign.
      */
-    void assign(ind_type count, T val) // T, not InT<T>: see ArrayChunkBase::assign
+    void assign(IndType count, T val) // T, not InT<T>: see ArrayChunkBase::assign
     {
         Base::assign(count, val);
     }
@@ -252,18 +252,18 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     bool operator==(const ArrayChunk2A& other) const noexcept
     {
-        if (m_size != other.m_size)
+        if (m_size_ != other.m_size_)
         {
             return false;
         }
-        if (m_size == 0)
+        if (m_size_ == 0)
         {
             return true;
         }
         const auto        csz = static_cast<long long>(this->chunk_size());
         std::atomic<bool> differ{false};
         parallel_storage_init::for_each_chunk(
-            this->chunk_index_of(m_size - 1) + 1,
+            this->chunk_index_of(m_size_ - 1) + 1,
             [&](int c)
             {
                 if (differ.load(std::memory_order_relaxed))
@@ -271,10 +271,10 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                     return;
                 }
                 const long long lo = static_cast<long long>(c) * csz;
-                const long long hi = std::min(lo + csz, static_cast<long long>(m_size));
+                const long long hi = std::min(lo + csz, static_cast<long long>(m_size_));
                 for (long long i = lo; i < hi; ++i)
                 {
-                    if (Base2::read_value(static_cast<ind_type>(i)) != other.read_value(static_cast<ind_type>(i)))
+                    if (Base2::read_value(static_cast<IndType>(i)) != other.read_value(static_cast<IndType>(i)))
                     {
                         differ.store(true, std::memory_order_relaxed);
                         return;
@@ -299,14 +299,14 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     /// @return const reference to the chunks backing this array
     [[nodiscard]] const Base::chunk_list_type& get_chunk_list() const noexcept
     {
-        return chunk_list;
+        return chunk_list_;
     }
 
     /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
     [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::chunk_list_type&
     getChunkList() const noexcept
     {
-        return chunk_list;
+        return chunk_list_;
     }
 
     /**
@@ -367,22 +367,22 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         }
         else
         {
-            using gvh = GlobalVecHolder<T>;
+            using Gvh = GlobalVecHolder<T>;
             // Each refusal counted by cause (second_value_stats()): it returns
             // 0 as a call with nothing to free does.
             if (CHUNK_PMP_IN_PARALLEL_REGION)
             {
-                gvh::refused_parallel.fetch_add(1, std::memory_order_relaxed);
+                Gvh::refused_parallel.fetch_add(1, std::memory_order_relaxed);
                 return 0;
             }
             if (g_in_rechunk_rebuild.load(std::memory_order_acquire))
             {
-                gvh::refused_rechunk.fetch_add(1, std::memory_order_relaxed);
+                Gvh::refused_rechunk.fetch_add(1, std::memory_order_relaxed);
                 return 0;
             }
-            if (gvh::index_degraded.load(std::memory_order_relaxed))
+            if (Gvh::index_degraded.load(std::memory_order_relaxed))
             {
-                gvh::refused_degraded.fetch_add(1, std::memory_order_relaxed);
+                Gvh::refused_degraded.fetch_add(1, std::memory_order_relaxed);
                 // Sticky until the last array of the type goes: say it once, the
                 // run will otherwise end on the identifier exhaustion with no cause.
                 static std::atomic<bool> warned{false};
@@ -399,9 +399,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
             // end of reclaim_unmarked() -- the mark included, since a slot found
             // before it and recorded after it would be freed (GlobalVecHolder's
             // "Reclaim contract").
-            const typename gvh::ReclaimScope scope;
-            gvh::reclaim_runs.fetch_add(1, std::memory_order_relaxed);
-            const std::size_t handed_out = gvh::ids_handed_out();
+            const typename Gvh::ReclaimScope scope;
+            Gvh::reclaim_runs.fetch_add(1, std::memory_order_relaxed);
+            const std::size_t handed_out = Gvh::ids_handed_out();
             if (handed_out == 0)
             {
                 return 0;
@@ -422,20 +422,20 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                     for (int j = 0; j < nc; ++j)
                     {
                         const T* vals = arr->chunk_ref(static_cast<std::size_t>(j)).values_load();
-                        if (gvh::region_contains(vals))
+                        if (Gvh::region_contains(vals))
                         {
-                            mark_cst2_id(referenced, gvh::slot_id(vals));
+                            mark_cst2_id(referenced, Gvh::slot_id(vals));
                         }
                     }
                 });
 
             // Every slot of every row: a released row is empty, a stale entry only keeps a
             // value one pass longer.
-            using spec              = typename Proxy2A<T>::BaseSpec;
-            const std::size_t nrows = spec::second_value_row_count();
+            using Spec              = typename Proxy2A<T>::BaseSpec;
+            const std::size_t nrows = Spec::second_value_row_count();
             for (std::size_t r = 0; r < nrows; ++r)
             {
-                const auto& row = spec::get_tab_second_value(static_cast<int>(r));
+                const auto& row = Spec::get_tab_second_value(static_cast<int>(r));
                 for (const auto& slot : row)
                 {
                     if constexpr (SecondValueTraits<T>::indexed)
@@ -444,15 +444,15 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                     }
                     else if (!(slot == T{}))
                     {
-                        if (const T* hit = gvh::index_lookup(slot))
+                        if (const T* hit = Gvh::index_lookup(slot))
                         {
-                            mark_cst2_id(referenced, gvh::slot_id(hit));
+                            mark_cst2_id(referenced, Gvh::slot_id(hit));
                         }
                     }
                 }
             }
-            const std::size_t freed = gvh::reclaim_unmarked(referenced);
-            gvh::reclaim_freed.fetch_add(freed, std::memory_order_relaxed);
+            const std::size_t freed = Gvh::reclaim_unmarked(referenced);
+            Gvh::reclaim_freed.fetch_add(freed, std::memory_order_relaxed);
             return freed;
         }
     }
@@ -507,7 +507,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         auto& sh_inf = *Proxy2A<T>::share_info_array;
 
         sh_inf.insert(this->registry_key(), nb_tab);
-        num_tab = nb_tab;
+        num_tab_ = nb_tab;
         ++nb_tab;
     }
 
@@ -520,16 +520,16 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *
      * @param sz element count to allocate for
      */
-    void rebuild_storage(ind_type sz);
+    void rebuild_storage(IndType sz);
 
     /**
      * @brief Second value registered for the chunk holding element @p i.
      * @param i element index
      * @return this chunk's own second value (2A registers one per chunk)
      */
-    auto get_metadata(ind_type i) const noexcept
+    auto get_metadata(IndType i) const noexcept
     {
-        return Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, this->chunk_index_of(i));
+        return Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(i));
     }
 
     /// @brief Storage teardown shared by clear() and rechunk_to().
@@ -558,7 +558,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     {
         if (!holds_cst2_registry_)
         {
-            Chunk2A<T>::tab_cst_val2_holder::create();
+            Chunk2A<T>::Holder::create();
             holds_cst2_registry_ = true;
         }
     }
@@ -569,7 +569,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     void swap_identity(ArrayChunk2A& other)
     {
         using std::swap;
-        swap(this->num_tab, other.num_tab);
+        swap(this->num_tab_, other.num_tab_);
         swap(holds_cst2_registry_, other.holds_cst2_registry_);
         Proxy2A<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
     }

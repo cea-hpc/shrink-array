@@ -35,7 +35,7 @@
  *                            (9, 11, 13, ...), only the first declared:
  *                            shrink_bench's situation, Chunk2A's advantage.
  *
- *          One Array<double> of N elements (N rounded up to whole chunks),
+ *          One Array<double> of n_elems elements (n_elems rounded up to whole chunks),
  *          all at 0 at the start. Every iteration gives each chunk a role
  *          from a hash of (chunk, iteration), so chunks keep changing state
  *          (materialise, compress, rewrite) from one iteration to the next:
@@ -57,17 +57,17 @@
  *          exact in double whatever the reduction order: the checksum is the
  *          same for every variant and thread count, and must be. --verify
  *          also keeps a std::vector mirror and compares every element at the
- *          end (twice the memory: small N only).
+ *          end (twice the memory: small n_elems only).
  *
  *          Printed: time per pass (summed over the iterations) and in total,
  *          the chunks compressed at the end, the exact resident size
  *          (smaps_rollup: VmRSS trails reality at 64 threads) at the end
  *          and its peak over the iteration ends, the checksum.
- *          Compare two runs at the same N, iterations, K and thread count;
+ *          Compare two runs at the same n_elems, iterations, K and thread count;
  *          at --constants 1 the compressed fraction must agree (to 0.1 point)
  *          for the times to mean anything.
  *
- *          Usage: variant_compare [--n N] [--iters I] [--constants K] [--verify]
+ *          Usage: variant_compare [--n n_elems] [--iters I] [--constants K] [--verify]
  */
 
 #include <chrono>      // std::chrono::steady_clock
@@ -183,7 +183,7 @@ int main(int argc, char** argv)
 {
     ParamChunk::init_indexes(true);
 
-    long N      = 1L << 28;
+    long n_elems = 1L << 28;
     int  iters  = 20;
     int  nconst = 1;
     bool verify = false;
@@ -192,7 +192,7 @@ int main(int argc, char** argv)
         const std::string o = argv[a];
         if (o == "--n" && a + 1 < argc)
         {
-            N = shrink_array::arg_number<long>(argv[++a], N, "--n");
+            n_elems = shrink_array::arg_number<long>(argv[++a], n_elems, "--n");
         }
         else if (o == "--iters" && a + 1 < argc)
         {
@@ -213,37 +213,37 @@ int main(int argc, char** argv)
             return 2;
         }
     }
-    if (nconst < 1 || nconst > max_constants || iters < 1 || N < 1 || N > 0x7fffffffL)
+    if (nconst < 1 || nconst > max_constants || iters < 1 || n_elems < 1 || n_elems > 0x7fffffffL)
     {
         std::fprintf(stderr, "variant_compare: need 1 <= constants <= %d, iters >= 1, 1 <= n < 2^31\n", max_constants);
         return 2;
     }
 
     // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
-    const long S       = static_cast<long>(Array<double>(0).chunk_size());
-    N                  = (N + S - 1) / S * S;
-    const long nchunks = N / S;
+    const long s       = static_cast<long>(Array<double>(0).chunk_size());
+    n_elems            = (n_elems + s - 1) / s * s;
+    const long nchunks = n_elems / s;
 
     println("=== variant_compare [{}]  n={}  chunk_size={}  chunks={}  iters={}  constants={}  threads={}{} ===",
-            variant_name(), N, S, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
+            variant_name(), n_elems, s, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
 
-    Array<double> a(static_cast<int>(N));
+    Array<double> a(static_cast<int>(n_elems));
     maybe_declare_second_value(a, second_value[0]);
     std::vector<double> ref;
     if (verify)
     {
-        ref.assign(static_cast<std::size_t>(N), 0.);
+        ref.assign(static_cast<std::size_t>(n_elems), 0.);
     }
 
-    using clk       = std::chrono::steady_clock;
-    const auto secs = [](clk::time_point t0) { return std::chrono::duration<double>(clk::now() - t0).count(); };
+    using Clk       = std::chrono::steady_clock;
+    const auto secs = [](Clk::time_point t0) { return std::chrono::duration<double>(Clk::now() - t0).count(); };
 
     double    t_const  = 0.;
     double    t_plain  = 0.;
     double    t_read   = 0.;
     double    t_rmw    = 0.;
     double    checksum = 0.;
-    const int n        = static_cast<int>(N);
+    const int n        = static_cast<int>(n_elems);
 
     // Exact RSS at each iteration end, outside the timed passes (a read
     // walks the page tables). A peak inside a pass is not seen.
@@ -251,14 +251,14 @@ int main(int argc, char** argv)
     for (int it = 0; it < iters; ++it)
     {
         // const: the constant chunks
-        auto t0 = clk::now();
+        auto t0 = Clk::now();
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static)
             for (int i = 0; i < n; ++i)
             {
-                const Role r = role(i / S, it, nconst);
+                const Role r = role(i / s, it, nconst);
                 if (r.kind == 0)
                 {
                     a[i] = r.value;
@@ -269,14 +269,14 @@ int main(int argc, char** argv)
         t_const += secs(t0);
 
         // plain: the non-uniform chunks
-        t0 = clk::now();
+        t0 = Clk::now();
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static)
             for (int i = 0; i < n; ++i)
             {
-                if (role(i / S, it, nconst).kind == 1)
+                if (role(i / s, it, nconst).kind == 1)
                 {
                     a[i] = plain(i, it);
                 }
@@ -286,7 +286,7 @@ int main(int argc, char** argv)
         t_plain += secs(t0);
 
         // read: everything
-        t0              = clk::now();
+        t0              = Clk::now();
         double      sum = 0.;
         const auto& ca  = std::as_const(a);
 #pragma omp parallel
@@ -303,14 +303,14 @@ int main(int argc, char** argv)
         checksum += sum;
 
         // rmw: the non-uniform chunks again
-        t0 = clk::now();
+        t0 = Clk::now();
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static)
             for (int i = 0; i < n; ++i)
             {
-                if (role(i / S, it, nconst).kind == 1)
+                if (role(i / s, it, nconst).kind == 1)
                 {
                     a[i] += 1.;
                 }
@@ -324,9 +324,9 @@ int main(int argc, char** argv)
 
         if (verify)
         {
-            for (long i = 0; i < N; ++i)
+            for (long i = 0; i < n_elems; ++i)
             {
-                const Role r = role(i / S, it, nconst);
+                const Role r = role(i / s, it, nconst);
                 if (r.kind == 0)
                 {
                     ref[static_cast<std::size_t>(i)] = r.value;
@@ -342,7 +342,7 @@ int main(int argc, char** argv)
     long compressed = 0;
     for (long j = 0; j < nchunks; ++j)
     {
-        compressed += a.written(static_cast<int>(j * S)) ? 0 : 1;
+        compressed += a.written(static_cast<int>(j * s)) ? 0 : 1;
     }
 
     const double total = t_const + t_plain + t_read + t_rmw;
@@ -358,7 +358,7 @@ int main(int argc, char** argv)
     if (verify)
     {
         long nbad = 0;
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n_elems; ++i)
         {
             if (std::as_const(a)[static_cast<int>(i)] != ref[static_cast<std::size_t>(i)])
             {

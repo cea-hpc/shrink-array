@@ -55,13 +55,13 @@ namespace shrink_array
 template <class T, class A = std::allocator<T>>
 class DefaultInitAllocator : public A
 {
-    using traits = std::allocator_traits<A>;
+    using Traits = std::allocator_traits<A>;
 
   public:
     template <class U>
     struct rebind
     {
-        using other = DefaultInitAllocator<U, typename traits::template rebind_alloc<U>>;
+        using other = DefaultInitAllocator<U, typename Traits::template rebind_alloc<U>>;
     };
 
     using A::A;
@@ -77,7 +77,7 @@ class DefaultInitAllocator : public A
     template <class U, class... Args>
     void construct(U* p, Args&&... args)
     {
-        traits::construct(static_cast<A&>(*this), p, std::forward<Args>(args)...);
+        Traits::construct(static_cast<A&>(*this), p, std::forward<Args>(args)...);
     }
 };
 
@@ -95,17 +95,17 @@ class DefaultInitAllocator : public A
 template <class T>
 class BaselineVector : public std::vector<T, DefaultInitAllocator<T>>
 {
-    using base = std::vector<T, DefaultInitAllocator<T>>;
+    using Base = std::vector<T, DefaultInitAllocator<T>>;
 
   public:
-    using base::base;
-    using base::resize;
-    using typename base::size_type;
+    using Base::Base;
+    using Base::resize;
+    using typename Base::size_type;
 
     BaselineVector() = default;
 
     /// @brief @p n elements reading T{}, zeroed in parallel.
-    explicit BaselineVector(size_type n) : base(n)
+    explicit BaselineVector(size_type n) : Base(n)
     {
         zero_from(0);
     }
@@ -114,7 +114,7 @@ class BaselineVector : public std::vector<T, DefaultInitAllocator<T>>
     void resize(size_type n)
     {
         const size_type old = this->size();
-        base::resize(n);
+        Base::resize(n);
         if (n > old)
         {
             zero_from(old);

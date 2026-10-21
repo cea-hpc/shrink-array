@@ -204,14 +204,14 @@ void Chunk2A<T>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
  * before the clear, so clear_int_st() commits the right pointer. `T{}` entries are skipped.
  *
  * @param thr     Rank whose candidate list is processed.
- * @param proxy2A Proxy of the write that triggered the pass; may be null. Used ONLY for
+ * @param proxy2a Proxy of the write that triggered the pass; may be null. Used ONLY for
  *                the compression handshake and re-queueing its chunk, never for sizing.
  *
  * @note Under OpenMP the body is gated by `compression_mgr.start()`, which can decline
  *       (another thread is compressing): the pass then does nothing.
  */
 template <typename T>
-void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
+void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2a)
 {
     // Geometry is pinned PER CHUNK, never once here (see the @file comment): each entry
     // carries its array's ChunkElems (from push_to_compress_list()), pinned right before
@@ -230,7 +230,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     // OpenMP-specific.
     if constexpr (build_config::use_openmp)
     {
-        if (proxy2A)
+        if (proxy2a)
         {
             // Per-chunk exclusion (ChunkBase::steal_mark_): claim every candidate BEFORE
             // start(), whose heavy barrier publishes the marks to the writers (its window then
@@ -249,7 +249,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
                     chunk_t->steal_mark();
                 }
             }
-            const bool ret = proxy2A->compression_mgr.template start<Proxy2A<T>>();
+            const bool ret = proxy2a->compression_mgr.template start<Proxy2A<T>>();
             if (!ret)
             {
                 for (int k = 0; k < sz; ++k)
@@ -282,7 +282,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     ll_compt2.reserve((sz / 50) + 1);
 
     // `claimed`: the claim loop runs only with a proxy (without: the resize path).
-    fill_list_chunk_to_compress_in_par(thr, ll_compt1, ll_compt2, proxy2A != nullptr);
+    fill_list_chunk_to_compress_in_par(thr, ll_compt1, ll_compt2, proxy2a != nullptr);
 
     for (auto& tup : ll_compt1)
     {
@@ -326,8 +326,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
                 const SecondValueRef<T> ptr_second_value =
                     Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
 
-                T* new_cst_val2_ptr =
-                    chunk_ptr->tab_cst_val2_holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                T* new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
 
                 chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr, new_cst_val2_ptr);
             }
@@ -337,7 +336,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
             // bool: no second-value pointer, ordering issue does not apply
             if (second_v)
             {
-                chunk_ptr->tab_cst_val2_holder::find_or_set_ind_cst_val2();
+                chunk_ptr->Holder::find_or_set_ind_cst_val2();
             }
 
             char* ptr_type_cst = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
@@ -391,19 +390,19 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     vec_tuple_to_compress.clear();
     vec_tuple_to_compress.reserve((sz / 10) + 1);
 
-    if (proxy2A)
+    if (proxy2a)
     {
-        if (proxy2A->is_not_cst_val())
+        if (proxy2a->is_not_cst_val())
         {
-            proxy2A->set_info_on_chunk();
+            proxy2a->set_info_on_chunk();
             // Only one thread runs this section at a time, but another may be in
             // add_to_compression_list concurrently.
-            proxy2A->add_to_compression_list(vec_tuple_to_compress);
+            proxy2a->add_to_compression_list(vec_tuple_to_compress);
         }
 
         if constexpr (build_config::use_openmp)
         {
-            proxy2A->compression_mgr.template finish<Proxy2A<T>>();
+            proxy2a->compression_mgr.template finish<Proxy2A<T>>();
         }
     }
 }
@@ -468,7 +467,7 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
             compact2                                 = scan.second;
             if (compact2)
             {
-                new_cst_val2_ptr = tab_cst_val2_holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                new_cst_val2_ptr = Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
             }
         }
         else
@@ -478,7 +477,7 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
             compact2        = scan.second;
             if (compact2)
             {
-                tab_cst_val2_holder::find_or_set_ind_cst_val2();
+                Holder::find_or_set_ind_cst_val2();
             }
         }
 
@@ -882,7 +881,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::create_value(bool need_set_second_valu
         }
     };
 
-    values = Base::allocate_chunk_internal(0, init_func);
+    values_ = Base::allocate_chunk_internal(0, init_func);
 }
 
 /**
@@ -925,7 +924,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear(char* ptr_type_cst, SecondValueR
 {
     if (this->written())
     {
-        Base::free_values(values);
+        Base::free_values(values_);
 
         ptr_second_value.reset();
         Derived::set_cst_val_to_cst_val1(ptr_type_cst);
@@ -947,7 +946,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondVal
 {
     Base::debug_check_written();
 
-    Base::free_values(values);
+    Base::free_values(values_);
 
     ptr_second_value.reset();
     Derived::set_cst_val_to_cst_val1(ptr_type_cst);
@@ -1015,19 +1014,19 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_comp
     // As try_mark_cst_and_get_old() on the OpenMP side: a chunk already at a constant has no
     // buffer; freeing that pointer corrupts the allocator (or faults). The type table already
     // describes the constant in place.
-    if (values == Base::get_cst_val1() || Derived::tab_cst_val2_holder::is_cst_val2_ptr(values)) [[unlikely]]
+    if (values_ == Base::get_cst_val1() || Derived::Holder::is_cst_val2_ptr(values_)) [[unlikely]]
     {
         return;
     }
 
     increm_chunk_compress<Derived>();
-    Base::free_values(values);
+    Base::free_values(values_);
     Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
 
     // Serial: no CAS; the caller's array for a type 2, from the tables otherwise.
     if (num_compress_value == 1 && cst2_ptr != nullptr)
     {
-        values = cst2_ptr;
+        values_ = cst2_ptr;
     }
     else
     {
@@ -1050,7 +1049,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_int_st(int               num_com
     Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
     {
-        new_cst_val2_ptr = Derived::tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
+        new_cst_val2_ptr = Derived::Holder::find_cst_val2_ptr(ptr_second_value.get());
     }
     block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
 }

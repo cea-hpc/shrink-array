@@ -264,14 +264,14 @@ class Chunk2CounterPolicy
     /// @brief Reset the second-value counter to 0.
     void reset_nb_val_eq_second_value() noexcept
     {
-        nb_val_eq_second_value = 0;
+        nb_val_eq_second_value_ = 0;
     }
 
     /// @brief Set the second-value counter to an explicit value.
     /// @param v New counter value.
     void set_nb_val_eq_second_value(CounterValueT v) noexcept
     {
-        nb_val_eq_second_value = v;
+        nb_val_eq_second_value_ = v;
     }
 
     /// @brief Whether every element in the chunk currently equals the second
@@ -281,48 +281,48 @@ class Chunk2CounterPolicy
     /// @return true if nb_val_eq_second_value == size.
     [[nodiscard]] bool is_full_second_value(unsigned int size = static_chunk_size) const noexcept
     {
-        return nb_val_eq_second_value == size;
+        return nb_val_eq_second_value_ == size;
     }
 
     /// @brief Increment the second-value counter (one more element now
     ///        equals the second constant).
     void inc_nb_val_eq_second_value() noexcept
     {
-        ++nb_val_eq_second_value;
+        ++nb_val_eq_second_value_;
     }
 
     /// @brief Decrement the second-value counter (one fewer element now
     ///        equals the second constant).
     void dec_nb_val_eq_second_value() noexcept
     {
-        --nb_val_eq_second_value;
+        --nb_val_eq_second_value_;
     }
 
     /// @brief Increment the first-value counter (one more element now
     ///        equals the first constant).
     void inc_nb_val_eq_first_value() noexcept
     {
-        ++nb_val_eq_first_value;
+        ++nb_val_eq_first_value_;
     }
 
     /// @brief Decrement the first-value counter (one fewer element now
     ///        equals the first constant).
     void dec_nb_val_eq_first_value() noexcept
     {
-        --nb_val_eq_first_value;
+        --nb_val_eq_first_value_;
     }
 
     /// @brief Reset the first-value counter to 0.
     void reset_nb_val_eq_first_value() noexcept
     {
-        nb_val_eq_first_value = 0;
+        nb_val_eq_first_value_ = 0;
     }
 
     /// @brief Set the first-value counter to an explicit value.
     /// @param v New counter value.
     void set_nb_val_eq_first_value(CounterValueT v) noexcept
     {
-        nb_val_eq_first_value = v;
+        nb_val_eq_first_value_ = v;
     }
 
     /// @brief Whether every element in the chunk currently equals the first
@@ -331,21 +331,21 @@ class Chunk2CounterPolicy
     /// @return true if nb_val_eq_first_value == size.
     [[nodiscard]] bool is_full_first_value(unsigned int size = static_chunk_size) const noexcept
     {
-        return nb_val_eq_first_value == size;
+        return nb_val_eq_first_value_ == size;
     }
 
     /// @brief Current first-value counter.
     /// @return Number of elements currently equal to the first constant.
     [[nodiscard]] CounterValueT get_nb_first_value() const noexcept
     {
-        return nb_val_eq_first_value;
+        return nb_val_eq_first_value_;
     }
 
     /// @brief Current second-value counter.
     /// @return Number of elements currently equal to the second constant.
     [[nodiscard]] CounterValueT get_nb_second_value() const noexcept
     {
-        return nb_val_eq_second_value;
+        return nb_val_eq_second_value_;
     }
 
   private:
@@ -359,8 +359,8 @@ class Chunk2CounterPolicy
     // [[no_unique_address]] and two distinct tags: when disabled both counters are empty and
     // share offset 0, so the policy is empty and `values` stays at offset 0 (see
     // ChunkCounterPolicy for the padding this saves).
-    [[no_unique_address]] ConditionalCounter<EnableCounters, 0> nb_val_eq_first_value;
-    [[no_unique_address]] ConditionalCounter<EnableCounters, 1> nb_val_eq_second_value;
+    [[no_unique_address]] ConditionalCounter<EnableCounters, 0> nb_val_eq_first_value_;
+    [[no_unique_address]] ConditionalCounter<EnableCounters, 1> nb_val_eq_second_value_;
 };
 /**
  * @brief Chunk2's OpenMP-only surface: per-thread materialisation and clearing.
@@ -530,7 +530,7 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     using Base::first_value;
     using Base::is_bool;
     using Base::is_not_bool;
-    using Base::values;
+    using Base::values_;
 
     /*!
      * \brief Materialise this chunk's buffer (allocate + init). Serial: no thr_rank.
@@ -1010,7 +1010,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
     using Base::allocator_data;
     using Base::first_value;
-    using Base::values;
+    using Base::values_;
 
     using CounterPolicy = Chunk2CounterPolicy; ///< The counter base, Chunk2CounterPolicy<use_compression_with_counter>.
 
@@ -1074,11 +1074,11 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (build_config::use_openmp)
         {
-            values.store(other.values.load());
+            values_.store(other.values.load());
         }
         else
         {
-            values = other.values;
+            values_ = other.values_;
         }
     }
 
@@ -1101,11 +1101,11 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         if constexpr (build_config::use_openmp)
         {
             T* loaded_value = other.values.load();
-            values.store(loaded_value);
+            values_.store(loaded_value);
         }
         else
         {
-            values = other.values;
+            values_ = other.values;
         }
 
         return *this;
@@ -1117,7 +1117,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      */
     void init_values_cst_val1() noexcept
     {
-        values = Base::get_cst_val1();
+        values_ = Base::get_cst_val1();
     }
 
     /*!
@@ -1144,13 +1144,13 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if (num_compress_value == 0)
         {
-            values = Base::get_cst_val1();
+            values_ = Base::get_cst_val1();
         }
         else
         {
             if constexpr (is_not_bool)
             {
-                values = BaseSpec::get_cst_val2(ind);
+                values_ = BaseSpec::get_cst_val2(ind);
             }
             else
             {
@@ -1170,7 +1170,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_bool)
         {
-            values = num_compress_value == 0 ? Base::get_cst_val1() : BaseSpec::m_ptr_cst_val2.data();
+            values_ = num_compress_value == 0 ? Base::get_cst_val1() : BaseSpec::m_ptr_cst_val2.data();
         }
         else
         {
@@ -1188,7 +1188,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_bool)
         {
-            return values != Base::get_cst_val1() && is_not_cst_val2();
+            return values_ != Base::get_cst_val1() && is_not_cst_val2();
         }
         else
         {
@@ -1233,7 +1233,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_not_bool)
         {
-            return values != Base::get_cst_val1() && is_not_cst_val2(ind);
+            return values_ != Base::get_cst_val1() && is_not_cst_val2(ind);
         }
         else
         {
@@ -1252,7 +1252,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_not_bool)
         {
-            return values == BaseSpec::get_cst_val2(ind);
+            return values_ == BaseSpec::get_cst_val2(ind);
         }
         else
         {
@@ -1270,7 +1270,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_bool)
         {
-            return values == BaseSpec::get_cst_val2();
+            return values_ == BaseSpec::get_cst_val2();
         }
         else
         {
@@ -1397,11 +1397,11 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (build_config::use_openmp)
         {
-            values.store(ptr, std::memory_order_release);
+            values_.store(ptr, std::memory_order_release);
         }
         else
         {
-            values = ptr;
+            values_ = ptr;
         }
     }
 
@@ -1463,7 +1463,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
         // Only the thread whose CAS replaces 'old' by 'new_ptr' may free/recycle the old block.
         CHUNK_CHECK_VALUES_PTR_C(new_ptr, "try_mark.new_ptr", this);
-        if (!values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
+        if (!values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
             [[unlikely]]
         {
             // Another thread changed 'values': free nothing.
@@ -1502,11 +1502,11 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_not_bool)
         {
-            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values, ind);
+            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values_, ind);
         }
         else
         {
-            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values);
+            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values_);
         }
     }
 

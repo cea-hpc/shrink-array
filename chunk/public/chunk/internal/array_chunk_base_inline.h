@@ -50,7 +50,7 @@ void ArrayChunkBase<Derived>::create(ind_type sz)
 template <typename Derived>
 void ArrayChunkBase<Derived>::create_common()
 {
-    nb_chunk = 0;
+    nb_chunk_ = 0;
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
@@ -73,7 +73,7 @@ bool ArrayChunkBase<Derived>::is_written_at(int j) const noexcept
     else
     {
         // ArrayChunk and ArrayChunk2A: the chunk knows by itself.
-        return chunk_list[j].written();
+        return chunk_list_[j].written();
     }
 }
 
@@ -112,7 +112,7 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written() const
     // `omp for` would give each caller a partial count).
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        for (int j = 0; j < nb_chunk; ++j)
+        for (int j = 0; j < nb_chunk_; ++j)
         {
             nb_written += lbd(j);
         }
@@ -120,7 +120,7 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written() const
     else
     {
 #pragma omp parallel for reduction(+ : nb_written)
-        for (int j = 0; j < nb_chunk; ++j)
+        for (int j = 0; j < nb_chunk_; ++j)
         {
             nb_written += lbd(j);
         }
@@ -132,7 +132,7 @@ template <typename Derived>
 int ArrayChunkBase<Derived>::get_nb_chunk_written_seq() const
 {
     int nb_chunk_written = 0;
-    for (int j = 0; j < nb_chunk; ++j)
+    for (int j = 0; j < nb_chunk_; ++j)
     {
         nb_chunk_written += static_cast<int>(is_written_at(j));
     }
@@ -142,12 +142,12 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written_seq() const
 template <typename Derived>
 double ArrayChunkBase<Derived>::stats_seq() const
 {
-    if (nb_chunk == 0)
+    if (nb_chunk_ == 0)
     {
         return 0.0;
     }
     const int nb_chunk_written = get_nb_chunk_written_seq();
-    return 100.0 * static_cast<double>(nb_chunk_written) / nb_chunk;
+    return 100.0 * static_cast<double>(nb_chunk_written) / nb_chunk_;
 }
 
 template <typename Derived>
@@ -231,15 +231,15 @@ void ArrayChunkBase<Derived>::reserve(ind_type new_capacity)
         return;
     }
     // resize() builds the storage; reserve() then restores the size.
-    const ind_type keep = m_size;
+    const ind_type keep = m_size_;
     derived().resize(new_capacity);
-    m_size = keep;
+    m_size_ = keep;
 }
 
 template <typename Derived>
 void ArrayChunkBase<Derived>::copy_from(const Derived& from)
 {
-    const ind_type from_size = from.m_size;
+    const ind_type from_size = from.m_size_;
     derived().resize(from_size);
     // Const reads of @p from (through its gate) from every thread of the team:
     // nothing writes it meanwhile.
@@ -256,7 +256,7 @@ void ArrayChunkBase<Derived>::shrink_to_fit()
 template <typename Derived>
 ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(ind_type i) const
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size)) [[unlikely]]
+    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
         throw std::out_of_range("ArrayChunk::at: index out of range");
     }
@@ -266,7 +266,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(ind_type i)
 template <typename Derived>
 ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(ind_type i)
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size)) [[unlikely]]
+    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
         throw std::out_of_range("ArrayChunk::at: index out of range");
     }
@@ -300,7 +300,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::back() const
     {
         throw std::out_of_range("ArrayChunk::back: container is empty");
     }
-    return (*this)[m_size - 1];
+    return (*this)[m_size_ - 1];
 }
 
 template <typename Derived>
@@ -310,7 +310,7 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back()
     {
         throw std::out_of_range("ArrayChunk::back: container is empty");
     }
-    return (*this)[m_size - 1];
+    return (*this)[m_size_ - 1];
 }
 
 } // namespace shrink_array

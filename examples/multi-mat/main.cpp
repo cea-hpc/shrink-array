@@ -211,9 +211,9 @@ int main()
                              using CV = std::remove_reference_t<decltype(tab0_ind)>;
                              using V  = std::remove_const_t<CV>;
 
-                             using vec_chunk_real = VectChunk<double>;
+                             using VecChunkReal = VectChunk<double>;
 
-                             if constexpr (std::is_same_v<V, vec_chunk_real>)
+                             if constexpr (std::is_same_v<V, VecChunkReal>)
                              {
                                  const double sz0 = only_first_chunk ? tab0_ind.stats_seq() : tab0_ind.stats();
 

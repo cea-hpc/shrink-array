@@ -407,15 +407,15 @@ int main(int argc, char* argv[])
 
     if constexpr (chunk_config::use_chunk)
     {
-        std::cout << tc.BOLD << tc.magenta << "MODE: " << tc.reset << "CHUNK (Single Value)\n";
+        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "CHUNK (Single Value)\n";
     }
     else if constexpr (chunk_config::use_chunk2)
     {
-        std::cout << tc.BOLD << tc.magenta << "MODE: " << tc.reset << "CHUNK2 (Dual Value)\n";
+        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "CHUNK2 (Dual Value)\n";
     }
     else if constexpr (chunk_config::use_chunk2a)
     {
-        std::cout << tc.BOLD << tc.magenta << "MODE: " << tc.reset << "CHUNK2A (Advanced Dual Value)\n";
+        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "CHUNK2A (Advanced Dual Value)\n";
     }
     else
     {
@@ -424,11 +424,11 @@ int main(int argc, char* argv[])
 
     if constexpr (build_config::use_fast_alloc)
     {
-        std::cout << tc.BOLD << tc.green << "ALLOC: " << tc.reset << "FAST_ALLOC (Thread-Local Pools)\n";
+        std::cout << tc.bold << tc.green << "ALLOC: " << tc.reset << "FAST_ALLOC (Thread-Local Pools)\n";
     }
     else
     {
-        std::cout << tc.BOLD << tc.yellow << "ALLOC: " << tc.reset << "STD_ALLOC (System Malloc)\n";
+        std::cout << tc.bold << tc.yellow << "ALLOC: " << tc.reset << "STD_ALLOC (System Malloc)\n";
     }
 
     auto start = std::chrono::steady_clock::now();
@@ -454,7 +454,7 @@ int main(int argc, char* argv[])
         [&type_instances, &get_max_length]<template <typename> typename ChunkType>(const std::string& chunk_name)
     {
         // 1. Display section header in Bold Cyan
-        std::cout << tc.BOLD << tc.CYAN << "\n=== " << chunk_name << " ===\n" << tc.reset;
+        std::cout << tc.bold << tc.cyan << "\n=== " << chunk_name << " ===\n" << tc.reset;
 
         const size_t max_width = get_max_length.operator()<ChunkType>();
 
@@ -471,7 +471,7 @@ int main(int argc, char* argv[])
                         // Print the line with a dedicated color scheme:
                         // [Label in White] [= in Cyan] [Value in Bold Yellow] [Unit in Green]
                         std::cout << tc.white << std::left << std::setw(static_cast<int>(max_width + 10)) << label
-                                  << tc.reset << tc.CYAN << " = " << tc.reset << tc.BOLD << tc.yellow << std::setw(5)
+                                  << tc.reset << tc.cyan << " = " << tc.reset << tc.bold << tc.yellow << std::setw(5)
                                   << sizeof(ChunkType<decltype(t)>) << tc.reset << tc.green << " bytes" << tc.reset
                                   << "\n";
                     }(data_types),
@@ -606,7 +606,7 @@ int main(int argc, char* argv[])
     std::chrono::duration<double> elapsed_seconds = end - start;
     start                                         = end;
 
-    std::cout << tc.white << "Elapsed time creation : " << tc.BOLD << elapsed_seconds.count() << "s" << tc.reset
+    std::cout << tc.white << "Elapsed time creation : " << tc.bold << elapsed_seconds.count() << "s" << tc.reset
               << "\n";
     // useless in chunk mode arrays are set to zero by default
 
@@ -1244,14 +1244,14 @@ int main(int argc, char* argv[])
         // Full re-chunk report: the advisor/decider runs in every dynamic-chunked
         // build (CHUNK_VARIANT_V1 / _V2 / _V2A), so rechunk_decider (and its per-event
         // log) exists here for all of them.
-        std::cout << tc.BOLD;
+        std::cout << tc.bold;
         rechunk_decider.print_rechunk_log(stdout);
         std::cout << tc.reset << "\n";
     }
     else if constexpr (build_config::chunk_dynamic)
     {
         // A dynamic build with no advisor wired: just the committed count.
-        std::cout << tc.BOLD << "Re-chunks performed: " << tc.reset << g_rechunk_count << "\n\n";
+        std::cout << tc.bold << "Re-chunks performed: " << tc.reset << g_rechunk_count << "\n\n";
     }
 
     // Self-checks, array release, final report and library shutdown:
