@@ -125,6 +125,24 @@ the tag's checksum to the recipe.
   1024 box of a 2048 x 2048 tiled field, against `f[i, j]`: out x 3.9 to 4.4,
   in x 8.5 to 9.2 (`mdspan_tiles`). Harness `mdspan_copy_box_validation`
   (every variant, 1 and 8 threads).
+- `md::copy_box_out_mt(f, lo, hi, dst)` and `md::copy_box_in_mt(f, lo, hi,
+  src)` (`chunk/mdspan_tile_ops.h`, experimental): called by every thread of
+  a region (`copy_box_in_mt` in a phase), they share the box themselves, with no
+  `omp for` and no communication -- a tiled view's tiles of the box dealt by
+  their cells inside it, a strided view's cells split on chunk boundaries.
+  A band of a 2048 x 2048 field, against the tile range overloads in an
+  `omp for`: x 1.7 on 1 thread (one call per thread, not per tile), x 3.0
+  to 3.3 on 2 (the band no longer falls to one thread).
+- `md::for_each_tile_mt`, `md::update_tiles_mt` (over every tile, or over the
+  tiles a box touches) and `md::fill_box_mt` (tiled and strided views)
+  (`chunk/mdspan_tile_ops.h`, experimental): called by every thread of a
+  region (the writing ones in a phase), they deal the tiles -- or a strided
+  box's cells, on chunk boundaries -- themselves, as `copy_box_*_mt` do, with
+  no `omp for`, no communication and no barrier. A band of a 2048 x 2048
+  field filled: x 7.4 to 7.8 against `fill_box(f, lo, hi, v, k, k + 1)` in an
+  `omp for`; over the whole view the same time as the `omp for`. The serial
+  forms now run on the same code (`detail::read_tiles`, `write_tiles`,
+  `fill_tiles`, `fill_strided`), behaviour unchanged.
 
 ### Changed
 

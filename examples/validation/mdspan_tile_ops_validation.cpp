@@ -30,28 +30,34 @@
 //     tiled views (tiles of one, a quarter, two chunks) and on row-major views
 //     of rank 2 and 3, against a std::vector filled element by element;
 //     serial, then per tile range / per row slice in a parallel phase.
+//   - team (the _mt forms, called by every thread, no omp for):
+//     update_tiles_mt / for_each_tile_mt over every tile and over the tiles
+//     of a box (each such tile visited once, no other; the tiles of a thread
+//     within one of the others' count), fill_box_mt over the boxes above on
+//     tiled and row-major views, in a phase and outside any region.
 //   - `misaligned` argument: tiles of a quarter chunk in a parallel region
 //     must stop the program (ctest: PASS_REGULAR_EXPRESSION on the message).
 //
 // Exit 0, 1 with the first mismatches, 77 (ctest SKIP_RETURN_CODE) without
 // mdspan. Run by ctest; the variant comes from the CHUNK_VARIANT_* macro.
 
-#include <algorithm>   // std::min, std::max (the reference boxes)
+#include <algorithm>   // std::min, std::max (the reference boxes), std::minmax_element
 #include <array>       // std::array (the boxes)
 #include <cstddef>     // std::size_t
 #include <string_view> // std::string_view (the argument)
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector (the reference of fill_box)
 
-#include "chunk/array_chunk.h"     // ArrayChunk
-#include "chunk/array_chunk2.h"    // ArrayChunk2
-#include "chunk/array_chunk2A.h"   // ArrayChunk2A
-#include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // chunk_config::use_chunk2*
-#include "chunk/internal/print.h"  // shrink_array::println
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/mdspan_tile_ops.h" // md::for_each_tile, md::update_tiles, md::fill_box, SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/array_chunk.h"    // ArrayChunk
+#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"         // chunk_config::use_chunk2*
+#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles(_mt), md::fill_box(_mt), SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/param_chunk.h" // ParamChunk::init_indexes
+#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 
 using namespace shrink_array;
 
@@ -470,6 +476,198 @@ void fill_box_row_major(bool parallel)
     }
 }
 
+// The _mt forms: every thread calls them, they deal the tiles themselves.
+void team_tiles()
+{
+    Array<double> a(static_cast<long>(md::tiled_size<16, 16>(nx, ny)));
+    auto          f    = md::tiled_view<16, 16>(a, nx, ny);
+    const long    n    = md::tile_count(f);
+    const long    tw   = (ny + 15) / 16; // tiles per row of tiles
+    const auto    k_of = [tw](const auto& t) { return t.origin[0] / 16 * tw + t.origin[1] / 16; };
+
+    // update_tiles_mt over every tile: each written once.
+    std::vector<int> visits(static_cast<std::size_t>(n), 0);
+    parallel_phase(
+        [&]
+        {
+            md::update_tiles_mt(f,
+                                [&](const auto& t, auto b)
+                                {
+    #pragma omp atomic
+                                    ++visits[static_cast<std::size_t>(k_of(t))];
+                                    for (long i = 0; i < t.extent[0]; ++i)
+                                    {
+                                        for (long j = 0; j < t.extent[1]; ++j)
+                                        {
+                                            b[i, j] = cell(t.origin[0] + i, t.origin[1] + j);
+                                        }
+                                    }
+                                });
+        });
+    long bad = 0;
+    for (const int v : visits)
+    {
+        bad += v != 1 ? 1 : 0;
+    }
+    expect(bad == 0, "update_tiles_mt: a tile not written once", bad);
+    for (long i = 0; i < nx; ++i)
+    {
+        for (long j = 0; j < ny; ++j)
+        {
+            const double x = f[i, j];
+            expect(x == cell(i, j), "update_tiles_mt values", i, j);
+        }
+    }
+
+    // for_each_tile_mt over every tile: each read once, the blocks right,
+    // the tiles of a thread within one of the others' count.
+    std::fill(visits.begin(), visits.end(), 0);
+    std::vector<long> per_thread;
+    long              wrong = 0;
+    #pragma omp parallel
+    {
+    #pragma omp single
+        per_thread.assign(static_cast<std::size_t>(CHUNK_PMP_NUM_THREADS), 0);
+        const auto me    = static_cast<std::size_t>(CHUNK_PMP_THREAD_RANK);
+        const auto check = [&](const auto& t, auto value_at)
+        {
+    #pragma omp atomic
+            ++visits[static_cast<std::size_t>(k_of(t))];
+            ++per_thread[me];
+            for (long i = 0; i < t.extent[0]; ++i)
+            {
+                for (long j = 0; j < t.extent[1]; ++j)
+                {
+                    if (value_at(i, j) != cell(t.origin[0] + i, t.origin[1] + j))
+                    {
+    #pragma omp atomic
+                        ++wrong;
+                    }
+                }
+            }
+        };
+        md::for_each_tile_mt(
+            f, [&](const auto& t, auto b) { check(t, [&](long i, long j) { return b[i, j]; }); },
+            [&](const auto& t, double v) { check(t, [v](long, long) { return v; }); });
+    }
+    bad = 0;
+    for (const int v : visits)
+    {
+        bad += v != 1 ? 1 : 0;
+    }
+    expect(bad == 0, "for_each_tile_mt: a tile not read once", bad);
+    expect(wrong == 0, "for_each_tile_mt values", wrong);
+    const auto [lo_n, hi_n] = std::minmax_element(per_thread.begin(), per_thread.end());
+    expect(*hi_n - *lo_n <= 1, "for_each_tile_mt: tiles of a thread off by more than one", *lo_n, *hi_n);
+
+    // Over a box: the tiles it touches, once each, no other; the callbacks
+    // change only the box's cells.
+    const std::array<long, 2> blo{21, 5};
+    const std::array<long, 2> bhi{70, 66};
+    const auto                touches = [&](long k)
+    {
+        const long ti = k / tw;
+        const long tj = k % tw;
+        return ti * 16 < bhi[0] && (ti + 1) * 16 > blo[0] && tj * 16 < bhi[1] && (tj + 1) * 16 > blo[1];
+    };
+    std::fill(visits.begin(), visits.end(), 0);
+    parallel_phase(
+        [&]
+        {
+            md::update_tiles_mt(f, blo, bhi,
+                                [&](const auto& t, auto b)
+                                {
+    #pragma omp atomic
+                                    ++visits[static_cast<std::size_t>(k_of(t))];
+                                    for (long i = 0; i < t.extent[0]; ++i)
+                                    {
+                                        for (long j = 0; j < t.extent[1]; ++j)
+                                        {
+                                            const long gi = t.origin[0] + i;
+                                            const long gj = t.origin[1] + j;
+                                            if (gi >= blo[0] && gi < bhi[0] && gj >= blo[1] && gj < bhi[1])
+                                            {
+                                                b[i, j] = -b[i, j] - 1.0;
+                                            }
+                                        }
+                                    }
+                                });
+        });
+    bad = 0;
+    for (long k = 0; k < n; ++k)
+    {
+        bad += visits[static_cast<std::size_t>(k)] != (touches(k) ? 1 : 0) ? 1 : 0;
+    }
+    expect(bad == 0, "update_tiles_mt box: a tile visited wrongly", bad);
+    for (long i = 0; i < nx; ++i)
+    {
+        for (long j = 0; j < ny; ++j)
+        {
+            const bool   in   = i >= blo[0] && i < bhi[0] && j >= blo[1] && j < bhi[1];
+            const double want = in ? -cell(i, j) - 1.0 : cell(i, j);
+            const double x    = f[i, j];
+            expect(x == want, "update_tiles_mt box values", i, j);
+        }
+    }
+    std::fill(visits.begin(), visits.end(), 0);
+    #pragma omp parallel
+    md::for_each_tile_mt(
+        f, blo, bhi,
+        [&](const auto& t, auto)
+        {
+    #pragma omp atomic
+            ++visits[static_cast<std::size_t>(k_of(t))];
+        },
+        [&](const auto& t, double)
+        {
+    #pragma omp atomic
+            ++visits[static_cast<std::size_t>(k_of(t))];
+        });
+    bad = 0;
+    for (long k = 0; k < n; ++k)
+    {
+        bad += visits[static_cast<std::size_t>(k)] != (touches(k) ? 1 : 0) ? 1 : 0;
+    }
+    expect(bad == 0, "for_each_tile_mt box: a tile visited wrongly", bad);
+}
+
+// fill_box_mt over the boxes, in a phase (and once outside any region).
+template <std::size_t TH, std::size_t TW>
+void fill_box_tiled_mt()
+{
+    Array<double>       a(static_cast<long>(md::tiled_size<TH, TW>(nx, ny)));
+    auto                f = md::tiled_view<TH, TW>(a, nx, ny);
+    std::vector<double> ref(static_cast<std::size_t>(nx * ny), 0.0);
+    int                 step = 0;
+    for (const Box& b : boxes)
+    {
+        apply_ref(ref, b);
+        if (step == 2)
+        {
+            md::fill_box_mt(f, b.lo, b.hi, b.v); // outside a region: the whole box
+        }
+        else
+        {
+            parallel_phase([&] { md::fill_box_mt(f, b.lo, b.hi, b.v); });
+        }
+        compare(f, ref, "fill_box_mt tiled", step++);
+    }
+}
+
+void fill_box_row_major_mt()
+{
+    Array<double>       a(nx * ny);
+    auto                f = md::view(a, nx, ny);
+    std::vector<double> ref(static_cast<std::size_t>(nx * ny), 0.0);
+    int                 step = 0;
+    for (const Box& b : boxes)
+    {
+        apply_ref(ref, b);
+        parallel_phase([&] { md::fill_box_mt(f, b.lo, b.hi, b.v); });
+        compare(f, ref, "fill_box_mt row-major", step++);
+    }
+}
+
 // Tiles of 64 elements on chunks of more: fine serially, refused in a region.
 int misaligned()
 {
@@ -505,6 +703,10 @@ int main(int argc, char** argv)
     fill_box_tiled<16, 32>(true);
     fill_box_row_major(false);
     fill_box_row_major(true);
+    team_tiles();
+    fill_box_tiled_mt<16, 16>();
+    fill_box_tiled_mt<16, 32>();
+    fill_box_row_major_mt();
     release_chunk_pools();
     destroy_block_chunk();
     if (fails != 0)

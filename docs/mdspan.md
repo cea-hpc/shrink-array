@@ -101,6 +101,9 @@ sa::md::update_tiles(f,                           // f = 0.5 f + 1
 | `md::for_each_tile(f, first, last, ...)`, `md::update_tiles(f, first, last, ...)` | tiles `[first, last)` in storage order, for a loop `#pragma omp for` over `[0, md::tile_count(f))` |
 | `md::fill_box(f, lo, hi, v)` | sets the box `[lo, hi)`, clipped to the extents, to `v`. Tiled view: a tile the box covers is filled whole, padding included, one range op per run of consecutive covered tiles; a tile it crosses is updated as by `update_tiles` (left alone if already uniform at `v`). Row-major view (`md::view`): one range op per contiguous run, several rows at once when the box spans whole rows |
 | `md::fill_box(f, lo, hi, v, first, last)` | tiled view, tiles `[first, last)` only: each thread its own slice of the tiles, in a phase |
+| `md::for_each_tile_mt(f, ...)`, `md::update_tiles_mt(f, ...)` | called by every thread of a region (`update_tiles_mt` in a phase), no `omp for`: the tiles dealt to the team, thread t of T taking the tiles `[n t / T, n (t + 1) / T)` in storage order |
+| `md::for_each_tile_mt(f, lo, hi, ...)`, `md::update_tiles_mt(f, lo, hi, ...)` | the same over the tiles the box `[lo, hi)` touches (clipped to the extents), one unit each; the callbacks get whole tiles |
+| `md::fill_box_mt(f, lo, hi, v)` | called by every thread of a region, in a phase: tiled view, the box's tiles dealt by their cells inside it; row-major view, the box's cells split on chunk boundaries (as `copy_box_in_mt`) |
 | `t.number`, `t.origin`, `t.extent` | the tile's rank in storage order, the multi-index of its first element, the part of it inside the view (smaller than the tile on the padded edges) |
 
 The block covers the whole tile, padding included: loop to `t.extent` where the padding must not
@@ -117,6 +120,27 @@ that changes is materialised for the write and queued, and the same pass compres
 In a parallel region each thread works on its own tiles, inside a phase for `update_tiles`, and a
 tile must be made of whole chunks: tile elements a multiple of `chunk_size()`, checked (a tile
 sharing a chunk with another thread's stops the program). Outside a region any chunk size works.
+
+The `_mt` forms share the work themselves: every thread computes the same deal, with no
+communication, and a tile goes to one thread. Outside a region (or in a team of one) they do the
+whole job serially. They end with no barrier: what one call writes is complete at the region's
+next barrier, so two calls on boxes that overlap need an `omp barrier` between them -- the next
+deal may give a shared tile to another thread. For many overlapping boxes in a row, a fixed slice
+of the tiles per thread and the `[first, last)` overloads (each tile always on the same thread, no
+barrier) remain the right idiom. `examples/mdspan_tiles`, 2048 x 2048 field, Release, GCC 14,
+2-core container:
+
+| kernel | threads | `omp for`, one tile per call | `_mt` | ratio |
+|---|---|---|---|---|
+| a band (rows `[n/16, 5n/16)`) filled, `fill_box_mt` | 1 | 0.58 to 0.88 ms | 0.08 to 0.11 ms | x 7.4 to 7.8 |
+| a band filled, `fill_box_mt` | 2 | 0.48 ms | 0.06 to 0.07 ms | x 7.4 to 7.6 |
+| sum of the field, `for_each_tile_mt` | 1 | 1.18 to 1.40 ms | 1.16 to 1.22 ms | x 1.0 to 1.1 |
+| sum of the field, `for_each_tile_mt` | 2 | 0.91 to 1.19 ms | 0.85 to 1.05 ms | x 1.1 |
+| 64 rectangles, against a slice of the tiles per thread | 1, 2 | 3.6 to 4.4 ms | 3.6 to 5.5 ms (a barrier per rectangle) | none |
+
+The gain is where the `omp for` loses: on a box, whose tiles it gives to the threads that hold
+those rows of tiles (all of the band to thread 0 at 2 threads), one call per tile of the whole
+view; over the whole view the deal is the `omp for`'s, and so is the time.
 
 `examples/mdspan_tiles`, same 2048 x 2048 field in 16 x 16 tiles (85 % of them uniform), Release
 build, GCC 14, on a 2-core container (orders of magnitude, not a benchmark):
@@ -155,6 +179,7 @@ md::copy_box_in(f, lo, hi, buf.data());    // and back
 | `md::copy_box_out(f, lo, hi, dst)` | tiled view: tile by tile, a tile read in one go, a uniform one a fill of its part of the box. Strided view (`md::view`, a `submdspan`): one read per row (`for_each_span`), element by element when the last stride is not 1 |
 | `md::copy_box_in(f, lo, hi, src)` | tiled view: a tile the box covers is written in one go with no read -- `fill_range` when its values are one value (a chunk already at it is left alone, a compressed one switches, a materialised one is released where the variant can), else `copy_range` --; a tile it crosses is updated as by `update_tiles`. Strided view: one `copy_range` per row |
 | `md::copy_box_out(f, lo, hi, dst, first, last)`, `md::copy_box_in(f, lo, hi, src, first, last)` | tiled view, tiles `[first, last)` only, for a loop `#pragma omp for` over `[0, md::tile_count(f))`; a strided view is split by the caller, each thread its own rows |
+| `md::copy_box_out_mt(f, lo, hi, dst)`, `md::copy_box_in_mt(f, lo, hi, src)` | called by every thread of a region (`copy_box_in_mt` in a phase), no `omp for`: the box shared by the functions themselves. Tiled view: the tiles of the box, in storage order, each weighing its cells inside the box, dealt in T consecutive shares of about W / T cells. Strided view: the box's cells in row-major order split in T shares, each bound moved up to the next chunk boundary when the rows are contiguous, so that a chunk inside a row is written by one thread. Every thread computes the same split, with no communication; outside a region, the whole box. No barrier: the buffer is complete at the region's next barrier |
 
 The box must lie inside the view's extents (a box outside stops the program: clipped, it would
 change the buffer's shape). Inside a parallel region the rules of the tile operations hold:
@@ -169,6 +194,18 @@ loop (`f[i, j]`, rows shared by the team), Release, GCC 14, 2-core container:
 | out | 2 | 3.79 ms | 0.87 ms | x 4.4 |
 | in | 1 | 22.79 ms | 2.48 ms | x 9.2 |
 | in | 2 | 10.42 ms | 1.23 ms | x 8.5 |
+
+The `omp for` over `[0, md::tile_count(f))` gives a thread the tiles of its rows of tiles, in the box
+or not: a box that is a band of the field (rows `[n/16, 5n/16)`, every column) falls to thread 0
+alone at 2 threads. The `_mt` forms share the band's tiles, and make one call per thread instead of
+one per tile (`mdspan_tiles`, 2048 x 2048 field):
+
+| | threads | `omp for`, one tile per call | `copy_box_*_mt` | ratio |
+|---|---|---|---|---|
+| out | 1 | 1.15 ms | 0.69 ms | x 1.7 |
+| out | 2 | 1.01 ms | 0.31 ms | x 3.3 |
+| in | 1 | 1.99 ms | 1.19 ms | x 1.7 |
+| in | 2 | 1.72 ms | 0.58 ms | x 3.0 |
 
 ### Sub-views: `md::submdspan`
 
@@ -316,9 +353,9 @@ reports as skipped.
 |---|---|
 | `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | writes through the view and linear read-back, compound operators, rank 3, read-only views, the tiled mapping (bijection, padding), a uniform tile is a uniform run; every variant (one ctest each, `mdspan_validation_<variant>`) |
-| `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile`, `md::update_tiles`, `md::fill_box`, `md::copy_box_out`, `md::copy_box_in`, `md::tile_count`, `md::tile` |
-| `examples/validation/mdspan_tile_ops_validation.cpp` | blocks, tile extents on padded edges, uniform tiles, the update against the element formula, untouched tiles stay compressed, the parallel update; every variant at 1 and 8 threads, and `mdspan_tile_ops_misaligned` (a tile smaller than a chunk refused in a parallel region) |
-| `examples/validation/mdspan_copy_box_validation.cpp` | `copy_box_out` / `copy_box_in` against `f[i, j]` and a reference: boxes aligned, unaligned, on the padded edges, one row, one column, the whole view, empty; tiled (a tile per chunk, 16 x 16), row-major, rank 3, a `submdspan` and a column; whole tiles copied in uniform left compressed; tile by tile and row slice by row slice in a parallel phase; every variant at 1 and 8 threads |
+| `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile(_mt)`, `md::update_tiles(_mt)`, `md::fill_box(_mt)`, `md::copy_box_out(_mt)`, `md::copy_box_in(_mt)`, `md::tile_count`, `md::tile` |
+| `examples/validation/mdspan_tile_ops_validation.cpp` | blocks, tile extents on padded edges, uniform tiles, the update against the element formula, untouched tiles stay compressed, the parallel update; the `_mt` forms (each tile of the view or of a box visited once and no other, a thread's tiles within one of the others' count, `fill_box_mt` on tiled and row-major views, in a phase and outside any region); every variant at 1 and 8 threads, and `mdspan_tile_ops_misaligned` (a tile smaller than a chunk refused in a parallel region) |
+| `examples/validation/mdspan_copy_box_validation.cpp` | `copy_box_out` / `copy_box_in` against `f[i, j]` and a reference: boxes aligned, unaligned, on the padded edges, one row, one column, the whole view, empty; tiled (a tile per chunk, 16 x 16), row-major, rank 3, a `submdspan` and a column; whole tiles copied in uniform left compressed; tile by tile and row slice by row slice in a parallel phase; the `_mt` forms on every box and view, and their deal (each tile of the box to one thread, no thread above W / T plus a tile, strided shares a partition with their bounds on chunk boundaries); every variant at 1 and 8 threads |
 | `examples/validation/mdspan_submdspan_validation.cpp` | sub-views of a row-major view (block, row, column, read-only, `fill_box`) and of a tiled view (aligned, ending at the extent, a sub-view of a sub-view; the tile operations on it, serially and in a parallel phase); every variant at 1 and 8 threads, and `mdspan_submdspan_misaligned` (a tiled slice off the tiles stops) |
 | `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, every multiple of 64 to 4096), `layout_tiled_dyn` against `layout_tiled` index by index and through their sub-views, `tiled_view_dyn`'s tile per chunk, the tile operations on a tile per chunk, a 3 x 5 tile and one beyond the inline buffer; every variant at the default size and at dyn (a re-chunk under the view), 1 and 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | the comparisons of sections 2 and 3, and the cost of the multi-index; `mdspan_tiles 4096` for a larger field |

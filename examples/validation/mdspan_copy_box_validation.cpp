@@ -29,17 +29,24 @@
 //     copied at first_value leaves its tiles compressed (every variant), at
 //     another value too on Chunk2A;
 //   - parallel: both, tile by tile (tiled view) or row slice by row slice
-//     (row-major view), from every thread of a phase.
+//     (row-major view), from every thread of a phase;
+//   - team (copy_box_out_mt / copy_box_in_mt, called by every thread): every
+//     box, every pattern, on a tiled view (a tile per chunk), rank 3, a
+//     row-major view, and with submdspan a sub-view and a column; called
+//     outside a region too (the whole box). The deal itself: every tile of
+//     the box to one thread, no thread above W / T plus one tile's cells; the
+//     strided shares a partition of the box, their inner bounds on a chunk
+//     boundary or a row's end.
 //
 // Exit 0, 1 with the first mismatches, 77 (ctest SKIP_RETURN_CODE) without
 // mdspan. Run by ctest; the variant comes from the CHUNK_VARIANT_* macro.
 
-#include <algorithm>   // std::min, std::max, std::fill
+#include <algorithm>   // std::min, std::max, std::fill, std::max_element
 #include <array>       // std::array (the boxes)
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::pair (submdspan), std::as_const
-#include <vector>      // std::vector (the buffers and the reference)
+#include <vector>      // std::vector (the buffers, the reference, the deals)
 
 #include "chunk/array_chunk.h"     // ArrayChunk
 #include "chunk/array_chunk2.h"    // ArrayChunk2
@@ -48,7 +55,7 @@
 #include "chunk/config.h"          // chunk_config::use_chunk2*
 #include "chunk/internal/print.h"  // shrink_array::println
 #include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/mdspan_tile_ops.h" // md::copy_box_out, md::copy_box_in, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan_tile_ops.h" // md::copy_box_out(_mt), md::copy_box_in(_mt), SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/PMP_CHUNK.h"       // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
@@ -452,6 +459,242 @@ void parallel()
         expect(out == src, "parallel row-major copy_box_out");
     }
 }
+
+// Every box out then in, the _mt forms from every thread of a region (in: in
+// a phase), and once outside any region.
+template <typename View>
+void out_and_in_mt(const char* name, const View& f, std::vector<double>& ref)
+{
+    for (const auto& box : box_pairs)
+    {
+        const Box&          lo = box.first; // not a structured binding: Clang cannot capture one in a region
+        const Box&          hi = box.second;
+        const long          n  = box_size(lo, hi);
+        std::vector<double> buf(static_cast<std::size_t>(n), -7.0);
+    #pragma omp parallel
+        md::copy_box_out_mt(f, lo, hi, buf.data());
+        std::vector<double> alone(static_cast<std::size_t>(n), -9.0);
+        md::copy_box_out_mt(f, lo, hi, alone.data()); // outside a region: the whole box
+        long bad = 0;
+        for (long i = lo[0]; i < hi[0]; ++i)
+        {
+            for (long j = lo[1]; j < hi[1]; ++j)
+            {
+                const double      v = f[i, j];
+                const std::size_t o = static_cast<std::size_t>((i - lo[0]) * (hi[1] - lo[1]) + (j - lo[1]));
+                bad += (buf[o] != v ? 1 : 0) + (alone[o] != v ? 1 : 0);
+            }
+        }
+        expect(bad == 0, name, lo[0] * 1000 + lo[1], bad);
+    }
+    for (int p = 0; p < 3; ++p)
+    {
+        for (const auto& [lo, hi] : box_pairs)
+        {
+            std::vector<double> src(static_cast<std::size_t>(box_size(lo, hi)));
+            for (long i = lo[0]; i < hi[0]; ++i)
+            {
+                for (long j = lo[1]; j < hi[1]; ++j)
+                {
+                    const double v                                                             = pattern(p, i, j) + 1.0;
+                    src[static_cast<std::size_t>((i - lo[0]) * (hi[1] - lo[1]) + (j - lo[1]))] = v;
+                    ref[static_cast<std::size_t>(i * ny + j)]                                  = v;
+                }
+            }
+            parallel_phase([&] { md::copy_box_in_mt(f, lo, hi, src.data()); });
+            const long bad = mismatches_with(f, ref);
+            expect(bad == 0, name, p * 100000 + lo[0] * 1000 + lo[1], bad);
+        }
+    }
+}
+
+// The deals: tiles (each tile of the box to one thread, loads bounded) and
+// strided shares (a partition, inner bounds on chunk boundaries or row ends).
+void deals()
+{
+    const long S    = static_cast<long>(Array<double>(1).chunk_size());
+    const auto tile = md::tile_shape<2, long>(static_cast<std::size_t>(S));
+    // A field of 12 x 9 tiles (padded on both edges), boxes off-centre.
+    const long    NX = 12 * tile[0] + 3;
+    const long    NY = 9 * tile[1] + 5;
+    Array<double> a(static_cast<int>(md::tiled_size_dyn(tile, std::array<long, 2>{NX, NY})));
+    auto          f                              = md::tiled_view_dyn(a, NX, NY);
+    using Index                                  = decltype(f)::index_type;
+    const std::vector<std::pair<Box, Box>> boxes = {
+        {{0, 0}, {NX, NY}},
+        {{tile[0] / 2, 1}, {NX / 3, NY - 2}},
+        {{NX / 2, NY / 2}, {NX, NY}},
+        {{3, 0}, {4, NY}},
+    };
+    const auto nt = static_cast<std::size_t>(md::tile_count(f));
+    for (const auto& [blo, bhi] : boxes)
+    {
+        std::array<Index, 2> lo{static_cast<Index>(blo[0]), static_cast<Index>(blo[1])};
+        std::array<Index, 2> hi{static_cast<Index>(bhi[0]), static_cast<Index>(bhi[1])};
+        std::vector<int>     owner(nt, -1);
+        std::vector<long>    cells;
+        long                 heaviest = 0;
+        int                  team     = 1;
+        long                 twice    = 0;
+    #pragma omp parallel
+        {
+            const int me = CHUNK_PMP_THREAD_RANK;
+    #pragma omp single
+            {
+                team = CHUNK_PMP_NUM_THREADS;
+                cells.assign(static_cast<std::size_t>(team), 0);
+            }
+            md::detail::for_each_dealt_tile(f, lo, hi,
+                                            [&](Index k)
+                                            {
+                                                const auto t = md::detail::tile_at(f, md::detail::tiles_per_dim(f), k);
+                                                long       w = 1;
+                                                for (std::size_t r = 0; r < 2; ++r)
+                                                {
+                                                    w *= std::min<long>(hi[r], t.origin[r] + t.extent[r]) -
+                                                         std::max<long>(lo[r], t.origin[r]);
+                                                }
+    #pragma omp critical
+                                                {
+                                                    twice += owner[static_cast<std::size_t>(k)] >= 0 ? 1 : 0;
+                                                    owner[static_cast<std::size_t>(k)] = me;
+                                                    cells[static_cast<std::size_t>(me)] += w;
+                                                    heaviest = std::max(heaviest, w);
+                                                }
+                                            });
+        }
+        expect(twice == 0, "deal: a tile to two threads", twice);
+        // every tile the box touches has an owner
+        long missing = 0;
+        md::detail::for_each_tile_of_box(f, lo, hi, Index{0}, static_cast<Index>(nt),
+                                         [&](Index k) { missing += owner[static_cast<std::size_t>(k)] < 0 ? 1 : 0; });
+        expect(missing == 0, "deal: a tile of the box to no thread", missing);
+        const long W   = box_size(blo, bhi);
+        const long top = *std::max_element(cells.begin(), cells.end());
+        expect(top <= W / team + 1 + heaviest, "deal: a thread above W / T plus a tile", top, W / team);
+    }
+
+    // strided shares, computed for every rank of a would-be team of T
+    Array<double> r(static_cast<int>(NX * NY));
+    auto          v = md::view(r, NX, NY);
+    using RIndex    = decltype(v)::index_type;
+    for (const auto& [blo, bhi] : boxes)
+    {
+        std::array<RIndex, 2> lo{static_cast<RIndex>(blo[0]), static_cast<RIndex>(blo[1])};
+        std::array<RIndex, 2> hi{static_cast<RIndex>(bhi[0]), static_cast<RIndex>(bhi[1])};
+        const auto            W         = static_cast<std::size_t>(box_size(blo, bhi));
+        std::size_t           prev_end  = 0;
+        long                  gaps      = 0;
+        long                  unaligned = 0;
+        int                   team      = 1;
+    #pragma omp parallel
+        {
+    #pragma omp single
+            team = CHUNK_PMP_NUM_THREADS;
+        }
+        std::vector<std::pair<std::size_t, std::size_t>> share(static_cast<std::size_t>(team));
+    #pragma omp parallel
+        share[static_cast<std::size_t>(CHUNK_PMP_THREAD_RANK)] = md::detail::team_share(v)(lo, hi, true);
+        const auto w                                           = static_cast<std::size_t>(hi[1] - lo[1]);
+        for (const auto& [c0, c1] : share)
+        {
+            gaps += (c0 != prev_end || c1 < c0) ? 1 : 0;
+            prev_end = c1;
+            if (c0 != 0 && c0 != W && c0 % w != 0)
+            {
+                const auto idx = std::array<RIndex, 2>{static_cast<RIndex>(lo[0] + static_cast<RIndex>(c0 / w)),
+                                                       static_cast<RIndex>(lo[1] + static_cast<RIndex>(c0 % w))};
+                unaligned += md::detail::strided_at(v, idx) % static_cast<std::size_t>(S) != 0 ? 1 : 0;
+            }
+        }
+        gaps += prev_end != W ? 1 : 0;
+        expect(gaps == 0, "strided shares: not a partition of the box", gaps);
+        expect(unaligned == 0, "strided shares: an inner bound inside a chunk and a row", unaligned);
+    }
+}
+
+void team()
+{
+    deals();
+    const long S    = static_cast<long>(Array<double>(1).chunk_size());
+    const auto tile = md::tile_shape<2, long>(static_cast<std::size_t>(S));
+    {
+        Array<double>       a(static_cast<int>(md::tiled_size_dyn(tile, std::array<long, 2>{nx, ny})));
+        auto                f = md::tiled_view_dyn(a, nx, ny);
+        std::vector<double> ref(static_cast<std::size_t>(nx * ny));
+        fill_from_cells(f, ref);
+        out_and_in_mt("team tiled", f, ref);
+    }
+    {
+        Array<double>       a(static_cast<int>(nx * ny));
+        auto                f = md::view(a, nx, ny);
+        std::vector<double> ref(static_cast<std::size_t>(nx * ny));
+        fill_from_cells(f, ref);
+        out_and_in_mt("team row-major", f, ref);
+    }
+    {
+        // rank 3, a tile per chunk
+        const auto                tile3 = md::tile_shape<3, long>(static_cast<std::size_t>(S));
+        const long                n0 = 10, n1 = 12, n2 = 20;
+        Array<double>             a(static_cast<int>(md::tiled_size_dyn(tile3, std::array<long, 3>{n0, n1, n2})));
+        auto                      f = md::tiled_view_dyn(a, tile3, n0, n1, n2);
+        const std::array<long, 3> lo{1, 2, 3};
+        const std::array<long, 3> hi{9, 11, 19};
+        std::vector<double>       src(static_cast<std::size_t>(8 * 9 * 16));
+        for (std::size_t k = 0; k < src.size(); ++k)
+        {
+            src[k] = static_cast<double>(k % 37) + 0.5;
+        }
+        parallel_phase([&] { md::copy_box_in_mt(f, lo, hi, src.data()); });
+        std::vector<double> out(src.size(), -1.0);
+    #pragma omp parallel
+        md::copy_box_out_mt(f, lo, hi, out.data());
+        expect(out == src, "team rank 3");
+    }
+    #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    {
+        Array<double>       a(static_cast<int>(nx * ny));
+        auto                f = md::view(a, nx, ny);
+        std::vector<double> ref(static_cast<std::size_t>(nx * ny));
+        fill_from_cells(f, ref);
+        auto                sub = md::submdspan(f, std::pair{10, 60}, std::pair{5, 80});
+        const Box           lo{2, 3};
+        const Box           hi{40, 70};
+        std::vector<double> src(static_cast<std::size_t>(box_size(lo, hi)));
+        for (long i = lo[0]; i < hi[0]; ++i)
+        {
+            for (long j = lo[1]; j < hi[1]; ++j)
+            {
+                const double v = static_cast<double>(i * 11 + j) + 0.75;
+                src[static_cast<std::size_t>((i - lo[0]) * (hi[1] - lo[1]) + (j - lo[1]))] = v;
+                ref[static_cast<std::size_t>((i + 10) * ny + j + 5)]                       = v;
+            }
+        }
+        parallel_phase([&] { md::copy_box_in_mt(sub, lo, hi, src.data()); });
+        expect(mismatches_with(f, ref) == 0, "team submdspan copy_box_in_mt", mismatches_with(f, ref));
+        std::vector<double> out(src.size(), -1.0);
+        #pragma omp parallel
+        md::copy_box_out_mt(sub, lo, hi, out.data());
+        expect(out == src, "team submdspan copy_box_out_mt");
+
+        auto                      col = md::submdspan(f, md::full_extent, 7); // stride ny
+        const std::array<long, 1> clo{3};
+        const std::array<long, 1> chi{97};
+        std::vector<double>       cbuf(94);
+        for (std::size_t k = 0; k < cbuf.size(); ++k)
+        {
+            cbuf[k]                                                            = 200.0 + static_cast<double>(k);
+            ref[static_cast<std::size_t>((3 + static_cast<long>(k)) * ny + 7)] = cbuf[k];
+        }
+        parallel_phase([&] { md::copy_box_in_mt(col, clo, chi, cbuf.data()); });
+        expect(mismatches_with(f, ref) == 0, "team column copy_box_in_mt", mismatches_with(f, ref));
+        std::vector<double> cout(94, -1.0);
+        #pragma omp parallel
+        md::copy_box_out_mt(col, clo, chi, cout.data());
+        expect(cout == cbuf, "team column copy_box_out_mt");
+    }
+    #endif
+}
 } // namespace
 
 int main()
@@ -463,6 +706,7 @@ int main()
     rank3();
     sub_views();
     parallel();
+    team();
     release_chunk_pools();
     destroy_block_chunk();
     if (fails != 0)

@@ -40,7 +40,12 @@
  *          price of the multi-index alone: a sum through a[k], f[i, j]
  *          row-major and f[i, j] in tiles. Between the two, a box of half the
  *          field each way copied out to a buffer and back in, element by
- *          element against md::copy_box_out / md::copy_box_in.
+ *          element against md::copy_box_out / md::copy_box_in; then a band
+ *          of the field, the tile range overloads in an omp for against
+ *          md::copy_box_out_mt / md::copy_box_in_mt (the band's tiles dealt
+ *          by weight), the band filled (fill_box_mt) and a sum over every
+ *          tile (for_each_tile_mt); the rectangles are painted a third time
+ *          with fill_box_mt, a barrier between two.
  *
  *          Usage: mdspan_tiles [n]   (an n x n field, 2048 by default)
  *          Exit 0, 1 when a layout does not read back the field, 77 when
@@ -61,8 +66,8 @@
 #include "chunk/manage_ompt.h"    // parallel_phase
 #include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
-#include "chunk/mdspan_tile_ops.h" // md::for_each_tile, md::update_tiles, md::fill_box, md::copy_box_out, md::copy_box_in
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_out(_mt), md::copy_box_in(_mt)
+#include "chunk/param_chunk.h" // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
 
@@ -390,6 +395,23 @@ void paint(long n, int& bad)
         });
     const double p_tile = seconds_since(t0);
 
+    // fill_box_mt: each rectangle's tiles dealt to the team, a barrier between
+    // two rectangles (they overlap: the next one waits for this one).
+    sa::ArrayChunk2A<double> m(size);
+    fill_tiled<16, 16>(m, n);
+    auto fm = sa::md::tiled_view<16, 16>(m, n, n);
+    t0      = std::chrono::steady_clock::now();
+    sa::parallel_phase(
+        [&]
+        {
+            for (const Rect& r : rects)
+            {
+                sa::md::fill_box_mt(fm, r.lo, r.hi, r.v);
+    #pragma omp barrier
+            }
+        });
+    const double p_mt = seconds_since(t0);
+
     const auto ce    = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(fe);
     const auto ct    = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(ft);
     long       wrong = 0;
@@ -398,18 +420,19 @@ void paint(long n, int& bad)
         for (long j = 0; j < n; ++j)
         {
             wrong += ce[i, j] != ct[i, j] ? 1 : 0;
+            wrong += std::as_const(fm)[i, j] != ct[i, j] ? 1 : 0;
         }
     }
     if (wrong != 0)
     {
-        sa::println("paint: {} cells differ between element and fill_box", wrong);
+        sa::println("paint: {} cells differ between element, fill_box and fill_box_mt", wrong);
         ++bad;
     }
     const long m_elem = count(e).materialised;
     const long m_tile = count(t).materialised;
     sa::ArrayChunk2A<double>::make_block_compression();
-    sa::println("paint 64 rect. element {:8.2f} ms   tile {:8.2f} ms   (x {:.1f})", 1e3 * p_elem, 1e3 * p_tile,
-                p_elem / p_tile);
+    sa::println("paint 64 rect. element {:8.2f} ms   tile {:8.2f} ms   (x {:.1f})   fill_box_mt {:8.2f} ms",
+                1e3 * p_elem, 1e3 * p_tile, p_elem / p_tile, 1e3 * p_mt);
     sa::println("  materialised at the end of the phase: element {}, tile {}; after one more pass: {} and {}", m_elem,
                 m_tile, count(e).materialised, count(t).materialised);
 }
@@ -579,6 +602,162 @@ void box_copy(long n, int& bad)
     sa::println("box out, row-major copy_box_out {:8.2f} ms; box in, row-major copy_box_in {:8.2f} ms", 1e3 * o_rows,
                 1e3 * i_rows);
 }
+
+// A band of the field, rows [n / 16, 5 n / 16), every column: the omp for over
+// [0, tile_count) of the range overloads gives its tiles to the threads that
+// hold those rows of tiles (thread 0 alone at 2 threads), copy_box_*_mt deals
+// the band's tiles by weight. Best of 5.
+void box_copy_team(long n, int& bad)
+{
+    const std::array<long, 2> lo{n / 16, 0};
+    const std::array<long, 2> hi{5 * n / 16, n};
+    const long                ne = (hi[0] - lo[0]) * (hi[1] - lo[1]);
+    std::vector<double>       range_out(static_cast<std::size_t>(ne), -1.0);
+    std::vector<double>       team_out(static_cast<std::size_t>(ne), -2.0);
+
+    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::ArrayChunk2A<double> t(size);
+    fill_tiled<16, 16>(t, n);
+    auto       ft = sa::md::tiled_view<16, 16>(t, n, n);
+    const auto ct = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(ft);
+    const long nt = sa::md::tile_count(ft);
+
+    const auto best = [](auto&& body)
+    {
+        double b = 1e30;
+        for (int rep = 0; rep < 5; ++rep)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            body();
+            b = std::min(b, seconds_since(t0));
+        }
+        return b;
+    };
+    const double o_range = best(
+        [&]
+        {
+    #pragma omp  parallel for schedule(static)
+            for (long k = 0; k < nt; ++k)
+            {
+                sa::md::copy_box_out(ct, lo, hi, range_out.data(), static_cast<int>(k), static_cast<int>(k + 1));
+            }
+        });
+    const double o_team = best(
+        [&]
+        {
+    #pragma omp parallel
+            sa::md::copy_box_out_mt(ct, lo, hi, team_out.data());
+        });
+    if (team_out != range_out)
+    {
+        sa::println("box copy team: copy_box_out_mt differs from copy_box_out");
+        ++bad;
+    }
+    std::vector<double> src(range_out);
+    for (double& v : src)
+    {
+        v += 1.0;
+    }
+    const double i_range = best(
+        [&]
+        {
+            sa::parallel_phase(
+                [&]
+                {
+    #pragma omp for schedule(static)
+                    for (long k = 0; k < nt; ++k)
+                    {
+                        sa::md::copy_box_in(ft, lo, hi, src.data(), static_cast<int>(k), static_cast<int>(k + 1));
+                    }
+                });
+        });
+    const double i_team = best([&] { sa::parallel_phase([&] { sa::md::copy_box_in_mt(ft, lo, hi, src.data()); }); });
+    sa::md::copy_box_out(ct, lo, hi, team_out.data());
+    if (team_out != src)
+    {
+        sa::println("box copy team: copy_box_in_mt did not write the band");
+        ++bad;
+    }
+    sa::println("band out, omp for over the tiles {:8.2f} ms   copy_box_out_mt {:8.2f} ms   (x {:.1f})", 1e3 * o_range,
+                1e3 * o_team, o_range / o_team);
+    sa::println("band in,  omp for over the tiles {:8.2f} ms   copy_box_in_mt  {:8.2f} ms   (x {:.1f})", 1e3 * i_range,
+                1e3 * i_team, i_range / i_team);
+
+    // The band filled (a new value each time, so every tile changes), and a
+    // sum over every tile of the field.
+    int          rep_v   = 0;
+    const double f_range = best(
+        [&]
+        {
+            const double v = 100.0 + rep_v++;
+            sa::parallel_phase(
+                [&]
+                {
+    #pragma omp for schedule(static)
+                    for (long k = 0; k < nt; ++k)
+                    {
+                        sa::md::fill_box(ft, lo, hi, v, static_cast<int>(k), static_cast<int>(k + 1));
+                    }
+                });
+        });
+    const double f_team = best(
+        [&]
+        {
+            const double v = 100.0 + rep_v++;
+            sa::parallel_phase([&] { sa::md::fill_box_mt(ft, lo, hi, v); });
+        });
+    if (ct[lo[0], lo[1]] != 100.0 + (rep_v - 1) || ct[hi[0] - 1, hi[1] - 1] != 100.0 + (rep_v - 1))
+    {
+        sa::println("box copy team: fill_box_mt did not fill the band");
+        ++bad;
+    }
+    double     sum_range = 0;
+    double     sum_team  = 0;
+    const auto add_block = [](double& acc, const auto& t, auto b)
+    {
+        for (long i = 0; i < t.extent[0]; ++i)
+        {
+            for (long j = 0; j < t.extent[1]; ++j)
+            {
+                acc += b[i, j];
+            }
+        }
+    };
+    const auto add_uniform = [](double& acc, const auto& t, double v)
+    { acc += v * static_cast<double>(t.extent[0] * t.extent[1]); };
+    const double s_range = best(
+        [&]
+        {
+            double acc = 0;
+    #pragma omp  parallel for schedule(static) reduction(+ : acc)
+            for (long k = 0; k < nt; ++k)
+            {
+                sa::md::for_each_tile(
+                    ct, static_cast<int>(k), static_cast<int>(k + 1), [&](const auto& t, auto b)
+                    { add_block(acc, t, b); }, [&](const auto& t, double v) { add_uniform(acc, t, v); });
+            }
+            sum_range = acc;
+        });
+    const double s_team = best(
+        [&]
+        {
+            double acc = 0;
+    #pragma omp parallel reduction(+ : acc)
+            sa::md::for_each_tile_mt(
+                ct, [&](const auto& t, auto b) { add_block(acc, t, b); },
+                [&](const auto& t, double v) { add_uniform(acc, t, v); });
+            sum_team = acc;
+        });
+    if (sum_range != sum_team && std::abs(sum_range - sum_team) > 1e-9 * std::abs(sum_range))
+    {
+        sa::println("box copy team: for_each_tile_mt sums {} against {}", sum_team, sum_range);
+        ++bad;
+    }
+    sa::println("band fill, omp for over the tiles {:8.2f} ms   fill_box_mt      {:8.2f} ms   (x {:.1f})",
+                1e3 * f_range, 1e3 * f_team, f_range / f_team);
+    sa::println("sum, omp for, one tile per call   {:8.2f} ms   for_each_tile_mt {:8.2f} ms   (x {:.1f})",
+                1e3 * s_range, 1e3 * s_team, s_range / s_team);
+}
 } // namespace
 
 // The price of the multi-index: one sum of the same field read as a[k], as
@@ -679,6 +858,7 @@ int main(int argc, char** argv)
     kernels(n, bad);
     paint(n, bad);
     box_copy(n, bad);
+    box_copy_team(n, bad);
     index_cost(n, bad);
     sa::release_chunk_pools();
     sa::destroy_block_chunk();
