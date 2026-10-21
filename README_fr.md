@@ -144,7 +144,7 @@ d'écrit dans votre cache). Avec Spack, la recette est dans le dépôt :
 
 ```shell
 spack repo add <clone>/spack/spack_repo/shrink_array
-spack install shrink-array +openmp sizes=256,1024 %gcc@15
+spack install shrink-array threads=openmp sizes=256,1024 %gcc@15   # threads=pool : écrits depuis des std::thread ou TBB
 ```
 
 Les options CMake (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,

@@ -141,7 +141,7 @@ into your cache). With Spack, the recipe is in the repository:
 
 ```shell
 spack repo add <clone>/spack/spack_repo/shrink_array
-spack install shrink-array +openmp sizes=256,1024 %gcc@15
+spack install shrink-array threads=openmp sizes=256,1024 %gcc@15   # threads=pool: written from std::threads or TBB
 ```
 
 The CMake options (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,

@@ -197,7 +197,7 @@ int main()
 
 Résultat attendu : environ 12 % des chunks ont un tampon. Un `std::vector` les aurait tous.
 
-## 5. OpenMP : les règles
+## 5. Threads : les règles
 
 **Ce qui se fait sans synchronisation.** Comme avec un `std::vector`, des threads différents
 peuvent lire et écrire des **éléments différents** en même temps, même dans un même chunk :
@@ -253,9 +253,47 @@ toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la
 `rechunk_to()`, et, pour Chunk2, `set_second_value()`.
 
 **Les threads.** Les structures par thread sont dimensionnées une fois pour
-`max(omp_get_max_threads(), nombre de cœurs)` threads. Un programme qui lance plus de threads
+`max(omp_get_max_threads(), nombre de cœurs)` threads (dans un build pool, la taille d'équipe :
+`CHUNK_NUM_THREADS`, sinon `OMP_NUM_THREADS`). Un programme qui lance plus de threads
 que de cœurs fixe `CHUNK_THREAD_CAPACITY=<n>` ; un thread au-delà de la capacité arrête le
 programme avec un message.
+
+**Sans OpenMP : vos propres threads, TBB.** Une bibliothèque construite avec
+`CHUNK_THREADS=pool` fait tourner son propre travail sur un pool de `std::jthread` et accepte les
+écritures de n'importe quel thread du programme : `std::thread`, TBB, un pool de threads à vous.
+Les phases sont alors toujours explicites : chaque thread qui écrit appelle
+`begin_parallel_phase()` avant sa première écriture, et **un seul** thread appelle
+`finalize_parallel_phase()` une fois que tous les écrivains se sont arrêtés (après le `join()`) :
+
+```cpp
+std::vector<std::thread> workers;
+for (int t = 0; t < nt; ++t)
+    workers.emplace_back([&, t] {
+        sa::begin_parallel_phase();               // chaque thread qui écrit
+        for (long i = t; i < n; i += nt)
+            a[i] = f(i);
+    });
+for (auto& w : workers)
+    w.join();
+sa::finalize_parallel_phase();                    // une fois, après le join
+```
+
+Un programme TBB utilise `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`) : les
+arguments de `oneapi::tbb::parallel_for`, les deux appels faits à votre place. L'en-tête est
+fourni avec la bibliothèque ; le programme lie TBB lui-même (`TBB::tbb`), la bibliothèque non :
+
+```cpp
+#include "chunk/tbb_adaptor.h"
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r) {
+    for (long i = r.begin(); i != r.end(); ++i)
+        a[i] = f(i);
+});
+```
+
+Entre `begin` et `finalize`, la bibliothèque compte les threads du programme comme une région
+parallèle (les points séquentiels ci-dessus ne doivent pas y être appelés, comme dans une région OpenMP), et
+chacun d'eux occupe une des places par thread tant qu'il vit. Un build OpenMP ne numérote que
+les threads d'OpenMP : pour les autres, utilisez le backend pool.
 
 ## 6. Pièges
 

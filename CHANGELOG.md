@@ -52,6 +52,34 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- OpenMP is no longer required: the library runs its own parallel work on a
+  backend chosen at build time, CMake `CHUNK_THREADS=openmp|pool|serial`
+  (empty, the default: from `OMP`, as before). `pool` is a pool of
+  `std::jthread` workers of the library's own, standard C++ only. Recorded
+  in the installed package as `chunk_THREADS`; the targets of a pool build
+  carry `FAST_ALLOC_PMP_POOL=1`, and a file compiled without it is refused.
+  Plan and status: [docs/threading_backends.md](docs/threading_backends.md).
+- Under the pool backend, the arrays can be written from the program's own
+  threads -- `std::thread`, TBB, a pool of its own. Each takes a dense rank
+  from a registry (given back when the thread exits); the phase contract is
+  the serial one: `begin_parallel_phase()` on every thread that writes,
+  `finalize_parallel_phase()` once, after they stopped
+  ([docs/getting_started.md](docs/getting_started.md) §5). New harness
+  `std_thread_validation`.
+- `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`, header-only):
+  `oneapi::tbb::parallel_for` with the phase calls made for it, for a TBB
+  program on the pool backend. The library never links TBB. CMake
+  `CHUNK_WITH_TBB` (off) builds what needs oneTBB: the harness
+  `tbb_validation` and the TBB bench `shrink_bench_tbb_<variant>_<size>`.
+- shrink_bench runs on every backend from one source
+  (`examples/shrink_bench/bench_par.h`): OpenMP builds keep the same
+  worksharing pragmas (the reductions are per-thread partials, in every
+  build); pool builds, which compiled the bench without OpenMP and so ran
+  its loops on one thread, now run them on the pool; the TBB bench runs them
+  as TBB tasks. `multi_launch_stress.py --exec tbb_<variant>`.
+- Spack: variant `threads=openmp|pool|serial` (default `openmp`), and `+tbb`
+  for the TBB examples (with `+examples threads=pool`).
+
 - Reduced models of the three lock-free handshakes -- writer / compressor,
   compressor / flush, readers / buffer reclamation -- checked by GenMC
   (`formal/`, `docs/formal_models.md`): the protocols of the source verified
@@ -73,6 +101,12 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The library's `omp critical` sections are `std::mutex`es and its
+  `omp atomic` updates `std::atomic_ref`s; every OpenMP construct sits in one
+  file of the backend (`fast_allocators/internal/pmp_loops.h`). The OpenMP
+  build runs the same regions, with the same clauses.
+- Spack: the variant `openmp` is replaced by `threads` (`+openmp` is now
+  `threads=openmp`, `~openmp` `threads=serial`).
 - Constants are snake_case everywhere, as the standard library's; UPPER_CASE is left to
   macros. 84 names change, all internal but one: `fast_alloc::SIZE_BLOCK` is now
   `fast_alloc::size_block`, the former name kept as a deprecated alias. `check_naming` (a
@@ -168,6 +202,11 @@ the tag's checksum to the recipe.
   chunk with the per-chunk gates is not achievable cleanly (`chunk/config.h`).
 
 ### Fixed
+
+- Chunk2A: the deferred replay of `=` stored the element with a plain store
+  while another writer's uniform-chunk scan read it as a relaxed atomic -- a
+  data race (found by TSan on the pool backend, present under OpenMP too).
+  Same machine code on x86 and AArch64, so no value was wrong.
 
 - `set_chunk_size()` accepted, on an empty array of a `_dyn` build, a size wider than
   `cst_buffer_size` (e.g. twice it): the array's constant chunks then read the shared constant

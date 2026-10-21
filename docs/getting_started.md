@@ -193,7 +193,7 @@ int main()
 Expected output: about 12 % of the chunks hold a buffer. A `std::vector` would hold all of
 them.
 
-## 5. OpenMP: the rules
+## 5. Threads: the rules
 
 **What you can do without synchronisation.** As with a `std::vector`, different threads can
 read and write **different elements** at the same time, even elements of the same chunk:
@@ -247,8 +247,45 @@ parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `cl
 Chunk2, `set_second_value()`.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
-of cores)` threads. A program that runs more threads than cores sets
+of cores)` threads (in a pool build, the team size: `CHUNK_NUM_THREADS`, else
+`OMP_NUM_THREADS`). A program that runs more threads than cores sets
 `CHUNK_THREAD_CAPACITY=<n>`; a thread beyond the capacity stops the program with a message.
+
+**Without OpenMP: your own threads, TBB.** A library built with `CHUNK_THREADS=pool` runs its own
+work on a pool of `std::jthread`s and takes writes from any thread of the program: `std::thread`,
+TBB, a thread pool of your own. The phases are then always explicit: every thread that writes
+calls `begin_parallel_phase()` before its first write, and **one** thread calls
+`finalize_parallel_phase()` once every writer has stopped (after the `join()`):
+
+```cpp
+std::vector<std::thread> workers;
+for (int t = 0; t < nt; ++t)
+    workers.emplace_back([&, t] {
+        sa::begin_parallel_phase();               // every thread that writes
+        for (long i = t; i < n; i += nt)
+            a[i] = f(i);
+    });
+for (auto& w : workers)
+    w.join();
+sa::finalize_parallel_phase();                    // once, after the join
+```
+
+A TBB program uses `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`): the arguments of
+`oneapi::tbb::parallel_for`, both calls made for you. The header comes with the library; the
+program links TBB itself (`TBB::tbb`), the library does not:
+
+```cpp
+#include "chunk/tbb_adaptor.h"
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r) {
+    for (long i = r.begin(); i != r.end(); ++i)
+        a[i] = f(i);
+});
+```
+
+Between `begin` and `finalize` the library counts the program's threads as a parallel region
+(the sequential points above must not be called there, as inside an OpenMP region), and each of them
+holds one of the per-thread slots while it is alive. An OpenMP build numbers only OpenMP's
+threads: for the others, use the pool backend.
 
 ## 6. Pitfalls
 
