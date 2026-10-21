@@ -228,6 +228,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Async-context version of the table-number lookup: resolves
      *        which array a given chunk pointer belongs to.
+     * @param ctx The async context, which holds the table number captured at enqueue.
      * @param ptr Chunk pointer to look up.
      * @return The table number @p ptr belongs to.
      */

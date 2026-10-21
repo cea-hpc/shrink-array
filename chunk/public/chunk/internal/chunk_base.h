@@ -843,7 +843,7 @@ class ChunkDynamicAllocPolicy<T, Derived, false>
     ///        single legacy allocator.
     /// @param thr_rank Calling thread's rank.
     /// @param key      Unused: static builds have a single pool per rank.
-    /// @return Reference to (*Derived::allocator_data)[thr_rank].
+    /// @return Reference to the entry of rank @p thr_rank in Derived's allocator_data.
     static auto& route_omp_dynamic_alloc(int thr_rank, [[maybe_unused]] unsigned int key = 0) noexcept
     {
         return (*Derived::allocator_data)[thr_rank];
