@@ -66,11 +66,10 @@
  * finalize. Such a program is outside the protocol anyway (manage_ompt.h).
  */
 
-#include <algorithm> // std::min (teams::manual_end)
 #include <atomic>    // std::atomic, std::memory_order_relaxed
 #include <cstddef>   // std::size_t (teams::rank_holders)
 
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_*, chunk_pmp_team_rank, chunk_thread_capacity
+#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_*, chunk_pmp_team_rank
 #include "chunk/config.h"                   // build_config::any_check, build_config::has_not_ompt
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
@@ -185,7 +184,7 @@ inline std::atomic<int> outer_active{0};
 ///        or null. Sized to the capacity on first use, immortal.
 [[nodiscard]] inline std::atomic<const void*>* rank_holders() noexcept
 {
-    static auto* const holders = new std::atomic<const void*>[static_cast<std::size_t>(chunk_thread_capacity())]();
+    static auto* const holders = new std::atomic<const void*>[static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY)]();
     return holders;
 }
 
@@ -249,7 +248,8 @@ inline void manual_begin(int rank) noexcept
 /// @brief The phase ended (manual protocol): every rank is free for the next one.
 inline void manual_end() noexcept
 {
-    const int bound   = std::min(chunk_thread_capacity(), internal::g_rank_high_water.load(std::memory_order_acquire));
+    // Every rank handed out so far (serial builds: 1), a seq_cst load of the registry's high-water mark.
+    const int bound   = CHUNK_PMP_RANK_BOUND;
     auto*     holders = rank_holders();
     for (int r = 0; r < bound; ++r)
     {
