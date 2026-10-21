@@ -322,7 +322,7 @@ bool advise_one_slab(Slab* slab) noexcept
  * @brief Give emptied slabs' resident pages back, the last page included, with
  *        ONE madvise() per run of adjacent slabs.
  *
- * @tparam Slab Duck-typed on `nn_ref`, `data`, `BlockAllocator` and
+ * @tparam Slab Duck-typed on `nn_ref`, `data`, `block_allocator` and
  *         `backptr_dropped`. A template so those members need only be complete
  *         at instantiation.
  *

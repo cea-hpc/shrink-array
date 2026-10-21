@@ -786,7 +786,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     static constexpr bool bit_operand_v = std::is_same_v<BaseT<U>, bool> || is_packed_bit_v<BaseT<U>>;
 
     /// @brief Bind a proxy to one element.
-    /// @note Leaves #ptr_on_array, #num_chunk and #num_tab unset --
+    /// @note Leaves #ptr_on_array_, #num_chunk_ and #num_tab_ unset --
     ///       set_this_and_num_chunk() and set_num_tab() finish the job, and the
     ///       compression paths need them.
     // ptr_on_array and num_chunk are set before use (see the @note); left
@@ -830,10 +830,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Elements per chunk, as this proxy sees them.
      *
      * @details A compile-time constant with a static chunk size; with a dynamic
-     *          one it reads the array's runtime geometry through #ptr_on_array
+     *          one it reads the array's runtime geometry through #ptr_on_array_
      *          -- unless set_chunk_size_frozen() armed a value, which the replay
      *          path does precisely so it need not touch a possibly-dead
-     *          #ptr_on_array.
+     *          #ptr_on_array_.
      *
      * @note Use this rather than the process-wide geometry on any write path:
      *       during a re-chunk the two disagree.
@@ -1348,7 +1348,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        and chunk_size() then reads the live geometry instead.
     /// @param key Allocator affinity key at enqueue time (0: shared pool).
     /// @details Without this, replay would read the geometry through
-    ///          #ptr_on_array -- which a re-chunk may have freed by then.
+    ///          #ptr_on_array_ -- which a re-chunk may have freed by then.
     void set_chunk_size_frozen(unsigned int sz, unsigned int key = 0) const noexcept
     {
         chunk_size_frozen_ = sz;

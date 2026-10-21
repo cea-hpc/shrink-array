@@ -103,7 +103,7 @@ inline void TCSlab<Links>::init(int elem_size, uintptr_t block_bytes)
     {
         // The free list is threaded THROUGH freed elements (free_block() writes the next
         // index, an int, into the element's first bytes): an element must hold an aligned int.
-        // ElementSize is a run-time value, so this is a release check, once per slab.
+        // element_size is a run-time value, so this is a release check, once per slab.
         if (std::cmp_less(elem_size, sizeof(int)) || elem_size % static_cast<int>(alignof(int)) != 0) [[unlikely]]
         {
             FAST_ALLOC_FATAL("TCAllocator: element size {} bytes cannot hold the free-list index (an int: {} bytes, "
@@ -143,7 +143,7 @@ inline void* TCSlab<Links>::alloc() noexcept
         if (backptr_dropped) [[unlikely]]
         {
             *reinterpret_cast<TCSlab**>(data + block_allocator - sizeof(void*)) = this;
-            backptr_dropped                                                    = false;
+            backptr_dropped                                                     = false;
         }
     }
 

@@ -337,8 +337,8 @@ void Proxy2A<T>::ensure_writable_storage()
         {
             const unsigned int frozen = this->chunk_size_frozen_;
             const unsigned int live =
-                this->ptr_on_array ? static_cast<const ArrayChunkForT<ChunkType>*>(this->ptr_on_array)->chunk_size()
-                                   : 0;
+                this->ptr_on_array_ ? static_cast<const ArrayChunkForT<ChunkType>*>(this->ptr_on_array_)->chunk_size()
+                                    : 0;
             const unsigned int used = this->chunk_size();
             if (used != live || frozen != 0U)
             {
@@ -760,8 +760,8 @@ T Proxy2A<T>::assign_impl(InT<U> v) noexcept
                                                    static_cast<const void*>(values_after));
                         }
                         // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                        const InT<T>  readback = values_after[num];
-                        const auto    expected = static_cast<T>(ctx->operand);
+                        const InT<T> readback = values_after[num];
+                        const auto   expected = static_cast<T>(ctx->operand);
                         if (readback != expected)
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: readback mismatch after store! "
