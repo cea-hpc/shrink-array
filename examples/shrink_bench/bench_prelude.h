@@ -136,6 +136,38 @@
     #define BENCH_OMP_FOR_STATIC_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for simd schedule(static) nowait reduction(+ : __VA_ARGS__))
 #endif
 
+namespace bench_par
+{
+/// @brief true on the std::vector baseline: its static loops are
+///        `omp for simd` (Team::for_static_simd); false on a shrink array,
+///        whose loops go through proxies (see above).
+#ifdef SHRINK_ARRAY
+inline constexpr bool simd_loops = false;
+#else
+inline constexpr bool simd_loops = true;
+#endif
+
+/**
+ * @brief A static nowait loop, `simd` on the std::vector baseline only.
+ * @details The choice is made at compile time: a simd loop instantiated over a
+ *          proxy, even never run, would warn (-Wpass-failed) and can leave the
+ *          sibling loops of the same region unvectorised. The call in the
+ *          discarded branch depends on @p Body, so it is not instantiated.
+ */
+template <typename Body>
+void for_static_vec(Team& t, Int b, Int e, Body&& body)
+{
+    if constexpr (simd_loops)
+    {
+        t.for_static_simd<Int>(b, e, std::forward<Body>(body), nowait);
+    }
+    else
+    {
+        t.for_static<Int>(b, e, std::forward<Body>(body), nowait);
+    }
+}
+} // namespace bench_par
+
 // ── Round-robin, chunk-aligned schedule for index-dependent loops ───────────
 //
 // schedule(static) hands each thread ONE contiguous slice, so a loop whose

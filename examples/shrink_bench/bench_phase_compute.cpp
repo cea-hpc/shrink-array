@@ -137,98 +137,104 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             // Scalar (this loop and the next): a few hundred elements, and libm
             // calls inside index-selected branches -- "control flow cannot be
             // substituted for a select", the calls may not be speculated.
-            BENCH_FOR_STATIC_NOWAIT_SCALAR(t, i, deb, start0)
-            {
-                const Int j = i - deb;
+            t.for_static<Int>(
+                deb, start0,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    const Int j = i - deb;
 
-                if (j < 60 + dec)
-                {
-                    tab_complex[i] = complex_double(std::sin(i + k), std::cos(i + k));
-                }
-                else if (j < 120 + dec)
-                {
-                    tab_complex[i] = zero_complex;
-                }
-                else if (j < 240 + dec)
-                {
-                    tab_complex[i] = second_value_c;
-                }
-                else if (j < 360 + dec)
-                {
-                    tab_complex[i] = zero_complex;
-                }
-                else
-                {
-                    tab_complex[i] = second_value_c;
-                }
-            }
+                    if (j < 60 + dec)
+                    {
+                        tab_complex[i] = complex_double(std::sin(i + k), std::cos(i + k));
+                    }
+                    else if (j < 120 + dec)
+                    {
+                        tab_complex[i] = zero_complex;
+                    }
+                    else if (j < 240 + dec)
+                    {
+                        tab_complex[i] = second_value_c;
+                    }
+                    else if (j < 360 + dec)
+                    {
+                        tab_complex[i] = zero_complex;
+                    }
+                    else
+                    {
+                        tab_complex[i] = second_value_c;
+                    }
+                },
+                bench_par::nowait);
 
-            BENCH_FOR_STATIC_NOWAIT_SCALAR(t, i, deb, start0)
-            {
-                const Int j = i - deb;
+            t.for_static<Int>(
+                deb, start0,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    const Int j = i - deb;
 
-                if (j < 60 + dec)
-                {
-                    tab1[i]    = 0;
-                    tab2[i]    = second_value_d;
-                    tab3[i]    = std::tan(i + k);
-                    tab4[i]    = 0;
-                    tab5[i]    = std::sin(i + k);
-                    tab_int[i] = 0;
+                    if (j < 60 + dec)
+                    {
+                        tab1[i]    = 0;
+                        tab2[i]    = second_value_d;
+                        tab3[i]    = std::tan(i + k);
+                        tab4[i]    = 0;
+                        tab5[i]    = std::sin(i + k);
+                        tab_int[i] = 0;
 
-                    tab_float[j] = static_cast<float>(std::cos(i - k));
-                    tab_short[j] = 0;
-                    tab_char[i]  = 0;
-                }
-                else if (j < 120 + dec)
-                {
-                    tab1[i]      = second_value_d;
-                    tab2[i]      = 0;
-                    tab3[i]      = 0;
-                    tab4[i]      = second_value_d1;
-                    tab5[i]      = 0;
-                    tab_int[i]   = 1;
-                    tab_float[j] = 0;
-                    tab_short[j] = 1;
-                    tab_char[i]  = 0;
-                }
-                else if (j < 240 + dec)
-                {
-                    tab1[i]      = 0;
-                    tab2[i]      = std::sin(i + k);
-                    tab3[i]      = second_value_d;
-                    tab4[i]      = 0;
-                    tab5[i]      = second_value_d2;
-                    tab_int[i]   = static_cast<int>(j);
-                    tab_float[j] = second_value_f0;
-                    tab_short[j] = second_value_s0;
-                    tab_char[i]  = second_value_c0;
-                }
-                else if (j < 360 + dec)
-                {
-                    tab1[i]      = std::cos(i + k);
-                    tab2[i]      = 0;
-                    tab3[i]      = 0;
-                    tab4[i]      = 0;
-                    tab5[i]      = 0;
-                    tab_int[i]   = static_cast<int>(j + 1);
-                    tab_float[j] = 0;
-                    tab_short[j] = 0;
-                    tab_char[i]  = 0;
-                }
-                else
-                {
-                    tab1[i]      = 0;
-                    tab2[i]      = second_value_d;
-                    tab3[i]      = second_value_d;
-                    tab4[i]      = second_value_d1;
-                    tab5[i]      = second_value_d2;
-                    tab_float[j] = second_value_f1;
-                    tab_short[j] = second_value_s2;
-                    tab_char[i]  = 0;
-                    tab_int[i]   = 0;
-                }
-            }
+                        tab_float[j] = static_cast<float>(std::cos(i - k));
+                        tab_short[j] = 0;
+                        tab_char[i]  = 0;
+                    }
+                    else if (j < 120 + dec)
+                    {
+                        tab1[i]      = second_value_d;
+                        tab2[i]      = 0;
+                        tab3[i]      = 0;
+                        tab4[i]      = second_value_d1;
+                        tab5[i]      = 0;
+                        tab_int[i]   = 1;
+                        tab_float[j] = 0;
+                        tab_short[j] = 1;
+                        tab_char[i]  = 0;
+                    }
+                    else if (j < 240 + dec)
+                    {
+                        tab1[i]      = 0;
+                        tab2[i]      = std::sin(i + k);
+                        tab3[i]      = second_value_d;
+                        tab4[i]      = 0;
+                        tab5[i]      = second_value_d2;
+                        tab_int[i]   = static_cast<int>(j);
+                        tab_float[j] = second_value_f0;
+                        tab_short[j] = second_value_s0;
+                        tab_char[i]  = second_value_c0;
+                    }
+                    else if (j < 360 + dec)
+                    {
+                        tab1[i]      = std::cos(i + k);
+                        tab2[i]      = 0;
+                        tab3[i]      = 0;
+                        tab4[i]      = 0;
+                        tab5[i]      = 0;
+                        tab_int[i]   = static_cast<int>(j + 1);
+                        tab_float[j] = 0;
+                        tab_short[j] = 0;
+                        tab_char[i]  = 0;
+                    }
+                    else
+                    {
+                        tab1[i]      = 0;
+                        tab2[i]      = second_value_d;
+                        tab3[i]      = second_value_d;
+                        tab4[i]      = second_value_d1;
+                        tab5[i]      = second_value_d2;
+                        tab_float[j] = second_value_f1;
+                        tab_short[j] = second_value_s2;
+                        tab_char[i]  = 0;
+                        tab_int[i]   = 0;
+                    }
+                },
+                bench_par::nowait);
 
             // No barrier plus flush of the deferred writes (finalize_barrier_phase)
             // after either nowait loop: that is exactly what the OMPT build does at
@@ -238,37 +244,40 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             //
             // Scalar: 256 elements, and interpolation() carries early exits
             // ("cannot vectorize early exit loop with more than one early exit").
-            BENCH_FOR_STATIC_NOWAIT_SCALAR(t, i, end0, std::min(end0 + 256, sz))
-            {
-                if (i % 3 == 0)
+            t.for_static<Int>(
+                end0, std::min(end0 + 256, sz),
+                [&](const Int i) __attribute__((always_inline))
                 {
-                    tab1[i] = second_value_d;
-                    tab2[i] = std::sin(i + k);
-                    tab3[i] = 0;
-                    tab4[i] = second_value_d1;
-                    tab5[i] = std::cos(i - k);
+                    if (i % 3 == 0)
+                    {
+                        tab1[i] = second_value_d;
+                        tab2[i] = std::sin(i + k);
+                        tab3[i] = 0;
+                        tab4[i] = second_value_d1;
+                        tab5[i] = std::cos(i - k);
 
-                    tab_complex[i] = zero_complex;
-                    tab_int[i]     = 0;
+                        tab_complex[i] = zero_complex;
+                        tab_int[i]     = 0;
 
-                    tab_float[i] = static_cast<float>(std::tan(i));
-                    tab_short[i] = 0;
-                    tab_char[i]  = static_cast<unsigned char>(interpolation(i, sz, 128));
-                }
-                else
-                {
-                    tab1[i]        = 0;
-                    tab2[i]        = 0;
-                    tab3[i]        = std::sin(i + k);
-                    tab4[i]        = 0;
-                    tab5[i]        = std::cos(i + (2 * k));
-                    tab_complex[i] = complex_double(std::tan(i + (2 * k)), std::cos(i - k));
-                    tab_int[i]     = static_cast<int>(i - k);
-                    tab_float[i]   = 0;
-                    tab_short[i]   = static_cast<short>(interpolation(i, sz, std::numeric_limits<short>::max()));
-                    tab_char[i]    = 0;
-                }
-            }
+                        tab_float[i] = static_cast<float>(std::tan(i));
+                        tab_short[i] = 0;
+                        tab_char[i]  = static_cast<unsigned char>(interpolation(i, sz, 128));
+                    }
+                    else
+                    {
+                        tab1[i]        = 0;
+                        tab2[i]        = 0;
+                        tab3[i]        = std::sin(i + k);
+                        tab4[i]        = 0;
+                        tab5[i]        = std::cos(i + (2 * k));
+                        tab_complex[i] = complex_double(std::tan(i + (2 * k)), std::cos(i - k));
+                        tab_int[i]     = static_cast<int>(i - k);
+                        tab_float[i]   = 0;
+                        tab_short[i]   = static_cast<short>(interpolation(i, sz, std::numeric_limits<short>::max()));
+                        tab_char[i]    = 0;
+                    }
+                },
+                bench_par::nowait);
 
             // To simulate behavior of a code where we read more than we write
 
@@ -286,110 +295,116 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             {
                 // To simulate behavior of a code where we read more than we write
 
-                BENCH_FOR_BLOCK_NOWAIT_SCALAR(t, i, sched_base, end0)
-                {
-                    if (i < start0) // alignment head: same trip count in every loop
+                t.for_static_chunks<Int>(
+                    sched_base, end0, bench_par::block(sched_blk),
+                    [&](const Int i) __attribute__((always_inline))
                     {
-                        continue;
-                    }
-                    tab1[i] = std::sqrt(double(i));
+                        if (i < start0) // alignment head: same trip count in every loop
+                        {
+                            return;
+                        }
+                        tab1[i] = std::sqrt(double(i));
 
-                    tab_float[i] += 1;
+                        tab_float[i] += 1;
 
-                    tab_complex[i] = complex_double(std::sqrt(double(i + 1)), std::sqrt(double(i - 1)));
+                        tab_complex[i] = complex_double(std::sqrt(double(i + 1)), std::sqrt(double(i - 1)));
 
-                    if (i > tab_nba1[k])
-                    {
-                        tab2[i]     = std::cos(double(2 * i));
-                        tab_char[i] = static_cast<unsigned char>(
-                            exponential_correlation(i, sz, std::numeric_limits<char>::max(), 2));
-                        tab_short[i] =
-                            static_cast<short>(exponential_correlation(i, sz, std::numeric_limits<short>::max(), 2));
-                    }
+                        if (i > tab_nba1[k])
+                        {
+                            tab2[i]     = std::cos(double(2 * i));
+                            tab_char[i] = static_cast<unsigned char>(
+                                exponential_correlation(i, sz, std::numeric_limits<char>::max(), 2));
+                            tab_short[i] =
+                                static_cast<short>(exponential_correlation(i, sz, std::numeric_limits<short>::max(), 2));
+                        }
 
-                    if (i > tab_nba2[k])
-                    {
-                        tab3[i] = std::sin(tab1[i] + tab2[i]);
-                        tab4[i] *= tab5[i] + 1;
-                        tab_bool[i]      = true;
-                        tab_bool_bits[i] = true;
-                        tab_int[i]       = static_cast<int>(i + 1);
+                        if (i > tab_nba2[k])
+                        {
+                            tab3[i] = std::sin(tab1[i] + tab2[i]);
+                            tab4[i] *= tab5[i] + 1;
+                            tab_bool[i]      = true;
+                            tab_bool_bits[i] = true;
+                            tab_int[i]       = static_cast<int>(i + 1);
 
-                        tab_int[i] = static_cast<int>(std::floor(log10(static_cast<double>(tab_int[i]))));
-                        tab_int[i] *= tab_int[i]; // Before the previous line if i bigger than sqrt(soit 2^31 − 1)
-                        // (46340) --> overflow
+                            tab_int[i] = static_cast<int>(std::floor(log10(static_cast<double>(tab_int[i]))));
+                            tab_int[i] *= tab_int[i]; // Before the previous line if i bigger than sqrt(soit 2^31 − 1)
+                            // (46340) --> overflow
 
-                        tab_int[i]--;
-                        tab_int[i] = -tab_int[i];
+                            tab_int[i]--;
+                            tab_int[i] = -tab_int[i];
 
-                        ++tab_int[i];
-                        tab_int[i] = std::abs(tab_int[i]);
+                            ++tab_int[i];
+                            tab_int[i] = std::abs(tab_int[i]);
 
-                        tab_long[i] = static_cast<long>(i);
-                        tab_long[i] += 1L;
-                        tab_long[i] *= 2L;
-                        --tab_long[i];
+                            tab_long[i] = static_cast<long>(i);
+                            tab_long[i] += 1L;
+                            tab_long[i] *= 2L;
+                            --tab_long[i];
 
-                        // Bounded to CHUNK_BENCH_ULONG_BANDS distinct values. The
-                        // band arithmetic below maps each 256-index band to one
-                        // constant, so writing i directly gave the array a NEW
-                        // second value per written range -- 214 300 of them at
-                        // 4000 iterations, growing with the run. That is not what
-                        // a solver does: it registers the constants it actually
-                        // holds, a few thousand at most. Masking first keeps the
-                        // write identical in shape -- same operations, same type,
-                        // a band still maps to one value -- and stops the bench
-                        // from manufacturing the very registry pressure it was
-                        // then blamed for. 0 restores the unbounded behaviour.
-                        tab_ulong[i] = static_cast<unsigned long>(i) & bench_ulong_mask;
-                        tab_ulong[i] |= 0xFFUL;
-                        tab_ulong[i] &= ~0x0FUL;
+                            // Bounded to CHUNK_BENCH_ULONG_BANDS distinct values. The
+                            // band arithmetic below maps each 256-index band to one
+                            // constant, so writing i directly gave the array a NEW
+                            // second value per written range -- 214 300 of them at
+                            // 4000 iterations, growing with the run. That is not what
+                            // a solver does: it registers the constants it actually
+                            // holds, a few thousand at most. Masking first keeps the
+                            // write identical in shape -- same operations, same type,
+                            // a band still maps to one value -- and stops the bench
+                            // from manufacturing the very registry pressure it was
+                            // then blamed for. 0 restores the unbounded behaviour.
+                            tab_ulong[i] = static_cast<unsigned long>(i) & bench_ulong_mask;
+                            tab_ulong[i] |= 0xFFUL;
+                            tab_ulong[i] &= ~0x0FUL;
 
-                        tab_float[i] -= 1.5f;
-                        tab_char[i] =
-                            static_cast<unsigned char>(linear_correlation(i, sz, std::numeric_limits<char>::max()));
-                        tab_short[i] = static_cast<short>(linear_correlation(i, sz, std::numeric_limits<short>::max()));
-                        tab_complex[i] = complex_double(tab1[i], tab2[i]);
+                            tab_float[i] -= 1.5f;
+                            tab_char[i] =
+                                static_cast<unsigned char>(linear_correlation(i, sz, std::numeric_limits<char>::max()));
+                            tab_short[i] = static_cast<short>(linear_correlation(i, sz, std::numeric_limits<short>::max()));
+                            tab_complex[i] = complex_double(tab1[i], tab2[i]);
 
-                        tab_complex[i] = 3. * tab_complex[i];
-                        tab_complex[i] = tab_complex[i] + complex_double(1., 3.);
-                        tab_complex[i] *= 2.;
-                        tab_complex[i] = complex_double(2., 3.) * tab_complex[i];
-                        tab_complex[i] = 2. / tab_complex[i];
-                        tab_complex[i] = 2. - tab_complex[i];
-                        tab_complex[i] = tab_complex[i] - complex_double(4., 3.);
-                        tab_complex[i] = -tab_complex[i];
-                    }
-                }
+                            tab_complex[i] = 3. * tab_complex[i];
+                            tab_complex[i] = tab_complex[i] + complex_double(1., 3.);
+                            tab_complex[i] *= 2.;
+                            tab_complex[i] = complex_double(2., 3.) * tab_complex[i];
+                            tab_complex[i] = 2. / tab_complex[i];
+                            tab_complex[i] = 2. - tab_complex[i];
+                            tab_complex[i] = tab_complex[i] - complex_double(4., 3.);
+                            tab_complex[i] = -tab_complex[i];
+                        }
+                    },
+                    bench_par::nowait);
             }
             else
             {
-                BENCH_FOR_BLOCK_NOWAIT_SCALAR(t, i, sched_base, end0)
-                {
-                    if (i < start0) // alignment head: same trip count in every loop
+                t.for_static_chunks<Int>(
+                    sched_base, end0, bench_par::block(sched_blk),
+                    [&](const Int i) __attribute__((always_inline))
                     {
-                        continue;
-                    }
-                    tab_int[i]       = second_value_i;
-                    tab_bool[i]      = second_value_b;
-                    tab_bool_bits[i] = second_value_b;
+                        if (i < start0) // alignment head: same trip count in every loop
+                        {
+                            return;
+                        }
+                        tab_int[i]       = second_value_i;
+                        tab_bool[i]      = second_value_b;
+                        tab_bool_bits[i] = second_value_b;
 
-                    tab2[i] = .5;
-                    tab3[i] = 2;
-                    tab1[i] = tab2[i] * tab3[i];
-                    tab2[i] = second_value_d;
-                    tab3[i] = second_value_d;
+                        tab2[i] = .5;
+                        tab3[i] = 2;
+                        tab1[i] = tab2[i] * tab3[i];
+                        tab2[i] = second_value_d;
+                        tab3[i] = second_value_d;
 
-                    tab4[i] = second_value_d1;
-                    tab5[i] = second_value_d2;
-                    tab1[i] *= second_value_d;
+                        tab4[i] = second_value_d1;
+                        tab5[i] = second_value_d2;
+                        tab1[i] *= second_value_d;
 
-                    tab_float[i] = second_value_f1;
-                    tab_char[i]  = second_value_c1;
-                    tab_short[i] = second_value_s1;
+                        tab_float[i] = second_value_f1;
+                        tab_char[i]  = second_value_c1;
+                        tab_short[i] = second_value_s1;
 
-                    tab_complex[i] = second_value_c;
-                }
+                        tab_complex[i] = second_value_c;
+                    },
+                    bench_par::nowait);
             }
 
             const Int interval_loc = end0 - start0;
@@ -427,34 +442,37 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 double    p_v_real       = 0;
                 double    p_v_im         = 0;
                 const Int n_blocks       = (end0 - sched_base + sched_blk - 1) / sched_blk;
-                BENCH_FOR_ROUND_ROBIN_NOWAIT(t, blk, 0, n_blocks)
-                {
-                    const Int lo = std::max(start0, sched_base + (blk * sched_blk));
-                    const Int hi = std::min(end0, sched_base + ((blk + 1) * sched_blk));
-                    BENCH_OMP_SIMD_RED(p_val_sum, p_long_val_sum, p_v_real, p_v_im)
-                    for (Int i = lo; i < hi; ++i)
+                t.for_static_chunks<Int>(
+                    0, n_blocks, 1,
+                    [&](const Int blk) __attribute__((always_inline))
                     {
-                        const double t1 = tab1[i];
-                        const double t2 = tab2[i];
-                        const double t3 = tab3[i];
-                        const double t5 = tab5[i];
+                        const Int lo = std::max(start0, sched_base + (blk * sched_blk));
+                        const Int hi = std::min(end0, sched_base + ((blk + 1) * sched_blk));
+                        BENCH_OMP_SIMD_RED(p_val_sum, p_long_val_sum, p_v_real, p_v_im)
+                        for (Int i = lo; i < hi; ++i)
+                        {
+                            const double t1 = tab1[i];
+                            const double t2 = tab2[i];
+                            const double t3 = tab3[i];
+                            const double t5 = tab5[i];
 
-                        const complex_double valc = tab_complex[i];
-                        const bool           b    = tab_bool[i];
-                        const Int            ti   = tab_int[i];
+                            const complex_double valc = tab_complex[i];
+                            const bool           b    = tab_bool[i];
+                            const Int            ti   = tab_int[i];
 
-                        const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
-                        const double arm    = b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) -
-                                                   (std::tan(t3) + std::cos(t5))
-                                                : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) -
-                                                   (std::sin(t3) + std::atan(t5));
+                            const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
+                            const double arm    = b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) -
+                                                       (std::tan(t3) + std::cos(t5))
+                                                    : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) -
+                                                       (std::sin(t3) + std::atan(t5));
 
-                        p_val_sum += common + arm;
-                        p_v_real += std::cos(valc.real()) - tab_float[i];
-                        p_v_im += std::sin(valc.imag()) - tab_short[i] - tab_char[i];
-                        p_long_val_sum += ti > 0 ? static_cast<long>(ti) : 0L;
-                    }
-                }
+                            p_val_sum += common + arm;
+                            p_v_real += std::cos(valc.real()) - tab_float[i];
+                            p_v_im += std::sin(valc.imag()) - tab_short[i] - tab_char[i];
+                            p_long_val_sum += ti > 0 ? static_cast<long>(ti) : 0L;
+                        }
+                    },
+                    bench_par::nowait);
                 bench_par::atomic_add(val_sum, p_val_sum);
                 bench_par::atomic_add(long_val_sum, p_long_val_sum);
                 bench_par::atomic_add(v_real, p_v_real);
@@ -472,143 +490,145 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             {
                 const auto val = static_cast<double>(p);
 
-                BENCH_FOR_BLOCK_NOWAIT_RED_SCALAR(t, i, sched_base, end0, val_sum)
-                {
-                    if (i < start0) // alignment head: same trip count in every loop
+                bench_par::for_static_chunks_sum(
+                    t, sched_base, end0, bench_par::block(sched_blk), val_sum,
+                    [&](const Int i, auto& val_sum_part) __attribute__((always_inline))
                     {
-                        continue;
-                    }
-                    BENCH_RED(val_sum) += std::cos(tab1[i]) + std::sin(tab2[i]) + std::atan(tab3[i]) + std::cos(val);
-                    BENCH_RED(val_sum) += std::sin(tab4[i]) * std::cos(tab5[i]);
-                    BENCH_RED(val_sum) -= tab_float[i] + tab_short[i] - tab_char[i];
-                    if (i > end0 - interval10)
-                    {
-                        tab1[i] = (tab2[i] * tab3[i] * std::sin(tab1[i])) + std::cos(val);
-                        tab1[i] += tab2[i] - std::exp(std::fmod(static_cast<double>(tab3[i]), 700.0));
-                        tab1[i] -= tab3[i] + std::tan(tab2[i]);
-                        tab1[i] += 1;
-                        --tab2[i];
-                        tab2[i] = -tab2[i];
-                        tab2[i]++;
-                        tab2[i] *= tab3[i];
-                        tab2[i] /= tab1[i];
-                        ++tab4[i];
-                        tab5[i] *= 2;
-                        tab_float[i] /= 1.01f;
-                        tab_float[i] -= .5f;
-
-                        tab_complex[i] /= complex_double(2, 3);
-                        tab_complex[i] -= tab1[i];
-                        tab_complex[i] *= tab1[i];
-
-                        tab_complex[i] = complex_double(3., 2.) * tab1[i] + tab2[i] / complex_double(2., 2.);
-                        tab_complex[i] = tab1[i] - complex_double(1., 2.) + tab3[i] + complex_double(3., 1.);
-
-                        tab_complex[i] *= tab1[i];
-
-                        // --- bound accumulators to keep the stress workload
-                        // numerically finite (values are a checksum; exact
-                        // magnitude irrelevant). Prevents FE_OVERFLOW traps on
-                        // the benign divergence of exp / repeated *=. Memory
-                        // and rechunk behaviour are unchanged (same writes).
-                        tab1[i] = std::fmod(static_cast<double>(tab1[i]), 1e6);
-                        tab2[i] = std::fmod(static_cast<double>(tab2[i]), 1e6);
-                        tab3[i] = std::fmod(static_cast<double>(tab3[i]), 1e6);
-                        tab5[i] = std::fmod(static_cast<double>(tab5[i]), 1e6);
+                        if (i < start0) // alignment head: same trip count in every loop
                         {
-                            const complex_double _cb = tab_complex[i];
-                            tab_complex[i] = complex_double(std::fmod(_cb.real(), 1e6), std::fmod(_cb.imag(), 1e6));
+                            return;
+                        }
+                        val_sum_part += std::cos(tab1[i]) + std::sin(tab2[i]) + std::atan(tab3[i]) + std::cos(val);
+                        val_sum_part += std::sin(tab4[i]) * std::cos(tab5[i]);
+                        val_sum_part -= tab_float[i] + tab_short[i] - tab_char[i];
+                        if (i > end0 - interval10)
+                        {
+                            tab1[i] = (tab2[i] * tab3[i] * std::sin(tab1[i])) + std::cos(val);
+                            tab1[i] += tab2[i] - std::exp(std::fmod(static_cast<double>(tab3[i]), 700.0));
+                            tab1[i] -= tab3[i] + std::tan(tab2[i]);
+                            tab1[i] += 1;
+                            --tab2[i];
+                            tab2[i] = -tab2[i];
+                            tab2[i]++;
+                            tab2[i] *= tab3[i];
+                            tab2[i] /= tab1[i];
+                            ++tab4[i];
+                            tab5[i] *= 2;
+                            tab_float[i] /= 1.01f;
+                            tab_float[i] -= .5f;
+
+                            tab_complex[i] /= complex_double(2, 3);
+                            tab_complex[i] -= tab1[i];
+                            tab_complex[i] *= tab1[i];
+
+                            tab_complex[i] = complex_double(3., 2.) * tab1[i] + tab2[i] / complex_double(2., 2.);
+                            tab_complex[i] = tab1[i] - complex_double(1., 2.) + tab3[i] + complex_double(3., 1.);
+
+                            tab_complex[i] *= tab1[i];
+
+                            // --- bound accumulators to keep the stress workload
+                            // numerically finite (values are a checksum; exact
+                            // magnitude irrelevant). Prevents FE_OVERFLOW traps on
+                            // the benign divergence of exp / repeated *=. Memory
+                            // and rechunk behaviour are unchanged (same writes).
+                            tab1[i] = std::fmod(static_cast<double>(tab1[i]), 1e6);
+                            tab2[i] = std::fmod(static_cast<double>(tab2[i]), 1e6);
+                            tab3[i] = std::fmod(static_cast<double>(tab3[i]), 1e6);
+                            tab5[i] = std::fmod(static_cast<double>(tab5[i]), 1e6);
+                            {
+                                const complex_double _cb = tab_complex[i];
+                                tab_complex[i] = complex_double(std::fmod(_cb.real(), 1e6), std::fmod(_cb.imag(), 1e6));
+                            }
+
+                            if (tab2[i] >= 0)
+                            {
+                                neutral_sqrt_assign(tab2, i, static_cast<double>(tab2[i]));
+                            }
+                            tab_bool[i]      = true;
+                            tab_bool_bits[i] = true;
+                            tab_int[i]       = static_cast<int>(i);
                         }
 
-                        if (tab2[i] >= 0)
+                        if (i > beg_loc && i < end_loc)
                         {
-                            neutral_sqrt_assign(tab2, i, static_cast<double>(tab2[i]));
+                            tab2[i] = 0;
+                            tab3[i] = 1;
+
+                            tab4[i] = 0;
+                            tab5[i] = 1;
+
+                            tab_int[i] = static_cast<int>(i & 0xF);
+                            tab_int[i] |= 0x1;
+                            tab_int[i] ^= 0x3;
+                            tab_int[i] <<= 2;
+                            tab_int[i] >>= 1;
+                            tab_int[i] = (tab_int[i] & 0xF) | 0x2;
+                            tab_int[i] %= 5; // same value as tab_int[i] % 5: the only %= of the bench
+                            tab_int[i] = ~tab_int[i];
+                            tab_int[i] = 1;
+
+                            if (i > beg_loc0)
+                            {
+                                tab_int[i] = (tab_bool[i] ? 1 : 0);
+
+                                tab_float[i] = tab_int[i] + 0.5f;
+
+                                tab_int[i] = static_cast<int>(tab_float[i] * 2);
+
+                                if (tab_int[i] == 0)
+                                {
+                                    tab_bool[i]      = true;
+                                    tab_bool_bits[i] = true;
+                                }
+                                if (tab_int[i] != 1)
+                                {
+                                    tab_bool[i]      = true;
+                                    tab_bool_bits[i] = true;
+                                }
+                                if (tab_int[i] < 10)
+                                {
+                                    tab_bool[i]      = true;
+                                    tab_bool_bits[i] = true;
+                                }
+                                if (tab_int[i] <= 100)
+                                {
+                                    tab_bool[i]      = true;
+                                    tab_bool_bits[i] = true;
+                                }
+
+                                const bool b = tab_bool[i];
+                                if (!b)
+                                {
+                                    tab_int[i]++;
+                                }
+                                if (tab_bool[i] && tab_int[i] > 0)
+                                {
+                                    --tab_int[i];
+                                }
+                                if (tab_bool[i] || tab_int[i] < 0)
+                                {
+                                    tab_int[i]--;
+                                }
+
+                                tab_float[i] = -tab_float[i];
+                                tab_int[i]   = tab_int[i] + 1;
+                                tab_float[i] = tab_float[i] - 0.5f;
+                                tab_int[i]   = tab_int[i] * 2;
+                                tab_int[i]   = tab_int[i] / 3;
+                                tab_int[i]   = tab_bool[i] ? (tab_float[i] > 0 ? 1 : 2) : 0;
+                                tab_float[i] = tab_int[i] + 0.5f;
+                                tab_int[i]   = static_cast<int>(tab_float[i] * tab1[i]);
+                            }
+                            else
+                            {
+                                tab_complex[i] = zero_complex;
+
+                                tab_float[i] = 0;
+                                tab_char[i]  = 0;
+                                tab_short[i] = 0;
+                            }
                         }
-                        tab_bool[i]      = true;
-                        tab_bool_bits[i] = true;
-                        tab_int[i]       = static_cast<int>(i);
-                    }
-
-                    if (i > beg_loc && i < end_loc)
-                    {
-                        tab2[i] = 0;
-                        tab3[i] = 1;
-
-                        tab4[i] = 0;
-                        tab5[i] = 1;
-
-                        tab_int[i] = static_cast<int>(i & 0xF);
-                        tab_int[i] |= 0x1;
-                        tab_int[i] ^= 0x3;
-                        tab_int[i] <<= 2;
-                        tab_int[i] >>= 1;
-                        tab_int[i] = (tab_int[i] & 0xF) | 0x2;
-                        tab_int[i] %= 5; // same value as tab_int[i] % 5: the only %= of the bench
-                        tab_int[i] = ~tab_int[i];
-                        tab_int[i] = 1;
-
-                        if (i > beg_loc0)
-                        {
-                            tab_int[i] = (tab_bool[i] ? 1 : 0);
-
-                            tab_float[i] = tab_int[i] + 0.5f;
-
-                            tab_int[i] = static_cast<int>(tab_float[i] * 2);
-
-                            if (tab_int[i] == 0)
-                            {
-                                tab_bool[i]      = true;
-                                tab_bool_bits[i] = true;
-                            }
-                            if (tab_int[i] != 1)
-                            {
-                                tab_bool[i]      = true;
-                                tab_bool_bits[i] = true;
-                            }
-                            if (tab_int[i] < 10)
-                            {
-                                tab_bool[i]      = true;
-                                tab_bool_bits[i] = true;
-                            }
-                            if (tab_int[i] <= 100)
-                            {
-                                tab_bool[i]      = true;
-                                tab_bool_bits[i] = true;
-                            }
-
-                            const bool b = tab_bool[i];
-                            if (!b)
-                            {
-                                tab_int[i]++;
-                            }
-                            if (tab_bool[i] && tab_int[i] > 0)
-                            {
-                                --tab_int[i];
-                            }
-                            if (tab_bool[i] || tab_int[i] < 0)
-                            {
-                                tab_int[i]--;
-                            }
-
-                            tab_float[i] = -tab_float[i];
-                            tab_int[i]   = tab_int[i] + 1;
-                            tab_float[i] = tab_float[i] - 0.5f;
-                            tab_int[i]   = tab_int[i] * 2;
-                            tab_int[i]   = tab_int[i] / 3;
-                            tab_int[i]   = tab_bool[i] ? (tab_float[i] > 0 ? 1 : 2) : 0;
-                            tab_float[i] = tab_int[i] + 0.5f;
-                            tab_int[i]   = static_cast<int>(tab_float[i] * tab1[i]);
-                        }
-                        else
-                        {
-                            tab_complex[i] = zero_complex;
-
-                            tab_float[i] = 0;
-                            tab_char[i]  = 0;
-                            tab_short[i] = 0;
-                        }
-                    }
-                }
+                    });
             }
 
             finalize_parallel_phase_only_flush_g();

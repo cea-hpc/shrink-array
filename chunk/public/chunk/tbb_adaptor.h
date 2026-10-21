@@ -212,6 +212,9 @@ void parallel_for(const Range& range, const Body& body, Extra&&... extra)
 /**
  * @brief oneapi::tbb::parallel_for(first, last, step, f, extra...) as one
  *        phase of the library: f(i) for i = first, first + step, ... < last.
+ * @param first first index
+ * @param last  the indices stay below it
+ * @param f     called as f(i), once per index
  * @param step  positive, as oneapi::tbb::parallel_for requires (std::invalid_argument otherwise)
  * @param extra partitioner and / or task_group_context
  * @details Run on a blocked_range of the iteration numbers (grain 1, as

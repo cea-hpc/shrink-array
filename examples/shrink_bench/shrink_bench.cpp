@@ -113,17 +113,19 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
             [&]([[maybe_unused]] bench_par::Team& t)
             {
                 begin_parallel_phase_g();
-                BENCH_FOR_STATIC_NOWAIT(t, c, beg / step, ((end - 1) / step) + 1)
-                {
-                    if constexpr (build_config::threaded)
+                bench_par::for_static_vec(
+                    t, beg / step, ((end - 1) / step) + 1,
+                    [&](const Int c) __attribute__((always_inline))
                     {
-                        a.alloc_chunk(c * step, get_thr_rank_fast());
-                    }
-                    else
-                    {
-                        a.alloc_chunk(c * step);
-                    }
-                }
+                        if constexpr (build_config::threaded)
+                        {
+                            a.alloc_chunk(c * step, get_thr_rank_fast());
+                        }
+                        else
+                        {
+                            a.alloc_chunk(c * step);
+                        }
+                    });
                 finalize_parallel_phase_only_flush_g();
             });
         finalize_parallel_phase_after_flush_g();
@@ -153,10 +155,12 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
         [&]([[maybe_unused]] bench_par::Team& t)
         {
             begin_parallel_phase_g();
-            BENCH_FOR_STATIC_NOWAIT(t, i, beg, end)
-            {
-                a[i] = value_at(i);
-            }
+            bench_par::for_static_vec(
+                t, beg, end,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    a[i] = value_at(i);
+                });
             finalize_parallel_phase_only_flush_g();
         });
     finalize_parallel_phase_after_flush_g();

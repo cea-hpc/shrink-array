@@ -364,6 +364,9 @@ class Team
     /**
      * @brief Share [@p first, @p last) out over the team, one contiguous
      *        block per thread (`omp for schedule(static)`).
+     * @param first first index
+     * @param last  one past the last index
+     * @param body  called as body(i), once per index
      * @param w wait_mode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
@@ -517,6 +520,10 @@ class Team
      * @brief Share [@p first, @p last) out over the team in blocks of
      *        @p chunk iterations, first come first served
      *        (`omp for schedule(dynamic, chunk)`).
+     * @param first first index
+     * @param last  one past the last index
+     * @param chunk iterations handed out at a time
+     * @param body  called as body(i), once per index
      * @param w wait_mode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
@@ -552,6 +559,9 @@ class Team
      *        task's run-time schedule (`omp for schedule(runtime)`: OMP_SCHEDULE,
      *        or what omp_set_schedule set -- the rechunk refill's
      *        CHUNK_RECHUNK_SCHEDULE).
+     * @param first first index
+     * @param last  one past the last index
+     * @param body  called as body(i), once per index
      * @param w wait_mode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
@@ -592,6 +602,7 @@ class Team
     /**
      * @brief Run @p f on ONE thread of the team, whichever gets here first
      *        (`omp single`).
+     * @param f called once, without argument
      * @param w wait_mode::wait (the default): the others wait for it at the
      *          end; nowait: they go on.
      */

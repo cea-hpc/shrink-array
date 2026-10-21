@@ -391,6 +391,46 @@ inline void atomic_add(T& v, T x) noexcept
 #endif
 }
 
+/// @brief A block size for Team::for_static_chunks (an int): the bench's
+///        sched_blk (bench_sched_for(), an Int, a power of two or a slice).
+[[nodiscard]] inline int block(Int sched_blk) noexcept
+{
+    return static_cast<int>(sched_blk);
+}
+
+// The bodies given to the helpers below, and the bench's loop bodies, are
+// lambdas marked __attribute__((always_inline)) (after the parameters; the
+// [[gnu::always_inline]] spelling there applies to the type and is ignored):
+// gcc -O3 otherwise leaves a big body of a big region out of line, a call per
+// iteration where the BENCH_FOR_* macros had the body in the loop.
+
+/**
+ * @brief A reduction inside a region: @p body(i, part) adds into the calling
+ *        thread's partial for its share of [@p b, @p e) under `schedule(static)`,
+ *        then the partial goes into @p v atomically. No barrier: @p v is whole
+ *        after the next barrier or the end of the region.
+ * @details Not a `reduction(+ : v)` clause (an orphaned `omp for reduction` on
+ *          a lambda's capture is refused by clang), not pmp::team_sum (a region
+ *          of its own, where the bench's phases are one barrier-free region).
+ */
+template <typename T, typename Body>
+void for_static_sum(Team& t, Int b, Int e, T& v, Body&& body)
+{
+    T part{};
+    t.for_static<Int>(b, e, [&](const Int i) __attribute__((always_inline)) { body(i, part); }, shrink_array::pmp::nowait);
+    atomic_add(v, part);
+}
+
+/// @brief for_static_sum() over round-robin blocks of @p chunk iterations
+///        (`schedule(static, chunk)`).
+template <typename T, typename Body>
+void for_static_chunks_sum(Team& t, Int b, Int e, int chunk, T& v, Body&& body)
+{
+    T part{};
+    t.for_static_chunks<Int>(b, e, chunk, [&](const Int i) __attribute__((always_inline)) { body(i, part); }, shrink_array::pmp::nowait);
+    atomic_add(v, part);
+}
+
 /// @brief The lock of critical(): one for the whole bench, as an unnamed
 ///        `omp critical`.
 [[nodiscard]] inline std::mutex& critical_mutex() noexcept

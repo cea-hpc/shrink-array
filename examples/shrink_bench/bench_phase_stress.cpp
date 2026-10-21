@@ -39,22 +39,25 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team,
                       [&]([[maybe_unused]] bench_par::Team& t)
                       {
                           begin_parallel_phase_g();
-                          BENCH_FOR_STATIC_NOWAIT_SCALAR(t, j, beg_s, end_s)
-                          {
-                              tab1[j] = second_value_d;
-                              tab2[j] = 0;
-                              tab3[j] = second_value_d;
-                              tab4[j] = second_value_d1;
-                              tab5[j] = second_value_d2;
+                          t.for_static<Int>(
+                              beg_s, end_s,
+                              [&](const Int j) __attribute__((always_inline))
+                              {
+                                  tab1[j] = second_value_d;
+                                  tab2[j] = 0;
+                                  tab3[j] = second_value_d;
+                                  tab4[j] = second_value_d1;
+                                  tab5[j] = second_value_d2;
 
-                              tab_int[j]       = second_value_i;
-                              tab_bool[j]      = second_value_b;
-                              tab_bool_bits[j] = second_value_b;
-                              tab_complex[j]   = second_value_c;
+                                  tab_int[j]       = second_value_i;
+                                  tab_bool[j]      = second_value_b;
+                                  tab_bool_bits[j] = second_value_b;
+                                  tab_complex[j]   = second_value_c;
 
-                              tab_long[j]  = second_value_l;
-                              tab_ulong[j] = second_value_ul;
-                          }
+                                  tab_long[j]  = second_value_l;
+                                  tab_ulong[j] = second_value_ul;
+                              },
+                              bench_par::nowait);
                           finalize_parallel_phase_only_flush_g();
                       });
     finalize_parallel_phase_after_flush_g();

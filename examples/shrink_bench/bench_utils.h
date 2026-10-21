@@ -242,16 +242,19 @@ void calculate_checksum_0(bench_par::Team& t, const V& vec, std::vector<uint64_t
     // The rank in the region's team (a TBB task's virtual rank): one slot per share.
     auto& checksum = checksum_thr[static_cast<std::size_t>(t.rank())];
 
-    BENCH_FOR_STATIC_NOWAIT_SCALAR(t, k, 0, nn)
-    {
-        const T element = vec[k];
-
-        if (element != zero)
+    t.for_static<Int>(
+        0, nn,
+        [&](const Int k) __attribute__((always_inline))
         {
-            checksum +=
-                static_cast<uint64_t_padding>(bench_checksum::contribution(static_cast<std::uint64_t>(k), element));
-        }
-    }
+            const T element = vec[k];
+
+            if (element != zero)
+            {
+                checksum +=
+                    static_cast<uint64_t_padding>(bench_checksum::contribution(static_cast<std::uint64_t>(k), element));
+            }
+        },
+        bench_par::nowait);
 }
 
 /// @brief A container reference with one padded checksum accumulator per thread.
