@@ -304,6 +304,21 @@ class Team
         end_construct(w);
     }
 
+    /// @brief for_static(): the same share. No OpenMP here to say `simd` to: the
+    ///        loop is the auto-vectoriser's, as in the OpenMP backend without it.
+    template <typename Index, typename Body>
+    void for_static_simd(Index first, Index last, Body&& body, wait_mode w = wait_mode::wait)
+    {
+        for_static(first, last, std::forward<Body>(body), w);
+    }
+
+    /// @brief for_static_chunks(): the same blocks (see for_static_simd()).
+    template <typename Index, typename Body>
+    void for_static_chunks_simd(Index first, Index last, int chunk, Body&& body, wait_mode w = wait_mode::wait)
+    {
+        for_static_chunks(first, last, chunk, std::forward<Body>(body), w);
+    }
+
     /// @brief Blocks of @p chunk iterations, first come first served (`schedule(dynamic, chunk)`).
     template <typename Index, typename Body>
     void for_dynamic(Index first, Index last, int chunk, Body&& body, wait_mode w = wait_mode::wait)

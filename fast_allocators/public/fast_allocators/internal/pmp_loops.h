@@ -33,7 +33,9 @@
 //   team_any(opt, body)                             body(Team&, flag): did any thread set its flag?
 //   current_team()                                  the team the calling thread runs in (a team of
 //                                                   one outside any region)
-//   Team: rank(), size(), for_static(), for_dynamic(), for_runtime(), barrier(), single(), masked()
+//   Team: rank(), size(), for_static(), for_static_chunks(), for_dynamic(), for_runtime(),
+//         barrier(), single(), masked(); for_static_simd() and for_static_chunks_simd(),
+//         the same shares as `omp for simd` (pool and serial: the auto-vectoriser's loop)
 //
 // Every thread of a team must meet the same Team calls in the same order (the
 // OpenMP rule for worksharing and barriers).
@@ -379,6 +381,126 @@ class Team
             return;
         }
         #pragma omp for schedule(static)
+        for (Index i = first; i < last; ++i)
+        {
+            body(i);
+        }
+    #else
+        for (Index i = first; i < last; ++i)
+        {
+            body(i);
+        }
+    #endif
+    }
+
+    /**
+     * @brief for_static() as `omp for simd schedule(static)`: the same share,
+     *        the loop vectorised as `simd` asks. Serial build: for_static().
+     * @details For loops that do vectorise (plain stores into a std::vector,
+     *          a compute kernel). Not for loops through the arrays' proxies:
+     *          there `simd` fails (-Wpass-failed) and can leave the sibling
+     *          loops of the same outlined region unvectorised too.
+     * @param w wait_mode::nowait: no barrier at the end.
+     */
+    template <typename Index, typename Body>
+    void for_static_simd(Index first, Index last, Body&& body, [[maybe_unused]] wait_mode w = wait_mode::wait)
+    {
+        static_assert(std::is_integral_v<Index>, "the loop index is an integer");
+    #ifdef _OPENMP
+        if (w == wait_mode::nowait)
+        {
+        #pragma omp for simd schedule(static) nowait
+            for (Index i = first; i < last; ++i)
+            {
+                body(i);
+            }
+            return;
+        }
+        #pragma omp for simd schedule(static)
+        for (Index i = first; i < last; ++i)
+        {
+            body(i);
+        }
+    #else
+        for (Index i = first; i < last; ++i)
+        {
+            body(i);
+        }
+    #endif
+    }
+
+    /**
+     * @brief Share [@p first, @p last) out over the team in blocks of
+     *        @p chunk iterations, round-robin: block k from @p first to rank
+     *        k % size() (`omp for schedule(static, chunk)`).
+     * @details A rank gets the same blocks in every loop of the same bounds and
+     *          chunk: two nowait loops in a row need no barrier between them
+     *          for a rank to read in the second what it wrote in the first.
+     *          The chunk is a local of this function: clang 19 and 20 crash
+     *          (EmitOMPWorksharingLoop) on a chunk that is a capture of the
+     *          region's lambda.
+     * @param chunk the block size (below 1 means 1)
+     * @param w     wait_mode::nowait: no barrier at the end.
+     */
+    template <typename Index, typename Body>
+    void for_static_chunks(Index                       first,
+                           Index                       last,
+                           int                         chunk,
+                           Body&&                      body,
+                           [[maybe_unused]] wait_mode w = wait_mode::wait)
+    {
+        static_assert(std::is_integral_v<Index>, "the loop index is an integer");
+        [[maybe_unused]] const int c = chunk > 0 ? chunk : 1;
+    #ifdef _OPENMP
+        if (w == wait_mode::nowait)
+        {
+        #pragma omp for schedule(static, c) nowait
+            for (Index i = first; i < last; ++i)
+            {
+                body(i);
+            }
+            return;
+        }
+        #pragma omp for schedule(static, c)
+        for (Index i = first; i < last; ++i)
+        {
+            body(i);
+        }
+    #else
+        for (Index i = first; i < last; ++i)
+        {
+            body(i);
+        }
+    #endif
+    }
+
+    /**
+     * @brief for_static_chunks() as `omp for simd schedule(static, chunk)`:
+     *        the same blocks (no `simd:` modifier, which would round them),
+     *        the loop vectorised. Serial build: for_static_chunks().
+     * @param chunk the block size (below 1 means 1)
+     * @param w     wait_mode::nowait: no barrier at the end.
+     */
+    template <typename Index, typename Body>
+    void for_static_chunks_simd(Index                       first,
+                                Index                       last,
+                                int                         chunk,
+                                Body&&                      body,
+                                [[maybe_unused]] wait_mode w = wait_mode::wait)
+    {
+        static_assert(std::is_integral_v<Index>, "the loop index is an integer");
+        [[maybe_unused]] const int c = chunk > 0 ? chunk : 1;
+    #ifdef _OPENMP
+        if (w == wait_mode::nowait)
+        {
+        #pragma omp for simd schedule(static, c) nowait
+            for (Index i = first; i < last; ++i)
+            {
+                body(i);
+            }
+            return;
+        }
+        #pragma omp for simd schedule(static, c)
         for (Index i = first; i < last; ++i)
         {
             body(i);

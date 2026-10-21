@@ -156,7 +156,9 @@ class RegionCtx
  *          (every worksharing loop and single is nowait), so a task that runs
  *          after another on the same thread loses nothing but time -- and no
  *          task blocks one that has not started, which is how a barrier deadlocks
- *          TBB. Hence no barrier() here, and single() / for_dynamic() nowait only.
+ *          TBB. Hence no barrier() here, and the constructs nowait only:
+ *          single(), for_dynamic(), and the static loops, whose shares come
+ *          from the virtual rank as pmp::Team's do from the thread's.
  */
 class Team
 {
@@ -186,6 +188,59 @@ class Team
         }
     }
 
+    /// @brief One contiguous block per rank, libgomp's split (`schedule(static)`; nowait only).
+    template <typename Index, typename Body>
+    void for_static(Index first, Index last, Body&& body, shrink_array::pmp::wait_mode w)
+    {
+        require_nowait(w, "bench_par: a static loop with a barrier in a TBB region (only nowait)\n");
+        const long long n = static_cast<long long>(last) - static_cast<long long>(first);
+        if (n <= 0)
+        {
+            return;
+        }
+        const long long q = n / size_;
+        const long long m = n % size_;
+        const long long b = rank_ < m ? rank_ * (q + 1) : (m * (q + 1)) + ((rank_ - m) * q);
+        const long long e = b + q + (rank_ < m ? 1 : 0);
+        for (long long k = b; k < e; ++k)
+        {
+            body(static_cast<Index>(first + static_cast<Index>(k)));
+        }
+    }
+
+    /// @brief for_static(): the same share (no OpenMP in a TBB bench).
+    template <typename Index, typename Body>
+    void for_static_simd(Index first, Index last, Body&& body, shrink_array::pmp::wait_mode w)
+    {
+        for_static(first, last, std::forward<Body>(body), w);
+    }
+
+    /// @brief Blocks of @p chunk iterations, block k to rank k % size()
+    ///        (`schedule(static, chunk)`; nowait only).
+    template <typename Index, typename Body>
+    void for_static_chunks(Index first, Index last, int chunk, Body&& body, shrink_array::pmp::wait_mode w)
+    {
+        require_nowait(w, "bench_par: a static loop with a barrier in a TBB region (only nowait)\n");
+        const long long n  = static_cast<long long>(last) - static_cast<long long>(first);
+        const long long c  = chunk > 0 ? chunk : 1;
+        const long long nt = size_;
+        for (long long b = rank_ * c; b < n; b += nt * c)
+        {
+            const long long e = b + c < n ? b + c : n;
+            for (long long k = b; k < e; ++k)
+            {
+                body(static_cast<Index>(first + static_cast<Index>(k)));
+            }
+        }
+    }
+
+    /// @brief for_static_chunks(): the same blocks (no OpenMP in a TBB bench).
+    template <typename Index, typename Body>
+    void for_static_chunks_simd(Index first, Index last, int chunk, Body&& body, shrink_array::pmp::wait_mode w)
+    {
+        for_static_chunks(first, last, chunk, std::forward<Body>(body), w);
+    }
+
     /// @brief Blocks of @p chunk iterations, first come first served (nowait only).
     template <typename Index, typename Body>
     void for_dynamic(Index first, Index last, int chunk, Body&& body, shrink_array::pmp::wait_mode w)
@@ -209,6 +264,14 @@ class Team
     }
 
   private:
+    static void require_nowait(shrink_array::pmp::wait_mode w, const char* what) noexcept
+    {
+        if (w != shrink_array::pmp::wait_mode::nowait)
+        {
+            detail::refuse(what);
+        }
+    }
+
     detail::RegionCtx* ctx_;
     int                rank_;
     int                size_;

@@ -108,7 +108,12 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    team of `all_type_chunk.cpp`, and the size advisor's region. *4c done*:
    `Team::for_runtime` (`schedule(runtime)`: `CHUNK_RECHUNK_SCHEDULE`); the
    rechunk refill's slice team and `drain_reuse_list_for_size_team`, which now
-   takes the team it runs on. Left after step 4, for step 6 (use E): the
+   takes the team it runs on. *4d done*: `Team::for_static_chunks`
+   (`schedule(static, chunk)`) on the OpenMP and serial backends (the pool
+   had it), and `for_static_simd` / `for_static_chunks_simd` (`omp for simd`,
+   the same shares; pool and serial: the auto-vectoriser's loop) on all
+   three -- what the bench's phases need to be written against `pmp::Team`;
+   `team_loops_validation` checks the shares on every backend. Left after step 4, for step 6 (use E): the
    regions of `parallel_phase` (`manage_ompt.h`) and the `omp barrier` of
    `all_type_chunk.cpp`'s phase end, run by the application's team.
 5. **A**: the queries through the backend; the `thread_local` rank registry for

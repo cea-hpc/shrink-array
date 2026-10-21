@@ -596,6 +596,24 @@ chunk_require_cxx20(log_validation PRIVATE)
 add_test(NAME log_validation COMMAND log_validation)
 set_property(TEST log_validation PROPERTY LABELS validation)
 
+# --- team_loops_validation: pmp::Team's static loops (for_static,
+# for_static_chunks and their _simd forms, fast_allocators/internal/
+# pmp_loops.h) alone, on the build's backend: every iteration once, on the
+# rank OpenMP gives it, the same share in two nowait loops in a row -- what
+# the bench's barrier-free regions rely on. Header-only: no library, no variant.
+add_executable(team_loops_validation team_loops_validation.cpp)
+target_include_directories(team_loops_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(team_loops_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(team_loops_validation PRIVATE OpenMP::OpenMP_CXX)
+endif()
+if (CHUNK_THREADS_BACKEND STREQUAL "pool")
+  target_compile_definitions(team_loops_validation PRIVATE FAST_ALLOC_PMP_POOL=1)
+endif()
+chunk_require_cxx20(team_loops_validation PRIVATE)
+add_test(NAME team_loops_validation COMMAND team_loops_validation)
+set_property(TEST team_loops_validation PROPERTY LABELS validation)
+
 # --- blk_allocator_validation: fast_allocators' public size-dispatching front
 # end (BlkAllocator) alone. Nothing in the library calls it, so this is what
 # runs it: sizes on, between and past the buckets, many live blocks at once,
