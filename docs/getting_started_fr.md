@@ -314,8 +314,9 @@ shrink-array, par exemple -- partagent tout cela. Ce que cela leur demande :
   fin d'une phase vide la file de chaque rang. Deux équipes OpenMP de premier niveau qui écrivent
   des tableaux en même temps -- ouvertes par deux threads hôtes, deux composants chacun sur son
   `std::thread` -- partagent les rangs 0 à n-1, et la fin de phase de l'une rejoue les écritures
-  de l'autre au milieu de sa région : le programme s'arrête, ou les valeurs sont fausses. Faire
-  tourner ces parties l'une après l'autre, ou dans une même équipe.
+  de l'autre au milieu de sa région. Dès qu'un tableau existe, la seconde équipe arrête le
+  programme avec un message (OMPT : à son début ; sans OMPT : à son `begin_parallel_phase()`).
+  Faire tourner ces parties l'une après l'autre, ou dans une même équipe.
 - **Les régions imbriquées ne posent pas de problème.** Un solveur ou un appel BLAS qui ouvre sa
   propre région dans une phase, un composant qui appelle `parallel_phase()` dans la vôtre : seule
   la fin de la région la plus externe est une frontière de phase, et `finalize_parallel_phase()`

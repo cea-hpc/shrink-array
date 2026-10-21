@@ -47,6 +47,7 @@
 #include "chunk/PMP_CHUNK.h"                // g_fast_omp_rank
 #include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (CHUNK_REQUIRE_OMPT)
+#include "chunk/internal/phase_guard.h"     // phase_guard::teams (one top-level team at a time)
 
 #include "chunk/all_type_chunk.h"          // AllTypeChunk
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
@@ -244,8 +245,29 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
     shrink_array::begin_parallel_phase();
 }
 
-// No `ompt_callback_parallel_begin`: pre-reserving the candidate lists is
-// useless, the passes empty them with clear(), which keeps their capacity.
+/// @brief Marks, in a region's tool data, a region counted as top-level.
+constexpr std::uint64_t outer_region_tag = 0x5348524bU; // "SHRK"
+
+/**
+ * @brief `ompt_callback_parallel_begin`: a team is about to start.
+ *
+ * Counts the TOP-LEVEL regions (the encountering task at level 0), which the
+ * library allows one at a time (phase_guard::teams): a second one, begun by
+ * another host thread while the first runs, stops the program. Counted whatever
+ * the suspension (the library's own regions start at serial points, when no
+ * other top-level region runs), tagged in the region's tool data so that
+ * on_parallel_end uncounts exactly those. Pre-reserving the candidate lists
+ * here would be useless: the passes empty them with clear(), which keeps their
+ * capacity.
+ */
+void on_parallel_begin(ompt_data_t*, const ompt_frame_t*, ompt_data_t* parallel_data, unsigned int, int, const void*)
+{
+    if (parallel_data != nullptr && omp_get_level() == 0)
+    {
+        parallel_data->value = outer_region_tag;
+        shrink_array::phase_guard::teams::outer_team_begin();
+    }
+}
 
 /**
  * @brief The chunk library's part of `ompt_callback_parallel_end`.
@@ -330,8 +352,15 @@ void flush_allocator_free_batches()
  * its own region with these callbacks suspended, and its frees are batched
  * too.
  */
-void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, const void*)
+void on_parallel_end(ompt_data_t* parallel_data, ompt_data_t*, int, const void*)
 {
+    // Before the suspension check: every top-level region counted at its
+    // begin is uncounted at its end (phase_guard::teams).
+    if (parallel_data != nullptr && parallel_data->value == outer_region_tag)
+    {
+        parallel_data->value = 0;
+        shrink_array::phase_guard::teams::outer_team_end();
+    }
     if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         return;
@@ -475,6 +504,7 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
                 *written.out = '\0';
             }
         };
+        set(ompt_callback_parallel_begin, (ompt_callback_t)on_parallel_begin, "parallel_begin");
         set(ompt_callback_parallel_end, (ompt_callback_t)on_parallel_end, "parallel_end");
         set(ompt_callback_sync_region, (ompt_callback_t)on_barrier_end, "sync_region");
 

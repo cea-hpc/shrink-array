@@ -213,7 +213,8 @@ math(EXPR _rt_nvar_last "${_rt_nvar} - 1")
 set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
-                        nested_region_validation iterator_validation stale_proxy_validation
+                        nested_region_validation concurrent_teams_validation iterator_validation
+                        stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 

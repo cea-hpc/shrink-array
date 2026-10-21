@@ -187,6 +187,14 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Two top-level OpenMP teams writing arrays at once -- opened by two host
+  threads, two components each on its own `std::thread` -- shared ranks 0..n-1
+  of the per-thread structures: one team's phase end replayed the other's
+  writes, and in a release build the values came out wrong, silently. The
+  second team now stops the program with a message, in every build once an
+  array exists: under OMPT when it begins (a `parallel_begin` callback counts
+  the top-level regions), without OMPT at its `begin_parallel_phase()`. Nested
+  regions are not concerned. New harness `concurrent_teams_validation`.
 - A parallel region nested in a phase -- a solver or BLAS call opening its own
   region, a component calling `parallel_phase()` inside the program's -- ended
   the phase at its own end: under OMPT the runtime reports every region's end,

@@ -47,6 +47,7 @@
  * by the rank IN the team: two teams started concurrently by different
  * host threads would share ranks 0..n-1, hence queues, and one team's
  * phase end would replay the other's writes in the middle of its region.
+ * Refused once an array exists, in every build (phase_guard::teams).
  *
  * @see all_type_chunk.cpp for the definitions.
  */

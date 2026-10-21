@@ -308,8 +308,9 @@ all of it. What that asks of them:
   end of a phase drains every rank's queue. Two top-level OpenMP teams writing arrays at the
   same time -- opened by two host threads, two components each on its own `std::thread` --
   share ranks 0 to n-1, and one team's phase end replays the other's writes in the middle of
-  its region: the program stops, or values are wrong. Run such parts one after the other, or in
-  one team.
+  its region. Once an array exists, the second team stops the program with a message (OMPT:
+  when it begins; without OMPT: at its `begin_parallel_phase()`). Run such parts one after the
+  other, or in one team.
 - **Nested regions are fine.** A solver or a BLAS call that opens its own region inside a
   phase, a component that calls `parallel_phase()` inside yours: only the outermost region's
   end is a phase boundary, and `finalize_parallel_phase()` does nothing inside an active

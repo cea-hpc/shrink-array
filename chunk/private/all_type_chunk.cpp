@@ -95,6 +95,7 @@ void AllTypeChunk::publish_manager(std::unique_ptr<ManagerChunkInt> manager)
     owned_.push_back(std::move(manager));
     tables_.back()[count] = owned_.back().get();
     nb_managers_.store(static_cast<int>(count + 1), std::memory_order_release); // publishes the slot
+    phase_guard::teams::arrays_exist.store(true, std::memory_order_release);    // two top-level teams now refused
 }
 
 namespace
@@ -135,6 +136,16 @@ void begin_parallel_phase()
         g_fast_omp_rank = CHUNK_PMP_THREAD_RANK;
     }
     phase_guard::check_begin(); // finalize forgotten before this region: stops, in every build
+    // One top-level team at a time (phase_guard::teams): each thread of a
+    // top-level team takes its rank for the phase; a rank already held by
+    // another thread is refused.
+    if constexpr (build_config::use_openmp && build_config::has_not_ompt)
+    {
+        if (CHUNK_PMP_LEVEL == 1)
+        {
+            phase_guard::teams::manual_begin(g_fast_omp_rank);
+        }
+    }
 }
 
 void finalize_parallel_phase_only_flush()
@@ -169,6 +180,7 @@ void finalize_parallel_phase_only_flush()
 
 void finalize_parallel_phase_after_flush()
 {
+    phase_guard::teams::manual_end(); // the phase is over: the next one may be any team's
     if constexpr (phase_guard::tracked)
     {
         phase_guard::next_phase();
@@ -206,6 +218,7 @@ void finalize_parallel_phase()
     {
         return;
     }
+    phase_guard::teams::manual_end(); // the phase is over: the next one may be any team's
     if constexpr (phase_guard::tracked)
     {
         phase_guard::next_phase();
