@@ -32,7 +32,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/config.h"                               // build_config::use_openmp
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
-#include "chunk/internal/in_t.h"                        // in_t<T>: resize's fill value
+#include "chunk/internal/in_t.h"                        // InT<T>: resize's fill value
 #include "chunk/internal/proxy.h"                       // Proxy<T>: the element proxy and its registry
 
 namespace shrink_array

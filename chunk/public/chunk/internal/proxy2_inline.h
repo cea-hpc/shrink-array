@@ -19,14 +19,14 @@
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::remove_cvref_t
 
-#include "chunk/internal/in_t.h"          // in_t<T>
+#include "chunk/internal/in_t.h"          // InT<T>
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/proxy2.h"        // the declarations these bodies belong to
 #include "chunk/config.h"                 // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
 #include "chunk/PMP_CHUNK.h"              // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationContext
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
-#include "chunk/internal/concept_is_clean_assignement.h" // base_t
+#include "chunk/internal/concept_is_clean_assignement.h" // BaseT
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/test_hooks.h"   // TEST KNOB: test_hooks::maybe_read_delay
@@ -216,7 +216,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
 {
     if constexpr (is_not_bool)
     {
-        derived().second_value = derived().make_second_value();
+        derived().second_value_ = derived().make_second_value();
     }
 
     // The threshold is tested where a list grows -- the push, which only the
@@ -643,8 +643,8 @@ void Proxy2<T>::ensure_writable_storage()
 }
 
 template <typename T>
-template <typename LAMBDA>
-void Proxy2<T>::execute_simple_operation(LAMBDA operation)
+template <typename Lambda>
+void Proxy2<T>::execute_simple_operation(Lambda operation)
 {
     ensure_writable_storage();
 
@@ -705,8 +705,8 @@ void Proxy2<T>::execute_simple_operation(LAMBDA operation)
 // per Proxy2FastCompPolicy specialisation.
 
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-template <typename LAMBDA>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(auto* ctx, LAMBDA operation)
+template <typename Lambda>
+void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
 {
     auto& chunk = ctx->chunk;
 
@@ -738,17 +738,17 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operat
 /**
  * @brief Handles arithmetic compound operations with operator (*, /, %),
  *        deferred-compression form (Enabled=true policy).
- * @tparam OP  Operation type (e.g., std::multiplies)
- * @tparam LAMBDA Callable `(op)` that performs the operation
+ * @tparam Op  Operation type (e.g., std::multiplies)
+ * @tparam Lambda Callable `(op)` that performs the operation
  * @param op Operation to apply
  * @param operand Right-hand operand
  * @param operation Called when the chunk had to be materialised
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-template <typename OP, typename LAMBDA, typename U>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation(OP       op,
+template <typename Op, typename Lambda, typename U>
+void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation(Op       op,
                                                                                                  const U& operand,
-                                                                                                 LAMBDA   operation)
+                                                                                                 Lambda   operation)
 {
     // Same rule as ensure_writable_storage(): this function may call
     // chunk.create_value() below (via the will_be_not_second_value branch)
@@ -778,7 +778,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
 
     if (will_be_not_second_value)
     {
-        chunk.create_value(true, inf_array);
+        chunk_.create_value(true, inf_array_);
         operation(op);
     }
     else if (Base2::is_not_cst_val2())
@@ -789,12 +789,12 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
 }
 
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-template <typename OP, typename LAMBDA, typename U>
+template <typename Op, typename Lambda, typename U>
 void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation_async(
     auto*    ctx,
-    OP       op,
+    Op       op,
     const U& operand,
-    LAMBDA   operation) const
+    Lambda   operation) const
 {
     using CalcType      = std::common_type_t<T, U>;
     const Proxy2  proxy = Base::template make_proxy_with_info<Derived>(ctx);
@@ -821,13 +821,13 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
 /**
  * @brief Serial (counter) form of execute_arithmetic_compound_operation()
  *        (Enabled=false policy).
- * @tparam LAMBDA Callable `(op, T* values)`.
+ * @tparam Lambda Callable `(op, T* values)`.
  */
 template <typename Derived, typename T, typename ChunkType>
-template <typename OP, typename LAMBDA, typename U>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_compound_operation(OP       op,
+template <typename Op, typename Lambda, typename U>
+void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_compound_operation(Op       op,
                                                                                                const U& operand,
-                                                                                               LAMBDA   operation)
+                                                                                               Lambda   operation)
 {
     // Same rule as ensure_writable_storage(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
@@ -865,7 +865,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_comp
 
 /**
  * @brief Handles simple compound operations (+, -, bit operations)
- * @tparam LAMBDA Callable that performs the operation
+ * @tparam Lambda Callable that performs the operation
  * @param operation Callable taking the element (T&) and applying the operation to it
  *
  * @details
@@ -876,8 +876,8 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_comp
  * 4. Track for compression
  */
 template <typename T>
-template <typename LAMBDA>
-void Proxy2<T>::execute_inplace_operation(LAMBDA operation)
+template <typename Lambda>
+void Proxy2<T>::execute_inplace_operation(Lambda operation)
 {
     // Same rule as ensure_writable_storage(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
@@ -978,9 +978,9 @@ void Proxy2<T>::execute_inplace_operation(LAMBDA operation)
 // Only present when fast block compression is active (the Enabled=true policy).
 
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-template <typename LAMBDA>
+template <typename Lambda>
 void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_operation_async(auto*  ctx,
-                                                                                           LAMBDA operation) const
+                                                                                           Lambda operation) const
 {
     auto&     chunk = ctx->chunk;
     const int num   = ctx->num;

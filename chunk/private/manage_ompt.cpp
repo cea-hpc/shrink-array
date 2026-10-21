@@ -64,7 +64,7 @@
     // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
     #if !CHUNK_OPT_STD_ALLOC
-        #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clearInfoFreeElt
+        #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clear_info_free_elt
     #endif
 
 /**

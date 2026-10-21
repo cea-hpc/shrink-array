@@ -29,7 +29,7 @@
 
 #include "chunk/config.h"                            // build_config::any_check, chunk_config::ring_log_debug
 #include "chunk/PMP_CHUNK.h"                         // get_thr_rank_fast
-#include "chunk/internal/in_t.h"                     // in_t<T>
+#include "chunk/internal/in_t.h"                     // InT<T>
 #include "chunk/ring_log_debug.h"                    // ring_log, get_tid, EV_*_THREAD_HAS_OPS
 #include "chunk/internal/invariant_check.h"          // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_size_policy.h"        // t_active_chunk_size — per-op geometry pin in write_body
@@ -136,10 +136,10 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
 
     /**
      * @brief A captured write, replayable later by a flush.
-     * @tparam CTX     context type holding the frozen target metadata
+     * @tparam Ctx     context type holding the frozen target metadata
      * @tparam WriteFn callable performing the write when replayed
      */
-    template <typename CTX, typename WriteFn>
+    template <typename Ctx, typename WriteFn>
     class DeferredOperation : public CmpDeferredOpBase
     {
       public:
@@ -149,7 +149,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
          * @param fn     callable performing the write
          * @param rank    enqueuing thread's rank
          */
-        DeferredOperation(CTX* context, WriteFn&& fn, int rank) : ctx_(context), fn_(std::move(fn))
+        DeferredOperation(Ctx* context, WriteFn&& fn, int rank) : ctx_(context), fn_(std::move(fn))
         {
             this->thread_rank_ = rank;
         }
@@ -281,7 +281,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
             free_op(this); // recycle the raw memory
         }
 
-        CTX*    ctx_; ///< frozen target metadata, owned until destroy()
+        Ctx*    ctx_; ///< frozen target metadata, owned until destroy()
         WriteFn fn_;  ///< the write to replay
 
         /// Liveness sentinel, poisoned by destroy(). A wrong value in

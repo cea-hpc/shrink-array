@@ -59,14 +59,14 @@ static double value_at(int i)
     return 0.001 * ((i * 2654435761u) % 1000);
 }
 
-template <typename TAB>
-static void fill_and_compress(TAB& tab)
+template <typename Tab>
+static void fill_and_compress(Tab& tab)
 {
     for (int i = 0; i < n_elems; ++i)
     {
         tab[i] = value_at(i);
     }
-    TAB::make_block_compression();
+    Tab::make_block_compression();
 }
 
 struct Truth

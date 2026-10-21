@@ -35,7 +35,7 @@
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/crp_helper.h"                   // CRTPSupport
-#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/tab_cst_val2_holder.h"          // SecondValueRef
 #include "chunk/internal/TChunk.h"                       // TChunk2AComp
@@ -43,7 +43,7 @@
 #include "chunk/internal/proxy2_base.h"                  // Proxy2Base
 #include "chunk/internal/dependent_false.h"              // dependent_false_v (wrong-type branches)
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/parallel_storage_init.h"        // no_init_vector, resize_filled, for_each_chunk
+#include "chunk/internal/parallel_storage_init.h"        // NoInitVector, resize_filled, for_each_chunk
 
 namespace shrink_array
 {
@@ -557,27 +557,27 @@ class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 
     using Base  = ProxyBase<Derived, T, ChunkType>;
     using Base2 = Proxy2Base<Derived, T, ChunkType>;
-    using Base::chunk;
+    using Base::chunk_;
 
     using BaseSpec::BaseSpec;
 
     // --- per-thread candidate list plumbing (OpenMP only) -----------------
-    template <typename LAMBDA>
-    void execute_simple_operation_async(auto* ctx, LAMBDA operation);
+    template <typename Lambda>
+    void execute_simple_operation_async(auto* ctx, Lambda operation);
 
     /**
      * @brief Executes an in-place modification (bitwise, inc/dec) asynchronously.
      */
-    template <typename LAMBDA>
-    void execute_inplace_operation_async(auto* ctx, LAMBDA operation) const;
+    template <typename Lambda>
+    void execute_inplace_operation_async(auto* ctx, Lambda operation) const;
 
-    template <typename OP, typename LBD, typename U>
-    void execute_arithmetic_compound_operation_async(auto* ctx, OP op, const U& v, LBD lbd) const;
+    template <typename Op, typename Body, typename U>
+    void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& v, Body lbd) const;
 
     /// @brief Rank @p thr's Chunk2A candidate list.
     TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
-        return chunk.get_vec_tuple_to_compress_potentially_thr(thr);
+        return chunk_.get_vec_tuple_to_compress_potentially_thr(thr);
     }
 
     /// @brief Common initialisation of the fast path: table number, then the
@@ -928,8 +928,8 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         {
             // Already queued: add_to_compression_list() is a no-op. One relaxed load; the
             // filter's reads are only paid once the pass has reset the flag.
-            if (this->ptr_is_inside_chunk_list_to_compress != nullptr &&
-                this->ptr_is_inside_chunk_list_to_compress->load(std::memory_order_relaxed) != 0)
+            if (this->ptr_is_inside_chunk_list_to_compress_ != nullptr &&
+                this->ptr_is_inside_chunk_list_to_compress_->load(std::memory_order_relaxed) != 0)
             {
                 return true;
             }
@@ -1010,8 +1010,8 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     template <typename ModifyFn>
     void execute_simple_operation(ModifyFn modify_fn);
 
-    template <typename OP, typename ModifyFn, typename U>
-    void execute_arithmetic_compound_operation(OP op, const U& v, ModifyFn modify_fn);
+    template <typename Op, typename ModifyFn, typename U>
+    void execute_arithmetic_compound_operation(Op op, const U& v, ModifyFn modify_fn);
 
     template <typename ModifyFn>
     void execute_inplace_operation(ModifyFn modify_fn);

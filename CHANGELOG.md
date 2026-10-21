@@ -77,6 +77,13 @@ the tag's checksum to the recipe.
   macros. 84 names change, all internal but one: `fast_alloc::SIZE_BLOCK` is now
   `fast_alloc::size_block`, the former name kept as a deprecated alias. `check_naming` (a
   source check, in ctest and the CI) keeps it so.
+- One naming convention over the whole tree ([docs/contributing.md](docs/contributing.md)
+  section 3): snake_case functions, variables, constants and enumerators, a `_` at the end of
+  private and protected data members, PascalCase types, aliases, concepts and template
+  parameters, `chunk2a` inside a snake_case name, no reserved `__` name. About 400 names
+  change, all internal but the two listed under Deprecated. `check_naming` now checks the
+  enumerators, the camelCase names, the types and template parameters and the reserved names;
+  `scripts/clang_tidy_naming.yaml` gives clang-tidy the rest.
 - An invariant failure is reported by one thread only (when a race is seen by
   several threads at once, their reports no longer interleave), as one block
   on stderr followed by the backtrace, and its message is formatted without

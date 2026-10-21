@@ -19,7 +19,7 @@
 
 #include <cstdlib> // std::getenv
 #include <cmath>   // std::cos, std::sin, std::sqrt
-#include <complex> // complex_double (std::complex) arithmetic
+#include <complex> // ComplexDouble (std::complex) arithmetic
 #include <limits>  // std::numeric_limits
 #include <vector>  // std::vector
 

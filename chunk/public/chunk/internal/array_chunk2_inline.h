@@ -28,10 +28,10 @@
 #include <sys/mman.h> // mprotect (use_mm_protect: the read-only cst_val2 blocks)
 #include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
 
-#include "chunk/internal/in_t.h"                        // in_t<T>: the element snapshots
+#include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/array_chunk2.h"                         // ArrayChunk2, the class these bodies belong to
 #include "chunk/type_name.h"                            // type_name<T>
-#include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::getRef
+#include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
 #include "chunk/internal/proxy2.h"                      // Proxy2<T>
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
@@ -451,7 +451,7 @@ void ArrayChunk2<T, IndType>::print_compression_stats(std::ostream& os) const
     if constexpr (is_not_bool)
     {
         const int ind = get_ind_second_value();
-#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
+#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500)
         for (int j = 0; j < nb_chunk_; ++j)
         {
             const auto& ck = chunk_list_[j];
@@ -488,7 +488,7 @@ void ArrayChunk2<T, IndType>::print_compression_stats(std::ostream& os) const
         // for the type -- an all-true chunk is type-2. Do not count it as
         // type-1: the verdict would say "plain Chunk would suffice" for arrays
         // whose true chunks a plain Chunk cannot compress.
-#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
+#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500)
         for (int j = 0; j < nb_chunk_; ++j)
         {
             const auto& ck = chunk_list_[j];
@@ -536,7 +536,7 @@ void ArrayChunk2<T, IndType>::print_compression_stats(std::ostream& os) const
         const int     ind          = get_ind_second_value();
         const InT<T>  second_value = get_second_value();
         n_would_be_2a              = 0;
-#pragma omp parallel for reduction(+ : n_would_be_2a) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
+#pragma omp parallel for reduction(+ : n_would_be_2a) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500)
         for (int j = 0; j < nb_chunk_; ++j)
         {
             const auto& ck = chunk_list_[j];
@@ -750,7 +750,7 @@ void ArrayChunk2<T, IndType>::clear_core()
 
                 for (int k = 0; k < nb; ++k)
                 {
-                    T* values_loc = ll_chunk_loc[k]->values;
+                    T* values_loc = ll_chunk_loc[k]->values_;
                     // Ledger LIVE -> parked, or a later pop trips an ILLEGAL b_pop.
                     CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
                     lbf.push_back(values_loc);
@@ -1143,7 +1143,7 @@ void ArrayChunk2<T, IndType>::release_chunk_range(int first, int last)
                         add_chunk_released<Chunk2<T>>(1, static_cast<long>(sizeof(T)) *
                                                              static_cast<long>(this->size_policy_.size()));
                     }
-                    T* values_loc = chunk_list_[j].values;
+                    T* values_loc = chunk_list_[j].values_;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
                     lbf.push_back(values_loc);
                     // Neutralise, as clear_core(): the buffer belongs to the

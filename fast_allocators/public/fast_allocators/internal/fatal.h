@@ -53,7 +53,7 @@
 #include <execinfo.h>      // backtrace, backtrace_symbols
 #include <unistd.h>        // pause
 
-#include "fast_allocators/internal/log_core.h" // format_message, emit_fatal, fmt_arg_t
+#include "fast_allocators/internal/log_core.h" // format_message, emit_fatal, FmtArgT
 
 namespace fast_alloc::logging
 {

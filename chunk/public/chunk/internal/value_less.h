@@ -23,7 +23,7 @@
 
 #include "chunk/chunk_def.h"             // ComplexType
 #include "chunk/internal/complex_less.h" // ComplexLess
-#include "chunk/internal/in_t.h"         // in_t<T>: the compared values
+#include "chunk/internal/in_t.h"         // InT<T>: the compared values
 
 namespace shrink_array
 {

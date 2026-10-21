@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <array>   // __chunk_stats (CHUNK_STATS only)
+#include <array>   // g_chunk_stats (CHUNK_STATS only)
 #include <cstddef> // std::size_t
 
 #include "chunk/all_type_chunk.h"           // AllTypeChunk
@@ -34,7 +34,7 @@ namespace shrink_array
 // Per-variant (chunk/chunk2/chunk2a) x per-thread counter table. Each thread
 // bumps its own cache-line-aligned slot on the hot path (no atomics); the
 // end-of-run report reduces over threads. See chunk_stats.h.
-std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant> __chunk_stats;
+std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant> g_chunk_stats;
 #endif
 
 // No #ifdef _OPENMP here. The bodies below are members of

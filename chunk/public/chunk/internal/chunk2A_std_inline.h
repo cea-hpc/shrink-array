@@ -20,7 +20,7 @@
 #include <cstdlib>   // std::abort
 #include <optional>  // std::nullopt (the clears)
 
-#include "chunk/internal/in_t.h"            // in_t<T>: the element snapshots
+#include "chunk/internal/in_t.h"            // InT<T>: the element snapshots
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (steal-mark check)
 #include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
@@ -31,7 +31,7 @@
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/proxy2A.h"       // Proxy2A<T>
-#include "chunk/internal/manager_chunk.h" // manager_chunk2A:: (dependent calls the include tools cannot attribute)
+#include "chunk/internal/manager_chunk.h" // ManagerChunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
 #include "chunk/chunk_traits.h"                        // ChunkTraits<ChunkT>::proxy_type (wait_before_materialise)
@@ -991,7 +991,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_c
     // Type-2 array: the caller's, or the one registered for the second value (bool path).
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
     {
-        new_cst_val2_ptr = Derived::tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
+        new_cst_val2_ptr = Derived::Holder::find_cst_val2_ptr(ptr_second_value.get());
     }
 
     block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);

@@ -23,7 +23,7 @@
 #include "bench_phases.h"      // bench_teardown (defined here), BenchArrays
 #include "bench_stl_checks.h"  // run_stl_self_checks
 #include "chunk/chunk_std.h"   // clear_all_list_block_free_thr, delete_chunk_allocator
-#include "chunk/param_chunk.h" // ParamChunk::ChunkStats
+#include "chunk/param_chunk.h" // ParamChunk::chunk_stats
 
 // As in shrink_bench.cpp, where this body comes from.
 using namespace shrink_array;

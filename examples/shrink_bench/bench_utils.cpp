@@ -20,7 +20,7 @@
 #include <fstream>        // std::ifstream, std::ofstream
 #include <iostream>       // std::cout, std::cerr
 #include <limits>         // std::numeric_limits
-#include <random>         // std::mt19937 / std::random_device (initializeRNG)
+#include <random>         // std::mt19937 / std::random_device (initialize_rng)
 #include <string>         // std::string
 #include <sys/resource.h> // getrusage
 #include <unistd.h>       // sysconf

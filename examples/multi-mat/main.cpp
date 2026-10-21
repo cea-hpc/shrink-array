@@ -49,7 +49,7 @@
 
 #include "config.h"       // multi_mat::max_threads, embedded_compression
 #include "MultiMatAlgo.h" // MultiMatAlgo
-#include "ComputeLoops.h" // Simu::computeLoops, the template main() instantiates
+#include "ComputeLoops.h" // Simu::compute_loops, the template main() instantiates
 #include "Containers.h"   // VectChunk
 #include "Dispatch.h"     // Dispatch
 #include "Simu.h"         // Simu

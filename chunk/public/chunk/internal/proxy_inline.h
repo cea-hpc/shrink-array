@@ -22,12 +22,12 @@
 #include <memory>      // std::addressof (operator=: operator& is deleted)
 #include <utility>     // std::move
 
-#include "chunk/internal/in_t.h"  // in_t<T>
+#include "chunk/internal/in_t.h" // InT<T>
 #include "chunk/internal/proxy.h" // the declarations these bodies belong to
 #include "chunk/config.h"    // chunk_config::use_compression_with_counter, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationProxyContext
-#include "chunk/internal/concept_is_clean_assignement.h" // base_t
+#include "chunk/internal/concept_is_clean_assignement.h" // BaseT
 #include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
@@ -174,8 +174,8 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(InT<T> 
 }
 
 template <typename T>
-template <typename OP, typename LBD, typename U>
-void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] const U& v, LBD lbd)
+template <typename Op, typename Body, typename U>
+void Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& v, Body lbd)
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -268,11 +268,11 @@ inline void check_replay_store([[maybe_unused]] ChunkT&     chunk,
 /// @brief Replay of a compound arithmetic operation (v1).
 /// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
-template <typename OP, typename LAMBDA, typename U>
+template <typename Op, typename Lambda, typename U>
 void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(auto* ctx,
-                                                                                           OP    op,
+                                                                                           Op    op,
                                                                                            [[maybe_unused]] const U& v,
-                                                                                           LAMBDA lbd) const
+                                                                                           Lambda lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -474,8 +474,8 @@ T Proxy<T>::assign_impl(InT<U> v) noexcept
 }
 
 template <typename T>
-template <typename LAMBDA>
-void Proxy<T>::execute_simple_operation(LAMBDA operation)
+template <typename Lambda>
+void Proxy<T>::execute_simple_operation(Lambda operation)
 {
     // Snapshot BEFORE any arming, to maintain nb_val_eq_zero across the write
     // for an ALREADY-ARMED chunk (0 -> non-zero must decrement it, else the
@@ -534,8 +534,8 @@ void Proxy<T>::execute_simple_operation(LAMBDA operation)
 /// @brief Replay of a plain store (v1).
 /// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
-template <typename LAMBDA>
-void ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(auto* ctx, LAMBDA operation)
+template <typename Lambda>
+void ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
 {
     const bool is_val1 = ctx->chunk.is_cst_val1();
 
@@ -550,8 +550,8 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(au
 }
 
 template <typename T>
-template <typename LAMBDA>
-void Proxy<T>::execute_inplace_operation(LAMBDA operation)
+template <typename Lambda>
+void Proxy<T>::execute_inplace_operation(Lambda operation)
 {
     // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
     [[maybe_unused]] const bool was_first_value = values_[num_] == static_cast<T>(Chunk<T>::first_value);
@@ -635,8 +635,8 @@ void Proxy<T>::execute_inplace_operation(LAMBDA operation)
 /// @brief Replay of an in-place operation (++, --; v1).
 /// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
-template <typename LAMBDA>
-void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(auto* ctx, LAMBDA operation)
+template <typename Lambda>
+void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(auto* ctx, Lambda operation)
 {
     auto&     chunk_loc = ctx->chunk;
     const int num       = ctx->num;

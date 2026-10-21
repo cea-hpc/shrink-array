@@ -18,7 +18,7 @@
 /// @brief The value census and filling-rate report. See bench_phases.h.
 
 #include <algorithm>   // std::max (name_padding)
-#include <complex>     // operator== on complex_double
+#include <complex>     // operator== on ComplexDouble
 #include <cstddef>     // std::size_t
 #include <iomanip>     // std::setw, std::setprecision
 #include <iostream>    // std::cout

@@ -39,14 +39,14 @@
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_DISCARD
-#include "chunk/chunk_std.h"                     // Chunk<T>: the CHUNK_T<T>:: calls
-#include "chunk/chunk2_std.h"                    // Chunk2<T>: the CHUNK_T<T>:: calls
-#include "chunk/chunk2A_std.h"                   // Chunk2A<T>: the CHUNK_T<T>:: calls
+#include "chunk/chunk_std.h"                     // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/chunk2_std.h"                    // Chunk2<T>: the ChunkT<T>:: calls
+#include "chunk/chunk2A_std.h"                   // Chunk2A<T>: the ChunkT<T>:: calls
 #include "chunk/chunk_def.h"                     // ChunkDef
 #include "chunk/chunk2_def.h"                    // Chunk2Def
 #include "chunk/chunk2A_def.h"                   // Chunk2ADef
 #include "chunk/array_chunk.h"                   // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
-#include "chunk/internal/array_chunk_for.h"      // ArrayChunkFor_t
+#include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"        // IsChunk, IsChunk2, IsChunk2A, IsChunk2Or2A
 #include "chunk/global_stats_chunk_list.h"       // GlobalStatsChunkList
 #include "chunk/type_name.h"                     // type_name<T>
@@ -331,7 +331,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::resize_all_list_block_free_thr()
     using Mgr        = ManagerChunk<ChunkT, T>;
     const auto& self = static_cast<const Mgr&>(*this);
 
-    Mgr::resize_list_block_free_thr(self.max_thr);
+    Mgr::resize_list_block_free_thr(self.max_thr_);
 }
 
 /**
@@ -353,7 +353,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::resize_all_list_block_free_thr()
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunkParallelImpl<ChunkT, T, true>::destroy_after_flush(bool in_parallel)
 {
-    using Storage = DeferredOpsStorage<typename ChunkT<T>::per_thread_map>;
+    using Storage = DeferredOpsStorage<typename ChunkT<T>::PerThreadMap>;
     auto& storage = Storage::instance();
 
     {
@@ -464,7 +464,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_paral
     using Mgr        = ManagerChunk<ChunkT, T>;
     const auto& self = static_cast<const Mgr&>(*this);
 
-    using Storage = DeferredOpsStorage<typename ChunkT<T>::per_thread_map>;
+    using Storage = DeferredOpsStorage<typename ChunkT<T>::PerThreadMap>;
     auto& storage = Storage::instance();
 
     // The global flag keeps the barrier callback out of the SERIAL flush's own nested drain
@@ -592,7 +592,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::alloc_chunk_allocator_thr()
     if constexpr (build_config::use_openmp && build_config::use_fast_alloc)
     {
         // Built whole: an allocator is not movable.
-        *ChunkT<T>::allocator_data = std::vector<TCTypeCAllocator<T>>(static_cast<std::size_t>(self.max_thr));
+        *ChunkT<T>::allocator_data = std::vector<TCTypeCAllocator<T>>(static_cast<std::size_t>(self.max_thr_));
     }
 }
 
@@ -617,7 +617,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]]
     if constexpr (build_config::use_fast_alloc)
     {
         using Mgr         = ManagerChunk<ChunkT, T>;
-        const int max_thr = static_cast<const Mgr&>(*this).max_thr;
+        const int max_thr = static_cast<const Mgr&>(*this).max_thr_;
 
         // Also recorded here: an array may be created before any runtime size is registered,
         // and register_alloc_key() needs the slab budget.
@@ -790,7 +790,7 @@ std::size_t ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_pre
     using Mgr        = ManagerChunk<ChunkT, T>;
     const auto& self = static_cast<const Mgr&>(*this);
 
-    auto nb = static_cast<std::size_t>(std::max(1, self.max_thr));
+    auto nb = static_cast<std::size_t>(std::max(1, self.max_thr_));
     nb      = std::max(nb, Mgr::get_list_block_free_thr().size());
     if constexpr (build_config::chunk_dynamic)
     {
@@ -1145,7 +1145,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::delete_list_block_chunk_free_its
     }
     else
     {
-        ChunkT<T>::manager_chunk::get_list_block_free_thr(0).clear();
+        ChunkT<T>::Manager::get_list_block_free_thr(0).clear();
     }
 }
 

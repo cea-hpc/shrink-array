@@ -18,7 +18,7 @@
 
 #include <cstdint> // std::uint64_t (the liveness sentinel)
 
-#include "chunk/internal/in_t.h"                     // in_t<T>: the operands
+#include "chunk/internal/in_t.h"                     // InT<T>: the operands
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
 
 namespace shrink_array

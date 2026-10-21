@@ -29,7 +29,7 @@
 #include <vector>      // std::vector<bool>: tab_mask in the baseline
 
 #include "baseline_vector.h" // BaselineVector: the std::vector baseline, zeroed in parallel
-#include "bench_prelude.h"   // Int, complex_double, chunk_config::
+#include "bench_prelude.h"   // Int, ComplexDouble, chunk_config::
 
 #include "bench_struct.h" // Point3, Cell: the aggregate element types
 

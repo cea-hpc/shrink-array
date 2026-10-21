@@ -37,7 +37,7 @@
 #include <utility>     // std::swap (the array swap)
 #include <vector>      // the refill buffers
 
-#include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
+#include "chunk/internal/in_t.h"                // InT<T>: the element snapshots
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase: self().set_chunk_size, invalidate_proxies
 #include "chunk/internal/array_chunk_core.h"    // alloc_affinity_detail::RechunkStorageScope
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport, the class these bodies belong to
@@ -486,7 +486,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // Every rank, both keys, into ONE sweep: the abandoned set's slabs were
         // carved back to back across ranks, so one madvise per contiguous run
         // instead of one per slab (each one a TLB shootdown on every CPU).
-        typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep sweep;
+        typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::SlabSweep sweep;
         for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
         {
             if (old_key != 0)
@@ -677,7 +677,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         {
             if (!aligned_coarsening)
             {
-                old_done = std::vector<std::atomic<int>>(static_cast<std::size_t>(self().nb_chunk));
+                old_done = std::vector<std::atomic<int>>(static_cast<std::size_t>(self().nb_chunk_));
             }
         }
         // Per-thread fold counters, merged once per thread and slice after the
@@ -941,7 +941,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     {
                         continue; // still needed by the next new chunk
                     }
-                    auto& och = self().chunk_list[static_cast<std::size_t>(oc)];
+                    auto& och = self().chunk_list_[static_cast<std::size_t>(oc)];
                     // release_st, not clear_st: a release once copied, not a
                     // compression (CHUNK_STATS counted every rebuilt chunk as one).
                     if (!och.is_cst_val1())
@@ -1028,7 +1028,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     if (all_folded)
                     {
                         ++tally.folded;
-                        auto& nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
+                        auto& nch = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
                         nch.compress(get_thr_rank_fast(), inf_new2,
                                      /*apply=*/true, static_cast<unsigned int>(new_size));
                         if (!nch.is_cst_val1() && !nch.is_cst_val2(inf_new2.ind))
@@ -1349,7 +1349,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 // One sweep across ranks: one madvise per
                                 // contiguous run.
                                 typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(
-                                    0, 0u))>::empty_slab_sweep sweep;
+                                    0, 0u))>::SlabSweep sweep;
                                 for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                                 {
                                     chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);

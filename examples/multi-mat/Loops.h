@@ -37,8 +37,8 @@
 struct Loops
 {
     /// @brief `lbd(k)` for k in [kdeb, kfin), shared by the team, no barrier.
-    template <typename LBD>
-    static void omp_for_nowait_simd(int kdeb, int kfin, const LBD& lbd)
+    template <typename Body>
+    static void omp_for_nowait_simd(int kdeb, int kfin, const Body& lbd)
     {
 #pragma omp for schedule(static) nowait
         for (int k = kdeb; k < kfin; ++k)
@@ -49,8 +49,8 @@ struct Loops
     }
 
     /// @brief `lbd(ll[k])` for the first @p nn entries, shared by the team.
-    template <typename LBD, typename LL>
-    static void omp_simd_foreach_int(const LL& ll, const LBD& lbd, int nn)
+    template <typename Body, typename IndexList>
+    static void omp_simd_foreach_int(const IndexList& ll, const Body& lbd, int nn)
     {
 #pragma omp for schedule(static)
         for (int k = 0; k < nn; ++k)
@@ -62,8 +62,8 @@ struct Loops
     }
 
     /// @brief omp_simd_foreach_int() without the barrier at the end.
-    template <typename LBD, typename LL>
-    static void omp_simd_foreach_nowait_int(const LL& ll, const LBD& lbd, int nn)
+    template <typename Body, typename IndexList>
+    static void omp_simd_foreach_nowait_int(const IndexList& ll, const Body& lbd, int nn)
     {
 #pragma omp for schedule(static) nowait
         for (int k = 0; k < nn; ++k)
@@ -75,15 +75,15 @@ struct Loops
     }
 
     /// @brief `lbd(i)` for every index i of the indirection @p ll.
-    template <typename LBD, typename LL>
-    void omp_simd_foreach(const LL& ll, const LBD& lbd) const
+    template <typename Body, typename IndexList>
+    void omp_simd_foreach(const IndexList& ll, const Body& lbd) const
     {
         omp_simd_foreach_int(ll, lbd, static_cast<int>(ll.size()));
     }
 
     /// @brief omp_simd_foreach() without the barrier at the end.
-    template <typename LBD, typename LL>
-    void omp_simd_foreach_nowait(const LL& ll, const LBD& lbd) const
+    template <typename Body, typename IndexList>
+    void omp_simd_foreach_nowait(const IndexList& ll, const Body& lbd) const
     {
         omp_simd_foreach_nowait_int(ll, lbd, static_cast<int>(ll.size()));
     }
@@ -95,8 +95,8 @@ struct Loops
      *          caller's per-thread accumulator, is touched by one thread
      *          only; the caller reduces across threads.
      */
-    template <typename LBD, typename LL, typename T>
-    static void omp_foreach_simd_red_sum(const LL& ll, T& red, const LBD& lbd) noexcept
+    template <typename Body, typename IndexList, typename T>
+    static void omp_foreach_simd_red_sum(const IndexList& ll, T& red, const Body& lbd) noexcept
     {
         const int nn = static_cast<int>(ll.size());
 
@@ -120,8 +120,8 @@ struct Loops
 struct LoopsSimd
 {
     /// @copydoc Loops::omp_simd_foreach_int
-    template <typename LBD, typename LL>
-    static void omp_simd_foreach_int(const LL& ll, const LBD& lbd, int nn)
+    template <typename Body, typename IndexList>
+    static void omp_simd_foreach_int(const IndexList& ll, const Body& lbd, int nn)
     {
 #pragma omp for simd        schedule(static)
         for (int k = 0; k < nn; ++k)
@@ -133,8 +133,8 @@ struct LoopsSimd
     }
 
     /// @copydoc Loops::omp_simd_foreach_nowait_int
-    template <typename LBD, typename LL>
-    static void omp_simd_foreach_nowait_int(const LL& ll, const LBD& lbd, int nn)
+    template <typename Body, typename IndexList>
+    static void omp_simd_foreach_nowait_int(const IndexList& ll, const Body& lbd, int nn)
     {
 #pragma omp for simd nowait schedule(static)
         for (int k = 0; k < nn; ++k)
@@ -146,22 +146,22 @@ struct LoopsSimd
     }
 
     /// @copydoc Loops::omp_simd_foreach
-    template <typename LBD, typename LL>
-    void omp_simd_foreach(const LL& ll, const LBD& lbd) const
+    template <typename Body, typename IndexList>
+    void omp_simd_foreach(const IndexList& ll, const Body& lbd) const
     {
         omp_simd_foreach_int(ll, lbd, static_cast<int>(ll.size()));
     }
 
     /// @copydoc Loops::omp_simd_foreach_nowait
-    template <typename LBD, typename LL>
-    void omp_simd_foreach_nowait(const LL& ll, const LBD& lbd) const
+    template <typename Body, typename IndexList>
+    void omp_simd_foreach_nowait(const IndexList& ll, const Body& lbd) const
     {
         omp_simd_foreach_nowait_int(ll, lbd, static_cast<int>(ll.size()));
     }
 
     /// @copydoc Loops::omp_for_nowait_simd
-    template <typename LBD>
-    static void omp_for_nowait_simd(int kdeb, int kfin, const LBD& lbd)
+    template <typename Body>
+    static void omp_for_nowait_simd(int kdeb, int kfin, const Body& lbd)
     {
 #pragma omp for simd nowait schedule(static)
         for (int k = kdeb; k < kfin; ++k)
@@ -176,8 +176,8 @@ struct LoopsSimd
      * @note The accumulation goes through a local under `omp simd
      *       reduction`, so the lanes reduce before the thread does.
      */
-    template <typename LBD, typename LL, typename T>
-    void omp_foreach_simd_red_sum(const LL& ll, T& red, const LBD& lbd) const noexcept
+    template <typename Body, typename IndexList, typename T>
+    void omp_foreach_simd_red_sum(const IndexList& ll, T& red, const Body& lbd) const noexcept
     {
         const int nn = static_cast<int>(ll.size());
 

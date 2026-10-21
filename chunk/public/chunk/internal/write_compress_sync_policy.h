@@ -183,11 +183,11 @@ inline void heavy_barrier() noexcept
  *          The whole policy is OpenMP-only; the serial build gets the empty
  *          specialisation below, since a single thread cannot race with itself.
  *
- * @tparam PROX    proxy type the policy is instantiated for -- it keys the static
+ * @tparam ProxyT    proxy type the policy is instantiated for -- it keys the static
  *                 state, giving one independent handshake per (variant, T)
  * @tparam Enabled build_config::use_openmp; never pass it explicitly
  */
-template <typename PROX, bool Enabled = build_config::use_openmp>
+template <typename ProxyT, bool Enabled = build_config::use_openmp>
 class WriteCompressSyncPolicy
 {
   public:
@@ -497,10 +497,10 @@ class WriteCompressSyncPolicy
 
 /**
  * @brief Serial specialisation: empty, since a single thread cannot race itself.
- * @tparam PROX proxy type the policy would be instantiated for
+ * @tparam ProxyT proxy type the policy would be instantiated for
  */
-template <typename PROX>
-class WriteCompressSyncPolicy<PROX, false>
+template <typename ProxyT>
+class WriteCompressSyncPolicy<ProxyT, false>
 {
 };
 

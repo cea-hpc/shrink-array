@@ -59,9 +59,9 @@ void compress_file(const std::string& source_file, const std::string& dest_file)
 void decompress_file(const std::string& source_file, const std::string& dest_file);
 
 // -----------------------------------------------------------------------------
-// write_binary_file<VEC> — dump a plain std::vector to disk as raw bytes
+// write_binary_file<Vec> — dump a plain std::vector to disk as raw bytes
 // alongside a companion checksum file. Compresses with bzip2 only when
-// no_compress is null (--compress / COMPRESS=1).  Aborts on non-vector VEC
+// no_compress is null (--compress / COMPRESS=1).  Aborts on non-vector Vec
 // (chunk arrays cannot be written directly, they need to be materialised
 // first — not implemented).
 // -----------------------------------------------------------------------------
@@ -120,15 +120,15 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt c
 ///        file and its .bz2 are not written, and stale copies left by an earlier full
 ///        reference are removed, so a later checksum miss cannot be compared against
 ///        data from another oracle (read_check_binary_file then aborts).
-template <typename VEC>
+template <typename Vec>
 void write_binary_file(const std::string& filename,
-                       const VEC&         data,
+                       const Vec&         data,
                        std::uint64_t      checksum,
                        bool               special_writing,
                        const char*        no_compress,
                        bool               checksum_only = false)
 {
-    using CV = std::remove_reference_t<VEC>;
+    using CV = std::remove_reference_t<Vec>;
     using V  = std::remove_const_t<CV>;
 
     const std::string filename_gz        = filename + ".bz2";
@@ -155,7 +155,7 @@ void write_binary_file(const std::string& filename,
             return;
         }
 
-        using T = VEC::value_type;
+        using T = Vec::value_type;
         std::ofstream file(filename, std::ios::binary);
         if (!file)
         {
@@ -231,7 +231,7 @@ void write_binary_file(const std::string& filename,
 }
 
 // -----------------------------------------------------------------------------
-// read_check_binary_file<VEC> — read back a bench dump written by
+// read_check_binary_file<Vec> — read back a bench dump written by
 // write_binary_file() and cross-check it against `data_check`, which may
 // be either a std::vector or a chunk array.  When the checksum mismatches,
 // the raw data is uncompressed and compared element-by-element; the first
@@ -244,17 +244,17 @@ void write_binary_file(const std::string& filename,
 //     to trace_err.txt so a follow-up run can jump straight to it.
 //   - read_trace=true  : replay from trace_err.txt written by a previous run.
 // -----------------------------------------------------------------------------
-template <typename VEC>
+template <typename Vec>
 void read_check_binary_file(Int                ind,
                             const std::string& tab_name,
                             const std::string& filename,
-                            const VEC&         data_check,
+                            const Vec&         data_check,
                             std::uint64_t      lchs,
                             const char*        no_compress,
                             bool               read_trace,
                             bool               write_trace)
 {
-    using T = VEC::value_type;
+    using T = Vec::value_type;
 
     const std::string filename_gz        = filename + ".bz2";
     const std::string filename_check_sum = filename + "_check_sum";
@@ -361,10 +361,10 @@ void read_check_binary_file(Int                ind,
         }
     };
 
-    // No directive: the whole lambda lives inside template <typename VEC>
+    // No directive: the whole lambda lives inside template <typename Vec>
     // read_check_binary_file, so every data_check.* call below is DEPENDENT and
     // the `if constexpr` inside it is genuinely not instantiated for a
-    // std::vector VEC. It is unused there -- io_res == 2 is unreachable without
+    // std::vector Vec. It is unused there -- io_res == 2 is unreachable without
     // a shrink build -- hence [[maybe_unused]]. Capture-default rather than a
     // list for the same reason: format_val is only named in that discarded
     // branch, and an explicit capture that the std::vector instantiation
@@ -374,7 +374,7 @@ void read_check_binary_file(Int                ind,
     {
         // The body as a whole, not statement by statement: everything below
         // reads data_check, whose type is the DEPENDENT template parameter, so
-        // for a std::vector VEC none of it is instantiated.
+        // for a std::vector Vec none of it is instantiated.
         if constexpr (chunk_config::is_shrink_enabled)
         {
             std::string line;
@@ -673,7 +673,7 @@ void read_check_binary_file(Int                ind,
                     if constexpr (is_atomic_pointer<ValueType>::value)
                     {
                         // It's a std::atomic<T*>
-                        raw_ptr = chunk_t.values.load();
+                        raw_ptr = chunk_t.values_.load();
                     }
                     else
                     {
@@ -848,7 +848,7 @@ void read_check_binary_file(Int                ind,
                     if constexpr (is_atomic_pointer<ValueType>::value)
                     {
                         // It's a std::atomic<T*>
-                        raw_ptr = chunk_t.values.load();
+                        raw_ptr = chunk_t.values_.load();
                     }
                     else
                     {

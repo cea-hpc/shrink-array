@@ -25,7 +25,7 @@
 #include <random>   // std::mt19937, std::uniform_int_distribution
 
 #include "Containers.h" // dispatch
-#include "Simu.h"       // Simu::computeDistribution
+#include "Simu.h"       // Simu::compute_distribution
 
 void Simu::compute_distribution()
 {

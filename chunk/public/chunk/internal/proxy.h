@@ -24,12 +24,12 @@
 
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk2
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
-#include "chunk/internal/array_chunk_for.h"    // ArrayChunkFor_t
+#include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
 #include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, ElementAddable, ElementModulable
-#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/conditional_counter.h"          // counter_value_t — resync_nb_val_eq_zero
+#include "chunk/internal/conditional_counter.h"          // CounterValueT — resync_nb_val_eq_zero
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/read_reclaim.h"                 // read_reclaim::ReadSection
@@ -130,8 +130,8 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     // --- fast-block-compression surface: this policy's Enabled is that axis
     // (chunk_config::use_fast_block_compression).
-    using Base::num_tab;
-    using Base::ptr_on_array;
+    using Base::num_tab_;
+    using Base::ptr_on_array_;
     using Base::read_values;
     using Base::read_values_async;
     using Base::read_values_at;
@@ -171,16 +171,16 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief Async-context counterpart of execute_arithmetic_compound_operation().
-     * @tparam OP Binary operator (e.g. std::plus<>, std::minus<>).
-     * @tparam LBD Callable used only on the "chunk was not written" fast path.
+     * @tparam Op Binary operator (e.g. std::plus<>, std::minus<>).
+     * @tparam Body Callable used only on the "chunk was not written" fast path.
      * @tparam U Type of the operand.
      * @param ctx Async write context.
      * @param op The operator to apply.
      * @param v Operand to combine with the current value.
      * @param lbd Called (with `op`) when the chunk was not yet written.
      */
-    template <typename OP, typename LBD, typename U>
-    void execute_arithmetic_compound_operation_async(auto* ctx, OP op, [[maybe_unused]] const U& v, LBD lbd) const;
+    template <typename Op, typename Body, typename U>
+    void execute_arithmetic_compound_operation_async(auto* ctx, Op op, [[maybe_unused]] const U& v, Body lbd) const;
 
     /**
      * @brief Resolve and cache this proxy's table number from ptr_on_array.
@@ -189,11 +189,11 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     {
         // Armed by the array's operator[] (see Proxy2A::set_num_tab): the
         // registry lookup only for a proxy armed otherwise.
-        if (num_tab >= 0) [[likely]]
+        if (num_tab_ >= 0) [[likely]]
         {
             return;
         }
-        num_tab = Derived::get_num_tab(ptr_on_array);
+        num_tab_ = Derived::get_num_tab(ptr_on_array_);
     }
 
     /**
@@ -250,23 +250,23 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief Async-context counterpart of execute_inplace_operation().
-     * @tparam LAMBDA Callable performing the actual in-place modification.
+     * @tparam Lambda Callable performing the actual in-place modification.
      * @param ctx Async write context.
      * @param operation The operation to run.
      */
-    template <typename LAMBDA>
-    static void execute_inplace_operation_async(auto* ctx, LAMBDA operation);
+    template <typename Lambda>
+    static void execute_inplace_operation_async(auto* ctx, Lambda operation);
 
     /**
      * @brief Async-context counterpart of execute_simple_operation():
      *        materialise the chunk referenced by `ctx` if it is currently
      *        compressed, then run `operation` on the reloaded values pointer.
-     * @tparam LAMBDA Callable performing the actual write.
+     * @tparam Lambda Callable performing the actual write.
      * @param ctx Async write context.
      * @param operation The write to perform.
      */
-    template <typename LAMBDA>
-    static void execute_simple_operation_async(auto* ctx, LAMBDA operation);
+    template <typename Lambda>
+    static void execute_simple_operation_async(auto* ctx, Lambda operation);
 
     /**
      * @brief Clear one chunk's "queued for compression" flag, so a later
@@ -539,27 +539,27 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Shared implementation behind operator+=/operator-=: materialise
      *        the chunk if needed, then apply `op` in a common high-precision
      *        type before truncating back to T.
-     * @tparam OP Binary operator (e.g. std::plus<>, std::minus<>).
-     * @tparam LBD Callable used only on the "chunk was not written" fast path.
+     * @tparam Op Binary operator (e.g. std::plus<>, std::minus<>).
+     * @tparam Body Callable used only on the "chunk was not written" fast path.
      * @tparam U Type of the operand being combined with the current value.
      * @param op The operator to apply.
      * @param v Operand to combine with the current value.
      * @param lbd Called (with `op`) when the chunk was not yet written, right
      *            after materialising it.
      */
-    template <typename OP, typename LBD, typename U>
-    void execute_arithmetic_compound_operation(OP op, [[maybe_unused]] const U& v, LBD lbd);
+    template <typename Op, typename Body, typename U>
+    void execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& v, Body lbd);
 
     /**
      * @brief Run an arbitrary in-place operation on this element,
      *        materialising the chunk first if it is currently compressed,
      *        and maintaining the counter-mode zero-tracking bookkeeping
      *        around it.
-     * @tparam LAMBDA Callable performing the actual in-place modification.
+     * @tparam Lambda Callable performing the actual in-place modification.
      * @param operation The operation to run.
      */
-    template <typename LAMBDA>
-    void execute_inplace_operation(LAMBDA operation);
+    template <typename Lambda>
+    void execute_inplace_operation(Lambda operation);
 
     /**
      * @brief Early-out check for operator=(): is the chunk already
@@ -596,11 +596,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Run a write on this element, materialising the chunk if needed and
      *        maintaining the counter-mode bookkeeping (non-OMP path; async
      *        counterpart: ProxyFastCompPolicy::execute_simple_operation_async).
-     * @tparam LAMBDA Callable performing the actual write.
+     * @tparam Lambda Callable performing the actual write.
      * @param operation The write to perform.
      */
-    template <typename LAMBDA>
-    void execute_simple_operation(LAMBDA operation);
+    template <typename Lambda>
+    void execute_simple_operation(Lambda operation);
 
     /**
      * @brief Shared implementation behind operator/=, operator*=, and
@@ -873,7 +873,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] int get_num_tab_cached(const void* array_ptr) const noexcept
     {
-        return this->num_tab >= 0 ? this->num_tab : get_num_tab(array_ptr);
+        return this->num_tab_ >= 0 ? this->num_tab_ : get_num_tab(array_ptr);
     }
 
     /// Registry of every v1 array: array address -> table number.

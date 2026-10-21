@@ -50,7 +50,7 @@
 #include <array>       // std::array, for chunk/*
 #include <atomic>      // std::atomic, for chunk/*
 #include <chrono>      // std::chrono, for chunk/*
-#include <complex>     // std::complex (complex_double)
+#include <complex>     // std::complex (ComplexDouble)
 #include <cstddef>     // std::size_t (cache_line_size)
 #include <cstdint>     // std::uint64_t, for chunk/*
 #include <cstring>     // std::memcpy, for chunk/*

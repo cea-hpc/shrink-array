@@ -320,10 +320,10 @@ struct Interval
 // Event types for sweep line; order matters for tie-breaking
 enum EventType : std::uint8_t
 {
-    COMP_START = 0,
-    FAST_START = 1,
-    FAST_END   = 2,
-    COMP_END   = 3
+    comp_start = 0,
+    fast_start = 1,
+    fast_end   = 2,
+    comp_end   = 3
 };
 
 struct Endpoint
@@ -542,7 +542,7 @@ bool analyze_ring_sweep()
     std::vector<Endpoint> endpoints;
     endpoints.reserve((fast_intervals.size() + compress_intervals.size()) * 2);
 
-    const auto add_endpoints = [&](const std::unordered_map<uint32_t, std::vector<Interval>>& map, bool isCompress)
+    const auto add_endpoints = [&](const std::unordered_map<uint32_t, std::vector<Interval>>& map, bool is_compress)
     {
         for (const auto& p : map)
         {
@@ -555,15 +555,15 @@ bool analyze_ring_sweep()
                 {
                     continue; // ⛔ Ignore fallback intervals
                 }
-                if (isCompress)
+                if (is_compress)
                 {
-                    endpoints.push_back({iv.start, COMP_START, tid, i});
-                    endpoints.push_back({iv.end, COMP_END, tid, i});
+                    endpoints.push_back({iv.start, comp_start, tid, i});
+                    endpoints.push_back({iv.end, comp_end, tid, i});
                 }
                 else
                 {
-                    endpoints.push_back({iv.start, FAST_START, tid, i});
-                    endpoints.push_back({iv.end, FAST_END, tid, i});
+                    endpoints.push_back({iv.start, fast_start, tid, i});
+                    endpoints.push_back({iv.end, fast_end, tid, i});
                 }
             }
         }
@@ -629,7 +629,7 @@ bool analyze_ring_sweep()
     {
         switch (ep.type)
         {
-            case COMP_START:
+            case comp_start:
             {
                 if (ep.idx >= compress_intervals[ep.tid].size())
                 {
@@ -644,7 +644,7 @@ bool analyze_ring_sweep()
                 break;
             }
 
-            case COMP_END:
+            case comp_end:
             {
                 const uint64_t key = make_key(ep.tid, ep.idx);
                 const auto     it  = active_index_by_key.find(key);
@@ -663,7 +663,7 @@ bool analyze_ring_sweep()
                 break;
             }
 
-            case FAST_START:
+            case fast_start:
             {
                 if (ep.idx >= fast_intervals[ep.tid].size())
                 {
@@ -687,8 +687,8 @@ bool analyze_ring_sweep()
                 break;
             }
 
-            case FAST_END:
-                // nothing to do; overlaps already recorded at FAST_START
+            case fast_end:
+                // nothing to do; overlaps already recorded at fast_start
                 break;
         }
 

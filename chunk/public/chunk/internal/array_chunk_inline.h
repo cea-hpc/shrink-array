@@ -34,7 +34,7 @@
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
-#include "chunk/internal/in_t.h"                        // in_t<T>
+#include "chunk/internal/in_t.h"                        // InT<T>
 
 namespace shrink_array
 {
@@ -53,7 +53,7 @@ void ArrayChunk<T, IndType>::rebuild_storage(IndType sz)
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                Proxy<T>::resize_tab_is_int(this->num_tab, nb_chunk_);
+                Proxy<T>::resize_tab_is_int(this->num_tab_, nb_chunk_);
             }
         }
         else if (sz && !this->size_policy_.size())
@@ -104,7 +104,8 @@ void ArrayChunk<T, IndType>::print_compression_stats(std::ostream& os) const
     int n_compressed  = 0;
     int n_would_be_t2 = 0;
 
-#pragma omp parallel for reduction(+ : n_compressed, n_would_be_t2) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
+#pragma omp parallel for reduction(+ : n_compressed, \
+                                       n_would_be_t2) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500)
     for (int j = 0; j < nb_chunk_; ++j)
     {
         const auto& ck = chunk_list_[j];
@@ -237,11 +238,11 @@ void ArrayChunk<T, IndType>::clear_core()
                 // the LEGACY list, which drain_reuse_list_for_size() never
                 // drains: those blocks then stay until teardown.
                 const unsigned int my_sz = this->size_policy_.size();
-                auto&              lbf   = Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                auto&              lbf   = Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                 for (int k = 0; k < nb; ++k)
                 {
-                    T*          values_loc = ll_chunk_loc[k]->values;
+                    T*          values_loc = ll_chunk_loc[k]->values_;
                     constexpr T zero{};
                     std::uninitialized_fill_n(values_loc, my_sz, zero);
 
@@ -379,7 +380,7 @@ void ArrayChunk<T, IndType>::release_chunk_range(int first, int last)
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
             first, last, [my_sz]() -> auto&
-            { return Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
+            { return Chunk<T>::Manager::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this, my_sz](int j, auto& lbf)
             {
                 if (chunk_list_[j].written())
@@ -390,7 +391,7 @@ void ArrayChunk<T, IndType>::release_chunk_range(int first, int last)
                         add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
                     }
                     // As clear_core(): v1's reuse lists hold zeroed buffers.
-                    T*          values_loc = chunk_list_[j].values;
+                    T*          values_loc = chunk_list_[j].values_;
                     constexpr T zero{};
                     std::uninitialized_fill_n(values_loc, my_sz, zero);
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");

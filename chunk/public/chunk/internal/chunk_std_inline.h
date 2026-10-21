@@ -67,7 +67,7 @@ template <typename T, typename Derived, bool Enabled>
 template <typename T, typename Derived, bool Enabled>
 void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int thr, VecTupleChunkpInt2& ll_compt)
 {
-    const auto& vec_tup = Derived::manager_chunk::chunk_to_compress_potentially_thr[thr];
+    const auto& vec_tup = Derived::Manager::chunk_to_compress_potentially_thr[thr];
 
     const int sz = vec_tup.size();
 
@@ -485,9 +485,9 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int 
     // and be popped for a 256-element chunk (overflow). The memset and the push must agree.
     auto& ll_block_free_thr = Manager::get_list_block_free_thr_for_size(thr_rank, n_elems);
 
-    Base::init_block(values.load(), n_elems);
-    CHUNK_LEDGER_PARK(values.load(), "clear_st.park"); // LIVE -> parked before it re-enters the pool
-    ll_block_free_thr.push_back(values);
+    Base::init_block(values_.load(), n_elems);
+    CHUNK_LEDGER_PARK(values_.load(), "clear_st.park"); // LIVE -> parked before it re-enters the pool
+    ll_block_free_thr.push_back(values_);
 
     derived().init_values_cst_val();
 }

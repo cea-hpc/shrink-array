@@ -29,7 +29,7 @@
 
 #include "Containers.h" // MultiArray, VectChunk2
 
-template <typename LOOPS, typename LOOPSCHUNK>
+template <typename LoopsVec, typename LoopsChunk>
 class MultiMatAlgo;
 
 /**
@@ -121,9 +121,10 @@ struct Simu
      *                  and then when verbose.
      * @param value     This thread's share of the gadget result.
      */
-    template <typename LOOPS, typename LOOPSCHUNK>
-    void
-    compute_loops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::function<void(bool)>& lbd_stats, double& value);
+    template <typename LoopsVec, typename LoopsChunk>
+    void compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
+                       const std::function<void(bool)>&    lbd_stats,
+                       double&                             value);
 
     int nbmat = nbmat_default; ///< Materials
 

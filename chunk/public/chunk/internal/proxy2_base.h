@@ -23,9 +23,9 @@
 
 #include "chunk/bit.h"    // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h" // chunk_config::use_fast_block_compression, build_config::do_check
-#include "chunk/internal/concept_is_clean_assignement.h" // base_t, ElementMultipliable, ElementModulable
+#include "chunk/internal/concept_is_clean_assignement.h" // BaseT, ElementMultipliable, ElementModulable
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
-#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/log.h"                                   // CHUNK_LOG (the operators bool has not)
 

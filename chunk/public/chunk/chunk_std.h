@@ -224,7 +224,7 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
     using Base::init_block;
     using Base::is_cst_val1;
     using Base::self;
-    using Base::values;
+    using Base::values_;
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
     ///        first constant (init_chunks_cst_val).
@@ -296,7 +296,7 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
         T* expected = old;
         T* new_ptr  = Base::get_cst_val1();
 
-        if (!values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
+        if (!values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
             [[unlikely]]
         {
             return nullptr;
@@ -519,7 +519,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     {
         if constexpr (build_config::use_openmp)
         {
-            values_.store(other.values.load());
+            values_.store(other.values_.load());
         }
         else
         {

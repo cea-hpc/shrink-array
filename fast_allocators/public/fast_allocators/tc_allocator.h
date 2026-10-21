@@ -64,7 +64,7 @@
 #include <cstring>     // std::strerror
 #include <cstdint>     // uintptr_t
 #include <limits>      // std::numeric_limits: TCAllocatorEB's index range
-#include <type_traits> // std::conditional_t (free_index_t)
+#include <type_traits> // std::conditional_t (FreeIndexT)
 #include <cassert>     // assert (FAST_ALLOC_DBG_ASSERT)
 #include <sys/mman.h>  // mmap, munmap
 #include <unistd.h>    // sysconf (fast_alloc::page_size)
@@ -76,7 +76,7 @@
 #include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/fatal.h"           // FAST_ALLOC_FATAL
 #include "fast_allocators/internal/log_core.h"        // CHUNK_LOG, logging::enabled (the eviction trace)
-#include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
+#include "fast_allocators/internal/next_power_of_2.h" // next_power_of_2, for slab_of()'s effective slab geometry
 
 namespace fast_alloc
 {
@@ -1342,10 +1342,10 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
     static constexpr const char* pool_name = "TCCAllocator";
     /// @brief The batch collect_empty_slabs() feeds: one madvise per run of
     ///        adjacent empty slabs.
-    using empty_slab_sweep = fast_alloc::EmptySlabSweep<TCCAllocator>;
+    using SlabSweep = fast_alloc::EmptySlabSweep<TCCAllocator>;
 
     /// @brief Empty and unusable until init(); its slabs draw from the value arena.
-    TCTypeCAllocator() : TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAllocator>(fast_alloc::ArenaKind::Value) {}
+    TCTypeCAllocator() : TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAllocator>(fast_alloc::ArenaKind::value) {}
 
     /// @brief Hand every slab of this instance that currently holds no block to
     ///        @p sweep, which advises them away at its flush().
@@ -1361,8 +1361,8 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
     ///        the slabs the next phase allocates.
     /// @return Number of slabs handed over. The CHUNK_RECLAIM_MIN_SLABS floor
     ///         is applied by the sweep, to all instances together.
-    std::size_t collect_empty_slabs([[maybe_unused]] empty_slab_sweep& sweep,
-                                    [[maybe_unused]] std::size_t       keep_empty = 0) noexcept
+    std::size_t collect_empty_slabs([[maybe_unused]] SlabSweep&  sweep,
+                                    [[maybe_unused]] std::size_t keep_empty = 0) noexcept
     {
         if constexpr (alloc_config::use_std_alloc || !alloc_config::reclaim_empty_slabs)
         {

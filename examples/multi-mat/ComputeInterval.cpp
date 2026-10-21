@@ -23,7 +23,7 @@
 #include <cmath>    // std::round
 #include <iostream> // std::cout
 
-#include "Simu.h" // Simu::computeInterval
+#include "Simu.h" // Simu::compute_interval
 
 void Simu::compute_interval()
 {

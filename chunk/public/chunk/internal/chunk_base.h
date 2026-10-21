@@ -34,14 +34,14 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"           // cst_buffer_size, thread_chunk_size, alloc_chunk_count
-#include "chunk/internal/in_t.h"                        // in_t<T>: the scans' constants, by value or by reference
-#include "chunk/internal/bit_words.h"                   // bits::scan_words / word_t: the Bit scans
+#include "chunk/internal/in_t.h"                        // InT<T>: the scans' constants, by value or by reference
+#include "chunk/internal/bit_words.h"                   // bits::scan_words / WordT: the Bit scans
 #include "chunk/internal/element_access.h"              // elem_get: Bit buffers are words of bits
 #include "chunk/internal/relaxed_element.h"             // element_at<true>: the marking filter's reads
 #include "fast_allocators/internal/svalloc.h"           // svcalloc_align, svfree
 #include "chunk/config.h"                               // build_config::use_openmp, chunk_config::stats
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/ring_log_debug.h"                       // EV_VALUE_ALLOC/FREE (debug ring log)
+#include "chunk/ring_log_debug.h"                       // ev_value_alloc/FREE (debug ring log)
 #include "chunk/internal/global_check.h"                // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h"            // DeferredOpPtr
@@ -603,13 +603,13 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
         CHUNK_CHECK_VALUES_PTR_C(values_loc, "CAS.values_loc", &self);
         CHUNK_CHECK_VALUES_PTR_C(m_ptr_cst_val, "CAS.expected_cst", &self);
 
-        if (self.values.load(std::memory_order_relaxed) != m_ptr_cst_val) [[unlikely]]
+        if (self.values_.load(std::memory_order_relaxed) != m_ptr_cst_val) [[unlikely]]
         {
             return true; // failed (already changed)
         }
 
-        return !self.values.compare_exchange_strong(m_ptr_cst_val, values_loc, std::memory_order_acq_rel,
-                                                    std::memory_order_acquire);
+        return !self.values_.compare_exchange_strong(m_ptr_cst_val, values_loc, std::memory_order_acq_rel,
+                                                     std::memory_order_acquire);
     }
 
     /// @brief Compare-and-swap against first constant value

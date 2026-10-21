@@ -63,10 +63,10 @@
 #include <cstdint>   // int64_t, uint32_t
 #include <vector>    // std::vector
 
-#include "chunk/internal/in_t.h"               // in_t<T>: the element snapshots
+#include "chunk/internal/in_t.h"               // InT<T>: the element snapshots
 #include "chunk/bit.h"                         // is_bool_like_v, is_packed_bit_v
 #include "chunk/internal/element_access.h"     // internal::as_words: Bit sub-blocks scanned by word
-#include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform, bits::word_t
+#include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform, bits::WordT
 #include "chunk/config.h"                      // chunk_config::use_chunk2 / use_chunk2a
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread)
 #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it

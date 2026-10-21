@@ -46,7 +46,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
         int num_tab = 0;
         if constexpr (is_chunk2a)
         {
-            num_tab = self().num_tab; // 2A keys its candidates by the num_tab MEMBER
+            num_tab = self().num_tab_; // 2A keys its candidates by the num_tab MEMBER
         }
         else
         {

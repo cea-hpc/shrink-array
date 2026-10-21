@@ -32,7 +32,7 @@
 #include <algorithm> // std::max
 
 #include "config.h" // multi_mat::interactive_input
-#include "Simu.h"   // Simu::inputData
+#include "Simu.h"   // Simu::input_data
 
 namespace
 {

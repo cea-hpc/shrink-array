@@ -48,7 +48,7 @@
 #include <tuple>           // std::tuple_size_v, std::ignore
 #include <type_traits>     // std::remove_cvref_t, std::common_type_t, std::conditional_t
 
-#include "chunk/internal/in_t.h"       // in_t<T>: the element snapshots
+#include "chunk/internal/in_t.h"       // InT<T>: the element snapshots
 #include "chunk/internal/proxy_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/chunk_size_policy.h"  // ChunkElems — used HERE, not via includers
 #include "chunk/internal/phase_guard.h"        // check-build guard of the phase protocol
@@ -57,9 +57,9 @@
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast, CHUNK_PMP_IN_PARALLEL_REGION
 #include "chunk/ring_log_debug.h"              // ScopedRingLog, ring_log, get_tid
 #include "chunk/internal/arithmetic_context.h" // ArithmeticProxyContext, ArithmeticContext
-#include "chunk/internal/array_chunk_for.h"    // ArrayChunkFor_t
+#include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"      // IsChunk2, chunk_template_of
-#include "chunk/internal/concept_is_clean_assignement.h" // base_t
+#include "chunk/internal/concept_is_clean_assignement.h" // BaseT
 #include "chunk/internal/crp_helper.h"                   // CHUNK_CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
@@ -332,7 +332,7 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
     auto&     chunk = ctx->chunk;
     const int num   = ctx->num;
 
-    std::atomic<T*>& atomic_values = chunk.values;
+    std::atomic<T*>& atomic_values = chunk.values_;
 
     ProxyType proxy(atomic_values, num, chunk);
 

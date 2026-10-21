@@ -24,7 +24,7 @@
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // ChunkElems, set_thread_chunk_size
-#include "chunk/internal/in_t.h"                // in_t<T>
+#include "chunk/internal/in_t.h"                // InT<T>
 #include "chunk/chunk2_std.h"                   // Chunk2, the class these bodies belong to
 #include "chunk/internal/proxy2.h"              // Proxy2<T>
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
@@ -757,7 +757,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
         // chunk could be compressed to the OTHER array's constant, and its own
         // array, which only recognises its own constant, would then write into
         // that shared block, changing every chunk compressed to it.
-        if (proxy2->is_not_cst_val() && proxy2->second_value == second_value)
+        if (proxy2->is_not_cst_val() && proxy2->second_value_ == second_value)
         {
             proxy2->add_to_compression_list(vec_tuple_to_compress);
         }

@@ -34,17 +34,17 @@
 #include "chunk/config.h"                  // chunk_config::use_fast_block_compression, build_config::any_check
 #include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE: the write engine and its wrappers
-#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"              // ProxyOperators
 #include "chunk/internal/tab_cst_val2_holder.h"          // TabCstVal2Holder: second-value identifiers
 #include "chunk/internal/relaxed_element.h"              // store_value: Chunk2A's relaxed element stores
-#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, base_t
+#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
 #include "chunk/internal/crp_helper.h"                   // CRTPSupport, CHUNK_CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/parallel_storage_init.h"        // no_init_vector, make_filled: the candidate-flag rows
+#include "chunk/internal/parallel_storage_init.h"        // NoInitVector, make_filled: the candidate-flag rows
 
 namespace shrink_array
 {

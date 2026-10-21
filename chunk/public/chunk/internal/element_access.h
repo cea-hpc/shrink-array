@@ -36,7 +36,7 @@
 
 #include "chunk/bit.h"                // Bit, is_packed_bit_v
 #include "chunk/config.h"             // build_config::use_openmp
-#include "chunk/internal/bit_words.h" // bits::word_t, bits::get_bit, bits::set_bit_atomic
+#include "chunk/internal/bit_words.h" // bits::WordT, bits::get_bit, bits::set_bit_atomic
 
 namespace shrink_array
 {

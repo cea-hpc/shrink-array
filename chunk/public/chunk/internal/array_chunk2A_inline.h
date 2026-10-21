@@ -36,7 +36,7 @@
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"               // ManagerChunk: per-size free lists, candidate filter
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, get_size_max_tab_omp
-#include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::getRef
+#include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
@@ -135,7 +135,7 @@ void ArrayChunk2A<T, IndType>::print_compression_stats(std::ostream& os) const
     int        n_t0      = 0;
     int        n_t1      = 0;
 
-#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
+#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500)
     for (int j = 0; j < nb_chunk_; ++j)
     {
         const auto& ck = chunk_list_[j];
@@ -195,7 +195,7 @@ void ArrayChunk2A<T, IndType>::clear()
         {
             const auto                      csz = static_cast<unsigned int>(this->size_policy_.size());
             std::vector<std::pair<bool, T>> summary(static_cast<std::size_t>(nb_chunk_));
-#pragma omp parallel for if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
+#pragma omp parallel for if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500)
             for (int j = 0; j < nb_chunk_; ++j)
             {
                 const auto& ck = chunk_list_[j];
@@ -449,7 +449,7 @@ void ArrayChunk2A<T, IndType>::clear_core()
 
                 for (int k = 0; k < nb; ++k)
                 {
-                    T* values_loc = ll_chunk_loc[k]->values;
+                    T* values_loc = ll_chunk_loc[k]->values_;
                     // Ledger: LIVE -> parked, or a later pop of this block from the
                     // free-list is an ILLEGAL b_pop (state=LIVE, expected parked).
                     CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
@@ -476,7 +476,7 @@ void ArrayChunk2A<T, IndType>::clear_core()
                 // Only the reference this array took (acquire_cst2_registry).
                 if (holds_cst2_registry_)
                 {
-                    Chunk2A<T>::tab_cst_val2_holder::clear(nb_val2);
+                    Chunk2A<T>::Holder::clear(nb_val2);
                     holds_cst2_registry_ = false;
                 }
             }
@@ -648,7 +648,7 @@ void ArrayChunk2A<T, IndType>::release_chunk_range(int first, int last)
                         add_chunk_released<Chunk2A<T>>(1, static_cast<long>(sizeof(T)) *
                                                               static_cast<long>(this->size_policy_.size()));
                     }
-                    T* values_loc = chunk_list_[j].values;
+                    T* values_loc = chunk_list_[j].values_;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
                     lbf.push_back(values_loc);
                     // Neutralise, as clear_core(): the buffer belongs to the

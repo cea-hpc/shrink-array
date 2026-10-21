@@ -25,7 +25,7 @@
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
-#include "chunk/internal/in_t.h"              // in_t<value_type>: the captured state
+#include "chunk/internal/in_t.h"              // InT<value_type>: the captured state
 
 namespace shrink_array
 {
@@ -131,9 +131,9 @@ void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<va
             {
                 Derived& arr = self();
 
-                arr.inf_array    = tmp.inf_array; // tmp's is valid (set_second_value ran)
-                arr.ind_cst_val2 = tmp.ind_cst_val2;
-                proxy_type::share_info_array->insert(state, &arr.inf_array);
+                arr.inf_array_    = tmp.inf_array_; // tmp's is valid (set_second_value ran)
+                arr.ind_cst_val2_ = tmp.ind_cst_val2_;
+                proxy_type::share_info_array->insert(state, &arr.inf_array_);
             }
         }
     }

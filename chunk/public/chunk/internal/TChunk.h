@@ -34,28 +34,28 @@ namespace shrink_array
 ///          with alloc_chunk_count() -- the consuming thread's ambient size,
 ///          which after a rechunk overflows a buffer of another geometry.
 ///          Producers and consumers must share this single alias.
-template <template <typename> class TCHUNK, typename T>
-using VectorTuple4ChunkInt2 = std::vector<std::tuple<TCHUNK<T>*, int, int, ChunkElems>>;
+template <template <typename> class ChunkTemplate, typename T>
+using VectorTuple4ChunkInt2 = std::vector<std::tuple<ChunkTemplate<T>*, int, int, ChunkElems>>;
 
 /// @brief Map from a second value to the shared list of queued chunks
 ///        (4-element tuples) holding it.
 /// @details Tuples as VectorTuple4ChunkInt2. Ordered by ValueLess (value_less.h).
-template <template <typename> class TCHUNK, typename T>
-using MapTypeChunk2P = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<TCHUNK, T>>, ValueLess<T>>;
+template <template <typename> class ChunkTemplate, typename T>
+using MapTypeChunk2P = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<ChunkTemplate, T>>, ValueLess<T>>;
 
 /// @brief Chunk2's candidate lists, one per second value.
 /// @details Copied into map_chunk2_to_compress_potentially_thr's shared_ptr
 ///          (ArrayChunk2::set_second_value): same tuples as MapTypeChunk2P.
-template <template <typename> class TCHUNK, typename T>
-using TChunk2Comp = std::vector<VectorTuple4ChunkInt2<TCHUNK, T>>;
+template <template <typename> class ChunkTemplate, typename T>
+using TChunk2Comp = std::vector<VectorTuple4ChunkInt2<ChunkTemplate, T>>;
 
 /// @brief Chunk2A's candidate list.
-template <template <typename> class TCHUNK, typename T>
-using TChunk2AComp = VectorTuple4ChunkInt2<TCHUNK, T>;
+template <template <typename> class ChunkTemplate, typename T>
+using TChunk2AComp = VectorTuple4ChunkInt2<ChunkTemplate, T>;
 
 /// @brief Chunk's candidate list (tuples: see VectorTuple4ChunkInt2).
-template <template <typename> class TCHUNK, typename T>
-using TChunkComp = VectorTuple4ChunkInt2<TCHUNK, T>;
+template <template <typename> class ChunkTemplate, typename T>
+using TChunkComp = VectorTuple4ChunkInt2<ChunkTemplate, T>;
 
 /**
  * @brief One thread's slot in a per-thread candidate store, on cache lines of
@@ -76,21 +76,21 @@ struct alignas(128) PerThreadSlot : public Container
 };
 
 /// @brief Chunk2A's candidate lists, one slot per thread.
-template <template <typename> class TCHUNK, typename T>
-using TChunk2ACompThr = std::vector<PerThreadSlot<TChunk2AComp<TCHUNK, T>>>;
+template <template <typename> class ChunkTemplate, typename T>
+using TChunk2ACompThr = std::vector<PerThreadSlot<TChunk2AComp<ChunkTemplate, T>>>;
 
 /// @brief Chunk2's candidate lists, one slot per thread.
-template <template <typename> class TCHUNK, typename T>
-using TChunk2CompThr = std::vector<PerThreadSlot<TChunk2Comp<TCHUNK, T>>>;
+template <template <typename> class ChunkTemplate, typename T>
+using TChunk2CompThr = std::vector<PerThreadSlot<TChunk2Comp<ChunkTemplate, T>>>;
 
 /// @brief Chunk's candidate lists, one slot per thread.
-template <template <typename> class TCHUNK, typename T>
-using TChunkCompThr = std::vector<PerThreadSlot<VectorTuple4ChunkInt2<TCHUNK, T>>>;
+template <template <typename> class ChunkTemplate, typename T>
+using TChunkCompThr = std::vector<PerThreadSlot<VectorTuple4ChunkInt2<ChunkTemplate, T>>>;
 
 /// @brief Chunk2's candidate store: one map keyed by second value per thread.
 /// @details Only the OpenMP fast-block code reaches it; a serial build keeps
 ///          it empty.
-template <template <typename> class TCHUNK, typename T>
-using TChunk2CompMap = std::vector<PerThreadSlot<MapTypeChunk2P<TCHUNK, T>>>;
+template <template <typename> class ChunkTemplate, typename T>
+using TChunk2CompMap = std::vector<PerThreadSlot<MapTypeChunk2P<ChunkTemplate, T>>>;
 
 } // namespace shrink_array

@@ -31,7 +31,7 @@
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
-#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EV_OP_ALLOC / EV_OP_FREE
+#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, ev_op_alloc / ev_op_free
 #include "chunk/log.h"                      // CHUNK_LOG (recycle)
 
 #if CHUNK_OPT_FAST_ALLOC
@@ -47,9 +47,9 @@ namespace fast_alloc
 /// @brief Fallback arena kinds (op, ctx, value), matching the names of the fast allocator's enum.
 enum class ArenaKind
 {
-    Op,
-    Ctx,
-    Value
+    op,
+    ctx,
+    value
 };
 
 /// @brief std-alloc stand-in for the fast allocator: operator new/delete

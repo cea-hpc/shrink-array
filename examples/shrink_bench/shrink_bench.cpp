@@ -17,7 +17,7 @@
 // Central prelude first: fixes the chunk/ include order and derives the
 // SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION macros from the
 // build-time variant selector.
-#include "bench_prelude.h" // Int, tc, complex_double, SHRINK_ARRAY
+#include "bench_prelude.h" // Int, tc, ComplexDouble, SHRINK_ARRAY
 
 #include <algorithm> // std::min, std::max
 #include <limits>    // std::numeric_limits (tab_mask's size)
@@ -42,7 +42,7 @@
 
 // Utility templates and function declarations (checksums, correlations,
 // seed I/O, help/suggest, memory report).
-#include "bench_utils.h" // initializeRNG, memory_consumption
+#include "bench_utils.h" // initialize_rng, memory_consumption
 
 // The phases extracted from main() and their shared context: the array type,
 // the second_value_* constants, the BenchArrays handle, and the OMPT phase

@@ -24,13 +24,13 @@
 #include <vector>          // the per-chunk "queued" flags
 
 #include "chunk/internal/proxy2A.h"            // the declarations these bodies belong to
-#include "chunk/internal/in_t.h"               // in_t<T>
+#include "chunk/internal/in_t.h"               // InT<T>
 #include "chunk/array_chunk2A.h"               // ArrayChunk2A (dependent calls the include tools cannot attribute)
 #include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h" // ArithmeticAffectationContext
-#include "chunk/internal/array_chunk_for.h"    // ArrayChunkFor_t
-#include "chunk/internal/concept_is_clean_assignement.h" // base_t
+#include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
+#include "chunk/internal/concept_is_clean_assignement.h" // BaseT
 #include "chunk/internal/deferred_op_pool.h"             // pool_new_ctx
 #include "chunk/internal/bad_ptr_check.h"                // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
@@ -427,11 +427,11 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_stor
     {
         if (is_val2)
         {
-            this->chunk.create_value(true, proxy.ptr_second_value);
+            this->chunk_.create_value(true, proxy.ptr_second_value_);
         }
         else if (Base::is_cst_val1())
         {
-            this->chunk.create_value(false, proxy.ptr_second_value);
+            this->chunk_.create_value(false, proxy.ptr_second_value_);
         }
     }
     else
@@ -676,7 +676,7 @@ T Proxy2A<T>::assign_impl(InT<U> v) noexcept
                     {
                         if constexpr (is_not_bool)
                         {
-                            chunk.create_value(is_cst2, proxy.ptr_second_value);
+                            chunk.create_value(is_cst2, proxy.ptr_second_value_);
                         }
                         else
                         {
@@ -819,13 +819,13 @@ void Proxy2A<T>::execute_simple_operation(ModifyFn modify_fn)
  * The file's retry protocol; a failed check restarts the whole body, proxy
  * included, since a compressor may have changed the chunk state, not just its buffer.
  *
- * @tparam LAMBDA Callable taking the values pointer to write through.
+ * @tparam Lambda Callable taking the values pointer to write through.
  * @param ctx       Deferred-operation context being replayed.
  * @param operation Write body.
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-template <typename LAMBDA>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(auto* ctx, LAMBDA operation)
+template <typename Lambda>
+void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
 {
     int retry_count = 0;
 
@@ -869,7 +869,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_opera
  *  - cst_val2 chunk, result == second value: nothing (a compressed chunk whose
  *    value does not change must not be materialised).
  *
- * @tparam OP       Binary operation type.
+ * @tparam Op       Binary operation type.
  * @tparam ModifyFn Callable storing the result on the materialised path.
  * @tparam U        Operand type.
  * @param op        Operation to apply.
@@ -877,8 +877,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_opera
  * @param modify_fn Store body, invoked as `modify_fn(op)`.
  */
 template <typename T>
-template <typename OP, typename ModifyFn, typename U>
-void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, ModifyFn modify_fn)
+template <typename Op, typename ModifyFn, typename U>
+void Proxy2A<T>::execute_arithmetic_compound_operation(Op op, const U& v, ModifyFn modify_fn)
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -938,8 +938,8 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, Modify
  * Same three-way branch, each arm under the retry protocol. The no-op arm is
  * re-tested before exiting: the state it was decided on may have changed.
  *
- * @tparam OP  Binary operation type.
- * @tparam LBD Callable storing the result on the materialised path.
+ * @tparam Op  Binary operation type.
+ * @tparam Body Callable storing the result on the materialised path.
  * @tparam U   Operand type.
  * @param ctx Deferred-operation context being replayed.
  * @param op  Operation to apply.
@@ -947,11 +947,11 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, Modify
  * @param lbd Store body, invoked as `lbd(op)`.
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-template <typename OP, typename LBD, typename U>
+template <typename Op, typename Body, typename U>
 void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation_async(auto*    ctx,
-                                                                                                        OP       op,
+                                                                                                        Op       op,
                                                                                                         const U& v,
-                                                                                                        LBD lbd) const
+                                                                                                        Body lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -979,11 +979,11 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 
         if constexpr (is_not_bool)
         {
-            const bool will_be_not_second_value = (v_new_truncated != proxy.ptr_second_value.get()) && cst_val2;
+            const bool will_be_not_second_value = (v_new_truncated != proxy.ptr_second_value_.get()) && cst_val2;
 
             if (will_be_not_second_value)
             {
-                ctx->chunk.create_value(true, proxy.ptr_second_value);
+                ctx->chunk.create_value(true, proxy.ptr_second_value_);
 
                 const T* values_before = ctx->chunk.values_load();
 
@@ -1034,7 +1034,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
             }
             {
                 // No-op arm (result == second value on cst_val2): re-test before exiting.
-                if (proxy.is_cst_val2() && v_new_truncated == proxy.ptr_second_value.get())
+                if (proxy.is_cst_val2() && v_new_truncated == proxy.ptr_second_value_.get())
                 {
                     break;
                 }
@@ -1135,9 +1135,9 @@ void Proxy2A<T>::execute_inplace_operation(ModifyFn modify_fn)
 // Replay twin of execute_inplace_operation(), under the retry protocol. Check
 // builds assert the chunk did not go back to a constant during the store.
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-template <typename LAMBDA>
+template <typename Lambda>
 void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_operation_async(auto*  ctx,
-                                                                                            LAMBDA operation) const
+                                                                                            Lambda operation) const
 {
     int retry_count = 0;
 

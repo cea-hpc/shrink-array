@@ -47,7 +47,7 @@
 #include <vector>    // std::vector
 
 #include "chunk/config.h"                         // build_config::use_openmp
-#include "chunk/internal/parallel_storage_init.h" // no_init_vector, make_filled: the words built by a team
+#include "chunk/internal/parallel_storage_init.h" // NoInitVector, make_filled: the words built by a team
 
 namespace shrink_array
 {

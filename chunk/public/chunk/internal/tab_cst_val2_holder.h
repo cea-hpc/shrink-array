@@ -74,7 +74,7 @@
 
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
-#include "chunk/internal/in_t.h"              // in_t<T>: the value parameters
+#include "chunk/internal/in_t.h"              // InT<T>: the value parameters
 #include "chunk/config.h"                     // build_config::use_mm_protect
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays

@@ -19,7 +19,7 @@
 #include <utility> // std::forward
 
 #include "chunk/internal/proxy2_base.h" // the declarations these bodies belong to
-#include "chunk/internal/in_t.h"        // in_t<T>
+#include "chunk/internal/in_t.h"        // InT<T>
 
 namespace shrink_array
 {

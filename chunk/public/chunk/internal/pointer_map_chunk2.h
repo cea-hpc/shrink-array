@@ -48,10 +48,10 @@
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"         // ValueLess
 #include "chunk/internal/map_helper.h"         // ValueToIntMapHelper
-#include "chunk/internal/in_t.h"               // in_t<T>
+#include "chunk/internal/in_t.h"               // InT<T>
 #include "chunk/config.h"                      // build_config::any_check
 #include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/second_value_info.h"  // SecondValueInfo (inf_array_t)
+#include "chunk/internal/second_value_info.h"  // SecondValueInfo (InfArrayT)
 #include "chunk/log.h"                         // CHUNK_LOG (report_key_not_found)
 
 namespace shrink_array

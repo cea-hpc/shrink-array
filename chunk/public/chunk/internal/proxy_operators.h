@@ -18,7 +18,7 @@
 
 #include <type_traits> // std::common_type_t
 
-#include "chunk/internal/concept_composite_arithmetic.h" // composite_arithmetic, scalar_arithmetic
+#include "chunk/internal/concept_composite_arithmetic.h" // CompositeArithmetic, ScalarArithmetic
 
 namespace shrink_array
 {

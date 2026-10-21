@@ -93,8 +93,8 @@ class Chunk2AConcurrentOps
             ring_log(get_tid(), ev_compress_attempt, info);
         }
 
-        if (!self()->values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
-                                                    std::memory_order_acquire))
+        if (!self()->values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
+                                                     std::memory_order_acquire))
         {
             return nullptr;
         }
@@ -309,7 +309,7 @@ class Chunk2AStateQueries
     ///        writer or compressor can be publishing.
     [[nodiscard]] bool written_test() const noexcept
     {
-        return self()->values != Base::get_cst_val1() && is_not_cst_val2();
+        return self()->values_ != Base::get_cst_val1() && is_not_cst_val2();
     }
 
   protected:
@@ -369,7 +369,7 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
     using Base::derived;
     using Base::is_bool;
     using Base::is_not_bool;
-    using Base::values;
+    using Base::values_;
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
     ///        first constant (init_chunks_cst_val).

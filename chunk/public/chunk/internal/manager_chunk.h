@@ -42,7 +42,7 @@
 
 #include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (CHUNK_ARENA_REPORT)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 
 namespace shrink_array
 {
@@ -741,7 +741,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         std::size_t collected = 0;
         // OpenMP builds only, like the re-chunk's sweep: the serial
-        // TCTypeAllocator has no empty_slab_sweep / collect_empty_slabs.
+        // TCTypeAllocator has no SlabSweep / collect_empty_slabs.
         if constexpr (chunk_config::use_fast_alloc && build_config::use_openmp)
         {
             if (CHUNK_PMP_IN_PARALLEL_REGION)
@@ -770,7 +770,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             std::sort(sets.begin(), sets.end());
             sets.erase(std::unique(sets.begin(), sets.end()), sets.end());
 
-            typename AllocT::empty_slab_sweep  sweep;
+            typename AllocT::SlabSweep         sweep;
             const unsigned int                 saved_sz = thread_chunk_size();
             for (const auto& [size, key] : sets)
             {

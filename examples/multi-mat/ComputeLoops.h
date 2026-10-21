@@ -39,14 +39,14 @@
 
 #include "config.h"       // multi_mat::begin_parallel_phase, barrier_phase, embedded_compression
 #include "Containers.h"   // VectChunk, dispatch
-#include "Dispatch.h"     // Dispatch::isChunk
+#include "Dispatch.h"     // Dispatch::is_chunk
 #include "MultiMatAlgo.h" // MultiMatAlgo
-#include "Simu.h"         // Simu: computeLoops() is defined here
+#include "Simu.h"         // Simu: compute_loops() is defined here
 
-template <typename LOOPS, typename LOOPSCHUNK>
-void Simu::compute_loops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
-                         const std::function<void(bool)>& lbd_stats,
-                         double&                          value)
+template <typename LoopsVec, typename LoopsChunk>
+void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
+                         const std::function<void(bool)>&    lbd_stats,
+                         double&                             value)
 {
     multi_mat::begin_parallel_phase(); // manual executable only, see config.h
 

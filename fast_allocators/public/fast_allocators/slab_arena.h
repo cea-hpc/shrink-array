@@ -267,7 +267,7 @@ std::size_t reclaimable_bytes(const Slab* slab) noexcept
         return 0;
     }
     const void* base = slab->data;
-    const auto  len  = static_cast<std::size_t>(slab->BlockAllocator);
+    const auto  len  = static_cast<std::size_t>(slab->block_allocator);
     if (base == nullptr || len == 0)
     {
         return 0;

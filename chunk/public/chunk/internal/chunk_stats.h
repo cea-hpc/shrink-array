@@ -31,12 +31,12 @@
  *     sharing (each slot is cache-line aligned). A reduction over threads is
  *     done once, at display time.
  *   - Increments are TEMPLATED on the chunk type: increm_chunk_read<C>()
- *     routes to __chunk_stats[C::stat_variant][rank].
+ *     routes to g_chunk_stats[C::stat_variant][rank].
  */
 
 // All of these serve the CHUNK_STATS half of the file only.
 #include <array>       // std::array
-#include <chrono>      // __chunk_stats_t0, the rates ParamChunk::ChunkStats() prints
+#include <chrono>      // g_chunk_stats_t0, the rates ParamChunk::chunk_stats() prints
 #include <map>         // std::map
 #include <mutex>       // std::mutex, std::scoped_lock
 #include <concepts>    // ChunkStatsZeroComparable
@@ -120,10 +120,10 @@ struct alignas(64) ChunkStatsThr
 
 /// @brief Program start, for the per-second rates ParamChunk::chunk_stats() shows
 ///        next to the gate counters. Static init: as early as the counters.
-inline const std::chrono::steady_clock::time_point __chunk_stats_t0 = std::chrono::steady_clock::now();
+inline const std::chrono::steady_clock::time_point g_chunk_stats_t0 = std::chrono::steady_clock::now();
 
 /// @brief [variant][thread] counter table. Defined once in chunk_std.cpp.
-extern std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant> __chunk_stats;
+extern std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant> g_chunk_stats;
 
 /**
  * @brief Current thread's counter slot for a variant.
@@ -136,14 +136,14 @@ extern std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_
  * TLS lookup): an increment runs on every read and write, and the raw call
  * costs a noticeable share of a stats build, skewing what is measured.
  */
-inline ChunkStatsThr& __chunk_stats_slot(int variant) noexcept
+inline ChunkStatsThr& chunk_stats_slot(int variant) noexcept
 {
     int rank = get_thr_rank_fast();
     if (rank < 0 || rank >= CHUNK_STATS_MAX_THR)
     {
         rank = 0;
     }
-    return __chunk_stats[variant][rank];
+    return g_chunk_stats[variant][rank];
 }
 
 // ---- increments (templated on the chunk type; no atomics) ------------------
@@ -152,70 +152,70 @@ inline ChunkStatsThr& __chunk_stats_slot(int variant) noexcept
 template <typename C>
 inline void increm_chunk_alloc() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).alloc++;
+    chunk_stats_slot(C::stat_variant).alloc++;
 }
 /// @brief Count one read served from a materialised buffer.
 template <typename C>
 void increm_chunk_read() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).read++;
+    chunk_stats_slot(C::stat_variant).read++;
 }
 /// @brief Count one read served straight from the constant (compressed chunk).
 template <typename C>
 void increm_chunk_read_cst() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).read_cst++;
+    chunk_stats_slot(C::stat_variant).read_cst++;
 }
 /// @brief Count one access that had to enter the slow sync path.
 template <typename C>
 void increm_chunk_read_sync() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).read_sync++;
+    chunk_stats_slot(C::stat_variant).read_sync++;
 }
 /// @brief Count one of those slow-sync accesses that needed the cross-rank walk.
 template <typename C>
 void increm_chunk_read_sync_cross() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).read_sync_cross++;
+    chunk_stats_slot(C::stat_variant).read_sync_cross++;
 }
 /// @brief Count one chunk creation.
 template <typename C>
 void increm_chunk_create() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).create++;
+    chunk_stats_slot(C::stat_variant).create++;
 }
 /// @brief Count one block handed out from the reuse list.
 template <typename C>
 void increm_chunk_list() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).list++;
+    chunk_stats_slot(C::stat_variant).list++;
 }
 /// @brief Add @p bytes bytes from a fresh allocation (alloc event).
 /// @param bytes Bytes allocated.
 template <typename C>
 void add_chunk_bytes_alloc(long bytes) noexcept
 {
-    __chunk_stats_slot(C::stat_variant).bytes_alloc += bytes;
+    chunk_stats_slot(C::stat_variant).bytes_alloc += bytes;
 }
 /// @brief Add @p bytes bytes handed out from the reuse list (list event).
 /// @param bytes Bytes reused.
 template <typename C>
 void add_chunk_bytes_reused(long bytes) noexcept
 {
-    __chunk_stats_slot(C::stat_variant).bytes_reused += bytes;
+    chunk_stats_slot(C::stat_variant).bytes_reused += bytes;
 }
 /// @brief Add @p bytes bytes returned by a real compression (compress event).
 /// @param bytes Bytes freed.
 template <typename C>
 void add_chunk_bytes_freed(long bytes) noexcept
 {
-    __chunk_stats_slot(C::stat_variant).bytes_freed += bytes;
+    chunk_stats_slot(C::stat_variant).bytes_freed += bytes;
 }
 /// @brief Count one chunk swept by clear_st at teardown (NOT a compression).
 template <typename C>
 void increm_chunk_teardown_clear() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).teardown_clear++;
+    chunk_stats_slot(C::stat_variant).teardown_clear++;
 }
 /// @brief Count @p n buffers released WITHOUT a compression, @p bytes in all.
 /// @param n     Buffers released.
@@ -223,105 +223,105 @@ void increm_chunk_teardown_clear() noexcept
 template <typename C>
 void add_chunk_released(long n, long bytes) noexcept
 {
-    __chunk_stats_slot(C::stat_variant).released += n;
-    __chunk_stats_slot(C::stat_variant).bytes_freed += bytes;
+    chunk_stats_slot(C::stat_variant).released += n;
+    chunk_stats_slot(C::stat_variant).bytes_freed += bytes;
 }
 /// @brief Add `nb` chunks found at the constant when the array is destroyed.
 /// @param nb Number of still-compressed chunks found.
 template <typename C>
 void add_chunk_still_compressed_at_exit(long nb) noexcept
 {
-    __chunk_stats_slot(C::stat_variant).still_compressed_at_exit += nb;
+    chunk_stats_slot(C::stat_variant).still_compressed_at_exit += nb;
 }
 /// @brief Count one successful compression (a block was released).
 template <typename C>
 void increm_chunk_compress() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).compress++;
+    chunk_stats_slot(C::stat_variant).compress++;
 }
 /// @brief Compress breakdown: count one buffer parked by clear_st.
 template <typename C>
 void increm_chunk_release_park() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).release_park++;
+    chunk_stats_slot(C::stat_variant).release_park++;
 }
 /// @brief Compress breakdown: count one buffer returned via free_block_to_pool.
 template <typename C>
 void increm_chunk_release_pool() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).release_pool++;
+    chunk_stats_slot(C::stat_variant).release_pool++;
 }
 /// @brief Compress breakdown: count one buffer freed via free_values.
 template <typename C>
 void increm_chunk_release_free() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).release_free++;
+    chunk_stats_slot(C::stat_variant).release_free++;
 }
 /// @brief Count one chunk scanned as a compression candidate.
 template <typename C>
 void increm_chunk_compress_attempt() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).compress_attempt++;
+    chunk_stats_slot(C::stat_variant).compress_attempt++;
 }
 /// @brief Count one write that newly marked a chunk as a candidate (CAS 0->1).
 template <typename C>
 void increm_chunk_mark_ok() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).mark_ok++;
+    chunk_stats_slot(C::stat_variant).mark_ok++;
 }
 /// @brief Count one write refused because the chunk was ALREADY flagged.
 template <typename C>
 void increm_chunk_mark_refused() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).mark_refused++;
+    chunk_stats_slot(C::stat_variant).mark_refused++;
 }
 /// @brief Count one CompressionManager::start() entered.
 template <typename C>
 void increm_chunk_gate_start() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).gate_start++;
+    chunk_stats_slot(C::stat_variant).gate_start++;
 }
 /// @brief Count one start() that yielded to a flush.
 template <typename C>
 void increm_chunk_gate_start_flush_yield() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).gate_start_flush_yield++;
+    chunk_stats_slot(C::stat_variant).gate_start_flush_yield++;
 }
 /// @brief Count one start() that yielded at the re-check, after the writer wait.
 template <typename C>
 void increm_chunk_gate_start_yield_late() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).gate_start_yield_late++;
+    chunk_stats_slot(C::stat_variant).gate_start_yield_late++;
 }
 /// @brief Count one start() that gave up after the writer-wait budget.
 template <typename C>
 void increm_chunk_gate_start_deferred() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).gate_start_deferred++;
+    chunk_stats_slot(C::stat_variant).gate_start_deferred++;
 }
 /// @brief Count one announce_flush().
 template <typename C>
 void increm_chunk_gate_flush() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).gate_flush++;
+    chunk_stats_slot(C::stat_variant).gate_flush++;
 }
 /// @brief Count one run_slow_path() driver.
 template <typename C>
 void increm_chunk_gate_driver() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).gate_driver++;
+    chunk_stats_slot(C::stat_variant).gate_driver++;
 }
 /// @brief Count one write deferred to a per-rank queue.
 template <typename C>
 void increm_chunk_gate_deferred() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).gate_deferred++;
+    chunk_stats_slot(C::stat_variant).gate_deferred++;
 }
 /// @brief Count one writer-side wait for a compressor, and the yields it spent.
 template <typename C>
 void increm_chunk_gate_wait(int yields, bool mark_hit) noexcept
 {
-    auto& slot = __chunk_stats_slot(C::stat_variant);
+    auto& slot = chunk_stats_slot(C::stat_variant);
     slot.gate_wait++;
     slot.gate_wait_yields += yields;
     if (mark_hit)
@@ -333,38 +333,38 @@ void increm_chunk_gate_wait(int yields, bool mark_hit) noexcept
 template <typename C>
 void increm_chunk_scan_read() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).scan_read++;
+    chunk_stats_slot(C::stat_variant).scan_read++;
 }
 /// @brief Count @p count element reads done by one scan (ChunkBase::scan_constants and friends).
 template <typename C>
 void add_chunk_scan_read(long count) noexcept
 {
-    __chunk_stats_slot(C::stat_variant).scan_read += count;
+    chunk_stats_slot(C::stat_variant).scan_read += count;
 }
 /// @brief Count one rechunk_to() operation (geometry change).
 template <typename C>
 void increm_chunk_rechunk() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).rechunk++;
+    chunk_stats_slot(C::stat_variant).rechunk++;
 }
 /// @brief Count one new chunk actually rebuilt by a rechunk.
 template <typename C>
 void increm_chunk_rechunk_rebuilt() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).rechunk_rebuilt++;
+    chunk_stats_slot(C::stat_variant).rechunk_rebuilt++;
 }
 /// @brief Count one new chunk left compressed by a rechunk (nothing to rebuild).
 template <typename C>
 void increm_chunk_rechunk_skipped() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).rechunk_skipped++;
+    chunk_stats_slot(C::stat_variant).rechunk_skipped++;
 }
 
 /// @brief Count one write, unconditionally (see the value-aware overload below).
 template <typename C>
 void increm_chunk_write() noexcept
 {
-    __chunk_stats_slot(C::stat_variant).write++;
+    chunk_stats_slot(C::stat_variant).write++;
 }
 
 /**
@@ -401,12 +401,12 @@ void increm_chunk_write(V v) noexcept
     {
         if (v != V{})
         {
-            __chunk_stats_slot(C::stat_variant).write++;
+            chunk_stats_slot(C::stat_variant).write++;
         }
     }
     else
     {
-        __chunk_stats_slot(C::stat_variant).write++;
+        chunk_stats_slot(C::stat_variant).write++;
     }
 }
 
@@ -415,7 +415,7 @@ void increm_chunk_write(V v) noexcept
 /// @brief Reset every (variant, thread) counter slot to zero.
 inline void init_all_stats() noexcept
 {
-    for (auto& per_variant : __chunk_stats)
+    for (auto& per_variant : g_chunk_stats)
     {
         for (ChunkStatsThr& slot : per_variant)
         {
@@ -431,13 +431,13 @@ inline void init_all_stats() noexcept
  *          map is fine. Static builds (chunk_dynamic == false) never touch it:
  *          every array has the same compile-time size.
  */
-inline std::array<std::mutex, chunk_stats_n_variant> __chunk_size_dist_mutex;
-/// @brief See __chunk_size_dist_mutex.
-inline std::array<std::map<unsigned int, long>, chunk_stats_n_variant> __chunk_size_dist;
+inline std::array<std::mutex, chunk_stats_n_variant> g_chunk_size_dist_mutex;
+/// @brief See g_chunk_size_dist_mutex.
+inline std::array<std::map<unsigned int, long>, chunk_stats_n_variant> g_chunk_size_dist;
 
 /**
  * @brief Record one array's current chunk size in the end-of-life size
- *        distribution (__chunk_size_dist). No-op on static builds or when
+ *        distribution (g_chunk_size_dist). No-op on static builds or when
  *        stats are disabled.
  * @tparam C Chunk type (selects the variant slot).
  * @param size The array's current chunk size.
@@ -447,8 +447,8 @@ inline void record_chunk_size_at_exit(unsigned int size) noexcept
 {
     if constexpr (build_config::chunk_dynamic && chunk_config::stats)
     {
-        const std::scoped_lock lock(__chunk_size_dist_mutex[C::stat_variant]);
-        ++__chunk_size_dist[C::stat_variant][size];
+        const std::scoped_lock lock(g_chunk_size_dist_mutex[C::stat_variant]);
+        ++g_chunk_size_dist[C::stat_variant][size];
     }
 }
 
@@ -463,7 +463,7 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
     const int     nthr = CHUNK_PMP_MAX_THREADS < CHUNK_STATS_MAX_THR ? CHUNK_PMP_MAX_THREADS : CHUNK_STATS_MAX_THR;
     for (int t = 0; t < nthr; ++t)
     {
-        const ChunkStatsThr& slot = __chunk_stats[variant][t];
+        const ChunkStatsThr& slot = g_chunk_stats[variant][t];
         acc.alloc += slot.alloc;
         acc.write += slot.write;
         acc.read += slot.read;

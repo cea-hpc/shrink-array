@@ -396,7 +396,7 @@ void ParamChunk::chunk_stats()
         if (stats.gate_start != 0 || stats.gate_flush != 0 || stats.gate_driver != 0)
         {
             const double secs =
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - __chunk_stats_t0).count();
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - g_chunk_stats_t0).count();
             const auto rate = [secs](long count) { return secs > 0 ? static_cast<double>(count) / secs : 0.0; };
             std::cout << std::fixed << std::setprecision(0);
             std::cout << "  gate start     = " << stats.gate_start << "  (" << rate(stats.gate_start) << "/s; yield "
@@ -431,8 +431,8 @@ void ParamChunk::chunk_stats()
 
             // Chunk size of each array at its own teardown (record_chunk_size_at_exit).
             {
-                const std::scoped_lock lock(shrink_array::__chunk_size_dist_mutex[v]);
-                const auto&            dist = shrink_array::__chunk_size_dist[v];
+                const std::scoped_lock lock(shrink_array::g_chunk_size_dist_mutex[v]);
+                const auto&            dist = shrink_array::g_chunk_size_dist[v];
                 if (!dist.empty())
                 {
                     std::cout << "  size dist      arrays at each chunk size, at their own teardown:\n";

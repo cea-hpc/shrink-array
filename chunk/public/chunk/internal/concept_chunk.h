@@ -50,12 +50,12 @@ concept IsChunk2Or2A = IsChunk2<ChunkT, T> || IsChunk2A<ChunkT, T>;
 template <typename>
 struct chunk_template_of;
 
-/// @brief For CH\<T\>, type\<U\> names CH\<U\>.
-template <template <typename> typename CH, typename T>
-struct chunk_template_of<CH<T>>
+/// @brief For ChunkTemplate\<T\>, type\<U\> names ChunkTemplate\<U\>.
+template <template <typename> typename ChunkTemplate, typename T>
+struct chunk_template_of<ChunkTemplate<T>>
 {
     template <typename U>
-    using type = CH<U>;
+    using type = ChunkTemplate<U>;
 };
 
 } // namespace shrink_array

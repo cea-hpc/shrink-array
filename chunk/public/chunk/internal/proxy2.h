@@ -24,7 +24,7 @@
 #include <vector>   // std::vector
 
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/in_t.h"               // in_t<T>
+#include "chunk/internal/in_t.h"               // InT<T>
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/crp_helper.h"         // CRTPSupport
@@ -39,7 +39,7 @@
 #include "chunk/internal/proxy2_base.h"                 // Proxy2Base
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 
 // compression_manager.h (CompressionManagerType) comes unconditionally through proxy_base.h.
 
@@ -377,13 +377,13 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     using Base2 = Proxy2Base<Derived, T, Chunk2<T>>;
     using Base  = ProxyBase<Derived, T, Chunk2<T>>;
 
-    using Base::chunk;
-    using Base::num;
+    using Base::chunk_;
+    using Base::num_;
     using Base::read_values;
     using Base::read_values_async;
     using Base::tab_is_inside_chunk_list_to_compress;
-    using Base::values;
-    using ProxySpec2<T, Derived>::inf_array;
+    using Base::values_;
+    using ProxySpec2<T, Derived>::inf_array_;
 
     // second_value is in a dependent base: import it for unqualified use (two-phase lookup).
     using ProxySpec2<T, Derived>::second_value_;
@@ -434,12 +434,12 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *        materialise the chunk referenced by `ctx` if it is at either
      *        constant, run `operation` on the reloaded values pointer, then
      *        mark for compression based on the old/new values.
-     * @tparam LAMBDA Callable performing the actual in-place modification.
+     * @tparam Lambda Callable performing the actual in-place modification.
      * @param ctx Async write context.
      * @param operation The operation to run.
      */
-    template <typename LAMBDA>
-    void execute_inplace_operation_async(auto* ctx, LAMBDA operation) const;
+    template <typename Lambda>
+    void execute_inplace_operation_async(auto* ctx, Lambda operation) const;
 
   private:
     /// @brief The calling thread pushed a candidate that took its list past
@@ -454,12 +454,12 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *        materialise the chunk referenced by `ctx` if it is at either
      *        constant, run `operation` on the reloaded values pointer, then
      *        mark for compression based on the old/new values.
-     * @tparam LAMBDA Callable performing the actual write.
+     * @tparam Lambda Callable performing the actual write.
      * @param ctx Async write context.
      * @param operation The write to perform.
      */
-    template <typename LAMBDA>
-    void execute_simple_operation_async(auto* ctx, LAMBDA operation);
+    template <typename Lambda>
+    void execute_simple_operation_async(auto* ctx, Lambda operation);
 
     /**
      * @brief Async-context counterpart of Proxy2::execute_arithmetic_compound_operation().
@@ -470,16 +470,16 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          the result directly and marks for compression. If the chunk
      *          is at the second constant AND the result would stay there,
      *          this is a no-op (the chunk remains correctly compressed).
-     * @tparam OP Binary operator (e.g. std::multiplies<>, std::divides<>).
-     * @tparam LAMBDA Callable used only on the materialise-and-apply path.
+     * @tparam Op Binary operator (e.g. std::multiplies<>, std::divides<>).
+     * @tparam Lambda Callable used only on the materialise-and-apply path.
      * @tparam U Type of the operand.
      * @param ctx Async write context.
      * @param op The operator to apply.
      * @param operand Operand to combine with the current value.
      * @param operation Called (with `op`) when the chunk had to be materialised.
      */
-    template <typename OP, typename LAMBDA, typename U>
-    void execute_arithmetic_compound_operation_async(auto* ctx, OP op, const U& operand, LAMBDA operation) const;
+    template <typename Op, typename Lambda, typename U>
+    void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& operand, Lambda operation) const;
 
     /**
      * @brief This proxy's second constant value. Bool: always true.
@@ -642,12 +642,12 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @details Deferred-compression form: the result is compared with the second constant
      *          BEFORE the store, then the write is marked for compression. The serial
      *          specialisation keeps per-chunk counters instead.
-     * @tparam OP Binary operator to apply.
-     * @tparam LAMBDA Callable `(op)` used on the materialise-and-apply path.
+     * @tparam Op Binary operator to apply.
+     * @tparam Lambda Callable `(op)` used on the materialise-and-apply path.
      * @tparam U Type of the operand.
      */
-    template <typename OP, typename LAMBDA, typename U>
-    void execute_arithmetic_compound_operation(OP op, const U& operand, LAMBDA operation);
+    template <typename Op, typename Lambda, typename U>
+    void execute_arithmetic_compound_operation(Op op, const U& operand, Lambda operation);
 
     /**
      * @brief Mark chunk for compression if new value creates compression opportunity
@@ -752,10 +752,10 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
      *        counter path -- a chunk leaving its second constant gets its
      *        second-value counter set, and `operation` writes through the
      *        values pointer it is handed.
-     * @tparam LAMBDA Callable `(op, T* values)`.
+     * @tparam Lambda Callable `(op, T* values)`.
      */
-    template <typename OP, typename LAMBDA, typename U>
-    void execute_arithmetic_compound_operation(OP op, const U& operand, LAMBDA operation);
+    template <typename Op, typename Lambda, typename U>
+    void execute_arithmetic_compound_operation(Op op, const U& operand, Lambda operation);
 
   private:
     // Used by the counter-based handlers above (the Enabled=true specialisation has its own).
@@ -910,20 +910,20 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @brief Run an arbitrary write operation on this element, materialising
      *        the chunk first if it is currently compressed, then marking
      *        for compression based on the old/new values.
-     * @tparam LAMBDA Callable performing the actual write.
+     * @tparam Lambda Callable performing the actual write.
      * @param operation The write to perform.
      */
-    template <typename LAMBDA>
-    void execute_simple_operation(LAMBDA operation);
+    template <typename Lambda>
+    void execute_simple_operation(Lambda operation);
 
     /**
      * @brief Run an arbitrary in-place operation on this element,
      *        materialising the chunk first if it is currently compressed.
-     * @tparam LAMBDA Callable performing the actual in-place modification.
+     * @tparam Lambda Callable performing the actual in-place modification.
      * @param operation The operation to run.
      */
-    template <typename LAMBDA>
-    void execute_inplace_operation(LAMBDA operation);
+    template <typename Lambda>
+    void execute_inplace_operation(Lambda operation);
 
     // ========================================================================
     // ASSIGNMENT OPERATOR

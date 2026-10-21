@@ -46,7 +46,7 @@
 #include <iterator> // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
-#include "chunk/internal/in_t.h"                // in_t<T>
+#include "chunk/internal/in_t.h"                // InT<T>
 #include "chunk/chunk_traits.h"                 // ArrayChunkTraits, Proxy2
 #include "chunk/internal/crp_helper.h"          // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
