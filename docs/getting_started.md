@@ -200,6 +200,47 @@ compression and materialisation are the library's business. Two accesses to the 
 element** from different threads must be ordered by your program (a barrier, a `critical`
 section, a lock, release/acquire atomics), exactly as on a `std::vector`.
 
+**With OMPT, the `std::vector` loop as it is.** With a library built with OMPT (Clang, oneAPI),
+the same OpenMP loop fills a `std::vector` and a compressed array: no `parallel_phase()`, no
+phase call. Linked as in §3, with `OpenMP::OpenMP_CXX` too:
+
+```cpp
+#include <cstdio>
+#include <utility>                 // std::as_const
+#include <vector>
+
+#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+
+namespace sa = shrink_array;
+
+template <typename Array>
+void fill(Array& t, int n)
+{
+#pragma omp parallel for
+    for (int i = 0; i < n / 2; ++i)
+        t[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+
+int main()
+{
+    const int n = 1 << 24;
+
+    std::vector<double>      v(n);
+    sa::ArrayChunk2A<double> a(n);
+    fill(v, n);                          // the reference
+    fill(a, n);                          // the same loop: no parallel_phase(), no phase calls
+
+    // Read through a const view: on a non-const array, a[i] is a write proxy.
+    const auto& ca  = std::as_const(a);
+    long        bad = 0;
+    for (int i = 0; i < n; ++i)
+        bad += (ca[i] != v[i]);
+
+    std::printf("%s: %ld element(s) differ out of %d\n", bad == 0 ? "OK" : "FAIL", bad, n);
+    return bad == 0 ? 0 : 1;
+}
+```
+
 **Phases, without OMPT.** When a writer meets a compression in progress on its chunk, the
 library **defers** its write and replays it later. It also compresses between parallel regions.
 With OMPT (Clang, oneAPI builds) the OpenMP runtime tells the library where regions begin and

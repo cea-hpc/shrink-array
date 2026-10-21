@@ -205,6 +205,47 @@ compression et matérialisation sont l'affaire de la bibliothèque. Deux accès 
 une section `critical`, un verrou, des atomiques release/acquire), exactement comme sur un
 `std::vector`.
 
+**Avec OMPT, la boucle du `std::vector` telle quelle.** Avec une bibliothèque construite avec
+OMPT (Clang, oneAPI), la même boucle OpenMP remplit un `std::vector` et un tableau compressé :
+ni `parallel_phase()`, ni appel de phase. Lié comme au §3, avec `OpenMP::OpenMP_CXX` en plus :
+
+```cpp
+#include <cstdio>
+#include <utility>                 // std::as_const
+#include <vector>
+
+#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+
+namespace sa = shrink_array;
+
+template <typename Array>
+void fill(Array& t, int n)
+{
+#pragma omp parallel for
+    for (int i = 0; i < n / 2; ++i)
+        t[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+}
+
+int main()
+{
+    const int n = 1 << 24;
+
+    std::vector<double>      v(n);
+    sa::ArrayChunk2A<double> a(n);
+    fill(v, n);                          // la référence
+    fill(a, n);                          // la même boucle : ni parallel_phase(), ni appels de phase
+
+    // Lire par une vue const : sur un tableau non const, a[i] est un proxy d'écriture.
+    const auto& ca  = std::as_const(a);
+    long        bad = 0;
+    for (int i = 0; i < n; ++i)
+        bad += (ca[i] != v[i]);
+
+    std::printf("%s: %ld element(s) differ out of %d\n", bad == 0 ? "OK" : "FAIL", bad, n);
+    return bad == 0 ? 0 : 1;
+}
+```
+
 **Les phases, sans OMPT.** Quand un écrivain rencontre une compression en cours sur son chunk,
 la bibliothèque **diffère** son écriture et la rejoue plus tard. Elle compresse aussi entre les
 régions parallèles. Avec OMPT (builds Clang, oneAPI), le runtime OpenMP lui signale le début et
