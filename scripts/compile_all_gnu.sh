@@ -186,7 +186,9 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-addr
   "gnu relwithdebinfo openmp std-alloc address sanitizer"
 
 # Optimised TSan build with the switches of the *_check_* benchmark binaries:
-# fast allocator (default), HAVE_AGGRESSIVE_COMPRESSION, CHECK_OPTIM,
+# fast allocator (default), CHECK_OPTIM, and CHUNK_AGGRESSIVE_COMPRESSION=1 at
+# run time for the aggressive scheduling (a run-time switch now: this build was
+# ...-thread-sanitizer-have-aggressive-compression when it was a compile-time one),
 # RelWithDebInfo so inlining and scheduling are the production ones (a race
 # that needs them does not show in a Debug build). GNU-specific caveat: libgomp is not TSan-instrumented, so TSan does not
 # see its barriers and reports a race at every parallel-region boundary (the
@@ -194,9 +196,9 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-addr
 # output next to the LLVM+libomp twin in compile_all.sh, whose runtime carries
 # the barrier annotations; a report that only the GNU build shows is a
 # barrier the tool did not see, a report both show is a bug.
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-thread-sanitizer-have-aggressive-compression${ICF_SUFFIX}/$arch" \
-  "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu relwithdebinfo openmp thread sanitizer have_aggressive_compression"
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-check-thread-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DCHECK_OPTIM=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu relwithdebinfo openmp check thread sanitizer"
 
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
@@ -251,13 +253,9 @@ else
       "gnu openmp std allocator"
 fi
 
-if skip_release; then
-    echo "[debug-only] skipping gnu openmp have_aggressive_compression"
-else
-    compile_with_cmake "$build_rep/cmake-build-omp-gnu-have-aggressive-compression${ICF_SUFFIX}/$arch" \
-      "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
-      "gnu openmp have_aggressive_compression"
-fi
+# No -have-aggressive-compression build any more: the switch is a run-time one
+# (CHUNK_AGGRESSIVE_COMPRESSION=1, chunk/config.h); bench_and_test.py and
+# multi_launch_stress.py run cmake-build-omp-gnu with it under that name.
 
 if skip_release; then
     echo "[debug-only] skipping gnu"
@@ -330,10 +328,6 @@ fi
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc${ICF_SUFFIX}/$arch" \
   "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug openmp std allocator"
-
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-have-aggressive-compression${ICF_SUFFIX}/$arch" \
-  "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu debug openmp have_aggressive_compression"
 
 compile_with_cmake "$build_rep/cmake-build-gnu-debug${ICF_SUFFIX}/$arch" \
   "-DOMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \

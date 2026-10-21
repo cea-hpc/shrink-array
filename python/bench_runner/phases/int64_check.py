@@ -6,7 +6,7 @@ import sys
 from ..builds import int64_variant, oracle_complete, oracle_dir, resolve_exe, short_config_label
 from ..progress import CONFIG_W, VARIANT_W
 from ..runs import _append_error_now, effective_timeout, repro_line, run_cmd
-from ..settings import INT64_CHECK_VARIANTS, sanitizer_env_for
+from ..settings import INT64_CHECK_VARIANTS, config_env, sanitizer_env_for
 from ..term import _hms, bold, cyan, dim, green, red, yellow
 
 
@@ -44,7 +44,7 @@ def run_int64_check_phase(args, extra_ldpath, errors):
                      f"{shown[:VARIANT_W + 6]:<{VARIANT_W + 6}} | ")
             sys.stdout.write("\r" + lead + "running…       ")
             sys.stdout.flush()
-            run_env = {**env, **sanitizer_env_for(cfg)}
+            run_env = {**env, **sanitizer_env_for(cfg), **config_env(cfg)}
             run_cwd = oracle_dir(args.output_dir, cfg)
             ok, dur, code, err_tail, _ = run_cmd(
                 [exe, "--mode", "check"], run_env, to,

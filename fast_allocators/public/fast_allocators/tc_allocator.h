@@ -22,32 +22,32 @@
  *
  * Four layers, bottom to top:
  *
- *  - ::TCSlab is ONE slab. It owns a block of memory, hands out fixed-size
+ *  - fast_alloc::TCSlab is ONE slab. It owns a block of memory, hands out fixed-size
  *    elements from it, and keeps a free list of the elements handed back. It
- *    is also the node of an intrusive list. ::TCAllocator and ::TCCAllocator
+ *    is also the node of an intrusive list. fast_alloc::TCAllocator and fast_alloc::TCCAllocator
  *    are its two kinds (see below).
- *  - ::sl_insert, ::sl_remove, ::sl_manage_full_empty and ::sl_delete_all are
+ *  - fast_alloc::sl_insert, fast_alloc::sl_remove, fast_alloc::sl_manage_full_empty and fast_alloc::sl_delete_all are
  *    the list primitives, shared by every family so a fix lands in one place.
- *  - ::TCSlabPool owns a SET of slabs for one element size, split three ways:
+ *  - fast_alloc::TCSlabPool owns a SET of slabs for one element size, split three ways:
  *    `block` (room left), `block_full`, and `block_empty` (a small reserve of
- *    emptied slabs kept for reuse). ::TCTypeAllocator and ::TCTypeCAllocator
+ *    emptied slabs kept for reuse). fast_alloc::TCTypeAllocator and fast_alloc::TCTypeCAllocator
  *    are its two pools, one per slab kind, with what is theirs alone.
- *  - ::TCTypeAllocatorEBC is a third family whose element and block sizes are
+ *  - fast_alloc::TCTypeAllocatorEBC is a third family whose element and block sizes are
  *    template parameters rather than run-time values.
  *
  * @par Why two slab kinds
- * ::TCAllocator threads its free list THROUGH the freed elements, writing the
- * next free index into the element's first bytes. ::TCCAllocator does not: it
+ * fast_alloc::TCAllocator threads its free list THROUGH the freed elements, writing the
+ * next free index into the element's first bytes. fast_alloc::TCCAllocator does not: it
  * keeps the links in a side array (TCSlab::tab_firstFree) and never writes
  * into a free element, so an emptied slab's pages can be dropped with madvise()
  * without losing anything the allocator needs. That side array is indexed by
  * `unsigned short`, which is what caps a TCCAllocator slab at
- * TCSlab::free_list_end - 1 elements. ::FreeLinks names the choice.
+ * TCSlab::free_list_end - 1 elements. fast_alloc::FreeLinks names the choice.
  *
  * @par Configuration
  * The options are read in alloc_config.h only (FAST_ALLOC_DBG_ASSERT aside), so
  * the bodies here branch with `if constexpr`: both arms must compile in every
- * configuration. See ::bypass_slabs.
+ * configuration. See fast_alloc::bypass_slabs.
  *
  * @warning A slab's own address is recovered from any interior pointer by
  *          masking (TCSlab::slab_from), which requires the block to be
@@ -201,8 +201,8 @@ enum class FreeLinks : std::uint8_t
  *          the fill functors of allocate_chunk_internal() for v2/v2A; the op
  *          pools construct every op at its own block.
  *
- * @tparam Links Where the free list keeps its links: ::TCAllocator threads it
- *         through the elements, ::TCCAllocator keeps it aside.
+ * @tparam Links Where the free list keeps its links: fast_alloc::TCAllocator threads it
+ *         through the elements, fast_alloc::TCCAllocator keeps it aside.
  */
 template <FreeLinks Links>
 class alignas(64) TCSlab
@@ -673,7 +673,7 @@ void sl_delete_all(Node* block, Node* block_full, Node* const* block_empty, int 
 }
 
 /**
- * @brief Type-erased handle on a ::TCTypeAllocator, for the memory report.
+ * @brief Type-erased handle on a fast_alloc::TCTypeAllocator, for the memory report.
  * @details Every instance registers itself so a total can be taken across all
  *          element types without the reporting code knowing any of them.
  */
@@ -708,14 +708,14 @@ void remove_TCTypeAllocator_inst(VTCTypeAllocator* /*inst*/);
 
 /**
  * @brief Owns every slab serving one element size: the machinery common to
- *        ::TCTypeAllocator and ::TCTypeCAllocator.
+ *        fast_alloc::TCTypeAllocator and fast_alloc::TCTypeCAllocator.
  *
  * @details Slabs are kept in three places, and which one a slab is in is a
  *          function of its `nn_ref`: #block has room, #block_full has none, and
  *          #block_empty is a small reserve of emptied slabs kept back so the
  *          next allocation does not have to go to the arena. alloc() and the
  *          frees move slabs between them; the moves themselves live in
- *          ::sl_manage_full_empty.
+ *          fast_alloc::sl_manage_full_empty.
  *
  * @tparam Derived The pool (CRTP). It provides, as `static constexpr`:
  *         `eager_first_slab` (init() creates the first slab), `zero_std_alloc`
@@ -723,7 +723,7 @@ void remove_TCTypeAllocator_inst(VTCTypeAllocator* /*inst*/);
  *         `pool_name` (for the [MUNMAP] trace).
  * @tparam ElemT Element type. What is handed out is an ARRAY of these --
  *         init() takes a count, and alloc() returns a pointer to the first.
- * @tparam Slab ::TCAllocator or ::TCCAllocator.
+ * @tparam Slab fast_alloc::TCAllocator or fast_alloc::TCCAllocator.
  *
  * @note One instance per (element size, thread) in the OpenMP value pools.
  *       Nothing here is synchronised: a thread only ever touches its own
@@ -750,7 +750,7 @@ class TCSlabPool
      * @brief Set the geometry. Call once, before any allocation.
      *
      * @param ElementSize_ Number of ElementType per allocation -- a COUNT, not
-     *        a byte size. Stored as bytes unless bypassing; see ::bypass_slabs.
+     *        a byte size. Stored as bytes unless bypassing; see fast_alloc::bypass_slabs.
      * @param BlockAllocator_ Slab size in bytes, rounded up to a power of two.
      * @param nb_max_block_emptyl Capacity of the emptied-slab reserve.
      *        NEGATIVE means "never release a slab", which also means the reserve
@@ -758,7 +758,7 @@ class TCSlabPool
      *
      * @note Whether the first slab is created here is the pool's call
      *       (`Derived::eager_first_slab`); alloc() makes one anyway when #block
-     *       is null. ::TCTypeCAllocator creates none: eager priming would cost
+     *       is null. fast_alloc::TCTypeCAllocator creates none: eager priming would cost
      *       one slab per (thread, geometry) pair that never allocates, and the
      *       value arena never takes a slab back.
      */
@@ -1032,7 +1032,7 @@ class TCSlabPool
      * @brief Choose which arena this pool's slabs are drawn from.
      * @param k Op, Ctx or Value.
      * @warning Must be set BEFORE the first slab is taken (copied into each
-     *          slab at creation). ::TCTypeAllocator defaults to Op: a pool that
+     *          slab at creation). fast_alloc::TCTypeAllocator defaults to Op: a pool that
      *          holds values must say so, or its slabs share the op pool's address
      *          space (the aliasing slab_arena.h prevents).
      */
@@ -1092,7 +1092,7 @@ class TCSlabPool
     /// @brief The pool as its slabs name it (TCSlab::owner): the DERIVED
     ///        object. ChunkBase::release_to_owner casts the owner back to the
     ///        pool type, and a base subobject need not share its address --
-    ///        ::TCTypeAllocator's sits after the ::VTCTypeAllocator vtable.
+    ///        fast_alloc::TCTypeAllocator's sits after the fast_alloc::VTCTypeAllocator vtable.
     [[nodiscard]] const void* self() const noexcept
     {
         return static_cast<const Derived*>(this);
@@ -1249,18 +1249,18 @@ class TCSlabPool
 };
 
 /**
- * @brief Owns every ::TCAllocator slab serving one element size.
+ * @brief Owns every fast_alloc::TCAllocator slab serving one element size.
  *
  * @details The serial family, and the op and ctx pools of every build:
- *          ::TCSlabPool over slabs whose free list runs through the elements.
+ *          fast_alloc::TCSlabPool over slabs whose free list runs through the elements.
  *          init() creates the first slab, the slabs draw from the op arena
  *          unless set_arena() says otherwise, and every instance enrols in the
- *          ::VTCTypeAllocator registry for the memory report.
+ *          fast_alloc::VTCTypeAllocator registry for the memory report.
  *
  * @tparam ElemT Element type; an allocation is an ARRAY of these.
  *
- * @note ::TCTypeCAllocator is its OpenMP value counterpart (links outside the
- *       payload); ::TCTypeAllocatorEBC is the compile-time geometry variant.
+ * @note fast_alloc::TCTypeCAllocator is its OpenMP value counterpart (links outside the
+ *       payload); fast_alloc::TCTypeAllocatorEBC is the compile-time geometry variant.
  */
 template <typename ElemT>
 class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeAllocator<ElemT>, ElemT, TCAllocator>
@@ -1329,13 +1329,13 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
 #ifdef _OPENMP
 
 /**
- * @brief Owns every ::TCCAllocator slab serving one element size.
+ * @brief Owns every fast_alloc::TCCAllocator slab serving one element size.
  *
- * @details The OpenMP value pools: ::TCSlabPool over slabs that keep their free
+ * @details The OpenMP value pools: fast_alloc::TCSlabPool over slabs that keep their free
  *          list outside the payload, so an emptied slab can be madvised away
  *          (collect_empty_slabs(), its own part). Its slabs draw from the
  *          value arena; init() creates none; it does not enrol in the
- *          ::VTCTypeAllocator report registry; under FAST_ALLOC_STD_ALLOC it zero-fills
+ *          fast_alloc::VTCTypeAllocator report registry; under FAST_ALLOC_STD_ALLOC it zero-fills
  *          what it hands out.
  *
  *          alignas(64): it lives in per-rank arrays; unaligned, one rank's list
@@ -1369,6 +1369,7 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
     ///          drain), never on the hot path. Several instances (every rank,
     ///          several keys) may feed ONE sweep, so adjacent runs merge across
     ///          them. EmptySlabSweep's preconditions hold until its flush.
+    /// @param sweep      The batch the empty slabs are handed to.
     /// @param keep_empty Empty slabs this instance keeps resident (the first
     ///        ones found), for its next allocations: a sweep between two
     ///        phases that keeps a few does not give back, then fault in again,
@@ -1422,7 +1423,7 @@ using free_index_t = std::conditional_t<bytes == 1, signed char, std::conditiona
 /**
  * @brief One slab whose element and block sizes are template parameters.
  *
- * @details Same job as ::TCAllocator, with the geometry known at compile time:
+ * @details Same job as fast_alloc::TCAllocator, with the geometry known at compile time:
  *          the capacity, the shift used for indexing and the free-list index
  *          width all become constants, so the division in num_block() and the
  *          per-slab geometry fields go away.
@@ -1430,7 +1431,7 @@ using free_index_t = std::conditional_t<bytes == 1, signed char, std::conditiona
  * @tparam ElementBytes Element size in bytes.
  * @tparam BlockBytes Block size in bytes.
  *
- * @note Used only through ::TCTypeAllocatorEBC, which owns the slab lists.
+ * @note Used only through fast_alloc::TCTypeAllocatorEBC, which owns the slab lists.
  */
 template <unsigned int ElementBytes, unsigned int BlockBytes>
 class TCAllocatorEB
@@ -1496,7 +1497,7 @@ class TCAllocatorEB
      * @return Raw, uninitialised memory.
      * @pre The slab is not full -- the caller checks is_full().
      * @details Free list threaded through the freed elements, as in
-     *          ::TCAllocator, but with the index narrowed to #T so a small block
+     *          fast_alloc::TCAllocator, but with the index narrowed to #T so a small block
      *          does not spend four bytes per element on it.
      */
     void* alloc() noexcept
@@ -1663,7 +1664,7 @@ class TCAllocatorEB
 };
 
 /**
- * @brief Owns every ::TCAllocatorEB slab for one compile-time geometry.
+ * @brief Owns every fast_alloc::TCAllocatorEB slab for one compile-time geometry.
  *
  * @details Third slab family, same three-way split (#block, #block_full,
  *          #block_empty); the geometry is a template parameter, so indexing
@@ -1675,7 +1676,7 @@ class TCAllocatorEB
  * @note This is what StaticConstArray's size ladder is built from -- one
  *       instance per small block size (4, 8, 24, ... bytes).
  *
- * @note Like ::TCTypeCAllocator, the constructor takes no slab: the first
+ * @note Like fast_alloc::TCTypeCAllocator, the constructor takes no slab: the first
  *       alloc() makes one. Do not seed eagerly: across all of StaticConstArray's
  *       buckets that reserves ~100 MiB of address space up front.
  */
@@ -1822,7 +1823,7 @@ class TCTypeAllocatorEBC
     /**
      * @brief Re-file @p slab after a free, EBC's own way.
      *
-     * @details Deliberately NOT ::sl_manage_full_empty. Three differences: a
+     * @details Deliberately NOT fast_alloc::sl_manage_full_empty. Three differences: a
      *          slab that comes back from full returns immediately instead of
      *          also being tested for emptiness; there is no never-release
      *          branch, the reserve being a fixed inline array; and a slab past

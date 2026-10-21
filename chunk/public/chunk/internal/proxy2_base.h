@@ -280,6 +280,9 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          race changed it), but before the store memory still holds the
      *          old value, so its check would fire on every write that changes
      *          the value and queue the chunk whatever should_mark said.
+     * @param second_val  The second constant value
+     * @param new_value   The value about to be stored
+     * @param first_value The first constant value
      * @param vals The chunk's values pointer, loaded by the caller inside the
      *        write session: the old value and the race check read through it
      *        instead of reloading it (see Proxy2A::handle_no_bool_assignment).

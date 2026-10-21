@@ -69,7 +69,7 @@ class TCTypeAllocator
         return true;
     }
 
-    /// @brief Allocate sizeof(T) bytes with ::operator new.
+    /// @brief Allocate sizeof(T) bytes with the global operator new.
     std::byte* alloc()
     {
         return static_cast<std::byte*>(::operator new(sizeof(T)));

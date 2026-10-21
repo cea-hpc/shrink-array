@@ -7,6 +7,7 @@ import time
 from ..builds import is_compression_only_config, skip_variant_on_config
 from ..progress import _prog, get_progress_bar
 from ..runs import _append_error_now, effective_timeout, run_with_rebuild_retry
+from ..settings import config_env
 from ..term import bold, cyan, dim, green, red, yellow
 
 
@@ -55,7 +56,7 @@ def run_perf_phase(args, plan, counter, errors, results):
 
                     ok, dur, code, err_tail, mem_mo, exe = run_with_rebuild_retry(
                         args.build_root, cfg, var, "perf", exe,
-                        {"OMP_NUM_THREADS": str(tc)}, _timeout,
+                        {"OMP_NUM_THREADS": str(tc), **config_env(cfg)}, _timeout,
                         plan.extra_ldpath,
                         args.rebuild_retries, args.rebuild_wait,
                         cwd=args.output_dir

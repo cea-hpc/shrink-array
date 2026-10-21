@@ -66,9 +66,11 @@
  * finalize. Such a program is outside the protocol anyway (manage_ompt.h).
  */
 
-#include <atomic> // std::atomic, std::memory_order_relaxed
+#include <algorithm> // std::min (teams::manual_end)
+#include <atomic>    // std::atomic, std::memory_order_relaxed
+#include <cstddef>   // std::size_t (teams::rank_holders)
 
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_LEVEL, chunk_pmp_team_rank
+#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_*, chunk_pmp_team_rank, chunk_thread_capacity
 #include "chunk/config.h"                   // build_config::any_check, build_config::has_not_ompt
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
@@ -151,4 +153,102 @@ inline void check_write(const void* chunk, long num) noexcept
         }
     }
 }
+// ── One top-level team at a time (every OpenMP build) ────────────────────────
+// The per-rank structures are indexed by the rank in the team, and the end of a
+// phase drains every rank's queue: two top-level teams writing arrays at once --
+// opened by two host threads -- share ranks 0..n-1, one team's phase end replays
+// the other's writes in the middle of its region, and their writers clear each
+// other's flags (wrong values in a release build). The second team is refused,
+// in every build, once an array exists (before, nothing is shared):
+//  - OMPT: the parallel_begin / parallel_end callbacks count the top-level
+//    regions (outer_team_begin / outer_team_end, manage_ompt.cpp);
+//  - otherwise: every begin_parallel_phase() at level 1 takes its rank for
+//    the phase (manual_begin); a rank another thread holds in the open phase
+//    is a second team. The phase end frees them all (manual_end).
+// A nested region is not a top-level one: it is allowed (nested_region_validation).
+namespace teams
+{
+/// @brief An array exists: set by the first manager's registration (all_type_chunk.cpp).
+inline std::atomic<bool> arrays_exist{false};
+
+/// @brief Top-level regions running now (OMPT builds).
+inline std::atomic<int> outer_active{0};
+
+/// @brief Per rank: the thread that holds it in the open phase (manual protocol),
+///        or null. Sized to the capacity on first use, immortal.
+[[nodiscard]] inline std::atomic<const void*>* rank_holders() noexcept
+{
+    static auto* const holders = new std::atomic<const void*>[static_cast<std::size_t>(chunk_thread_capacity())]();
+    return holders;
+}
+
+/// @brief An address unique to the calling thread, for as long as it lives.
+[[nodiscard]] inline const void* this_thread_id() noexcept
+{
+    thread_local const char marker = 0;
+    return &marker;
+}
+
+/// @brief A top-level region begins (OMPT parallel_begin): refuse a second one.
+inline void outer_team_begin() noexcept
+{
+    const int before = outer_active.fetch_add(1, std::memory_order_acq_rel);
+    if (before > 0 && arrays_exist.load(std::memory_order_acquire)) [[unlikely]]
+    {
+        CHUNK_INVARIANT_FAILED(
+            "[PHASE PROTOCOL] {} top-level OpenMP teams at once: a parallel region began while another one, opened "
+            "by another host thread, is still running. The arrays' per-thread structures are indexed by the rank "
+            "in the team, so the two teams share them, and one team's phase end replays the other's writes. Run "
+            "the parts of the program that use the arrays one after the other, or in one team "
+            "(docs/getting_started.md, section 5).",
+            before + 1);
+    }
+}
+
+/// @brief A top-level region ended (OMPT parallel_end).
+inline void outer_team_end() noexcept
+{
+    outer_active.fetch_sub(1, std::memory_order_acq_rel);
+}
+
+/// @brief begin_parallel_phase() at level 1 (manual protocol): the calling
+///        thread takes its rank for the phase; a rank another live thread
+///        already holds in it means two teams at once. Every thread checks,
+///        not only the master: the workers of a second team write as soon as
+///        they begin.
+inline void manual_begin(int rank) noexcept
+{
+    auto&       holder = rank_holders()[rank];
+    const void* me     = this_thread_id();
+    const void* cur    = holder.load(std::memory_order_acquire);
+    if (cur == me || (cur == nullptr && holder.compare_exchange_strong(cur, me, std::memory_order_acq_rel)))
+    {
+        return;
+    }
+    if (cur != me && arrays_exist.load(std::memory_order_acquire)) [[unlikely]]
+    {
+        CHUNK_INVARIANT_FAILED(
+            "[PHASE PROTOCOL] two top-level OpenMP teams at once: rank {} began a phase on a thread while another "
+            "thread holds that rank in the phase still open -- two teams opened by two host threads run together, "
+            "or finalize_parallel_phase() was forgotten after the other's region. The arrays' per-thread "
+            "structures are indexed by the rank in the team, so two teams share them. Run the parts of the "
+            "program that use the arrays one after the other, or in one team (docs/getting_started.md, "
+            "section 5).",
+            rank);
+    }
+    holder.store(me, std::memory_order_release); // no array yet: nothing shared, take it over
+}
+
+/// @brief The phase ended (manual protocol): every rank is free for the next one.
+inline void manual_end() noexcept
+{
+    const int bound   = std::min(chunk_thread_capacity(), internal::g_rank_high_water.load(std::memory_order_acquire));
+    auto*     holders = rank_holders();
+    for (int r = 0; r < bound; ++r)
+    {
+        holders[r].store(nullptr, std::memory_order_relaxed);
+    }
+    std::atomic_thread_fence(std::memory_order_release);
+}
+} // namespace teams
 } // namespace shrink_array::phase_guard

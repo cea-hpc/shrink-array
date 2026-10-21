@@ -1100,6 +1100,9 @@ void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::s
  *
  * @tparam Constant value_at returns one value for every index (fill_range_mt):
  *                  no buffer
+ * @param arr       the array written
+ * @param first     first index of the range
+ * @param last      one past its last index
  * @param value_at  called as value_at(i), i the global index; returns a value
  *                  convertible to the element type
  */

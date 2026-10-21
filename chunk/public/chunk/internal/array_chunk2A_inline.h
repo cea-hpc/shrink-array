@@ -287,7 +287,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // compress()'s clear_int_st calls are compiled out, so the sweep would
         // only scan every chunk's values without compressing anything -- a cost
         // that dominates the profile.
-        if constexpr (!chunk_config::have_aggressive_compression)
+        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
             const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
 
@@ -313,55 +313,58 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // has a hole.
         //
         // Non-fatal; O(nb_chunk * chunk_size) once at teardown, check builds only.
-        if constexpr (build_config::any_check && !chunk_config::have_aggressive_compression)
+        if constexpr (build_config::any_check)
         {
-            const auto  csz           = static_cast<unsigned int>(this->size_policy_.size());
-            const auto& inside        = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
-            std::size_t missed_first  = 0;
-            std::size_t missed_second = 0;
-            std::size_t missed_other  = 0;
-
-            for (int j = 0; j < nb_chunk; ++j)
+            if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
             {
-                const auto& ck = chunk_list[j];
-                if (!ck.written())
+                const auto  csz           = static_cast<unsigned int>(this->size_policy_.size());
+                const auto& inside        = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
+                std::size_t missed_first  = 0;
+                std::size_t missed_second = 0;
+                std::size_t missed_other  = 0;
+
+                for (int j = 0; j < nb_chunk; ++j)
                 {
-                    continue; // already constant/compressed — nothing owed
-                }
-                if (inside[j].load(std::memory_order_acquire) != 0)
-                {
-                    continue; // legitimately queued (a straggler the pass left) — not "missed"
+                    const auto& ck = chunk_list[j];
+                    if (!ck.written())
+                    {
+                        continue; // already constant/compressed — nothing owed
+                    }
+                    if (inside[j].load(std::memory_order_acquire) != 0)
+                    {
+                        continue; // legitimately queued (a straggler the pass left) — not "missed"
+                    }
+
+                    // Is it actually constant? (same notion fill_list_to_compress uses:
+                    // every element equal to the block's first element.)
+                    const auto v = ck.constant_value(csz);
+                    if (!v)
+                    {
+                        continue;
+                    }
+                    if (*v == static_cast<T>(Chunk2A<T>::first_value))
+                    {
+                        ++missed_first;
+                    }
+                    else if (*v == Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j).get())
+                    {
+                        ++missed_second;
+                    }
+                    else
+                    {
+                        ++missed_other;
+                    }
                 }
 
-                // Is it actually constant? (same notion fill_list_to_compress uses:
-                // every element equal to the block's first element.)
-                const auto v = ck.constant_value(csz);
-                if (!v)
+                if (missed_first + missed_second + missed_other != 0)
                 {
-                    continue;
+                    CHUNK_LOG(info, compress,
+                              "audit: chunk2a tab={}: {} constant block(s) never queued for compression ({} at "
+                              "first_value, {} at their second value, {} at another value: missed by the marking path). "
+                              "A few is benign; a recurring/large count is not.",
+                              num_tab, missed_first + missed_second + missed_other, missed_first, missed_second,
+                              missed_other);
                 }
-                if (*v == static_cast<T>(Chunk2A<T>::first_value))
-                {
-                    ++missed_first;
-                }
-                else if (*v == Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j).get())
-                {
-                    ++missed_second;
-                }
-                else
-                {
-                    ++missed_other;
-                }
-            }
-
-            if (missed_first + missed_second + missed_other != 0)
-            {
-                CHUNK_LOG(info, compress,
-                          "audit: chunk2a tab={}: {} constant block(s) never queued for compression ({} at "
-                          "first_value, {} at their second value, {} at another value: missed by the marking path). "
-                          "A few is benign; a recurring/large count is not.",
-                          num_tab, missed_first + missed_second + missed_other, missed_first, missed_second,
-                          missed_other);
             }
         }
     }

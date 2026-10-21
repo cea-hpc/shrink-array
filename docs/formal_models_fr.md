@@ -1,10 +1,10 @@
-# Modèles formels des handshakes sans verrou
+# Modèles formels des protocoles sans verrou
 
 > English version: [formal_models.md](formal_models.md).
 
-[synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) explique les trois handshakes de la
+[synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) explique les trois protocoles de la
 bibliothèque et argumente leur correction sur le papier. `formal/` contient les mêmes protocoles
-sous forme de **modèles réduits** : de petits programmes C11, un par handshake, qui ne gardent
+sous forme de **modèles réduits** : de petits programmes C11, un par protocole, qui ne gardent
 que les atomiques du source avec leurs ordres mémoire exacts, et qu'un vérificateur de modèles --
 [GenMC](https://github.com/MPI-SWS/genmc) -- explore exhaustivement sous le modèle mémoire C11
 (RC11, et IMM en second avis). Ce document dit ce que sont les modèles, comment les lancer, ce
@@ -53,7 +53,7 @@ Avec CMake, `ctest -L formal` lance `formal_genmc` (quand `genmc` est sur le PAT
 ordinaire et lancé 300 fois, ce qui prouve que le modèle est un vrai programme et sert d'oracle
 faible pour le protocole. Rien de `formal/` n'entre dans la bibliothèque ni n'est installé.
 
-## 3. Le modèle du handshake 1 : écrivain contre compresseur
+## 3. Le modèle du protocole 1 : écrivain contre compresseur
 
 `formal/writer_compressor.c` est les sections 5.1 à 5.3 et 5.6 du document de synchronisation :
 NWRITERS écrivains (2 par défaut) écrivent chacun une fois un élément d'un chunk, pendant qu'une
@@ -119,41 +119,41 @@ lecture relaxed, rien ne l'ordonne après le CAS de la passe, donc son `values_l
 l'ancien tampon -- celui que la passe vient de rendre -- et l'écriture tombe dans une mémoire
 libérée. L'acquire s'apparie avec le release de `steal_unmark()` et emporte le CAS avec lui.
 
-## 5. Le modèle du handshake 2 : compresseur contre flush
+## 5. Le modèle du protocole 2 : compresseur contre flush
 
-`formal/compressor_flush.c` ajoute la section 5.4 par-dessus le handshake 1. NWRITERS écrivains (1
+`formal/compressor_flush.c` ajoute la section 5.4 par-dessus le protocole 1. NWRITERS écrivains (1
 par défaut, jusqu'à 3 vérifiés) écrivent chacun une fois un élément -- **différé** quand le regard
 n° 2 voit la marque de la passe, direct sinon -- et un écrivain qui a différé vide ensuite son
 propre rang, comme la bibliothèque le fait au-delà du seuil d'arriéré : `announce_flush()`
-(incrément seq_cst, barrière), l'attente des voleurs sur `stealing_inflight_`, puis le rejeu
+(incrément seq_cst, barrière), l'attente des voleurs sur `stealing_inflight_`, puis l'application
 exactement comme `lbd_equal_asynch` le fait : une écriture **simple** (« les flushes excluent les
 voleurs »), la confirmation après écriture, la boucle de reprise. La passe a ses deux regards sur
 les flushs, la sortie anticipée après `hard_inflight_++` et le second regard après
-`stealing_inflight_++`. Une quatrième propriété rejoint les trois du handshake 1 : **P4**,
-l'écriture simple du rejeu n'est jamais en course avec le parcours de la passe (la détection de
+`stealing_inflight_++`. Une quatrième propriété rejoint les trois du protocole 1 : **P4**,
+l'écriture simple de l'application n'est jamais en course avec le parcours de la passe (la détection de
 courses de GenMC).
 
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
 | source, 1 écrivain ; 2 écrivains ; 3 écrivains (vivacité vérifiée) | passe | passe | 12 ; 403 ; 25 810 |
-| `MUT_NO_SECOND_LOOK` : le bug du 5.4 (1 et 2 écrivains) | échoue | **course**, et détection de courses coupée le **rejeu perdu** lui-même | 1 |
-| `MUT_NO_SECOND_LOOK` + `MUT_NO_POSTCHECK` | échoue | rejeu perdu | 1 |
-| `MUT_FLUSH_NO_DRAIN` : le flush rejoue sans attendre la fin des voleurs | échoue | rejeu perdu | 1 |
+| `MUT_NO_SECOND_LOOK` : le bug du 5.4 (1 et 2 écrivains) | échoue | **course**, et détection de courses coupée l'**application perdue** elle-même | 1 |
+| `MUT_NO_SECOND_LOOK` + `MUT_NO_POSTCHECK` | échoue | application perdue | 1 |
+| `MUT_FLUSH_NO_DRAIN` : le flush applique sans attendre la fin des voleurs | échoue | application perdue | 1 |
 | `MUT_NO_FIRST_LOOK` : la sortie anticipée retirée (1 et 2 écrivains) | passe | passe | 10 ; 357 |
 | `MUT_NO_POSTCHECK` : la confirmation après écriture retirée (1 et 2 écrivains) | passe | passe | 12 ; 403 |
 
 Trois choses que la table dit. Le **second regard** est la paire : sans lui le premier
 contre-exemple du vérificateur est le bug de l'historique, ligne pour ligne -- l'écrivain diffère
 sur la marque ; le flush annonce, trouve `stealing_inflight_` à zéro (la passe est parquée),
-rejoue, sa confirmation après écriture passe ; la passe ouvre alors sa fenêtre, entre en vol,
-parcourt les zéros d'avant le rejeu, remet le chunk sur la constante par CAS et rend le tampon ;
-l'écriture rejouée a disparu. Le **premier regard** « ne s'apparie avec rien », comme le dit la
+applique l'écriture, sa confirmation après écriture passe ; la passe ouvre alors sa fenêtre, entre en vol,
+parcourt les zéros d'avant l'application, remet le chunk sur la constante par CAS et rend le tampon ;
+l'écriture appliquée a disparu. Le **premier regard** « ne s'apparie avec rien », comme le dit la
 section 5.4 : le retirer ne change aucun verdict, c'est une optimisation. La **confirmation après
 écriture** est une seconde ligne de défense, pas l'exclusion : avec le second regard en place elle
 ne sert jamais, et sans le second regard elle ne sauve pas l'écriture (le CAS de la passe peut
 tomber après la lecture de la confirmation).
 
-## 6. Le modèle du handshake 3 : lecteurs contre réemploi des tampons
+## 6. Le modèle du protocole 3 : lecteurs contre réemploi des tampons
 
 `formal/reader_reclaim.c` est la section 5.5 (`internal/read_reclaim.h`). Un chunk tenant un
 tampon tout à zéro ; NREADERS lecteurs (2 par défaut, 3 vérifiés) faisant chacun NREADS lectures
@@ -262,14 +262,14 @@ abandonnée (le compteur de porte des abandons sur attente trop longue, dans le 
 candidats -- le cas dont `fill_list_to_compress()` se garde avec `is_not_cst_val1()` -- donc c'est
 rare, pas impossible.
 
-Le correctif découle du handshake lui-même : un écrivain du chemin rapide tient son drapeau et a
+Le correctif découle du protocole lui-même : un écrivain du chemin rapide tient son drapeau et a
 passé le regard n° 2, donc une marque qu'il voit maintenant appartient à un compresseur
 **parqué** sur ce drapeau ; rien ne peut voler le chunk avant `end_write()`, et l'attente ne
 protège rien. `wait_before_materialise()` prend désormais le rang de l'appelant et rend la main
 aussitôt quand le drapeau de ce rang est sur le chunk (`WriteCompressSyncPolicy::is_thread_writing_on()`,
 une lecture relaxed du propre drapeau du thread). Les appelants sans drapeau -- `alloc_chunk()`,
-le point d'entrée de préallocation utilisable depuis une région parallèle, et un rejeu du flush --
-gardent l'attente, que le modèle ne couvre pas (handshake 2). Avec le correctif, le vérificateur
+le point d'entrée de préallocation utilisable depuis une région parallèle, et l'application d'un flush --
+gardent l'attente, que le modèle ne couvre pas (protocole 2). Avec le correctif, le vérificateur
 prouve sûreté et vivacité même avec une attente **non bornée** du compresseur (26 et 191
 exécutions) ; `MUT_MATERIALISE_WAIT_UNDER_FLAG` est l'attente telle qu'elle était.
 
@@ -359,8 +359,8 @@ possède pas tout le chunk sache ce qu'il faut.
   modèle simplifie est une ligne que le vérificateur ne voit pas. La table de correspondance de la
   section 3 est ce qu'il faut relire quand le source change, et les mutations sont la garde contre
   un modèle qui ne prouve rien.
-- **Bornes.** Jusqu'à 5 écrivains (handshake 1 ; 3 pour le handshake 2, chacun avec son flush ;
-  3 lecteurs et 3 lectures chacun pour le handshake 3), un chunk, une passe, une écriture chacun
+- **Bornes.** Jusqu'à 5 écrivains (protocole 1 ; 3 pour le protocole 2, chacun avec son flush ;
+  3 lecteurs et 3 lectures chacun pour le protocole 3), un chunk, une passe, une écriture chacun
   (5 écrivains avec matérialisation : 9 637 exécutions, 7 s). Un bug qui demande deux
   passes ou un chunk recyclé deux fois est hors champ.
 - **`membarrier()`.** Aucun modèle mémoire de langage ne l'a. Le vérificateur vérifie la forme
