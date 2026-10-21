@@ -323,9 +323,10 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      schedule out, so a rank gets the same iterations in every loop of a
      region (the nowait reasoning of bench_phase_compute.cpp) and from one
      region to the next (first touch);
-   - reductions: the body adds to `BENCH_RED(v)`; OpenMP keeps its
-     `reduction(+ : v)` clause on the shared `v`, the other builds add a
-     per-thread partial into `v` atomically when the thread's share ends.
+   - reductions: the body adds to `BENCH_RED(v)`, a per-thread partial added
+     into `v` atomically when the thread's share ends -- in every build: clang
+     refuses an orphaned `omp for reduction(+ : v)` in the body of the region's
+     lambda, `v` a capture by reference ("reduction variable must be shared").
      The region-level `parallel for reduction` loops (census, checksum) are
      `pmp::parallel_sum`, the zeroing of the baseline vector
      `pmp::parallel_for`;

@@ -97,12 +97,12 @@ void bench_phase_compute(BenchArrays&            bench_arr,
     double v_real       = 0;
     double v_im         = 0;
 
-    // The accumulators are SHARED in the region, and each loop that adds to them
-    // carries its own reduction clause (BENCH_OMP_FOR_STATIC_NOWAIT_RED): a
-    // worksharing reduction must be on a shared variable, and that is the form
-    // `for simd` accepts on the std::vector baseline. A reduction on a nowait
-    // loop is complete for the thread at the end of its own portion; the value
-    // is whole after the region's barrier, which is where it is read.
+    // The accumulators are SHARED in the region; each loop that adds to them
+    // adds a per-thread partial into them atomically at the end of the thread's
+    // own portion (BENCH_FOR_*_RED_SCALAR and BENCH_RED, bench_par.h; the
+    // four-accumulator loop by hand). A partial of a nowait loop is in at the
+    // end of the thread's portion; the value is whole after the region's
+    // barrier, which is where it is read.
     // Block size and aligned start of the [start0, end0) loops' schedule
     // (bench_sched_for, bench_prelude.h). Computed once, before the region:
     // every thread must see the same values, or the same-thread guarantee is

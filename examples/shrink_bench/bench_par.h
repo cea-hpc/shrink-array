@@ -49,11 +49,12 @@
  * Every loop is NOWAIT, every single() too: the regions have no barrier,
  * which is what lets the TBB bench run them as tasks (below).
  *
- * Reductions (_RED): the body adds to BENCH_RED(v), not to v. OpenMP: the
- * pragma keeps its `reduction(+ : v)` on the shared v, and BENCH_RED(v) is v.
- * Other builds: each thread adds into a private partial, BENCH_RED(v), which
- * goes into v atomically once the thread's share is done -- whole after the
- * next barrier or the end of the region, as with OpenMP.
+ * Reductions (_RED): the body adds to BENCH_RED(v), not to v: each thread adds
+ * into a private partial, BENCH_RED(v), which goes into v atomically once the
+ * thread's share is done -- whole after the next barrier or the end of the
+ * region. Every build, OpenMP included: an orphaned `omp for reduction(+ : v)`
+ * in the body of the region's lambda, v a capture by reference, is refused by
+ * clang ("reduction variable must be shared"), accepted by gcc.
  *
  * The macros name the loop's variable, so the body is the same text in every
  * build; `continue` works, `break` is refused by OpenMP anyway.
@@ -343,8 +344,8 @@ void critical(F&& f)
     f();
 }
 
-/// @brief A thread's partial of a reduction (builds without OpenMP): added
-///        into the shared variable when the loop's share is done.
+/// @brief A thread's partial of a reduction (every build, see the file
+///        comment): added into the shared variable when the loop's share is done.
 template <typename T>
 class Partial
 {
@@ -378,11 +379,17 @@ class Partial
 
     #define BENCH_FOR_STATIC_NOWAIT(t, i, b, e) BENCH_OMP_FOR_STATIC_NOWAIT for (Int i = (b); i < (e); ++i)
     #define BENCH_FOR_STATIC_NOWAIT_SCALAR(t, i, b, e) BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR for (Int i = (b); i < (e); ++i)
-    #define BENCH_FOR_BLOCK_NOWAIT_SCALAR(t, i, b, e) BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR for (Int i = (b); i < (e); ++i)
+    // sched_blk copied into a local first: clang 19 and 20 crash on a chunk size that is a
+    // capture of the region's lambda (segfault in EmitOMPWorksharingLoop).
+    #define BENCH_FOR_BLOCK_NOWAIT_SCALAR(t, i, b, e) \
+        if (const Int bench_blk_ = sched_blk; true) _Pragma("omp for schedule(static, bench_blk_) nowait") for (Int i = (b); i < (e); ++i)
     #define BENCH_FOR_ROUND_ROBIN_NOWAIT(t, i, b, e) _Pragma("omp for schedule(static, 1) nowait") for (Int i = (b); i < (e); ++i)
-    #define BENCH_FOR_STATIC_NOWAIT_RED_SCALAR(t, i, b, e, v) BENCH_OMP_FOR_STATIC_NOWAIT_RED_SCALAR(v) for (Int i = (b); i < (e); ++i)
-    #define BENCH_FOR_BLOCK_NOWAIT_RED_SCALAR(t, i, b, e, v) BENCH_OMP_FOR_BLOCK_NOWAIT_RED_SCALAR(v) for (Int i = (b); i < (e); ++i)
-    #define BENCH_RED(v) v
+    // A per-thread partial, not a reduction clause: see the file comment.
+    #define BENCH_FOR_STATIC_NOWAIT_RED_SCALAR(t, i, b, e, v) \
+        for (::bench_par::Partial<decltype(v)> v##_part_(v); v##_part_.once();) BENCH_FOR_STATIC_NOWAIT_SCALAR(t, i, b, e)
+    #define BENCH_FOR_BLOCK_NOWAIT_RED_SCALAR(t, i, b, e, v) \
+        for (::bench_par::Partial<decltype(v)> v##_part_(v); v##_part_.once();) BENCH_FOR_BLOCK_NOWAIT_SCALAR(t, i, b, e)
+    #define BENCH_RED(v) v##_part_.value
 
 #else
 
