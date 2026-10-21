@@ -24,7 +24,8 @@
  *        to / from contiguous row-major memory (an MPI halo, an HDF5
  *        hyperslab, a library that wants a T*), tile by tile or row by row;
  *        copy_box_out_mt() / copy_box_in_mt() share the box among the
- *        threads of a region by themselves.
+ *        threads of a region by themselves; stencil_tiles() runs a stencil
+ *        tile by tile, the kernel reading a tile and its halo.
  *
  * @details f[i, j] pays an operator[] per element. With layout_tiled, a tile is
  *          a run of consecutive elements -- one chunk when the tile has
@@ -72,13 +73,13 @@
     #include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
     #include <array>       // std::array (the tile buffer, the tile coordinates)
     #include <concepts>    // std::invocable, std::same_as, std::integral
-    #include <cstddef>     // std::size_t
+    #include <cstddef>     // std::size_t, std::ptrdiff_t
     #include <limits>      // std::numeric_limits (the box corners)
     #include <span>        // std::span (the blocks of for_each_span)
     #include <tuple>       // std::apply (a multi-index into a mapping)
     #include <type_traits> // std::remove_cvref_t, std::is_const_v
     #include <utility>     // std::as_const, std::forward, std::pair
-    #include <vector>      // std::vector (a run-time tile larger than the inline buffer)
+    #include <vector> // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
 
     #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
     #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
@@ -1142,6 +1143,487 @@ void update_tiles_mt(const View&                        f,
     }
     detail::write_tiles(f, "md::update_tiles_mt", detail::dealt_tiles(f, lo, hi, detail::deal_weight::tiles), on_block,
                         on_uniform);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stencils: a tile with its halo, stencil_tiles()
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// @brief Halo cells outside the view take @p value (a Dirichlet border).
+template <typename T>
+struct constant_boundary
+{
+    T value{};
+};
+
+/// @brief Halo cells outside the view take the value of the nearest cell of
+///        the view (a zero-gradient, Neumann border).
+struct clamp_boundary
+{
+};
+
+/**
+ * @brief What a stencil kernel reads: a tile and @p h cells around it, read
+ *        only. in[i, j] for i in [-h, te0 + h), j in [-h, te1 + h): (0, 0) is
+ *        the tile's first cell, te the tile's extents (padding included);
+ *        cells outside the view hold the boundary's value.
+ */
+template <typename T, std::size_t Rank, typename Index>
+class halo_block
+{
+  public:
+    halo_block(const T* origin, const std::array<std::ptrdiff_t, Rank>& strides, Index h) noexcept
+        : origin_(origin), strides_(strides), h_(h)
+    {
+    }
+
+    template <std::integral... I>
+        requires(sizeof...(I) == Rank)
+    const T& operator[](I... i) const noexcept
+    {
+        std::ptrdiff_t o = 0;
+        std::size_t    r = 0;
+        ((o += static_cast<std::ptrdiff_t>(i) * strides_[r++]), ...);
+        return origin_[o];
+    }
+
+    /// @brief The halo's width, cells on each side.
+    Index halo() const noexcept
+    {
+        return h_;
+    }
+
+  private:
+    const T*                         origin_;
+    std::array<std::ptrdiff_t, Rank> strides_;
+    Index                            h_;
+};
+
+namespace detail
+{
+template <typename B, typename T>
+concept boundary_of = std::same_as<B, clamp_boundary> || std::same_as<B, constant_boundary<T>>;
+
+/// @brief The tiles a stencil reads around the one it computes: gathered once
+///        each (lazily: a uniform tile is its constant), kept while the walk
+///        goes along a row of tiles.
+template <typename View, typename T>
+class tile_cache
+{
+    using Index = typename View::index_type;
+
+  public:
+    struct entry
+    {
+        explicit entry(const View& f) : buf(f) {}
+        Index                k       = std::numeric_limits<Index>::max();
+        bool                 uniform = false;
+        T                    cst{};
+        tile_buffer<View, T> buf;
+    };
+
+    tile_cache(const View& f, std::size_t n) : f_(f), dims_(tiles_per_dim(f))
+    {
+        e_.reserve(n);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            e_.emplace_back(f);
+        }
+    }
+
+    /// @brief The tile of coordinates @p c (in tiles), read.
+    entry& fetch(const std::array<Index, View::rank()>& c)
+    {
+        Index k = 0;
+        for (std::size_t r = 0; r < View::rank(); ++r)
+        {
+            k = k * dims_[r] + c[r];
+        }
+        for (auto& x : e_)
+        {
+            if (x.k == k)
+            {
+                return x;
+            }
+        }
+        entry& x     = e_[next_];
+        next_        = (next_ + 1) % e_.size();
+        const auto t = tile_at(f_, dims_, k);
+        x.uniform    = gather(*f_.data_handle(), tile_storage(f_, t), x.buf, x.cst, /*lazy=*/true);
+        x.k          = k;
+        return x;
+    }
+
+    const std::array<Index, View::rank()>& dims() const noexcept
+    {
+        return dims_;
+    }
+
+  private:
+    const View&                     f_;
+    std::array<Index, View::rank()> dims_;
+    std::vector<entry>              e_;
+    std::size_t                     next_ = 0;
+};
+
+/// @brief 3^rank: the tiles around a tile, itself included.
+template <std::size_t Rank>
+constexpr std::size_t neighbourhood()
+{
+    std::size_t n = 1;
+    for (std::size_t r = 0; r < Rank; ++r)
+    {
+        n *= 3;
+    }
+    return n;
+}
+
+/// @brief stencil_tiles() on the tiles @p walk(fn) gives.
+template <typename Src, typename Dst, typename Boundary, typename Walk, typename OnBlock, typename OnUniform>
+void stencil_on(const Src&                       src,
+                const Dst&                       dst,
+                typename Src::index_type         h,
+                [[maybe_unused]] const Boundary& bnd,
+                const char*                      who,
+                Walk&&                           walk,
+                OnBlock&                         on_block,
+                OnUniform&                       on_uniform)
+{
+    using T             = value_of<Src>;
+    using Index         = typename Src::index_type;
+    constexpr auto rank = Src::rank();
+    static_assert(rank == Dst::rank(), "md::stencil_tiles: the source and the destination have one rank");
+    static_assert(std::same_as<T, value_of<Dst>>, "md::stencil_tiles: the source and the destination hold one type");
+    static_assert(boundary_of<Boundary, T>,
+                  "md::stencil_tiles: the boundary is md::clamp_boundary{} or md::constant_boundary<T>{v}");
+    constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, no_uniform>;
+    constexpr bool clamp       = std::same_as<Boundary, clamp_boundary>;
+
+    // The two views: one shape, one tiling, two arrays.
+    for (std::size_t r = 0; r < rank; ++r)
+    {
+        const auto rr = static_cast<typename Src::rank_type>(r);
+        if (src.extent(r) != dst.extent(r) || src.mapping().tile_extent(rr) != dst.mapping().tile_extent(rr) || h < 0 ||
+            h > src.mapping().tile_extent(rr)) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("{}: the source and the destination must have the same extents and tiles, and "
+                                   "the halo ({}) at most a tile's extent; dimension {}: extents {} and {}, tiles "
+                                   "{} and {}",
+                                   who, static_cast<long long>(h), r, static_cast<long long>(src.extent(r)),
+                                   static_cast<long long>(dst.extent(r)),
+                                   static_cast<long long>(src.mapping().tile_extent(rr)),
+                                   static_cast<long long>(dst.mapping().tile_extent(rr)));
+        }
+    }
+    if (static_cast<const void*>(&*src.data_handle()) == static_cast<const void*>(&*dst.data_handle())) [[unlikely]]
+    {
+        CHUNK_INVARIANT_FAILED("{}: the source and the destination are one array: a stencil reads cells its other "
+                               "tiles write",
+                               who);
+    }
+    const auto& sa = *src.data_handle();
+    auto&       da = *dst.data_handle();
+    check_tile_on_chunks(sa, src.mapping().tile_elements(), who);
+    check_tile_on_chunks(da, dst.mapping().tile_elements(), who);
+
+    std::array<Index, rank>          te{}; // tile extents
+    std::array<Index, rank>          he{}; // halo buffer extents
+    std::array<std::ptrdiff_t, rank> hs{}; // its strides
+    std::array<std::size_t, rank>    ts{}; // a tile's strides
+    for (std::size_t r = 0; r < rank; ++r)
+    {
+        te[r] = src.mapping().tile_extent(static_cast<typename Src::rank_type>(r));
+        he[r] = te[r] + 2 * h;
+    }
+    {
+        std::ptrdiff_t s = 1;
+        std::size_t    u = 1;
+        for (std::size_t r = rank; r-- > 0;)
+        {
+            hs[r] = s;
+            ts[r] = u;
+            s *= static_cast<std::ptrdiff_t>(he[r]);
+            u *= static_cast<std::size_t>(te[r]);
+        }
+    }
+    std::size_t hn = 1;
+    for (std::size_t r = 0; r < rank; ++r)
+    {
+        hn *= static_cast<std::size_t>(he[r]);
+    }
+    std::vector<T> halo(hn);
+    std::ptrdiff_t centre = 0;
+    for (std::size_t r = 0; r < rank; ++r)
+    {
+        centre += static_cast<std::ptrdiff_t>(h) * hs[r];
+    }
+
+    tile_cache<Src, T>          cache(src, 2 * neighbourhood<rank>());
+    const auto                  dims = cache.dims();
+    const std::size_t           N    = static_cast<std::size_t>(src.mapping().tile_elements());
+    tile_buffer<Dst, T>         outb(dst);
+    range_writer<array_of<Dst>> out{da};
+    T                           boundary_value{}; // the halo outside the view, constant_boundary's
+    if constexpr (!clamp)
+    {
+        boundary_value = bnd.value;
+    }
+
+    walk(
+        [&](Index k)
+        {
+            const auto              t = tile_at(src, dims, k);
+            std::array<Index, rank> tc{};
+            for (std::size_t r = 0; r < rank; ++r)
+            {
+                tc[r] = t.origin[r] / te[r];
+            }
+            auto&      me    = cache.fetch(tc);
+            const bool me_u  = me.uniform;
+            const T    me_v  = me.cst;
+            bool       leave = false; // the halo leaves the view
+            for (std::size_t r = 0; r < rank; ++r)
+            {
+                leave = leave || t.origin[r] < h || t.origin[r] + te[r] + h > src.extent(r);
+            }
+
+            // The tile, its neighbours and the border all one value: O(1).
+            if constexpr (has_uniform)
+            {
+                bool uniform = me_u && (clamp || !leave || boundary_value == me_v);
+                for (std::size_t d = 0; uniform && h > 0 && d < neighbourhood<rank>(); ++d)
+                {
+                    std::array<Index, rank> c    = tc;
+                    std::size_t             code = d;
+                    bool                    in   = true;
+                    for (std::size_t r = rank; r-- > 0;)
+                    {
+                        const auto off = static_cast<long long>(code % 3) - 1;
+                        code /= 3;
+                        const auto x = static_cast<long long>(tc[r]) + off;
+                        in           = in && x >= 0 && x < static_cast<long long>(dims[r]);
+                        c[r]         = static_cast<Index>(x < 0 ? 0 : x);
+                    }
+                    if (in)
+                    {
+                        const auto& nb = cache.fetch(c);
+                        uniform        = nb.uniform && nb.cst == me_v;
+                    }
+                }
+                if (uniform)
+                {
+                    T v = me_v;
+                    if (on_uniform(t, std::as_const(me_v), v))
+                    {
+                        const std::size_t s = tile_storage(dst, t);
+                        out.fill(s, s + N, v);
+                        return;
+                    }
+                }
+            }
+
+            // The halo buffer, row by row (every dimension but the last).
+            const Index             w     = he[rank - 1];
+            const auto              ext_l = static_cast<long long>(src.extent(rank - 1));
+            const long long         g0_l  = static_cast<long long>(t.origin[rank - 1]) - h; // global of column 0
+            const long long         qa    = std::max<long long>(0, -g0_l);
+            const long long         qb    = std::min<long long>(w, ext_l - g0_l);
+            std::array<Index, rank> p{}; // halo-local row (last coordinate 0)
+            while (true)
+            {
+                T*                      row     = halo.data();
+                bool                    outside = false;
+                std::array<Index, rank> gc{}; // the row's cell in the view, clamped
+                for (std::size_t r = 0; r + 1 < rank; ++r)
+                {
+                    row += static_cast<std::ptrdiff_t>(p[r]) * hs[r];
+                    const long long g = static_cast<long long>(t.origin[r]) - h + p[r];
+                    const long long e = static_cast<long long>(src.extent(r));
+                    outside           = outside || g < 0 || g >= e;
+                    gc[r]             = static_cast<Index>(std::clamp<long long>(g, 0, e - 1));
+                }
+                if ((!clamp && outside) || qa >= qb)
+                {
+                    std::fill_n(row, w, boundary_value);
+                }
+                else
+                {
+                    long long q = qa;
+                    while (q < qb)
+                    {
+                        const long long         g = g0_l + q;
+                        std::array<Index, rank> c{}; // tile coordinates
+                        std::size_t             off = 0;
+                        for (std::size_t r = 0; r + 1 < rank; ++r)
+                        {
+                            c[r] = gc[r] / te[r];
+                            off += static_cast<std::size_t>(gc[r] % te[r]) * ts[r];
+                        }
+                        c[rank - 1]      = static_cast<Index>(g / te[rank - 1]);
+                        const auto local = static_cast<Index>(g % te[rank - 1]);
+                        const auto n     = std::min<long long>(qb - q, te[rank - 1] - local);
+                        auto&      nb    = cache.fetch(c);
+                        if (nb.uniform)
+                        {
+                            std::fill_n(row + q, n, nb.cst);
+                        }
+                        else
+                        {
+                            std::copy_n(nb.buf.data() + off + local, n, row + q);
+                        }
+                        q += n;
+                    }
+                    std::fill_n(row, qa, clamp ? row[qa] : boundary_value);
+                    std::fill(row + qb, row + w, clamp ? row[qb - 1] : boundary_value);
+                }
+                // next row
+                std::size_t r = rank - 1;
+                while (r-- > 0)
+                {
+                    if (++p[r] < he[r])
+                    {
+                        break;
+                    }
+                    p[r] = 0;
+                }
+                if (r == static_cast<std::size_t>(-1))
+                {
+                    break;
+                }
+            }
+
+            // The kernel, on a copy of the tile (its padding kept), then the
+            // tile written back: as one constant when its cells are one value.
+            {
+                auto& c = cache.fetch(tc);
+                if (c.uniform)
+                {
+                    std::fill(outb.begin(), outb.end(), c.cst);
+                }
+                else
+                {
+                    std::copy_n(c.buf.data(), N, outb.data());
+                }
+            }
+            on_block(t, halo_block<T, rank, Index>(halo.data() + centre, hs, h), make_block<Dst, T>(dst, outb.data()));
+            const T                 v0      = outb[0];
+            bool                    uniform = true;
+            std::array<Index, rank> lo{};
+            for_each_row(lo, t.extent,
+                         [&](const std::array<Index, rank>& i)
+                         {
+                             if (!uniform)
+                             {
+                                 return;
+                             }
+                             std::size_t o = 0;
+                             for (std::size_t r = 0; r < rank; ++r)
+                             {
+                                 o += static_cast<std::size_t>(i[r]) * ts[r];
+                             }
+                             const T* x = outb.data() + o;
+                             uniform    = std::all_of(x, x + t.extent[rank - 1], [&v0](const T& y) { return y == v0; });
+                         });
+            const std::size_t s = tile_storage(dst, t);
+            if (uniform)
+            {
+                out.fill(s, s + N, v0);
+            }
+            else
+            {
+                out.copy(s, s + N, outb.data());
+            }
+        });
+}
+} // namespace detail
+
+/**
+ * @brief Apply a stencil tile by tile: tiles [@p first, @p last) of @p dst
+ *        computed from @p src read with a halo of @p h cells.
+ *
+ * @details For each tile, the tile of @p src and the @p h cells around it --
+ *          read from its neighbour tiles, each gathered once along a row of
+ *          tiles (a uniform one costs its constant) -- go to the kernel as a
+ *          halo_block; cells outside the view hold the boundary's value
+ *          (constant_boundary<T>{v}, or clamp_boundary{}: the nearest cell of
+ *          the view). The kernel writes the tile of @p dst in a buffer that
+ *          starts as a copy of the source tile; it is written back in one go,
+ *          as one constant when its cells inside the view are one value.
+ *
+ * @param on_block   on_block(const tile& t, halo_block in, block out): in[i, j]
+ *                   for i in [-h, te + h), out an mdspan<T> over the tile
+ *                   (padding included: loop to t.extent)
+ * @param on_uniform on_uniform(const tile& t, const T& v, T& out) -> bool, for
+ *                   a tile whose cells, halo and border are all v, in O(1):
+ *                   set out and return true (the tile of @p dst becomes out),
+ *                   or return false to get on_block. Omitted: always on_block.
+ * @pre   @p src and @p dst have the same extents and tiles, and are two
+ *        arrays (checked: a mismatch stops the program); 0 <= h <= a tile's
+ *        extent in every dimension (checked). Inside a parallel region, in a
+ *        phase, a tile whole chunks, and no thread writes @p src meanwhile.
+ * @warning Experimental until 1.0 (see the file).
+ */
+template <tiled_view_of_array Src,
+          tiled_view_of_array Dst,
+          typename Boundary,
+          typename OnBlock,
+          typename OnUniform = detail::no_uniform>
+    requires(!std::is_const_v<typename Dst::element_type>)
+void stencil_tiles(const Src&               src,
+                   const Dst&               dst,
+                   typename Src::index_type h,
+                   const Boundary&          bnd,
+                   typename Src::index_type first,
+                   typename Src::index_type last,
+                   OnBlock&&                on_block,
+                   OnUniform&&              on_uniform = {})
+{
+    detail::stencil_on(src, dst, h, bnd, "md::stencil_tiles", detail::tile_range(src, first, last), on_block,
+                       on_uniform);
+}
+
+/// @brief stencil_tiles() over every tile.
+template <tiled_view_of_array Src,
+          tiled_view_of_array Dst,
+          typename Boundary,
+          typename OnBlock,
+          typename OnUniform = detail::no_uniform>
+    requires(!std::is_const_v<typename Dst::element_type>)
+void stencil_tiles(const Src&               src,
+                   const Dst&               dst,
+                   typename Src::index_type h,
+                   const Boundary&          bnd,
+                   OnBlock&&                on_block,
+                   OnUniform&&              on_uniform = {})
+{
+    detail::stencil_on(src, dst, h, bnd, "md::stencil_tiles", detail::tile_range(src, 0, tile_count(src)), on_block,
+                       on_uniform);
+}
+
+/**
+ * @brief stencil_tiles() called by every thread of a parallel region, in a
+ *        phase: the tiles dealt to the team as for_each_tile_mt() deals them
+ *        (thread t of T on tiles [n t / T, n (t + 1) / T), consecutive: the
+ *        neighbour tiles each thread gathers are mostly its own), no
+ *        `omp for`. Outside a region, every tile. No barrier: @p dst is
+ *        complete at the region's next barrier, which a next step that reads
+ *        it needs.
+ * @warning stencil_tiles()'s; every thread of the team calls it.
+ */
+template <tiled_view_of_array Src,
+          tiled_view_of_array Dst,
+          typename Boundary,
+          typename OnBlock,
+          typename OnUniform = detail::no_uniform>
+    requires(!std::is_const_v<typename Dst::element_type>)
+void stencil_tiles_mt(const Src&               src,
+                      const Dst&               dst,
+                      typename Src::index_type h,
+                      const Boundary&          bnd,
+                      OnBlock&&                on_block,
+                      OnUniform&&              on_uniform = {})
+{
+    detail::stencil_on(src, dst, h, bnd, "md::stencil_tiles_mt", detail::dealt_tiles(src), on_block, on_uniform);
 }
 
 namespace detail

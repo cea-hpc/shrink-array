@@ -45,7 +45,9 @@
  *          md::copy_box_out_mt / md::copy_box_in_mt (the band's tiles dealt
  *          by weight), the band filled (fill_box_mt) and a sum over every
  *          tile (for_each_tile_mt); the rectangles are painted a third time
- *          with fill_box_mt, a barrier between two.
+ *          with fill_box_mt, a barrier between two. Then one diffusion step,
+ *          a 5-point stencil, element by element against
+ *          md::stencil_tiles_mt, without and with its uniform shortcut.
  *
  *          Usage: mdspan_tiles [n]   (an n x n field, 2048 by default)
  *          Exit 0, 1 when a layout does not read back the field, 77 when
@@ -66,7 +68,7 @@
 #include "chunk/manage_ompt.h"    // parallel_phase
 #include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
-#include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_out(_mt), md::copy_box_in(_mt)
+#include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_*(_mt), md::stencil_tiles_mt
 #include "chunk/param_chunk.h" // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
@@ -760,6 +762,113 @@ void box_copy_team(long n, int& bad)
 }
 } // namespace
 
+// One explicit diffusion step, a 5-point stencil with a clamped border, from
+// the field into another array: element by element (f[i, j] and its four
+// neighbours, rows shared by the team) against md::stencil_tiles_mt (a tile
+// and its halo of 1 read in one go), without and with the uniform shortcut
+// (a tile whose neighbourhood is one value stays that value, in O(1)). Best
+// of 3.
+void stencil(long n, int& bad)
+{
+    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::ArrayChunk2A<double> src(size);
+    fill_tiled<16, 16>(src, n);
+    const auto cs = sa::md::view_type<const sa::ArrayChunk2A<double>, sa::md::layout_tiled<16, 16>>(
+        sa::md::tiled_view<16, 16>(src, n, n));
+    constexpr double nu = 0.2;
+
+    const auto best = [](auto&& body)
+    {
+        double b = 1e30;
+        for (int rep = 0; rep < 3; ++rep)
+        {
+            const auto t0 = std::chrono::steady_clock::now();
+            body();
+            b = std::min(b, seconds_since(t0));
+        }
+        return b;
+    };
+
+    sa::ArrayChunk2A<double> e(size);
+    auto                     fe     = sa::md::tiled_view<16, 16>(e, n, n);
+    const double             t_elem = best(
+        [&]
+        {
+            sa::parallel_phase(
+                [&]
+                {
+    #pragma omp for schedule(static)
+                    for (long i = 0; i < n; ++i)
+                    {
+                        const long im = i > 0 ? i - 1 : 0;
+                        const long ip = i + 1 < n ? i + 1 : n - 1;
+                        for (long j = 0; j < n; ++j)
+                        {
+                            const long   jm = j > 0 ? j - 1 : 0;
+                            const long   jp = j + 1 < n ? j + 1 : n - 1;
+                            const double c  = cs[i, j];
+                            fe[i, j]        = c + nu * (cs[im, j] + cs[ip, j] + cs[i, jm] + cs[i, jp] - 4.0 * c);
+                        }
+                    }
+                });
+        });
+
+    const auto kernel = [](const auto& t, const auto& in, auto out)
+    {
+        for (long i = 0; i < t.extent[0]; ++i)
+        {
+            for (long j = 0; j < t.extent[1]; ++j)
+            {
+                const double c = in[i, j];
+                out[i, j]      = c + nu * (in[i - 1, j] + in[i + 1, j] + in[i, j - 1] + in[i, j + 1] - 4.0 * c);
+            }
+        }
+    };
+    sa::ArrayChunk2A<double> b(size);
+    auto                     fb     = sa::md::tiled_view<16, 16>(b, n, n);
+    const double             t_tile = best(
+        [&] { sa::parallel_phase([&] { sa::md::stencil_tiles_mt(cs, fb, 1L, sa::md::clamp_boundary{}, kernel); }); });
+    sa::ArrayChunk2A<double> u(size);
+    auto                     fu     = sa::md::tiled_view<16, 16>(u, n, n);
+    const double             t_unif = best(
+        [&]
+        {
+            sa::parallel_phase(
+                [&]
+                {
+                    sa::md::stencil_tiles_mt(cs, fu, 1L, sa::md::clamp_boundary{}, kernel,
+                                                         [](const auto&, const double& v, double& out)
+                                                         {
+                                                 out = v;
+                                                 return true;
+                                             });
+                });
+        });
+
+    long wrong = 0;
+    for (long i = 0; i < n; ++i)
+    {
+        for (long j = 0; j < n; ++j)
+        {
+            const double x = std::as_const(fe)[i, j];
+            wrong += (std::abs(std::as_const(fb)[i, j] - x) > 1e-12 || std::abs(std::as_const(fu)[i, j] - x) > 1e-12)
+                         ? 1
+                         : 0;
+        }
+    }
+    if (wrong != 0)
+    {
+        sa::println("stencil: {} cells differ between the element loop and stencil_tiles_mt", wrong);
+        ++bad;
+    }
+    sa::println(
+        "stencil 5 pts, element {:8.2f} ms   stencil_tiles_mt {:8.2f} ms (x {:.1f})   with on_uniform {:8.2f} ms "
+        "(x {:.1f})",
+        1e3 * t_elem, 1e3 * t_tile, t_elem / t_tile, 1e3 * t_unif, t_elem / t_unif);
+    sa::println("  materialised: element {}, stencil_tiles_mt {}, with on_uniform {}", count(e).materialised,
+                count(b).materialised, count(u).materialised);
+}
+
 // The price of the multi-index: one sum of the same field read as a[k], as
 // f[i, j] row-major and as f[i, j] in tiles, element by element (the const
 // operator[] every time), best of 5. The tiled mapping divides by constant
@@ -859,6 +968,7 @@ int main(int argc, char** argv)
     paint(n, bad);
     box_copy(n, bad);
     box_copy_team(n, bad);
+    stencil(n, bad);
     index_cost(n, bad);
     sa::release_chunk_pools();
     sa::destroy_block_chunk();

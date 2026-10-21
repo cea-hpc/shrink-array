@@ -143,6 +143,17 @@ the tag's checksum to the recipe.
   `omp for`; over the whole view the same time as the `omp for`. The serial
   forms now run on the same code (`detail::read_tiles`, `write_tiles`,
   `fill_tiles`, `fill_strided`), behaviour unchanged.
+- `md::stencil_tiles(src, dst, h, boundary, kernel, on_uniform)`, its tile
+  range form and `md::stencil_tiles_mt` (`chunk/mdspan_tile_ops.h`,
+  experimental): a stencil tile by tile, the kernel reading the tile and a
+  halo of `h` cells (`md::halo_block`, `in[i - 1, j]`) gathered in one go
+  from the neighbour tiles, the border `md::constant_boundary<T>{v}` or
+  `md::clamp_boundary{}`, the result tile of another array written back in
+  one go (as one constant when uniform); `on_uniform` computes a tile whose
+  neighbourhood is one value in O(1). Any rank. One diffusion step on a
+  2048 x 2048 field: x 7 to 10 against the element loop, x 11 to 23 with
+  `on_uniform`. Harness `mdspan_stencil_validation` (every variant, 1 and 8
+  threads) and `mdspan_stencil_alias` (a stencil in place refused).
 
 ### Changed
 

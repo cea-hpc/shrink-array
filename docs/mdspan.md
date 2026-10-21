@@ -162,6 +162,52 @@ same field summed element by element, 1 thread, reads at 2.8 ns per element thro
 3.3 ns through `f[i, j]` row-major and 3.5 ns through `f[i, j]` in tiles (the tiled mapping
 divides by its constant tile extents in unsigned arithmetic: shifts and masks).
 
+### Stencils: `md::stencil_tiles`
+
+A stencil reads a cell's neighbours, which near a tile's edge lie in another tile. `md::stencil_tiles`
+hands the kernel the tile and `h` cells around it, read in one go from the neighbour tiles (each
+gathered once along a row of tiles, a uniform one costing its constant), and writes the result
+tile of another array back in one go.
+
+```cpp
+auto src = sa::md::tiled_view<16, 16>(a, nx, ny);   // read
+auto dst = sa::md::tiled_view<16, 16>(b, nx, ny);   // written: another array
+sa::parallel_phase([&] {
+    sa::md::stencil_tiles_mt(std::as_const(src), dst, 1, sa::md::clamp_boundary{},
+        [](const auto& t, const auto& in, auto out) {    // in[i, j], i in [-1, 17)
+            for (long i = 0; i < t.extent[0]; ++i)
+                for (long j = 0; j < t.extent[1]; ++j)
+                    out[i, j] = in[i, j] + 0.2 * (in[i - 1, j] + in[i + 1, j] + in[i, j - 1]
+                                                  + in[i, j + 1] - 4.0 * in[i, j]);
+        },
+        [](const auto&, const double& v, double& out) { out = v; return true; });  // optional
+});
+```
+
+| call | does |
+|---|---|
+| `md::stencil_tiles(src, dst, h, boundary, on_block, on_uniform)` | for each tile: `on_block(t, in, out)`, `in` a `md::halo_block` (`in[i, j]` for `i` in `[-h, te + h)`, `(0, 0)` the tile's first cell), `out` an `mdspan<T>` over the tile of `dst`, starting as a copy of the source tile. The tile is written back as one constant when its cells inside the view are one value, else copied |
+| `on_uniform(t, v, out) -> bool` | optional: for a tile whose cells, halo and border are all `v`, in O(1) -- set `out` and return true, the tile of `dst` becomes `out` (no halo read, no kernel); false gets `on_block` |
+| `md::constant_boundary<T>{v}`, `md::clamp_boundary{}` | the halo cells outside the view: `v` (Dirichlet), or the nearest cell of the view (zero gradient) |
+| `md::stencil_tiles(src, dst, h, boundary, first, last, ...)` | tiles `[first, last)`, for an `omp for` or a slice per thread |
+| `md::stencil_tiles_mt(src, dst, h, boundary, ...)` | called by every thread of a region, in a phase: the tiles dealt as `for_each_tile_mt` deals them (consecutive: a thread's neighbour tiles are mostly its own), no `omp for`, no barrier -- the next step, which reads `dst`, needs the region's next barrier |
+
+`src` and `dst` have the same extents and tiles and are two arrays, and `0 <= h <=` a tile's extent
+in every dimension: checked, a mismatch stops the program (a stencil in place would read cells its
+other tiles have already written). Any rank: `in[i, j, k]` in 3D. Inside a region the rules of the
+tile operations hold: a tile whole chunks, `dst` written in a phase, `src` written by no one.
+
+`examples/mdspan_tiles`, one explicit diffusion step (5 points, clamped border) on the 2048 x 2048
+field (85 % of its tiles uniform) into another array, against the element loop (`f[i, j]` and its
+four neighbours, the border by `min` / `max`), Release, GCC 14, 2-core container, several runs:
+
+| threads | element by element | `stencil_tiles_mt` | with `on_uniform` |
+|---|---|---|---|
+| 1 | 119 to 181 ms | 15.8 to 18.2 ms (x 7.4 to 10.4) | 7.4 to 7.9 ms (x 15.9 to 22.9) |
+| 2 | 63 to 92 ms | 9.7 to 12.6 ms (x 6.5 to 7.3) | 5.3 to 8.5 ms (x 10.6 to 12.0) |
+
+All three leave the same field, with the same 2561 materialised chunks.
+
 ### A box in and out of contiguous memory: `md::copy_box_out`, `md::copy_box_in`
 
 An MPI halo, an HDF5 hyperslab, a library that wants a `T*`: a box of the view copied to or from
@@ -353,9 +399,10 @@ reports as skipped.
 |---|---|
 | `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | writes through the view and linear read-back, compound operators, rank 3, read-only views, the tiled mapping (bijection, padding), a uniform tile is a uniform run; every variant (one ctest each, `mdspan_validation_<variant>`) |
-| `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile(_mt)`, `md::update_tiles(_mt)`, `md::fill_box(_mt)`, `md::copy_box_out(_mt)`, `md::copy_box_in(_mt)`, `md::tile_count`, `md::tile` |
+| `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile(_mt)`, `md::update_tiles(_mt)`, `md::fill_box(_mt)`, `md::copy_box_out(_mt)`, `md::copy_box_in(_mt)`, `md::stencil_tiles(_mt)`, `md::halo_block`, `md::constant_boundary`, `md::clamp_boundary`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocks, tile extents on padded edges, uniform tiles, the update against the element formula, untouched tiles stay compressed, the parallel update; the `_mt` forms (each tile of the view or of a box visited once and no other, a thread's tiles within one of the others' count, `fill_box_mt` on tiled and row-major views, in a phase and outside any region); every variant at 1 and 8 threads, and `mdspan_tile_ops_misaligned` (a tile smaller than a chunk refused in a parallel region) |
 | `examples/validation/mdspan_copy_box_validation.cpp` | `copy_box_out` / `copy_box_in` against `f[i, j]` and a reference: boxes aligned, unaligned, on the padded edges, one row, one column, the whole view, empty; tiled (a tile per chunk, 16 x 16), row-major, rank 3, a `submdspan` and a column; whole tiles copied in uniform left compressed; tile by tile and row slice by row slice in a parallel phase; the `_mt` forms on every box and view, and their deal (each tile of the box to one thread, no thread above W / T plus a tile, strided shares a partition with their bounds on chunk boundaries); every variant at 1 and 8 threads |
+| `examples/validation/mdspan_stencil_validation.cpp` | `stencil_tiles` / `stencil_tiles_mt` against the stencil through `f[i, j]`: 9 points (halo 1) and 13 (halo 2), constant and clamped borders, tiles of 16 x 16 and of a chunk (padded edges), a halo as wide as a tile, rank 3; the same result with and without `on_uniform`, the uniform tiles of the result holding no buffer, the source untouched; serial, per tile in an `omp for`, from every thread of a phase and outside any region; every variant at 1 and 8 threads, and `mdspan_stencil_alias` (a stencil from an array into itself refused) |
 | `examples/validation/mdspan_submdspan_validation.cpp` | sub-views of a row-major view (block, row, column, read-only, `fill_box`) and of a tiled view (aligned, ending at the extent, a sub-view of a sub-view; the tile operations on it, serially and in a parallel phase); every variant at 1 and 8 threads, and `mdspan_submdspan_misaligned` (a tiled slice off the tiles stops) |
 | `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, every multiple of 64 to 4096), `layout_tiled_dyn` against `layout_tiled` index by index and through their sub-views, `tiled_view_dyn`'s tile per chunk, the tile operations on a tile per chunk, a 3 x 5 tile and one beyond the inline buffer; every variant at the default size and at dyn (a re-chunk under the view), 1 and 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | the comparisons of sections 2 and 3, and the cost of the multi-index; `mdspan_tiles 4096` for a larger field |

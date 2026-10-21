@@ -166,6 +166,54 @@ le même champ sommé élément par élément, 1 thread, se lit à 2,8 ns par é
 3,3 ns par `f[i, j]` ligne par ligne et 3,5 ns par `f[i, j]` en tuiles (le mapping en tuiles
 divise par ses étendues de tuile constantes en arithmétique non signée : décalages et masques).
 
+### Stencils : `md::stencil_tiles`
+
+Un stencil lit les voisins d'une cellule, qui près du bord d'une tuile sont dans une autre tuile.
+`md::stencil_tiles` donne au noyau la tuile et `h` cellules autour, lues d'un bloc dans les tuiles
+voisines (chacune lue une fois le long d'une rangée de tuiles, une uniforme coûtant sa constante),
+et réécrit d'un bloc la tuile résultat d'un autre tableau.
+
+```cpp
+auto src = sa::md::tiled_view<16, 16>(a, nx, ny);   // lu
+auto dst = sa::md::tiled_view<16, 16>(b, nx, ny);   // écrit : un autre tableau
+sa::parallel_phase([&] {
+    sa::md::stencil_tiles_mt(std::as_const(src), dst, 1, sa::md::clamp_boundary{},
+        [](const auto& t, const auto& in, auto out) {    // in[i, j], i dans [-1, 17)
+            for (long i = 0; i < t.extent[0]; ++i)
+                for (long j = 0; j < t.extent[1]; ++j)
+                    out[i, j] = in[i, j] + 0.2 * (in[i - 1, j] + in[i + 1, j] + in[i, j - 1]
+                                                  + in[i, j + 1] - 4.0 * in[i, j]);
+        },
+        [](const auto&, const double& v, double& out) { out = v; return true; });  // facultatif
+});
+```
+
+| appel | effet |
+|---|---|
+| `md::stencil_tiles(src, dst, h, boundary, on_block, on_uniform)` | pour chaque tuile : `on_block(t, in, out)`, `in` un `md::halo_block` (`in[i, j]` pour `i` dans `[-h, te + h)`, `(0, 0)` la première cellule de la tuile), `out` un `mdspan<T>` sur la tuile de `dst`, initialisé à une copie de la tuile source. La tuile est réécrite comme une constante quand ses cellules dans la vue ont une seule valeur, sinon copiée |
+| `on_uniform(t, v, out) -> bool` | facultatif : pour une tuile dont les cellules, le halo et le bord valent tous `v`, en O(1) -- fixer `out` et renvoyer true, la tuile de `dst` devient `out` (ni lecture du halo ni noyau) ; false donne `on_block` |
+| `md::constant_boundary<T>{v}`, `md::clamp_boundary{}` | les cellules du halo hors de la vue : `v` (Dirichlet), ou la cellule de la vue la plus proche (gradient nul) |
+| `md::stencil_tiles(src, dst, h, boundary, first, last, ...)` | tuiles `[first, last)`, pour un `omp for` ou une tranche par thread |
+| `md::stencil_tiles_mt(src, dst, h, boundary, ...)` | appelée par tous les threads d'une région, dans une phase : les tuiles réparties comme par `for_each_tile_mt` (consécutives : les tuiles voisines d'un thread sont surtout les siennes), sans `omp for`, sans barrière -- le pas suivant, qui lit `dst`, demande la barrière suivante de la région |
+
+`src` et `dst` ont les mêmes étendues et les mêmes tuiles et sont deux tableaux, et `0 <= h <=`
+l'étendue d'une tuile dans chaque dimension : vérifié, un écart arrête le programme (un stencil en
+place lirait des cellules que ses autres tuiles ont déjà écrites). Tout rang : `in[i, j, k]` en 3D.
+Dans une région, les règles des opérations sur tuiles s'appliquent : une tuile faite de chunks
+entiers, `dst` écrit dans une phase, `src` écrit par personne.
+
+`examples/mdspan_tiles`, un pas de diffusion explicite (5 points, bord par recopie) sur le champ de
+2048 x 2048 (85 % de ses tuiles uniformes) vers un autre tableau, contre la boucle élément par
+élément (`f[i, j]` et ses quatre voisins, le bord par `min` / `max`), Release, GCC 14, conteneur à
+2 cœurs, plusieurs passages :
+
+| threads | élément par élément | `stencil_tiles_mt` | avec `on_uniform` |
+|---|---|---|---|
+| 1 | 119 à 181 ms | 15,8 à 18,2 ms (x 7,4 à 10,4) | 7,4 à 7,9 ms (x 15,9 à 22,9) |
+| 2 | 63 à 92 ms | 9,7 à 12,6 ms (x 6,5 à 7,3) | 5,3 à 8,5 ms (x 10,6 à 12,0) |
+
+Les trois laissent le même champ, avec les mêmes 2561 chunks matérialisés.
+
 ### Un rectangle vers et depuis une mémoire contiguë : `md::copy_box_out`, `md::copy_box_in`
 
 Un halo MPI, un hyperslab HDF5, une bibliothèque qui attend un `T*` : un rectangle de la vue copié
@@ -364,9 +412,10 @@ compte comme sauté.
 |---|---|
 | `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (et son `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | écritures par la vue et relecture linéaire, opérateurs composés, rang 3, vues en lecture seule, le mapping en tuiles (bijection, bourrage), une tuile uniforme est une suite uniforme ; toutes les variantes (un ctest chacune, `mdspan_validation_<variant>`) |
-| `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile(_mt)`, `md::update_tiles(_mt)`, `md::fill_box(_mt)`, `md::copy_box_out(_mt)`, `md::copy_box_in(_mt)`, `md::tile_count`, `md::tile` |
+| `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile(_mt)`, `md::update_tiles(_mt)`, `md::fill_box(_mt)`, `md::copy_box_out(_mt)`, `md::copy_box_in(_mt)`, `md::stencil_tiles(_mt)`, `md::halo_block`, `md::constant_boundary`, `md::clamp_boundary`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocs, étendues des tuiles sur les bords bourrés, tuiles uniformes, la mise à jour contre la formule élément par élément, les tuiles non touchées restent compressées, la mise à jour en parallèle ; les formes `_mt` (chaque tuile de la vue ou d'un rectangle visitée une fois et aucune autre, les tuiles d'un thread à une près de celles des autres, `fill_box_mt` sur vues en tuiles et ligne par ligne, dans une phase et hors région) ; toutes les variantes à 1 et 8 threads, et `mdspan_tile_ops_misaligned` (une tuile plus petite qu'un chunk refusée dans une région parallèle) |
 | `examples/validation/mdspan_copy_box_validation.cpp` | `copy_box_out` / `copy_box_in` contre `f[i, j]` et une référence : rectangles alignés, non alignés, sur les bords bourrés, une ligne, une colonne, toute la vue, vide ; en tuiles (une tuile par chunk, 16 x 16), ligne par ligne, rang 3, une `submdspan` et une colonne ; des tuiles entières copiées uniformes restent compressées ; tuile par tuile et tranche de lignes par tranche dans une phase parallèle ; les formes `_mt` sur chaque rectangle et chaque vue, et leur partage (chaque tuile du rectangle à un seul thread, aucun thread au-delà de W / T plus une tuile, parts des vues à pas formant une partition, bornes sur des frontières de chunk) ; toutes les variantes à 1 et 8 threads |
+| `examples/validation/mdspan_stencil_validation.cpp` | `stencil_tiles` / `stencil_tiles_mt` contre le stencil par `f[i, j]` : 9 points (halo 1) et 13 (halo 2), bords constants et par recopie, tuiles de 16 x 16 et d'un chunk (bords bourrés), un halo aussi large qu'une tuile, rang 3 ; le même résultat avec et sans `on_uniform`, les tuiles uniformes du résultat sans buffer, la source intacte ; en série, par tuile dans un `omp for`, depuis tous les threads d'une phase et hors région ; toutes les variantes à 1 et 8 threads, et `mdspan_stencil_alias` (un stencil d'un tableau vers lui-même refusé) |
 | `examples/validation/mdspan_submdspan_validation.cpp` | sous-vues d'une vue ligne par ligne (bloc, ligne, colonne, lecture seule, `fill_box`) et d'une vue en tuiles (alignée, finissant à l'étendue, sous-vue d'une sous-vue ; les opérations sur tuiles dessus, en série et en phase parallèle) ; toutes les variantes à 1 et 8 threads, et `mdspan_submdspan_misaligned` (une tranche en tuiles hors des tuiles arrête le programme) |
 | `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, tous les multiples de 64 jusqu'à 4096), `layout_tiled_dyn` contre `layout_tiled` indice par indice et par leurs sous-vues, la tuile par chunk de `tiled_view_dyn`, les opérations sur tuiles sur une tuile par chunk, une tuile 3 x 5 et une au-delà du tampon local ; toutes les variantes à la taille par défaut et en dyn (un rechunk sous la vue), 1 et 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | les comparaisons des sections 2 et 3, et le coût du multi-indice ; `mdspan_tiles 4096` pour un champ plus grand |

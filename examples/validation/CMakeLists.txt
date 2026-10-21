@@ -721,6 +721,34 @@ foreach(_vi RANGE ${_rt_nvar_last})
   endif()
 endforeach()
 
+# --- mdspan_stencil_validation_<variant>: md::stencil_tiles / md::stencil_tiles_mt
+# (chunk/mdspan_tile_ops.h) against the stencil through f[i, j], serially, per
+# tile in an omp for and from every thread of a phase, at 1 and 8 threads.
+# mdspan_stencil_alias: a stencil from an array into itself must stop the
+# program (expect_stop.cmake).
+foreach(_vi RANGE ${_rt_nvar_last})
+  list(GET _rt_variant_names   ${_vi} _vname)
+  list(GET _rt_variant_libbase ${_vi} _libbase)
+  list(GET _rt_variant_macro   ${_vi} _vmacro)
+  if (TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    set(_tgt mdspan_stencil_validation_${_vname})
+    add_executable(${_tgt} mdspan_stencil_validation.cpp)
+    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
+    validation_setup_target(${_tgt})
+    validation_add_test(${_tgt} ${_tgt} "" "1;8")
+    foreach(_nthr 1 8)
+      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
+    endforeach()
+    if (_vname STREQUAL "chunk2a")
+      add_test(NAME mdspan_stencil_alias
+               COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=alias
+                       "-DEXPECT=the source and the destination are one array" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)
+      set_tests_properties(mdspan_stencil_alias PROPERTIES LABELS validation)
+    endif()
+  endif()
+endforeach()
+
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).
 shrink_stamp_directory_targets()
