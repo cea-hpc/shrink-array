@@ -3,7 +3,7 @@
 > Version française : [README_fr.md](README_fr.md).
 
 **shrink-array** gives C++ HPC codes arrays that read and write like a `std::vector` -- same
-`[]`, same loops, same OpenMP threads -- but stop paying for the parts that hold the same value.
+`[]`, same loops, same OpenMP threads (or `std::thread`s, TBB) -- but stop paying for the parts that hold the same value.
 On the reference benchmark, a billion-element workload that needs **125.9 GB** with
 `std::vector` runs in **6 to 7.3 GB**: up to 20 times less memory, with no change to the loops.
 
@@ -14,7 +14,8 @@ On the reference benchmark, a billion-element workload that needs **125.9 GB** w
 - **Any repeated value**, not only zero (Chunk2A), for any trivially copyable type: `double`,
   `std::complex`, your own structures.
 - **Built for many threads**: no lock on the write path, arrays of 10⁹ elements, a few hundred
-  threads. C++20, Linux, CMake, Spack.
+  threads -- OpenMP's, or the program's own `std::thread`s and TBB tasks with the pool backend
+  (`CHUNK_THREADS=pool`, no OpenMP needed). C++20, Linux, CMake, Spack.
 
 *The project is `shrink-array` (repository, Spack package); the C++ namespace is
 `shrink_array`; the installed CMake package is `chunk` (`find_package(chunk)`, targets
@@ -168,20 +169,14 @@ Every call, by task: [docs/api.md](docs/api.md).
 
 ## In progress
 
-Two development branches, not in a release yet:
+One development branch, not in a release yet:
 
-- **`threads` -- OpenMP becomes optional.** The library's own parallel work goes through a
-  backend chosen at build time: OpenMP (unchanged), a pool of C++ threads (std::jthread), or serial;
-  no OpenMP pragma is left outside one backend file. With the pool backend the arrays can be
-  driven from the application's own `std::thread`s, and from a TBB program through
-  `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`). Plan and status:
-  [docs/threading_backends.md](https://github.com/cea-hpc/shrink-array/blob/threads/docs/threading_backends.md).
 - **`cpp23` -- C++23 and `mdspan`.** A multidimensional view on any array: `f[i, j]` goes
   through the same write proxy, and a tiled layout (16 x 16 tiles for 256-element chunks) makes
   a uniform 2D or 3D region compress whatever its width. Needs GCC 14 or Clang 18.
   [docs/mdspan.md](https://github.com/cea-hpc/shrink-array/blob/cpp23/docs/mdspan.md).
 
-`develop` is merged into both as it moves; `cpp23` is also a Spack version
+`develop` is merged into it as it moves; it is also a Spack version
 (`spack install shrink-array@cpp23`).
 
 ## Going further

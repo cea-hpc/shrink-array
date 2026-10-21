@@ -58,7 +58,6 @@ the tag's checksum to the recipe.
   `std::jthread` workers of the library's own, standard C++ only. Recorded
   in the installed package as `chunk_THREADS`; the targets of a pool build
   carry `FAST_ALLOC_PMP_POOL=1`, and a file compiled without it is refused.
-  Plan and status: [docs/threading_backends.md](docs/threading_backends.md).
 - Under the pool backend, the arrays can be written from the program's own
   threads -- `std::thread`, TBB, a pool of its own. Each takes a dense rank
   from a registry (given back when the thread exits); the phase contract is

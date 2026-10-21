@@ -3,7 +3,7 @@
 > English version: [README.md](README.md).
 
 **shrink-array** donne aux codes de calcul C++ des tableaux qui se lisent et s'écrivent comme un
-`std::vector` -- mêmes `[]`, mêmes boucles, mêmes threads OpenMP -- mais cessent de payer pour
+`std::vector` -- mêmes `[]`, mêmes boucles, mêmes threads OpenMP (ou `std::thread`, TBB) -- mais cessent de payer pour
 les parties qui contiennent la même valeur. Sur le banc de référence, une charge d'un milliard
 d'éléments qui demande **125,9 Go** en `std::vector` tient dans **6 à 7,3 Go** : jusqu'à 20 fois
 moins de mémoire, sans toucher aux boucles.
@@ -15,7 +15,8 @@ moins de mémoire, sans toucher aux boucles.
 - **N'importe quelle valeur répétée**, pas seulement zéro (Chunk2A), pour tout type trivialement
   copiable : `double`, `std::complex`, vos propres structures.
 - **Fait pour beaucoup de threads** : aucun verrou à l'écriture, des tableaux de 10⁹ éléments,
-  quelques centaines de threads. C++20, Linux, CMake, Spack.
+  quelques centaines de threads -- ceux d'OpenMP, ou les propres `std::thread` et tâches TBB du
+  programme avec le backend pool (`CHUNK_THREADS=pool`, sans OpenMP). C++20, Linux, CMake, Spack.
 
 *Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ est
 `shrink_array` ; le paquet CMake installé est `chunk` (`find_package(chunk)`, cibles
@@ -173,22 +174,15 @@ Chaque appel, par tâche : [docs/api_fr.md](docs/api_fr.md).
 
 ## En cours
 
-Deux branches de développement, pas encore dans une version :
+Une branche de développement, pas encore dans une version :
 
-- **`threads` -- OpenMP devient facultatif.** Le travail parallèle de la bibliothèque passe par
-  un backend choisi à la compilation : OpenMP (inchangé), un pool de threads C++ (std::jthread), ou série ;
-  il ne reste aucun pragma OpenMP hors d'un seul fichier de backend. Avec le backend pool, les
-  tableaux peuvent être pilotés depuis les propres `std::thread` de l'application, et depuis un
-  programme TBB via `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`). Plan et
-  avancement (en anglais) :
-  [docs/threading_backends.md](https://github.com/cea-hpc/shrink-array/blob/threads/docs/threading_backends.md).
 - **`cpp23` -- C++23 et `mdspan`.** Une vue multidimensionnelle sur n'importe quel tableau :
   `f[i, j]` passe par le même proxy d'écriture, et une disposition en tuiles (tuiles de 16 x 16
   pour des chunks de 256 éléments) fait qu'une région 2D ou 3D uniforme se compresse quelle que
   soit sa largeur. Demande GCC 14 ou Clang 18.
   [docs/mdspan_fr.md](https://github.com/cea-hpc/shrink-array/blob/cpp23/docs/mdspan_fr.md).
 
-`develop` est fusionnée dans les deux au fil de l'eau ; `cpp23` est aussi une version Spack
+`develop` y est fusionnée au fil de l'eau ; c'est aussi une version Spack
 (`spack install shrink-array@cpp23`).
 
 ## Pour aller plus loin
