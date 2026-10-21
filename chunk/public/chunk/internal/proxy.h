@@ -336,7 +336,8 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param old_value Value before the write.
      * @param new_value Value after the write.
      */
-    static void mark_for_compression_if_needed_with_value_async(const Derived& proxy, T old_value, T new_value)
+    static void mark_for_compression_if_needed_with_value_async(const Derived& proxy, in_t<T> old_value,
+                                                                in_t<T> new_value)
     {
         proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
     }
