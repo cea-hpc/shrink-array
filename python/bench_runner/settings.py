@@ -13,6 +13,32 @@ import os
 # (see COMPRESSION_INSENSITIVE_VARIANTS) to avoid re-timing identical binaries.
 COMPRESSION_ONLY_CONFIG_MARKERS = ["have-aggressive-compression"]
 
+# Configurations that are a RUN-TIME mode of another build, not a build of their
+# own: the suffix of the name, and the environment of their runs. Their binaries
+# are the base build's (builds.physical_config). -have-aggressive-compression:
+# the base build with CHUNK_AGGRESSIVE_COMPRESSION=1 (chunk/config.h), a build of
+# its own until the switch became a run-time one; a directory of that name still
+# on disk (an old build) is used as it is.
+VIRTUAL_CONFIG_ENV = {
+    "-have-aggressive-compression": {"CHUNK_AGGRESSIVE_COMPRESSION": "1"},
+}
+
+
+def virtual_base(config):
+    """The build a run-time-mode configuration runs, or None for a real one."""
+    for suffix in VIRTUAL_CONFIG_ENV:
+        if config.endswith(suffix):
+            return config[: -len(suffix)]
+    return None
+
+
+def config_env(config):
+    """The environment every run of `config` gets: its mode's (empty for a real build)."""
+    for suffix, env in VIRTUAL_CONFIG_ENV.items():
+        if config.endswith(suffix):
+            return dict(env)
+    return {}
+
 # Variants whose binary does not depend on the aggressive-compression knob, so
 # they never need to be run on a COMPRESSION_ONLY config. vector is a plain
 # non-chunk path, identical to the base config there. (std_alloc is handled

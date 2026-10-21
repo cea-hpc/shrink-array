@@ -311,6 +311,13 @@ def _build_dir_name(root, name):
     for cand in (name, f"cmake-build-{name}"):
         if os.path.isdir(os.path.join(root, cand)):
             return cand
+    # A run-time mode of another build (bench_runner/settings.py,
+    # VIRTUAL_CONFIG_ENV): kept when its base build exists.
+    from bench_runner.settings import virtual_base
+    for cand in (name, f"cmake-build-{name}"):
+        base = virtual_base(cand)
+        if base and os.path.isdir(os.path.join(root, base)):
+            return cand
     return None
 
 
@@ -486,6 +493,9 @@ for i in range(n):
 
         env = os.environ.copy()
         env["OMP_NUM_THREADS"] = str(exe_threads)
+        if build:
+            from bench_runner.settings import config_env
+            env.update(config_env(build))  # a run-time mode: CHUNK_AGGRESSIVE_COMPRESSION=1
         # NUMA binding: pin threads to cores so data stays on the local socket.
         # On this 4-socket machine, unbound threads migrate across sockets and
         # hammer remote memory (huge slowdown). Overridable from the outer env.

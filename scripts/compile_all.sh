@@ -550,22 +550,24 @@ echo "llvm → libstdc++ from ${CHUNK_GCC_TOOLCHAIN_DIR:-the default gcc} (USE_L
 # Optimised thread-sanitizer build, with the switches of the *_check_* benchmark
 # binaries: RelWithDebInfo so the scheduling and the inlining are the
 # production ones -- a race that needs them does not show in the Debug TSan
-# build below --, HAVE_AGGRESSIVE_COMPRESSION and CHECK_OPTIM as in those
-# binaries. LLVM
+# build below --, CHECK_OPTIM as in those binaries, and
+# CHUNK_AGGRESSIVE_COMPRESSION=1 at run time for the aggressive scheduling (this
+# build was ...-have-aggressive-compression-thread-sanitizer when the switch was a
+# compile-time one). LLVM
 # libomp carries the TSan annotations for barriers / omp for / tasks (Archer),
 # which is what makes the reports meaningful across region boundaries; the same
 # build with libgomp reports a race at every region end. Hardening
 # (CHUNK_GLIBCXX_ASSERTIONS) is added by default as for every -DSANITIZER build;
 # --no-hardening removes it if it perturbs the timing too much.
 if [ "$enable_sanitizers" = true ]; then
-set_build_header 'Compiling llvm relwithdebinfo openmp have_aggressive_compression thread sanitizer:'
+set_build_header 'Compiling llvm relwithdebinfo openmp check thread sanitizer:'
 if skip_release; then
-   echo "[debug-only] skipping llvm relwithdebinfo have_aggressive_compression thread-sanitizer build"
+   echo "[debug-only] skipping llvm relwithdebinfo check thread-sanitizer build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-relwithdebinfo-have-aggressive-compression-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-relwithdebinfo-check-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
    fi
-   launch_build "$build_rep/cmake-build-omp-llvm-relwithdebinfo-have-aggressive-compression-thread-sanitizer/$arch"
+   launch_build "$build_rep/cmake-build-omp-llvm-relwithdebinfo-check-thread-sanitizer/$arch"
 fi
 fi
 
@@ -675,15 +677,9 @@ else
    launch_build "$build_rep/cmake-build-omp-llvm-std-alloc/$arch"
 fi
 
-set_build_header 'Compiling llvm openmp have_aggressive_compression:'
-if skip_release; then
-   echo "[debug-only] skipping llvm have_aggressive_compression (release) build"
-else
-   if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-have-aggressive-compression/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-   fi
-   launch_build "$build_rep/cmake-build-omp-llvm-have-aggressive-compression/$arch"
-fi
+# No -have-aggressive-compression build any more: the switch is a run-time one
+# (CHUNK_AGGRESSIVE_COMPRESSION=1, chunk/config.h); bench_and_test.py and
+# multi_launch_stress.py run cmake-build-omp-llvm with it under that name.
 
 # MM_PROTECT: its branches are `if constexpr` in class templates, never
 # instantiated by any other build here, so a change can break them unseen (it

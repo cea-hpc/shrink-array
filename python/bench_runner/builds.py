@@ -6,7 +6,7 @@ import os
 import platform as _platform
 from pathlib import Path
 
-from .settings import COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS
+from .settings import COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS, virtual_base
 from .term import dim
 
 
@@ -87,6 +87,16 @@ def oracle_complete(output_dir, config):
     return os.path.exists(os.path.join(oracle_dir(output_dir, config), ORACLE_MARKER))
 
 
+def physical_config(build_root, config):
+    """The build directory a configuration's binaries come from: its own, or,
+    for a run-time mode (settings.VIRTUAL_CONFIG_ENV) with no directory of its
+    name, its base build's."""
+    base = virtual_base(config)
+    if base is None or (Path(build_root) / config).exists():
+        return config
+    return base
+
+
 def resolve_exe(build_root, config, var, stage):
     """
     Look up the executable for (config, var, stage) under several layouts:
@@ -114,6 +124,7 @@ def resolve_exe(build_root, config, var, stage):
         exe_name = f"shrink_bench_{base}_{size}"
     else:
         exe_name = f"shrink_bench_{var}_{stage}"
+    config = physical_config(build_root, config)  # a run-time mode runs its base build
     root = Path(build_root)
 
     # Layout 1: glob over the $arch level, but ONLY the current arch.

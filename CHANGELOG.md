@@ -77,6 +77,16 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Aggressive compression is a run-time switch, `CHUNK_AGGRESSIVE_COMPRESSION=1`
+  (the CMake option `HAVE_AGGRESSIVE_COMPRESSION` only sets its default): every
+  site that reads it is a phase boundary, a teardown or a check-build audit.
+  `compile_all*.sh` no longer builds `omp-gnu-have-aggressive-compression`,
+  `omp-llvm-have-aggressive-compression` and `omp-gnu-debug-have-aggressive-compression`;
+  `bench_and_test.py` and `multi_launch_stress.py` run those names as the base
+  build with the variable set. The two optimised TSan builds lose the switch from
+  their name: `omp-gnu-relwithdebinfo-check-thread-sanitizer`,
+  `omp-llvm-relwithdebinfo-check-thread-sanitizer` (run them with the variable for
+  the same coverage).
 - The thread capacity (the ranks the per-thread structures are sized for) is at
   least 256, besides `omp_get_max_threads()` and the cores: a team larger than
   the node's cores -- a `num_threads()` clause, a component that picks its own

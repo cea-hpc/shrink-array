@@ -60,9 +60,11 @@ endif()
 message(STATUS "CHUNK_VARIANTS = ${CHUNK_VARIANTS}")
 
 # --- Aggressive vs release compression scheduling ------------------------
-option(HAVE_AGGRESSIVE_COMPRESSION "Enable aggressive-compression scheduling mode." OFF)
+# A run-time switch (chunk_config::aggressive_compression(), environment
+# CHUNK_AGGRESSIVE_COMPRESSION=1 / 0); the option only sets its default.
+option(HAVE_AGGRESSIVE_COMPRESSION "Default of the run-time aggressive-compression switch (CHUNK_AGGRESSIVE_COMPRESSION)" OFF)
 if (HAVE_AGGRESSIVE_COMPRESSION)
-  message(STATUS "HAVE_AGGRESSIVE_COMPRESSION=ON → aggressive scheduling (stresses concurrent compression)")
+  message(STATUS "HAVE_AGGRESSIVE_COMPRESSION=ON → aggressive scheduling by default (CHUNK_AGGRESSIVE_COMPRESSION=0 turns it off)")
 endif()
 
 # --- Read-side deferred-op sync -----------------------------------------

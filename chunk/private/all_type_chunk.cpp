@@ -123,7 +123,7 @@ struct SerialFlushOwnership
 };
 } // namespace
 
-// chunk_config::have_aggressive_compression (CMake HAVE_AGGRESSIVE_COMPRESSION):
+// chunk_config::aggressive_compression() (run time: CHUNK_AGGRESSIVE_COMPRESSION):
 //   false (default): the deferred sweep runs at end-of-parallel-phase boundaries,
 //       via compress_chunk_to_compress_potentially(true) below;
 //   true: no between-phase sweep; all compression falls on the opportunistic
@@ -191,7 +191,7 @@ void finalize_parallel_phase_after_flush()
         ens_type_chunk.destroy_after_flush(false);
 
         reset_all();
-        if constexpr (!chunk_config::have_aggressive_compression)
+        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
             if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
@@ -230,7 +230,7 @@ void finalize_parallel_phase()
 
         reset_all();
 
-        if constexpr (!chunk_config::have_aggressive_compression)
+        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
             // Drain the deferred-compression backlog here, between parallel
             // phases: parallel, with no concurrent writers (no start() barrier).
