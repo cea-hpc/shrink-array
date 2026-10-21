@@ -29,7 +29,7 @@
 | option | default | effect |
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP |
-| `CHUNK_STATIC_SIZES` | `256;1024` | static chunk sizes built (targets `_<size>`) |
+| `CHUNK_STATIC_SIZES` | `auto` | static chunk sizes built (targets `_<size>`); `auto`: `256;1024`, `256` alone in a Debug or sanitizer build |
 | `CHUNK_BUILD_DYN` | `ON` | also build a dynamic-geometry library (`_dyn`) per variant |
 | `CHUNK_STD_ALLOC` | `OFF` | standard allocator for the chunk buffers instead of `fast_allocators` (useful under ASan: each buffer is a real `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A: the second-value slot holds a 4-byte identifier instead of the value (less memory, +3% write time) |

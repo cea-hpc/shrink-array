@@ -12,12 +12,12 @@
 Un build de développement d'une seule configuration :
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOMP=ON -DCHUNK_STATIC_SIZES=256
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOMP=ON
 cmake --build build
 ```
 
-`-DCHUNK_STATIC_SIZES=256` construit une seule taille statique au lieu de deux, ce qui économise une bonne part du temps
-de build ; `-DCHUNK_VARIANTS=chunk2a` construit une seule variante au lieu de trois, avec ses seuls exemples et
+Un build Debug construit une seule taille statique, 256, au lieu de deux (`CHUNK_STATIC_SIZES=auto`), ce qui
+économise une bonne part du temps de build ; `-DCHUNK_VARIANTS=chunk2a` construit une seule variante au lieu de trois, avec ses seuls exemples et
 harnais. Un build Debug, `-DCHECK_OPTIM=ON` ou un sanitizer construit aussi les harnais de validation
 (`examples/validation`).
 

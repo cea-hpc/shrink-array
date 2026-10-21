@@ -144,6 +144,40 @@ def resolve_exe(build_root, config, var, stage):
     return None
 
 
+def built_static_sizes(build_root, config):
+    """The static chunk sizes `config` was built with, as a set of strings
+    (CHUNK_STATIC_SIZES_BUILT in its CMakeCache.txt, for the current arch), or
+    None when unknown (no cache, or one written before the list was recorded):
+    the caller then looks for every size, as before. A Debug or sanitizer
+    build builds 256 alone by default (CHUNK_STATIC_SIZES=auto)."""
+    root = Path(build_root) / config
+    caches = [c for c in sorted(root.glob("*/CMakeCache.txt"))
+              if _arch_matches_current(c.parent.name)]
+    caches.append(root / "CMakeCache.txt")
+    for cache in caches:
+        try:
+            with open(cache) as f:
+                for line in f:
+                    if line.startswith("CHUNK_STATIC_SIZES_BUILT:"):
+                        value = line.split("=", 1)[1].strip()
+                        return {s for s in value.split(";") if s}
+        except OSError:
+            continue
+    return None
+
+
+def size_not_built(build_root, config, var):
+    """True when `var` names a static size ("chunk2a@1024") that `config` does
+    not build: skipped, not MISSING. dyn and variants without a size: False."""
+    if "@" not in var:
+        return False
+    size = var.split("@", 1)[1]
+    if size == "dyn":
+        return False
+    built = built_static_sizes(build_root, config)
+    return built is not None and size not in built
+
+
 def config_dir_present(build_root, config):
     """True if `config` has at least one built executable for the CURRENT arch.
     Lets us skip an entirely-unbuilt config (e.g. a non-OMP dir the user did not

@@ -73,6 +73,15 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Less compilation, the same measured binaries. The optimised builds carry
+  function names and line tables only (`-g1`), full `-g` where a debugger reads
+  locals (`CHECK_OPTIM`, sanitizers): `CHUNK_DEBUG_INFO` (auto, full, lines,
+  none). Same machine code; 20 to 27 % less compilation and 40 % less peak
+  memory on the bench and validation units. And `CHUNK_STATIC_SIZES` defaults
+  to `auto`: `256;1024`, but 256 alone (with dyn) in a Debug or sanitizer build
+  of this project, a third fewer libraries and executables there.
+  `bench_and_test.py` skips the sizes a configuration does not build. Existing
+  build directories keep their cached list: `compile_all.sh --fresh-cache`.
 - Constants are snake_case everywhere, as the standard library's; UPPER_CASE is left to
   macros. 84 names change, all internal but one: `fast_alloc::SIZE_BLOCK` is now
   `fast_alloc::size_block`, the former name kept as a deprecated alias. `check_naming` (a

@@ -33,10 +33,13 @@ option(CHUNK_STD_ALLOC "Use standard allocator for chunk." OFF)
 # -DCHUNK_SIZE. To benchmark several fixed sizes we therefore build ONE lib
 # per (variant, size). CHUNK_STATIC_SIZES is the list of static sizes; each
 # yields chunk_v<x>_<size>. CHUNK_BUILD_DYN adds a runtime-size (CHUNK_DYNAMIC)
-# lib chunk_v<x>_dyn per variant. Trim CHUNK_STATIC_SIZES during development to
-# cut build time (e.g. -DCHUNK_STATIC_SIZES=256).
-set(CHUNK_STATIC_SIZES "256;1024" CACHE STRING
-    "Semicolon list of compile-time chunk sizes to build (powers of two or multiples of 64).")
+# lib chunk_v<x>_dyn per variant. The list is resolved by the top-level
+# CMakeLists.txt (auto: 256 alone in a Debug or sanitizer build); trim it during
+# development to cut build time (e.g. -DCHUNK_STATIC_SIZES=256). Not a cache
+# entry here: it would hide the resolved list from this directory.
+if(NOT DEFINED CHUNK_STATIC_SIZES OR CHUNK_STATIC_SIZES STREQUAL "auto")
+  set(CHUNK_STATIC_SIZES "256;1024")
+endif()
 option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per variant." ON)
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
 # The variants built: chunk (ArrayChunk, chunk_v1_*), chunk2 (ArrayChunk2,
@@ -402,7 +405,8 @@ set(CHUNK_SOURCES
         private/link_check.cpp
 )
 # Optimisation: the library's .cpp files inherit the project's
-# CMAKE_CXX_FLAGS_RELEASE / _RELWITHDEBINFO (-O3 -g), like every other target.
+# CMAKE_CXX_FLAGS_RELEASE / _RELWITHDEBINFO (-O3 and CHUNK_DEBUG_INFO's level),
+# like every other target.
 # If the icpx EmitCtorList ICE comes back, CHUNK_ICPX_O0_WORKAROUND=ON builds
 # only the three TUs it hit at -O0, under icpx only.
 option(CHUNK_ICPX_O0_WORKAROUND "icpx only: compile array_chunk2A.cpp, array_chunk2.cpp and manager_chunk.cpp at -O0 (EmitCtorList ICE)" OFF)
