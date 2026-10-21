@@ -155,6 +155,9 @@ the tag's checksum to the recipe.
   (`alloc=trace`). Still accepted -- each sets its level, with a warning -- and to be removed in
   0.3.0. They are developer settings ([docs/developer_settings.md](docs/developer_settings.md)),
   outside the versioning policy; the deprecation period is a courtesy to the scripts that set them.
+- `getChunkList()` (ArrayChunk, ArrayChunk2, ArrayChunk2A) and `ParamChunk::ChunkStats()`,
+  renamed `get_chunk_list()` and `ParamChunk::chunk_stats()`: functions and methods are
+  snake_case. The former names stay, `[[deprecated]]`, until 1.0.
 
 ### Removed
 

@@ -23,7 +23,7 @@
  * thread's NUMA node, so the parallel phases afterwards read remote memory on
  * a multi-node machine -- a cost the chunked arrays, which allocate nothing at
  * creation, do not pay. BaselineVector allocates without writing
- * (default_init_allocator), then zeroes the elements in a parallel loop with
+ * (DefaultInitAllocator), then zeroes the elements in a parallel loop with
  * the static schedule of the bench's loops: each page is first touched by the
  * thread that works on it.
  *
@@ -53,7 +53,7 @@ namespace shrink_array
  *          reading one is undefined behaviour. BaselineVector writes them.
  */
 template <class T, class A = std::allocator<T>>
-class default_init_allocator : public A
+class DefaultInitAllocator : public A
 {
     using traits = std::allocator_traits<A>;
 
@@ -61,7 +61,7 @@ class default_init_allocator : public A
     template <class U>
     struct rebind
     {
-        using other = default_init_allocator<U, typename traits::template rebind_alloc<U>>;
+        using other = DefaultInitAllocator<U, typename traits::template rebind_alloc<U>>;
     };
 
     using A::A;
@@ -93,9 +93,9 @@ class default_init_allocator : public A
  * cannot write side by side.
  */
 template <class T>
-class BaselineVector : public std::vector<T, default_init_allocator<T>>
+class BaselineVector : public std::vector<T, DefaultInitAllocator<T>>
 {
-    using base = std::vector<T, default_init_allocator<T>>;
+    using base = std::vector<T, DefaultInitAllocator<T>>;
 
   public:
     using base::base;

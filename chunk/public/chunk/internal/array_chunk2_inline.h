@@ -171,9 +171,9 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
 
         if (nb_chunk)
         {
-            manager_chunk2::increm_somme_chunk_create(nb_chunk);
-            manager_chunk2::compute_size_buffer_reuse();
-            manager_chunk2::compute_size_max_number_of_chunk_to_check_compress();
+            ManagerChunk2::increm_somme_chunk_create(nb_chunk);
+            ManagerChunk2::compute_size_buffer_reuse();
+            ManagerChunk2::compute_size_max_number_of_chunk_to_check_compress();
 
             // Chunks start at cst_val1 (the first value).
             this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk));
@@ -291,21 +291,21 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
 
             if constexpr (build_config::use_openmp)
             {
-                const int sz = manager_chunk2::chunk2_to_compress_potentially_thr[0].size();
+                const int sz = ManagerChunk2::chunk2_to_compress_potentially_thr[0].size();
 
                 if (sz <= ind)
                 {
                     for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                     {
-                        manager_chunk2::chunk2_to_compress_potentially_thr[thr].resize(ind + 1);
+                        ManagerChunk2::chunk2_to_compress_potentially_thr[thr].resize(ind + 1);
                     }
                 }
 
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
-                    const auto& vec_ref    = manager_chunk2::chunk2_to_compress_potentially_thr[thr][ind];
+                    const auto& vec_ref    = ManagerChunk2::chunk2_to_compress_potentially_thr[thr][ind];
                     const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk2, T>>(vec_ref);
-                    manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][sec_value] = shared_vec;
+                    ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][sec_value] = shared_vec;
                 }
             }
         }
@@ -394,10 +394,10 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
         {
             for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
-                manager_chunk2::chunk2_to_compress_potentially_thr[thr].resize(1);
-                const auto& vec_ref    = manager_chunk2::chunk2_to_compress_potentially_thr[thr][0];
+                ManagerChunk2::chunk2_to_compress_potentially_thr[thr].resize(1);
+                const auto& vec_ref    = ManagerChunk2::chunk2_to_compress_potentially_thr[thr][0];
                 const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk2, T>>(vec_ref);
-                manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][sec_value] = shared_vec;
+                ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][sec_value] = shared_vec;
             }
         }
 
@@ -534,7 +534,7 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
     {
         const auto    csz          = static_cast<unsigned int>(this->size_policy_.size());
         const int     ind          = get_ind_second_value();
-        const in_t<T> second_value = get_second_value();
+        const InT<T>  second_value = get_second_value();
         n_would_be_2a              = 0;
 #pragma omp parallel for reduction(+ : n_would_be_2a) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
         for (int j = 0; j < nb_chunk; ++j)
@@ -544,7 +544,7 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
             {
                 continue; // compressed: holds first_value or second_value by definition
             }
-            const in_t<T> v = ck.read_value_scan(0);
+            const InT<T> v = ck.read_value_scan(0);
             if (v == Chunk2<T>::first_value || v == second_value)
             {
                 continue; // Chunk2 material, caught or not
@@ -633,7 +633,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
         // nothing else clears it, so a destroyed array's Chunk2* would dangle
         // there for a later pass to walk. Targeted (no compression, other arrays
         // untouched); it also makes rechunk_to's tmp teardown safe.
-        manager_chunk2::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+        ManagerChunk2::remove_from_compress_list_chunk2_by_num_tab(num_tab);
     }
 
     if (!nb_chunk)
@@ -650,7 +650,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // out), so it would be costly wasted work.
     if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_aggressive_compression)
     {
-        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
 
         if (ens_type_chunk.have_chunk_to_compress_potentially())
         {
@@ -745,12 +745,12 @@ void ArrayChunk2<T, ind_type>::clear_core()
                 // a size-A buffer filed under list[B] is later popped and
                 // memset at B, and overflows. Single-size builds have one list.
                 const unsigned int my_sz = this->size_policy_.size();
-                auto&              lbf   = manager_chunk2::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                auto&              lbf   = ManagerChunk2::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                 for (int k = 0; k < nb; ++k)
                 {
                     T* values_loc = ll_chunk_loc[k]->values;
-                    // Ledger LIVE -> PARKED, or a later pop trips an ILLEGAL b_pop.
+                    // Ledger LIVE -> parked, or a later pop trips an ILLEGAL b_pop.
                     CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
                     lbf.push_back(values_loc);
 
@@ -831,7 +831,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
     {
         if (!CHUNK_PMP_IN_PARALLEL_REGION)
         {
-            const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
+            const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
             if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);
@@ -1130,7 +1130,7 @@ void ArrayChunk2<T, ind_type>::release_chunk_range(int first, int last)
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
             first, last, [my_sz]() -> auto&
-            { return manager_chunk2::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
+            { return ManagerChunk2::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this](int j, auto& lbf)
             {
                 if (chunk_list[j].owns_live_buffer())

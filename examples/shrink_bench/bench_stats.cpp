@@ -58,7 +58,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     {
         using value_type           = std::remove_reference_t<std::remove_const_t<decltype(tab)>>::value_type;
         constexpr bool is_not_bool = !shrink_array::is_bool_like_v<value_type>; // bool, Bit
-        constexpr bool is_complex  = std::is_same_v<value_type, complex_double>;
+        constexpr bool is_complex  = std::is_same_v<value_type, ComplexDouble>;
         constexpr bool is_char     = std::is_same_v<value_type, unsigned char>;
 
         Int nbz = 0;

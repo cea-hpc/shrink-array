@@ -38,7 +38,7 @@
  * @par Why two slab kinds
  * ::TCAllocator threads its free list THROUGH the freed elements, writing the
  * next free index into the element's first bytes. ::TCCAllocator does not: it
- * keeps the links in a side array (TCSlab::tab_firstFree) and never writes
+ * keeps the links in a side array (TCSlab::tab_first_free_) and never writes
  * into a free element, so an emptied slab's pages can be dropped with madvise()
  * without losing anything the allocator needs. That side array is indexed by
  * `unsigned short`, which is what caps a TCCAllocator slab at
@@ -168,13 +168,13 @@ enum class FreeLinks : std::uint8_t
     /// In the freed elements themselves: a freed element's first bytes hold
     /// the index of the next free one. No extra memory, but an element must be
     /// at least an `int` wide and its contents do not survive a free.
-    InPayload,
-    /// In a side array (TCSlab::tab_firstFree), never in the elements: the
+    in_payload,
+    /// In a side array (TCSlab::tab_first_free_), never in the elements: the
     /// allocator never writes into a free element, so an emptied slab's pages
     /// can be dropped (fast_alloc::EmptySlabSweep) without losing a
     /// link. The array is `unsigned short`, which caps a slab at
     /// TCSlab::free_list_end - 1 elements.
-    SideArray
+    side_array
 };
 
 /**
@@ -206,8 +206,8 @@ template <FreeLinks Links>
 class alignas(64) TCSlab
 {
   public:
-    /// @brief The links live in #tab_firstFree rather than in the elements.
-    static constexpr bool side_links = Links == FreeLinks::SideArray;
+    /// @brief The links live in #tab_first_free_ rather than in the elements.
+    static constexpr bool side_links = Links == FreeLinks::side_array;
 
     /// @brief An element index on the free list.
     using index_type = std::conditional_t<side_links, unsigned short, int>;
@@ -225,7 +225,7 @@ class alignas(64) TCSlab
         destroy();
     }
 
-    // Owns its block (and #tab_firstFree): a copy would release them twice.
+    // Owns its block (and #tab_first_free_): a copy would release them twice.
     TCSlab(const TCSlab&)            = delete;
     TCSlab& operator=(const TCSlab&) = delete;
     TCSlab(TCSlab&&)                 = delete;
@@ -268,11 +268,11 @@ class alignas(64) TCSlab
     void reset() noexcept
     {
         UsedSize  = 0;
-        firstFree = free_list_end;
+        first_free = free_list_end;
     }
 
     /// @brief Index of the element at @p ptr within this slab: offset / #ElementSize
-    ///        without a division. One 64x64->128 multiplication by #ElementMagic
+    ///        without a division. One 64x64->128 multiplication by #element_magic_
     ///        (Lemire, Kaser & Kurz 2019, exact for every 32-bit dividend and
     ///        divisor >= 2; init() refuses a slab over 4 GiB).
     /// @pre #ElementSize >= 2 -- a power of two goes through num_block_pow2().
@@ -280,9 +280,9 @@ class alignas(64) TCSlab
     {
         const auto off = static_cast<std::uint64_t>(static_cast<const char*>(ptr) - data);
         FAST_ALLOC_DBG_ASSERT(ElementSize >= 2 && off <= UINT32_MAX);
-        FAST_ALLOC_DBG_ASSERT(static_cast<int>((static_cast<unsigned __int128>(ElementMagic) * off) >> 64) ==
+        FAST_ALLOC_DBG_ASSERT(static_cast<int>((static_cast<unsigned __int128>(element_magic_) * off) >> 64) ==
                               static_cast<int>(off / static_cast<std::uint64_t>(ElementSize)));
-        return static_cast<int>((static_cast<unsigned __int128>(ElementMagic) * off) >> 64);
+        return static_cast<int>((static_cast<unsigned __int128>(element_magic_) * off) >> 64);
     }
 
     /// @brief num_block() by shift. Valid only if #ElementSize is a power of two.
@@ -323,7 +323,7 @@ class alignas(64) TCSlab
     ///          from the middle of a block (slab_geometry_validation).
     [[nodiscard]] static uintptr_t slab_bytes_for(uintptr_t block_bytes) noexcept
     {
-        return NextPowerOf2(block_bytes);
+        return next_power_of_2(block_bytes);
     }
 
     /// @brief The slab of @p slab_bytes (a power of two) holding @p ptr:
@@ -352,7 +352,7 @@ class alignas(64) TCSlab
 
     uintptr_t BlockAllocator = 0; ///< Block size in bytes; a power of two.
 
-    index_type firstFree{free_list_end}; ///< Head of the free list; #free_list_end if empty.
+    index_type first_free{free_list_end}; ///< Head of the free list; #free_list_end if empty.
 
     int nn_ref{0}; ///< Elements currently out. 0 == releasable, #BlockSize == full.
 
@@ -400,7 +400,7 @@ class alignas(64) TCSlab
     {
         if constexpr (side_links)
         {
-            return tab_firstFree[static_cast<std::size_t>(i)];
+            return tab_first_free_[static_cast<std::size_t>(i)];
         }
         else
         {
@@ -409,7 +409,7 @@ class alignas(64) TCSlab
         }
     }
 
-    /// @brief Free #tab_firstFree and hand the block back to the arena named
+    /// @brief Free #tab_first_free_ and hand the block back to the arena named
     ///        by #arena_kind.
     inline void destroy();
 
@@ -417,7 +417,7 @@ class alignas(64) TCSlab
      * @brief Obtain the block and lay it out.
      * @details Rounds the block size up to a power of two (slab_from() masks
      *          with it), derives #BlockSize from it -- capped to the index width
-     *          with side links, which also sizes #tab_firstFree -- takes the
+     *          with side links, which also sizes #tab_first_free_ -- takes the
      *          block from the arena and writes `this` into its last word. The
      *          block is not cleared, fresh or recycled: see the class @warning.
      */
@@ -426,30 +426,30 @@ class alignas(64) TCSlab
     int Log2ElementSize = 0; ///< log2(#ElementSize), for num_block_pow2().
 
     /// @brief num_block()'s multiplier: floor((2^64 - 1) / #ElementSize) + 1.
-    std::uint64_t ElementMagic = 0;
+    std::uint64_t element_magic_ = 0;
 
     /// @brief Free-list links, one per element, with side links. Kept out of
     ///        the payload, so an emptied slab's pages can be dropped without
     ///        losing them.
-    [[no_unique_address]] std::conditional_t<side_links, std::vector<unsigned short>, NoSideArray> tab_firstFree;
+    [[no_unique_address]] std::conditional_t<side_links, std::vector<unsigned short>, NoSideArray> tab_first_free_;
 };
 
 /// @brief Slab with its free list threaded through the freed elements: the op
 ///        and ctx pools, and the value pools of serial builds.
-using TCAllocator = TCSlab<FreeLinks::InPayload>;
+using TCAllocator = TCSlab<FreeLinks::in_payload>;
 
 /// @brief Slab with its free list in a side array: the value pools of OpenMP
 ///        builds, whose emptied slabs an EmptySlabSweep can madvise away
 ///        (TCTypeCAllocator::collect_empty_slabs).
-using TCCAllocator = TCSlab<FreeLinks::SideArray>;
+using TCCAllocator = TCSlab<FreeLinks::side_array>;
 
 #ifndef _OPENMP
 // Defined in tc_allocator.cpp. Only the in-payload slab is ever created in a
 // serial build: ::TCTypeCAllocator exists in OpenMP builds only.
 template <>
-void* TCSlab<FreeLinks::InPayload>::operator new(size_t size);
+void* TCSlab<FreeLinks::in_payload>::operator new(size_t size);
 template <>
-void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr);
+void TCSlab<FreeLinks::in_payload>::operator delete(void* ptr);
 #endif
 
 /// @brief A whole-list check (sl_check, sl_contains): linear on every insert
@@ -687,18 +687,18 @@ struct VTCTypeAllocator
 
     /**
      * @brief Accumulate this allocator's footprint into the running totals.
-     * @param sum_UsedSize Elements ever carved, summed over slabs.
+     * @param sum_used_size Elements ever carved, summed over slabs.
      * @param sum_nn_ref Elements currently out, summed over slabs.
      * @param alloc_sz Bytes held, summed over slabs.
      */
-    virtual void addAllocatedSize(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz) const = 0;
+    virtual void add_allocated_size(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const = 0;
 };
 
 /// @brief Enrol an allocator in the registry the memory report walks.
-void add_TCTypeAllocator_inst(VTCTypeAllocator* /*inst*/);
+void add_tc_type_allocator_inst(VTCTypeAllocator* /*inst*/);
 
 /// @brief Withdraw it. Called from the destructor.
-void remove_TCTypeAllocator_inst(VTCTypeAllocator* /*inst*/);
+void remove_tc_type_allocator_inst(VTCTypeAllocator* /*inst*/);
 
 /**
  * @brief Owns every slab serving one element size: the machinery common to
@@ -1264,13 +1264,13 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
     /// @brief Empty and unusable until init(); enrols in the report registry.
     TCTypeAllocator() : TCSlabPool<TCTypeAllocator<ElemT>, ElemT, TCAllocator>(fast_alloc::ArenaKind::Op)
     {
-        add_TCTypeAllocator_inst(this);
+        add_tc_type_allocator_inst(this);
     }
 
     /// @brief Unregisters from the instance list; the base then frees every slab.
     ~TCTypeAllocator() override
     {
-        remove_TCTypeAllocator_inst(this);
+        remove_tc_type_allocator_inst(this);
     }
 
     // Owns its slabs and is enrolled by address in the report registry.
@@ -1281,20 +1281,20 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
 
   private:
     /**
-     * @copydoc VTCTypeAllocator::addAllocatedSize
+     * @copydoc VTCTypeAllocator::add_allocated_size
      * @note @p alloc_sz counts ELEMENTS, not bytes -- it sums BlockSize over the
      *       slabs. The reserve in #block_empty is not counted, so a run that
      *       parks slabs there reports less than it holds.
      */
-    void addAllocatedSize(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz) const noexcept override
+    void add_allocated_size(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const noexcept override
     {
         size_t s_blocks   = 0;
-        size_t s_UsedSize = 0;
+        size_t s_used_size = 0;
         size_t s_nn_ref   = 0;
 
         for (const TCAllocator* node = this->block; node != nullptr; node = node->next)
         {
-            s_UsedSize += static_cast<size_t>(node->UsedSize) * node->ElementSize;
+            s_used_size += static_cast<size_t>(node->UsedSize) * node->ElementSize;
             s_nn_ref += static_cast<size_t>(node->nn_ref) * node->ElementSize;
             s_blocks += node->BlockSize;
         }
@@ -1304,7 +1304,7 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
             s_blocks += node->BlockSize;
         }
 
-        sum_UsedSize += s_UsedSize;
+        sum_used_size += s_used_size;
         sum_nn_ref += s_nn_ref;
         alloc_sz += s_blocks;
     }
@@ -1402,7 +1402,7 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
 ///        a slab's free-list index sized to the element, rather than an `int`
 ///        per element on a small block.
 template <unsigned int bytes>
-using free_index_t = std::conditional_t<bytes == 1, signed char, std::conditional_t<bytes == 2, short, int>>;
+using FreeIndexT = std::conditional_t<bytes == 1, signed char, std::conditional_t<bytes == 2, short, int>>;
 
 
 /**
@@ -1428,22 +1428,22 @@ class TCAllocatorEB
         ElementSize     = ElementBytes,
         Log2ElementSize = std::bit_width(ElementBytes) - 1,
         BlockSize       = BlockBytes,
-        BlockSizePOT    = static_cast<int>(std::bit_ceil(BlockBytes)), // int: the mask below must sign-extend
-        BlockAddrMask   = ~(BlockSizePOT - 1),
-        getSizeOf       = sizeof(TCAllocatorEB*),
-        UsedBlockSize   = BlockBytes - getSizeOf,
-        MaxElements     = UsedBlockSize / ElementBytes
+        block_size_pot  = static_cast<int>(std::bit_ceil(BlockBytes)), // int: the mask below must sign-extend
+        block_addr_mask = ~(block_size_pot - 1),
+        get_size_of     = sizeof(TCAllocatorEB*),
+        used_block_size = BlockBytes - get_size_of,
+        max_elements    = used_block_size / ElementBytes
     };
 
     /// @brief Free-list index type, as narrow as the element allows.
-    using T = free_index_t<std::bit_floor(ElementBytes)>;
+    using T = FreeIndexT<std::bit_floor(ElementBytes)>;
 
     // The free list stores an element INDEX of type T inside each freed
     // element: T must fit in an element, and must count every element of the
     // block (a signed char stops at 127, a short at 32767).
     static_assert(sizeof(T) <= static_cast<std::size_t>(ElementSize),
                   "TCAllocatorEB: the free-list index does not fit in an element");
-    static_assert(static_cast<long long>(MaxElements) <= static_cast<long long>(std::numeric_limits<T>::max()),
+    static_assert(static_cast<long long>(max_elements) <= static_cast<long long>(std::numeric_limits<T>::max()),
                   "TCAllocatorEB: more elements per block than the free-list index type can count");
 
     /// @brief Takes its block straight away -- there is no separate init().
@@ -1488,19 +1488,19 @@ class TCAllocatorEB
     void* alloc() noexcept
     {
         ++nn_ref;
-        char* elemPtr = nullptr;
+        char* elem_ptr = nullptr;
 
-        if (firstFree != -1)
+        if (first_free != -1)
         {
-            elemPtr   = data + (firstFree * ElementSize);
-            firstFree = *(T*)elemPtr;
+            elem_ptr   = data + (first_free * ElementSize);
+            first_free = *(T*)elem_ptr;
         }
         else
         {
-            elemPtr = data + (UsedSize * ElementSize);
+            elem_ptr = data + (UsedSize * ElementSize);
             ++UsedSize;
         }
-        return static_cast<void*>(elemPtr);
+        return static_cast<void*>(elem_ptr);
     }
 
     /// @brief Index of the element at @p ptr within this slab (division).
@@ -1530,8 +1530,8 @@ class TCAllocatorEB
         }
         else
         {
-            *(T*)(data + (i * ElementSize)) = firstFree;
-            firstFree                       = i;
+            *(T*)(data + (i * ElementSize)) = first_free;
+            first_free                      = i;
         }
         --nn_ref;
     }
@@ -1545,13 +1545,13 @@ class TCAllocatorEB
     /// @brief This free brought the slab back from full.
     [[nodiscard]] bool was_full() const noexcept
     {
-        return nn_ref == MaxElements - 1;
+        return nn_ref == max_elements - 1;
     }
 
     /// @brief Every element is out; the slab must move to block_full.
     [[nodiscard]] bool is_full() const noexcept
     {
-        return nn_ref == MaxElements;
+        return nn_ref == max_elements;
     }
 
     /**
@@ -1564,12 +1564,13 @@ class TCAllocatorEB
     {
         // this pointer stored at the end of the block
         // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
-        const char* base = static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & ~size_t(BlockAddrMask));
-        return *reinterpret_cast<TCAllocatorEB* const*>(base + UsedBlockSize);
+        const char* base =
+            static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & ~size_t(block_addr_mask));
+        return *reinterpret_cast<TCAllocatorEB* const*>(base + used_block_size);
     }
 
-    char* data = nullptr; ///< The block itself, aligned on #BlockSizePOT.
-    int   firstFree{-1};  ///< Head of the free list, an element index; -1 if empty.
+    char* data = nullptr; ///< The block itself, aligned on #block_size_pot.
+    int   first_free{-1}; ///< Head of the free list, an element index; -1 if empty.
 
     int nn_ref{0};   ///< Elements currently out. 0 == deletable.
     int UsedSize{0}; ///< Bump index: how far the linear carve has reached.
@@ -1589,7 +1590,7 @@ class TCAllocatorEB
      * @return 0, or 1 when no block could be obtained (posix_memalign failed);
      *         the constructor aborts then.
      * @details The block must be aligned on its own power-of-two size, because
-     *          addr_to_block() masks with #BlockAddrMask. The mmap path maps
+     *          addr_to_block() masks with #block_addr_mask. The mmap path maps
      *          twice the size and unmaps the unaligned head and the tail; the
      *          posix_memalign path asks for the alignment explicitly.
      *          A failed trimming munmap (ENOMEM at vm.max_map_count) is not a
@@ -1626,7 +1627,7 @@ class TCAllocatorEB
             use_mmap    = false;
             void* datal = nullptr;
 
-            const int result = posix_memalign(&datal, BlockSizePOT, BlockSize);
+            const int result = posix_memalign(&datal, block_size_pot, BlockSize);
 
             if (result != 0)
             {
@@ -1636,9 +1637,9 @@ class TCAllocatorEB
             data = static_cast<char*>(datal);
         }
 
-        *reinterpret_cast<TCAllocatorEB**>(data + UsedBlockSize) = this;
+        *reinterpret_cast<TCAllocatorEB**>(data + used_block_size) = this;
 
-        firstFree = -1;
+        first_free = -1;
 
         return 0;
     }
@@ -1702,7 +1703,7 @@ class TCTypeAllocatorEBC
                 insert(block, slab);
 
                 slab->UsedSize  = 0;
-                slab->firstFree = -1;
+                slab->first_free = -1;
 
                 return slab->alloc();
             }
@@ -1759,16 +1760,16 @@ class TCTypeAllocatorEBC
 
     /**
      * @brief Accumulate this allocator's footprint into the running totals.
-     * @param sum_UsedSize Bytes ever carved, summed over slabs.
+     * @param sum_used_size Bytes ever carved, summed over slabs.
      * @param sum_nn_ref Bytes currently out, summed over slabs.
      * @param alloc_sz Bytes held, summed over slabs.
-     * @note Unlike TCTypeAllocator::addAllocatedSize, these are BYTES: the
+     * @note Unlike TCTypeAllocator::add_allocated_size, these are BYTES: the
      *       compile-time ElementSize and BlockSize are folded in here.
      */
-    void addAllocatedSize(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz) const noexcept
+    void add_allocated_size(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const noexcept
     {
         size_t nb_blocks  = 0;
-        size_t s_UsedSize = 0;
+        size_t s_used_size = 0;
         size_t s_nn_ref   = 0;
 
         // const: this walk only totals, it never touches a slab.
@@ -1776,7 +1777,7 @@ class TCTypeAllocatorEBC
 
         while (node != nullptr)
         {
-            s_UsedSize += node->UsedSize;
+            s_used_size += node->UsedSize;
             s_nn_ref += node->nn_ref;
             nb_blocks++;
 
@@ -1794,7 +1795,7 @@ class TCTypeAllocatorEBC
             node                       = next;
         }
 
-        sum_UsedSize += s_UsedSize * size_t(ElementSize);
+        sum_used_size += s_used_size * size_t(ElementSize);
         sum_nn_ref += s_nn_ref * size_t(ElementSize);
         alloc_sz += nb_blocks * size_t(BlockSize);
     }

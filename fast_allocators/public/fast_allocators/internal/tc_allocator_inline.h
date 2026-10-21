@@ -57,7 +57,7 @@ inline void TCSlab<Links>::alloc_block()
             BlockSize = free_list_end - 1;
         }
 
-        tab_firstFree.resize(static_cast<std::size_t>(BlockSize));
+        tab_first_free_.resize(static_cast<std::size_t>(BlockSize));
     }
 
     // From the slab's own arena, never glibc: arena addresses are never returned to the OS
@@ -79,7 +79,7 @@ inline void TCSlab<Links>::alloc_block()
 
     *reinterpret_cast<TCSlab**>(data + BlockAllocator - sizeof(void*)) = this;
 
-    firstFree = free_list_end;
+    first_free = free_list_end;
 }
 
 template <FreeLinks Links>
@@ -87,7 +87,7 @@ inline void TCSlab<Links>::destroy()
 {
     if constexpr (side_links)
     {
-        std::vector<unsigned short>().swap(tab_firstFree); // releases the free-list links
+        std::vector<unsigned short>().swap(tab_first_free_); // releases the free-list links
         // (not `= {}`: that is operator=(initializer_list), which keeps the capacity)
     }
 
@@ -126,7 +126,7 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
     }
     // Unused (and 0, the +1 wrapping) for an element size of 1: a power of
     // two, num_block_pow2() takes it.
-    ElementMagic = UINT64_MAX / static_cast<std::uint64_t>(ElementSize) + 1u;
+    element_magic_ = UINT64_MAX / static_cast<std::uint64_t>(ElementSize) + 1u;
 
     alloc_block();
 }
@@ -148,20 +148,20 @@ inline void* TCSlab<Links>::alloc() noexcept
     }
 
     ++nn_ref;
-    char* elemPtr = nullptr;
+    char* elem_ptr = nullptr;
 
-    if (firstFree != free_list_end)
+    if (first_free != free_list_end)
     {
-        elemPtr   = data + (static_cast<std::ptrdiff_t>(firstFree) * ElementSize);
-        firstFree = link(firstFree); // the link is read before the element is handed out
+        elem_ptr   = data + (static_cast<std::ptrdiff_t>(first_free) * ElementSize);
+        first_free = link(first_free); // the link is read before the element is handed out
     }
     else
     {
-        elemPtr = data + (static_cast<std::ptrdiff_t>(UsedSize) * ElementSize);
+        elem_ptr = data + (static_cast<std::ptrdiff_t>(UsedSize) * ElementSize);
         ++UsedSize;
     }
 
-    return elemPtr;
+    return elem_ptr;
 }
 
 template <FreeLinks Links>
@@ -174,8 +174,8 @@ inline void TCSlab<Links>::free_block(int i) noexcept
     }
     else
     {
-        link(i)   = firstFree;
-        firstFree = static_cast<index_type>(i);
+        link(i)    = first_free;
+        first_free = static_cast<index_type>(i);
     }
 
     --nn_ref;

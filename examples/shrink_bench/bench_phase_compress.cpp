@@ -80,7 +80,7 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         // reported as a miss its self-heal had to compress.
         if constexpr (build_config::use_openmp && !chunk_config::have_aggressive_compression)
         {
-            auto& ens = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
+            auto& ens = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
             if (ens.have_chunk_to_compress_potentially())
             {
                 ens.compress_chunk_to_compress_potentially(true);

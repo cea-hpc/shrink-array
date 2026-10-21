@@ -245,7 +245,7 @@ void ArrayChunk<T, ind_type>::clear_core()
                     constexpr T zero{};
                     std::uninitialized_fill_n(values_loc, my_sz, zero);
 
-                    // Ledger LIVE -> PARKED (no-op when the ledger is off).
+                    // Ledger LIVE -> parked (no-op when the ledger is off).
                     CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
                     lbf.push_back(values_loc);
 

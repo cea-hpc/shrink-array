@@ -65,8 +65,7 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int                    thr,
-                                                                                  vec_tuple_chunkp_int2& ll_compt)
+void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int thr, VecTupleChunkpInt2& ll_compt)
 {
     const auto& vec_tup = Derived::manager_chunk::chunk_to_compress_potentially_thr[thr];
 
@@ -92,10 +91,10 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_pa
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(vec_tuple_chunkp_int2& ll_compt,
-                                                                     int                    num_chunk,
-                                                                     int                    num_tab,
-                                                                     unsigned int           n_elems)
+void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(VecTupleChunkpInt2& ll_compt,
+                                                                     int                 num_chunk,
+                                                                     int                 num_tab,
+                                                                     unsigned int        n_elems)
 {
     if (derived().written())
     {
@@ -327,7 +326,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
         }
     }
 
-    vec_tuple_chunkp_int2 ll_compt;
+    VecTupleChunkpInt2 ll_compt;
 
     ll_compt.reserve((sz / 10) + 1);
 
@@ -487,7 +486,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int 
     auto& ll_block_free_thr = manager_chunk::get_list_block_free_thr_for_size(thr_rank, n_elems);
 
     Base::init_block(values.load(), n_elems);
-    CHUNK_LEDGER_PARK(values.load(), "clear_st.park"); // LIVE -> PARKED before it re-enters the pool
+    CHUNK_LEDGER_PARK(values.load(), "clear_st.park"); // LIVE -> parked before it re-enters the pool
     ll_block_free_thr.push_back(values);
 
     derived().init_values_cst_val();

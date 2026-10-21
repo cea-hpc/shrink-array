@@ -197,9 +197,9 @@ fatal_report(std::string_view prefix, const std::source_location& loc, std::stri
  *        spells them (fmt_arg) -- and fatal_report() it.
  */
 template <typename... Args>
-[[noreturn]] void fatal(std::string_view                               prefix,
-                        const std::source_location&                    loc,
-                        std::format_string<detail::fmt_arg_t<Args>...> fmt,
+[[noreturn]] void fatal(std::string_view                             prefix,
+                        const std::source_location&                  loc,
+                        std::format_string<detail::FmtArgT<Args>...> fmt,
                         Args&&... args) noexcept
 {
     char              msg[line_max];

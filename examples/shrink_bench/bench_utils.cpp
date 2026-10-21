@@ -39,7 +39,7 @@
 // -----------------------------------------------------------------------------
 // File-scope globals (declared in bench_utils.h).
 // -----------------------------------------------------------------------------
-bool __debug_flag = false;
+bool debug_flag = false;
 
 // "--test_stl" must be listed here: the filter below (ranges::find over
 // valid_args) runs FIRST and rejects an unknown flag, so a flag missing from
@@ -85,7 +85,7 @@ unsigned load_seed_to_file(const std::string& filename)
     return seed;
 }
 
-void initializeRNG(std::mt19937& rng, const std::string& seed_file_name)
+void initialize_rng(std::mt19937& rng, const std::string& seed_file_name)
 {
     unsigned seed = load_seed_to_file(seed_file_name);
     if (seed == 0)
@@ -101,14 +101,14 @@ void initializeRNG(std::mt19937& rng, const std::string& seed_file_name)
 // -----------------------------------------------------------------------------
 // Memory report.
 // -----------------------------------------------------------------------------
-double convert_memory(double memoryValue)
+double convert_memory(double memory_value)
 {
     constexpr double byte_to_kb = 1.0 / 1024;
     constexpr double kb_to_mb   = 1.0 / 1024;
 
     // A conversion, nothing else: no file I/O inside --mode perf's timed
     // loop. memory_consumption("end") writes memory_mo.txt, with the peak.
-    const double kilobytes = memoryValue * byte_to_kb;
+    const double kilobytes = memory_value * byte_to_kb;
     return kilobytes * kb_to_mb;
 }
 
@@ -168,7 +168,7 @@ void memory_consumption(const std::string& msg)
                 static const bool keep_pools = shrink_array::env_flag("SHRINK_BENCH_KEEP_POOLS");
                 if (!keep_pools)
                 {
-                    (void)shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef().trim_reuse_pools(0);
+                    (void)shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref().trim_reuse_pools(0);
                 }
             }
             malloc_trim(0);
@@ -236,7 +236,7 @@ void memory_consumption(const std::string& msg)
         if constexpr (chunk_config::is_shrink_enabled)
         {
             const std::size_t parked =
-                shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef().reuse_pool_bytes();
+                shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref().reuse_pool_bytes();
             std::cout << ", parked " << convert_memory(static_cast<double>(parked)) << " Mo";
             // Preprocessor guard, not `if constexpr`: ChunkStatsThr and
             // reduce_chunk_stats() only exist in a CHUNK_STATS build, and a

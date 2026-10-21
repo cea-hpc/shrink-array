@@ -82,7 +82,7 @@ class RechunkHooks2<Derived, true>
      * @brief Re-declare the captured state on the freshly built array.
      * @param state value returned by rechunk_capture_state()
      */
-    void rechunk_seed_fresh(in_t<value_type> state);
+    void rechunk_seed_fresh(InT<value_type> state);
 
     /**
      * @brief Exchange identity with the scratch array built at the new geometry.
@@ -99,7 +99,7 @@ class RechunkHooks2<Derived, true>
      *          that tmp's destructor does not erase an entry the survivor still
      *          needs -- see ArrayChunk2's destructor, second warning.
      */
-    void rechunk_reown_after_swap(Derived& tmp, in_t<value_type> state);
+    void rechunk_reown_after_swap(Derived& tmp, InT<value_type> state);
 
   protected:
     /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
@@ -137,14 +137,14 @@ class RechunkHooks2<Derived, false>
         return value_type{};
     }
     /** @brief No-op: there is no fresh array to seed. */
-    void rechunk_seed_fresh(in_t<value_type> /*state*/) const noexcept {}
+    void rechunk_seed_fresh(InT<value_type> /*state*/) const noexcept {}
     /** @brief No-op: there is no temporary array to swap identities with. */
     bool rechunk_swap_identity(Derived& /*tmp*/) const noexcept
     {
         return true;
     }
     /** @brief No-op: no identity was swapped, so nothing to re-own. */
-    void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<value_type> /*state*/) const noexcept {}
+    void rechunk_reown_after_swap(Derived& /*tmp*/, InT<value_type> /*state*/) const noexcept {}
 };
 
 } // namespace shrink_array

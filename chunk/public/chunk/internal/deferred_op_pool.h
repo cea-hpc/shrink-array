@@ -613,7 +613,7 @@ template <typename T, typename... Args>
     // (vptr written).
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), EV_OP_ALLOC, 0, mem);
+        ring_log_op(get_tid(), ev_op_alloc, 0, mem);
     }
     return constructed;
 }
@@ -649,7 +649,7 @@ void free_op(T* op)
     // can show a free while the op was still referenced by op_map.
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), EV_OP_FREE, 0, static_cast<const void*>(op));
+        ring_log_op(get_tid(), ev_op_free, 0, static_cast<const void*>(op));
     }
     pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();

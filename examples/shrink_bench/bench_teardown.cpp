@@ -83,12 +83,12 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // tab_*.clear() above: clear() runs clear_core(), which is what feeds
     // teardown_clear -- reporting before them always showed 0. Independent of the
     // bench's own `stats` mode (that one is application-level and check-only);
-    // these are library counters we want in perf runs too. ChunkStats() is
+    // these are library counters we want in perf runs too. chunk_stats() is
     // declared unconditionally and compiles to an empty body without CHUNK_STATS,
     // so a plain if constexpr does the job -- no #ifdef needed.
     if constexpr (chunk_config::stats)
     {
-        shrink_array::ParamChunk::ChunkStats();
+        shrink_array::ParamChunk::chunk_stats();
     }
 
     // Entries get_info_second_value() scans per call, per element type. It is a

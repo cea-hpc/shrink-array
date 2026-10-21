@@ -50,7 +50,7 @@ struct ValueLess
 {
     /// @brief Compare two values with the ordering selected for T (see above).
     /// @return true when @p lhs orders before @p rhs.
-    bool operator()(in_t<T> lhs, in_t<T> rhs) const noexcept
+    bool operator()(InT<T> lhs, InT<T> rhs) const noexcept
     {
         if constexpr (ComplexType<T>)
         {

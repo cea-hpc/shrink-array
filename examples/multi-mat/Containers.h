@@ -43,7 +43,7 @@ class VectCom
     virtual ~VectCom() = default;
 
     /// @brief The material this array belongs to.
-    void setInd(int i)
+    void set_ind(int i)
     {
         ind = i;
     }
@@ -157,17 +157,17 @@ void MultiArray<T, VecChunk>::create(int nbmat, int mesh_size)
 
     for (int k = 0; k < nbmat; ++k)
     {
-        if (dispatch.isChunk(k))
+        if (dispatch.is_chunk(k))
         {
             auto* v = new vec_chunk;
-            v->setInd(k);
+            v->set_ind(k);
             v->create(mesh_size);
             (*this)[k] = v;
         }
         else
         {
             auto* v = new vec_dir;
-            v->setInd(k);
+            v->set_ind(k);
             v->create(mesh_size);
             (*this)[k] = v;
         }

@@ -49,7 +49,7 @@ std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant
 template <typename AllT>
 bool ChunkPoolParallelInterface<true, AllT>::need_load_balance_list_block_free()
 {
-    const auto& ens_type_chunk = SingletonChk<AllT>::getRef();
+    const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
 
     return ens_type_chunk.need_load_balance_list_block_free();
 }
@@ -57,21 +57,21 @@ bool ChunkPoolParallelInterface<true, AllT>::need_load_balance_list_block_free()
 template <typename AllT>
 void ChunkPoolParallelInterface<true, AllT>::load_balance_list_block_free()
 {
-    const auto& ens_type_chunk = SingletonChk<AllT>::getRef();
+    const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
     ens_type_chunk.load_balance_list_block_free();
 }
 
 template <typename AllT>
 void ChunkPoolParallelInterface<true, AllT>::clear_all_list_block_free_thr()
 {
-    auto& ens_type_chunk = SingletonChk<AllT>::getRef();
+    auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
     ens_type_chunk.clear_list_block_free_thr();
 }
 
 template <typename AllT>
 void ChunkPoolParallelInterface<true, AllT>::delete_list_block_chunk_free_itself()
 {
-    const auto& ens_type_chunk = SingletonChk<AllT>::getRef();
+    const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
     ens_type_chunk.delete_list_block_chunk_free_itself();
 }
 
@@ -91,7 +91,7 @@ void ChunkPoolParallelInterface<false, AllT>::delete_chunk_allocator()
 {
     if constexpr (build_config::use_fast_alloc)
     {
-        const auto& ens_type_chunk = SingletonChk<AllT>::getRef();
+        const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
         ens_type_chunk.delete_chunk_allocator();
     }
 }
@@ -185,7 +185,7 @@ void release_chunk_pools()
 /// @copydoc shrink_array::compress_now_and_trim_pools
 std::size_t compress_now_and_trim_pools()
 {
-    const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+    const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
     if constexpr (chunk_config::use_fast_block_compression)
     {
         ens_type_chunk.force_chunk_to_compress();
@@ -204,7 +204,7 @@ void destroy_block_chunk()
         {
             return; // see release_chunk_pools()
         }
-        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         ens_type_chunk.destroy_block_chunk();
     }
 }

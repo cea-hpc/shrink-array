@@ -159,9 +159,9 @@ class RechunkSupport<Derived, true>
         return T{};
     }
     /** @brief Apply the captured state to the fresh array (default: no-op). */
-    static void rechunk_seed_fresh(in_t<T> /*state*/) {}
+    static void rechunk_seed_fresh(InT<T> /*state*/) {}
     /** @brief Post-swap fixup so the dying temporary does not take state with it (default: no-op). */
-    static void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
+    static void rechunk_reown_after_swap(Derived& /*tmp*/, InT<T> /*state*/) {}
     /** @brief Swap registry identity with the temporary (default: nothing to swap, succeeds). */
     static bool rechunk_swap_identity(Derived& /*tmp*/)
     {
@@ -252,9 +252,9 @@ class RechunkSupport<Derived, false>
         return T{};
     }
     /** @brief No state to apply. */
-    static void rechunk_seed_fresh(in_t<T> /*state*/) {}
+    static void rechunk_seed_fresh(InT<T> /*state*/) {}
     /** @brief Nothing to re-own. */
-    static void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
+    static void rechunk_reown_after_swap(Derived& /*tmp*/, InT<T> /*state*/) {}
     /** @brief Nothing to swap; succeeds. */
     static bool rechunk_swap_identity(Derived& /*tmp*/)
     {

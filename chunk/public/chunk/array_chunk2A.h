@@ -45,7 +45,7 @@
 namespace shrink_array
 {
 
-template <template <typename> class CHUNK_T, typename T>
+template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
 /**
@@ -70,7 +70,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                      public RechunkHooks<ArrayChunk2A<T, ind_type>>
 {
   public:
-    using manager_chunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as manager_type.
+    using ManagerChunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as manager_type.
 
     using Base2   = ArrayChunk2Base<ArrayChunk2A>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
     using Base    = ArrayChunkBase<ArrayChunk2A>;  ///< Base shared by every variant.
@@ -235,7 +235,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @note Fills [0, count), not only the new elements: Base2::resize(count, val) has
      *       std::vector::resize semantics, so this goes through ArrayChunkBase::assign.
      */
-    void assign(ind_type count, T val) // T, not in_t<T>: see ArrayChunkBase::assign
+    void assign(ind_type count, T val) // T, not InT<T>: see ArrayChunkBase::assign
     {
         Base::assign(count, val);
     }
@@ -297,7 +297,14 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     /// @brief Read-only access to the underlying chunk list.
     /// @return const reference to the chunks backing this array
-    [[nodiscard]] const Base::chunk_list_type& getChunkList() const noexcept
+    [[nodiscard]] const Base::chunk_list_type& get_chunk_list() const noexcept
+    {
+        return chunk_list;
+    }
+
+    /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
+    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::chunk_list_type&
+    getChunkList() const noexcept
     {
         return chunk_list;
     }

@@ -18,7 +18,7 @@ All names are in namespace `shrink_array`, `build_config` and `chunk_config` inc
 | `release_chunk_pools()` | `chunk/chunk_std.h` | optional, once, at the end; while an array is alive (a global or `static` one) it only empties the free lists |
 | `destroy_block_chunk()` | `chunk/chunk_std.h` | optional, right after `release_chunk_pools()`; does nothing while an array is alive |
 | `ParamChunk::force_compression()` | `chunk/param_chunk.h` | to compress every pending candidate now, for a measurement or a checkpoint |
-| `ParamChunk::ChunkStats()` | `chunk/param_chunk.h` | prints the `CHUNK_STATS` counters (no-op in other builds) |
+| `ParamChunk::chunk_stats()` | `chunk/param_chunk.h` | prints the `CHUNK_STATS` counters (no-op in other builds) |
 
 ## 2. The containers
 

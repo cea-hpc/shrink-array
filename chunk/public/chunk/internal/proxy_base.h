@@ -52,7 +52,7 @@ namespace shrink_array
 ///        list"): one atomic<char> per chunk, built by make_filled (a team for
 ///        a large array). char, not bool: vector<bool> is the packed
 ///        specialisation.
-using chunk_flag_row_t = parallel_storage_init::no_init_vector<std::atomic<char>>;
+using ChunkFlagRowT = parallel_storage_init::NoInitVector<std::atomic<char>>;
 
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
@@ -123,7 +123,7 @@ CHUNK_FORCE_INLINE void check_integer_divisor([[maybe_unused]] const U& v, [[may
 {
     if constexpr (build_config::any_check && std::is_integral_v<T> && !std::is_same_v<T, bool>)
     {
-        if (static_cast<base_t<U>>(v) == base_t<U>{}) [[unlikely]]
+        if (static_cast<BaseT<U>>(v) == BaseT<U>{}) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("integer element {} by zero (undefined behaviour)", op);
         }
@@ -225,17 +225,17 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      */
     static void release_tab_is_int(int num_tab) noexcept
     {
-        using row_t = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
+        using RowT = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
         {
-            row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
+            RowT{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
         }
     }
 
     /// @brief Write @p v at the offset @p ctx recorded, on the replay path.
     /// @warning Reloads the chunk's value pointer from @p ctx: the one captured
     ///          when the write was enqueued may since have been reallocated.
-    static void store_value_async(auto* ctx, in_t<T> v) noexcept
+    static void store_value_async(auto* ctx, InT<T> v) noexcept
     {
         T* const values_loc = ctx->chunk.values_load();
         elem_set(values_loc, static_cast<std::size_t>(ctx->num), static_cast<T>(v));
@@ -275,13 +275,13 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     /**
      * @brief Per-tab array of atomic flags indicating whether each chunk is marked for compression.
-     * Each entry holds nb_chunk atomic<char> flags (chunk_flag_row_t), built
+     * Each entry holds nb_chunk atomic<char> flags (ChunkFlagRowT), built
      * whole by make_filled (atomics are not movable).
      */
 
-    static inline constinit internal::Immortal<std::vector<chunk_flag_row_t>>
-                                                 tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<chunk_flag_row_t>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<std::vector<ChunkFlagRowT>>
+                                              tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
@@ -313,10 +313,10 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport
     ///          v1 and Chunk2 never fill a row here: the guard makes it free.
     static void release_tab_is_int(int num_tab) noexcept
     {
-        using row_t = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
+        using RowT = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
         {
-            row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
+            RowT{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
         }
     }
 
@@ -332,9 +332,9 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport
     static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
     static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
     std::atomic<char>*                              ptr_is_inside_chunk_list_to_compress;
-    static inline constinit internal::Immortal<std::vector<chunk_flag_row_t>>
-                                                 tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<chunk_flag_row_t>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<std::vector<ChunkFlagRowT>>
+                                              tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
@@ -418,7 +418,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ========================================================================
     // OpenMP: every read of the chunk's pointer is load(acquire), see
     // internal::AcquireValuesRef.
-    using atomic_ptr_ref_t = std::conditional_t<build_config::use_openmp, internal::AcquireValuesRef<T>, T*&>;
+    using AtomicPtrRefT = std::conditional_t<build_config::use_openmp, internal::AcquireValuesRef<T>, T*&>;
 
     /// @brief Check builds: the array's storage generation, and its value when
     ///        operator[] built this proxy (ArrayChunkBase::storage_generation_).
@@ -498,13 +498,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          engine, whose WAW guard retires the op before the store;
     ///          otherwise the write is silently lost. pending_any() is one
     ///          acquire load of the chunk header, constant-false in a serial build.
-    [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(in_t<T> v) const noexcept
+    [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(InT<T> v) const noexcept
     {
         return v == static_cast<T>(ChunkType::first_value) && is_cst_val1() && !chunk.pending_any();
     }
 
     /// @brief is_cst_val1_and_v_equal_first_value() from a loaded value pointer.
-    [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(const T* values_loc, in_t<T> v) const noexcept
+    [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(const T* values_loc, InT<T> v) const noexcept
     {
         return v == static_cast<T>(ChunkType::first_value) && is_cst_val1(values_loc) && !chunk.pending_any();
     }
@@ -547,14 +547,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /// @brief This element, written raw: `values[num] = v`, or an atomic RMW
     ///        of its word for Bit. No sync, no check.
-    void raw_elem_set(in_t<T> v) const noexcept
+    void raw_elem_set(InT<T> v) const noexcept
     {
         elem_set(static_cast<T*>(values), static_cast<std::size_t>(num), static_cast<T>(v));
     }
 
     /// @brief Write @p v straight through #values, with no synchronisation.
     /// @pre The chunk is materialised and the caller holds the write path.
-    void store_value(in_t<T> v) const noexcept
+    void store_value(InT<T> v) const noexcept
     {
         store_value_at(values, v);
     }
@@ -564,7 +564,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        (after the materialisation, if there was one); saves a reload.
     /// @param v The value to store.
     /// @pre As store_value().
-    void store_value_at(T* const vals, in_t<T> v) const noexcept
+    void store_value_at(T* const vals, InT<T> v) const noexcept
     {
         // The chunk must not be COMMITTED to a compressor here: a writer on a
         // marked chunk is sent to the slow path by must_defer_write(), and a
@@ -646,7 +646,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Run @p write_body on the fast path, or defer it.
      * @tparam WriteCallable The write itself.
-     * @tparam LBD_INFO Callable arming whatever metadata the write needs.
+     * @tparam LbdInfo Callable arming whatever metadata the write needs.
      * @return TRUE if the write was performed, FALSE if it was deferred and
      *         will be replayed later.
      * @note @p lbd_info runs BEFORE the body, and only when the metadata is
@@ -658,9 +658,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *       flush_deferred, ...) stay calls; do NOT turn this into
      *       CHUNK_FLATTEN, which would copy them into every write site.
      */
-    template <typename WriteCallable, typename LBD_INFO>
-    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_impl(WriteCallable&&           write_body,
-                                                                        [[maybe_unused]] LBD_INFO lbd_info) noexcept;
+    template <typename WriteCallable, typename LbdInfo>
+    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_impl(WriteCallable&&          write_body,
+                                                                        [[maybe_unused]] LbdInfo lbd_info) noexcept;
 
     /**
      * @brief Record a write to be applied later, when the fast path refuses it.
@@ -686,7 +686,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
     template <typename U, typename Op>
         requires std::is_invocable_r_v<T, Op, T, U>
-    void apply_atomic_op(Op operation, const U& v, in_t<T> v_old);
+    void apply_atomic_op(Op operation, const U& v, InT<T> v_old);
 
     /**
      * @brief Generic helper for compound arithmetic operations
@@ -706,7 +706,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note Increments CHUNK_STATS statistics if enabled
      */
     template <typename U, typename Op>
-    void arithmetic_assign(in_t<U> v, Op operation) noexcept; // in_t: see assign_impl in the proxies
+    void arithmetic_assign(InT<U> v, Op operation) noexcept; // InT: see assign_impl in the proxies
 
     /**
      * @brief Has a thread's candidate list grown past the point where it must be drained?
@@ -731,7 +731,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        AcquireValuesRef, read with acquire on every use.
     /// @warning A REFERENCE, captured at construction. The chunk may reallocate
     ///          under it, so a write path must reload through it, never cache it.
-    atomic_ptr_ref_t values;
+    AtomicPtrRefT values;
 
     const int  num;   ///< Offset of this element WITHIN its chunk.
     ChunkType& chunk; ///< The chunk that owns the element.
@@ -783,7 +783,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief The operand kinds the Bit operators take: bool, Bit, or a proxy
     ///        of either.
     template <typename U>
-    static constexpr bool bit_operand_v = std::is_same_v<base_t<U>, bool> || is_packed_bit_v<base_t<U>>;
+    static constexpr bool bit_operand_v = std::is_same_v<BaseT<U>, bool> || is_packed_bit_v<BaseT<U>>;
 
     /// @brief Bind a proxy to one element.
     /// @note Leaves #ptr_on_array, #num_chunk and #num_tab unset --
@@ -792,7 +792,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ptr_on_array and num_chunk are set before use (see the @note); left
     // unset here on purpose, this constructor runs on every element access.
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
-    explicit ProxyBase(atomic_ptr_ref_t values_, int num_, ChunkType& chunk_) noexcept
+    explicit ProxyBase(AtomicPtrRefT values_, int num_, ChunkType& chunk_) noexcept
         : values(values_), num(num_), chunk(chunk_)
     {
     }
@@ -1035,7 +1035,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     template <typename U>
     Derived operator&=(const U& v) noexcept
-        requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
+        requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
         bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs & rhs; });
         return derived();
@@ -1053,7 +1053,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     template <typename U>
     Derived operator|=(const U& v) noexcept
-        requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
+        requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
         bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs | rhs; });
         return derived();
@@ -1071,7 +1071,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     template <typename U>
     Derived operator^=(const U& v) noexcept
-        requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
+        requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
         bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs ^ rhs; });
         return derived();
@@ -1289,7 +1289,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief The whole candidate-flag row for array @p num_tab.
-    static chunk_flag_row_t& get_tab_is_inside_list_to_compress(int num_tab) noexcept
+    static ChunkFlagRowT& get_tab_is_inside_list_to_compress(int num_tab) noexcept
     {
         return FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab];
     }
@@ -1396,7 +1396,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note Requires T and U to be integral types
      */
     template <typename U, typename Op>
-    void bitwise_assign(in_t<U> v, Op operation) noexcept
+    void bitwise_assign(InT<U> v, Op operation) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<U>;
 
     /**

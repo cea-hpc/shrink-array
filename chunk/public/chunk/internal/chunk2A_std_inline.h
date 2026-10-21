@@ -144,12 +144,12 @@ void Chunk2A<T>::set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_c
  *       because `first_value` is 0 (an all-zero chunk is classified compact1).
  */
 template <typename T>
-void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
-                                       vec_tuple_chunkA2p_Tint2& ll_compt2,
-                                       int                       num_chunk,
-                                       int                       num_tab,
-                                       ChunkElems                size,
-                                       [[maybe_unused]] bool     claimed)
+void Chunk2A<T>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
+                                       VecTupleChunkA2pTint2& ll_compt2,
+                                       int                    num_chunk,
+                                       int                    num_tab,
+                                       ChunkElems             size,
+                                       [[maybe_unused]] bool  claimed)
 {
     if (Base::is_not_cst_val1())
     {
@@ -180,7 +180,7 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
         }
 
         // The first element is the candidate second constant.
-        const in_t<T> second_v = Base::read_value_scan(0);
+        const InT<T>  second_v = Base::read_value_scan(0);
         const auto    scan     = Base::scan_constants(first_value, second_v, size.count());
 
         if (scan.first)
@@ -217,7 +217,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     // carries its array's ChunkElems (from push_to_compress_list()), pinned right before
     // clear_int_st() reaches ChunkBase::free_values(), which routes by the ambient
     // thread_chunk_size() (see Proxy2::manage_full_first_value() in proxy2.h).
-    auto& vec_tuple_to_compress = manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
+    auto& vec_tuple_to_compress = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
 
     const auto sz = static_cast<int>(vec_tuple_to_compress.size());
 
@@ -275,8 +275,8 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         }
     }
 
-    vec_tuple_chunkA2p_int2  ll_compt1;
-    vec_tuple_chunkA2p_Tint2 ll_compt2;
+    VecTupleChunkA2pInt2  ll_compt1;
+    VecTupleChunkA2pTint2 ll_compt2;
 
     ll_compt1.reserve((sz / 50) + 1);
     ll_compt2.reserve((sz / 50) + 1);
@@ -462,7 +462,7 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
             // Against values[0], as fill_list_to_compress does, not the registered second
             // value: a chunk uniform at another value is compressed to THAT value.
             const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            const in_t<T>           second_v         = Base::read_value_scan(0);
+            const InT<T>            second_v         = Base::read_value_scan(0);
             const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
             compact1                                 = scan.first;
             compact2                                 = scan.second;
@@ -595,7 +595,7 @@ bool Chunk2A<T>::have_chunk_to_compress([[maybe_unused]] int max_thr)
 template <typename T>
 void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, bool apply)
 {
-    auto& vec_tup = manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
+    auto& vec_tup = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
 
     if constexpr (build_config::use_openmp)
     {
@@ -665,12 +665,12 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
  *                  first; forwarded to fill_list_to_compress().
  */
 template <typename T>
-void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      thr,
-                                                    vec_tuple_chunkA2p_int2&  ll_compt1,
-                                                    vec_tuple_chunkA2p_Tint2& ll_compt2,
-                                                    [[maybe_unused]] bool     claimed)
+void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int   thr,
+                                                    VecTupleChunkA2pInt2&  ll_compt1,
+                                                    VecTupleChunkA2pTint2& ll_compt2,
+                                                    [[maybe_unused]] bool  claimed)
 {
-    auto& vec_tup = manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
+    auto& vec_tup = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
 
     const int sz = vec_tup.size();
 
@@ -713,7 +713,7 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
  *
  * A fast-path writer -- its flag raised on THIS chunk, check #2 passed -- does not wait: a
  * mark it sees now was set AFTER its check #2 (set before, the handshake made the writer
- * see it and defer), so the pass that owns it is PARKED in start(), waiting for this very
+ * see it and defer), so the pass that owns it is parked in start(), waiting for this very
  * flag, and steals nothing before end_write(). Waiting here was the writer waiting for the
  * compressor waiting for the writer, resolved only by the compressor's yield budget
  * (CHUNK_COMPRESS_MAX_YIELDS): a stall of both for that whole budget, then an abandoned

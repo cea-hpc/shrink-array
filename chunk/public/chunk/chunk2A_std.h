@@ -47,7 +47,7 @@ struct CompressionManager;
 template <typename T>
 class Proxy2A;
 
-template <template <typename> typename CHUNK_T, typename T>
+template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
 
 /*!
@@ -90,7 +90,7 @@ class Chunk2AConcurrentOps
         {
             const uint32_t chunk_id = ring_chunk_id();
             const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), EV_COMPRESS_ATTEMPT, info);
+            ring_log(get_tid(), ev_compress_attempt, info);
         }
 
         if (!self()->values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
@@ -116,7 +116,7 @@ class Chunk2AConcurrentOps
         {
             const uint32_t chunk_id = ring_chunk_id();
             const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), EV_CAS_VALUES_TO_CST, info);
+            ring_log(get_tid(), ev_cas_values_to_cst, info);
         }
         return old;
     }
@@ -179,7 +179,7 @@ class Chunk2AConcurrentOps
             const uint32_t chunk_id = ring_chunk_id();
             const uint32_t info =
                 (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24U);
-            ring_log(get_tid(), failed ? EV_CAS_VALUES_FAIL : EV_CAS_VALUES_FROM_CST, info);
+            ring_log(get_tid(), failed ? ev_cas_values_fail : ev_cas_values_from_cst, info);
         }
         return failed;
     }
@@ -363,7 +363,7 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
 {
   public:
     using Base                   = Chunk2Base<T, Derived>;
-    using manager_chunk2A        = ManagerChunk<Chunk2A, T>;
+    using ManagerChunk2A         = ManagerChunk<Chunk2A, T>;
     using CompressionManagerType = CompressionManager<T, Derived>;
 
     using Base::derived;
@@ -472,7 +472,7 @@ class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 {
   public:
     using Base            = Chunk2Base<T, Derived>;
-    using manager_chunk2A = ManagerChunk<Chunk2A, T>;
+    using ManagerChunk2A  = ManagerChunk<Chunk2A, T>;
 
     using Base::derived;
     using Base::is_bool;
@@ -482,7 +482,7 @@ class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     /// @brief The single candidate list of a serial build.
     static TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially() noexcept
     {
-        return manager_chunk2A::chunk2A_to_compress_potentially;
+        return ManagerChunk2A::chunk2a_to_compress_potentially;
     }
 
     /*!
@@ -539,10 +539,10 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     using Base      = Chunk2Base<T, Chunk2A>;                                 ///< The CRTP chunk base.
     using OmpPolicy = Chunk2AOmpPolicy<T, Chunk2A, build_config::use_openmp>; ///< This build's thread-model policy.
 
-    using manager_chunk2A = ManagerChunk<Chunk2A, T>;
+    using ManagerChunk2A = ManagerChunk<Chunk2A, T>;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
-    using vec_tuple_chunkA2p_int2  = std::vector<std::tuple<Chunk2A*, int, int, ChunkElems>>;
-    using vec_tuple_chunkA2p_Tint2 = std::vector<std::tuple<Chunk2A*, T, int, int, ChunkElems>>;
+    using VecTupleChunkA2pInt2  = std::vector<std::tuple<Chunk2A*, int, int, ChunkElems>>;
+    using VecTupleChunkA2pTint2 = std::vector<std::tuple<Chunk2A*, T, int, int, ChunkElems>>;
 
     using Base::allocator_data;
     using Base::first_value;
@@ -646,7 +646,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     }
 
     /// @brief Get reference to the chunk manager (static access)
-    /// @return Reference to the manager_chunk2A static instance
+    /// @return Reference to the ManagerChunk2A static instance
     ///
     static auto& get_manager() noexcept
     {
@@ -659,7 +659,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     /// @brief Rank @p thr's candidate list.
     static TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
     {
-        return manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
+        return ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
     }
 
     /// @brief Materialise this chunk if it is currently compressed to either
@@ -756,11 +756,11 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     {
         if constexpr (build_config::use_openmp)
         {
-            return manager_chunk2A::is_chunk2A_to_compress_potentially_empty();
+            return ManagerChunk2A::is_chunk2a_to_compress_potentially_empty();
         }
         else
         {
-            return manager_chunk2A::get_chunk2A_to_compress_potentially().empty();
+            return ManagerChunk2A::get_chunk2a_to_compress_potentially().empty();
         }
     }
 
@@ -770,19 +770,19 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     // array's chunk size (field <3>, from push_to_compress_list). The scan bounds come from
     // that field. Do not add a `= static_chunk_size` default: it would scan only the first
     // static_chunk_size values of a wider chunk, declare it constant and destroy the rest.
-    static void fill_list_chunk_to_compress_in_par(int                       thr,
-                                                   vec_tuple_chunkA2p_int2&  ll_compt1,
-                                                   vec_tuple_chunkA2p_Tint2& ll_compt2,
-                                                   bool                      claimed = false);
+    static void fill_list_chunk_to_compress_in_par(int                    thr,
+                                                   VecTupleChunkA2pInt2&  ll_compt1,
+                                                   VecTupleChunkA2pTint2& ll_compt2,
+                                                   bool                   claimed = false);
 
-    void fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
-                               vec_tuple_chunkA2p_Tint2& ll_compt2,
-                               int                       num_chunk,
-                               int                       num_tab,
-                               ChunkElems                size,
-                               bool                      claimed = false);
+    void fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
+                               VecTupleChunkA2pTint2& ll_compt2,
+                               int                    num_chunk,
+                               int                    num_tab,
+                               ChunkElems             size,
+                               bool                   claimed = false);
 
-    static inline constinit internal::LazyImmortal<manager_chunk2A> s_manager_;
+    static inline constinit internal::LazyImmortal<ManagerChunk2A> s_manager_;
 };
 
 } // namespace shrink_array

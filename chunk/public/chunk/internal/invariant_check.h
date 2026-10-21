@@ -69,8 +69,8 @@ namespace detail
  * still says what it is.
  */
 template <typename... Args>
-[[noreturn]] void invariant_failed(const std::source_location&                             loc,
-                                   std::format_string<logging::detail::fmt_arg_t<Args>...> fmt,
+[[noreturn]] void invariant_failed(const std::source_location&                           loc,
+                                   std::format_string<logging::detail::FmtArgT<Args>...> fmt,
                                    Args&&... args) noexcept
 {
     char              msg[logging::line_max];

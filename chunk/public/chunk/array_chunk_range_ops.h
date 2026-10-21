@@ -156,7 +156,7 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
 {
     if constexpr (track_zeros_v<Arr>)
     {
-        counter_value_t nz = 0;
+        CounterValueT nz = 0;
         for (unsigned int k = 0; k < S; ++k)
         {
             if (dst[k] == static_cast<T>(Chunk::first_value))
@@ -169,8 +169,8 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
     else if constexpr (track_chunk2_counts_v<Arr> && requires { arr.get_second_value(); })
     {
         const T         sv = static_cast<T>(arr.get_second_value());
-        counter_value_t n1 = 0;
-        counter_value_t n2 = 0;
+        CounterValueT   n1 = 0;
+        CounterValueT   n2 = 0;
         for (unsigned int k = 0; k < S; ++k)
         {
             if (dst[k] == static_cast<T>(Chunk::first_value))
@@ -452,7 +452,7 @@ void packed_chunk_store(Arr&         arr,
         return; // the whole span was the chunk's constant
     }
 
-    bits::word_t* w = shrink_array::internal::as_words(ch.values_load());
+    bits::WordT* w = shrink_array::internal::as_words(ch.values_load());
     store_bits(w, i - c_begin, hi - c_begin);
 
     if constexpr (track_chunk2_counts_v<Arr>)
@@ -460,10 +460,10 @@ void packed_chunk_store(Arr&         arr,
         // Counter mode (serial builds): the element write that brings a count
         // to S compresses the chunk on the spot (manage_full_*), and there is
         // no pass to queue for -- so do what that last write would have done.
-        const auto ones = static_cast<counter_value_t>(bits::count_ones(w, S));
-        ch.set_nb_val_eq_first_value(static_cast<counter_value_t>(S) - ones);
+        const auto ones = static_cast<CounterValueT>(bits::count_ones(w, S));
+        ch.set_nb_val_eq_first_value(static_cast<CounterValueT>(S) - ones);
         ch.set_nb_val_eq_second_value(ones);
-        if (ones == static_cast<counter_value_t>(S))
+        if (ones == static_cast<CounterValueT>(S))
         {
             arr.element_proxy(static_cast<ind_type>(c_begin)).manage_full_second_value();
         }
@@ -532,7 +532,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
     }
 
     const unsigned int S     = arr.chunk_size();
-    const in_t<T>      value = static_cast<T>(v);
+    const InT<T>       value = static_cast<T>(v);
     const int          ind2  = internal::second_value_index(arr); // Chunk2's written(ind)
 
     // Pin the ambient geometry once for the whole operation: every
@@ -607,7 +607,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             const bool bit = static_cast<bool>(value);
             internal::packed_chunk_store(
                 arr, ch, c_begin, lo, hi, S, ind2, [&](std::size_t) { return static_cast<T>(value); },
-                [bit](bits::word_t* w, std::size_t a, std::size_t b) { bits::fill_bit_range(w, a, b, bit); });
+                [bit](bits::WordT* w, std::size_t a, std::size_t b) { bits::fill_bit_range(w, a, b, bit); });
         }
         // ── Variants whose second-value state lives in the proxy ─────────────
         else if constexpr (!internal::raw_fillable_v<T>)
@@ -725,7 +725,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             const auto src_at = [&](std::size_t i)
             { return static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first))); };
             internal::packed_chunk_store(arr, ch, c_begin, lo, hi, S, ind2, src_at,
-                                         [&](bits::word_t* w, std::size_t a, std::size_t b)
+                                         [&](bits::WordT* w, std::size_t a, std::size_t b)
                                          {
                                              bits::store_bit_range(w, a, b, [&](std::size_t bi)
                                                                    { return static_cast<bool>(src_at(c_begin + bi)); });
@@ -903,7 +903,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
         using Mgr    = CompressionManager<T, chunk_type>;
         // The span's values, computed before the session (not for a constant).
         // bool, not Bit, for ArrayChunkBits: a Bit is a packed reference type.
-        using buf_value_t = std::conditional_t<is_packed_bit_v<T>, bool, T>;
+        using BufValueT = std::conditional_t<is_packed_bit_v<T>, bool, T>;
 
         const unsigned int S    = arr.chunk_size();
         const int          ind2 = second_value_index(arr); // Chunk2's written(ind)
@@ -918,14 +918,14 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
         // contention, zeroing a chunk's worth) costs more than the copy. Not a
         // std::vector: std::vector<bool> (ArrayChunkBits) packs its bits and
         // has no data(). Not zeroed: a span writes each slot before reading it.
-        buf_value_t* buf = nullptr;
+        BufValueT* buf = nullptr;
         if constexpr (!Constant)
         {
-            thread_local std::unique_ptr<buf_value_t[]> tl_buf;
+            thread_local std::unique_ptr<BufValueT[]>   tl_buf;
             thread_local unsigned int                   tl_cap = 0;
             if (tl_cap < S)
             {
-                tl_buf = std::make_unique_for_overwrite<buf_value_t[]>(S);
+                tl_buf = std::make_unique_for_overwrite<BufValueT[]>(S);
                 tl_cap = S;
             }
             buf = tl_buf.get();
@@ -958,23 +958,23 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
             // The span's values (offsets into the chunk), and whether they are
             // all one value: once, before the session.
             bool        same = true;
-            buf_value_t v0{};
+            BufValueT   v0{};
             if constexpr (Constant)
             {
-                v0 = static_cast<buf_value_t>(static_cast<T>(value_at(i)));
+                v0 = static_cast<BufValueT>(static_cast<T>(value_at(i)));
             }
             else
             {
-                v0               = static_cast<buf_value_t>(static_cast<T>(value_at(i)));
+                v0               = static_cast<BufValueT>(static_cast<T>(value_at(i)));
                 buf[i - c_begin] = v0;
                 for (std::size_t k = i + 1; k < hi; ++k)
                 {
-                    const auto v     = static_cast<buf_value_t>(static_cast<T>(value_at(k)));
+                    const auto v     = static_cast<BufValueT>(static_cast<T>(value_at(k)));
                     buf[k - c_begin] = v;
                     same             = same && (v == v0);
                 }
             }
-            const auto at = [&](std::size_t o) -> buf_value_t
+            const auto at = [&](std::size_t o) -> BufValueT
             {
                 if constexpr (Constant)
                 {
@@ -1113,7 +1113,7 @@ template <internal::ChunkedArray Arr, typename U>
 void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
 {
     using T             = Arr::value_type;
-    const in_t<T> value = static_cast<T>(v);
+    const InT<T> value  = static_cast<T>(v);
     internal::store_range_mt<true>(arr, first, last, [&value](std::size_t) { return static_cast<T>(value); });
 }
 

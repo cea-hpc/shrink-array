@@ -43,7 +43,7 @@ const Proxy<T>& Proxy<T>::operator=(const Proxy<T>& from) noexcept
     {
         // Read through operator T() (the dirty-bit gated read), complete before
         // the write starts: no reader/writer nesting even in the same chunk.
-        const in_t<T> v = static_cast<T>(from);
+        const InT<T> v = static_cast<T>(from);
 
         // Write through the engine (handshake / deferred path, WAW-erase,
         // compression marking, zero counter). Do not store inline: it could
@@ -56,7 +56,7 @@ const Proxy<T>& Proxy<T>::operator=(const Proxy<T>& from) noexcept
 }
 
 template <typename T>
-T* Proxy<T>::perform_core_assignment(T* vals, in_t<T> v) const noexcept
+T* Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
@@ -150,9 +150,9 @@ T* Proxy<T>::perform_core_assignment(T* vals, in_t<T> v) const noexcept
  * state (a concurrent write).
  */
 template <typename Derived, typename T, bool Enabled>
-void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(in_t<T> old_value,
-                                                                         in_t<T> new_value,
-                                                                         in_t<T> expected_in_memory) const
+void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(InT<T> old_value,
+                                                                         InT<T> new_value,
+                                                                         InT<T> expected_in_memory) const
 {
     if (should_mark_for_compression(old_value, new_value) || (read_values() != expected_in_memory)) [[unlikely]]
     {
@@ -161,9 +161,9 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(in_t<T>
 }
 
 template <typename Derived, typename T, bool Enabled>
-void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(in_t<T>  old_value,
-                                                                         in_t<T>  new_value,
-                                                                         in_t<T>  expected_in_memory,
+void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(InT<T>   old_value,
+                                                                         InT<T>   new_value,
+                                                                         InT<T>   expected_in_memory,
                                                                          const T* vals) const
 {
     // Same test; the race check reads the element again, not the pointer.
@@ -177,7 +177,7 @@ template <typename T>
 template <typename OP, typename LBD, typename U>
 void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] const U& v, LBD lbd)
 {
-    using CalcType = std::common_type_t<T, base_t<U>>;
+    using CalcType = std::common_type_t<T, BaseT<U>>;
 
     // No compression pass from here: this body runs inside the rank's writer
     // window, so start()'s "no writer" wait would see our own flag and run to
@@ -193,7 +193,7 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
     }
     else
     {
-        // const T, not in_t<T>: a snapshot read before the store below and
+        // const T, not InT<T>: a snapshot read before the store below and
         // used after it (in_t.h, corollary for local variables).
         // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
         const T v_old = values[num];
@@ -274,7 +274,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_opera
                                                                                            [[maybe_unused]] const U& v,
                                                                                            LAMBDA lbd) const
 {
-    using CalcType = std::common_type_t<T, base_t<U>>;
+    using CalcType = std::common_type_t<T, BaseT<U>>;
 
     const bool was_not_written = !ctx->chunk.written();
 
@@ -311,7 +311,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_opera
 
 template <typename T>
 template <typename U>
-T Proxy<T>::assign_impl(in_t<U> v) noexcept
+T Proxy<T>::assign_impl(InT<U> v) noexcept
 {
     this->check_not_stale();
     if (is_cst_val_and_v_equal_zero(v))
@@ -371,7 +371,7 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
         //    proxy was built (it may designate the constant buffer since).
         // On a still-constant chunk this yields the constant: the right old
         // value. read_value() under CHUNK_STATS, for its read counters.
-        const in_t<T> old_value = [&]
+        const InT<T> old_value = [&]
         {
             if constexpr (chunk_config::stats)
             {
@@ -416,7 +416,7 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
                 // Capture the old value BEFORE materialising: create_value()
                 // installs an all-zero buffer, and the non-zero -> zero transition
                 // would never fire (see lbd_equal_core).
-                const in_t<T> v_old = [&]
+                const InT<T> v_old = [&]
                 {
                     if constexpr (chunk_config::stats)
                     {
@@ -641,7 +641,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(a
     auto&     chunk_loc = ctx->chunk;
     const int num       = ctx->num;
 
-    const in_t<T> v_old = Base::read_values_async(ctx);
+    const InT<T> v_old = Base::read_values_async(ctx);
 
     const Proxy proxy  = Base::template make_proxy_with_info<Derived>(ctx);
     const bool  is_val = chunk_loc.is_cst_val1();
@@ -658,16 +658,16 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(a
     operation(values[num]);
     internal::check_replay_store(chunk_loc, values, "execute_inplace_operation_async", num);
 
-    // in_t: nothing writes it afterwards.
+    // InT: nothing writes it afterwards.
     // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-    const in_t<T> v_new = values[num];
+    const InT<T> v_new = values[num];
 
     mark_for_compression_if_needed_with_value_async(proxy, v_old, v_new);
 }
 
 template <typename T>
 template <typename U, typename BinaryOp>
-void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
+void Proxy<T>::apply_compound_operation(InT<U> v, BinaryOp op)
 {
     this->check_not_stale();
     // Cross-rank RMW materialisation: pull any foreign deferred write first.
@@ -689,9 +689,9 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
                     op, static_cast<T>(v),
                     [this, &v](auto op_func) // v: this call's parameter, alive for the call
                     {
-                        using LocalCalcType = std::common_type_t<T, base_t<U>>;
+                        using LocalCalcType = std::common_type_t<T, BaseT<U>>;
 
-                        const in_t<T> result = static_cast<T>(
+                        const InT<T> result = static_cast<T>(
                             op_func(static_cast<LocalCalcType>(Base::load_value()), static_cast<LocalCalcType>(v)));
 
                         Base::store_value(result);
@@ -712,7 +712,7 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
         }
         else
         {
-            // const T, not in_t<T>: apply_atomic_op() stores to values[num]
+            // const T, not InT<T>: apply_atomic_op() stores to values[num]
             // and still reads v_old (in_t.h). Read under a ReadSection (see
             // ProxyBase::read_values_outside_session).
             const T v_old = Base::read_values_outside_session();

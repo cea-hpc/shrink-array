@@ -45,15 +45,15 @@ namespace internal
 {
 /// @brief A packed buffer seen as its words.
 template <typename T>
-[[nodiscard]] inline const bits::word_t* as_words(const T* v) noexcept
+[[nodiscard]] inline const bits::WordT* as_words(const T* v) noexcept
 {
-    return reinterpret_cast<const bits::word_t*>(v);
+    return reinterpret_cast<const bits::WordT*>(v);
 }
 /// @copydoc as_words(const T*)
 template <typename T>
-[[nodiscard]] inline bits::word_t* as_words(T* v) noexcept
+[[nodiscard]] inline bits::WordT* as_words(T* v) noexcept
 {
-    return reinterpret_cast<bits::word_t*>(v);
+    return reinterpret_cast<bits::WordT*>(v);
 }
 } // namespace internal
 

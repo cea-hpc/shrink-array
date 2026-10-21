@@ -591,8 +591,8 @@ int bulk_ranges(long N)
     fails += compare(a, ref, "after the pass") != 0;
     for (long c = 0; c < 3; ++c)
     {
-        if (a.getChunkList()[static_cast<std::size_t>(c0 + c)].written() ||
-            a.getChunkList()[static_cast<std::size_t>(c1 + c)].written())
+        if (a.get_chunk_list()[static_cast<std::size_t>(c0 + c)].written() ||
+            a.get_chunk_list()[static_cast<std::size_t>(c1 + c)].written())
         {
             println("[bits] FAIL fill_range: whole chunk {} / {} filled with a constant still materialised", c0 + c,
                     c1 + c);

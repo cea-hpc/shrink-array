@@ -192,7 +192,7 @@ struct ChunkSizeAdvisor
         // a constant? (classify() below asks whether a chunk already is one.)
         // v1: first_value only. Chunk2: also the array's second value, when
         // designated (otherwise only first_value: the conservative answer).
-        const in_t<T> cst1_value = Arr::chunk_type::first_value;
+        const InT<T>  cst1_value = Arr::chunk_type::first_value;
         bool          has_cst2   = false;
         T             cst2_value = cst1_value;
         if constexpr ((chunk_config::use_chunk2 || chunk_config::use_chunk2a) && requires { tab.get_second_value(); })
@@ -609,11 +609,11 @@ struct ChunkSizeAdvisor
                         // A word at a time: the bits that differ from the one below.
                         const auto*       w     = internal::as_words(vj);
                         const std::size_t nw    = (S + bits::word_bits - 1) / bits::word_bits;
-                        auto              below = static_cast<bits::word_t>(w[0] & 1u);
+                        auto              below = static_cast<bits::WordT>(w[0] & 1u);
                         for (std::size_t k = 0; k < nw; ++k)
                         {
-                            const bits::word_t x = w[k];
-                            bits::word_t       t = x ^ ((x << 1) | below);
+                            const bits::WordT x  = w[k];
+                            bits::WordT       t  = x ^ ((x << 1) | below);
                             below                = x >> (bits::word_bits - 1);
                             while (t != 0)
                             {

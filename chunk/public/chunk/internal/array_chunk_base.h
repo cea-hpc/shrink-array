@@ -542,7 +542,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @details The derived arrays' resize(newsz) does the resizing (they name
      *          this overload back with a using-declaration).
      */
-    void resize(ind_type newsz, in_t<T> val)
+    void resize(ind_type newsz, InT<T> val)
     {
         const ind_type old_size = m_size;
         derived().resize(newsz);
@@ -560,7 +560,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *       resize(), a sequential point (see capacity()). Invalidates all
      *       iterators.
      */
-    void push_back(in_t<T> val)
+    void push_back(InT<T> val)
     {
         if (static_cast<size_type>(m_size) < capacity()) [[likely]]
         {
@@ -893,7 +893,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(ind_type count, T val); // T, not in_t<T>: val may be a(i) -- resize() can free it
+    void assign(ind_type count, T val); // T, not InT<T>: val may be a(i) -- resize() can free it
 
     /**
      * @brief assign(): the elements of [first, last), in order.
@@ -1323,7 +1323,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             // pending counter, below.
             if (derived().is_chunk_dirty(num_chunk)) [[unlikely]]
             {
-                // Precise per-chunk gate (DeferredReadGate, chunk_base.h).
+                // precise per-chunk gate (DeferredReadGate, chunk_base.h).
                 if (chunk_t.read_gate_should_wait(offset)) [[unlikely]]
                 {
                     chunk_t.wait_for_availability(offset);

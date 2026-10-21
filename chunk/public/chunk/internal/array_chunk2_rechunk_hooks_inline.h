@@ -88,7 +88,7 @@ RechunkHooks2<Derived, true>::value_type RechunkHooks2<Derived, true>::rechunk_c
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_seed_fresh(in_t<value_type> state)
+void RechunkHooks2<Derived, true>::rechunk_seed_fresh(InT<value_type> state)
 {
     // On the FRESH array before refill. Not value_type{}: that is already its
     // state, and re-declaring it would make a degenerate cst_val2 == cst_val1 buffer.
@@ -116,7 +116,7 @@ bool RechunkHooks2<Derived, true>::rechunk_swap_identity(Derived& tmp)
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, in_t<value_type> state)
+void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<value_type> state)
 {
     // Re-own the registration of `state`: map_inf_array[state] points at
     // &tmp.inf_array, which dangles once the stack tmp dies, and the next

@@ -23,7 +23,7 @@
 // k / chunk_size(), k % chunk_size()), never from the compile-time globals
 // (static_chunk_size, ParamChunk::get_decalage_chunk()...). In CHUNK_DYNAMIC runs the
 // effective size (chunk_dyn_size, e.g. 512) differs from the compile-time
-// default (64): the static shift over-indexes getChunkList() (libstdc++ assert
+// default (64): the static shift over-indexes get_chunk_list() (libstdc++ assert
 // in the mismatch report) and the static loop bounds only scan the first 64
 // values of a 512-wide chunk.
 
@@ -438,7 +438,7 @@ void read_check_binary_file(Int                ind,
                 }
             }
 
-            const auto& chunk_t = data_check.getChunkList()[num_chunk];
+            const auto& chunk_t = data_check.get_chunk_list()[num_chunk];
 
             const bool is_val1 = chunk_t.is_cst_val1();
 
@@ -665,7 +665,7 @@ void read_check_binary_file(Int                ind,
                     log_message("\nchunk number        : " + std::to_string(num_chunk) + "\n");
                     const Int num = k % static_cast<Int>(data_check.chunk_size());
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
-                    const auto& chunk_t = data_check.getChunkList()[num_chunk];
+                    const auto& chunk_t = data_check.get_chunk_list()[num_chunk];
                     using ValueType     = decltype(chunk_t.values); // infer the type
 
                     T* raw_ptr = nullptr;
@@ -730,7 +730,7 @@ void read_check_binary_file(Int                ind,
 
         constexpr T zero{};
 
-        constexpr bool is_complex = std::is_same_v<T, complex_double>;
+        constexpr bool is_complex = std::is_same_v<T, ComplexDouble>;
 
         for (Int k = 0; k < sz; ++k)
         {
@@ -834,7 +834,7 @@ void read_check_binary_file(Int                ind,
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
                     const Int   num_chunk = k / static_cast<Int>(data_check.chunk_size());
-                    const auto& chunk_t   = data_check.getChunkList()[num_chunk];
+                    const auto& chunk_t   = data_check.get_chunk_list()[num_chunk];
                     log_message("chunk number        : " + std::to_string(num_chunk) + "\n");
                     const Int num = k % static_cast<Int>(data_check.chunk_size());
                     log_message("number inside chunk : " + std::to_string(num) + "\n");

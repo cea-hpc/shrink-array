@@ -38,7 +38,7 @@
 namespace shrink_array
 {
 
-template <template <typename> typename CHUNK_T, typename T>
+template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
 
 /**
@@ -302,7 +302,14 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     }
 
     /// @brief Read-only access to the underlying chunk list.
-    [[nodiscard]] const Base::chunk_list_type& getChunkList() const noexcept
+    [[nodiscard]] const Base::chunk_list_type& get_chunk_list() const noexcept
+    {
+        return chunk_list;
+    }
+
+    /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
+    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::chunk_list_type&
+    getChunkList() const noexcept
     {
         return chunk_list;
     }

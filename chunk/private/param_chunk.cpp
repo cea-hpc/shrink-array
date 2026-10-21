@@ -22,7 +22,7 @@
  *    init_thread_structures() lives on ParamChunkParallelInterface, one body
  *    per thread model.
  *  - **The geometry registration hook**, for dynamic builds.
- *  - **ChunkStats()**, the instrumentation report (presentation only).
+ *  - **chunk_stats()**, the instrumentation report (presentation only).
  *
  * @note Sequential context only: nothing here may be called in a parallel region.
  */
@@ -84,7 +84,7 @@ template struct ParamChunkParallelInterface<build_config::use_openmp, AllTypeChu
  */
 void ParamChunk::init_indexes(bool big_chunk_block)
 {
-    auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+    auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
 
     int sz = 1024 * 1024 * 2;
     if (big_chunk_block)
@@ -141,7 +141,7 @@ void ParamChunk::force_compression()
     // Declared in every build; a no-op without fast block compression.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
 
         ens_type_chunk.force_chunk_to_compress();
     }
@@ -150,14 +150,14 @@ void ParamChunk::force_compression()
 #if CHUNK_OPT_STATS
 
 /**
- * @copydoc ParamChunk::ChunkStats
+ * @copydoc ParamChunk::chunk_stats
  *
  * @details Two passes: the first reduces the totals so that each legend line
  *          is printed only when some counter will stand behind it.
  *
  * @note Presentation only: the counters are maintained elsewhere.
  */
-void ParamChunk::ChunkStats()
+void ParamChunk::chunk_stats()
 {
     // Totals first, to filter the legend; then one block per active variant.
     ChunkStatsThr all{};
@@ -451,7 +451,7 @@ void ParamChunk::ChunkStats()
     // separate, and can differ widely between builds whose event counters
     // match: here, the buffers parked in the reuse pools.
     {
-        const auto&       etc  = SingletonChk<AllTypeChunk>::getRef();
+        const auto&       etc  = SingletonChk<AllTypeChunk>::get_ref();
         const std::size_t pool = etc.reuse_pool_bytes();
         std::cout << "\n----- CHUNK_RETENTION -----\n";
         std::cout << "  reuse pools    = " << (pool / (std::size_t{1024} * 1024)) << " MB parked at exit\n";
@@ -459,9 +459,9 @@ void ParamChunk::ChunkStats()
 }
 
 #else
-/// @copydoc ParamChunk::ChunkStats
+/// @copydoc ParamChunk::chunk_stats
 /// @note No counters without CHUNK_STATS; kept so call sites need no guard.
-void ParamChunk::ChunkStats() {}
+void ParamChunk::chunk_stats() {}
 #endif
 
 // Defined for every dynamic build; no #ifdef CHUNK_DYNAMIC: a TEMPLATE on AllT,
@@ -478,7 +478,7 @@ void ParamChunkDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] un
     // Without it, buffers of DIFFERENT geometries share the legacy list and a
     // smaller buffer is popped for a larger chunk (overflow in init_block), or
     // drain_reuse_list_for_size finds no slot at the first re-chunk.
-    auto& ens_type_chunk = SingletonChk<AllT>::getRef();
+    auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
     ens_type_chunk.register_chunk_size(size, ParamChunk::block_size);
 }
 

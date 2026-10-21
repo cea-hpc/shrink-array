@@ -36,10 +36,10 @@ class MultiMatAlgo;
  * @brief A mock multi-material simulation: every material occupies, at
  *        each iteration, a random interval of the mesh; its fields are
  *        written there and read back by a gadget computation.
- * @details Steps, in the order main() runs them: inputData() (parameters
- *          and the storage of every material), computeInterval(),
- *          createTabs(), computeDistribution() (the intervals of every
- *          iteration, drawn up front), computeLoops() (the iterations, in
+ * @details Steps, in the order main() runs them: input_data() (parameters
+ *          and the storage of every material), compute_interval(),
+ *          create_tabs(), compute_distribution() (the intervals of every
+ *          iteration, drawn up front), compute_loops() (the iterations, in
  *          one parallel region).
  */
 struct Simu
@@ -52,30 +52,30 @@ struct Simu
     Simu() = default;
 
     /// @brief Number of cells (mesh_size).
-    int getMeshSize() const;
+    int get_mesh_size() const;
     /// @brief Storage of every material (dis): true = chunk.
-    const std::vector<bool>& getDis() const;
+    const std::vector<bool>& get_dis() const;
 
     /// @brief The three fields of every material (tabs).
-    std::array<MultiArray<double>, 3>& getTabs()
+    std::array<MultiArray<double>, 3>& get_tabs()
     {
         return tabs;
     }
 
     /// @brief The three fields of every material (tabs), read-only.
-    const std::array<MultiArray<double>, 3>& getTabs() const
+    const std::array<MultiArray<double>, 3>& get_tabs() const
     {
         return tabs;
     }
 
     /// @brief Field @p ind of every material.
-    const MultiArray<double>& getTabs(int ind) const
+    const MultiArray<double>& get_tabs(int ind) const
     {
         return tabs[ind];
     }
 
     /// @brief The presence fraction of every material.
-    const MultiArray<double, VectChunk2<double>>& getFrac() const
+    const MultiArray<double, VectChunk2<double>>& get_frac() const
     {
         return frac;
     }
@@ -83,7 +83,7 @@ struct Simu
     /// @brief The presence fraction at position @p p of an interval of
     ///        @p size cells: a ramp over the first and last interface_width
     ///        cells, 1 in between.
-    [[nodiscard]] double presenceFraction(int p, int size) const
+    [[nodiscard]] double presence_fraction(int p, int size) const
     {
         const int d = std::min(p, size - 1 - p); // distance to the nearest end
         return d >= interface_width ? 1. : static_cast<double>(d + 1) / static_cast<double>(interface_width + 1);
@@ -91,28 +91,28 @@ struct Simu
 
     /// @brief Storage of the materials (option_chunk): 1 all chunk, 2 all vector, 3 random 50/50,
     ///        4 random at chunk_rate.
-    int getOptionChunk() const;
+    int get_option_chunk() const;
 
     /// @brief Whether per-iteration prints are on (verbose).
-    bool isVerbose() const;
+    bool is_verbose() const;
 
     /// @brief Number of materials (nbmat).
-    int getNbmat() const;
+    int get_nbmat() const;
 
     /// @brief The parameters -- asked on stdin under
     ///        multi_mat::interactive_input, the defaults above otherwise --
     ///        and the storage of every material (InputData.cpp).
-    void inputData();
+    void input_data();
 
     /// @brief The three fields and the presence fraction of every material.
-    void createTabs();
+    void create_tabs();
 
     /// @brief The largest intervals, from pc_chunk / pc_vector.
-    void computeInterval();
+    void compute_interval();
 
     /// @brief The interval of every material at every iteration, drawn now
     ///        so the iterations need no sequential step.
-    void computeDistribution();
+    void compute_distribution();
 
     /**
      * @brief The iterations. Called by every thread of a parallel region.
@@ -123,7 +123,7 @@ struct Simu
      */
     template <typename LOOPS, typename LOOPSCHUNK>
     void
-    computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::function<void(bool)>& lbd_stats, double& value);
+    compute_loops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::function<void(bool)>& lbd_stats, double& value);
 
     int nbmat = nbmat_default; ///< Materials
 
@@ -143,13 +143,13 @@ struct Simu
     int freq_rtz_default = std::max(iter_max_default / 10, 5);
     int freq_rtz         = freq_rtz_default; ///< Every this many iterations the fields are zeroed instead of written
 
-    int freq_compress = 0; ///< Manual mode: every this many iterations the fields are compressed (inputData())
+    int freq_compress = 0; ///< Manual mode: every this many iterations the fields are compressed (input_data())
 
     bool all_chunk  = false; ///< Every material is a chunk one
     bool all_vector = false; ///< Every material is a vector one
 
-    // Largest intervals, set by computeInterval() for the kinds in use. The
-    // other one stays 1: computeDistribution() builds the distributions of
+    // Largest intervals, set by compute_interval() for the kinds in use. The
+    // other one stays 1: compute_distribution() builds the distributions of
     // both kinds, and [1, 1] is a valid range where an unset value was not.
     int interval_chunk  = 1; ///< Largest interval of a chunk material, cells
     int interval_vector = 1; ///< Largest interval of a vector material, cells

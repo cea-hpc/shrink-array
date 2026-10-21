@@ -153,29 +153,29 @@ const char* event_color(EventCode ev)
 {
     switch (ev)
     {
-        case EV_BEGIN_SLOW_PATH:
+        case ev_begin_slow_path:
             return "\033[36m"; // cyan
-        case EV_END_SLOW_PATH:
+        case ev_end_slow_path:
             return "\033[32m"; // green
-        case EV_BEGIN_FAST_PATH:
+        case ev_begin_fast_path:
             return "\033[33m"; // yellow
-        case EV_END_FAST_PATH:
+        case ev_end_fast_path:
             return "\033[90m"; // grey
-        case EV_COMPRESS_ATTEMPT:
+        case ev_compress_attempt:
             return "\033[35m"; // magenta
-        case EV_COMPRESS_STARTED:
+        case ev_compress_started:
             return "\033[34m"; // blue
-        case EV_COMPRESS_ABORTED:
+        case ev_compress_aborted:
             return "\033[31m"; // red
-        case EV_COMPRESS_FINISHED:
+        case ev_compress_finished:
             return "\033[92m"; // light green
-        case EV_POLICY_BEGIN_WRITE:
+        case ev_policy_begin_write:
             return "\033[96m"; // light cyan
-        case EV_POLICY_END_WRITE:
+        case ev_policy_end_write:
             return "\033[94m"; // light blue
-        case EV_MARK_THREAD_HAS_OPS:
+        case ev_mark_thread_has_ops:
             return "\033[93m"; // light yellow
-        case EV_CLEAR_THREAD_HAS_OPS:
+        case ev_clear_thread_has_ops:
             return "\033[95m"; // light magenta
         default:
             return "\033[0m"; // reset
@@ -186,41 +186,41 @@ const char* event_name(EventCode ev)
 {
     switch (ev)
     {
-        case EV_BEGIN_SLOW_PATH:
+        case ev_begin_slow_path:
             return "BEGIN_SLOW_PATH";
-        case EV_END_SLOW_PATH:
+        case ev_end_slow_path:
             return "EV_END_SLOW_PATH";
-        case EV_BEGIN_FAST_PATH:
+        case ev_begin_fast_path:
             return "EV_BEGIN_FAST_PATH";
-        case EV_END_FAST_PATH:
+        case ev_end_fast_path:
             return "EV_END_FAST_PATH";
-        case EV_COMPRESS_ATTEMPT:
+        case ev_compress_attempt:
             return "COMPRESS_ATTEMPT";
-        case EV_COMPRESS_STARTED:
+        case ev_compress_started:
             return "COMPRESS_STARTED";
-        case EV_COMPRESS_ABORTED:
+        case ev_compress_aborted:
             return "COMPRESS_ABORTED";
-        case EV_COMPRESS_FINISHED:
+        case ev_compress_finished:
             return "COMPRESS_FINISHED";
-        case EV_POLICY_BEGIN_WRITE:
+        case ev_policy_begin_write:
             return "POLICY_BEGIN_WRITE";
-        case EV_POLICY_END_WRITE:
+        case ev_policy_end_write:
             return "POLICY_END_WRITE";
-        case EV_MARK_THREAD_HAS_OPS:
+        case ev_mark_thread_has_ops:
             return "MARK_THREAD_HAS_OPS";
-        case EV_CLEAR_THREAD_HAS_OPS:
+        case ev_clear_thread_has_ops:
             return "CLEAR_THREAD_HAS_OPS";
-        case EV_OP_ALLOC:
+        case ev_op_alloc:
             return "OP_ALLOC";
-        case EV_OP_ENQUEUE:
+        case ev_op_enqueue:
             return "OP_ENQUEUE";
-        case EV_OP_FREE:
+        case ev_op_free:
             return "OP_FREE";
-        case EV_OP_FLUSH_ONE:
+        case ev_op_flush_one:
             return "OP_FLUSH_ONE";
-        case EV_VALUE_ALLOC:
+        case ev_value_alloc:
             return "VALUE_ALLOC";
-        case EV_VALUE_FREE:
+        case ev_value_free:
             return "VALUE_FREE";
         default:
             return "UNKNOWN";
@@ -439,7 +439,7 @@ bool analyze_ring_sweep()
 
         switch (entry.ev)
         {
-            case EV_BEGIN_FAST_PATH:
+            case ev_begin_fast_path:
                 if (!thr_state.in_fast)
                 {
                     thr_state.in_fast    = true;
@@ -447,7 +447,7 @@ bool analyze_ring_sweep()
                 }
                 break;
 
-            case EV_END_FAST_PATH:
+            case ev_end_fast_path:
                 if (thr_state.in_fast)
                 {
                     fast_intervals[entry.tid].push_back({thr_state.fast_start, entry.ts});
@@ -455,8 +455,8 @@ bool analyze_ring_sweep()
                 }
                 break;
 
-            case EV_COMPRESS_ATTEMPT:
-            case EV_COMPRESS_STARTED:
+            case ev_compress_attempt:
+            case ev_compress_started:
                 if (!thr_state.in_compress)
                 {
                     thr_state.in_compress    = true;
@@ -464,8 +464,8 @@ bool analyze_ring_sweep()
                 }
                 break;
 
-            case EV_COMPRESS_FINISHED:
-            case EV_COMPRESS_ABORTED:
+            case ev_compress_finished:
+            case ev_compress_aborted:
                 if (thr_state.in_compress)
                 {
                     compress_intervals[entry.tid].push_back({thr_state.compress_start, entry.ts});

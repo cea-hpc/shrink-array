@@ -118,7 +118,7 @@ struct alignas(64) ChunkStatsThr
     long gate_driver         = 0; ///< run_slow_path() drivers (a writer sent to the slow path)
 };
 
-/// @brief Program start, for the per-second rates ParamChunk::ChunkStats() shows
+/// @brief Program start, for the per-second rates ParamChunk::chunk_stats() shows
 ///        next to the gate counters. Static init: as early as the counters.
 inline const std::chrono::steady_clock::time_point __chunk_stats_t0 = std::chrono::steady_clock::now();
 

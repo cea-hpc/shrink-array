@@ -42,7 +42,7 @@
 namespace shrink_array
 {
 
-template <template <typename> typename CHUNK_T, typename T>
+template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
 
 /**
@@ -95,9 +95,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Base2::resize; // resize(sz, val), ArrayChunkBase's
 
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
-    using manager_chunk2 = ManagerChunk<Chunk2, T>; ///< Same type as manager_type.
+    using ManagerChunk2 = ManagerChunk<Chunk2, T>; ///< Same type as manager_type.
 
     // Required, not decoration: ArrayChunkBase re-exports RechunkSupport's hook
     // DEFAULTS under these names, so a hook call through self() would be
@@ -257,7 +257,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     }
 
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
-    [[nodiscard]] inf_array_t get_info_second_value() const noexcept
+    [[nodiscard]] InfArrayT get_info_second_value() const noexcept
     {
         return Proxy2<T>::share_info_array->get_info_second_value(this->registry_key());
     }
@@ -349,7 +349,14 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     void compress();
 
     /// @brief Read-only access to the underlying chunk list.
-    [[nodiscard]] const Base::chunk_list_type& getChunkList() const noexcept
+    [[nodiscard]] const Base::chunk_list_type& get_chunk_list() const noexcept
+    {
+        return chunk_list;
+    }
+
+    /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
+    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::chunk_list_type&
+    getChunkList() const noexcept
     {
         return chunk_list;
     }
@@ -406,7 +413,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     {
         if constexpr (!is_bool_like_v<T>)
         {
-            const in_t<T> sv = from.get_second_value();
+            const InT<T> sv = from.get_second_value();
             if (sv != T{} && get_second_value() != sv)
             {
                 set_second_value(sv, false);
@@ -416,7 +423,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     /// @brief Address of the registry mirror, for ArrayChunkBase to arm write
     ///        proxies with (ProxySpec2::arm_inf_array).
-    [[nodiscard]] const inf_array_t* registry_mirror() const noexcept
+    [[nodiscard]] const InfArrayT* registry_mirror() const noexcept
     {
         return &inf_array;
     }
@@ -449,7 +456,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
             {
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
-                    auto& slot = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
+                    auto& slot = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
                     if (!slot)
                     {
                         slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();
@@ -496,7 +503,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     ///          write path.
     /// @warning map_inf_array holds a POINTER to this member, so the destructor
     ///          must erase that entry -- see its documentation.
-    inf_array_t inf_array;
+    InfArrayT inf_array;
 
     /**
      * @brief The (T{}, no_second_value_index) tuple every array without a
@@ -505,7 +512,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      *          second value queues under T{}, which needs this tuple and a list
      *          per rank (register_no_second_value_key()). Never erased.
      */
-    static inline inf_array_t inf_array_none{T{}, chunk_config::no_second_value_index, 0};
+    static inline InfArrayT inf_array_none{T{}, chunk_config::no_second_value_index, 0};
 
     /// Index of the second value in the shared value table;
     /// chunk_config::no_second_value_index until set_second_value().

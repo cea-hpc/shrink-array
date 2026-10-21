@@ -52,7 +52,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
     // interaction; assign/swap are serial and localised to this section.
     if (test_stl)
     {
-        std::cout << tc.BOLD << tc.CYAN << "\n=== STL interface self-checks ===\n" << tc.RESET;
+        std::cout << tc.BOLD << tc.CYAN << "\n=== STL interface self-checks ===\n" << tc.reset;
         Int  failures = 0;
         auto expect   = [&](bool ok, const char* what)
         {
@@ -347,11 +347,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
         if (failures == 0)
         {
-            std::cout << tc.BOLD << tc.GREEN << "STL self-checks: ALL PASSED\n" << tc.RESET;
+            std::cout << tc.BOLD << tc.green << "STL self-checks: ALL PASSED\n" << tc.reset;
         }
         else
         {
-            std::cout << tc.BOLD << "STL self-checks: " << failures << " FAILURE(S)\n" << tc.RESET;
+            std::cout << tc.BOLD << "STL self-checks: " << failures << " FAILURE(S)\n" << tc.reset;
         }
     }
 
@@ -366,7 +366,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
     // trivially holds.
     if (test_stl)
     {
-        std::cout << tc.BOLD << tc.CYAN << "\n=== read-idempotence self-checks ===\n" << tc.RESET;
+        std::cout << tc.BOLD << tc.CYAN << "\n=== read-idempotence self-checks ===\n" << tc.reset;
 
         // Size spans many chunks (≈195 at chunk_size 512) so reads cross chunk
         // boundaries. Mixed data (mostly second_value, some distinct) exercises
@@ -416,14 +416,14 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
         if (idem_bad == 0 && ne_bad == 0)
         {
-            std::cout << tc.BOLD << tc.GREEN << "read-idempotence: ALL PASSED\n" << tc.RESET;
+            std::cout << tc.BOLD << tc.green << "read-idempotence: ALL PASSED\n" << tc.reset;
         }
         else
         {
             std::cout << tc.BOLD << "read-idempotence: FAILURE(S) — " << idem_bad << " non-idempotent reads, " << ne_bad
                       << " operator!=/operatorT disagreements"
                       << " (first at i=" << first_i << ")\n"
-                      << tc.RESET;
+                      << tc.reset;
         }
 
         r.clear();

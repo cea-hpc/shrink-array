@@ -75,12 +75,12 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     // Automatic colour-support detection (disabled when output is redirected to a file).
     const bool use_color = isatty(fileno(stdout)) != 0;
 
-    const std::string RESET  = use_color ? "\033[0m" : "";
+    const std::string reset  = use_color ? "\033[0m" : "";
     const std::string BOLD   = use_color ? "\033[1m" : "";
     const std::string GREY   = use_color ? "\033[90m" : "";
     const std::string RED    = use_color ? "\033[31m" : "";
-    const std::string YELLOW = use_color ? "\033[33m" : "";
-    const std::string GREEN  = use_color ? "\033[32m" : "";
+    const std::string yellow = use_color ? "\033[33m" : "";
+    const std::string green  = use_color ? "\033[32m" : "";
     const std::string CYAN   = use_color ? "\033[36m" : "";
 
     // ── Verdict 1: is this variant worth it vs a plain std::vector? ───────────
@@ -90,38 +90,38 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     std::string verdict;
     if (n_compressed == 0)
     {
-        verdict = RED + "no compression — plain std::vector would be lighter" + RESET;
+        verdict = RED + "no compression — plain std::vector would be lighter" + reset;
     }
     else if (pct_total < 25.0)
     {
-        verdict = YELLOW + "compression marginal vs std::vector — plain storage may be lighter" + RESET;
+        verdict = yellow + "compression marginal vs std::vector — plain storage may be lighter" + reset;
     }
     else if (chunk_name != "Chunk" && (n_t1 == 0 || pct_t1 < 10.0))
     {
         // Chunk2/Chunk2A carrying no, or almost no, type-2: the second value
         // never paid.
-        verdict = GREY + chunk_name + " overkill — plain Chunk would suffice" + RESET;
+        verdict = GREY + chunk_name + " overkill — plain Chunk would suffice" + reset;
     }
     else if (chunk_name == "Chunk2A" && bool_elements)
     {
         // Type-2 chunks of bools are all-true chunks: Chunk2's single second
         // value (true) stores every one of them. The per-chunk second value of
         // Chunk2A has nothing to add.
-        verdict = GREY + std::string("Chunk2A no better than Chunk2 for bool (one second value: true)") + RESET;
+        verdict = GREY + std::string("Chunk2A no better than Chunk2 for bool (one second value: true)") + reset;
     }
     else if (chunk_name != "Chunk" && pct_t1 < 40.0)
     {
-        verdict = CYAN + chunk_name + " useful" + RESET;
+        verdict = CYAN + chunk_name + " useful" + reset;
     }
     else if (chunk_name != "Chunk")
     {
-        verdict = GREEN + BOLD + chunk_name + " highly effective" + RESET;
+        verdict = green + BOLD + chunk_name + " highly effective" + reset;
     }
     else
     {
         // Plain Chunk: no type-2 notion; verdict is purely vs std::vector.
-        verdict = (pct_total >= 60.0) ? GREEN + BOLD + "Chunk highly effective vs std::vector" + RESET
-                                      : CYAN + "Chunk useful vs std::vector" + RESET;
+        verdict = (pct_total >= 60.0) ? green + BOLD + "Chunk highly effective vs std::vector" + reset
+                                      : CYAN + "Chunk useful vs std::vector" + reset;
     }
 
     // Write everything into a local stringstream first, to guarantee thread-safety.
@@ -136,7 +136,7 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
                                       : "[" + array_name + " #" + std::to_string(num_tab) + " " + type_name + "]";
 
     // Step 1: the left-aligned prefix.
-    ss << std::left << std::setw(40) << tab_label << RESET;
+    ss << std::left << std::setw(40) << tab_label << reset;
 
     // Step 2: overall compression statistics.
     ss << std::right << std::setw(6) << n_compressed << "/" << std::setw(6) << nb_chunk << " chunks compressed ("
@@ -145,7 +145,7 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     // Step 3: aligned type-2 statistics.
     if (n_t1 > 0)
     {
-        ss << ", " << BOLD << std::setw(6) << n_t1 << RESET << " type-2 (" << std::setw(5) << pct_t1 << "%)";
+        ss << ", " << BOLD << std::setw(6) << n_t1 << reset << " type-2 (" << std::setw(5) << pct_t1 << "%)";
     }
     else
     {
@@ -161,12 +161,12 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     {
         if (n_cross == 0)
         {
-            ss << GREY << "   [" << cross_name << " would not have helped]" << RESET;
+            ss << GREY << "   [" << cross_name << " would not have helped]" << reset;
         }
         else
         {
-            ss << YELLOW << "   [+" << n_cross << " blocks (" << std::fixed << std::setprecision(1) << pct_cross
-               << "%) " << cross_name << " would have compressed]" << RESET;
+            ss << yellow << "   [+" << n_cross << " blocks (" << std::fixed << std::setprecision(1) << pct_cross
+               << "%) " << cross_name << " would have compressed]" << reset;
         }
     }
 

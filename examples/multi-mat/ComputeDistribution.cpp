@@ -16,7 +16,7 @@
 
 /**
  * @file ComputeDistribution.cpp
- * @brief Simu::computeDistribution(): the interval of every material at
+ * @brief Simu::compute_distribution(): the interval of every material at
  *        every iteration, drawn up front.
  */
 
@@ -27,7 +27,7 @@
 #include "Containers.h" // dispatch
 #include "Simu.h"       // Simu::computeDistribution
 
-void Simu::computeDistribution()
+void Simu::compute_distribution()
 {
     const int min = 1;
     const int max = mesh_size;
@@ -60,7 +60,7 @@ void Simu::computeDistribution()
         {
             int size  = 0;
             int begin = 0;
-            if (dispatch.isChunk(mat))
+            if (dispatch.is_chunk(mat))
             {
                 size  = size_distribution_chunk(rng_chunk);
                 begin = start_distribution_chunk(rng_chunk);
@@ -76,7 +76,7 @@ void Simu::computeDistribution()
             tab_size[it][mat]  = size;
             tab_start[it][mat] = begin;
 
-            if (isVerbose())
+            if (is_verbose())
             {
                 const int end = begin + size;
 

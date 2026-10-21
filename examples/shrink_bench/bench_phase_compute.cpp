@@ -143,7 +143,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
             if (j < 60 + dec)
             {
-                tab_complex[i] = complex_double(std::sin(i + k), std::cos(i + k));
+                tab_complex[i] = ComplexDouble(std::sin(i + k), std::cos(i + k));
             }
             else if (j < 120 + dec)
             {
@@ -264,7 +264,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 tab3[i]        = std::sin(i + k);
                 tab4[i]        = 0;
                 tab5[i]        = std::cos(i + (2 * k));
-                tab_complex[i] = complex_double(std::tan(i + (2 * k)), std::cos(i - k));
+                tab_complex[i] = ComplexDouble(std::tan(i + (2 * k)), std::cos(i - k));
                 tab_int[i]     = static_cast<int>(i - k);
                 tab_float[i]   = 0;
                 tab_short[i]   = static_cast<short>(interpolation(i, sz, std::numeric_limits<short>::max()));
@@ -299,7 +299,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                 tab_float[i] += 1;
 
-                tab_complex[i] = complex_double(std::sqrt(double(i + 1)), std::sqrt(double(i - 1)));
+                tab_complex[i] = ComplexDouble(std::sqrt(double(i + 1)), std::sqrt(double(i - 1)));
 
                 if (i > tab_nba1[k])
                 {
@@ -352,15 +352,15 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab_char[i] =
                         static_cast<unsigned char>(linear_correlation(i, sz, std::numeric_limits<char>::max()));
                     tab_short[i]   = static_cast<short>(linear_correlation(i, sz, std::numeric_limits<short>::max()));
-                    tab_complex[i] = complex_double(tab1[i], tab2[i]);
+                    tab_complex[i] = ComplexDouble(tab1[i], tab2[i]);
 
                     tab_complex[i] = 3. * tab_complex[i];
-                    tab_complex[i] = tab_complex[i] + complex_double(1., 3.);
+                    tab_complex[i] = tab_complex[i] + ComplexDouble(1., 3.);
                     tab_complex[i] *= 2.;
-                    tab_complex[i] = complex_double(2., 3.) * tab_complex[i];
+                    tab_complex[i] = ComplexDouble(2., 3.) * tab_complex[i];
                     tab_complex[i] = 2. / tab_complex[i];
                     tab_complex[i] = 2. - tab_complex[i];
-                    tab_complex[i] = tab_complex[i] - complex_double(4., 3.);
+                    tab_complex[i] = tab_complex[i] - ComplexDouble(4., 3.);
                     tab_complex[i] = -tab_complex[i];
                 }
             }
@@ -443,7 +443,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     const double t3 = tab3[i];
                     const double t5 = tab5[i];
 
-                    const complex_double valc = tab_complex[i];
+                    const ComplexDouble  valc = tab_complex[i];
                     const bool           b    = tab_bool[i];
                     const Int            ti   = tab_int[i];
 
@@ -506,12 +506,12 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab_float[i] /= 1.01f;
                     tab_float[i] -= .5f;
 
-                    tab_complex[i] /= complex_double(2, 3);
+                    tab_complex[i] /= ComplexDouble(2, 3);
                     tab_complex[i] -= tab1[i];
                     tab_complex[i] *= tab1[i];
 
-                    tab_complex[i] = complex_double(3., 2.) * tab1[i] + tab2[i] / complex_double(2., 2.);
-                    tab_complex[i] = tab1[i] - complex_double(1., 2.) + tab3[i] + complex_double(3., 1.);
+                    tab_complex[i] = ComplexDouble(3., 2.) * tab1[i] + tab2[i] / ComplexDouble(2., 2.);
+                    tab_complex[i] = tab1[i] - ComplexDouble(1., 2.) + tab3[i] + ComplexDouble(3., 1.);
 
                     tab_complex[i] *= tab1[i];
 
@@ -525,8 +525,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab3[i] = std::fmod(static_cast<double>(tab3[i]), 1e6);
                     tab5[i] = std::fmod(static_cast<double>(tab5[i]), 1e6);
                     {
-                        const complex_double _cb = tab_complex[i];
-                        tab_complex[i] = complex_double(std::fmod(_cb.real(), 1e6), std::fmod(_cb.imag(), 1e6));
+                        const ComplexDouble _cb = tab_complex[i];
+                        tab_complex[i]          = ComplexDouble(std::fmod(_cb.real(), 1e6), std::fmod(_cb.imag(), 1e6));
                     }
 
                     if (tab2[i] >= 0)

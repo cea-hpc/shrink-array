@@ -52,7 +52,7 @@ namespace shrink_array
 template <typename T, typename ChunkType>
 struct CompressionManager;
 
-template <template <typename> class CHUNK_T, typename T>
+template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
 /*---------------------------------------------------------------------------*/
@@ -334,11 +334,11 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     /// @brief What a slot holds: the value, or for a wide T the identifier
     ///        of its shared array (SecondValueTraits) -- 4 bytes per chunk
     ///        instead of 8 or 16.
-    using second_value_slot_t = SecondValueTraits<T>::slot_t;
+    using SecondValueSlotT = SecondValueTraits<T>::SlotT;
 
     /// @brief One array's slots, one per chunk: same element type, filled by
     ///        a team for a large array (resize_filled).
-    using second_value_row_t = parallel_storage_init::no_init_vector<second_value_slot_t>;
+    using SecondValueRowT = parallel_storage_init::NoInitVector<SecondValueSlotT>;
 
     using Base2::Base2;
 
@@ -358,7 +358,7 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \param num_tab Index of the tab.
      * \return Reference to the vector of second values.
      */
-    [[nodiscard]] static second_value_row_t& get_tab_second_value(int num_tab) noexcept
+    [[nodiscard]] static SecondValueRowT& get_tab_second_value(int num_tab) noexcept
     {
         return tab_second_value[static_cast<std::size_t>(num_tab)];
     }
@@ -376,7 +376,7 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \param i Index of the chunk within the tab.
      * \param v Value to assign.
      */
-    static void set(int num_tab, int i, in_t<T> v)
+    static void set(int num_tab, int i, InT<T> v)
     {
         get_tab_second_value(num_tab, i).set(v);
     }
@@ -402,12 +402,12 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
         auto&     row  = tab_second_value[static_cast<std::size_t>(nb_tab)];
         const int held = static_cast<int>(row.size());
         // Keeps [0, min(old, new)); new slots value-initialised (by a team for a large array).
-        parallel_storage_init::resize_filled(row, static_cast<std::size_t>(nb_chunk), second_value_slot_t{});
+        parallel_storage_init::resize_filled(row, static_cast<std::size_t>(nb_chunk), SecondValueSlotT{});
         // Clear from the OLD count too: the row may hold more than nb_chunk_old entries.
         // Only up to what it held: resize_filled() initialised the rest.
         for (int k = nb_chunk_old; k < std::min(held, nb_chunk); ++k)
         {
-            row[static_cast<std::size_t>(k)] = second_value_slot_t{};
+            row[static_cast<std::size_t>(k)] = SecondValueSlotT{};
         }
     }
 
@@ -422,7 +422,7 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
         // row: `= {}` would keep the capacity.
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
         {
-            second_value_row_t().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
+            SecondValueRowT().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
         }
     }
 
@@ -433,8 +433,8 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \brief Static container holding second values for each tab and chunk.
      * Indexed as tab_second_value[num_tab][num_chunk].
      */
-    static inline constinit internal::Immortal<std::vector<second_value_row_t>> tab_second_value_storage_{};
-    static inline std::vector<second_value_row_t>& tab_second_value = tab_second_value_storage_.value;
+    static inline constinit internal::Immortal<std::vector<SecondValueRowT>> tab_second_value_storage_{};
+    static inline std::vector<SecondValueRowT>& tab_second_value = tab_second_value_storage_.value;
 };
 
 /*!
@@ -450,13 +450,13 @@ class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool
 
     using Base2 = Proxy2Base<Derived, bool, ChunkType>;
 
-    using values_type_ref = Proxy2Base<Derived, bool, ChunkType>::values_type_ref;
+    using ValuesTypeRef = Proxy2Base<Derived, bool, ChunkType>::ValuesTypeRef;
 
     /// @brief Forward the element reference, index and chunk to Proxy2Base.
     /// @param v Reference to the chunk's values.
     /// @param num_ Index of the element in the chunk.
     /// @param chunk_ Owning chunk.
-    explicit ProxySpec2A(values_type_ref v, int num_, ChunkType& chunk_) noexcept : Base2(v, num_, chunk_) {}
+    explicit ProxySpec2A(ValuesTypeRef v, int num_, ChunkType& chunk_) noexcept : Base2(v, num_, chunk_) {}
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
@@ -553,7 +553,7 @@ class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 
     using CRTPSupport<Derived>::derived;
 
-    using values_type_ref = BaseSpec::values_type_ref;
+    using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
     using Base  = ProxyBase<Derived, T, ChunkType>;
     using Base2 = Proxy2Base<Derived, T, ChunkType>;
@@ -603,7 +603,7 @@ class Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<T
   public:
     using BaseSpec = ProxySpec2A<T, Derived>;
 
-    using values_type_ref = BaseSpec::values_type_ref;
+    using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
     using Base = ProxyBase<Derived, T, ChunkType>;
     using Base::chunk;
@@ -658,7 +658,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @param num_ index within array
      * @param chunk_ owning chunk
      */
-    explicit Proxy2A(BaseFastCompPolicy::values_type_ref values_, int num_, Chunk2A<T>& chunk_) noexcept
+    explicit Proxy2A(BaseFastCompPolicy::ValuesTypeRef values_, int num_, Chunk2A<T>& chunk_) noexcept
         : Proxy2AFastCompPolicy<Proxy2A, T, Chunk2A<T>, chunk_config::use_fast_block_compression>(values_, num_, chunk_)
     {
     }
@@ -691,7 +691,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     {
         if (std::addressof(from) != this) // operator& is deleted
         {
-            const in_t<T> v = static_cast<T>(from); // complete before the write starts
+            const InT<T> v = static_cast<T>(from); // complete before the write starts
             assign_impl<T>(v);
         }
         return *this;
@@ -768,7 +768,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         BaseSpec::clear(num_tab);
         // Released, not just emptied (clear() keeps the capacity): every re-chunk would
         // leave one byte per old chunk behind.
-        parallel_storage_init::no_init_vector<char>().swap(tab_type_cst_val[num_tab]);
+        parallel_storage_init::NoInitVector<char>().swap(tab_type_cst_val[num_tab]);
         // Same for the candidate flags.
         Base::release_tab_is_int(num_tab);
     }
@@ -776,9 +776,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     /**
      * @brief Per-tab array of flags indicating the type of constant value used.
      */
-    static inline constinit internal::Immortal<std::vector<parallel_storage_init::no_init_vector<char>>>
+    static inline constinit internal::Immortal<std::vector<parallel_storage_init::NoInitVector<char>>>
         tab_type_cst_val_storage_{}; ///< type-of-constant flags
-    static inline std::vector<parallel_storage_init::no_init_vector<char>>& tab_type_cst_val =
+    static inline std::vector<parallel_storage_init::NoInitVector<char>>& tab_type_cst_val =
         tab_type_cst_val_storage_.value;
 
     /**
@@ -787,7 +787,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     static inline constinit internal::LazyImmortal<PointerMapChunk2A<T>> share_info_array; ///< pointer->tab mapping
 
   private:
-    using manager_chunk2A = ManagerChunk<Chunk2A, T>;
+    using ManagerChunk2A = ManagerChunk<Chunk2A, T>;
 
     using Base::read_values;
     using Base::values;
@@ -828,14 +828,14 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      *       mark_for_compression_if_needed_with_value() when the caller already
      *       holds it, so no concurrent writer can be read in between.
      */
-    void mark_for_compression_if_needed(in_t<T> new_value, const T* vals) const;
+    void mark_for_compression_if_needed(InT<T> new_value, const T* vals) const;
 
     /**
      * @brief Marks chunk for potential compression with explicit old value
      * @param old_value Previous value
      * @param new_value New value being written
      */
-    void mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value) const;
+    void mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const;
 
     /// @brief Materialise this proxy's chunk with the constant it was compressed to
     ///        (first value, or @p ptr_second_value). Not for bool.
@@ -884,7 +884,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
 
     inline void perform_compression() noexcept;
 
-    inline void perform_core_assignment(T* vals, in_t<T> v) const;
+    inline void perform_core_assignment(T* vals, InT<T> v) const;
 
     /**
      * @brief Checks if a value change should trigger compression consideration
@@ -908,10 +908,10 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      *          drives make_block_compression on the slow path again and again
      *          (microseconds per write). Non-static: the filter reads the chunk.
      */
-    [[nodiscard]] bool should_mark_for_compression(in_t<T> old_value,
-                                                   in_t<T> new_value,
-                                                   in_t<T> second_value,
-                                                   in_t<T> first_value) const noexcept
+    [[nodiscard]] bool should_mark_for_compression(InT<T> old_value,
+                                                   InT<T> new_value,
+                                                   InT<T> second_value,
+                                                   InT<T> first_value) const noexcept
     {
         if (CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value,
                                                                           first_value))
@@ -950,7 +950,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     ///          elements belong to other writers, so both sides are relaxed atomics
     ///          (relaxed_element.h; the stores in store_value()). A type that cannot
     ///          take them (the aggregates) skips the filter and always queues.
-    [[nodiscard]] bool may_become_uniform(in_t<T> v) const noexcept
+    [[nodiscard]] bool may_become_uniform(InT<T> v) const noexcept
     {
         if constexpr (!internal::relaxed_element_access_v<T>)
         {
@@ -988,7 +988,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @return true if the write is worth examining further.
      */
     [[nodiscard]] bool
-    pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    pre_check_mark_for_compression(InT<T> new_value, InT<T> first_value, InT<T> second_val) const noexcept
     {
         // The "leave" clause depends on the old value, which this filter does not see: let
         // any write of a non-second value through; the predicate decides on the old value.
@@ -1016,9 +1016,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     template <typename ModifyFn>
     void execute_inplace_operation(ModifyFn modify_fn);
 
-    inline void handle_bool_assignment(in_t<T> v);
+    inline void handle_bool_assignment(InT<T> v);
 
-    inline void handle_no_bool_assignment(in_t<T> v);
+    inline void handle_no_bool_assignment(InT<T> v);
 
     /**
      * @brief Assigns a value to the proxy element.
@@ -1026,15 +1026,15 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @return Assigned value.
      */
     template <typename U>
-    // in_t<U>, not const U&: the write engine is the one frame not inlined into the caller,
+    // InT<U>, not const U&: the write engine is the one frame not inlined into the caller,
     // so a small type crosses the call in a register. Non-deducible: call assign_impl<U>(v).
-    T assign_impl(in_t<U> v) noexcept;
+    T assign_impl(InT<U> v) noexcept;
 
     // ========================================================================
     // COMPOUND ARITHMETIC OPERATORS
     // ========================================================================
     template <typename U, typename Op>
-    void apply_compound_operation(Op op, in_t<U> v) noexcept; // in_t: see assign_impl
+    void apply_compound_operation(Op op, InT<U> v) noexcept; // InT: see assign_impl
 
     char* ptr_type_cst = nullptr; ///< pointer into tab_type_cst_val[num_tab]
 };

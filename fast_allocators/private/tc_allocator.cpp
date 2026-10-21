@@ -24,13 +24,13 @@ namespace fast_alloc
 
 #ifndef _OPENMP // not under OpenMP: the allocator would re-enter itself -> deadlock
 template <>
-void* TCSlab<FreeLinks::InPayload>::operator new(size_t size)
+void* TCSlab<FreeLinks::in_payload>::operator new(size_t size)
 {
     return TypeAllocator<TCAllocator>::alloc(size);
 }
 
 template <>
-void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr)
+void TCSlab<FreeLinks::in_payload>::operator delete(void* ptr)
 {
     TypeAllocator<TCAllocator>::free(ptr);
 }

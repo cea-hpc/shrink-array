@@ -351,12 +351,12 @@ int check_vector_realloc()
     maybe_set_second_value(v[0], p0.sv);
     fill(v[0], p0, N);
     compress_in_region(v[0]);
-    const auto* const chunks_before = v[0].getChunkList().data();
+    const auto* const chunks_before = v[0].get_chunk_list().data();
 
     v.emplace_back(static_cast<int>(M)); // capacity 1: reallocates, moving v[0]
 
     int bad = 0;
-    if (v[0].getChunkList().data() != chunks_before)
+    if (v[0].get_chunk_list().data() != chunks_before)
     {
         println("[{}/{}] FAIL the reallocation copied the array instead of moving it", variant_name(), step);
         ++bad;

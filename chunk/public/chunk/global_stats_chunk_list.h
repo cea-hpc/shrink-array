@@ -66,16 +66,16 @@ class GlobalStatsChunkList
         long double total_metadata_mem = 0;
         const int   nb_threads         = CHUNK_PMP_MAX_THREADS;
 
-        std::cout << "\n" << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n";
+        std::cout << "\n" << tc.CYAN << std::string(total_width, '=') << tc.reset << "\n";
         std::cout << tc.BOLD << tc.CYAN << std::string((total_width - 35) / 2, ' ')
-                  << "GLOBAL COMPRESSION LISTS MONITORING" << tc.RESET << "\n";
-        std::cout << tc.WHITE << " Configuration: " << tc.BOLD << nb_threads << tc.RESET << tc.WHITE
-                  << " active threads" << tc.RESET << "\n";
-        std::cout << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n";
+                  << "GLOBAL COMPRESSION LISTS MONITORING" << tc.reset << "\n";
+        std::cout << tc.white << " Configuration: " << tc.BOLD << nb_threads << tc.reset << tc.white
+                  << " active threads" << tc.reset << "\n";
+        std::cout << tc.CYAN << std::string(total_width, '=') << tc.reset << "\n";
 
         std::cout << tc.BOLD << std::left << std::setw(col_type) << "Chunk Type Instance" << std::right
                   << std::setw(col_data) << "Allocated Chunks" << std::right << std::setw(col_list)
-                  << "Op-List Capacity" << std::right << std::setw(col_mem) << "List Memory" << tc.RESET << "\n";
+                  << "Op-List Capacity" << std::right << std::setw(col_mem) << "List Memory" << tc.reset << "\n";
 
         std::cout << std::string(total_width, '-') << "\n";
 
@@ -85,17 +85,17 @@ class GlobalStatsChunkList
             const long double type_list_bytes     = static_cast<long double>(total_list_capacity) * stats.element_size;
             total_metadata_mem += type_list_bytes;
 
-            std::cout << std::left << std::setw(col_type) << name << tc.GREEN << std::right << std::setw(col_data)
-                      << stats.allocated_chunks << tc.RESET << tc.YELLOW << std::right << std::setw(col_list)
-                      << total_list_capacity << tc.RESET << tc.RED << std::right << std::setw(col_mem)
-                      << format_memory(type_list_bytes) << tc.RESET << "\n";
+            std::cout << std::left << std::setw(col_type) << name << tc.green << std::right << std::setw(col_data)
+                      << stats.allocated_chunks << tc.reset << tc.yellow << std::right << std::setw(col_list)
+                      << total_list_capacity << tc.reset << tc.RED << std::right << std::setw(col_mem)
+                      << format_memory(type_list_bytes) << tc.reset << "\n";
         }
 
         std::cout << std::string(total_width, '-') << "\n";
-        std::cout << tc.BOLD << "AGGREGATED METADATA OVERHEAD:" << tc.RESET << "\n";
-        std::cout << std::left << std::setw(40) << " Total footprint for tracking lists" << ": " << tc.BOLD << tc.GREEN
-                  << format_memory(total_metadata_mem) << tc.RESET << "\n";
-        std::cout << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n\n";
+        std::cout << tc.BOLD << "AGGREGATED METADATA OVERHEAD:" << tc.reset << "\n";
+        std::cout << std::left << std::setw(40) << " Total footprint for tracking lists" << ": " << tc.BOLD << tc.green
+                  << format_memory(total_metadata_mem) << tc.reset << "\n";
+        std::cout << tc.CYAN << std::string(total_width, '=') << tc.reset << "\n\n";
     }
 
   private:

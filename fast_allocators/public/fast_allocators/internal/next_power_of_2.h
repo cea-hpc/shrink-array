@@ -26,7 +26,7 @@ namespace fast_alloc
  * @details std::bit_ceil, which is defined for 0 and 1 (both give 1). The
  *          slab-size rule, TCSlab::slab_bytes_for(), rounds with it.
  */
-[[nodiscard]] inline unsigned long NextPowerOf2(unsigned long value) noexcept
+[[nodiscard]] inline unsigned long next_power_of_2(unsigned long value) noexcept
 {
     return std::bit_ceil(value);
 }

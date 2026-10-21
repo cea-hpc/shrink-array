@@ -62,7 +62,7 @@ class MultiMatAlgo
     {
         const LOOPS loops;
 
-        const auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto& { return getMatVecDir(gdr, mat); };
+        const auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto& { return get_mat_vec_dir(gdr, mat); };
 
         lbd_loop_body(mat, lbd_get_mat_vec, loops);
     }
@@ -73,7 +73,7 @@ class MultiMatAlgo
     {
         const LOOPSCHUNK loops;
 
-        const auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto& { return getMatVecChunk(gdr, mat); };
+        const auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto& { return get_mat_vec_chunk(gdr, mat); };
 
         lbd_loop_body(mat, lbd_get_mat_vec, loops);
     }
@@ -82,7 +82,7 @@ class MultiMatAlgo
     template <typename LAM>
     void single_int(int& mat, const LAM& lbd_loop_body) const
     {
-        const bool chunk = dispatch.isChunk(mat);
+        const bool chunk = dispatch.is_chunk(mat);
 
         if (chunk)
         {
@@ -101,7 +101,7 @@ class MultiMatAlgo
 
     /// @brief The std::vector of material @p mat in @p gdr.
     template <typename MA>
-    static auto& getMatVecDir(const MA& gdr, int mat)
+    static auto& get_mat_vec_dir(const MA& gdr, int mat)
     {
         using Vec = MA::vec_dir;
 
@@ -110,7 +110,7 @@ class MultiMatAlgo
 
     /// @brief The chunk array of material @p mat in @p gdr.
     template <typename MA>
-    static auto& getMatVecChunk(const MA& gdr, int mat)
+    static auto& get_mat_vec_chunk(const MA& gdr, int mat)
     {
         using Vec = MA::vec_chunk;
 

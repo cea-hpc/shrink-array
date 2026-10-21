@@ -152,7 +152,7 @@ template <typename T>
 struct SecondValueTraits
 {
     static constexpr bool indexed = build_config::second_value_indexed && sizeof(T) > 4;
-    using slot_t                  = std::conditional_t<indexed, std::uint32_t, T>;
+    using SlotT                   = std::conditional_t<indexed, std::uint32_t, T>;
 };
 
 /**
@@ -165,7 +165,7 @@ struct SecondValueTraits
 template <typename T>
 struct SecondValueRef
 {
-    using slot_t = SecondValueTraits<T>::slot_t;
+    using SlotT = SecondValueTraits<T>::SlotT;
 
     /// @brief The chunk's second value; T{} (== first_value, 0) when none.
     [[nodiscard]] T get() const noexcept
@@ -214,14 +214,14 @@ struct SecondValueRef
     /// @brief No second value (the `= 0` of the value table).
     void reset() const noexcept
     {
-        *slot = slot_t{};
+        *slot = SlotT{};
     }
     [[nodiscard]] explicit operator bool() const noexcept
     {
         return slot != nullptr;
     }
 
-    slot_t* slot = nullptr;
+    SlotT* slot = nullptr;
 };
 
 /**
@@ -729,7 +729,7 @@ class GlobalVecHolder
      *          concurrency: open addressing probes across collisions, so the
      *          slot reached may belong to another value.
      */
-    static T* index_lookup(in_t<T> v) noexcept
+    static T* index_lookup(InT<T> v) noexcept
     {
         // The table named here is never freed while a reader can hold it (see
         // index_generations). A superseded generation misses newer values: a miss
@@ -765,7 +765,7 @@ class GlobalVecHolder
      * @note Giving up after #index_max_probe sets #index_degraded rather than
      *       failing: the value IS registered in the chain, just not indexed.
      */
-    static void index_publish(in_t<T> v, T* ptr) noexcept
+    static void index_publish(InT<T> v, T* ptr) noexcept
     {
         IndexTable* table = index_tab.load(std::memory_order_relaxed);
         // Grow before the table passes half full: linear probing degrades
@@ -1091,7 +1091,7 @@ class GlobalVecHolder
     /// @brief Value hash (a 64-bit finaliser over the object's bytes).
     /// @note Hashes the REPRESENTATION, so two values that compare equal but
     ///       differ bitwise would land in different slots.
-    static size_t index_hash(in_t<T> v) noexcept
+    static size_t index_hash(InT<T> v) noexcept
     {
         uint64_t bits = 0;
         std::memcpy(&bits, &v, sizeof(T) < sizeof(uint64_t) ? sizeof(T) : sizeof(uint64_t));
@@ -1264,7 +1264,7 @@ class TabCstVal2Holder
     ///          constant from the per-chunk tables alone
     ///          (init_values_cst_val): re-sync after a lost CAS, re-chunk,
     ///          teardown -- never on the element write path.
-    [[nodiscard]] static T* find_cst_val2_ptr(in_t<T> second_v)
+    [[nodiscard]] static T* find_cst_val2_ptr(InT<T> second_v)
     {
         using gvh = GlobalVecHolder<T>;
         const typename gvh::LookupGuard in_flight; // holds an index generation / the chain
@@ -1356,7 +1356,7 @@ class TabCstVal2Holder
 
     /// @brief The identifier for @p v, registering its slot if it is new;
     ///        0 for T{} (the "no second value" the value table wrote as 0).
-    [[nodiscard]] static std::uint32_t id_for_value(in_t<T> v)
+    [[nodiscard]] static std::uint32_t id_for_value(InT<T> v)
     {
         if (v == T{})
         {
@@ -1366,7 +1366,7 @@ class TabCstVal2Holder
     }
 
   private:
-    using segment_t = Segment<T>;
+    using SegmentT = Segment<T>;
 
     /**
      * @brief Carve one identifier slot for @p val and record the value.
@@ -1394,7 +1394,7 @@ class TabCstVal2Holder
      * @brief The slot for @p second_v, registering it if new.
      * @return The value's slot (an identifier, never dereferenced). Never null.
      */
-    [[nodiscard]] static T* find_or_register(in_t<T> second_v)
+    [[nodiscard]] static T* find_or_register(InT<T> second_v)
     {
         const typename global_vec_holder::LookupGuard in_flight; // check builds; nests in the callers'
         // ── Hot path, lock-free ───────────────────────────────────────────
@@ -1417,7 +1417,7 @@ class TabCstVal2Holder
         // registered value be unindexed: then, and only then, scan the chain to avoid a duplicate.
         const bool degraded = global_vec_holder::index_degraded.load(std::memory_order_relaxed);
 
-        segment_t* last_seg = global_vec_holder::tail;
+        SegmentT* last_seg = global_vec_holder::tail;
         if (last_seg == nullptr) [[unlikely]]
         {
             // First append after a clear: re-seed the cached tail from head.
@@ -1431,8 +1431,8 @@ class TabCstVal2Holder
 
         if (degraded) [[unlikely]]
         {
-            for (const segment_t* seg = global_vec_holder::head.load(std::memory_order_acquire); seg != nullptr;
-                 seg                  = seg->next)
+            for (const SegmentT* seg = global_vec_holder::head.load(std::memory_order_acquire); seg != nullptr;
+                 seg                 = seg->next)
             {
                 for (int i = 0; i < seg->used; ++i)
                 {
@@ -1448,8 +1448,8 @@ class TabCstVal2Holder
         // Not present: append. The list is append-only between clears, so the
         // first free slot is last_seg->used (or slot 0 of a fresh segment).
         // create() guarantees head is never nullptr here.
-        segment_t* seg = last_seg;
-        if (seg->used == segment_t::slots_per_segment)
+        SegmentT* seg = last_seg;
+        if (seg->used == SegmentT::slots_per_segment)
         {
             seg = global_vec_holder::append_segment(last_seg);
         }

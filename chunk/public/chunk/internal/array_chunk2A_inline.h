@@ -64,9 +64,9 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
 
         if (nb_chunk)
         {
-            manager_chunk2A::increm_somme_chunk_create(nb_chunk);
-            manager_chunk2A::compute_size_buffer_reuse();
-            manager_chunk2A::compute_size_max_number_of_chunk_to_check_compress();
+            ManagerChunk2A::increm_somme_chunk_create(nb_chunk);
+            ManagerChunk2A::compute_size_buffer_reuse();
+            ManagerChunk2A::compute_size_max_number_of_chunk_to_check_compress();
 
             acquire_cst2_registry();
             this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk));
@@ -252,7 +252,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     // before they are freed: in non-OMPT builds nothing else clears it, and a
     // later compression pass would walk the dangling Chunk2A* (use-after-free).
     // By num_tab, so other live arrays' candidates are untouched.
-    manager_chunk2A::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
+    ManagerChunk2A::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
 
     // Also drop any candidate whose chunk pointer lies in THIS array's
     // chunk_list span: the by-num_tab removal misses a tuple whose num_tab was
@@ -260,7 +260,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     // buffer. Must run before the terminal sweep and before chunk_list.clear().
     if (!chunk_list.empty())
     {
-        manager_chunk2A::remove_from_compress_list_chunk2a_by_ptr_range(
+        ManagerChunk2A::remove_from_compress_list_chunk2a_by_ptr_range(
             static_cast<const void*>(chunk_list.data()),
             static_cast<const void*>(chunk_list.data() + chunk_list.size()));
     }
@@ -290,7 +290,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // that dominates the profile.
         if constexpr (!chunk_config::have_aggressive_compression)
         {
-            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
 
             if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
@@ -445,13 +445,13 @@ void ArrayChunk2A<T, ind_type>::clear_core()
                 // t_active (may be another size mid-rechunk): a size-A buffer filed
                 // under list[B] would be memset at B by a later pop and overflow.
                 const unsigned int my_sz = this->size_policy_.size();
-                auto&              lbf   = manager_chunk2A::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                auto&              lbf   = ManagerChunk2A::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                 for (int k = 0; k < nb; ++k)
                 {
                     T* values_loc = ll_chunk_loc[k]->values;
-                    // Ledger: LIVE -> PARKED, or a later pop of this block from the
-                    // free-list is an ILLEGAL b_pop (state=LIVE, expected PARKED).
+                    // Ledger: LIVE -> parked, or a later pop of this block from the
+                    // free-list is an ILLEGAL b_pop (state=LIVE, expected parked).
                     CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
                     lbf.push_back(values_loc);
 
@@ -636,7 +636,7 @@ void ArrayChunk2A<T, ind_type>::release_chunk_range(int first, int last)
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
             first, last, [my_sz]() -> auto&
-            { return manager_chunk2A::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
+            { return ManagerChunk2A::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this](int j, auto& lbf)
             {
                 if (chunk_list[j].written_test())

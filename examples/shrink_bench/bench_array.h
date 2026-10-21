@@ -109,10 +109,10 @@ inline constexpr int            other_second_value_i = 10;
 inline constexpr long           second_value_l       = 1L;
 inline constexpr unsigned long  second_value_ul      = 1UL;
 inline constexpr bool           second_value_b       = true;
-inline constexpr complex_double second_value_c       = std::complex<double>(1., 0.);
-inline constexpr complex_double other_second_value_c = std::complex<double>(10., 20.);
+inline constexpr ComplexDouble  second_value_c       = std::complex<double>(1., 0.);
+inline constexpr ComplexDouble  other_second_value_c = std::complex<double>(10., 20.);
 
-inline constexpr complex_double zero_complex = std::complex<double>(0., 0.);
+inline constexpr ComplexDouble zero_complex = std::complex<double>(0., 0.);
 /// @}
 
 /// @brief What main() declares tab_bool as. A shrink build uses a real
@@ -279,7 +279,7 @@ struct BenchArrays
     Array<int>&            tab_int;
     BenchBoolArray&        tab_bool;
     BenchBoolBitsArray&    tab_bool_bits; ///< tab_bool's twin, bit-packed in a chunk2 build
-    Array<complex_double>& tab_complex;
+    Array<ComplexDouble>&  tab_complex;
     Array<float>&          tab_float;
     Array<short>&          tab_short;
     Array<unsigned char>&  tab_char;

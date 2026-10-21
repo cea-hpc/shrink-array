@@ -434,8 +434,8 @@ int check_range_ops(const char* label, long N)
     const std::string lab_s = pass_label(label);
     label                   = lab_s.c_str();
 
-    Arr viaRange(static_cast<int>(N));
-    Arr viaElem(static_cast<int>(N));
+    Arr via_range(static_cast<int>(N));
+    Arr via_elem(static_cast<int>(N));
 
     const auto expected = [](long i) -> T
     {
@@ -455,10 +455,10 @@ int check_range_ops(const char* label, long N)
 
     // 1) whole-array zero fill: the case where a correct implementation must
     //    allocate NOTHING (every chunk set constant outright).
-    shrink_array::fill_range(viaRange, 0, static_cast<std::size_t>(N), static_cast<T>(0));
+    shrink_array::fill_range(via_range, 0, static_cast<std::size_t>(N), static_cast<T>(0));
     for (long i = 0; i < N; ++i)
     {
-        viaElem[i] = static_cast<T>(0);
+        via_elem[i] = static_cast<T>(0);
     }
 
     // 2) scattered writes, both paths identical
@@ -467,13 +467,13 @@ int check_range_ops(const char* label, long N)
         const T e = expected(i);
         if (!(e == static_cast<T>(0)))
         {
-            viaRange[i] = e;
-            viaElem[i]  = e;
+            via_range[i] = e;
+            via_elem[i]  = e;
         }
     }
 
     // 3) partial fills straddling chunk boundaries, deliberately unaligned
-    const unsigned S = viaRange.chunk_size();
+    const unsigned S = via_range.chunk_size();
     for (const long off : {1L, (long)S - 1, (long)S + 1, (long)(2 * S) + 3})
     {
         const auto a0 = static_cast<std::size_t>(off);
@@ -482,10 +482,10 @@ int check_range_ops(const char* label, long N)
         {
             continue;
         }
-        shrink_array::fill_range(viaRange, a0, b0, static_cast<T>(7));
+        shrink_array::fill_range(via_range, a0, b0, static_cast<T>(7));
         for (std::size_t i = a0; i < b0; ++i)
         {
-            viaElem[static_cast<long>(i)] = static_cast<T>(7);
+            via_elem[static_cast<long>(i)] = static_cast<T>(7);
         }
     }
 
@@ -497,19 +497,19 @@ int check_range_ops(const char* label, long N)
     }
     const std::size_t ca = 3;
     const std::size_t cb = static_cast<std::size_t>(N) - 3;
-    shrink_array::copy_range(viaRange, ca, cb, src.begin() + 0);
+    shrink_array::copy_range(via_range, ca, cb, src.begin() + 0);
     for (std::size_t i = ca; i < cb; ++i)
     {
-        viaElem[static_cast<long>(i)] = src[i - ca];
+        via_elem[static_cast<long>(i)] = src[i - ca];
     }
 
     const long nbad =
-        count_if_index(N, [&](long i) { return !(static_cast<T>(viaRange[i]) == static_cast<T>(viaElem[i])); });
+        count_if_index(N, [&](long i) { return !(static_cast<T>(via_range[i]) == static_cast<T>(via_elem[i])); });
     int bad = 0;
     for (long i = 0; nbad && i < N && bad < 5; ++i)
     {
-        const T r = static_cast<T>(viaRange[i]);
-        const T e = static_cast<T>(viaElem[i]);
+        const T r = static_cast<T>(via_range[i]);
+        const T e = static_cast<T>(via_elem[i]);
         if (!(r == e))
         {
             println("[{}/{}] MISMATCH at {}: range={:g} element={:g}", variant_name(), label, i, (double)r, (double)e);
@@ -811,7 +811,7 @@ static int run_body(int argc, char** argv)
             pos.push_back(argv[a]);
         }
     }
-    const long     N_scale = !pos.empty() ? shrink_array::arg_number<long>(pos[0], 1000000L, "N") : 1000000L;
+    const long     n_scale = !pos.empty() ? shrink_array::arg_number<long>(pos[0], 1000000L, "N") : 1000000L;
     const unsigned tgt     = pos.size() > 1 ? shrink_array::arg_number<unsigned>(pos[1], 1024u, "target size") : 1024u;
     const int      rounds  = pos.size() > 2 ? shrink_array::arg_number<int>(pos[2], 200, "rounds") : 200;
     const bool     run_ser = std::strcmp(mode, "parallel") != 0;
@@ -835,7 +835,7 @@ static int run_body(int argc, char** argv)
          [&]
          {
              return check_invariance<double>(
-                 "scale-64-to-tgt", N_scale, tgt, [](long i) -> double { return double((i / 5000) % 3); },
+                 "scale-64-to-tgt", n_scale, tgt, [](long i) -> double { return double((i / 5000) % 3); },
                  /*sv_value=*/2.0, /*post_rounds=*/rounds);
          }},
         {"mostly-constant", 512,
@@ -950,7 +950,7 @@ static int run_body(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    println("=== rechunk_validation [variant = {}]  N_scale={}  64->{}  case={}  mode={} ===", variant_name(), N_scale,
+    println("=== rechunk_validation [variant = {}]  N_scale={}  64->{}  case={}  mode={} ===", variant_name(), n_scale,
             tgt, only ? only : "all", mode);
 
     int      fails    = 0;

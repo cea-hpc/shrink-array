@@ -61,10 +61,10 @@ namespace shrink_array
 template <typename T>
 struct ValueToInfTupleMapHelper
 {
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     // Keyed by the second value, ordered by ValueLess (value_less.h).
-    using type = std::map<T, inf_array_t*, ValueLess<T>>;
+    using type = std::map<T, InfArrayT*, ValueLess<T>>;
 };
 
 /**
@@ -84,15 +84,15 @@ template <typename T, bool Enabled>
 class PointerMapChunk2InfArrayPolicy
 {
   public:
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     /**
      * @brief All registered inf_array pointers, in map order.
      * @return Vector of every second value's currently-registered pointer.
      */
-    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
+    [[nodiscard]] std::vector<InfArrayT*> get_all_inf_array() const
     {
-        std::vector<inf_array_t*> values;
+        std::vector<InfArrayT*> values;
 
         for (const auto& [key, v] : map_inf_array)
         {
@@ -107,7 +107,7 @@ class PointerMapChunk2InfArrayPolicy
      * @param key Second value to look up.
      * @return The registered pointer, or nullptr if @p key is not registered.
      */
-    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> key) const
+    [[nodiscard]] InfArrayT* find_inf_array(InT<T> key) const
     {
         const auto it = map_inf_array.find(key);
         if (it != map_inf_array.end())
@@ -129,7 +129,7 @@ class PointerMapChunk2InfArrayPolicy
      *
      * @param self_ptr Address of the departing array's inf_array member.
      */
-    void erase_inf_array_by_ptr(const inf_array_t* self_ptr)
+    void erase_inf_array_by_ptr(const InfArrayT* self_ptr)
     {
         for (auto it = map_inf_array.begin(); it != map_inf_array.end();)
         {
@@ -152,7 +152,7 @@ class PointerMapChunk2InfArrayPolicy
      * @param key Second value to register.
      * @param ind inf_array record pointer to associate with @p key.
      */
-    void insert(in_t<T> key, inf_array_t* ind)
+    void insert(InT<T> key, InfArrayT* ind)
     {
         map_inf_array[key] = ind;
     }
@@ -171,24 +171,24 @@ template <typename T>
 class PointerMapChunk2InfArrayPolicy<T, false>
 {
   public:
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     /// @brief No registry: always empty.
-    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
+    [[nodiscard]] std::vector<InfArrayT*> get_all_inf_array() const
     {
         return {};
     }
     /// @brief No registry: never found.
-    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> /*key*/) const
+    [[nodiscard]] InfArrayT* find_inf_array(InT<T> /*key*/) const
     {
         return nullptr;
     }
     /// @brief No registry: nothing to erase.
-    static void erase_inf_array_by_ptr(const inf_array_t* /*self_ptr*/) {}
+    static void erase_inf_array_by_ptr(const InfArrayT* /*self_ptr*/) {}
 
   protected:
     /// @brief No registry: nothing recorded.
-    static void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
+    static void insert(InT<T> /*key*/, InfArrayT* /*ind*/) {}
 };
 
 /**
@@ -204,9 +204,9 @@ class PointerMapChunk2
 {
   private:
     /// Internal alias for tuple representing a value with index and table number.
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
-    using Linear = PointerMapLinear<inf_array_t, std::deque<std::pair<const void*, inf_array_t>>>;
+    using Linear = PointerMapLinear<InfArrayT, std::deque<std::pair<const void*, InfArrayT>>>;
     /// @brief Bring the base's storage into this class's scope.
     /// @details Avoids `this->vec` everywhere (dependent base).
     using Linear::vec;
@@ -281,7 +281,7 @@ class PointerMapChunk2
         // of whichever second value was registered first, by any array).
         const T   val{};
         const int ind = chunk_config::no_second_value_index;
-        vec.emplace_back(key, inf_array_t{val, ind, num_tab});
+        vec.emplace_back(key, InfArrayT{val, ind, num_tab});
     }
 
     /**
@@ -305,7 +305,7 @@ class PointerMapChunk2
      * @param ind New index to assign.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    void replace_all_other_elm(void* key, in_t<T> val, int ind) noexcept
+    void replace_all_other_elm(void* key, InT<T> val, int ind) noexcept
     {
         for (auto& item : vec)
         {
@@ -324,7 +324,7 @@ class PointerMapChunk2
 
     /// @brief Record that second value @p key sits at index @p ind of the
     ///        shared value table.
-    void insert_map_ind_cst_val2(in_t<T> key, int ind)
+    void insert_map_ind_cst_val2(InT<T> key, int ind)
     {
         map_ind_cst_val2[key] = ind;
     }
@@ -344,7 +344,7 @@ class PointerMapChunk2
 
     /// @brief Index of second value @p key in the shared value table, or -1
     ///        when it is not registered (0 for bool, which has no table).
-    [[nodiscard]] int find_ind_tab_cst2(in_t<T> key) const
+    [[nodiscard]] int find_ind_tab_cst2(InT<T> key) const
     {
         if constexpr (is_not_bool)
         {
@@ -364,7 +364,7 @@ class PointerMapChunk2
     /// @brief Change the second value and its table index recorded for
     ///        array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    void replace(void* key, in_t<T> val, int ind) noexcept
+    void replace(void* key, InT<T> val, int ind) noexcept
     {
         for (auto& item : vec)
         {
@@ -421,7 +421,7 @@ class PointerMapChunk2
 
     /// @brief The whole (second value, index, num_tab) tuple recorded for
     ///        array @p key.
-    [[nodiscard]] inf_array_t get_info_second_value(const void* key) const noexcept
+    [[nodiscard]] InfArrayT get_info_second_value(const void* key) const noexcept
     {
         if constexpr (is_not_bool)
         {

@@ -44,7 +44,7 @@ namespace shrink_array
 // the proxy is not armed. Callers read the fields THROUGH this pointer: see the
 // note on set_info_on_chunk() below for why not through a returned copy.
 template <typename T, typename Derived>
-const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array() const
+const ProxySpec2<T, Derived>::InfArrayT* ProxySpec2<T, Derived>::armed_inf_array() const
 {
     if (inf_array_src_ != nullptr) [[likely]]
     {
@@ -52,7 +52,7 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
         {
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
+            const InfArrayT reg = Derived::get_info_second_value(get_ptr_on_array());
             if (reg.ind != inf_array_src_->ind || reg.num_tab != inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
@@ -67,9 +67,9 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
 }
 
 template <typename T, typename Derived>
-ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+ProxySpec2<T, Derived>::InfArrayT ProxySpec2<T, Derived>::load_inf_array() const
 {
-    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    if (const InfArrayT* src = armed_inf_array()) [[likely]]
     {
         return *src;
     }
@@ -78,7 +78,7 @@ ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() con
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array() const
+const ProxySpec2<T, Derived>::InfArrayT* ProxySpec2<T, Derived>::armed_inf_array() const
 {
     if (inf_array_src_ != nullptr) [[likely]]
     {
@@ -86,7 +86,7 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
         {
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
+            const InfArrayT reg = Derived::get_info_second_value(get_ptr_on_array());
             if (reg.ind != inf_array_src_->ind || reg.num_tab != inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
@@ -102,9 +102,9 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+ProxySpec2<T, Derived>::InfArrayT ProxySpec2<T, Derived>::load_inf_array() const
 {
-    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    if (const InfArrayT* src = armed_inf_array()) [[likely]]
     {
         return *src;
     }
@@ -123,7 +123,7 @@ ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() con
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_on_chunk()
 {
-    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    if (const InfArrayT* src = armed_inf_array()) [[likely]]
     {
         inf_array    = *src;
         second_value = src->second_value;
@@ -147,7 +147,7 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_second_value_ind()
 {
-    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    if (const InfArrayT* src = armed_inf_array()) [[likely]]
     {
         inf_array    = *src;
         second_value = src->second_value;
@@ -173,7 +173,7 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind_from_key(const void* key)
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_second_value()
 {
-    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    if (const InfArrayT* src = armed_inf_array()) [[likely]]
     {
         inf_array    = *src;
         second_value = src->second_value;
@@ -188,7 +188,7 @@ template <typename T, typename Derived>
     requires is_bool_like_v<T>
 void ProxySpec2<T, Derived>::set_info_on_chunk()
 {
-    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    if (const InfArrayT* src = armed_inf_array()) [[likely]]
     {
         inf_array = *src;
         derived().set_num_tab(src->num_tab); // not read back from inf_array (see above)
@@ -244,19 +244,19 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
     // Runs inside a region, next to pure readers: the buffers this pass
     // releases wait for one grace period (read_reclaim.h).
     const read_reclaim::PassScope pass_scope;
-    const int                     szm          = manager_chunk2::get_size_max_number_of_chunk_to_check_compress();
+    const int                     szm          = ManagerChunk2::get_size_max_number_of_chunk_to_check_compress();
     const int                     thr_rank     = get_thr_rank_fast();
     const int                     sz_threshold = szm / 2;
 
-    const auto& ml = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
+    const auto& ml = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
 
     if constexpr (is_not_bool)
     {
         for (const auto& elm : ml)
         {
-            // in_t: the map key, by reference when T is large (a struct), by
+            // InT: the map key, by reference when T is large (a struct), by
             // value when it is a scalar. The map is not touched in the loop.
-            const in_t<T> second_val  = elm.first;
+            const InT<T>  second_val  = elm.first;
             const auto*   vec_tuple_p = elm.second.get();
             if (vec_tuple_p)
             {
@@ -276,7 +276,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
     }
     else
     {
-        const auto* vec_tuple_p = manager_chunk2::compress_candidates(thr_rank, true);
+        const auto* vec_tuple_p = ManagerChunk2::compress_candidates(thr_rank, true);
         if (vec_tuple_p)
         {
             const int sz_before = static_cast<int>(vec_tuple_p->size());
@@ -297,7 +297,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
 }
 
 template <typename T>
-void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
+void Proxy2<T>::perform_core_assignment(InT<T> v) const noexcept
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
@@ -363,8 +363,8 @@ void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
     {
         if (Base2::is_not_cst_val2())
         {
-            // Read once, before the store below: in_t, no copy of a struct.
-            const in_t<T> vv = this->raw_elem();
+            // Read once, before the store below: InT, no copy of a struct.
+            const InT<T> vv = this->raw_elem();
             if (vv == second_value)
             {
                 chunk.dec_nb_val_eq_second_value();
@@ -432,7 +432,7 @@ void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
 
 template <typename T>
 template <typename U>
-T Proxy2<T>::assign_impl(in_t<U> v) noexcept
+T Proxy2<T>::assign_impl(InT<U> v) noexcept
 {
     this->check_not_stale();
     // Only one read of values_loc
@@ -657,7 +657,7 @@ void Proxy2<T>::execute_simple_operation(LAMBDA operation)
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        const in_t<T> v_old = read_values();
+        const InT<T> v_old  = read_values();
         was_second_value    = (v_old == second_value);
         was_first_value     = (v_old == static_cast<T>(Chunk2<T>::first_value));
     }
@@ -727,11 +727,11 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operat
         }
     }
 
-    const in_t<T> v_old  = read_values_async(ctx);
+    const InT<T>  v_old  = read_values_async(ctx);
     T*            values = chunk.values_load();
     operation(values);
 
-    const in_t<T> v_new = read_values_async(ctx);
+    const InT<T> v_new = read_values_async(ctx);
     proxy.mark_for_compression_if_needed_with_value(v_old, v_new);
 }
 
@@ -762,7 +762,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
 
     using CalcType = std::common_type_t<T, U>;
 
-    const in_t<T> v_old = read_values();
+    const InT<T> v_old = read_values();
 
     // Perform math in high precision
     const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
@@ -798,7 +798,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
 {
     using CalcType      = std::common_type_t<T, U>;
     const Proxy2  proxy = Base::template make_proxy_with_info<Derived>(ctx);
-    const in_t<T> v_old = read_values_async(ctx);
+    const InT<T>  v_old = read_values_async(ctx);
 
     const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
 
@@ -836,7 +836,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_comp
         shrink_array::set_thread_alloc_key(this->alloc_key());
     }
 
-    using CalcType = std::common_type_t<T, base_t<U>>;
+    using CalcType = std::common_type_t<T, BaseT<U>>;
 
     const bool was_not_written = !chunk.written(this->ind);
 
@@ -985,7 +985,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_opera
     auto&     chunk = ctx->chunk;
     const int num   = ctx->num;
 
-    const in_t<T> v_old = read_values_async(ctx);
+    const InT<T>  v_old = read_values_async(ctx);
     const Proxy2  proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
     const bool is_val1 = chunk.is_cst_val1();
@@ -1009,20 +1009,20 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_opera
     elem_update(values, static_cast<std::size_t>(num), operation);
 
     // The value just written, read for the counters: nothing writes it
-    // afterwards, so in_t (a reference for a struct) rather than a copy.
+    // afterwards, so InT (a reference for a struct) rather than a copy.
     // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-    const in_t<T> v_new = elem_get(values, static_cast<std::size_t>(num));
+    const InT<T> v_new = elem_get(values, static_cast<std::size_t>(num));
     Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, v_new);
 }
 
 template <typename T>
 template <typename U, typename Op>
-void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op op, in_t<U> v) noexcept
+void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op op, InT<U> v) noexcept
 {
     this->check_not_stale();
     // Cross-rank RMW materialisation: pull any foreign
     // deferred write to this offset to applied state before reading v_old, so the
-    // RMW cannot clobber it. Precise gate, outside begin_write. See
+    // RMW cannot clobber it. precise gate, outside begin_write. See
     // ProxyBase::arithmetic_assign for the full rationale.
     chunk.reader_sync(num);
 
@@ -1030,7 +1030,7 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op op, in_t<U> v) noex
     {
         BaseSpec::set_info_second_value_ind(); // Initialize second_value / ind — needed by both branches below
 
-        const in_t<T> v_old_snapshot = this->raw_elem();
+        const InT<T>  v_old_snapshot = this->raw_elem();
         const bool    is_first_value = (v_old_snapshot == static_cast<T>(Chunk2<T>::first_value));
 
         if (!is_first_value) [[likely]]
@@ -1046,12 +1046,12 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op op, in_t<U> v) noex
             execute_arithmetic_compound_operation(
                 op, v,
                 // v by reference (this call's parameter, alive for the call);
-                // `current` in_t: the right-hand side is evaluated in full
+                // `current` InT: the right-hand side is evaluated in full
                 // before the store, so a reference into the slot is read once,
                 // before it is written.
                 [this, &v](auto op_func, T* val_ptr)
                 {
-                    using LocalCalcType = std::common_type_t<T, base_t<U>>;
+                    using LocalCalcType = std::common_type_t<T, BaseT<U>>;
                     const T current     = elem_get(val_ptr, static_cast<std::size_t>(num));
                     elem_set(
                         val_ptr, static_cast<std::size_t>(num),
@@ -1060,8 +1060,8 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op op, in_t<U> v) noex
 
             // Read after the operation, compared before each branch's action
             // (a manage_full_* may fold the chunk, and nothing reads v_new
-            // after it): in_t, no copy of a struct.
-            const in_t<T> v_new = this->raw_elem();
+            // after it): InT, no copy of a struct.
+            const InT<T> v_new = this->raw_elem();
             // Transition OUT of the second value first, independently of the
             // transition IN below (as execute_simple_operation does). Do not
             // chain it to the first-value branch: `second_value * 0` (or
@@ -1096,7 +1096,7 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op op, in_t<U> v) noex
         // Outside the write session: under a ReadSection, or the `0 * x`
         // shortcut may act on a released, zero-filled buffer (see
         // ProxyBase::read_values_outside_session).
-        const in_t<T> v_old = Base::read_values_outside_session();
+        const InT<T> v_old = Base::read_values_outside_session();
         if (v_old != Chunk2<T>::first_value)
         {
             Base::apply_atomic_op(op, v, v_old);

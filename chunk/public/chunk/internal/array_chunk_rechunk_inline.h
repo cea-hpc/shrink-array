@@ -166,7 +166,7 @@ inline long rss_mib_now() noexcept
 ///        Serial builds parse it too; chunk_pmp_set_schedule() is then a no-op.
 struct RebuildSchedule
 {
-    chunk_pmp_schedule   schedule{.kind = chunk_pmp_sched::sched_guided, .chunk = 16};
+    ChunkPmpSchedule     schedule{.kind = ChunkPmpSched::sched_guided, .chunk = 16};
     std::array<char, 32> text{"guided,16"};
 };
 
@@ -188,25 +188,25 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         const std::size_t      comma = spec.find(',');
         const std::string_view kv    = spec.substr(0, comma);
         int                    chunk = 0;
-        chunk_pmp_sched        k     = chunk_pmp_sched::sched_static;
+        ChunkPmpSched          k     = ChunkPmpSched::sched_static;
         bool ok = comma == std::string_view::npos || (parse_number(env + comma + 1, chunk) && chunk >= 0);
         if (ok)
         {
             if (kv == "static")
             {
-                k = chunk_pmp_sched::sched_static;
+                k = ChunkPmpSched::sched_static;
             }
             else if (kv == "dynamic")
             {
-                k = chunk_pmp_sched::sched_dynamic;
+                k = ChunkPmpSched::sched_dynamic;
             }
             else if (kv == "guided")
             {
-                k = chunk_pmp_sched::sched_guided;
+                k = ChunkPmpSched::sched_guided;
             }
             else if (kv == "auto")
             {
-                k = chunk_pmp_sched::sched_auto;
+                k = ChunkPmpSched::sched_auto;
             }
             else
             {
@@ -324,7 +324,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
     // Variant state captured BEFORE the geometry switch (Chunk2's
     // array-level second_value; T{} / ignored for Chunk & Chunk2A).
-    const in_t<T> state = self().rechunk_capture_state();
+    const InT<T> state = self().rechunk_capture_state();
 
     // 2) build the fresh array at S'. Set the active geometry around its
     //    construction + refill only, then restore. g_active is saved (only
@@ -626,7 +626,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // re-chunk. `ind_old2` selects the SOURCE array's second value (the scan
         // reads *this), `inf_new2` the fresh array's (the fold writes tmp;
         // rechunk_seed_fresh() has already declared it on tmp).
-        // Deduced, not named: only ArrayChunk2 has inf_array_t, and the
+        // Deduced, not named: only ArrayChunk2 has InfArrayT, and the
         // discarded branch of an `if constexpr` inside the immediately-invoked
         // lambda is never instantiated.
         // NESTED, not `use_chunk2 && Derived::is_not_bool`: `&&` short-circuits
@@ -1053,7 +1053,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         //
         // SLICED rebuild. Inside one region v1 releases each source chunk as
         // soon as it is transcribed (release_st in rebuild_one), but a block
-        // freed by a rank that does not own its slab is only PARKED in that
+        // freed by a rank that does not own its slab is only parked in that
         // rank's reuse list (walking the owner's slab chains from inside a
         // region is what the owner-routed drain avoids). Unsliced, no page
         // comes back before the drain after the WHOLE rebuild: peak = old + new.
@@ -1088,8 +1088,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
 
         // Slice boundaries run INSIDE the slice's region (see the loop): the
         // team drain's scratch lives across them, and so do the trace timers.
-        using manager_t = Traits::manager_type;
-        typename manager_t::TeamDrainScratch team_drain;
+        using ManagerT = Traits::manager_type;
+        typename ManagerT::TeamDrainScratch team_drain;
         // Slab recycling at the slice boundaries (internal::g_rechunk_recycle):
         // the ranks the team holds (each recycles its own slabs, one thread
         // the others'), and an address buffer per rank, reused. Sized at the
@@ -1109,7 +1109,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // task (the slice regions inherit it) and restore the caller's after
         // the slices. See internal::rebuild_schedule(). Both calls are
         // no-ops in a serial build (PMP_CHUNK.h).
-        const chunk_pmp_schedule caller_schedule = chunk_pmp_get_schedule();
+        const ChunkPmpSchedule caller_schedule = chunk_pmp_get_schedule();
         if constexpr (build_config::use_openmp)
         {
             const auto& rs = internal::rebuild_schedule();
@@ -1243,7 +1243,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 slice_t0 = slice_clock::now();
                             }
                         }
-                        manager_t::drain_reuse_list_for_size_team(static_cast<unsigned int>(old_size), team_drain);
+                        ManagerT::drain_reuse_list_for_size_team(static_cast<unsigned int>(old_size), team_drain);
                         if (internal::g_rechunk_recycle)
                         {
                             // The slabs this drain emptied go to the value

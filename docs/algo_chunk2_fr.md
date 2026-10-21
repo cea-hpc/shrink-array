@@ -114,7 +114,7 @@ valeur déclarée, repéré par un **indice** `ind`.
 
 La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le registre partagé
 <tt>Proxy2\<T\>\::share_info_array</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
-triplet `inf_array_t` :
+triplet `InfArrayT` :
 
 ```
 (second_value, ind, num_tab)
@@ -341,7 +341,7 @@ La compression en vol rend ces chunks à `cst_val2` au fil de l'eau.
 Chaque thread tient une **liste de chunks candidats par seconde valeur** :
 
 ```
-manager_chunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
+ManagerChunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
 ```
 
 Chaque entrée porte `(chunk, num_chunk, num_tab, nombre d'éléments)`. Le nombre d'éléments

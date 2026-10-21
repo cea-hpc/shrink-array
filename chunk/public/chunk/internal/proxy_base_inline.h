@@ -502,17 +502,17 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
  * Each step's correctness argument is kept inline next to the code.
  *
  * @tparam WriteCallable Callable performing the actual store.
- * @tparam LBD_INFO      Callable arming the per-chunk bookkeeping beforehand.
+ * @tparam LbdInfo      Callable arming the per-chunk bookkeeping beforehand.
  * @param write_body Write to perform.
  * @param lbd_info   Ran first on the fast path; typically set_info_on_chunk().
  * @return True if the write did NOT happen and must be deferred by the caller;
  *         false if it was applied.
  */
 template <typename Derived, typename T, typename ChunkType>
-template <typename WriteCallable, typename LBD_INFO>
+template <typename WriteCallable, typename LbdInfo>
 [[nodiscard]] CHUNK_FORCE_INLINE bool
-ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&&           write_body,
-                                                                [[maybe_unused]] LBD_INFO lbd_info) noexcept
+ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&&          write_body,
+                                                                [[maybe_unused]] LbdInfo lbd_info) noexcept
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -649,7 +649,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 // end_write. Concurrent writers on the same chunk are handled by
                 // the is_cst_val re-checks in handle_{bool,no_bool}_assignment.
 
-                const ScopedRingLog<EV_BEGIN_FAST_PATH, EV_END_FAST_PATH> fast_log;
+                const ScopedRingLog<ev_begin_fast_path, ev_end_fast_path> fast_log;
 
                 // ─── Pre-write invariant: our flag still holds
                 if constexpr (build_config::any_check)
@@ -728,7 +728,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 return false;
             }
 
-            const ScopedRingLog<EV_BEGIN_SLOW_PATH, EV_END_SLOW_PATH> slow_log;
+            const ScopedRingLog<ev_begin_slow_path, ev_end_slow_path> slow_log;
 
             // Check #2 failed: a compressor slipped in between check #1 and
             // begin_write. Release our flag, then defer the write.
@@ -809,7 +809,7 @@ unsigned int ProxyBase<Derived, T, ChunkType>::chunk_size() const noexcept
         return chunk_size_frozen_;
     }
 
-    using ArrayType = ArrayChunkFor_t<ChunkType>;
+    using ArrayType = ArrayChunkForT<ChunkType>;
     return static_cast<const ArrayType*>(ptr_on_array)->chunk_size();
 }
 
@@ -820,7 +820,7 @@ unsigned int ProxyBase<Derived, T, ChunkType>::alloc_key() const noexcept
     {
         return alloc_key_frozen_;
     }
-    using ArrayType = ArrayChunkFor_t<ChunkType>;
+    using ArrayType = ArrayChunkForT<ChunkType>;
     return static_cast<const ArrayType*>(ptr_on_array)->alloc_key();
 }
 
@@ -839,7 +839,7 @@ template <typename Derived, typename T, typename ChunkType>
 template <typename CtxType, typename LambdaBody>
 void ProxyBase<Derived, T, ChunkType>::enqueue_deferred_write(CtxType* ctx, LambdaBody&& body) const
 {
-    using ArrayType = ArrayChunkFor_t<ChunkType>;
+    using ArrayType = ArrayChunkForT<ChunkType>;
     // This const guards the proxy, not the array: enqueueing marks the array's
     // dirty bitset now, the write itself replays at the phase end.
     auto* arr       = static_cast<ArrayType*>(const_cast<void*>(ptr_on_array));
@@ -938,14 +938,14 @@ constexpr bool check_is_cst_val2([[maybe_unused]] const P& proxy)
 template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>
     requires std::is_invocable_r_v<T, Op, T, U>
-void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v, in_t<T> v_old)
+void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v, InT<T> v_old)
 {
     if constexpr (chunk_config::stats)
     {
         increm_chunk_write<ChunkType>(v);
     }
 
-    using CalcType = std::common_type_t<T, base_t<U>>;
+    using CalcType = std::common_type_t<T, BaseT<U>>;
 
     const auto compute_operation = [this, operation, &v, v_old] // v: the call's parameter, alive for the call
     {
@@ -955,7 +955,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
             operation, static_cast<T>(v),
             [this, &v, operation](auto) // operation functor is used instead of the passed one to ensure consistency
             {
-                const in_t<T>  current = load_value();
+                const InT<T>   current = load_value();
                 const CalcType res     = operation(static_cast<CalcType>(current), static_cast<CalcType>(v));
 
                 // ─── Pre-store check: cst_val should not be visible here under Dekker ───
@@ -1031,7 +1031,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                                 }
                             }
 
-                            const in_t<T> current = proxy.read_values_async(ctx);
+                            const InT<T> current = proxy.read_values_async(ctx);
 
                             const CalcType res =
                                 op_func(static_cast<CalcType>(current), static_cast<CalcType>(ctx->operand));
@@ -1055,7 +1055,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                                         static_cast<const void*>(values_after));
                                 }
                                 // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                                const in_t<T> readback = elem_get(values_after, static_cast<std::size_t>(ctx->num));
+                                const InT<T>  readback = elem_get(values_after, static_cast<std::size_t>(ctx->num));
                                 const auto    expected = static_cast<T>(res);
                                 if (readback != expected)
                                 {
@@ -1083,7 +1083,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
 // is what makes v_old -- the input of the read-modify-write -- trustworthy.
 template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>
-void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) noexcept
+void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(InT<U> v, Op operation) noexcept
 {
     check_not_stale();
     if constexpr (chunk_config::stats)
@@ -1098,14 +1098,14 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
     // reader_sync is a no-op when nothing is pending.
     chunk.reader_sync(num);
 
-    using CalcType = std::common_type_t<T, base_t<U>>;
+    using CalcType = std::common_type_t<T, BaseT<U>>;
 
     const auto op_lambda = [this, &v, operation] // v: the call's parameter, alive for the call
     {
         execute_operation(
             [this, &v, operation]
             {
-                const in_t<T> current = load_value();
+                const InT<T> current = load_value();
                 // Compute in CalcType, truncate back to T.
                 const CalcType intermediate = operation(static_cast<CalcType>(current), static_cast<CalcType>(v));
 
@@ -1136,7 +1136,7 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
                         {
                             static_cast<void>(proxy);
                             // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                            const in_t<T>  current = elem_get(values, static_cast<std::size_t>(ctx->num));
+                            const InT<T>   current = elem_get(values, static_cast<std::size_t>(ctx->num));
                             const CalcType intermediate =
                                 ctx->operation(static_cast<CalcType>(current), static_cast<CalcType>(ctx->operand));
                             const auto final_val = static_cast<T>(intermediate);
@@ -1192,10 +1192,10 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
 
                                 if (values == cst1 || is_cst2)
                                 {
-                                    ring_log(get_tid(), EV_VALUES_LOAD_IS_CST, info);
+                                    ring_log(get_tid(), ev_values_load_is_cst, info);
                                     return; // skip the write: keep cst_val clean
                                 }
-                                ring_log(get_tid(), EV_LAMBDA_ASYNC_ARITH, info);
+                                ring_log(get_tid(), ev_lambda_async_arith, info);
                             }
 
                             if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
@@ -1222,7 +1222,7 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
 // nothing, so the whole operation can be deferred without anyone waiting.
 template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>
-void ProxyBase<Derived, T, ChunkType>::bitwise_assign(in_t<U> v, Op operation) noexcept
+void ProxyBase<Derived, T, ChunkType>::bitwise_assign(InT<U> v, Op operation) noexcept
     requires std::is_integral_v<T> && std::is_integral_v<U>
 {
     check_not_stale();
