@@ -253,8 +253,36 @@ parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `cl
 Chunk2, `set_second_value()`.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
-of cores)` threads. A program that runs more threads than cores sets
-`CHUNK_THREAD_CAPACITY=<n>`; a thread beyond the capacity stops the program with a message.
+of cores, 256)` threads (about 1 KiB per element type and per thread). A program that runs
+more threads than that sets `CHUNK_THREAD_CAPACITY=<n>`; a thread beyond the capacity stops the
+program with a message.
+
+**Next to other components.** The library keeps its state per process, not per array: the
+element-type registries, the allocators, Chunk2A's second-value registry, the per-thread
+structures and their capacity, the log settings, and the phase. Two parts of a program that use
+it without knowing of each other -- your code and a library built on shrink-array, say -- share
+all of it. What that asks of them:
+
+- **One phase at a time.** The per-thread queues are indexed by the rank in the team, and the
+  end of a phase drains every rank's queue. Two top-level OpenMP teams writing arrays at the
+  same time -- opened by two host threads, two components each on its own `std::thread` --
+  share ranks 0 to n-1, and one team's phase end replays the other's writes in the middle of
+  its region: the program stops, or values are wrong. Run such parts one after the other, or in
+  one team.
+- **Nested regions are fine.** A solver or a BLAS call that opens its own region inside a
+  phase, a component that calls `parallel_phase()` inside yours: only the outermost region's
+  end is a phase boundary, and `finalize_parallel_phase()` does nothing inside an active
+  region. The arrays may be written in a nested region while it is serialised
+  (`OMP_MAX_ACTIVE_LEVELS=1`, the default); with two active levels a write stops the program.
+- **The first array fixes the thread capacity** (above): at least 256 threads, or the cores, or
+  `OMP_NUM_THREADS`; a component that opens larger teams needs `CHUNK_THREAD_CAPACITY` set
+  before the first array.
+- **Process-wide calls.** `ParamChunk::init_indexes()` sets the allocation block size of the
+  whole process: one call, at the start, by the program (a later one leaves the arrays already
+  built intact). `release_chunk_pools()` and `destroy_block_chunk()` empty everyone's free
+  lists (an array still alive keeps what it needs): once, at the end of the program, or not at
+  all. `reclaim_second_values()` covers every array of a type; `CHUNK_LOG` and
+  `logging::set_sink()` are one setting for all.
 
 ## 6. Pitfalls
 

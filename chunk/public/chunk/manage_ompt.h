@@ -79,6 +79,11 @@ extern void begin_parallel_phase();
  * All-in-one; use finalize_parallel_phase_only_flush() /
  * finalize_parallel_phase_after_flush() when the flush must happen while the
  * region is still open.
+ *
+ * @note Called inside a parallel region (a parallel_phase() nested in a phase:
+ *       a component's, a solver's), it does nothing: the enclosing phase is not
+ *       over, and its own end finalizes. Under OMPT likewise, a nested region's
+ *       end is not a phase boundary; only the outermost one is.
  */
 extern void finalize_parallel_phase();
 

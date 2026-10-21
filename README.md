@@ -203,8 +203,13 @@ The CMake options (`OMP`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_D
   `double(a[i])` to `printf`, `std::format` or `std::max`.
 - **Threads**: different elements need no synchronisation, even in the same chunk; anything that
   rebuilds the storage (`resize`, `shrink_to_fit`, `assign`, a re-chunk) is a sequential point.
-  Use the arrays from OpenMP threads, with `OMP_NUM_THREADS` set before the first array;
+  Use the arrays from OpenMP threads; a team larger than 256 threads and than the cores needs
+  `CHUNK_THREAD_CAPACITY` set before the first array;
   without OMPT (GCC's `libgomp`), open the regions with `parallel_phase()`.
+- **One per process**: the library's state -- type registries, allocators, per-thread
+  structures, the phase -- is the process's, shared by every part of the program that uses it:
+  one top-level team writing arrays at a time (nested regions are fine), the shutdown calls once
+  at the end ([docs/getting_started.md](docs/getting_started.md), section 5).
 - **Not there, by construction**: `data()` (a compressed chunk has no buffer), `T&` and mutable
   iterators, `insert` / `erase` in the middle.
 - **Faster bulk writes**: `fill_range`, `copy_range` and their `_mt` versions decide once per

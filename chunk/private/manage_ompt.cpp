@@ -336,6 +336,17 @@ void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, 
     {
         return;
     }
+    // A NESTED region's end is not a phase boundary: the enclosing team may
+    // still be writing, and the phase end drains every rank's deferred queue
+    // with no lock (finalize_parallel_phase, serial) -- a solver or BLAS call
+    // opening its own region inside a phase lost writes that way
+    // (nested_region_validation C). Only with an enclosing ACTIVE region,
+    // omp_in_parallel(): a region of one thread (OMP_NUM_THREADS=1, inactive)
+    // is reported at its own level, and must still end the phase.
+    if (omp_in_parallel())
+    {
+        return;
+    }
 
     parallel_end_chunk_work();
 
@@ -385,6 +396,15 @@ void on_barrier_end(ompt_sync_region_t    kind,
     // gone. Skipping loses nothing: the master's on_parallel_end() runs
     // finalize_parallel_phase() right after, for EVERY rank.
     if (endpoint == ompt_scope_end && (kind == ompt_sync_region_barrier_implicit_parallel || parallel_data == nullptr))
+    {
+        return;
+    }
+
+    // A barrier of a NESTED region inside an active one: its team is not the
+    // phase's team, whose other threads are still writing; the phase's own
+    // barriers and its end flush. After the return above: here the thread is
+    // still in its team, so omp_get_level() reads a live one.
+    if (omp_in_parallel() && omp_get_level() > 1)
     {
         return;
     }

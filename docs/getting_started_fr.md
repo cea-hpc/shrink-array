@@ -259,9 +259,37 @@ toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la
 `rechunk_to()`, et, pour Chunk2, `set_second_value()`.
 
 **Les threads.** Les structures par thread sont dimensionnées une fois pour
-`max(omp_get_max_threads(), nombre de cœurs)` threads. Un programme qui lance plus de threads
-que de cœurs fixe `CHUNK_THREAD_CAPACITY=<n>` ; un thread au-delà de la capacité arrête le
-programme avec un message.
+`max(omp_get_max_threads(), nombre de cœurs, 256)` threads (environ 1 Kio par type d'élément et
+par thread). Un programme qui lance plus de threads que cela fixe `CHUNK_THREAD_CAPACITY=<n>` ;
+un thread au-delà de la capacité arrête le programme avec un message.
+
+**À côté d'autres composants.** La bibliothèque garde son état par processus, pas par tableau :
+les registres de types d'éléments, les allocateurs, le registre des secondes valeurs de Chunk2A,
+les structures par thread et leur capacité, les réglages du log, et la phase. Deux parties d'un
+programme qui l'utilisent sans se connaître -- votre code et une bibliothèque construite sur
+shrink-array, par exemple -- partagent tout cela. Ce que cela leur demande :
+
+- **Une phase à la fois.** Les files par thread sont indexées par le rang dans l'équipe, et la
+  fin d'une phase vide la file de chaque rang. Deux équipes OpenMP de premier niveau qui écrivent
+  des tableaux en même temps -- ouvertes par deux threads hôtes, deux composants chacun sur son
+  `std::thread` -- partagent les rangs 0 à n-1, et la fin de phase de l'une rejoue les écritures
+  de l'autre au milieu de sa région : le programme s'arrête, ou les valeurs sont fausses. Faire
+  tourner ces parties l'une après l'autre, ou dans une même équipe.
+- **Les régions imbriquées ne posent pas de problème.** Un solveur ou un appel BLAS qui ouvre sa
+  propre région dans une phase, un composant qui appelle `parallel_phase()` dans la vôtre : seule
+  la fin de la région la plus externe est une frontière de phase, et `finalize_parallel_phase()`
+  ne fait rien dans une région active. Les tableaux peuvent être écrits dans une région imbriquée
+  tant qu'elle est sérialisée (`OMP_MAX_ACTIVE_LEVELS=1`, le défaut) ; avec deux niveaux actifs,
+  une écriture arrête le programme.
+- **Le premier tableau fixe la capacité en threads** (ci-dessus) : au moins 256 threads, ou les
+  cœurs, ou `OMP_NUM_THREADS` ; un composant qui ouvre des équipes plus grandes demande
+  `CHUNK_THREAD_CAPACITY` fixé avant le premier tableau.
+- **Des appels à l'échelle du processus.** `ParamChunk::init_indexes()` fixe la taille des blocs
+  d'allocation de tout le processus : un appel, au début, par le programme (un appel ultérieur
+  laisse intacts les tableaux déjà construits). `release_chunk_pools()` et `destroy_block_chunk()`
+  vident les listes libres de tout le monde (un tableau encore vivant garde ce qu'il lui faut) :
+  une fois, à la fin du programme, ou pas du tout. `reclaim_second_values()` couvre tous les
+  tableaux d'un type ; `CHUNK_LOG` et `logging::set_sink()` sont un seul réglage pour tous.
 
 ## 6. Pièges
 

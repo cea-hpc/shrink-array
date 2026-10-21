@@ -30,16 +30,31 @@
 // back from a nested region, even a serialised one, with rank 0, sharing rank
 // 0's structures unprotected. Two ACTIVE levels are an invariant failure.
 //
+// And a second one: the end of a nested region is not the end of the phase.
+// With OMPT the runtime reports every region's end, the nested ones too; the
+// library's phase end (the serial flush of every rank's deferred writes, the
+// compression of the candidates) must run at the OUTERMOST one only, or it
+// drains the queues of the outer team's threads while they are still writing.
+// Without OMPT the same holds for a parallel_phase() opened inside a phase --
+// a component's, a solver's: its finalize_parallel_phase() is the enclosing
+// phase's business.
+//
 // What it does:
 //   A. max-active-levels 1: an outer team of 4 writes the arrays; every thread
 //      opens a nested region (serialised by that setting), writes in it, and
 //      goes on writing in the outer region after it. Checked against a
 //      std::vector; check builds also check each cached rank against the
 //      thread's rank in the active team.
+//   C. A with deferred writes queued when the nested regions end: one write in
+//      7 forced down the deferred path (test_hooks.h, check builds). Before the
+//      fix: writes lost ("deferred ops still queued"), a crash, or wrong values.
+//   D. C with the nested regions opened by parallel_phase(2, ...), as a
+//      component that knows nothing of the enclosing phase would.
 //   B. re-runs itself with `--nested-active`: max-active-levels 2 and a
 //      2-thread inner team writing the arrays, which must stop with the
 //      "nested ACTIVE" invariant failure.
-// In a serial build there is no nesting: A runs single-threaded, B is skipped.
+// In a serial build there is no nesting: A, C and D run single-threaded, B is
+// skipped.
 //
 // The outer team is num_threads(4) whatever OMP_NUM_THREADS says: where the job
 // sees fewer than 4 cores, run it with CHUNK_THREAD_CAPACITY=4 (the ctest
@@ -54,15 +69,16 @@
 #include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"    // ArrayChunk
-#include "chunk/array_chunk2.h"   // ArrayChunk2
-#include "chunk/array_chunk2A.h"  // ArrayChunk2A
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"      // chunk_pmp_set_max_active_levels
-#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/chunk_traits.h"        // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"         // ArrayChunk
+#include "chunk/array_chunk2.h"        // ArrayChunk2
+#include "chunk/array_chunk2A.h"       // ArrayChunk2A
+#include "chunk/param_chunk.h"         // ParamChunk::init_indexes
+#include "chunk/config.h"              // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"           // chunk_pmp_set_max_active_levels
+#include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"      // shrink_array::println
+#include "chunk/internal/test_hooks.h" // force_defer_every, forced_deferrals (C, D)
 
 #include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -115,9 +131,31 @@ static int expected_before_inner(long i, int round)
     return ((i / 2048) + round) % 3 == 0 ? 0 : static_cast<int>(((i * 5) + round) % 89) + 1;
 }
 
-/// Scenario A (and B's body): each thread of the outer team writes its share,
-/// opens a nested region that writes again, then writes after it.
-static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
+/// The nested region's writes: one thread of the inner team adds 3 to every
+/// 7th element of block @p b. A function of its own: an orphaned `omp single`,
+/// so the compiler does not see it lexically inside the outer `omp for`.
+static void inner_writes(Array<int>& a, long b)
+{
+#pragma omp single
+    for (long i = b * 1024; i < (b + 1) * 1024; ++i)
+    {
+        if (i % 7 == 0)
+        {
+            a[i] += 3;
+        }
+    }
+}
+
+/// How the nested regions are opened.
+enum class Inner
+{
+    pragma,        ///< `#pragma omp parallel num_threads(2)`, begin_phase() in it (A, B, C)
+    parallel_phase ///< shrink_array::parallel_phase(2, ...) (D)
+};
+
+/// Scenario A (and B, C, D's body): each thread of the outer team writes its
+/// share, opens a nested region that writes again, then writes after it.
+static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds, Inner inner)
 {
     const long N = static_cast<long>(ref.size());
     for (int round = 0; round < rounds; ++round)
@@ -136,16 +174,17 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
 #pragma omp for schedule(static)
             for (long b = 0; b < N / 1024; ++b)
             {
-#pragma omp parallel num_threads(2)
+                const auto inner_body = [&] { inner_writes(a, b); };
+                if (inner == Inner::parallel_phase)
                 {
-                    begin_phase();
-#pragma omp single
-                    for (long i = b * 1024; i < (b + 1) * 1024; ++i)
+                    shrink_array::parallel_phase(2, inner_body);
+                }
+                else
+                {
+#pragma omp parallel num_threads(2)
                     {
-                        if (i % 7 == 0)
-                        {
-                            a[i] += 3;
-                        }
+                        begin_phase();
+                        inner_body();
                     }
                 }
                 // Back in the outer region: writes go to THIS thread's rank.
@@ -237,12 +276,40 @@ static int run_body(int argc, char** argv)
             nested_active ? "ACTIVE (--nested-active)" : "serialised");
     std::fflush(stdout);
 
-    long fails = run_nested(a, ref, 3);
+    long fails = run_nested(a, ref, 3, Inner::pragma);
 
     if (nested_active)
     {
         println("[nested-active] two active levels ran without an invariant failure");
         return 1;
+    }
+
+    // C and D: deferred writes queued when the nested regions end.
+    if constexpr (test_hooks::force_defer_compiled)
+    {
+        const unsigned saved          = test_hooks::force_defer_every;
+        test_hooks::force_defer_every = 7;
+        for (const Inner inner : {Inner::pragma, Inner::parallel_phase})
+        {
+            const unsigned long before = test_hooks::forced_deferrals.load();
+            Array<int>          c(N);
+            std::vector<int>    ref_c(N, 0);
+            const long          f      = run_nested(c, ref_c, 3, inner);
+            const unsigned long forced = test_hooks::forced_deferrals.load() - before;
+            println("[{}] deferred writes queued at the nested ends: {} forced, {} wrong",
+                    inner == Inner::pragma ? "C omp parallel" : "D parallel_phase", forced, f);
+            fails += f;
+            if (forced == 0)
+            {
+                println("  the forced-deferral hook did not fire: the scenario tested nothing");
+                ++fails;
+            }
+        }
+        test_hooks::force_defer_every = saved;
+    }
+    else
+    {
+        println("[C, D] skipped: no forced-deferral hook in this build (check builds have it)");
     }
 
     if constexpr (build_config::use_openmp)

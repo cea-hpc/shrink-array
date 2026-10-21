@@ -206,9 +206,15 @@ Les options CMake (`OMP`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_D
   passer `double(a[i])` à `printf`, `std::format` ou `std::max`.
 - **Threads** : des éléments différents n'ont besoin d'aucune synchronisation, même dans le même
   chunk ; tout ce qui reconstruit le stockage (`resize`, `shrink_to_fit`, `assign`, un rechunk)
-  est un point séquentiel. Utiliser les tableaux depuis des threads OpenMP, avec
-  `OMP_NUM_THREADS` fixé avant le premier tableau ; sans OMPT (le `libgomp` de GCC), ouvrir les
+  est un point séquentiel. Utiliser les tableaux depuis des threads OpenMP ; une équipe de plus
+  de 256 threads et de plus que les cœurs demande `CHUNK_THREAD_CAPACITY` fixé avant le premier
+  tableau ; sans OMPT (le `libgomp` de GCC), ouvrir les
   régions par `parallel_phase()`.
+- **Un par processus** : l'état de la bibliothèque -- registres de types, allocateurs,
+  structures par thread, la phase -- est celui du processus, partagé par toutes les parties du
+  programme qui l'utilisent : une seule équipe de premier niveau qui écrit des tableaux à la fois
+  (les régions imbriquées ne posent pas de problème), les appels d'arrêt une fois à la fin
+  ([docs/getting_started_fr.md](docs/getting_started_fr.md), section 5).
 - **Absents, par construction** : `data()` (un chunk compressé n'a pas de tampon), `T&` et les
   itérateurs mutables, `insert` / `erase` au milieu.
 - **Écritures en masse plus rapides** : `fill_range`, `copy_range` et leurs versions `_mt`

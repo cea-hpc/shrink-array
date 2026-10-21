@@ -197,6 +197,15 @@ void finalize_parallel_phase_after_flush()
 
 void finalize_parallel_phase()
 {
+    // Inside an active parallel region -- a parallel_phase() opened within a phase, by
+    // a component that knows nothing of it -- the enclosing phase is not over:
+    // its other threads may still be writing, and the flush below drains every
+    // rank's queue without a lock. The enclosing phase's own end finalizes
+    // (manage_ompt.h; nested_region_validation D).
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        return;
+    }
     if constexpr (phase_guard::tracked)
     {
         phase_guard::next_phase();

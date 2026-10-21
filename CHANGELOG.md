@@ -77,6 +77,11 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The thread capacity (the ranks the per-thread structures are sized for) is at
+  least 256, besides `omp_get_max_threads()` and the cores: a team larger than
+  the node's cores -- a `num_threads()` clause, a component that picks its own
+  team, a job granted two cores -- no longer stops the program. About 1 KiB per
+  element type and per rank, built once; `CHUNK_THREAD_CAPACITY` still raises it.
 - Less compilation, the same measured binaries. The optimised builds carry
   function names and line tables only (`-g1`), full `-g` where a debugger reads
   locals (`CHECK_OPTIM`, sanitizers): `CHUNK_DEBUG_INFO` (auto, full, lines,
@@ -182,6 +187,15 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- A parallel region nested in a phase -- a solver or BLAS call opening its own
+  region, a component calling `parallel_phase()` inside the program's -- ended
+  the phase at its own end: under OMPT the runtime reports every region's end,
+  and the library flushed every rank's deferred writes while the enclosing team
+  was still writing them (writes lost, crashes); without OMPT the nested
+  `parallel_phase()`'s `finalize_parallel_phase()` did the same. Only the
+  outermost region's end is a phase boundary now, and `finalize_parallel_phase()`
+  does nothing inside a region. `nested_region_validation` has the two cases,
+  with writes deferred when the nested regions end.
 - `set_chunk_size()` accepted, on an empty array of a `_dyn` build, a size wider than
   `cst_buffer_size` (e.g. twice it): the array's constant chunks then read the shared constant
   buffers out of bounds. It checked only that the size is a power of two or a multiple of 64;
