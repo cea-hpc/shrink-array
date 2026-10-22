@@ -78,7 +78,7 @@ inline thread_local int g_fast_omp_rank = -1;
 ///        auto 4), in a type that exists in a serial build too. `int` like
 ///        omp_sched_t, which it is cast to and from.
 // NOLINTNEXTLINE(performance-enum-size)
-enum class chunk_pmp_sched : int
+enum class ChunkPmpSched : int
 {
     sched_static  = 1,
     sched_dynamic = 2,
@@ -87,10 +87,10 @@ enum class chunk_pmp_sched : int
 };
 
 /// @brief A runtime schedule: its kind and chunk (0: the runtime's default).
-struct chunk_pmp_schedule
+struct ChunkPmpSchedule
 {
-    chunk_pmp_sched kind  = chunk_pmp_sched::sched_static; ///< Schedule kind (omp_sched_t value).
-    int             chunk = 0;                             ///< Chunk size; 0 lets the runtime pick its default.
+    ChunkPmpSched kind  = ChunkPmpSched::sched_static; ///< Schedule kind (omp_sched_t value).
+    int           chunk = 0;                           ///< Chunk size; 0 lets the runtime pick its default.
 };
 } // namespace shrink_array
 
@@ -253,17 +253,17 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
     return std::min(chunk_thread_capacity(), std::max(::fast_alloc::pmp::max_threads(), seen));
 }
 /// @brief The calling task's run-sched-var (omp_get_schedule).
-[[nodiscard]] inline chunk_pmp_schedule chunk_pmp_get_schedule() noexcept
+[[nodiscard]] inline ChunkPmpSchedule chunk_pmp_get_schedule() noexcept
 {
     const auto s = ::fast_alloc::pmp::get_runtime_schedule();
     // As is, modifier bits included (omp_sched_monotonic): the enum's int
     // holds them, so a get / set round trip restores the caller's exactly.
-    return {.kind = static_cast<chunk_pmp_sched>(s.kind), .chunk = s.chunk};
+    return {.kind = static_cast<ChunkPmpSched>(s.kind), .chunk = s.chunk};
 }
 
 /// @brief Set the calling task's run-sched-var (omp_set_schedule): the
 ///        schedule of the `schedule(runtime)` loops it then opens.
-inline void chunk_pmp_set_schedule(chunk_pmp_schedule schedule) noexcept
+inline void chunk_pmp_set_schedule(ChunkPmpSchedule schedule) noexcept
 {
     ::fast_alloc::pmp::set_runtime_schedule({.kind = static_cast<int>(schedule.kind), .chunk = schedule.chunk});
 }
@@ -365,12 +365,12 @@ inline int chunk_pmp_thread_rank() noexcept
 namespace shrink_array
 {
 /// @copydoc chunk_pmp_get_schedule -- serial build: no runtime schedule.
-[[nodiscard]] inline chunk_pmp_schedule chunk_pmp_get_schedule() noexcept
+[[nodiscard]] inline ChunkPmpSchedule chunk_pmp_get_schedule() noexcept
 {
     return {};
 }
 /// @copydoc chunk_pmp_set_schedule -- serial build: nothing to set.
-inline void chunk_pmp_set_schedule(chunk_pmp_schedule) noexcept {}
+inline void chunk_pmp_set_schedule(ChunkPmpSchedule) noexcept {}
 /// @copydoc chunk_pmp_team_rank -- serial build: always 0.
 [[nodiscard]] inline int chunk_pmp_team_rank() noexcept
 {

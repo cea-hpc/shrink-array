@@ -59,14 +59,14 @@ static double value_at(int i)
     return 0.001 * ((i * 2654435761u) % 1000);
 }
 
-template <typename TAB>
-static void fill_and_compress(TAB& tab)
+template <typename Tab>
+static void fill_and_compress(Tab& tab)
 {
     for (int i = 0; i < n_elems; ++i)
     {
         tab[i] = value_at(i);
     }
-    TAB::make_block_compression();
+    Tab::make_block_compression();
 }
 
 struct Truth
@@ -77,10 +77,10 @@ struct Truth
 
 static Truth ground_truth(const ArrayChunk2A<double>& tab, double meta)
 {
-    Truth t{tab.nb_chunk, 0, 0.};
+    Truth t{tab.nb_chunk_, 0, 0.};
     for (long long j = 0; j < t.chunks; ++j)
     {
-        const auto& c = tab.chunk_list[j];
+        const auto& c = tab.chunk_list_[j];
         if (!c.is_cst_val1() && !c.is_cst_val2())
         {
             ++t.mat;
@@ -111,7 +111,7 @@ int main()
         set_thread_chunk_size(cs);
         ArrayChunk2A<double> tab(1); // proven pattern (test_multisize):
         tab.set_chunk_size(cs);      // register per-array size FIRST,
-        tab.resize(n_elems);               // THEN size the geometry
+        tab.resize(n_elems);         // THEN size the geometry
         fill_and_compress(tab);
         if (meta == 0.)
         {

@@ -90,19 +90,11 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 },
                 bench_par::nowait);
 
-            bench_par::for_static_vec(
-                t, 256, sz / 4,
-                [&](const Int i) __attribute__((always_inline))
-                {
-                    tab_short[i] = 0;
-                });
+            bench_par::for_static_vec(t, 256, sz / 4,
+                                      [&](const Int i) __attribute__((always_inline)) { tab_short[i] = 0; });
 
-            bench_par::for_static_vec(
-                t, sz / 4, sz / 2,
-                [&](const Int i) __attribute__((always_inline))
-                {
-                    tab_short[i] = second_value_s0;
-                });
+            bench_par::for_static_vec(t, sz / 4, sz / 2, [&](const Int i) __attribute__((always_inline))
+                                      { tab_short[i] = second_value_s0; });
 
             t.for_static<Int>(
                 256, sz / 2,
@@ -168,8 +160,9 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                     // (std::vector reference, 64 / 256 / 1024, dyn), so the checksums
                     // still compare; 1024 is a multiple of each of those geometries.
                     constexpr Int bench_quant_band = 1024;
-                    tab_quant[i] = std::round(std::sin(static_cast<double>(i / bench_quant_band)) * bench_double_bands) /
-                                   bench_double_bands;
+                    tab_quant[i] =
+                        std::round(std::sin(static_cast<double>(i / bench_quant_band)) * bench_double_bands) /
+                        bench_double_bands;
                 },
                 bench_par::nowait);
 
@@ -233,7 +226,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                     tab_int[i]       = 0;
                     tab_bool[i]      = false;
                     tab_bool_bits[i] = false;
-                    tab_complex[i]   = complex_double(1, 2);
+                    tab_complex[i]   = ComplexDouble(1, 2);
                 },
                 bench_par::nowait);
 

@@ -77,7 +77,7 @@ namespace fast_alloc
  *
  * @warning The per-rank arrays are sized ONCE (#nb_thr = FAST_ALLOC_PMP_MAX_THREADS,
  *          before main) and indexed unchecked: callers must bound the rank
- *          (freeBlock() frees a rank >= #nb_thr's blocks at once).
+ *          (try_free_block() frees a rank >= #nb_thr's blocks at once).
  */
 class InfoFreeElt
 {
@@ -85,7 +85,7 @@ class InfoFreeElt
     /// @brief Batch capacity, in blocks. The other bound is 4 MiB of payload.
     static constexpr int max_free_elt = 10000;
 
-    int* somme_sz{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
+    int* somme_sz_{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
 
   public:
     using IntMaxFreeElt  = std::array<int, max_free_elt>;   ///< One rank's batched sizes.
@@ -121,12 +121,12 @@ class InfoFreeElt
     {
         int& ref_compt = compt[thr_rank];
 
-        if ((ref_compt < max_free_elt && somme_sz[thr_rank] < 4 * 1024 * 1024))
+        if ((ref_compt < max_free_elt && somme_sz_[thr_rank] < 4 * 1024 * 1024))
         {
             tab_ptr[thr_rank][ref_compt] = ptr;
             tab_sz[thr_rank][ref_compt]  = sz;
 
-            somme_sz[thr_rank] += sz;
+            somme_sz_[thr_rank] += sz;
 
             ref_compt++;
             return false;
@@ -138,7 +138,7 @@ class InfoFreeElt
     /// @brief Forget the batch. Call only after its blocks have been released.
     void reset(int thr_rank) noexcept
     {
-        somme_sz[thr_rank] = compt[thr_rank] = 0;
+        somme_sz_[thr_rank] = compt[thr_rank] = 0;
     }
 
     VoidMaxFreeElt* tab_ptr{nullptr}; ///< Per rank: the batched blocks.
@@ -169,14 +169,14 @@ class StaticConstArray
     /// @brief Return thread @p thr_rank's batched blocks to the ladder.
     /// @warning Does NOT reset the batch; the caller must call
     ///          InfoFreeElt::reset() or the same blocks are freed twice.
-    static void clearInfoFreeElt(int thr_rank);
+    static void clear_info_free_elt(int thr_rank);
 
     /// @brief Flush every thread's batch and reset it.
     /// @warning Quiescent point only: no rank may be freeing meanwhile (no
     ///          ladder_mutex() here). Called by the chunk library's OMPT
     ///          parallel_end callback, so a region's parked blocks do not
     ///          outlive it.
-    static void clearInfoFreeElt();
+    static void clear_info_free_elt();
 
     /// @brief The ladder's buckets, smallest first: element sizes 4 << i bytes.
     using Ladder = std::tuple<TCTypeAllocatorEBC<4, size_block>,
@@ -199,8 +199,8 @@ class StaticConstArray
     static constexpr std::size_t n_buckets = std::tuple_size_v<Ladder>;
 
     /// @brief Largest size the ladder serves, in bytes: its top bucket's.
-    ///        Past it, getBlockAlloc() returns null and the caller uses malloc.
-    /// @note `int`: freeBlock() compares an `int` size with it, the front ends a
+    ///        Past it, get_block_alloc() returns null and the caller uses malloc.
+    /// @note `int`: try_free_block() compares an `int` size with it, the front ends a
     ///       `size_t` one, and neither mixes signedness against a variable.
     static constexpr int max_const_block_size = 65536;
 
@@ -230,7 +230,7 @@ class StaticConstArray
         return *ladder;
     }
 
-    /// @brief The bucket getBlockAllocInt() / freeBlockWithInt() use for
+    /// @brief The bucket get_block_alloc_int() / free_block_with_int() use for
     ///        @p sz bytes: the smallest that holds it, the top one past 32768.
     [[nodiscard]] static constexpr std::size_t bucket_index(unsigned int sz) noexcept
     {
@@ -252,7 +252,7 @@ class StaticConstArray
      *         caller should fall back to malloc.
      * @note Takes the critical section when called inside a parallel region.
      */
-    static void* getBlockAlloc(unsigned int sz);
+    static void* get_block_alloc(unsigned int sz);
 
     /**
      * @brief Give a block back to the ladder.
@@ -263,16 +263,16 @@ class StaticConstArray
      * @note Inside a parallel region the block is batched rather than returned
      *       immediately. @see InfoFreeElt
      */
-    static bool freeBlock(int sz, void* ptr);
+    static bool try_free_block(int sz, void* ptr);
 
   private:
     /// @brief Bare ladder lookup: smallest bucket that fits @p sz.
     /// @return Null if @p sz is past the top bucket. Not locked, not bounded.
-    static void* getBlockAllocInt(unsigned int sz);
+    static void* get_block_alloc_int(unsigned int sz);
 
-    /// @brief Bare ladder release, the counterpart of getBlockAllocInt().
+    /// @brief Bare ladder release, the counterpart of get_block_alloc_int().
     /// @pre @p ptr came from the bucket that @p sz selects.
-    static void freeBlockWithInt(int sz, void* ptr);
+    static void free_block_with_int(int sz, void* ptr);
 
     /// @brief Run @p f on bucket @p i of the ladder; its result, if any.
     /// @pre @p i < n_buckets.
@@ -334,7 +334,7 @@ struct BlkAllocator : public StaticConstArray
         {
             // Compared in size_t BEFORE narrowing to unsigned int (4 GiB + 64
             // would become 64).
-            void* ptr = size <= max_const_block_size ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
+            void* ptr = size <= max_const_block_size ? get_block_alloc(static_cast<unsigned int>(size)) : nullptr;
 
             if (ptr == nullptr)
             {
@@ -364,7 +364,7 @@ struct BlkAllocator : public StaticConstArray
         {
             // false: not a ladder size, so it came from int_alloc(). Test in
             // size_t first: static_cast<int> alone turns [2 GiB, 4 GiB) negative.
-            if (size <= max_const_block_size && freeBlock(static_cast<int>(size), ptr))
+            if (size <= max_const_block_size && try_free_block(static_cast<int>(size), ptr))
             {
                 return;
             }
@@ -392,7 +392,7 @@ struct BlkAllocator : public StaticConstArray
         const std::size_t total = size + fast_alloc::alignment;
 
         auto* ptr = static_cast<std::size_t*>(
-            total <= max_const_block_size ? getBlockAlloc(static_cast<unsigned int>(total)) : nullptr);
+            total <= max_const_block_size ? get_block_alloc(static_cast<unsigned int>(total)) : nullptr);
 
         if (ptr == nullptr)
         {
@@ -417,7 +417,7 @@ struct BlkAllocator : public StaticConstArray
         const std::size_t total = m_ptr[0] + fast_alloc::alignment;
 
         // Same routing as alloc_tab(), decided in size_t.
-        if (total > max_const_block_size || !freeBlock(static_cast<int>(total), m_ptr))
+        if (total > max_const_block_size || !try_free_block(static_cast<int>(total), m_ptr))
         {
             int_free_align(m_ptr);
         }
@@ -448,7 +448,7 @@ class FixedSizeAllocator : private StaticConstArray
         }
         else
         {
-            void* ptr = getBlockAlloc(static_cast<unsigned int>(sizeof(ElemT)));
+            void* ptr = get_block_alloc(static_cast<unsigned int>(sizeof(ElemT)));
 
             if (ptr == nullptr)
             {
@@ -473,9 +473,9 @@ class FixedSizeAllocator : private StaticConstArray
         }
         else
         {
-            // freeBlock() returns false for a size the ladder does not serve:
+            // try_free_block() returns false for a size the ladder does not serve:
             // the block came from int_alloc().
-            if (freeBlock(static_cast<int>(sizeof(ElemT)), ptr))
+            if (try_free_block(static_cast<int>(sizeof(ElemT)), ptr))
             {
                 return;
             }
@@ -516,14 +516,14 @@ struct TypeAllocator
 
 /**
  * @brief Total what every allocator in the process is holding.
- * @param sum_UsedSize Bytes ever carved out of a block.
+ * @param sum_used_size Bytes ever carved out of a block.
  * @param sum_nn_ref Bytes currently handed out.
  * @param alloc_sz Bytes held in blocks, whether handed out or not.
  * @details Walks the ladder, then the registry of fast_alloc::TCTypeAllocator instances.
  * @note Only a serial build fills the registry, so an OpenMP build reports
  *       the ladder alone.
  */
-void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz);
+void compute_sum_allocated_size_tc_alloc(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz);
 
 } // namespace fast_alloc
 

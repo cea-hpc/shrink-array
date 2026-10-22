@@ -24,13 +24,13 @@ namespace fast_alloc
 
 #if !FAST_ALLOC_PMP_THREADED // serial builds only: threaded, the allocator would re-enter itself -> deadlock
 template <>
-void* TCSlab<FreeLinks::InPayload>::operator new(size_t size)
+void* TCSlab<FreeLinks::in_payload>::operator new(size_t size)
 {
     return TypeAllocator<TCAllocator>::alloc(size);
 }
 
 template <>
-void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr)
+void TCSlab<FreeLinks::in_payload>::operator delete(void* ptr)
 {
     TypeAllocator<TCAllocator>::free(ptr);
 }

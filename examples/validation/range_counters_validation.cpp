@@ -163,16 +163,16 @@ int run_case(Case c)
     }
 
     Array<double> a;
-    const long    S = static_cast<long>(a.chunk_size());
-    const long    N = 3 * S;
-    a.resize(static_cast<int>(N));
+    const long    s = static_cast<long>(a.chunk_size());
+    const long    n = 3 * s;
+    a.resize(static_cast<int>(n));
     maybe_set_second_value(a, second_value);
 
-    const auto lo = static_cast<std::size_t>(S);
-    const auto hi = static_cast<std::size_t>(2 * S);
+    const auto lo = static_cast<std::size_t>(s);
+    const auto hi = static_cast<std::size_t>(2 * s);
     if (c == Case::copy)
     {
-        const std::vector<double> src(static_cast<std::size_t>(S), plain_value);
+        const std::vector<double> src(static_cast<std::size_t>(s), plain_value);
         shrink_array::copy_range(a, lo, hi, src.begin());
     }
     else
@@ -183,13 +183,13 @@ int run_case(Case c)
     // The single proxied write of a constant: with a stale count, the one that
     // makes it reach chunk_size.
     const double constant  = (c == Case::second) ? second_value : 0.0;
-    a[static_cast<int>(S)] = constant;
+    a[static_cast<int>(s)] = constant;
     compress_in_region(a);
 
     int bad = 0;
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
-        const double want = (i < S || i >= 2 * S) ? 0.0 : (i == S ? constant : plain_value);
+        const double want = (i < s || i >= 2 * s) ? 0.0 : (i == s ? constant : plain_value);
         const double got  = std::as_const(a)[static_cast<int>(i)];
         if (got != want)
         {
@@ -203,7 +203,7 @@ int run_case(Case c)
     if (!bad)
     {
         println("[{}/{}] OK: raw span of {} plain values + one {} value, compressed, read back", variant_name(),
-                case_name(c), S, c == Case::second ? "second" : "first");
+                case_name(c), s, c == Case::second ? "second" : "first");
     }
     return bad ? 1 : 0;
 }
@@ -221,24 +221,24 @@ int run_mul_zero_case()
         return 0;
     }
     Array<double> a;
-    const long    S = static_cast<long>(a.chunk_size());
-    const long    N = 3 * S;
-    a.resize(static_cast<int>(N));
+    const long    s = static_cast<long>(a.chunk_size());
+    const long    n = 3 * s;
+    a.resize(static_cast<int>(n));
     maybe_set_second_value(a, second_value);
 
-    shrink_array::fill_range(a, static_cast<std::size_t>(S), static_cast<std::size_t>(2 * S), plain_value);
-    a[static_cast<int>(S)] = second_value;
-    a[static_cast<int>(S)] *= 0.0;
-    for (long i = S + 1; i < 2 * S; ++i)
+    shrink_array::fill_range(a, static_cast<std::size_t>(s), static_cast<std::size_t>(2 * s), plain_value);
+    a[static_cast<int>(s)] = second_value;
+    a[static_cast<int>(s)] *= 0.0;
+    for (long i = s + 1; i < 2 * s; ++i)
     {
         a[static_cast<int>(i)] = second_value;
     }
     compress_in_region(a);
 
     int bad = 0;
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
-        const double want = (i < S || i >= 2 * S || i == S) ? 0.0 : second_value;
+        const double want = (i < s || i >= 2 * s || i == s) ? 0.0 : second_value;
         const double got  = std::as_const(a)[static_cast<int>(i)];
         if (got != want)
         {
@@ -301,10 +301,10 @@ int run_compound_case(Op o)
 {
     using I = long long;
     Array<I>   a;
-    const long S = static_cast<long>(a.chunk_size());
-    a.resize(static_cast<int>(3 * S));
+    const long s = static_cast<long>(a.chunk_size());
+    a.resize(static_cast<int>(3 * s));
     maybe_set_second_value(a, I{7});
-    const int k = static_cast<int>(S) + 3;
+    const int k = static_cast<int>(s) + 3;
     switch (o)
     {
         case Op::and_:
@@ -341,7 +341,7 @@ int run_compound_case(Op o)
                 after1 ? "after the operator (a zero result)" : "after 9 then 0 (the zero count drifted)");
         ++bad;
     }
-    for (long i = 0; i < 3 * S; ++i)
+    for (long i = 0; i < 3 * s; ++i)
     {
         if (std::as_const(a)[static_cast<int>(i)] != I{0})
         {

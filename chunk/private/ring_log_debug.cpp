@@ -153,29 +153,29 @@ const char* event_color(EventCode ev)
 {
     switch (ev)
     {
-        case EV_BEGIN_SLOW_PATH:
+        case ev_begin_slow_path:
             return "\033[36m"; // cyan
-        case EV_END_SLOW_PATH:
+        case ev_end_slow_path:
             return "\033[32m"; // green
-        case EV_BEGIN_FAST_PATH:
+        case ev_begin_fast_path:
             return "\033[33m"; // yellow
-        case EV_END_FAST_PATH:
+        case ev_end_fast_path:
             return "\033[90m"; // grey
-        case EV_COMPRESS_ATTEMPT:
+        case ev_compress_attempt:
             return "\033[35m"; // magenta
-        case EV_COMPRESS_STARTED:
+        case ev_compress_started:
             return "\033[34m"; // blue
-        case EV_COMPRESS_ABORTED:
+        case ev_compress_aborted:
             return "\033[31m"; // red
-        case EV_COMPRESS_FINISHED:
+        case ev_compress_finished:
             return "\033[92m"; // light green
-        case EV_POLICY_BEGIN_WRITE:
+        case ev_policy_begin_write:
             return "\033[96m"; // light cyan
-        case EV_POLICY_END_WRITE:
+        case ev_policy_end_write:
             return "\033[94m"; // light blue
-        case EV_MARK_THREAD_HAS_OPS:
+        case ev_mark_thread_has_ops:
             return "\033[93m"; // light yellow
-        case EV_CLEAR_THREAD_HAS_OPS:
+        case ev_clear_thread_has_ops:
             return "\033[95m"; // light magenta
         default:
             return "\033[0m"; // reset
@@ -186,41 +186,41 @@ const char* event_name(EventCode ev)
 {
     switch (ev)
     {
-        case EV_BEGIN_SLOW_PATH:
+        case ev_begin_slow_path:
             return "BEGIN_SLOW_PATH";
-        case EV_END_SLOW_PATH:
+        case ev_end_slow_path:
             return "EV_END_SLOW_PATH";
-        case EV_BEGIN_FAST_PATH:
+        case ev_begin_fast_path:
             return "EV_BEGIN_FAST_PATH";
-        case EV_END_FAST_PATH:
+        case ev_end_fast_path:
             return "EV_END_FAST_PATH";
-        case EV_COMPRESS_ATTEMPT:
+        case ev_compress_attempt:
             return "COMPRESS_ATTEMPT";
-        case EV_COMPRESS_STARTED:
+        case ev_compress_started:
             return "COMPRESS_STARTED";
-        case EV_COMPRESS_ABORTED:
+        case ev_compress_aborted:
             return "COMPRESS_ABORTED";
-        case EV_COMPRESS_FINISHED:
+        case ev_compress_finished:
             return "COMPRESS_FINISHED";
-        case EV_POLICY_BEGIN_WRITE:
+        case ev_policy_begin_write:
             return "POLICY_BEGIN_WRITE";
-        case EV_POLICY_END_WRITE:
+        case ev_policy_end_write:
             return "POLICY_END_WRITE";
-        case EV_MARK_THREAD_HAS_OPS:
+        case ev_mark_thread_has_ops:
             return "MARK_THREAD_HAS_OPS";
-        case EV_CLEAR_THREAD_HAS_OPS:
+        case ev_clear_thread_has_ops:
             return "CLEAR_THREAD_HAS_OPS";
-        case EV_OP_ALLOC:
+        case ev_op_alloc:
             return "OP_ALLOC";
-        case EV_OP_ENQUEUE:
+        case ev_op_enqueue:
             return "OP_ENQUEUE";
-        case EV_OP_FREE:
+        case ev_op_free:
             return "OP_FREE";
-        case EV_OP_FLUSH_ONE:
+        case ev_op_flush_one:
             return "OP_FLUSH_ONE";
-        case EV_VALUE_ALLOC:
+        case ev_value_alloc:
             return "VALUE_ALLOC";
-        case EV_VALUE_FREE:
+        case ev_value_free:
             return "VALUE_FREE";
         default:
             return "UNKNOWN";
@@ -320,10 +320,10 @@ struct Interval
 // Event types for sweep line; order matters for tie-breaking
 enum EventType : std::uint8_t
 {
-    COMP_START = 0,
-    FAST_START = 1,
-    FAST_END   = 2,
-    COMP_END   = 3
+    comp_start = 0,
+    fast_start = 1,
+    fast_end   = 2,
+    comp_end   = 3
 };
 
 struct Endpoint
@@ -439,7 +439,7 @@ bool analyze_ring_sweep()
 
         switch (entry.ev)
         {
-            case EV_BEGIN_FAST_PATH:
+            case ev_begin_fast_path:
                 if (!thr_state.in_fast)
                 {
                     thr_state.in_fast    = true;
@@ -447,7 +447,7 @@ bool analyze_ring_sweep()
                 }
                 break;
 
-            case EV_END_FAST_PATH:
+            case ev_end_fast_path:
                 if (thr_state.in_fast)
                 {
                     fast_intervals[entry.tid].push_back({thr_state.fast_start, entry.ts});
@@ -455,8 +455,8 @@ bool analyze_ring_sweep()
                 }
                 break;
 
-            case EV_COMPRESS_ATTEMPT:
-            case EV_COMPRESS_STARTED:
+            case ev_compress_attempt:
+            case ev_compress_started:
                 if (!thr_state.in_compress)
                 {
                     thr_state.in_compress    = true;
@@ -464,8 +464,8 @@ bool analyze_ring_sweep()
                 }
                 break;
 
-            case EV_COMPRESS_FINISHED:
-            case EV_COMPRESS_ABORTED:
+            case ev_compress_finished:
+            case ev_compress_aborted:
                 if (thr_state.in_compress)
                 {
                     compress_intervals[entry.tid].push_back({thr_state.compress_start, entry.ts});
@@ -542,7 +542,7 @@ bool analyze_ring_sweep()
     std::vector<Endpoint> endpoints;
     endpoints.reserve((fast_intervals.size() + compress_intervals.size()) * 2);
 
-    const auto add_endpoints = [&](const std::unordered_map<uint32_t, std::vector<Interval>>& map, bool isCompress)
+    const auto add_endpoints = [&](const std::unordered_map<uint32_t, std::vector<Interval>>& map, bool is_compress)
     {
         for (const auto& p : map)
         {
@@ -555,15 +555,15 @@ bool analyze_ring_sweep()
                 {
                     continue; // ⛔ Ignore fallback intervals
                 }
-                if (isCompress)
+                if (is_compress)
                 {
-                    endpoints.push_back({iv.start, COMP_START, tid, i});
-                    endpoints.push_back({iv.end, COMP_END, tid, i});
+                    endpoints.push_back({iv.start, comp_start, tid, i});
+                    endpoints.push_back({iv.end, comp_end, tid, i});
                 }
                 else
                 {
-                    endpoints.push_back({iv.start, FAST_START, tid, i});
-                    endpoints.push_back({iv.end, FAST_END, tid, i});
+                    endpoints.push_back({iv.start, fast_start, tid, i});
+                    endpoints.push_back({iv.end, fast_end, tid, i});
                 }
             }
         }
@@ -629,7 +629,7 @@ bool analyze_ring_sweep()
     {
         switch (ep.type)
         {
-            case COMP_START:
+            case comp_start:
             {
                 if (ep.idx >= compress_intervals[ep.tid].size())
                 {
@@ -644,7 +644,7 @@ bool analyze_ring_sweep()
                 break;
             }
 
-            case COMP_END:
+            case comp_end:
             {
                 const uint64_t key = make_key(ep.tid, ep.idx);
                 const auto     it  = active_index_by_key.find(key);
@@ -663,7 +663,7 @@ bool analyze_ring_sweep()
                 break;
             }
 
-            case FAST_START:
+            case fast_start:
             {
                 if (ep.idx >= fast_intervals[ep.tid].size())
                 {
@@ -687,8 +687,8 @@ bool analyze_ring_sweep()
                 break;
             }
 
-            case FAST_END:
-                // nothing to do; overlaps already recorded at FAST_START
+            case fast_end:
+                // nothing to do; overlaps already recorded at fast_start
                 break;
         }
 

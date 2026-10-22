@@ -175,7 +175,7 @@ def _parse_last_long_val_sum(stdout_text):
 
 def _seed_was_pinned(stdout_text):
     """False if the run fell back to a random seed (our pinned seed failed to
-    load from seed<iter_max>.txt) -- see initializeRNG in bench_utils.cpp."""
+    load from seed<iter_max>.txt) -- see initialize_rng in bench_utils.cpp."""
     return _SEED_FALLBACK_RE.search(stdout_text) is None
 
 
@@ -183,7 +183,7 @@ def _write_pinned_seed(output_dir, iter_max, seed):
     """(Re)write the fixed seed into seed<iter_max>.txt in output_dir -- the
     SAME cwd every run in this phase uses, so all of them read the identical
     value regardless of which binary/config is launched. Rewritten before
-    EVERY run: initializeRNG only regenerates when the file is absent or
+    EVERY run: initialize_rng only regenerates when the file is absent or
     holds 0, so a pinned non-zero value is never overwritten by the bench
     itself, but writing it fresh each time removes any doubt (and self-heals
     if a previous run's crash left the file missing or truncated)."""

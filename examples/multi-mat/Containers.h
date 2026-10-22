@@ -43,13 +43,13 @@ class VectCom
     virtual ~VectCom() = default;
 
     /// @brief The material this array belongs to.
-    void setInd(int i)
+    void set_ind(int i)
     {
-        ind = i;
+        ind_ = i;
     }
 
   private:
-    int ind;
+    int ind_;
 };
 
 /// @brief A field of a "chunk" material: compressed where it is zero.
@@ -101,10 +101,10 @@ struct Vect : public VectCom<T>, public std::vector<T>
  * @brief One array per material, a std::vector or a chunk array as the
  *        dispatch says.
  * @tparam T        Element type.
- * @tparam VecChunk The chunk array of the chunk materials: VectChunk<T> for a
+ * @tparam VecChunkT The chunk array of the chunk materials: VectChunk<T> for a
  *                  field, VectChunk2<T> for the presence fraction.
  */
-template <typename T, typename VecChunk = VectChunk<T>>
+template <typename T, typename VecChunkT = VectChunk<T>>
 class MultiArray : public std::vector<VectCom<T>*>
 {
   public:
@@ -112,8 +112,8 @@ class MultiArray : public std::vector<VectCom<T>*>
 
     using BaseClass = std::vector<VectCom<T>*>;
 
-    using vec_dir   = Vect<T>;
-    using vec_chunk = VecChunk;
+    using VecDir   = Vect<T>;
+    using VecChunk = VecChunkT;
 
     MultiArray() = default;
 
@@ -157,17 +157,17 @@ void MultiArray<T, VecChunk>::create(int nbmat, int mesh_size)
 
     for (int k = 0; k < nbmat; ++k)
     {
-        if (dispatch.isChunk(k))
+        if (dispatch.is_chunk(k))
         {
-            auto* v = new vec_chunk;
-            v->setInd(k);
+            auto* v = new VecChunk;
+            v->set_ind(k);
             v->create(mesh_size);
             (*this)[k] = v;
         }
         else
         {
-            auto* v = new vec_dir;
-            v->setInd(k);
+            auto* v = new VecDir;
+            v->set_ind(k);
             v->create(mesh_size);
             (*this)[k] = v;
         }

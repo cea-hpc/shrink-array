@@ -35,7 +35,7 @@ class NanoSleeper
 
     /// @brief Busy-wait a random 100 ns to 10 us (a back-off that does not
     ///        yield the CPU).
-    void sleepRandomNano()
+    void sleep_random_nano()
     {
         const int delay_ns = dist(gen);
 

@@ -23,7 +23,7 @@
 // k / chunk_size(), k % chunk_size()), never from the compile-time globals
 // (static_chunk_size, ParamChunk::get_decalage_chunk()...). In CHUNK_DYNAMIC runs the
 // effective size (chunk_dyn_size, e.g. 512) differs from the compile-time
-// default (64): the static shift over-indexes getChunkList() (libstdc++ assert
+// default (64): the static shift over-indexes get_chunk_list() (libstdc++ assert
 // in the mismatch report) and the static loop bounds only scan the first 64
 // values of a 512-wide chunk.
 
@@ -59,9 +59,9 @@ void compress_file(const std::string& source_file, const std::string& dest_file)
 void decompress_file(const std::string& source_file, const std::string& dest_file);
 
 // -----------------------------------------------------------------------------
-// write_binary_file<VEC> — dump a plain std::vector to disk as raw bytes
+// write_binary_file<Vec> — dump a plain std::vector to disk as raw bytes
 // alongside a companion checksum file. Compresses with bzip2 only when
-// no_compress is null (--compress / COMPRESS=1).  Aborts on non-vector VEC
+// no_compress is null (--compress / COMPRESS=1).  Aborts on non-vector Vec
 // (chunk arrays cannot be written directly, they need to be materialised
 // first — not implemented).
 // -----------------------------------------------------------------------------
@@ -120,15 +120,15 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt c
 ///        file and its .bz2 are not written, and stale copies left by an earlier full
 ///        reference are removed, so a later checksum miss cannot be compared against
 ///        data from another oracle (read_check_binary_file then aborts).
-template <typename VEC>
+template <typename Vec>
 void write_binary_file(const std::string& filename,
-                       const VEC&         data,
+                       const Vec&         data,
                        std::uint64_t      checksum,
                        bool               special_writing,
                        const char*        no_compress,
                        bool               checksum_only = false)
 {
-    using CV = std::remove_reference_t<VEC>;
+    using CV = std::remove_reference_t<Vec>;
     using V  = std::remove_const_t<CV>;
 
     const std::string filename_gz        = filename + ".bz2";
@@ -152,7 +152,7 @@ void write_binary_file(const std::string& filename,
             return;
         }
 
-        using T = VEC::value_type;
+        using T = Vec::value_type;
         std::ofstream file(filename, std::ios::binary);
         if (!file)
         {
@@ -226,7 +226,7 @@ void write_binary_file(const std::string& filename,
 }
 
 // -----------------------------------------------------------------------------
-// read_check_binary_file<VEC> — read back a bench dump written by
+// read_check_binary_file<Vec> — read back a bench dump written by
 // write_binary_file() and cross-check it against `data_check`, which may
 // be either a std::vector or a chunk array.  When the checksum mismatches,
 // the raw data is uncompressed and compared element-by-element; the first
@@ -239,17 +239,17 @@ void write_binary_file(const std::string& filename,
 //     to trace_err.txt so a follow-up run can jump straight to it.
 //   - read_trace=true  : replay from trace_err.txt written by a previous run.
 // -----------------------------------------------------------------------------
-template <typename VEC>
+template <typename Vec>
 void read_check_binary_file(Int                ind,
                             const std::string& tab_name,
                             const std::string& filename,
-                            const VEC&         data_check,
+                            const Vec&         data_check,
                             std::uint64_t      lchs,
                             const char*        no_compress,
                             bool               read_trace,
                             bool               write_trace)
 {
-    using T = VEC::value_type;
+    using T = Vec::value_type;
 
     const std::string filename_gz        = filename + ".bz2";
     const std::string filename_check_sum = filename + "_check_sum";
@@ -348,10 +348,10 @@ void read_check_binary_file(Int                ind,
         }
     };
 
-    // No directive: the whole lambda lives inside template <typename VEC>
+    // No directive: the whole lambda lives inside template <typename Vec>
     // read_check_binary_file, so every data_check.* call below is DEPENDENT and
     // the `if constexpr` inside it is genuinely not instantiated for a
-    // std::vector VEC. It is unused there -- io_res == 2 is unreachable without
+    // std::vector Vec. It is unused there -- io_res == 2 is unreachable without
     // a shrink build -- hence [[maybe_unused]]. Capture-default rather than a
     // list for the same reason: format_val is only named in that discarded
     // branch, and an explicit capture that the std::vector instantiation
@@ -361,7 +361,7 @@ void read_check_binary_file(Int                ind,
     {
         // The body as a whole, not statement by statement: everything below
         // reads data_check, whose type is the DEPENDENT template parameter, so
-        // for a std::vector VEC none of it is instantiated.
+        // for a std::vector Vec none of it is instantiated.
         if constexpr (chunk_config::is_shrink_enabled)
         {
             std::string line;
@@ -425,7 +425,7 @@ void read_check_binary_file(Int                ind,
                 }
             }
 
-            const auto& chunk_t = data_check.getChunkList()[num_chunk];
+            const auto& chunk_t = data_check.get_chunk_list()[num_chunk];
 
             const bool is_val1 = chunk_t.is_cst_val1();
 
@@ -505,7 +505,7 @@ void read_check_binary_file(Int                ind,
                     bool        te = true;
                     for (UInt p = 0; p < data_check.chunk_size(); ++p)
                     {
-                        if (chunk_t.values[p] != v)
+                        if (chunk_t.values_[p] != v)
                         {
                             te = false;
                             break;
@@ -519,11 +519,11 @@ void read_check_binary_file(Int                ind,
                     else
                     {
                         bool       all_equal = true;
-                        const auto first     = chunk_t.values[0];
+                        const auto first     = chunk_t.values_[0];
 
                         for (UInt p = 1; p < data_check.chunk_size(); ++p)
                         {
-                            if (chunk_t.values[p] != first)
+                            if (chunk_t.values_[p] != first)
                             {
                                 all_equal = false;
                                 break;
@@ -537,7 +537,7 @@ void read_check_binary_file(Int                ind,
                         else
                         {
                             std::cerr << "All values of chunk (compacted):\n";
-                            const T* vals = chunk_t.values; // atomic<T*> implicit load or plain ptr
+                            const T* vals = chunk_t.values_; // atomic<T*> implicit load or plain ptr
                             log_values_compacted([](const std::string& m) { std::cerr << m; }, format_val, vals,
                                                  data_check.chunk_size());
                         }
@@ -652,20 +652,20 @@ void read_check_binary_file(Int                ind,
                     log_message("\nchunk number        : " + std::to_string(num_chunk) + "\n");
                     const Int num = k % static_cast<Int>(data_check.chunk_size());
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
-                    const auto& chunk_t = data_check.getChunkList()[num_chunk];
-                    using ValueType     = decltype(chunk_t.values); // infer the type
+                    const auto& chunk_t = data_check.get_chunk_list()[num_chunk];
+                    using ValueType     = decltype(chunk_t.values_); // infer the type
 
                     T* raw_ptr = nullptr;
 
                     if constexpr (is_atomic_pointer<ValueType>::value)
                     {
                         // It's a std::atomic<T*>
-                        raw_ptr = chunk_t.values.load();
+                        raw_ptr = chunk_t.values_.load();
                     }
                     else
                     {
                         // It's a raw pointer
-                        raw_ptr = chunk_t.values;
+                        raw_ptr = chunk_t.values_;
                     }
                     auto addr = reinterpret_cast<std::uintptr_t>(raw_ptr);
 
@@ -717,7 +717,7 @@ void read_check_binary_file(Int                ind,
 
         constexpr T zero{};
 
-        constexpr bool is_complex = std::is_same_v<T, complex_double>;
+        constexpr bool is_complex = std::is_same_v<T, ComplexDouble>;
 
         for (Int k = 0; k < sz; ++k)
         {
@@ -821,7 +821,7 @@ void read_check_binary_file(Int                ind,
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
                     const Int   num_chunk = k / static_cast<Int>(data_check.chunk_size());
-                    const auto& chunk_t   = data_check.getChunkList()[num_chunk];
+                    const auto& chunk_t   = data_check.get_chunk_list()[num_chunk];
                     log_message("chunk number        : " + std::to_string(num_chunk) + "\n");
                     const Int num = k % static_cast<Int>(data_check.chunk_size());
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
@@ -830,20 +830,20 @@ void read_check_binary_file(Int                ind,
 
                     T* raw_ptr = nullptr;
 
-                    using ValueType = decltype(chunk_t.values);
+                    using ValueType = decltype(chunk_t.values_);
 
                     if constexpr (is_atomic_pointer<ValueType>::value)
                     {
                         // It's a std::atomic<T*>
-                        raw_ptr = chunk_t.values.load();
+                        raw_ptr = chunk_t.values_.load();
                     }
                     else
                     {
                         // It's a raw pointer
-                        raw_ptr = chunk_t.values;
+                        raw_ptr = chunk_t.values_;
                     }
 
-                    auto               addr_values_member = reinterpret_cast<std::uintptr_t>(&chunk_t.values);
+                    auto               addr_values_member = reinterpret_cast<std::uintptr_t>(&chunk_t.values_);
                     std::ostringstream oss_member;
                     oss_member << "0x" << std::hex << addr_values_member;
                     const std::string s_member = oss_member.str();
@@ -881,11 +881,11 @@ void read_check_binary_file(Int                ind,
                     // into a single `if constexpr`.
                     const Int num_chunk = k / static_cast<Int>(data_check.chunk_size());
 
-                    if (const auto& chunk_t = data_check.chunk_list[num_chunk]; chunk_t.is_cst_val1() && value != zero)
+                    if (const auto& chunk_t = data_check.chunk_list_[num_chunk]; chunk_t.is_cst_val1() && value != zero)
                     {
                         log_message("\nis_cst_val1 should be not !\n");
                         {
-                            const T* vals = chunk_t.values;
+                            const T* vals = chunk_t.values_;
                             log_values_compacted(log_message, format_val, vals, data_check.chunk_size());
                         }
                     }
@@ -913,7 +913,7 @@ void read_check_binary_file(Int                ind,
 
                         for (UInt p = 0; p < data_check.chunk_size(); p++)
                         {
-                            if (chunk_t.values[p] != zero)
+                            if (chunk_t.values_[p] != zero)
                             {
                                 test_zero = false;
                             }
@@ -923,7 +923,7 @@ void read_check_binary_file(Int                ind,
                         {
                             log_message("chunk values contain : ");
                             {
-                                const T* vals = chunk_t.values;
+                                const T* vals = chunk_t.values_;
                                 log_values_compacted(log_message, format_val, vals, data_check.chunk_size());
                             }
                         }
@@ -942,11 +942,11 @@ void read_check_binary_file(Int                ind,
                     else
                     {
                         bool       all_equal = true;
-                        const auto first_v   = chunk_t.values[0];
+                        const auto first_v   = chunk_t.values_[0];
 
                         for (UInt i = 1; i < data_check.chunk_size(); ++i)
                         {
-                            if (chunk_t.values[i] != first_v)
+                            if (chunk_t.values_[i] != first_v)
                             {
                                 all_equal = false;
                                 break;
@@ -963,7 +963,7 @@ void read_check_binary_file(Int                ind,
                         {
                             log_message("All values of chunk (compacted):\n");
                             {
-                                const T* vals = chunk_t.values;
+                                const T* vals = chunk_t.values_;
                                 log_values_compacted(log_message, format_val, vals, data_check.chunk_size());
                             }
                         }

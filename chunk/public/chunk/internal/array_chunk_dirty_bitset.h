@@ -47,7 +47,7 @@
 #include <vector>    // std::vector
 
 #include "chunk/config.h"                         // build_config::threaded
-#include "chunk/internal/parallel_storage_init.h" // no_init_vector, make_filled: the words built by a team
+#include "chunk/internal/parallel_storage_init.h" // NoInitVector, make_filled: the words built by a team
 
 namespace shrink_array
 {
@@ -278,7 +278,7 @@ class DirtyBitsetSupport<Derived, true>
     /// One bit per chunk, one cache line per 64 chunks, then the flag word.
     /// mutable: the words are atomics, marked and read through const paths
     /// (any_marked_word).
-    mutable parallel_storage_init::no_init_vector<PaddedDirtyWord> bitset_;
+    mutable parallel_storage_init::NoInitVector<PaddedDirtyWord> bitset_;
     int nb_words_{0}; ///< Words of bits in @ref bitset_ (its size - 1), so clearing needs no chunk count.
 
     static_assert(chunks_per_word == 1 << word_shift, "word_shift must be log2(chunks_per_word)");

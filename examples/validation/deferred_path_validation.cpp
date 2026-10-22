@@ -265,27 +265,27 @@ static long returns_chain(C& c, long i)
  * @return 0 if every result and every element matched, 1 otherwise.
  */
 template <typename T>
-static int run_returns(const char* label, long N)
+static int run_returns(const char* label, long n)
 {
-    Array<T>       arr(N);
-    std::vector<T> ref(N);
+    Array<T>       arr(n);
+    std::vector<T> ref(n);
     long           bad = 0;
 #pragma omp parallel reduction(+ : bad)
     {
         begin_phase();
 #pragma omp for schedule(static)
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             bad += returns_chain<T>(arr, i);
         }
     }
     end_phase();
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         returns_chain<T>(ref, i);
     }
     long mismatched = 0;
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const T got = arr[i];
         if (!same_bits(got, ref[i]))
@@ -297,12 +297,12 @@ static int run_returns(const char* label, long N)
     {
         println("[{}/returns-{}] FAIL: {} compound result(s) not the stored value, {}/{} elements off the "
                 "reference",
-                variant_name(), label, bad, mismatched, N);
+                variant_name(), label, bad, mismatched, n);
     }
     else
     {
         println("[{}/returns-{}] OK: every compound operator returned the stored value ({} elements)", variant_name(),
-                label, N);
+                label, n);
     }
     arr.clear();
     return (bad != 0 || mismatched != 0) ? 1 : 0;
@@ -411,12 +411,12 @@ struct Scenario
 template <typename T>
 static long compare(const char* label, const char* stage, const Array<T>& arr, const std::vector<T>& ref)
 {
-    const long N     = static_cast<long>(ref.size());
+    const long n     = static_cast<long>(ref.size());
     long       bad   = 0;
     long       first = -1;
     T          got_first{};
     T          exp_first{};
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const T got = arr[i];
         if (got != ref[i])
@@ -435,7 +435,7 @@ static long compare(const char* label, const char* stage, const Array<T>& arr, c
         const long csz = static_cast<long>(arr.chunk_size());
         println("[{}/{}] FAIL after {}: {}/{} mismatches, first at i={} (chunk #{}, offset {}) "
                 "got={:g} expected={:g}",
-                variant_name(), label, stage, bad, N, first, first / csz, first % csz, (double)got_first,
+                variant_name(), label, stage, bad, n, first, first / csz, first % csz, (double)got_first,
                 (double)exp_first);
     }
     return bad;
@@ -447,14 +447,14 @@ static long compare(const char* label, const char* stage, const Array<T>& arr, c
  * @return 0 if every element matched every time, 1 otherwise.
  */
 template <typename T>
-static int run(const char* label, long N, const Scenario<T>& sc)
+static int run(const char* label, long n, const Scenario<T>& sc)
 {
-    Array<T> arr(N);
-    Array<T> other(N);
+    Array<T> arr(n);
+    Array<T> other(n);
     maybe_set_second_value(arr, sc.second);
     maybe_set_second_value(other, sc.second);
-    std::vector<T> ref(N);
-    std::vector<T> ref_other(N);
+    std::vector<T> ref(n);
+    std::vector<T> ref_other(n);
 
     long fails = 0;
 
@@ -467,7 +467,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             const long run = (i / run_len) % 3;
             const T    v   = run == 0 ? T(0) : run == 1 ? sc.second : static_cast<T>((i % 23) + 1);
@@ -477,7 +477,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         }
     }
     end_phase();
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const long run = (i / run_len) % 3;
         ref[i]         = run == 0 ? T(0) : run == 1 ? sc.second : static_cast<T>((i % 23) + 1);
@@ -491,13 +491,13 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             sc.chain(arr, i);
         }
     }
     end_phase();
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         sc.chain_ref(ref, i);
     }
@@ -521,7 +521,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             mix_other<T>(arr, other, i, i);
             if (i & 1)
@@ -531,7 +531,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         }
     }
     end_phase();
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         mix_other<T>(ref, ref_other, i, i);
         if (i & 1)
@@ -552,18 +552,18 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     {
         begin_phase();
 #pragma omp for schedule(static)
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             sc.chain(other, i);
         }
         // (the omp for's own barrier)
 #pragma omp for schedule(static, 37)
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
-            mix_other<T>(arr, other, (i + (N / 2)) % N, i);
+            mix_other<T>(arr, other, (i + (n / 2)) % n, i);
         }
 #pragma omp for schedule(static, 37)
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             if (i % 3 != 1)
             {
@@ -572,15 +572,15 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         }
     }
     end_phase();
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         sc.chain_ref(ref_other, i);
     }
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
-        mix_other<T>(ref, ref_other, (i + (N / 2)) % N, i);
+        mix_other<T>(ref, ref_other, (i + (n / 2)) % n, i);
     }
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         if (i % 3 != 1)
         {
@@ -595,13 +595,13 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             other[i] = T(arr[i]);
         }
     }
     end_phase();
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         ref_other[i] = ref[i];
     }
@@ -615,17 +615,17 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     // actually took; a write deferred on one rank and replayed after the next
     // thread's write would leave the older value.
     {
-        const long H      = std::min<long>(N, 256);
-        const long stride = N / H;
-        const long M      = 3 * 64 * H; // every hot element written 192 times
+        const long h      = std::min<long>(n, 256);
+        const long stride = n / h;
+        const long m      = 3 * 64 * h; // every hot element written 192 times
         long       tick   = 0;          // only touched inside the critical
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long k = 0; k < M; ++k)
+            for (long k = 0; k < m; ++k)
             {
-                const long i = ((k / 3) % H) * stride;
+                const long i = ((k / 3) % h) * stride;
 #pragma omp critical(deferred_waw)
                 {
                     const long t = tick++;
@@ -661,7 +661,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     // it. The first loop never waits, so every flag is eventually set.
     {
         constexpr long                block_len = 1000; // not a chunk multiple: blocks straddle chunks
-        const long                    nb        = (N + block_len - 1) / block_len;
+        const long                    nb        = (n + block_len - 1) / block_len;
         std::vector<std::atomic<int>> ready(nb);
         for (auto& r : ready)
         {
@@ -673,7 +673,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
 #pragma omp for schedule(static, 1) nowait
             for (long b = 0; b < nb; ++b)
             {
-                for (long i = b * block_len; i < std::min(N, (b + 1) * block_len); ++i)
+                for (long i = b * block_len; i < std::min(n, (b + 1) * block_len); ++i)
                 {
                     arr[i] = waw_value<T>(i);
                 }
@@ -687,7 +687,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
                 {
                     std::this_thread::yield();
                 }
-                for (long i = b * block_len; i < std::min(N, (b + 1) * block_len); ++i)
+                for (long i = b * block_len; i < std::min(n, (b + 1) * block_len); ++i)
                 {
                     arr[i] = waw_value<T>(i + 5);
                     if constexpr (!std::is_same_v<T, bool>)
@@ -701,7 +701,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
             }
         }
         end_phase();
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             ref[i] = waw_value<T>(i + 5);
             if constexpr (!std::is_same_v<T, bool>)
@@ -717,7 +717,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
 
     if (!fails)
     {
-        println("[{}/{}] OK: {} elements, chunk_size={}", variant_name(), label, N,
+        println("[{}/{}] OK: {} elements, chunk_size={}", variant_name(), label, n,
                 static_cast<long>(arr.chunk_size()));
     }
 
@@ -740,10 +740,10 @@ static int run(const char* label, long N, const Scenario<T>& sc)
  * @return 0 if every element matched after every resize, 1 otherwise.
  */
 template <typename T>
-static int run_resize(const char* label, long N)
+static int run_resize(const char* label, long n)
 {
-    Array<T>       arr(N);
-    std::vector<T> ref(static_cast<std::size_t>(N));
+    Array<T>       arr(n);
+    std::vector<T> ref(static_cast<std::size_t>(n));
     long           fails = 0;
 
     const auto write_range = [&](long lo, long hi, long salt)
@@ -755,27 +755,27 @@ static int run_resize(const char* label, long N)
             ref[static_cast<std::size_t>(i)] = v;
         }
     };
-    const auto resize_both = [&](long n)
+    const auto resize_both = [&](long new_size)
     {
-        arr.resize(n);
-        ref.resize(static_cast<std::size_t>(n), T{});
-        if (static_cast<long>(arr.size()) != n)
+        arr.resize(new_size);
+        ref.resize(static_cast<std::size_t>(new_size), T{});
+        if (static_cast<long>(arr.size()) != new_size)
         {
-            println("[{}/resize] FAIL: size() = {} after resize({})", label, static_cast<long>(arr.size()), n);
+            println("[{}/resize] FAIL: size() = {} after resize({})", label, static_cast<long>(arr.size()), new_size);
             ++fails;
         }
     };
 
-    write_range(0, N, 1);
-    resize_both(2 * N); // growth, ops queued on the old chunks
+    write_range(0, n, 1);
+    resize_both(2 * n); // growth, ops queued on the old chunks
     fails += compare(label, "resize-grow", arr, ref);
 
-    write_range(N / 2, 2 * N, 5);
-    resize_both(N + N / 3); // shrink, the dropped chunks may hold queued ops
+    write_range(n / 2, 2 * n, 5);
+    resize_both(n + n / 3); // shrink, the dropped chunks may hold queued ops
     fails += compare(label, "resize-shrink", arr, ref);
 
-    write_range(0, N + N / 3, 11);
-    resize_both(3 * N); // growth again
+    write_range(0, n + n / 3, 11);
+    resize_both(3 * n); // growth again
     fails += compare(label, "resize-grow-again", arr, ref);
 
     arr.clear();
@@ -805,12 +805,12 @@ int run(int argc, char** argv)
     // million deferred writes per run of the executable, and a Debug build
     // still under 20 s at 1 thread (each deferred op is a context, a map
     // entry and a replay -- forty times the cost of the write it stands for).
-    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 17, "N") : (1L << 17);
+    const long n = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 17, "N") : (1L << 17);
 
     ParamChunk::init_indexes(true);
 
     println("=== deferred_path_validation [variant = {}]  N={}  threads={}  force_defer_every={} ===", variant_name(),
-            N, CHUNK_PMP_MAX_THREADS, test_hooks::force_defer_compiled ? test_hooks::force_defer_every : 0U);
+            n, CHUNK_PMP_MAX_THREADS, test_hooks::force_defer_compiled ? test_hooks::force_defer_every : 0U);
 
     int fails = 0;
 
@@ -818,20 +818,20 @@ int run(int argc, char** argv)
     const Scenario<double> sd{3.5, &chain_double<Array<double>>, &chain_double<std::vector<double>>};
     const Scenario<bool>   sb{true, &chain_bool<Array<bool>>, &chain_bool<std::vector<bool>>};
 
-    fails += run<int>("int", N, si);
-    fails += run<double>("double", N, sd);
-    fails += run<bool>("bool", N, sb);
+    fails += run<int>("int", n, si);
+    fails += run<double>("double", n, sd);
+    fails += run<bool>("bool", n, sb);
 
-    fails += run_returns<int>("int", N);
-    fails += run_returns<long>("long", N);
-    fails += run_returns<unsigned long>("ulong", N);
-    fails += run_returns<float>("float", N);
-    fails += run_returns<double>("double", N);
-    fails += run_returns<std::complex<double>>("complex", N);
+    fails += run_returns<int>("int", n);
+    fails += run_returns<long>("long", n);
+    fails += run_returns<unsigned long>("ulong", n);
+    fails += run_returns<float>("float", n);
+    fails += run_returns<double>("double", n);
+    fails += run_returns<std::complex<double>>("complex", n);
 
-    fails += run_resize<int>("int", N);
-    fails += run_resize<double>("double", N);
-    fails += run_resize<bool>("bool", N);
+    fails += run_resize<int>("int", n);
+    fails += run_resize<double>("double", n);
+    fails += run_resize<bool>("bool", n);
 
     // The hook really fired, in every build that has it (the deferral count
     // below needs CHUNK_STATS).

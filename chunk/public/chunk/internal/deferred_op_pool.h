@@ -33,7 +33,7 @@
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
-#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EV_OP_ALLOC / EV_OP_FREE
+#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, ev_op_alloc / ev_op_free
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::backend (the pools of exited threads)
 #include "chunk/log.h"                            // CHUNK_LOG (recycle)
 
@@ -50,9 +50,9 @@ namespace fast_alloc
 /// @brief Fallback arena kinds (op, ctx, value), matching the names of the fast allocator's enum.
 enum class ArenaKind
 {
-    Op,
-    Ctx,
-    Value
+    op,
+    ctx,
+    value
 };
 
 /// @brief std-alloc stand-in for the fast allocator: operator new/delete
@@ -132,8 +132,8 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 ///        object type, found by AllocatorRegistry).
 struct FastAllocatorBase
 {
-    /// @param block_size_ bytes per block
-    explicit FastAllocatorBase(size_t block_size_) noexcept : block_size(block_size_) {}
+    /// @param block_bytes bytes per block
+    explicit FastAllocatorBase(size_t block_bytes) noexcept : block_size(block_bytes) {}
     virtual ~FastAllocatorBase() = default;
 
     // Polymorphic, held by unique_ptr in the registry: never copied or moved.
@@ -327,7 +327,7 @@ struct DeferredFreeListSlot
  * @brief Per-thread pool allocator for objects of type T.
  * Uses a calculated number of blocks based on the global granularity config.
  */
-template <typename T, fast_alloc::ArenaKind Arena = fast_alloc::ArenaKind::Op>
+template <typename T, fast_alloc::ArenaKind Arena = fast_alloc::ArenaKind::op>
 class FastAllocatorConcrete : public FastAllocatorBase
 {
   public:
@@ -586,13 +586,13 @@ struct arena_of_tag;
 template <>
 struct arena_of_tag<OpTag>
 {
-    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Op;
+    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::op;
 };
 /// @brief Context allocators: the Ctx arena.
 template <>
 struct arena_of_tag<CtxTag>
 {
-    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Ctx;
+    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::ctx;
 };
 
 /**
@@ -726,7 +726,7 @@ template <typename T, typename... Args>
     // (vptr written).
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), EV_OP_ALLOC, 0, mem);
+        ring_log_op(get_tid(), ev_op_alloc, 0, mem);
     }
     return constructed;
 }
@@ -762,7 +762,7 @@ void free_op(T* op)
     // can show a free while the op was still referenced by op_map.
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), EV_OP_FREE, 0, static_cast<const void*>(op));
+        ring_log_op(get_tid(), ev_op_free, 0, static_cast<const void*>(op));
     }
     pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();

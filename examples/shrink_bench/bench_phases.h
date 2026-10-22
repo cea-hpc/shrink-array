@@ -350,7 +350,7 @@ void bench_init_library();
  *          than as a handful of calls main() could reorder by accident:
  *            1. tab_*.clear() -- clear() runs clear_core(), which is what feeds
  *               the teardown_clear counter;
- *            2. only THEN ChunkStats(), or the counter always reads 0;
+ *            2. only THEN chunk_stats(), or the counter always reads 0;
  *            3. the compression check, the pool breakdown, and last the
  *               library's own pool release.
  */

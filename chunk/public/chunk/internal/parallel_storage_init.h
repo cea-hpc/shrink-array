@@ -27,7 +27,7 @@
  *          costs as much as the init loop itself, mostly page faults, and puts
  *          every page on one NUMA node.
  *
- *          So the per-chunk vectors are no_init_vector: NoInitAllocator leaves
+ *          So the per-chunk vectors are NoInitVector: NoInitAllocator leaves
  *          a default-inserted element unconstructed, and make_filled() /
  *          resize_filled() construct the new elements from a team, static
  *          schedule (pmp::parallel_for), where the per-chunk loops will use them. The atomic rows
@@ -98,10 +98,10 @@ namespace shrink_array::parallel_storage_init
 
 /// @brief A per-chunk vector whose new elements the helpers below construct.
 template <typename T>
-using no_init_vector = std::vector<T, NoInitAllocator<T>>;
+using NoInitVector = std::vector<T, NoInitAllocator<T>>;
 
 // The allocator has no state: the vector is exactly a std::vector's size.
-static_assert(sizeof(no_init_vector<char>) == sizeof(std::vector<char>));
+static_assert(sizeof(NoInitVector<char>) == sizeof(std::vector<char>));
 
 /// @brief Below this many bytes a vector's elements are constructed by the
 ///        calling thread: a team costs more than the faults it would share.
@@ -218,10 +218,10 @@ void construct_range(T* base, std::size_t first, std::size_t last, Make&& make)
  *          moved (the returned vector is moved whole, its buffer kept).
  */
 template <typename T, typename... Args>
-[[nodiscard]] no_init_vector<T> make_filled(std::size_t n, const Args&... args)
+[[nodiscard]] NoInitVector<T> make_filled(std::size_t n, const Args&... args)
 {
     static_assert(std::is_trivially_destructible_v<T>, "an unconstructed element must be safe to destroy");
-    no_init_vector<T> v(n); // allocates only (NoInitAllocator)
+    NoInitVector<T> v(n); // allocates only (NoInitAllocator)
     construct_range(v.data(), 0, n, [&](T* p) { std::construct_at(p, args...); });
     return v;
 }
@@ -234,7 +234,7 @@ template <typename T, typename... Args>
  *          filled from empty (every storage build) has none.
  */
 template <typename T>
-void resize_filled(no_init_vector<T>& v, std::size_t n, const T& value)
+void resize_filled(NoInitVector<T>& v, std::size_t n, const T& value)
 {
     static_assert(std::is_trivially_destructible_v<T>, "an unconstructed element must be safe to destroy");
     const std::size_t held = v.size();

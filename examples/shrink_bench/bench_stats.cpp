@@ -18,7 +18,7 @@
 /// @brief The value census and filling-rate report. See bench_phases.h.
 
 #include <algorithm>   // std::max (name_padding)
-#include <complex>     // operator== on complex_double
+#include <complex>     // operator== on ComplexDouble
 #include <cstddef>     // std::size_t
 #include <iomanip>     // std::setw, std::setprecision
 #include <iostream>    // std::cout
@@ -58,7 +58,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     {
         using value_type           = std::remove_reference_t<std::remove_const_t<decltype(tab)>>::value_type;
         constexpr bool is_not_bool = !shrink_array::is_bool_like_v<value_type>; // bool, Bit
-        constexpr bool is_complex  = std::is_same_v<value_type, complex_double>;
+        constexpr bool is_complex  = std::is_same_v<value_type, ComplexDouble>;
         constexpr bool is_char     = std::is_same_v<value_type, unsigned char>;
 
         const Int ssz = tab.size();
@@ -115,7 +115,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                             }
                                                                         }
                                                                     });
-        const Int nbz = census[0];
+        const Int  nbz    = census[0];
         const Int  nbv    = census[1];
         const Int  nb     = census[2];
 
@@ -157,9 +157,13 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         oss << "Numbers of ";
 
         if constexpr (is_char)
+        {
             oss << static_cast<int>(sec_val);
+        }
         else
+        {
             oss << sec_val;
+        }
 
         const std::string label = oss.str();
         std::cout << std::setw(label_width) << std::left << label << ":" // Ensures consistent colon alignment
@@ -187,7 +191,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                         acc[0]++;
                                                                     }
                                                                 })[0];
-        const Int nb = ssz - nbz;
+        const Int nb  = ssz - nbz;
 
         constexpr int name_width   = 20;
         const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);

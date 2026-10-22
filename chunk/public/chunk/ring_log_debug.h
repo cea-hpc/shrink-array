@@ -28,37 +28,37 @@ namespace shrink_array
 // ----------------------------- Simple ring log for debugging (lock-free-ish) -----------------------------
 enum EventCode : uint8_t
 {
-    EV_BEGIN_SLOW_PATH = 1,
-    EV_END_SLOW_PATH,
-    EV_BEGIN_FAST_PATH,
-    EV_END_FAST_PATH,
-    EV_COMPRESS_ATTEMPT,
-    EV_COMPRESS_STARTED,
-    EV_COMPRESS_ABORTED,
-    EV_COMPRESS_FINISHED,
+    ev_begin_slow_path = 1,
+    ev_end_slow_path,
+    ev_begin_fast_path,
+    ev_end_fast_path,
+    ev_compress_attempt,
+    ev_compress_started,
+    ev_compress_aborted,
+    ev_compress_finished,
     // ─── cst_val transitions ────────────────────────────────────────
-    EV_CAS_VALUES_TO_CST,   // info = chunk_idx, sub-value = which cst (1 or 2)
-    EV_CAS_VALUES_FROM_CST, // info = chunk_idx (create_value success)
-    EV_CAS_VALUES_FAIL,     // info = chunk_idx (create_value failed = recup)
-    EV_FLUSH_BEGIN,         // info = chunk_idx
-    EV_FLUSH_END,           // info = chunk_idx
-    EV_LAMBDA_ASYNC_ASSIGN, // info = chunk_idx (in lambda exec)
-    EV_LAMBDA_ASYNC_ARITH,  // info = chunk_idx
-    EV_VALUES_LOAD_IS_CST,  // info = chunk_idx (RACE DETECTOR if observed in lambda)
-    EV_STORE_VALUE,         // info = (chunk_idx << 8) | num
-    EV_POLICY_BEGIN_WRITE,  // info = thr_rank (entered begin_write)
-    EV_POLICY_END_WRITE,    // info = thr_rank (entered end_write)
+    ev_cas_values_to_cst,   // info = chunk_idx, sub-value = which cst (1 or 2)
+    ev_cas_values_from_cst, // info = chunk_idx (create_value success)
+    ev_cas_values_fail,     // info = chunk_idx (create_value failed = recup)
+    ev_flush_begin,         // info = chunk_idx
+    ev_flush_end,           // info = chunk_idx
+    ev_lambda_async_assign, // info = chunk_idx (in lambda exec)
+    ev_lambda_async_arith,  // info = chunk_idx
+    ev_values_load_is_cst,  // info = chunk_idx (RACE DETECTOR if observed in lambda)
+    ev_store_value,         // info = (chunk_idx << 8) | num
+    ev_policy_begin_write,  // info = thr_rank (entered begin_write)
+    ev_policy_end_write,    // info = thr_rank (entered end_write)
     // ─── thread-ops bitmap tracking ──────────────────────────────────
-    EV_MARK_THREAD_HAS_OPS,  // info = thr_rank
-    EV_CLEAR_THREAD_HAS_OPS, // info = thr_rank
+    ev_mark_thread_has_ops,  // info = thr_rank
+    ev_clear_thread_has_ops, // info = thr_rank
     // ─── op lifecycle (use-after-free via op_map) ────────────────────
-    EV_OP_ALLOC,     // info = num ; track op storage alloc
-    EV_OP_ENQUEUE,   // info = (chunk_idx << 8) | num ; put in op_map
-    EV_OP_FREE,      // info = num ; op block recycled (free_op)
-    EV_OP_FLUSH_ONE, // info = num ; about to write_body this op
+    ev_op_alloc,     // info = num ; track op storage alloc
+    ev_op_enqueue,   // info = (chunk_idx << 8) | num ; put in op_map
+    ev_op_free,      // info = num ; op block recycled (free_op)
+    ev_op_flush_one, // info = num ; about to write_body this op
     // ─── chunk VALUE storage (op/value address aliasing) ─────────────
-    EV_VALUE_ALLOC, // a chunk values buffer was allocated at addr
-    EV_VALUE_FREE,  // a chunk values buffer was freed at addr
+    ev_value_alloc, // a chunk values buffer was allocated at addr
+    ev_value_free,  // a chunk values buffer was freed at addr
 };
 
 #ifdef CHUNK_RING_LOG_ANY
@@ -152,13 +152,13 @@ inline bool analyze_ring_sweep()
 #endif
 /// @brief RAII helper for ring-log paired begin/end events.
 ///
-/// On construction: emits BEGIN_EVENT with the (optional) payload.
-/// On destruction:  emits END_EVENT with the same payload.
+/// On construction: emits BeginEvent with the (optional) payload.
+/// On destruction:  emits EndEvent with the same payload.
 ///
 /// `Manual` mode disables the destructor-emitted end. Caller calls .end()
 /// explicitly. Useful when the end must happen at a precise point (after a
 /// CAS, before a return) rather than at scope exit.
-template <EventCode BEGIN_EVENT, EventCode END_EVENT, bool Manual = false>
+template <EventCode BeginEvent, EventCode EndEvent, bool Manual = false>
 class ScopedRingLog
 {
   public:
@@ -167,14 +167,14 @@ class ScopedRingLog
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            tid     = get_tid();
-            payload = payload_value;
-            ended   = false;
-            ring_log_start(tid, BEGIN_EVENT, payload);
+            tid_     = get_tid();
+            payload_ = payload_value;
+            ended_   = false;
+            ring_log_start(tid_, BeginEvent, payload_);
         }
     }
 
-    /// @brief Emit END_EVENT unless in Manual mode; in Manual mode, check builds print a message on stderr when
+    /// @brief Emit EndEvent unless in Manual mode; in Manual mode, check builds print a message on stderr when
     ///        end() was not called.
     ~ScopedRingLog() noexcept
     {
@@ -182,18 +182,18 @@ class ScopedRingLog
         {
             if constexpr (!Manual)
             {
-                ring_log_end(tid, END_EVENT, payload); // end, not start
+                ring_log_end(tid_, EndEvent, payload_); // end, not start
             }
             else
             {
                 // Manual mode: stop (in check builds only) if the user forgot to call .end()
                 if constexpr (build_config::any_check)
                 {
-                    if (!ended)
+                    if (!ended_)
                     {
                         CHUNK_INVARIANT_FAILED("ScopedRingLog<Manual>: end() not called before destruction "
                                                "(BEGIN_EVENT={})",
-                                               static_cast<int>(BEGIN_EVENT));
+                                               static_cast<int>(BeginEvent));
                     }
                 }
             }
@@ -211,23 +211,23 @@ class ScopedRingLog
     {
         if constexpr (chunk_config::ring_log_debug && Manual)
         {
-            if (!ended)
+            if (!ended_)
             {
-                ring_log_end(tid, END_EVENT, payload);
-                ended = true;
+                ring_log_end(tid_, EndEvent, payload_);
+                ended_ = true;
             }
         }
     }
 
   private:
-    [[maybe_unused]] uint32_t tid;
-    [[maybe_unused]] uint32_t payload;
-    [[maybe_unused]] bool     ended;
+    [[maybe_unused]] uint32_t tid_;
+    [[maybe_unused]] uint32_t payload_;
+    [[maybe_unused]] bool     ended_;
 };
 
 // Convenience aliases
-template <EventCode BEGIN_EVENT, EventCode END_EVENT>
-using ScopedRingLogManualEnd = ScopedRingLog<BEGIN_EVENT, END_EVENT, /*Manual=*/true>;
+template <EventCode BeginEvent, EventCode EndEvent>
+using ScopedRingLogManualEnd = ScopedRingLog<BeginEvent, EndEvent, /*Manual=*/true>;
 
 
 } // namespace shrink_array

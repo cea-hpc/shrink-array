@@ -71,14 +71,14 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
         // Sequential point: outside a region only.
         if constexpr (Derived::is_not_bool)
         {
-            using proxy_t   = typename Traits::proxy_type;
-            using manager_t = typename Traits::manager_type;
+            using ProxyT   = typename Traits::proxy_type;
+            using ManagerT = typename Traits::manager_type;
 
-            const int  num_tab  = proxy_t::share_info_array->get_num_tab(self().registry_key());
+            const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
             const auto inf      = self().get_info_second_value();
             const int  thr_self = get_thr_rank_fast();
             bool       found    = false;
-            for (const auto& per_rank : manager_t::map_chunk2_to_compress_potentially_thr)
+            for (const auto& per_rank : ManagerT::map_chunk2_to_compress_potentially_thr)
             {
                 for (const auto& kv : per_rank)
                 {
@@ -91,7 +91,7 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
                         if (std::get<2>(tup) == num_tab)
                         {
                             std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
-                            proxy_t::reset_tab_inside_list_to_compress(num_tab, std::get<1>(tup));
+                            ProxyT::reset_tab_inside_list_to_compress(num_tab, std::get<1>(tup));
                             found = true;
                         }
                     }
@@ -99,7 +99,7 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
             }
             if (found)
             {
-                manager_t::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+                ManagerT::remove_from_compress_list_chunk2_by_num_tab(num_tab);
             }
         }
     }

@@ -26,7 +26,7 @@
 //      variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A) and the mode macros
 //      (CHUNK_OPT_DEBUG / CHECK),
 //   4. pulls the variant-specific array_chunk* headers,
-//   5. defines the complex_double alias used across TUs.
+//   5. defines the ComplexDouble alias used across TUs.
 //
 // The variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A) MUST be defined identically
 // on every TU of a given executable target. In practice they are defined
@@ -50,7 +50,7 @@
 #include <array>       // std::array, for chunk/*
 #include <atomic>      // std::atomic, for chunk/*
 #include <chrono>      // std::chrono, for chunk/*
-#include <complex>     // std::complex (complex_double)
+#include <complex>     // std::complex (ComplexDouble)
 #include <cstddef>     // std::size_t (cache_line_size)
 #include <cstdint>     // std::uint64_t, for chunk/*
 #include <cstring>     // std::memcpy, for chunk/*
@@ -271,7 +271,7 @@ namespace chunk_config = shrink_array::chunk_config;
     #include <vector> // std::vector (the baseline build)
 #endif
 
-using complex_double = std::complex<double>;
+using ComplexDouble = std::complex<double>;
 
 // Assumed cache line size (used for padding). Kept here rather than in
 // bench_config.h because it's a hardware/ABI-level constant, not a bench

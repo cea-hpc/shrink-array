@@ -185,9 +185,9 @@ template <typename T>
 inline constexpr bool is_complex<std::complex<T>> = true;
 
 /// @brief True when std::format has a formatter for V (C++20 spelling of
-///        C++23's std::formattable: a disabled formatter has no format()).
+///        C++23's std::Formattable: a disabled formatter has no format()).
 template <typename V>
-concept formattable =
+concept Formattable =
     requires(std::formatter<V, char> fmt, const V& v, std::format_context& fmt_ctx) { fmt.format(v, fmt_ctx); };
 
 /// @brief A std::complex, formatted "(re+imi)", "(re-imi)" for a negative imaginary part.
@@ -205,9 +205,9 @@ struct BytesArg
     const V* v;
 };
 
-/// @brief The argument std::format sees for @p arg: itself when its type is formattable.
+/// @brief The argument std::format sees for @p arg: itself when its type is Formattable.
 template <typename A>
-    requires(formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
+    requires(Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
 constexpr A&& fmt_arg(A&& arg) noexcept
 {
     return std::forward<A>(arg);
@@ -223,7 +223,7 @@ constexpr auto fmt_arg(A&& z) noexcept
 
 /// @brief Overload for a type with no formatter: its bytes.
 template <typename A>
-    requires(!formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
+    requires(!Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
 constexpr auto fmt_arg(A&& arg) noexcept
 {
     return BytesArg<std::remove_cvref_t<A>>{&arg};
@@ -232,7 +232,7 @@ constexpr auto fmt_arg(A&& arg) noexcept
 /// @brief The type std::format deduces for that argument: the reference for an
 ///        lvalue, the value for anything else (an rvalue reference would not match).
 template <typename A, typename R = decltype(fmt_arg(std::declval<A>()))>
-using fmt_arg_t = std::conditional_t<std::is_lvalue_reference_v<R>, R, std::remove_reference_t<R>>;
+using FmtArgT = std::conditional_t<std::is_lvalue_reference_v<R>, R, std::remove_reference_t<R>>;
 
 /// @brief A CHUNK_LOG specification, parsed: the most verbose level let
 ///        through per channel, and the items that were not understood.
@@ -481,7 +481,7 @@ inline void emit_fatal(const Record& r) noexcept
 
 /// @brief Format @p fmt into @p buf (line_max bytes, "..." when cut); the length written.
 template <typename... Args>
-std::size_t format_message(char* buf, std::format_string<fmt_arg_t<Args>...> fmt, Args&&... args) noexcept
+std::size_t format_message(char* buf, std::format_string<FmtArgT<Args>...> fmt, Args&&... args) noexcept
 {
     try
     {
@@ -658,10 +658,10 @@ inline void ensure_configured() noexcept // declared above, for emit_fatal
 
 /// @brief Format and emit one message (CHUNK_LOG's slow path, past enabled()).
 template <typename... Args>
-void write(Level                                  l,
-           Channel                                c,
-           const std::source_location&            loc,
-           std::format_string<fmt_arg_t<Args>...> fmt,
+void write(Level                                l,
+           Channel                              c,
+           const std::source_location&          loc,
+           std::format_string<FmtArgT<Args>...> fmt,
            Args&&... args) noexcept
 {
     char              buf[line_max];

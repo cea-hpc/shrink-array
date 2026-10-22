@@ -150,7 +150,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     /// @brief Number of live chunks.
     [[nodiscard]] int chunk_count() const noexcept
     {
-        return nb_chunk;
+        return nb_chunk_;
     }
 
     /**
@@ -183,13 +183,13 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      */
     [[nodiscard]] chunk_type& chunk_ref(std::size_t i) noexcept
     {
-        return chunk_list[i];
+        return chunk_list_[i];
     }
 
     /// @brief Const overload of chunk_ref(): the same chunk, read-only.
     [[nodiscard]] const chunk_type& chunk_ref(std::size_t i) const noexcept
     {
-        return chunk_list[i];
+        return chunk_list_[i];
     }
 
     /**
@@ -232,7 +232,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         {
             return;
         }
-        if (nb_chunk <= 0)
+        if (nb_chunk_ <= 0)
         {
             return;
         }
@@ -244,7 +244,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         {
             return;
         }
-        const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk) * sizeof(chunk_type);
+        const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk_) * sizeof(chunk_type);
         if (meta_bytes < build_config::alloc_affinity_min_bytes)
         {
             return;
@@ -254,7 +254,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         // Keep the key ONLY if the manager built its allocator set: a key with no registered
         // set makes route_omp_dynamic_alloc fall through to the legacy single allocator,
         // which is neither this size's nor this array's.
-        alloc_key_ = manager_type::register_alloc_key(key, size_policy_.size(), nb_chunk) ? key : 0u;
+        alloc_key_ = manager_type::register_alloc_key(key, size_policy_.size(), nb_chunk_) ? key : 0u;
     }
 
     /**
@@ -273,13 +273,13 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     void acquire_chunk_list(std::size_t n)
     {
         if (alloc_affinity_detail::g_building_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
-            chunk_list.capacity() == 0 && spare_chunk_list_.capacity() >= n && spare_chunk_list_.capacity() / 4 <= n)
+            chunk_list_.capacity() == 0 && spare_chunk_list_.capacity() >= n && spare_chunk_list_.capacity() / 4 <= n)
         {
-            chunk_list.swap(spare_chunk_list_); // spare left empty, without a buffer
+            chunk_list_.swap(spare_chunk_list_); // spare left empty, without a buffer
         }
         // Only reserves (NoInitAllocator): the caller's init loop (static schedule) is the
         // first touch, page faults and NUMA placement included.
-        chunk_list.resize(n);
+        chunk_list_.resize(n);
     }
 
     /**
@@ -291,7 +291,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      */
     chunk_type& construct_chunk(int i) noexcept
     {
-        return *std::construct_at(&chunk_list[static_cast<std::size_t>(i)]);
+        return *std::construct_at(&chunk_list_[static_cast<std::size_t>(i)]);
     }
 
     /**
@@ -302,12 +302,12 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      */
     void release_chunk_list()
     {
-        chunk_list.clear();
+        chunk_list_.clear();
         if (alloc_affinity_detail::g_releasing_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
-            chunk_list.capacity() > spare_chunk_list_.capacity())
+            chunk_list_.capacity() > spare_chunk_list_.capacity())
         {
-            chunk_list.swap(spare_chunk_list_);
-            chunk_list_type().swap(chunk_list); // frees the smaller one
+            chunk_list_.swap(spare_chunk_list_);
+            chunk_list_type().swap(chunk_list_); // frees the smaller one
         }
     }
 
@@ -320,10 +320,10 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 
-    chunk_list_type chunk_list;  ///< The chunks, in index order.
-    int             nb_chunk{0}; ///< Number of live chunks in `chunk_list`.
+    chunk_list_type chunk_list_;  ///< The chunks, in index order.
+    int             nb_chunk_{0}; ///< Number of live chunks in `chunk_list`.
 
-    int num_tab{0}; ///< Identity of this array in the per-type registries.
+    int num_tab_{0}; ///< Identity of this array in the per-type registries.
     /// @brief Number of arrays of this element type created so far (source of
     ///        num_tab), all index types together: num_tab indexes the per-T
     ///        tables of the proxies.

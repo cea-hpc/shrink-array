@@ -86,11 +86,11 @@ static double plain(long i)
 template <typename Arr>
 static long materialised(const Arr& arr, long nchunks)
 {
-    const long S = static_cast<long>(arr.chunk_size());
+    const long s = static_cast<long>(arr.chunk_size());
     long       n = 0;
     for (long j = 0; j < nchunks; ++j)
     {
-        n += arr.written(static_cast<typename Arr::ind_type>(j * S)) ? 1 : 0;
+        n += arr.written(static_cast<typename Arr::ind_type>(j * s)) ? 1 : 0;
     }
     return n;
 }
@@ -119,11 +119,11 @@ static void phase(long n, Fn&& body)
 template <typename Arr>
 static int run_case(const char* name, Arr& arr, long nchunks, double v, long expect_materialised)
 {
-    const long S    = static_cast<long>(arr.chunk_size());
-    const long N    = nchunks * S;
-    const long half = S / 2;
+    const long s    = static_cast<long>(arr.chunk_size());
+    const long n    = nchunks * s;
+    const long half = s / 2;
 
-    phase(N, [&](long i) { arr[static_cast<typename Arr::ind_type>(i)] = plain(i); });
+    phase(n, [&](long i) { arr[static_cast<typename Arr::ind_type>(i)] = plain(i); });
     const long before = materialised(arr, nchunks);
 
     // Two spans per chunk, adjacent iterations: with schedule(static, 1) they
@@ -132,13 +132,13 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
     phase(2 * nchunks,
           [&](long k)
           {
-              const long lo = (k / 2) * S + (k % 2) * half;
-              const long hi = (k % 2) ? (k / 2 + 1) * S : lo + half;
+              const long lo = (k / 2) * s + (k % 2) * half;
+              const long hi = (k % 2) ? (k / 2 + 1) * s : lo + half;
               fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), v);
           });
 
     long bad = 0;
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const double got = arr[static_cast<typename Arr::ind_type>(i)];
         if (got != v)

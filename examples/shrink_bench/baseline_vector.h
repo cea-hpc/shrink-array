@@ -23,7 +23,7 @@
  * thread's NUMA node, so the parallel phases afterwards read remote memory on
  * a multi-node machine -- a cost the chunked arrays, which allocate nothing at
  * creation, do not pay. BaselineVector allocates without writing
- * (default_init_allocator), then zeroes the elements in a parallel loop with
+ * (DefaultInitAllocator), then zeroes the elements in a parallel loop with
  * the static schedule of the bench's loops: each page is first touched by the
  * thread that works on it.
  *
@@ -55,15 +55,15 @@ namespace shrink_array
  *          reading one is undefined behaviour. BaselineVector writes them.
  */
 template <class T, class A = std::allocator<T>>
-class default_init_allocator : public A
+class DefaultInitAllocator : public A
 {
-    using traits = std::allocator_traits<A>;
+    using Traits = std::allocator_traits<A>;
 
   public:
     template <class U>
     struct rebind
     {
-        using other = default_init_allocator<U, typename traits::template rebind_alloc<U>>;
+        using other = DefaultInitAllocator<U, typename Traits::template rebind_alloc<U>>;
     };
 
     using A::A;
@@ -79,7 +79,7 @@ class default_init_allocator : public A
     template <class U, class... Args>
     void construct(U* p, Args&&... args)
     {
-        traits::construct(static_cast<A&>(*this), p, std::forward<Args>(args)...);
+        Traits::construct(static_cast<A&>(*this), p, std::forward<Args>(args)...);
     }
 };
 
@@ -95,19 +95,19 @@ class default_init_allocator : public A
  * cannot write side by side.
  */
 template <class T>
-class BaselineVector : public std::vector<T, default_init_allocator<T>>
+class BaselineVector : public std::vector<T, DefaultInitAllocator<T>>
 {
-    using base = std::vector<T, default_init_allocator<T>>;
+    using Base = std::vector<T, DefaultInitAllocator<T>>;
 
   public:
-    using base::base;
-    using base::resize;
-    using typename base::size_type;
+    using Base::Base;
+    using Base::resize;
+    using typename Base::size_type;
 
     BaselineVector() = default;
 
     /// @brief @p n elements reading T{}, zeroed in parallel.
-    explicit BaselineVector(size_type n) : base(n)
+    explicit BaselineVector(size_type n) : Base(n)
     {
         zero_from(0);
     }
@@ -116,7 +116,7 @@ class BaselineVector : public std::vector<T, default_init_allocator<T>>
     void resize(size_type n)
     {
         const size_type old = this->size();
-        base::resize(n);
+        Base::resize(n);
         if (n > old)
         {
             zero_from(old);

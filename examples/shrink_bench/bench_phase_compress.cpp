@@ -82,7 +82,7 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         {
             if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
             {
-                auto& ens = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
+                auto& ens = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
                 if (ens.have_chunk_to_compress_potentially())
                 {
                     ens.compress_chunk_to_compress_potentially(true);
@@ -143,7 +143,8 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         if constexpr (bench_par::team_regions)
         {
             bench_par::region(
-                [&]([[maybe_unused]] bench_par::Team& t) {
+                [&]([[maybe_unused]] bench_par::Team& t)
+                {
                     all([&](const char* name)
                         { t.single([&] { std::cout << name << std::endl; }, bench_par::nowait); });
                 });

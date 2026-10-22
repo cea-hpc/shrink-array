@@ -121,14 +121,14 @@ static bool zero_run(long i, int round)
 /// thread under the static schedule), on the array and on the reference.
 static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, std::vector<double>& rd, int rounds)
 {
-    const long N = static_cast<long>(ra.size());
+    const long n = static_cast<long>(ra.size());
     for (int round = 0; round < rounds; ++round)
     {
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (long i = 0; i < N; ++i)
+            for (long i = 0; i < n; ++i)
             {
                 if (zero_run(i, round))
                 {
@@ -145,7 +145,7 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
             }
         }
         end_phase();
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             if (zero_run(i, round))
             {
@@ -168,20 +168,20 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (long i = 0; i < N / 2; ++i)
+            for (long i = 0; i < n / 2; ++i)
             {
-                a[i] += static_cast<int>(a[N - 1 - i]);
+                a[i] += static_cast<int>(a[n - 1 - i]);
             }
         }
         end_phase();
-        for (long i = 0; i < N / 2; ++i)
+        for (long i = 0; i < n / 2; ++i)
         {
-            ra[i] += snap[N - 1 - i];
+            ra[i] += snap[n - 1 - i];
         }
     }
 
     long fails = 0;
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const int    ai = a[i];
         const double di = d[i];
@@ -236,11 +236,11 @@ static int run_body(int argc, char** argv)
     set_team(2);
     ParamChunk::init_indexes(true);
 
-    const long          N = 1L << 16;
-    Array<int>          a(N);
-    Array<double>       d(N);
-    std::vector<int>    ra(N, 0);
-    std::vector<double> rd(N, 0.0);
+    const long          n = 1L << 16;
+    Array<int>          a(n);
+    Array<double>       d(n);
+    std::vector<int>    ra(n, 0);
+    std::vector<double> rd(n, 0.0);
 
     long fails = run_regions(a, ra, d, rd, 1);
 

@@ -75,7 +75,7 @@ struct ManagerChunkInt;
 
 /**
  * @brief The threading-dependent half of the registry.
- * @tparam Derived AllTypeChunk (CRTP, for getListTypeChunk()).
+ * @tparam Derived AllTypeChunk (CRTP, for get_list_type_chunk()).
  * @tparam Enabled build_config::threaded.
  */
 template <typename Derived, bool Enabled = build_config::threaded>
@@ -213,11 +213,11 @@ struct AllTypeChunkDynInterface<Derived, false>
  * rest of the library needs: allocator setup, deferred-write flush,
  * compression passes, free-list load balancing and teardown.
  *
- * Every public method below is a fan-out: it walks getListTypeChunk() and
+ * Every public method below is a fan-out: it walks get_list_type_chunk() and
  * forwards to the matching ManagerChunkInt virtual, so the semantics of each
  * one are those of the manager method it calls, applied to all types at once.
  *
- * Access is through <tt>SingletonChk\<AllTypeChunk\>\::getRef()</tt>. The registry starts
+ * Access is through <tt>SingletonChk\<AllTypeChunk\>\::get_ref()</tt>. The registry starts
  * empty and fills itself: the first array of each (chunk template, element
  * type) registers its manager from its create() (ensure_manager). The first
  * array of the process also runs ParamChunk::init_indexes(true) if the program
@@ -241,7 +241,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
 
     /// The managers' interface, reached through Derived by the policies so
     /// that their bodies stay dependent (each build declares a different half).
-    using manager_int_t = ManagerChunkInt;
+    using ManagerIntT = ManagerChunkInt;
 
     /**
      * @brief Builds an EMPTY registry; managers arrive with the first array of
@@ -274,7 +274,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
 
     /// @return The registered managers, in registration order: the prefix
     ///         published so far, read without a lock (see the members below).
-    [[nodiscard]] std::span<ManagerChunkInt* const> getListTypeChunk() const noexcept
+    [[nodiscard]] std::span<ManagerChunkInt* const> get_list_type_chunk() const noexcept
     {
         // The count first: every table published after the slot count-1 was
         // written holds that slot, so the table read next has all of them.
@@ -413,7 +413,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
 
     /**
      * @brief Build, initialise and publish the manager @p ManagerT
-     *        (ManagerChunk<CHUNK_T, T>). Takes the registry mutex; a no-op
+     *        (ManagerChunk<ChunkT, T>). Takes the registry mutex; a no-op
      *        when that manager is already registered.
      */
     template <typename ManagerT>
@@ -422,11 +422,11 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     /**
      * @brief Registers one chunk template for every element type of a tuple.
      *
-     * @tparam CHUNK_T Chunk template to register.
+     * @tparam ChunkT Chunk template to register.
      * @tparam Types   Type tuple owned by the consumer (e.g. MyChunkTypes).
      */
-    template <template <typename> class CHUNK_T, typename Types>
-    void fillManagerChunk();
+    template <template <typename> class ChunkT, typename Types>
+    void fill_manager_chunk();
 
     /// Resizes every manager's compression-candidate list to the current thread count.
     void resize_chunk_to_compress_potentially() const;

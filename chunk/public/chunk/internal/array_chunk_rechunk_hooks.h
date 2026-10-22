@@ -127,7 +127,7 @@ class RechunkHooks<Derived, true>
     {
         if constexpr (is_chunk2a)
         {
-            return manager_type::chunk2A_to_compress_potentially_thr;
+            return manager_type::chunk2a_to_compress_potentially_thr;
         }
         else
         {
@@ -139,7 +139,7 @@ class RechunkHooks<Derived, true>
     {
         if constexpr (is_chunk2a)
         {
-            return manager_type::chunk2A_to_compress_potentially;
+            return manager_type::chunk2a_to_compress_potentially;
         }
         else
         {

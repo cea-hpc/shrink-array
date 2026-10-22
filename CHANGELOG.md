@@ -78,11 +78,31 @@ the tag's checksum to the recipe.
   as TBB tasks. `multi_launch_stress.py --exec tbb_<variant>`.
 - Spack: variant `threads=openmp|pool|serial` (default `openmp`), and `+tbb`
   for the TBB examples (with `+examples threads=pool`).
+
+### Changed
+
+- The library's `omp critical` sections are `std::mutex`es and its
+  `omp atomic` updates `std::atomic_ref`s; every OpenMP construct sits in one
+  file of the backend (`fast_allocators/internal/pmp_loops.h`). The OpenMP
+  build runs the same regions, with the same clauses.
+- Spack: the variant `openmp` is replaced by `threads` (`+openmp` is now
+  `threads=openmp`, `~openmp` `threads=serial`).
+
+### Fixed
+
+- Chunk2A: the deferred replay of `=` stored the element with a plain store
+  while another writer's uniform-chunk scan read it as a relaxed atomic -- a
+  data race (found by TSan on the pool backend, present under OpenMP too).
+  Same machine code on x86 and AArch64, so no value was wrong.
+
+## 0.1.3 -- 2026-10-22
+
+### Added
+
 - `examples/getting_started/getting_started_ompt.cpp`: the first program with
   plain `#pragma omp parallel for` loops and no `parallel_phase()`, for an OMPT
   build (Clang, oneAPI), checked element by element against the same function
   run on a `std::vector` (ctest `getting_started_ompt`, OMPT builds only).
-
 - Reduced models of the three lock-free handshakes -- writer / compressor,
   compressor / flush, readers / buffer reclamation -- checked by GenMC
   (`formal/`, `docs/formal_models.md`): the protocols of the source verified
@@ -104,12 +124,6 @@ the tag's checksum to the recipe.
 
 ### Changed
 
-- The library's `omp critical` sections are `std::mutex`es and its
-  `omp atomic` updates `std::atomic_ref`s; every OpenMP construct sits in one
-  file of the backend (`fast_allocators/internal/pmp_loops.h`). The OpenMP
-  build runs the same regions, with the same clauses.
-- Spack: the variant `openmp` is replaced by `threads` (`+openmp` is now
-  `threads=openmp`, `~openmp` `threads=serial`).
 - Aggressive compression is a run-time switch, `CHUNK_AGGRESSIVE_COMPRESSION=1`
   (the CMake option `HAVE_AGGRESSIVE_COMPRESSION` only sets its default): every
   site that reads it is a phase boundary, a teardown or a check-build audit.
@@ -138,6 +152,13 @@ the tag's checksum to the recipe.
   macros. 84 names change, all internal but one: `fast_alloc::SIZE_BLOCK` is now
   `fast_alloc::size_block`, the former name kept as a deprecated alias. `check_naming` (a
   source check, in ctest and the CI) keeps it so.
+- One naming convention over the whole tree ([docs/contributing.md](docs/contributing.md)
+  section 3): snake_case functions, variables, constants and enumerators, a `_` at the end of
+  private and protected data members, PascalCase types, aliases, concepts and template
+  parameters, `chunk2a` inside a snake_case name, no reserved `__` name. About 400 names
+  change, all internal but those listed under Deprecated. `check_naming` now checks the
+  enumerators, the camelCase names, the types and template parameters and the reserved names;
+  `scripts/clang_tidy_naming.yaml` gives clang-tidy the rest.
 - An invariant failure is reported by one thread only (when a race is seen by
   several threads at once, their reports no longer interleave), as one block
   on stderr followed by the backtrace, and its message is formatted without
@@ -206,6 +227,8 @@ the tag's checksum to the recipe.
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.
+- fast_allocators 2.2.0 (the log, the snake_case names with their deprecated aliases);
+  `CHUNK_FAST_ALLOCATORS_VERSION` follows.
 
 ### Deprecated
 
@@ -216,6 +239,14 @@ the tag's checksum to the recipe.
   (`alloc=trace`). Still accepted -- each sets its level, with a warning -- and to be removed in
   0.3.0. They are developer settings ([docs/developer_settings.md](docs/developer_settings.md)),
   outside the versioning policy; the deprecation period is a courtesy to the scripts that set them.
+- `getChunkList()` (ArrayChunk, ArrayChunk2, ArrayChunk2A) and `ParamChunk::ChunkStats()`,
+  renamed `get_chunk_list()` and `ParamChunk::chunk_stats()`: functions and methods are
+  snake_case. The former names stay, `[[deprecated]]`, until 1.0.
+- fast_allocators (`fast_allocators/tc_allocator.h`): `VTCTypeAllocator::addAllocatedSize()`,
+  `TCTypeAllocatorEBC::addAllocatedSize()`, `add_TCTypeAllocator_inst()` and
+  `remove_TCTypeAllocator_inst()`, renamed `add_allocated_size()`, `add_tc_type_allocator_inst()`
+  and `remove_tc_type_allocator_inst()`. The former names stay, `[[deprecated]]`, until
+  fast_allocators 3.0; a class derived from `VTCTypeAllocator` overrides the new name.
 
 ### Removed
 
@@ -230,10 +261,6 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
-- Chunk2A: the deferred replay of `=` stored the element with a plain store
-  while another writer's uniform-chunk scan read it as a relaxed atomic -- a
-  data race (found by TSan on the pool backend, present under OpenMP too).
-  Same machine code on x86 and AArch64, so no value was wrong.
 - Two top-level OpenMP teams writing arrays at once -- opened by two host
   threads, two components each on its own `std::thread` -- shared ranks 0..n-1
   of the per-thread structures: one team's phase end replayed the other's
@@ -251,7 +278,6 @@ the tag's checksum to the recipe.
   outermost region's end is a phase boundary now, and `finalize_parallel_phase()`
   does nothing inside a region. `nested_region_validation` has the two cases,
   with writes deferred when the nested regions end.
-
 - `set_chunk_size()` accepted, on an empty array of a `_dyn` build, a size wider than
   `cst_buffer_size` (e.g. twice it): the array's constant chunks then read the shared constant
   buffers out of bounds. It checked only that the size is a power of two or a multiple of 64;
@@ -281,6 +307,13 @@ the tag's checksum to the recipe.
   had no back-off.
 - An invariant failure inside a program's log sink, while the log was reading
   its configuration, blocked instead of stopping the program.
+- The Spack recipe pinned, for 0.1.0, 0.1.1 and 0.1.2, commits of before a history rewrite that
+  are not on GitHub: an install of one of those versions could not fetch. It now pins what each
+  tag points to.
+- A cache entry declared by a subdirectory no longer hides the list the top level resolved
+  (policy CMP0126 NEW, CMake 3.21+): an older `chunk/CMakeLists.txt`, which declared
+  `CHUNK_STATIC_SIZES` in the cache, configured over a cached `auto` saw `auto` and stopped on
+  `CHUNK_DEFAULT_SIZE=256 is not in CHUNK_STATIC_SIZES`.
 
 ## 0.1.2 -- 2026-10-16
 

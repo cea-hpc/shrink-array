@@ -32,13 +32,13 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
-#include "chunk/internal/in_t.h"                        // in_t<T>: resize's fill value
+#include "chunk/internal/in_t.h"                        // InT<T>: resize's fill value
 #include "chunk/internal/proxy.h"                       // Proxy<T>: the element proxy and its registry
 
 namespace shrink_array
 {
 
-template <template <typename> typename CHUNK_T, typename T>
+template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
 
 /**
@@ -46,13 +46,13 @@ class ManagerChunk;
  *        value (Chunk, variant v1).
  *
  * @tparam T        stored element type
- * @tparam ind_type index type used for sizes and element positions
+ * @tparam IndType index type used for sizes and element positions
  */
-template <ArrayChunkElement T, typename ind_type>
-class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
-                   public ParallelSupport<ArrayChunk<T, ind_type>>,
-                   public FastBlockSupport<ArrayChunk<T, ind_type>>,
-                   public RechunkHooks<ArrayChunk<T, ind_type>>
+template <ArrayChunkElement T, typename IndType>
+class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndType>>,
+                   public ParallelSupport<ArrayChunk<T, IndType>>,
+                   public FastBlockSupport<ArrayChunk<T, IndType>>,
+                   public RechunkHooks<ArrayChunk<T, IndType>>
 {
   private:
     friend ArrayChunkBase<ArrayChunk>; // swap_identity()
@@ -71,7 +71,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
 
         sh_inf.insert(this->registry_key(), Base::nb_tab);
 
-        this->num_tab = Base::nb_tab;
+        this->num_tab_ = Base::nb_tab;
 
         ++nb_tab;
     }
@@ -80,7 +80,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     ///        the identity work create_common() does. Used by create() and by
     ///        rechunk_to().
     /// @param sz element count to allocate for
-    void rebuild_storage(ind_type sz);
+    void rebuild_storage(IndType sz);
 
     /// @brief Storage teardown shared by clear() and rechunk_to(): everything
     ///        clear() does except the pre-drain stats. Parks buffers by THIS
@@ -101,7 +101,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     void swap_identity(ArrayChunk& other)
     {
         using std::swap;
-        swap(this->num_tab, other.num_tab);
+        swap(this->num_tab_, other.num_tab_);
         Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
     }
 
@@ -112,12 +112,12 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     using proxy_type   = Base::proxy_type;   ///< Proxy<T>, the write proxy of the non-const accessors.
     using value_type   = T;                  ///< Stored element type.
 
-    using Base::chunk_list;
-    using Base::m_size;
-    using Base::nb_chunk;
+    using Base::chunk_list_;
+    using Base::m_size_;
+    using Base::nb_chunk_;
     using Base::nb_tab;
     using Base::size_policy_;
-    using manager_chunk = ManagerChunk<Chunk, T>; ///< Same type as manager_type.
+    using Manager = ManagerChunk<Chunk, T>; ///< Same type as manager_type.
 
     // Mode-specific members live in the two mixins above. Do not drop these
     // using-declarations: ArrayChunkBase re-exports RechunkSupport's hook
@@ -138,7 +138,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit ArrayChunk(ind_type sz = 0)
+    explicit ArrayChunk(IndType sz = 0)
     {
         if constexpr (build_config::threaded)
         {
@@ -184,7 +184,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    ArrayChunk(It first, It last) : ArrayChunk(static_cast<ind_type>(std::distance(first, last)))
+    ArrayChunk(It first, It last) : ArrayChunk(static_cast<IndType>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
@@ -226,7 +226,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op.
-    ArrayChunk& operator=(const ArrayChunk<T, ind_type>& from)
+    ArrayChunk& operator=(const ArrayChunk<T, IndType>& from)
     {
         if (this != &from)
         {
@@ -236,22 +236,22 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     }
 
     /// @brief Has the chunk holding element @p i been materialised?
-    [[nodiscard]] bool written(ind_type i) const noexcept
+    [[nodiscard]] bool written(IndType i) const noexcept
     {
-        return chunk_list[this->chunk_index_of(i)].written();
+        return chunk_list_[this->chunk_index_of(i)].written();
     }
 
     /// @brief Materialise the chunk holding element @p i if it is still
     ///        compressed; a no-op otherwise.
-    void alloc_chunk(ind_type i) noexcept
+    void alloc_chunk(IndType i) noexcept
     {
-        chunk_list[this->chunk_index_of(i)].alloc_chunk();
+        chunk_list_[this->chunk_index_of(i)].alloc_chunk();
     }
 
     /// @brief alloc_chunk(), taking the buffer from rank @p thr_rank's pool.
-    void alloc_chunk(ind_type i, int thr_rank) noexcept
+    void alloc_chunk(IndType i, int thr_rank) noexcept
     {
-        chunk_list[this->chunk_index_of(i)].alloc_chunk(thr_rank);
+        chunk_list_[this->chunk_index_of(i)].alloc_chunk(thr_rank);
     }
 
     /// @brief Resize to @p newsz elements; new elements read the first
@@ -260,7 +260,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
     ///       freed serially, parked in the geometry's reuse list under OpenMP);
     ///       chunk_list keeps its capacity.
-    void resize(ind_type newsz);
+    void resize(IndType newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
@@ -307,9 +307,16 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     }
 
     /// @brief Read-only access to the underlying chunk list.
-    [[nodiscard]] const Base::chunk_list_type& getChunkList() const noexcept
+    [[nodiscard]] const Base::chunk_list_type& get_chunk_list() const noexcept
     {
-        return chunk_list;
+        return chunk_list_;
+    }
+
+    /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
+    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::chunk_list_type&
+    getChunkList() const noexcept
+    {
+        return chunk_list_;
     }
 };
 

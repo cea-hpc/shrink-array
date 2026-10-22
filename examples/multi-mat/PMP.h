@@ -44,18 +44,18 @@ inline void get_parallel_loop_boundaries_int(int trank, int nb_max_tasks, int nb
 {
     if (nb > nb_max_tasks)
     {
-        const int Q = nb / nb_max_tasks;
-        const int R = nb % nb_max_tasks;
-        if (trank < R)
+        const int q = nb / nb_max_tasks;
+        const int r = nb % nb_max_tasks;
+        if (trank < r)
         {
-            const int nb_cells_spec = Q + 1;
+            const int nb_cells_spec = q + 1;
             kdeb                    = trank * nb_cells_spec;
             kfin                    = kdeb + nb_cells_spec;
         }
         else
         {
-            const int nb_cells_spec = Q;
-            kdeb                    = R * (Q + 1) + (trank - R) * nb_cells_spec;
+            const int nb_cells_spec = q;
+            kdeb                    = r * (q + 1) + (trank - r) * nb_cells_spec;
             kfin                    = kdeb + nb_cells_spec;
         }
     }

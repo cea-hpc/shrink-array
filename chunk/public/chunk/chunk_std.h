@@ -40,7 +40,7 @@ namespace shrink_array
 template <typename T, typename ChunkType>
 struct CompressionManager;
 
-template <template <typename> class CHUNK_T, typename T>
+template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
 /// @brief The per-type facade these verbs drive. Forward-declared, not included:
@@ -165,20 +165,20 @@ class ChunkCounterPolicy
     /// @brief Record one more zero element.
     void inc_nb_val_eq_zero() noexcept
     {
-        ++nb_val_eq_zero;
+        ++nb_val_eq_zero_;
     }
 
     /// @brief Record one fewer zero element.
     void dec_nb_val_eq_zero() noexcept
     {
-        --nb_val_eq_zero;
+        --nb_val_eq_zero_;
     }
 
     /// @brief Set the zero count outright.
     /// @param v new count
-    void set_nb_val_eq_zero(counter_value_t v) noexcept
+    void set_nb_val_eq_zero(CounterValueT v) noexcept
     {
-        nb_val_eq_zero = v;
+        nb_val_eq_zero_ = v;
     }
 
     /// @brief Is every element of the chunk zero?
@@ -186,14 +186,14 @@ class ChunkCounterPolicy
     /// @return true when the count has reached @p size -- the compression trigger
     [[nodiscard]] bool is_full_zero(unsigned int size = static_chunk_size) const noexcept
     {
-        return nb_val_eq_zero == size;
+        return nb_val_eq_zero_ == size;
     }
 
   private:
     // [[no_unique_address]]: a DISABLED counter is an empty type, but an empty
     // MEMBER still takes a byte, which grows the chunk header from 16 to 24
     // bytes in OpenMP builds (counter off).
-    [[no_unique_address]] ConditionalCounter<EnableCounter> nb_val_eq_zero;
+    [[no_unique_address]] ConditionalCounter<EnableCounter> nb_val_eq_zero_;
 };
 
 /**
@@ -216,15 +216,15 @@ template <typename T, typename Derived, bool Enabled = build_config::threaded>
 class ChunkOmpPolicy : public ChunkBase<T, Derived>
 {
   public:
-    using Base          = ChunkBase<T, Derived>;
-    using ChunkType     = Derived;
-    using manager_chunk = ManagerChunk<Chunk, T>;
+    using Base      = ChunkBase<T, Derived>;
+    using ChunkType = Derived;
+    using Manager   = ManagerChunk<Chunk, T>;
 
     using Base::derived;
     using Base::init_block;
     using Base::is_cst_val1;
     using Base::self;
-    using Base::values;
+    using Base::values_;
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
     ///        first constant (init_chunks_cst_val).
@@ -296,7 +296,7 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
         T* expected = old;
         T* new_ptr  = Base::get_cst_val1();
 
-        if (!values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
+        if (!values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
             [[unlikely]]
         {
             return nullptr;
@@ -330,7 +330,7 @@ class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
   public:
     using Base = ChunkBase<T, Derived>;
     using Base::derived;
-    using Base::values;
+    using Base::values_;
 
     /// @brief Materialise this chunk's storage.
     /// @details Allocates directly: there is no per-thread free-list to consult.
@@ -368,10 +368,10 @@ class ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
     // 4th element: the chunk's OWN geometry, captured at enqueue by
     // push_to_compress_list. compress() must scan exactly that many elements,
     // NOT alloc_chunk_count() (the CONSUMING thread's ambient size, may differ).
-    using vec_tuple_chunkp_int2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
+    using VecTupleChunkpInt2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
-    using manager_chunk = ManagerChunk<Chunk, T>;
-    using Base          = ChunkBase<T, Derived>;
+    using Manager = ManagerChunk<Chunk, T>;
+    using Base    = ChunkBase<T, Derived>;
 
     using Base::derived;
     using Base::self;
@@ -401,14 +401,14 @@ class ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
      *                  TChunk.h's note on the field it is carried in
      */
-    void fill_list_to_compress(vec_tuple_chunkp_int2& ll_compt, int num_chunk, int num_tab, unsigned int n_elems);
+    void fill_list_to_compress(VecTupleChunkpInt2& ll_compt, int num_chunk, int num_tab, unsigned int n_elems);
 
     /**
      * @brief Scan @p thr's queued candidates and collect those now compressible.
      * @param thr      rank whose candidate list is scanned
      * @param ll_compt out: the chunks found compressible, with their geometry
      */
-    static void fill_list_chunk_to_compress_in_par(int thr, vec_tuple_chunkp_int2& ll_compt);
+    static void fill_list_chunk_to_compress_in_par(int thr, VecTupleChunkpInt2& ll_compt);
 };
 
 /**
@@ -423,7 +423,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
 {
   public:
     // 4th element: the chunk's own geometry (see the enabled policy).
-    using vec_tuple_chunkp_int2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
+    using VecTupleChunkpInt2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
     /// @brief No block compression in this mode.
     static void make_block_compression(int /*thr*/, const Proxy<T>* /*proxy*/) {}
@@ -436,9 +436,9 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
 
   private:
     /// @brief No candidate list to fill in this mode.
-    static void fill_list_chunk_to_compress_in_par(int /*thr*/, vec_tuple_chunkp_int2& /*ll_compt*/) {}
+    static void fill_list_chunk_to_compress_in_par(int /*thr*/, VecTupleChunkpInt2& /*ll_compt*/) {}
     /// @copydoc fill_list_chunk_to_compress_in_par
-    static void fill_list_to_compress(vec_tuple_chunkp_int2& /*ll_compt*/,
+    static void fill_list_to_compress(VecTupleChunkpInt2& /*ll_compt*/,
                                       int /*num_chunk*/,
                                       int /*num_tab*/,
                                       unsigned int /*n_elems*/)
@@ -481,7 +481,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
-    using manager_chunk = ManagerChunk<Chunk, T>;
+    using Manager = ManagerChunk<Chunk, T>;
 
     using FastCompPolicy = ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>;
 
@@ -491,7 +491,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     using Base::init_block;
     using Base::is_cst_val1;
     using Base::m_ptr_cst_val1;
-    using Base::values;
+    using Base::values_;
     using Base::values_load;
     using Base::values_store;
 
@@ -519,11 +519,11 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     {
         if constexpr (build_config::threaded)
         {
-            values.store(other.values.load());
+            values_.store(other.values_.load());
         }
         else
         {
-            values = other.values;
+            values_ = other.values_;
         }
     }
 
@@ -542,11 +542,11 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
         if constexpr (build_config::threaded)
         {
             T* loaded_value = other.values.load();
-            values.store(loaded_value);
+            values_.store(loaded_value);
         }
         else
         {
-            values = other.values;
+            values_ = other.values;
         }
 
         return *this;
@@ -555,14 +555,14 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /// @brief Point this chunk at the shared zero constant (compressed state).
     void init_values_cst_val()
     {
-        values = Base::get_cst_val1();
+        values_ = Base::get_cst_val1();
     }
 
     /// @brief Does this chunk hold a real buffer?
     /// @return false while it is compressed to cst_val1
     [[nodiscard]] bool written() const noexcept
     {
-        return values != Base::get_cst_val1();
+        return values_ != Base::get_cst_val1();
     }
 
     /// @brief Materialise storage if the chunk is still compressed.
@@ -633,7 +633,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
      */
     void block_clear(int thr_rank);
 
-    static inline constinit internal::LazyImmortal<manager_chunk> s_manager_;
+    static inline constinit internal::LazyImmortal<Manager> s_manager_;
 };
 
 } // namespace shrink_array

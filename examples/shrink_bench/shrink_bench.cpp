@@ -17,7 +17,7 @@
 // Central prelude first: fixes the chunk/ include order and derives the
 // SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION macros from the
 // build-time variant selector.
-#include "bench_prelude.h" // Int, tc, complex_double, SHRINK_ARRAY
+#include "bench_prelude.h" // Int, tc, ComplexDouble, SHRINK_ARRAY
 
 #include <algorithm> // std::min, std::max
 #include <limits>    // std::numeric_limits (tab_mask's size)
@@ -42,7 +42,7 @@
 
 // Utility templates and function declarations (checksums, correlations,
 // seed I/O, help/suggest, memory report).
-#include "bench_utils.h" // initializeRNG, memory_consumption
+#include "bench_utils.h" // initialize_rng, memory_consumption
 
 // The phases extracted from main() and their shared context: the array type,
 // the second_value_* constants, the BenchArrays handle, and the OMPT phase
@@ -113,19 +113,18 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
             [&]([[maybe_unused]] bench_par::Team& t)
             {
                 begin_parallel_phase_g();
-                bench_par::for_static_vec(
-                    t, beg / step, ((end - 1) / step) + 1,
-                    [&](const Int c) __attribute__((always_inline))
-                    {
-                        if constexpr (build_config::threaded)
-                        {
-                            a.alloc_chunk(c * step, get_thr_rank_fast());
-                        }
-                        else
-                        {
-                            a.alloc_chunk(c * step);
-                        }
-                    });
+                bench_par::for_static_vec(t, beg / step, ((end - 1) / step) + 1,
+                                          [&](const Int c) __attribute__((always_inline))
+                                          {
+                                              if constexpr (build_config::threaded)
+                                              {
+                                                  a.alloc_chunk(c * step, get_thr_rank_fast());
+                                              }
+                                              else
+                                              {
+                                                  a.alloc_chunk(c * step);
+                                              }
+                                          });
                 finalize_parallel_phase_only_flush_g();
             });
         finalize_parallel_phase_after_flush_g();
@@ -155,12 +154,8 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
         [&]([[maybe_unused]] bench_par::Team& t)
         {
             begin_parallel_phase_g();
-            bench_par::for_static_vec(
-                t, beg, end,
-                [&](const Int i) __attribute__((always_inline))
-                {
-                    a[i] = value_at(i);
-                });
+            bench_par::for_static_vec(t, beg, end,
+                                      [&](const Int i) __attribute__((always_inline)) { a[i] = value_at(i); });
             finalize_parallel_phase_only_flush_g();
         });
     finalize_parallel_phase_after_flush_g();
@@ -411,15 +406,15 @@ int main(int argc, char* argv[])
 
     if constexpr (chunk_config::use_chunk)
     {
-        std::cout << tc.BOLD << tc.MAGENTA << "MODE: " << tc.RESET << "CHUNK (Single Value)\n";
+        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "CHUNK (Single Value)\n";
     }
     else if constexpr (chunk_config::use_chunk2)
     {
-        std::cout << tc.BOLD << tc.MAGENTA << "MODE: " << tc.RESET << "CHUNK2 (Dual Value)\n";
+        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "CHUNK2 (Dual Value)\n";
     }
     else if constexpr (chunk_config::use_chunk2a)
     {
-        std::cout << tc.BOLD << tc.MAGENTA << "MODE: " << tc.RESET << "CHUNK2A (Advanced Dual Value)\n";
+        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "CHUNK2A (Advanced Dual Value)\n";
     }
     else
     {
@@ -428,11 +423,11 @@ int main(int argc, char* argv[])
 
     if constexpr (build_config::use_fast_alloc)
     {
-        std::cout << tc.BOLD << tc.GREEN << "ALLOC: " << tc.RESET << "FAST_ALLOC (Thread-Local Pools)\n";
+        std::cout << tc.bold << tc.green << "ALLOC: " << tc.reset << "FAST_ALLOC (Thread-Local Pools)\n";
     }
     else
     {
-        std::cout << tc.BOLD << tc.YELLOW << "ALLOC: " << tc.RESET << "STD_ALLOC (System Malloc)\n";
+        std::cout << tc.bold << tc.yellow << "ALLOC: " << tc.reset << "STD_ALLOC (System Malloc)\n";
     }
 
     auto start = std::chrono::steady_clock::now();
@@ -446,8 +441,8 @@ int main(int argc, char* argv[])
     [[maybe_unused]] auto get_max_length = [&type_instances]<template <typename> typename ChunkType>() -> size_t
     {
         size_t max_len = 0;
-        std::apply([&](auto... dataTypes)
-                   { ((max_len = std::max(max_len, type_name<ChunkType<decltype(dataTypes)>>().size())), ...); },
+        std::apply([&](auto... data_types)
+                   { ((max_len = std::max(max_len, type_name<ChunkType<decltype(data_types)>>().size())), ...); },
                    type_instances);
         return max_len;
     };
@@ -458,13 +453,13 @@ int main(int argc, char* argv[])
         [&type_instances, &get_max_length]<template <typename> typename ChunkType>(const std::string& chunk_name)
     {
         // 1. Display section header in Bold Cyan
-        std::cout << tc.BOLD << tc.CYAN << "\n=== " << chunk_name << " ===\n" << tc.RESET;
+        std::cout << tc.bold << tc.cyan << "\n=== " << chunk_name << " ===\n" << tc.reset;
 
         const size_t max_width = get_max_length.operator()<ChunkType>();
 
         // 2. Iterate through each type stored in type_instances tuple
         std::apply(
-            [&](auto... dataTypes)
+            [&](auto... data_types)
             {
                 (
                     [&](auto t)
@@ -474,23 +469,23 @@ int main(int argc, char* argv[])
 
                         // Print the line with a dedicated color scheme:
                         // [Label in White] [= in Cyan] [Value in Bold Yellow] [Unit in Green]
-                        std::cout << tc.WHITE << std::left << std::setw(static_cast<int>(max_width + 10)) << label
-                                  << tc.RESET << tc.CYAN << " = " << tc.RESET << tc.BOLD << tc.YELLOW << std::setw(5)
-                                  << sizeof(ChunkType<decltype(t)>) << tc.RESET << tc.GREEN << " bytes" << tc.RESET
+                        std::cout << tc.white << std::left << std::setw(static_cast<int>(max_width + 10)) << label
+                                  << tc.reset << tc.cyan << " = " << tc.reset << tc.bold << tc.yellow << std::setw(5)
+                                  << sizeof(ChunkType<decltype(t)>) << tc.reset << tc.green << " bytes" << tc.reset
                                   << "\n";
-                    }(dataTypes),
+                    }(data_types),
                     ...); // C++17 Fold expression
             },
             type_instances);
     };
 
-    Array<double>         tab1(sz);
-    Array<double>         tab2(sz);
-    Array<double>         tab3(sz);
-    Array<double>         tab4(sz);
-    Array<double>         tab5(sz);
-    Array<int>            tab_int(sz);
-    Array<complex_double> tab_complex(sz);
+    Array<double>        tab1(sz);
+    Array<double>        tab2(sz);
+    Array<double>        tab3(sz);
+    Array<double>        tab4(sz);
+    Array<double>        tab5(sz);
+    Array<int>           tab_int(sz);
+    Array<ComplexDouble> tab_complex(sz);
 
     Array<float>         tab_float(2 * sz);
     Array<short>         tab_short(sz / 2);
@@ -604,13 +599,13 @@ int main(int argc, char* argv[])
     maybe_set_debug_name(tab_cell, "tab_cell");
     maybe_set_debug_name(tab_mask, "tab_mask");
 
-    SingletonChk<GlobalStatsChunkList>::getRef().print();
+    SingletonChk<GlobalStatsChunkList>::get_ref().print();
 
     auto                          end             = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
     start                                         = end;
 
-    std::cout << tc.WHITE << "Elapsed time creation : " << tc.BOLD << elapsed_seconds.count() << "s" << tc.RESET
+    std::cout << tc.white << "Elapsed time creation : " << tc.bold << elapsed_seconds.count() << "s" << tc.reset
               << "\n";
     // useless in chunk mode arrays are set to zero by default
 
@@ -656,13 +651,13 @@ int main(int argc, char* argv[])
     const std::string str            = std::to_string(iter_max);
     const std::string seed_file_name = "seed" + str + ".txt"; // File to store the seed
     std::mt19937      rng;                                    // Random number generator
-    initializeRNG(rng, seed_file_name);
+    initialize_rng(rng, seed_file_name);
 
     // Create a uniform distribution for interval sizes
-    std::uniform_int_distribution<Int> sizeDistribution(1, interval);
+    std::uniform_int_distribution<Int> size_distribution(1, interval);
 
     // Create a uniform distribution for the starting points of the intervals
-    std::uniform_int_distribution<Int> startDistribution(min, max);
+    std::uniform_int_distribution<Int> start_distribution(min, max);
 
     std::cout << "Iteration ..." << std::endl;
 
@@ -674,8 +669,8 @@ int main(int argc, char* argv[])
     // no parallel in OpenMP
     for (Int k = 0; k < iter_max; ++k)
     {
-        const Int size   = sizeDistribution(rng);
-        const Int start0 = startDistribution(rng);
+        const Int size   = size_distribution(rng);
+        const Int start0 = start_distribution(rng);
         const Int end0   = start0 + size;
         tab_size[k]      = size;
         tab_start[k]     = start0;
@@ -690,13 +685,13 @@ int main(int argc, char* argv[])
     start           = end;
     std::cout << "\nElapsed time distribution : " << elapsed_seconds.count() << "s\n";
 
-    double         val_sum      = 0;
-    complex_double cv_val_sum   = zero_complex;
-    long           long_val_sum = 0;
-    double         point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
-    long           mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
-    double         v_real       = 0;
-    double         v_im         = 0;
+    double        val_sum      = 0;
+    ComplexDouble cv_val_sum   = zero_complex;
+    long          long_val_sum = 0;
+    double        point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
+    long          mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
+    double        v_real       = 0;
+    double        v_im         = 0;
 
     // Checksums: bench_stats.cpp.
 
@@ -778,7 +773,7 @@ int main(int argc, char* argv[])
             rechunk_decider.consider<double>(tab1, tick, iter, "tab1");
             rechunk_decider.consider<double>(tab2, tick, iter, "tab2");
             rechunk_decider.consider<short>(tab_short, tick, iter, "tab_short");
-            rechunk_decider.consider<complex_double>(tab_complex, tick, iter, "tab_complex");
+            rechunk_decider.consider<ComplexDouble>(tab_complex, tick, iter, "tab_complex");
             if (!no_struct)
             {
                 rechunk_decider.consider<Point3>(tab_point, tick, iter, "tab_point");
@@ -842,7 +837,7 @@ int main(int argc, char* argv[])
                     // be of an array nothing ever touched.
                     ArrayChunk2A<double, Int>::gc_mark_report();
                     ArrayChunk2A<short, Int>::gc_mark_report();
-                    ArrayChunk2A<complex_double, Int>::gc_mark_report();
+                    ArrayChunk2A<ComplexDouble, Int>::gc_mark_report();
                 }
             }
         }
@@ -885,7 +880,7 @@ int main(int argc, char* argv[])
             freed += ArrayChunk2A<unsigned long, Int>::reclaim_second_values();
             freed += ArrayChunk2A<short, Int>::reclaim_second_values();
             freed += ArrayChunk2A<unsigned char, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<complex_double, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<ComplexDouble, Int>::reclaim_second_values();
             freed += ArrayChunk2A<Point3, Int>::reclaim_second_values();
             freed += ArrayChunk2A<Cell, Int>::reclaim_second_values();
             const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -914,7 +909,7 @@ int main(int argc, char* argv[])
             report("unsigned long", ArrayChunk2A<unsigned long, Int>::second_value_stats());
             report("short", ArrayChunk2A<short, Int>::second_value_stats());
             report("unsigned char", ArrayChunk2A<unsigned char, Int>::second_value_stats());
-            report("complex_double", ArrayChunk2A<complex_double, Int>::second_value_stats());
+            report("complex_double", ArrayChunk2A<ComplexDouble, Int>::second_value_stats());
             report("Point3", ArrayChunk2A<Point3, Int>::second_value_stats());
             report("Cell", ArrayChunk2A<Cell, Int>::second_value_stats());
         }
@@ -1109,7 +1104,7 @@ int main(int argc, char* argv[])
         }
         // ─── END STRESS TESTS ──────────────────────────────────────────────
 
-        cv_val_sum = complex_double(v_real, v_im);
+        cv_val_sum = ComplexDouble(v_real, v_im);
 
         // Always printed regardless of the cadence: the first and last
         // iterations, which bracket the run, and any non-finite checksum --
@@ -1249,14 +1244,14 @@ int main(int argc, char* argv[])
         // Full re-chunk report: the advisor/decider runs in every dynamic-chunked
         // build (CHUNK_VARIANT_V1 / _V2 / _V2A), so rechunk_decider (and its per-event
         // log) exists here for all of them.
-        std::cout << tc.BOLD;
+        std::cout << tc.bold;
         rechunk_decider.print_rechunk_log(stdout);
-        std::cout << tc.RESET << "\n";
+        std::cout << tc.reset << "\n";
     }
     else if constexpr (build_config::chunk_dynamic)
     {
         // A dynamic build with no advisor wired: just the committed count.
-        std::cout << tc.BOLD << "Re-chunks performed: " << tc.RESET << g_rechunk_count << "\n\n";
+        std::cout << tc.bold << "Re-chunks performed: " << tc.reset << g_rechunk_count << "\n\n";
     }
 
     // Self-checks, array release, final report and library shutdown:

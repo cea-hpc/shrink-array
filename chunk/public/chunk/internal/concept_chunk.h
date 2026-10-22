@@ -30,32 +30,32 @@ class Chunk2;
 template <typename T>
 class Chunk2A;
 
-/// @brief CHUNK_T<T> is Chunk<T>.
-template <template <typename> typename CHUNK_T, typename T>
-concept IsChunk = std::is_same_v<CHUNK_T<T>, Chunk<T>>;
+/// @brief ChunkT<T> is Chunk<T>.
+template <template <typename> typename ChunkT, typename T>
+concept IsChunk = std::is_same_v<ChunkT<T>, Chunk<T>>;
 
-/// @brief CHUNK_T<T> is Chunk2A<T>.
-template <template <typename> typename CHUNK_T, typename T>
-concept IsChunk2A = std::is_same_v<CHUNK_T<T>, Chunk2A<T>>;
+/// @brief ChunkT<T> is Chunk2A<T>.
+template <template <typename> typename ChunkT, typename T>
+concept IsChunk2A = std::is_same_v<ChunkT<T>, Chunk2A<T>>;
 
-/// @brief CHUNK_T<T> is Chunk2<T>.
-template <template <typename> typename CHUNK_T, typename T>
-concept IsChunk2 = std::is_same_v<CHUNK_T<T>, Chunk2<T>>;
+/// @brief ChunkT<T> is Chunk2<T>.
+template <template <typename> typename ChunkT, typename T>
+concept IsChunk2 = std::is_same_v<ChunkT<T>, Chunk2<T>>;
 
-/// @brief CHUNK_T<T> is Chunk2<T> or Chunk2A<T>.
-template <template <typename> typename CHUNK_T, typename T>
-concept IsChunk2Or2A = IsChunk2<CHUNK_T, T> || IsChunk2A<CHUNK_T, T>;
+/// @brief ChunkT<T> is Chunk2<T> or Chunk2A<T>.
+template <template <typename> typename ChunkT, typename T>
+concept IsChunk2Or2A = IsChunk2<ChunkT, T> || IsChunk2A<ChunkT, T>;
 
 /// @brief The chunk template of a chunk type (specialised below).
 template <typename>
 struct chunk_template_of;
 
-/// @brief For CH\<T\>, type\<U\> names CH\<U\>.
-template <template <typename> typename CH, typename T>
-struct chunk_template_of<CH<T>>
+/// @brief For ChunkTemplate\<T\>, type\<U\> names ChunkTemplate\<U\>.
+template <template <typename> typename ChunkTemplate, typename T>
+struct chunk_template_of<ChunkTemplate<T>>
 {
     template <typename U>
-    using type = CH<U>;
+    using type = ChunkTemplate<U>;
 };
 
 } // namespace shrink_array

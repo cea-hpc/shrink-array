@@ -42,7 +42,7 @@
 
 #include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (CHUNK_ARENA_REPORT)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 
 namespace shrink_array
 {
@@ -268,19 +268,19 @@ struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtu
  *          brings in. The body reaches ManagerChunk's members (max_thr is
  *          per-instance) through a CRTP down-cast.
  */
-template <template <typename> typename CHUNK_T, typename T, bool IsDynamic = build_config::chunk_dynamic>
+template <template <typename> typename ChunkT, typename T, bool IsDynamic = build_config::chunk_dynamic>
 struct ManagerChunkDynImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: implements register_chunk_size().
-template <template <typename> typename CHUNK_T, typename T>
-struct ManagerChunkDynImpl<CHUNK_T, T, true> : public virtual ManagerChunkDynInterface<true>
+template <template <typename> typename ChunkT, typename T>
+struct ManagerChunkDynImpl<ChunkT, T, true> : public virtual ManagerChunkDynInterface<true>
 {
     void register_chunk_size(unsigned int size, int block_size) override;
 };
 
 /// @brief Static-geometry builds: nothing to implement.
-template <template <typename> typename CHUNK_T, typename T>
-struct ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynInterface<false>
+template <template <typename> typename ChunkT, typename T>
+struct ManagerChunkDynImpl<ChunkT, T, false> : public virtual ManagerChunkDynInterface<false>
 {
 };
 
@@ -291,12 +291,12 @@ struct ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynIn
  *          bodies reach ManagerChunk's state through `mgr` (statics) and a CRTP
  *          down-cast (max_thr); ManagerChunk befriends the policies for that.
  */
-template <template <typename> class CHUNK_T, typename T, bool Threaded = build_config::threaded>
+template <template <typename> class ChunkT, typename T, bool Threaded = build_config::threaded>
 class ManagerChunkParallelImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the per-rank allocator and free-list overrides.
-template <template <typename> class CHUNK_T, typename T>
-class ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkParallelInterface<true>
+template <template <typename> class ChunkT, typename T>
+class ManagerChunkParallelImpl<ChunkT, T, true> : public virtual ManagerChunkParallelInterface<true>
 {
   private:
     void init_allocators(int block_size) const override;
@@ -318,8 +318,8 @@ class ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkPa
 };
 
 /// @brief Serial builds: a single allocator, and nothing per-thread to manage.
-template <template <typename> class CHUNK_T, typename T>
-class ManagerChunkParallelImpl<CHUNK_T, T, false> : public virtual ManagerChunkParallelInterface<false>
+template <template <typename> class ChunkT, typename T>
+class ManagerChunkParallelImpl<ChunkT, T, false> : public virtual ManagerChunkParallelInterface<false>
 {
   private:
     void init_allocator(int block_size) const override;
@@ -329,7 +329,7 @@ class ManagerChunkParallelImpl<CHUNK_T, T, false> : public virtual ManagerChunkP
 /**
  * @brief Owns the shared, per-(variant, element-type) state behind every array.
  *
- * @details One instance exists per @c CHUNK_T / @c T combination, reachable
+ * @details One instance exists per @c ChunkT / @c T combination, reachable
  *          statically. It holds three families of shared state:
  *
  *          - **Buffer reuse free-lists.** Chunk buffers released by a teardown
@@ -345,13 +345,13 @@ class ManagerChunkParallelImpl<CHUNK_T, T, false> : public virtual ManagerChunkP
  *          - **Allocator plumbing and counters** used by the statistics and the
  *            size advisor.
  *
- * @tparam CHUNK_T chunk variant template (Chunk, Chunk2 or Chunk2A)
+ * @tparam ChunkT chunk variant template (Chunk, Chunk2 or Chunk2A)
  * @tparam T       stored element type
  */
-template <template <typename> class CHUNK_T, typename T>
+template <template <typename> class ChunkT, typename T>
 class ManagerChunk final : public virtual ManagerChunkInt,
-                           public ManagerChunkDynImpl<CHUNK_T, T>,
-                           public ManagerChunkParallelImpl<CHUNK_T, T>
+                           public ManagerChunkDynImpl<ChunkT, T>,
+                           public ManagerChunkParallelImpl<ChunkT, T>
 {
     // The implementation policies are BASES and need this class's state, which
     // protected access does not reach: friendship, not a public accessor.
@@ -429,7 +429,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             return legacy_floor;
         }
-        const long block_bytes = std::max(1L, static_cast<long>(sizeof(T) * CHUNK_T<T>::storage_units(size)));
+        const long block_bytes = std::max(1L, static_cast<long>(sizeof(T) * ChunkT<T>::storage_units(size)));
         return static_cast<int>(std::min(floor_kb * 1024L / block_bytes, 1L << 30));
     }
 
@@ -500,7 +500,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             CHUNK_LOG_ALWAYS(pool,
                              "{} {:<22} legacy store        : {:9} block(s), {:8.1f} MB (sized by the ambient {})",
                              label, type_name<T>(), legacy_blocks,
-                             (double)(legacy_blocks * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size())) / 1e6,
+                             (double)(legacy_blocks * sizeof(T) * ChunkT<T>::storage_units(thread_chunk_size())) / 1e6,
                              thread_chunk_size());
         }
 
@@ -524,7 +524,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 }
                 CHUNK_LOG_ALWAYS(pool, "{} {:<22} size {:<6}        : {:9} block(s), {:8.1f} MB across {}/{} rank(s)",
                                  label, type_name<T>(), kv.first, blocks,
-                                 (double)(blocks * sizeof(T) * CHUNK_T<T>::storage_units(kv.first)) / 1e6,
+                                 (double)(blocks * sizeof(T) * ChunkT<T>::storage_units(kv.first)) / 1e6,
                                  non_empty_ranks, kv.second.size());
             }
         }
@@ -547,7 +547,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             legacy_blocks += ptf.list.size();
         }
-        total += legacy_blocks * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size());
+        total += legacy_blocks * sizeof(T) * ChunkT<T>::storage_units(thread_chunk_size());
 
         if constexpr (chunk_config::chunk_dynamic)
         {
@@ -558,7 +558,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 {
                     blocks += ptf.list.size();
                 }
-                total += blocks * sizeof(T) * CHUNK_T<T>::storage_units(kv.first);
+                total += blocks * sizeof(T) * ChunkT<T>::storage_units(kv.first);
             }
         }
         return total;
@@ -613,7 +613,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     lst.pop_back();
                     CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools");
                     fast_alloc::svfree(block);
-                    freed += CHUNK_T<T>::storage_units(elem_count) * sizeof(T);
+                    freed += ChunkT<T>::storage_units(elem_count) * sizeof(T);
                 }
                 // Release the pointer array's peak capacity too.
                 lst.shrink_to_fit();
@@ -681,15 +681,15 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         std::size_t bytes_freed = 0;
         if constexpr (chunk_config::use_fast_alloc)
         {
-            using alloc_t               = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
+            using AllocT                = std::remove_reference_t<decltype(ChunkT<T>::get_chunk_allocator(0))>;
             const unsigned int saved_sz = thread_chunk_size();
             for_each_sized_reuse_set(
                 [&](unsigned int size, std::vector<PerThreadFreeList>& per_thr)
                 {
                     set_thread_chunk_size(size);
                     // Any instance of this size: slab_of() needs its geometry only.
-                    alloc_t&          geometry    = CHUNK_T<T>::get_chunk_allocator(0, 0u);
-                    const std::size_t block_bytes = CHUNK_T<T>::storage_units(size) * sizeof(T);
+                    AllocT&           geometry    = ChunkT<T>::get_chunk_allocator(0, 0u);
+                    const std::size_t block_bytes = ChunkT<T>::storage_units(size) * sizeof(T);
                     for (auto& ptf : per_thr)
                     {
                         auto& lst = ptf.list;
@@ -706,7 +706,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                             {
                                 CHUNK_FREEPATH_INC(freed);
                                 CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools.owner");
-                                const_cast<alloc_t*>(static_cast<const alloc_t*>(slab->owner))
+                                const_cast<AllocT*>(static_cast<const AllocT*>(slab->owner))
                                     ->free_elt_pow2(block, slab);
                                 bytes_freed += block_bytes;
                             }
@@ -741,14 +741,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         std::size_t collected = 0;
         // OpenMP builds only, like the re-chunk's sweep: the serial
-        // TCTypeAllocator has no empty_slab_sweep / collect_empty_slabs.
+        // TCTypeAllocator has no SlabSweep / collect_empty_slabs.
         if constexpr (chunk_config::use_fast_alloc && build_config::threaded)
         {
             if (CHUNK_PMP_IN_PARALLEL_REGION)
             {
                 return 0;
             }
-            using alloc_t = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
+            using AllocT = std::remove_reference_t<decltype(ChunkT<T>::get_chunk_allocator(0))>;
             // (size, key) of every allocator set: the shared pools first.
             std::vector<std::pair<unsigned int, unsigned int>> sets;
             if constexpr (chunk_config::chunk_dynamic)
@@ -770,8 +770,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             std::sort(sets.begin(), sets.end());
             sets.erase(std::unique(sets.begin(), sets.end()), sets.end());
 
-            typename alloc_t::empty_slab_sweep sweep;
-            const unsigned int                 saved_sz = thread_chunk_size();
+            typename AllocT::SlabSweep sweep;
+            const unsigned int         saved_sz = thread_chunk_size();
             for (const auto& [size, key] : sets)
             {
                 set_thread_chunk_size(size);
@@ -779,7 +779,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 {
                     // An unregistered (key, size) routes to key 0: the sweep
                     // drops the slabs reached twice.
-                    collected += CHUNK_T<T>::get_chunk_allocator(r, key).collect_empty_slabs(sweep, keep_empty);
+                    collected += ChunkT<T>::get_chunk_allocator(r, key).collect_empty_slabs(sweep, keep_empty);
                 }
             }
             sweep.flush();
@@ -819,7 +819,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return (static_cast<std::uint64_t>(key) << 32U) | size;
     }
 
-    const int max_thr = CHUNK_PMP_THREAD_CAPACITY;
+    const int max_thr_ = CHUNK_PMP_THREAD_CAPACITY;
 
     /// @brief Chunk2: the second-value lists sweep_rank() drains, snapshotted
     ///        serially by sweep_prepare().
@@ -830,10 +830,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     static inline int registered_block_size_ = 0;
 
     // Serial counterpart of chunk_to_compress_potentially_thr (likewise
-    // chunk2A_to_compress_potentially). Declared in EVERY build, empty under
+    // chunk2a_to_compress_potentially). Declared in EVERY build, empty under
     // OpenMP, for the reason given at list_block_free_thr_by_size_.
-    static inline constinit internal::Immortal<TChunkComp<CHUNK_T, T>> chunk_to_compress_potentially_storage_{};
-    static inline TChunkComp<CHUNK_T, T>& chunk_to_compress_potentially = chunk_to_compress_potentially_storage_.value;
+    static inline constinit internal::Immortal<TChunkComp<ChunkT, T>> chunk_to_compress_potentially_storage_{};
+    static inline TChunkComp<ChunkT, T>& chunk_to_compress_potentially = chunk_to_compress_potentially_storage_.value;
 
     static inline long somme_chunk_create{0};
 
@@ -895,7 +895,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ~ManagerChunk() override = default;
 
     /**
-     * @brief Size the static per-rank structures of (CHUNK_T, T)
+     * @brief Size the static per-rank structures of (ChunkT, T)
      *        (see CompressionManager::ensure_initialised).
      * @details Called by AllTypeChunk::register_manager(), before the manager
      *          is published: the fan-outs and the first array come after it.
@@ -1158,7 +1158,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *        (dynamic builds; a no-op otherwise).
      *
      * @details Called by rechunk_to() (all variants) before allocating at a new
-     *          geometry. Std-alloc: each buffer is svfree'd (PARKED in the
+     *          geometry. Std-alloc: each buffer is svfree'd (parked in the
      *          ledger, hence DISCARD). Fast-alloc: each is returned to its OWNING
      *          rank's slab (free_elt_pow2() is only safe on an owned block);
      *          blocks with no known owner stay parked.
@@ -1212,12 +1212,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     //      the rank that owns it.
                     // Blocks no slab claims (bypass_slabs(), slab torn down) stay
                     // parked: an unreachable block is worse than a retained one.
-                    using alloc_t     = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
-                    alloc_t* geometry = nullptr; // any instance of this size: slab_of() needs its geometry only
+                    using AllocT     = std::remove_reference_t<decltype(ChunkT<T>::get_chunk_allocator(0))>;
+                    AllocT* geometry = nullptr; // any instance of this size: slab_of() needs its geometry only
                     {
                         const unsigned int saved_sz = shrink_array::thread_chunk_size();
                         shrink_array::set_thread_chunk_size(size);
-                        geometry = &CHUNK_T<T>::get_chunk_allocator(0, 0u);
+                        geometry = &ChunkT<T>::get_chunk_allocator(0, 0u);
                         shrink_array::set_thread_chunk_size(saved_sz);
                     }
                     if (geometry != nullptr)
@@ -1425,7 +1425,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if constexpr (chunk_config::chunk_dynamic && chunk_config::use_fast_alloc && build_config::threaded)
         {
-            using alloc_t = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
+            using AllocT = std::remove_reference_t<decltype(ChunkT<T>::get_chunk_allocator(0))>;
             team.single(
                 [&]
                 {
@@ -1464,10 +1464,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     }
                     const unsigned int saved_sz = shrink_array::thread_chunk_size();
                     shrink_array::set_thread_chunk_size(size);
-                    s.geometry = &CHUNK_T<T>::get_chunk_allocator(0, 0u);
+                    s.geometry = &ChunkT<T>::get_chunk_allocator(0, 0u);
                     shrink_array::set_thread_chunk_size(saved_sz);
                 }); // implicit barrier: s is complete for every thread
-            auto* const geometry = static_cast<alloc_t*>(s.geometry);
+            auto* const geometry = static_cast<AllocT*>(s.geometry);
             const int   me       = CHUNK_PMP_THREAD_RANK;
             auto* const held     = s.held.get();
             auto* const dirty    = s.dirty.get();
@@ -1529,35 +1529,35 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // serial store while the candidates sit per thread, so the constraint makes
     // a call fail to compile there.
     /// @brief The Chunk2A candidate list (serial builds: a single one).
-    static auto& get_chunk2A_to_compress_potentially() noexcept
+    static auto& get_chunk2a_to_compress_potentially() noexcept
         requires(!build_config::threaded)
     {
-        return chunk2A_to_compress_potentially;
+        return chunk2a_to_compress_potentially;
     }
     /// @brief Rank @p thr's Chunk2A candidate list (the single one in a
     ///        serial build).
-    static auto& get_chunk2A_to_compress_potentially([[maybe_unused]] int thr) noexcept
+    static auto& get_chunk2a_to_compress_potentially([[maybe_unused]] int thr) noexcept
     {
         if constexpr (build_config::threaded)
         {
-            return chunk2A_to_compress_potentially_thr[thr];
+            return chunk2a_to_compress_potentially_thr[thr];
         }
         else
         {
-            return chunk2A_to_compress_potentially;
+            return chunk2a_to_compress_potentially;
         }
     }
 
     /// @brief Is no Chunk2A chunk queued for compression, on any thread?
-    [[nodiscard]] static bool is_chunk2A_to_compress_potentially_empty() noexcept
+    [[nodiscard]] static bool is_chunk2a_to_compress_potentially_empty() noexcept
     {
         if constexpr (build_config::threaded)
         {
-            return chunk2A_to_compress_potentially_thr.empty();
+            return chunk2a_to_compress_potentially_thr.empty();
         }
         else
         {
-            return chunk2A_to_compress_potentially.empty();
+            return chunk2a_to_compress_potentially.empty();
         }
     }
 
@@ -1585,15 +1585,15 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         };
         if constexpr (build_config::threaded)
         {
-            const auto nthr = static_cast<int>(chunk2A_to_compress_potentially_thr.size());
+            const auto nthr = static_cast<int>(chunk2a_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
             {
-                std::erase_if(chunk2A_to_compress_potentially_thr[thr], in_range);
+                std::erase_if(chunk2a_to_compress_potentially_thr[thr], in_range);
             }
         }
         else
         {
-            std::erase_if(chunk2A_to_compress_potentially, in_range);
+            std::erase_if(chunk2a_to_compress_potentially, in_range);
         }
     }
 
@@ -1608,15 +1608,15 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if constexpr (build_config::threaded)
         {
-            const auto nthr = static_cast<int>(chunk2A_to_compress_potentially_thr.size());
+            const auto nthr = static_cast<int>(chunk2a_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
             {
-                erase_candidates_of_tab(chunk2A_to_compress_potentially_thr[thr], num_tab);
+                erase_candidates_of_tab(chunk2a_to_compress_potentially_thr[thr], num_tab);
             }
         }
         else
         {
-            erase_candidates_of_tab(chunk2A_to_compress_potentially, num_tab);
+            erase_candidates_of_tab(chunk2a_to_compress_potentially, num_tab);
         }
     }
 
@@ -1672,9 +1672,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /// @brief Chunk2's candidate lists: per rank, one list per second value.
-    static inline constinit internal::Immortal<TChunk2CompMap<CHUNK_T, T>>
-                                              map_chunk2_to_compress_potentially_thr_storage_{};
-    static inline TChunk2CompMap<CHUNK_T, T>& map_chunk2_to_compress_potentially_thr =
+    static inline constinit internal::Immortal<TChunk2CompMap<ChunkT, T>>
+                                             map_chunk2_to_compress_potentially_thr_storage_{};
+    static inline TChunk2CompMap<ChunkT, T>& map_chunk2_to_compress_potentially_thr =
         map_chunk2_to_compress_potentially_thr_storage_.value;
 
     /**
@@ -1694,23 +1694,22 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     /// @brief Chunk2: per rank, one list per second-value index, copied by
     ///        ArrayChunk2 into map_chunk2_to_compress_potentially_thr when it
     ///        registers a second value.
-    static inline constinit internal::Immortal<TChunk2CompThr<CHUNK_T, T>>
-                                              chunk2_to_compress_potentially_thr_storage_{};
-    static inline TChunk2CompThr<CHUNK_T, T>& chunk2_to_compress_potentially_thr =
+    static inline constinit internal::Immortal<TChunk2CompThr<ChunkT, T>> chunk2_to_compress_potentially_thr_storage_{};
+    static inline TChunk2CompThr<ChunkT, T>&                              chunk2_to_compress_potentially_thr =
         chunk2_to_compress_potentially_thr_storage_.value;
     /// @brief Chunk2A's per-rank candidate lists.
-    static inline constinit internal::Immortal<TChunk2ACompThr<CHUNK_T, T>>
-                                               chunk2A_to_compress_potentially_thr_storage_{};
-    static inline TChunk2ACompThr<CHUNK_T, T>& chunk2A_to_compress_potentially_thr =
-        chunk2A_to_compress_potentially_thr_storage_.value;
+    static inline constinit internal::Immortal<TChunk2ACompThr<ChunkT, T>>
+                                              chunk2a_to_compress_potentially_thr_storage_{};
+    static inline TChunk2ACompThr<ChunkT, T>& chunk2a_to_compress_potentially_thr =
+        chunk2a_to_compress_potentially_thr_storage_.value;
     /// @brief Chunk's (v1) per-rank candidate lists.
-    static inline constinit internal::Immortal<TChunkCompThr<CHUNK_T, T>> chunk_to_compress_potentially_thr_storage_{};
-    static inline TChunkCompThr<CHUNK_T, T>&                              chunk_to_compress_potentially_thr =
+    static inline constinit internal::Immortal<TChunkCompThr<ChunkT, T>> chunk_to_compress_potentially_thr_storage_{};
+    static inline TChunkCompThr<ChunkT, T>&                              chunk_to_compress_potentially_thr =
         chunk_to_compress_potentially_thr_storage_.value;
     /// @brief Chunk2A's single candidate list of a serial build.
-    static inline constinit internal::Immortal<TChunk2AComp<CHUNK_T, T>> chunk2A_to_compress_potentially_storage_{};
-    static inline TChunk2AComp<CHUNK_T, T>&                              chunk2A_to_compress_potentially =
-        chunk2A_to_compress_potentially_storage_.value;
+    static inline constinit internal::Immortal<TChunk2AComp<ChunkT, T>> chunk2a_to_compress_potentially_storage_{};
+    static inline TChunk2AComp<ChunkT, T>&                              chunk2a_to_compress_potentially =
+        chunk2a_to_compress_potentially_storage_.value;
 };
 
 } // namespace shrink_array

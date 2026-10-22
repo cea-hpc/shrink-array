@@ -19,7 +19,7 @@
 #include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
 #include "chunk/config.h"                    // build_config::not_threaded, chunk_config::use_fast_block_compression
 #include "chunk/chunk_traits.h"              // ArrayChunk2A forward declaration
-#include "chunk/internal/in_t.h"             // in_t<T>
+#include "chunk/internal/in_t.h"             // InT<T>
 #include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
 #include "chunk/internal/read_reclaim.h"     // read_reclaim::PassScope (perform_compression / compress in a region)
 
@@ -46,9 +46,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
 
     using Base::derived;
 
-    using Base::chunk_list;
-    using Base::m_size;
-    using Base::nb_chunk;
+    using Base::chunk_list_;
+    using Base::m_size_;
+    using Base::nb_chunk_;
 
 
     // ── Identical methods → factorised here ───────────────────────────────
@@ -64,7 +64,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // Deliberately NO dirty-marking: the dirty bit is for the DEFERRED path only, which
         // marks at enqueue (see DeferredReadGate, chunk_base.h). Marking here would enable the
         // read gate for preallocated chunks. Exercised by shrink_bench --test_prealloc.
-        chunk_list[num_chunk].alloc_chunk(derived().get_metadata(i));
+        chunk_list_[num_chunk].alloc_chunk(derived().get_metadata(i));
     }
 
     /**
@@ -74,7 +74,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     {
         const int num_chunk = this->chunk_index_of(i);
         // See alloc_chunk(i) above: deliberately no dirty-marking.
-        chunk_list[num_chunk].alloc_chunk(derived().get_metadata(i), thr_rank);
+        chunk_list_[num_chunk].alloc_chunk(derived().get_metadata(i), thr_rank);
     }
 
     // flush_pending_deferred_ops() lives in ParallelSupportCommon / ...Serial
@@ -126,34 +126,34 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
             derived().make_block_compression();
         }
 
-        const int old_nb_chunk = nb_chunk;
-        m_size                 = newsz;
-        nb_chunk               = this->chunks_for(newsz);
+        const int old_nb_chunk = nb_chunk_;
+        m_size_                = newsz;
+        nb_chunk_              = this->chunks_for(newsz);
 
-        if (nb_chunk < old_nb_chunk)
+        if (nb_chunk_ < old_nb_chunk)
         {
             // Shrink: release the chunks past the new end NOW (same release as clear_core()).
             // Do not return early keeping them: teardown loops stop at nb_chunk, so their
             // buffers would leak. The pass above left none of them referenced.
-            derived().release_chunk_range(nb_chunk, old_nb_chunk);
-            chunk_list.resize(static_cast<std::size_t>(nb_chunk));
-            Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk);
+            derived().release_chunk_range(nb_chunk_, old_nb_chunk);
+            chunk_list_.resize(static_cast<std::size_t>(nb_chunk_));
+            Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk_);
 
             // Fewer chunks alive: so is the count the compression threshold and reuse budget use.
-            manager_type::increm_somme_chunk_create(nb_chunk - old_nb_chunk);
+            manager_type::increm_somme_chunk_create(nb_chunk_ - old_nb_chunk);
             manager_type::compute_size_buffer_reuse();
             manager_type::compute_size_max_number_of_chunk_to_check_compress();
             return;
         }
-        if (nb_chunk == old_nb_chunk)
+        if (nb_chunk_ == old_nb_chunk)
         {
             return;
         }
 
-        chunk_list.resize(nb_chunk);
-        Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk);
+        chunk_list_.resize(nb_chunk_);
+        Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk_);
 
-        manager_type::increm_somme_chunk_create(nb_chunk - old_nb_chunk);
+        manager_type::increm_somme_chunk_create(nb_chunk_ - old_nb_chunk);
         manager_type::compute_size_buffer_reuse();
         manager_type::compute_size_max_number_of_chunk_to_check_compress();
         // An array built empty (the default) only becomes worth its own slabs

@@ -23,9 +23,9 @@
 
 #include "chunk/bit.h"    // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h" // chunk_config::use_fast_block_compression, build_config::do_check
-#include "chunk/internal/concept_is_clean_assignement.h" // base_t, ElementMultipliable, ElementModulable
+#include "chunk/internal/concept_is_clean_assignement.h" // BaseT, ElementMultipliable, ElementModulable
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
-#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/log.h"                                   // CHUNK_LOG (the operators bool has not)
 
@@ -53,21 +53,21 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     friend Base;
 
     using Base::add_to_compression_list;
-    using Base::chunk;
+    using Base::chunk_;
     using Base::derived;
     using Base::is_cst_val1;
     using Base::is_not_cst_val1;
-    using Base::num;
-    using Base::num_chunk;
-    using Base::num_tab;
-    using Base::values;
+    using Base::num_;
+    using Base::num_chunk_;
+    using Base::num_tab_;
+    using Base::values_;
 
-    using typename Base::atomic_ptr_ref_t;
-    using values_type_ref = atomic_ptr_ref_t;
+    using typename Base::AtomicPtrRefT;
+    using ValuesTypeRef = AtomicPtrRefT;
 
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
-    using Base::ptr_is_inside_chunk_list_to_compress;
+    using Base::ptr_is_inside_chunk_list_to_compress_;
     using Base::tab_is_inside_chunk_list_to_compress;
 
     // ========================================================================
@@ -116,9 +116,9 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         {
             // Early-out: multiplying by 1 writes nothing. Nothing to read either:
             // reading the returned proxy goes through operator T() -> read_pure()
-            // and its read-side gate. base_t<U> is the arithmetic type even if U
+            // and its read-side gate. BaseT<U> is the arithmetic type even if U
             // is a Proxy.
-            if (v == static_cast<base_t<U>>(1))
+            if (v == static_cast<BaseT<U>>(1))
             {
                 return derived();
             }
@@ -154,7 +154,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             // Early-out: dividing by 1 changes nothing -- nothing to write, and
             // nothing to read: reading the returned proxy goes through
             // operator T() -> read_pure() (see operator*=).
-            if (v == static_cast<base_t<U>>(1))
+            if (v == static_cast<BaseT<U>>(1))
             {
                 return derived();
             }
@@ -198,11 +198,11 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
   protected:
     /**
      * @brief Construct a proxy for element `num_` of `chunk_`.
-     * @param values_ Reference to the chunk's values pointer.
-     * @param num_ Element offset within the chunk.
-     * @param chunk_ Owning chunk.
+     * @param values Reference to the chunk's values pointer.
+     * @param num Element offset within the chunk.
+     * @param chunk Owning chunk.
      */
-    explicit Proxy2Base(values_type_ref values_, int num_, ChunkType& chunk_) noexcept : Base(values_, num_, chunk_) {}
+    explicit Proxy2Base(ValuesTypeRef values, int num, ChunkType& chunk) noexcept : Base(values, num, chunk) {}
 
     /**
      * @brief Negation of is_cst_val2().
@@ -245,7 +245,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @return true if new_value is first_value or second_val.
      */
     [[nodiscard]] static bool
-    pre_check_mark_for_compression_strict(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) noexcept
+    pre_check_mark_for_compression_strict(InT<T> new_value, InT<T> first_value, InT<T> second_val) noexcept
     {
         return new_value == first_value || new_value == second_val;
     }
@@ -272,7 +272,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param new_value The new value to be set
      * @param first_value The first constant value
      */
-    void mark_for_compression_if_needed(in_t<T> second_val, in_t<T> new_value, in_t<T> first_value) const
+    void mark_for_compression_if_needed(InT<T> second_val, InT<T> new_value, InT<T> first_value) const
     {
         const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
         mark_for_compression_impl(Base::read_values(), new_value, isv, second_val, first_value);
@@ -295,8 +295,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *        write session: the old value and the race check read through it
      *        instead of reloading it (see Proxy2A::handle_no_bool_assignment).
      */
-    void
-    mark_for_compression_before_store(in_t<T> second_val, in_t<T> new_value, in_t<T> first_value, const T* vals) const
+    void mark_for_compression_before_store(InT<T> second_val, InT<T> new_value, InT<T> first_value, const T* vals) const
     {
         // isv false makes the whole test a no-op: skip the read of the old
         // value too, which mark_for_compression_core() would not look at.
@@ -332,8 +331,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param new_value The new value to be set
      * @param first_value The first constant value
      */
-    void
-    mark_for_compression_if_needed(in_t<T> second_val, in_t<T> old_value, in_t<T> new_value, in_t<T> first_value) const
+    void mark_for_compression_if_needed(InT<T> second_val, InT<T> old_value, InT<T> new_value, InT<T> first_value) const
     {
         const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
         mark_for_compression_impl(old_value, new_value, isv, second_val, first_value);
@@ -379,7 +377,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param new_value Value after the write.
      */
     static void
-    mark_for_compression_if_needed_with_value_async(const Derived& proxy, in_t<T> old_value, in_t<T> new_value)
+    mark_for_compression_if_needed_with_value_async(const Derived& proxy, InT<T> old_value, InT<T> new_value)
     {
         proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
     }
@@ -405,7 +403,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *         or at cst_val2 and new_value == first_value.
      */
     [[nodiscard]] bool
-    is_cst_val_new_value_is_other_cst_val(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    is_cst_val_new_value_is_other_cst_val(InT<T> new_value, InT<T> first_value, InT<T> second_val) const noexcept
     {
         // CRTP dispatch: each variant owns its fast pre-check. Chunk2 keeps the
         // "a constant is written" test below; Chunk2A widens it (see
@@ -431,7 +429,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @return true if the write is worth examining further.
      */
     [[nodiscard]] bool
-    pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    pre_check_mark_for_compression(InT<T> new_value, InT<T> first_value, InT<T> second_val) const noexcept
     {
         return pre_check_mark_for_compression_strict(new_value, first_value, second_val);
     }
@@ -456,10 +454,10 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param compression_args Extra args forwarded to should_mark_for_compression().
      */
     template <typename... Args>
-    void mark_for_compression_core(in_t<T> old_value,
-                                   in_t<T> new_value,
-                                   in_t<T> expected_in_memory,
-                                   bool    isv,
+    void mark_for_compression_core(InT<T> old_value,
+                                   InT<T> new_value,
+                                   InT<T> expected_in_memory,
+                                   bool   isv,
                                    Args&&... compression_args) const;
 
     /**
@@ -472,7 +470,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param args Extra args forwarded to mark_for_compression_core().
      */
     template <typename... Args>
-    void mark_for_compression_impl(in_t<T> old_value, in_t<T> new_value, bool isv, Args&&... args) const
+    void mark_for_compression_impl(InT<T> old_value, InT<T> new_value, bool isv, Args&&... args) const
     {
         mark_for_compression_core(old_value, new_value, new_value, isv, std::forward<Args>(args)...);
     }

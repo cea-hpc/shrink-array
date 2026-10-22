@@ -64,7 +64,7 @@
     // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
     #if !CHUNK_OPT_STD_ALLOC
-        #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clearInfoFreeElt
+        #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clear_info_free_elt
     #endif
 
 /**
@@ -117,8 +117,8 @@ struct alignas(128) OmptSyncSlot
 };
 
 std::array<OmptSyncSlot, ompt_max_slots> g_ompt_slots;
-std::atomic<int>                        g_ompt_next_slot{0};
-thread_local OmptSyncSlot*              t_ompt_slot = nullptr;
+std::atomic<int>                         g_ompt_next_slot{0};
+thread_local OmptSyncSlot*               t_ompt_slot = nullptr;
 
 OmptSyncSlot* ompt_my_slot() noexcept
 {
@@ -307,7 +307,7 @@ void parallel_end_chunk_work()
         return;
     }
 
-    const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
+    const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
 
     if (!ens_type_chunk.have_chunk_to_compress_potentially())
     {
@@ -324,7 +324,7 @@ void parallel_end_chunk_work()
 /**
  * @brief Hand the fast_allocators per-thread free batches back to the ladder.
  *
- * @details Inside a region StaticConstArray::freeBlock / freeBlockAlign park
+ * @details Inside a region StaticConstArray::try_free_block / freeBlockAlign park
  *          freed blocks in a per-thread batch that is flushed only when it
  *          overflows (4 MiB or 10000 blocks, per ladder): without this, up to
  *          that much per thread stays out of every free list after the region.
@@ -338,7 +338,7 @@ void flush_allocator_free_batches()
     #if !CHUNK_OPT_STD_ALLOC
     if (!CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        fast_alloc::StaticConstArray::clearInfoFreeElt();
+        fast_alloc::StaticConstArray::clear_info_free_elt();
     }
     #endif
 }

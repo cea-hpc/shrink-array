@@ -16,7 +16,7 @@
 
 /**
  * @file InputData.cpp
- * @brief Simu::inputData(): the parameters of the run and the storage of
+ * @brief Simu::input_data(): the parameters of the run and the storage of
  *        every material.
  *
  * Interactive under multi_mat::interactive_input (one prompt per
@@ -32,7 +32,7 @@
 #include <algorithm> // std::max
 
 #include "config.h" // multi_mat::interactive_input
-#include "Simu.h"   // Simu::inputData
+#include "Simu.h"   // Simu::input_data
 
 namespace
 {
@@ -97,7 +97,7 @@ void ask(const char* prompt, const char* name, T& value, Parse parse, Valid vali
 
 } // namespace
 
-void Simu::inputData()
+void Simu::input_data()
 {
     if constexpr (multi_mat::interactive_input)
     {
@@ -139,7 +139,7 @@ void Simu::inputData()
 
     dis.resize(nbmat);
 
-    switch (getOptionChunk())
+    switch (get_option_chunk())
     {
         case 1:
         {

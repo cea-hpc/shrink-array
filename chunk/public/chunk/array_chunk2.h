@@ -25,8 +25,8 @@
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
 #include "chunk/bit.h"                                  // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/in_t.h"                        // in_t<T>: the element snapshots
-#include "chunk/internal/second_value_info.h"           // SecondValueInfo (inf_array_t)
+#include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
+#include "chunk/internal/second_value_info.h"           // SecondValueInfo (InfArrayT)
 #include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
 #include "chunk/internal/array_chunk2_rechunk_hooks.h"  // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
@@ -42,7 +42,7 @@
 namespace shrink_array
 {
 
-template <template <typename> typename CHUNK_T, typename T>
+template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
 
 /**
@@ -57,13 +57,13 @@ class ManagerChunk;
  *          hooks (2A has three).
  *
  * @tparam T        stored element type
- * @tparam ind_type index type used for sizes and element positions
+ * @tparam IndType index type used for sizes and element positions
  */
-template <ArrayChunkElement T, typename ind_type>
-class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
-                    public ParallelSupport2<ArrayChunk2<T, ind_type>>,
-                    public FastBlockSupport2<ArrayChunk2<T, ind_type>>,
-                    public RechunkHooks2<ArrayChunk2<T, ind_type>>
+template <ArrayChunkElement T, typename IndType>
+class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
+                    public ParallelSupport2<ArrayChunk2<T, IndType>>,
+                    public FastBlockSupport2<ArrayChunk2<T, IndType>>,
+                    public RechunkHooks2<ArrayChunk2<T, IndType>>
 {
   public:
     using Base2      = ArrayChunk2Base<ArrayChunk2>;   ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
@@ -86,18 +86,18 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using proxy_type   = Base2::proxy_type;   ///< Proxy2<T>, the write proxy of the non-const accessors.
     using value_type   = T;                   ///< Stored element type.
 
-    using Base2::chunk_list;
+    using Base2::chunk_list_;
 
     using Base::nb_tab;
     using Base::size_policy_;
-    using Base2::m_size;
-    using Base2::nb_chunk;
+    using Base2::m_size_;
+    using Base2::nb_chunk_;
     using Base2::resize; // resize(sz, val), ArrayChunkBase's
 
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
-    using manager_chunk2 = ManagerChunk<Chunk2, T>; ///< Same type as manager_type.
+    using ManagerChunk2 = ManagerChunk<Chunk2, T>; ///< Same type as manager_type.
 
     // Required, not decoration: ArrayChunkBase re-exports RechunkSupport's hook
     // DEFAULTS under these names, so a hook call through self() would be
@@ -118,7 +118,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit ArrayChunk2(ind_type sz = 0)
+    explicit ArrayChunk2(IndType sz = 0)
     {
         if constexpr (build_config::threaded)
         {
@@ -160,7 +160,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    ArrayChunk2(It first, It last) : ArrayChunk2(static_cast<ind_type>(std::distance(first, last)))
+    ArrayChunk2(It first, It last) : ArrayChunk2(static_cast<IndType>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
@@ -193,7 +193,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
         if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
         {
-            Proxy2<T>::share_info_array->erase_inf_array_by_ptr(&inf_array);
+            Proxy2<T>::share_info_array->erase_inf_array_by_ptr(&inf_array_);
         }
     }
 
@@ -257,7 +257,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     }
 
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
-    [[nodiscard]] inf_array_t get_info_second_value() const noexcept
+    [[nodiscard]] InfArrayT get_info_second_value() const noexcept
     {
         return Proxy2<T>::share_info_array->get_info_second_value(this->registry_key());
     }
@@ -281,7 +281,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @param i element index
      * @return false while that chunk is still compressed to a constant
      */
-    [[nodiscard]] bool written(ind_type i) const
+    [[nodiscard]] bool written(IndType i) const
     {
         return chunk_written(this->chunk_index_of(i));
     }
@@ -297,11 +297,11 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     {
         if constexpr (is_not_bool)
         {
-            return chunk_list[j].written(get_ind_second_value());
+            return chunk_list_[j].written(get_ind_second_value());
         }
         else
         {
-            return chunk_list[j].written();
+            return chunk_list_[j].written();
         }
     }
 
@@ -314,7 +314,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list keeps its capacity.
      */
-    void resize(ind_type newsz);
+    void resize(IndType newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
@@ -359,9 +359,16 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     void compress();
 
     /// @brief Read-only access to the underlying chunk list.
-    [[nodiscard]] const Base::chunk_list_type& getChunkList() const noexcept
+    [[nodiscard]] const Base::chunk_list_type& get_chunk_list() const noexcept
     {
-        return chunk_list;
+        return chunk_list_;
+    }
+
+    /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
+    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::chunk_list_type&
+    getChunkList() const noexcept
+    {
+        return chunk_list_;
     }
 
   private:
@@ -371,7 +378,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @brief Register the array and allocate its storage.
      * @param sz element count
      */
-    void create(ind_type sz);
+    void create(IndType sz);
 
     /**
      * @brief (Re)allocate storage at the current active geometry.
@@ -380,12 +387,12 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      *          array switching geometry (rechunk_to()).
      * @param sz element count to allocate for
      */
-    void rebuild_storage(ind_type sz);
+    void rebuild_storage(IndType sz);
 
     /// @brief CRTP hook: the metadata the base needs for any element.
     /// @return this array's shared second-value tuple (element index unused,
     ///         since the value is array-wide -- unlike ArrayChunk2A)
-    auto get_metadata(ind_type /*ind*/) const noexcept
+    auto get_metadata(IndType /*ind*/) const noexcept
     {
         return this->get_info_second_value();
     }
@@ -416,7 +423,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     {
         if constexpr (!is_bool_like_v<T>)
         {
-            const in_t<T> sv = from.get_second_value();
+            const InT<T> sv = from.get_second_value();
             if (sv != T{} && get_second_value() != sv)
             {
                 set_second_value(sv, false);
@@ -426,9 +433,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     /// @brief Address of the registry mirror, for ArrayChunkBase to arm write
     ///        proxies with (ProxySpec2::arm_inf_array).
-    [[nodiscard]] const inf_array_t* registry_mirror() const noexcept
+    [[nodiscard]] const InfArrayT* registry_mirror() const noexcept
     {
-        return &inf_array;
+        return &inf_array_;
     }
 
     /// @brief Re-read the mirror from the registry. Call after ANY write to
@@ -436,7 +443,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     ///        any_check comparison in ProxySpec2::load_inf_array().
     void sync_registry_mirror() noexcept
     {
-        inf_array = this->get_info_second_value();
+        inf_array_ = this->get_info_second_value();
     }
 
     /// @brief Make the T{} key drainable: its tuple in map_inf_array and a
@@ -459,7 +466,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
             {
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
-                    auto& slot = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
+                    auto& slot = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
                     if (!slot)
                     {
                         slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();
@@ -481,17 +488,17 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     {
         auto& sh_inf = *Proxy2<T>::share_info_array;
         sh_inf.swap_entries(this->registry_key(), other.registry_key());
-        std::swap(ind_cst_val2, other.ind_cst_val2);
+        std::swap(ind_cst_val2_, other.ind_cst_val2_);
         sync_registry_mirror();
         other.sync_registry_mirror();
         if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
         {
             for (ArrayChunk2* arr : {this, &other})
             {
-                const T value = arr->inf_array.second_value;
+                const T value = arr->inf_array_.second_value;
                 if (value != T{})
                 {
-                    sh_inf.insert(value, &arr->inf_array);
+                    sh_inf.insert(value, &arr->inf_array_);
                 }
             }
         }
@@ -506,7 +513,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     ///          write path.
     /// @warning map_inf_array holds a POINTER to this member, so the destructor
     ///          must erase that entry -- see its documentation.
-    inf_array_t inf_array;
+    InfArrayT inf_array_;
 
     /**
      * @brief The (T{}, no_second_value_index) tuple every array without a
@@ -515,11 +522,11 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      *          second value queues under T{}, which needs this tuple and a list
      *          per rank (register_no_second_value_key()). Never erased.
      */
-    static inline inf_array_t inf_array_none{T{}, chunk_config::no_second_value_index, 0};
+    static inline InfArrayT inf_array_none{T{}, chunk_config::no_second_value_index, 0};
 
     /// Index of the second value in the shared value table;
     /// chunk_config::no_second_value_index until set_second_value().
-    int ind_cst_val2 = chunk_config::no_second_value_index;
+    int ind_cst_val2_ = chunk_config::no_second_value_index;
 };
 
 } // namespace shrink_array

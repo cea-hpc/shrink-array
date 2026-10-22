@@ -150,27 +150,27 @@ int check_past_int_max()
 
     // Three chunks' worth past INT_MAX at the largest geometry (4096), and an
     // odd tail so the last chunk is partial.
-    const long N = static_cast<long>(INT_MAX) + (3L * 4096) + 5;
-    Big        big(N);
+    const long n = static_cast<long>(INT_MAX) + (3L * 4096) + 5;
+    Big        big(n);
     maybe_set_second_value(big, char(9));
-    const long S = static_cast<long>(big.chunk_size());
+    const long s = static_cast<long>(big.chunk_size());
 
     int bad = 0;
-    if (big.size() != N)
+    if (big.size() != n)
     {
-        println("[{}/{}] FAIL: size() = {}, expected {}", variant_name(), label, static_cast<long>(big.size()), N);
+        println("[{}/{}] FAIL: size() = {}, expected {}", variant_name(), label, static_cast<long>(big.size()), n);
         ++bad;
     }
-    if (big.capacity() < static_cast<std::size_t>(N))
+    if (big.capacity() < static_cast<std::size_t>(n))
     {
-        println("[{}/{}] FAIL: capacity() = {} < {}", variant_name(), label, big.capacity(), N);
+        println("[{}/{}] FAIL: capacity() = {} < {}", variant_name(), label, big.capacity(), n);
         ++bad;
     }
 
     // Both sides of 2^31, and the chunk boundaries around it.
-    const long              I = INT_MAX;
-    const std::vector<long> pos{0,     1,         S - 1, S,           I - S,     I - 1, I,    I + 1,
-                                I + 2, I + S - 1, I + S, I + (2 * S), N - S - 1, N - 2, N - 1};
+    const long              i = INT_MAX;
+    const std::vector<long> pos{0,     1,         s - 1, s,           i - s,     i - 1, i,    i + 1,
+                                i + 2, i + s - 1, i + s, i + (2 * s), n - s - 1, n - 2, n - 1};
     const auto              value_at = [](std::size_t k) { return static_cast<char>(1 + (k % 7)); };
 
     // (1) sequential writes
@@ -200,7 +200,7 @@ int check_past_int_max()
             // The neighbours nobody wrote are still the first constant.
             for (const long q : {pos[k] - 2, pos[k] + 2})
             {
-                if (q < 0 || q >= N)
+                if (q < 0 || q >= n)
                 {
                     continue;
                 }
@@ -249,8 +249,8 @@ int check_past_int_max()
 
     if (!bad)
     {
-        println("[{}/{}] OK: N={} (INT_MAX + {}), {} positions across 2^31, chunk_size={}", variant_name(), label, N,
-                N - I, pos.size(), S);
+        println("[{}/{}] OK: N={} (INT_MAX + {}), {} positions across 2^31, chunk_size={}", variant_name(), label, n,
+                n - i, pos.size(), s);
     }
     return bad ? 1 : 0;
 }
@@ -261,9 +261,9 @@ int check_past_int_max()
 
 /// Whole chunks of one value, so that the compression pass has constant
 /// chunks to fold (to the first value, and to the second where one exists).
-double pattern(int which, long i, long S)
+double pattern(int which, long i, long s)
 {
-    const long c = i / S;
+    const long c = i / s;
     switch (which)
     {
         case 0:
@@ -276,12 +276,12 @@ double pattern(int which, long i, long S)
 }
 
 template <typename Arr>
-int verify_mixed(const char* label, const char* step, const Arr& a, int which, long M, long S)
+int verify_mixed(const char* label, const char* step, const Arr& a, int which, long m, long s)
 {
     int nbad = 0;
-    for (long i = 0; i < M; ++i)
+    for (long i = 0; i < m; ++i)
     {
-        const double want = pattern(which, i, S);
+        const double want = pattern(which, i, s);
         const double got  = a[static_cast<Arr::ind_type>(i)];
         if (got != want)
         {
@@ -304,11 +304,11 @@ int check_mixed()
     Array<double, int>  a;
     Array<double, long> b;
     Array<double, int>  c;
-    const long          S = static_cast<long>(a.chunk_size());
-    const long          M = (50 * S) + 7;
-    a.resize(static_cast<int>(M));
-    b.resize(M);
-    c.resize(static_cast<int>(M));
+    const long          s = static_cast<long>(a.chunk_size());
+    const long          m = (50 * s) + 7;
+    a.resize(static_cast<int>(m));
+    b.resize(m);
+    c.resize(static_cast<int>(m));
     maybe_set_second_value(a, 1.0);
     maybe_set_second_value(b, 100.0);
     maybe_set_second_value(c, 7.0);
@@ -319,11 +319,11 @@ int check_mixed()
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long i = 0; i < M; ++i)
+            for (long i = 0; i < m; ++i)
             {
-                a[static_cast<int>(i)] = pattern(0, i, S) + static_cast<double>(round);
-                b[i]                   = pattern(1, i, S) + static_cast<double>(round);
-                c[static_cast<int>(i)] = pattern(2, i, S) + static_cast<double>(round);
+                a[static_cast<int>(i)] = pattern(0, i, s) + static_cast<double>(round);
+                b[i]                   = pattern(1, i, s) + static_cast<double>(round);
+                c[static_cast<int>(i)] = pattern(2, i, s) + static_cast<double>(round);
             }
         }
         end_phase();
@@ -334,21 +334,21 @@ int check_mixed()
     fill(0);
 
     int bad = 0;
-    bad += verify_mixed(label, "written", std::as_const(a), 0, M, S);
-    bad += verify_mixed(label, "written", std::as_const(b), 1, M, S);
-    bad += verify_mixed(label, "written", std::as_const(c), 2, M, S);
+    bad += verify_mixed(label, "written", std::as_const(a), 0, m, s);
+    bad += verify_mixed(label, "written", std::as_const(b), 1, m, s);
+    bad += verify_mixed(label, "written", std::as_const(c), 2, m, s);
 
     compress_in_region(a);
     compress_in_region(b);
     compress_in_region(c);
-    bad += verify_mixed(label, "compressed", std::as_const(a), 0, M, S);
-    bad += verify_mixed(label, "compressed", std::as_const(b), 1, M, S);
-    bad += verify_mixed(label, "compressed", std::as_const(c), 2, M, S);
+    bad += verify_mixed(label, "compressed", std::as_const(a), 0, m, s);
+    bad += verify_mixed(label, "compressed", std::as_const(b), 1, m, s);
+    bad += verify_mixed(label, "compressed", std::as_const(c), 2, m, s);
 
     if constexpr (build_config::chunk_dynamic)
     {
         // One walk of the per-T registry, which holds both index types.
-        const unsigned int tgt = (S >= 1024) ? static_cast<unsigned int>(S / 2) : static_cast<unsigned int>(S * 2);
+        const unsigned int tgt = (s >= 1024) ? static_cast<unsigned int>(s / 2) : static_cast<unsigned int>(s * 2);
         Array<double, int>::rechunk_all_to(tgt);
         // rechunk_all_to() leaves the active geometry as it found it: the
         // caller moves it, once, before the next writes.
@@ -364,22 +364,22 @@ int check_mixed()
                 ++bad;
             }
         }
-        bad += verify_mixed(label, "rechunked", std::as_const(a), 0, M, S);
-        bad += verify_mixed(label, "rechunked", std::as_const(b), 1, M, S);
-        bad += verify_mixed(label, "rechunked", std::as_const(c), 2, M, S);
+        bad += verify_mixed(label, "rechunked", std::as_const(a), 0, m, s);
+        bad += verify_mixed(label, "rechunked", std::as_const(b), 1, m, s);
+        bad += verify_mixed(label, "rechunked", std::as_const(c), 2, m, s);
 
         // And the arrays still take writes and compress at the new geometry.
         fill(0);
         compress_in_region(b);
-        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(a), 0, M, S);
-        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(b), 1, M, S);
-        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(c), 2, M, S);
+        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(a), 0, m, s);
+        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(b), 1, m, s);
+        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(c), 2, m, s);
     }
 
     if (!bad)
     {
         println("[{}/{}] OK: <double,int> x2 and <double,long> x1, M={}, written in parallel, compressed{}",
-                variant_name(), label, M, build_config::chunk_dynamic ? ", rechunked together" : "");
+                variant_name(), label, m, build_config::chunk_dynamic ? ", rechunked together" : "");
     }
     return bad ? 1 : 0;
 }

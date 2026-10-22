@@ -46,7 +46,7 @@
 #include <iterator> // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
-#include "chunk/internal/in_t.h"                // in_t<T>
+#include "chunk/internal/in_t.h"                // InT<T>
 #include "chunk/chunk_traits.h"                 // ArrayChunkTraits, Proxy2
 #include "chunk/internal/crp_helper.h"          // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
@@ -394,9 +394,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
          */
         void enter_chunk() noexcept
         {
-            if (num_chunk_ >= 0 && static_cast<std::size_t>(num_chunk_) < owner_->chunk_list.size()) [[likely]]
+            if (num_chunk_ >= 0 && static_cast<std::size_t>(num_chunk_) < owner_->chunk_list_.size()) [[likely]]
             {
-                chunk_ = &owner_->chunk_list[num_chunk_];
+                chunk_ = &owner_->chunk_list_[num_chunk_];
                 owner_->sync_chunk(*chunk_, num_chunk_, num_); // once per chunk
             }
             else
@@ -483,13 +483,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /** @brief Number of elements currently held. */
     [[nodiscard]] ind_type size() const noexcept
     {
-        return m_size;
+        return m_size_;
     }
 
     /** @brief True when the container holds no element. */
     [[nodiscard]] bool empty() const noexcept
     {
-        return m_size == 0;
+        return m_size_ == 0;
     }
 
     /**
@@ -511,7 +511,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     [[nodiscard]] double stats() const
     {
-        return nb_chunk ? (100.0 * get_nb_chunk_written() / nb_chunk) : 0.0;
+        return nb_chunk_ ? (100.0 * get_nb_chunk_written() / nb_chunk_) : 0.0;
     }
 
     // ── Capacity, and the growth by one ──────────────────────────────────────
@@ -525,7 +525,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /// @return The element count the current chunks can hold without a resize().
     [[nodiscard]] size_type capacity() const noexcept
     {
-        return static_cast<size_type>(nb_chunk) * static_cast<size_type>(size_policy_.size());
+        return static_cast<size_type>(nb_chunk_) * static_cast<size_type>(size_policy_.size());
     }
 
     /**
@@ -542,9 +542,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @details The derived arrays' resize(newsz) does the resizing (they name
      *          this overload back with a using-declaration).
      */
-    void resize(ind_type newsz, in_t<T> val)
+    void resize(ind_type newsz, InT<T> val)
     {
-        const ind_type old_size = m_size;
+        const ind_type old_size = m_size_;
         derived().resize(newsz);
 
         // A team of its own outside a region (the library's threshold, the
@@ -560,17 +560,17 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *       resize(), a sequential point (see capacity()). Invalidates all
      *       iterators.
      */
-    void push_back(in_t<T> val)
+    void push_back(InT<T> val)
     {
-        if (static_cast<size_type>(m_size) < capacity()) [[likely]]
+        if (static_cast<size_type>(m_size_) < capacity()) [[likely]]
         {
-            ++m_size;
+            ++m_size_;
         }
         else
         {
-            derived().resize(m_size + 1);
+            derived().resize(m_size_ + 1);
         }
-        (*this)[m_size - 1] = val;
+        (*this)[m_size_ - 1] = val;
     }
 
     /**
@@ -598,7 +598,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /// @brief One past the last element.
     [[nodiscard]] const_iterator end() const noexcept
     {
-        return const_iterator(this, m_size);
+        return const_iterator(this, m_size_);
     }
 
     /// @brief Same as begin().
@@ -688,9 +688,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             {
                 first = 0;
             }
-            if (last > m_size)
+            if (last > m_size_)
             {
-                last = m_size;
+                last = m_size_;
             }
             if (first >= last)
             {
@@ -708,7 +708,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     template <typename F>
     void for_each_value(F&& f) const
     {
-        for_each_value(ind_type{0}, m_size, std::forward<F>(f));
+        for_each_value(ind_type{0}, m_size_, std::forward<F>(f));
     }
 
     /**
@@ -786,7 +786,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     template <typename F>
     void for_each_span(F&& f) const
     {
-        for_each_span(ind_type{0}, m_size, std::forward<F>(f));
+        for_each_span(ind_type{0}, m_size_, std::forward<F>(f));
     }
 
     /**
@@ -837,7 +837,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         if (!empty())
         {
-            --m_size;
+            --m_size_;
         }
     }
 
@@ -893,7 +893,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(ind_type count, T val); // T, not in_t<T>: val may be a(i) -- resize() can free it
+    void assign(ind_type count, T val); // T, not InT<T>: val may be a(i) -- resize() can free it
 
     /**
      * @brief assign(): the elements of [first, last), in order.
@@ -944,7 +944,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         const int   num_chunk = chunk_index_of(i);
         const int   num       = offset_in_chunk(i);
-        const auto& chunk_t   = chunk_list[num_chunk];
+        const auto& chunk_t   = chunk_list_[num_chunk];
 
         sync_chunk(chunk_t, num_chunk, num);
 
@@ -962,7 +962,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         const int num_chunk = chunk_index_of(i);
         const int num       = offset_in_chunk(i);
-        auto&     chunk_t   = chunk_list[num_chunk];
+        auto&     chunk_t   = chunk_list_[num_chunk];
 
         sync_chunk(chunk_t, num_chunk, num);
 
@@ -990,7 +990,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         [[maybe_unused]] const int chunk_mod = static_cast<int>(size_policy_.modulo());
         CHUNK_ASSUME(num_chunk >= 0);
         CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
-        const auto& chunk_t = chunk_list[num_chunk];
+        const auto& chunk_t = chunk_list_[num_chunk];
 
         sync_chunk(chunk_t, num_chunk, num);
 
@@ -1036,14 +1036,14 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     CHUNK_FLATTEN CHUNK_FORCE_INLINE proxy_type element_proxy(ind_type i) noexcept
     {
         const int         num_chunk = chunk_index_of(i);
-        auto&             chunk_t   = chunk_list[num_chunk];
+        auto&             chunk_t   = chunk_list_[num_chunk];
         const int         num       = offset_in_chunk(i);
         const proxy_type& val       = chunk_t[num];
 
         // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
         // compression: in non-OpenMP builds too, set_num_tab() and
         // get_info_second_value() look ptr_on_array up in share_info_array.
-        val.set_this_and_num_chunk(registry_key(), num_chunk, num_tab);
+        val.set_this_and_num_chunk(registry_key(), num_chunk, num_tab_);
         val.arm_storage_generation(&storage_generation_); // check builds only
 
         // Chunk2 only: arm the proxy with this array's registry mirror, so the
@@ -1069,11 +1069,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     // them unqualified (the core is a dependent base).
     using Core::alloc_key_;
     using Core::assign_alloc_key;
-    using Core::chunk_list;
-    using Core::nb_chunk;
+    using Core::chunk_list_;
+    using Core::nb_chunk_;
     using Core::nb_tab;
     using Core::next_alloc_key_;
-    using Core::num_tab;
+    using Core::num_tab_;
     using Core::size_policy_;
 
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
@@ -1186,16 +1186,16 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         other.invalidate_proxies();
 
         using std::swap;
-        swap(chunk_list, other.chunk_list);
+        swap(chunk_list_, other.chunk_list_);
         swap(alloc_key_, other.alloc_key_);
         swap_dirty_bitset(other);
-        swap(m_size, other.m_size);
-        swap(nb_chunk, other.nb_chunk);
+        swap(m_size_, other.m_size_);
+        swap(nb_chunk_, other.nb_chunk_);
         swap(size_policy_, other.size_policy_);
         derived().swap_identity(other);
     }
 
-    ind_type m_size; ///< Number of elements exposed by size().
+    ind_type m_size_; ///< Number of elements exposed by size().
 
     /// @brief Bumped by every operation that invalidates a proxy (see operator[]).
     ///        Check builds' proxies abort on use when it changed
@@ -1248,9 +1248,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         {
             first = 0;
         }
-        if (last > m_size)
+        if (last > m_size_)
         {
-            last = m_size;
+            last = m_size_;
         }
         if (first >= last)
         {
@@ -1263,7 +1263,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         {
             const int         lo = c == c_first ? offset_in_chunk(first) : 0;
             const int         hi = c == c_last ? offset_in_chunk(last - 1) + 1 : full;
-            const chunk_type& ch = chunk_list[static_cast<std::size_t>(c)];
+            const chunk_type& ch = chunk_list_[static_cast<std::size_t>(c)];
             sync_chunk(ch, c, lo);
             fn(ch, c, lo, hi);
         }
@@ -1323,7 +1323,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             // pending counter, below.
             if (derived().is_chunk_dirty(num_chunk)) [[unlikely]]
             {
-                // Precise per-chunk gate (DeferredReadGate, chunk_base.h).
+                // precise per-chunk gate (DeferredReadGate, chunk_base.h).
                 if (chunk_t.read_gate_should_wait(offset)) [[unlikely]]
                 {
                     chunk_t.wait_for_availability(offset);
