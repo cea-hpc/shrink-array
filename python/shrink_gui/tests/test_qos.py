@@ -1,12 +1,16 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """QoS: ccc_mqinfo's table, and the QoS a job gets."""
+import pathlib
+
 import pytest
 
 from shrink_gui import qos
 from shrink_gui.widgets import parse_duration
 
-ROWS = qos.parse_mqinfo(qos.FALLBACK)
+# inti's real ccc_mqinfo output (the "*" rows, MaxSub 0 closing a QoS); the
+# site file's [qos] fallback is only a short stand-in for it.
+ROWS = qos.parse_mqinfo((pathlib.Path(__file__).parent / "data" / "ccc_mqinfo_inti.txt").read_text())
 H, D = 3600, 86400
 
 
