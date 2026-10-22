@@ -31,10 +31,11 @@
 #include <stdio.h>  // fileno (POSIX)
 #include <unistd.h> // isatty
 
-#include "chunk/config.h"         // build_config::use_openmp (get_tid)
-#include "chunk/PMP_CHUNK.h"      // chunk_pmp_team_rank (get_tid)
-#include "chunk/ring_log_debug.h" // the declarations defined here
-#include "chunk/log.h"            // CHUNK_LOG
+#include "chunk/config.h"              // build_config::use_openmp (get_tid)
+#include "chunk/internal/enum_name.h" // upper_enum_name, table_matches (event_name)
+#include "chunk/PMP_CHUNK.h"           // chunk_pmp_team_rank (get_tid)
+#include "chunk/ring_log_debug.h"      // the declarations defined here
+#include "chunk/log.h"                 // CHUNK_LOG
 
 #ifdef CHUNK_RING_LOG_ANY
 
@@ -182,18 +183,23 @@ const char* event_color(EventCode ev)
     }
 }
 
-const char* event_name(EventCode ev)
+// The event's name: its enumerator without "ev_", upper-cased ("STORE_VALUE").
+// The switch is the table of the builds without reflection (Clang, oneAPI):
+// no `default:`, so -Wswitch reports an event added without its case. Where
+// the compiler has reflection the name is derived from the enumerator, and the
+// static_assert below keeps the switch complete and spelled alike.
+constexpr const char* event_name_table(EventCode ev) noexcept
 {
     switch (ev)
     {
         case ev_begin_slow_path:
             return "BEGIN_SLOW_PATH";
         case ev_end_slow_path:
-            return "EV_END_SLOW_PATH";
+            return "END_SLOW_PATH";
         case ev_begin_fast_path:
-            return "EV_BEGIN_FAST_PATH";
+            return "BEGIN_FAST_PATH";
         case ev_end_fast_path:
-            return "EV_END_FAST_PATH";
+            return "END_FAST_PATH";
         case ev_compress_attempt:
             return "COMPRESS_ATTEMPT";
         case ev_compress_started:
@@ -202,6 +208,24 @@ const char* event_name(EventCode ev)
             return "COMPRESS_ABORTED";
         case ev_compress_finished:
             return "COMPRESS_FINISHED";
+        case ev_cas_values_to_cst:
+            return "CAS_VALUES_TO_CST";
+        case ev_cas_values_from_cst:
+            return "CAS_VALUES_FROM_CST";
+        case ev_cas_values_fail:
+            return "CAS_VALUES_FAIL";
+        case ev_flush_begin:
+            return "FLUSH_BEGIN";
+        case ev_flush_end:
+            return "FLUSH_END";
+        case ev_lambda_async_assign:
+            return "LAMBDA_ASYNC_ASSIGN";
+        case ev_lambda_async_arith:
+            return "LAMBDA_ASYNC_ARITH";
+        case ev_values_load_is_cst:
+            return "VALUES_LOAD_IS_CST";
+        case ev_store_value:
+            return "STORE_VALUE";
         case ev_policy_begin_write:
             return "POLICY_BEGIN_WRITE";
         case ev_policy_end_write:
@@ -222,10 +246,32 @@ const char* event_name(EventCode ev)
             return "VALUE_ALLOC";
         case ev_value_free:
             return "VALUE_FREE";
-        default:
-            return "UNKNOWN";
     }
+    return "UNKNOWN";
 }
+
+#if SHRINK_ARRAY_HAS_ENUM_NAME
+static_assert(table_matches<EventCode>(event_name_table, "ev_"),
+              "event_name_table() disagrees with the EventCode enumerators: add or fix the case");
+
+const char* event_name(EventCode ev)
+{
+    template for (constexpr std::meta::info en : std::define_static_array(std::meta::enumerators_of(^^EventCode)))
+    {
+        if (ev == [:en:])
+        {
+            constexpr const char* name = upper_enum_name(en, "ev_");
+            return name;
+        }
+    }
+    return "UNKNOWN";
+}
+#else
+const char* event_name(EventCode ev)
+{
+    return event_name_table(ev);
+}
+#endif
 
 void dump_ring()
 {

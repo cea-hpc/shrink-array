@@ -89,6 +89,15 @@ the tag's checksum to the recipe.
   member by member, so equal values with different padding, or `-0.0` against
   `+0.0`, share one identifier (without reflection they may take two: memory,
   not a wrong value). Checked by `examples/cst2_hash/cst2_hash_validation`.
+- The ring log (`CHUNK_RING_LOG_DEBUG` / `_OP`) printed 9 of its 27 events as
+  `UNKNOWN` -- the cst_val transitions, the flushes, the async lambdas,
+  `store_value`: `event_name()` had no case for them, hidden from `-Wswitch`
+  by a `default:`. The names are now the enumerators without `ev_`,
+  upper-cased (`EV_END_SLOW_PATH` becomes `END_SLOW_PATH`), derived by C++26
+  reflection where the compiler has it (`chunk/internal/enum_name.h`); the
+  switch, kept for the other builds, has no `default:` any more and a
+  `static_assert` checks it against the enumerators. `bstate_name()` (pool
+  ledger) gets the same check.
 
 ### Added (cpp23)
 
