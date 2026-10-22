@@ -121,7 +121,7 @@ easiest way to compare memory and time.
 `chunk_OPENMP`, `chunk_OMPT` and `chunk_STD_ALLOC`, for a project that wants to check what the
 installation holds.
 
-## 4. A first program
+## 4. A first program, parallel and multi-threaded
 
 This is [`examples/getting_started/getting_started.cpp`](../examples/getting_started/getting_started.cpp),
 shortened. The directory also has the `CMakeLists.txt` of §3: it builds against an install as

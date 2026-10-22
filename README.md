@@ -43,7 +43,7 @@ The loops of a code written for `std::vector` stay as they are; only the array t
 ```
 
 (The bare `#pragma omp parallel for` needs an OMPT build; with GCC's `libgomp`, open the
-region with `parallel_phase()`, see [A first program](#a-first-program).)
+region with `parallel_phase()`, see [A first program, parallel and multi-threaded](#a-first-program-parallel-and-multi-threaded).)
 
 ![Process memory of the reference benchmark: std::vector 125.9 GB, Chunk 40.2 GB, Chunk2 17.3 GB, Chunk2A 7.26 GB](docs/images/memory_bench.png)
 
@@ -51,7 +51,7 @@ region with `parallel_phase()`, see [A first program](#a-first-program).)
 types, static chunks of 256, whole-process memory at the end. The price is access time, see
 [In numbers](#in-numbers).*
 
-## A first program
+## A first program, parallel and multi-threaded
 
 ```cpp
 #include <cstdio>
@@ -107,7 +107,7 @@ sa::finalize_parallel_phase();       // outside the region: flush the queued wri
 
 Without OpenMP the lambda simply runs once, serially.
 
-**With OMPT, nothing of the library around the loops.** In an OMPT build (Clang, oneAPI: the
+**Parallel multi-threaded loops with OMPT: nothing of the library around them.** In an OMPT build (Clang, oneAPI: the
 library carries an OMPT tool, `CHUNK_OPT_OMPT`), the OpenMP runtime tells the library where
 each region begins and ends, so the loop is written as for a `std::vector` -- the same
 function fills both:

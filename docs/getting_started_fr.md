@@ -126,7 +126,7 @@ qui est la façon la plus simple de comparer mémoire et temps.
 `chunk_HAS_DYN`, `chunk_OPENMP`, `chunk_OMPT` et `chunk_STD_ALLOC`, pour un projet qui veut
 vérifier ce que contient l'installation.
 
-## 4. Un premier programme
+## 4. Un premier programme, parallèle et multi-thread
 
 C'est [`examples/getting_started/getting_started.cpp`](../examples/getting_started/getting_started.cpp),
 raccourci. Le répertoire contient aussi le `CMakeLists.txt` du §3 : il se construit contre une

@@ -45,7 +45,7 @@ change :
 ```
 
 (La forme nue `#pragma omp parallel for` demande un build OMPT ; avec le `libgomp` de GCC,
-ouvrez la région avec `parallel_phase()`, voir [Un premier programme](#un-premier-programme).)
+ouvrez la région avec `parallel_phase()`, voir [Un premier programme, parallèle et multi-thread](#un-premier-programme-parallèle-et-multi-thread).)
 
 ![Mémoire du process au banc de référence : std::vector 125,9 Go, Chunk 40,2 Go, Chunk2 17,3 Go, Chunk2A 7,26 Go](docs/images/memory_bench_fr.png)
 
@@ -53,7 +53,7 @@ ouvrez la région avec `parallel_phase()`, voir [Un premier programme](#un-premi
 douzaine de types, chunks statiques de 256, mémoire du process entier à la fin. Le prix est le
 temps d'accès, voir [En chiffres](#en-chiffres).*
 
-## Un premier programme
+## Un premier programme, parallèle et multi-thread
 
 ```cpp
 #include <cstdio>
@@ -109,7 +109,7 @@ sa::finalize_parallel_phase();       // hors de la région : vider les écriture
 
 Sans OpenMP, la lambda est simplement exécutée une fois, en série.
 
-**Avec OMPT, rien de la bibliothèque autour des boucles.** Dans un build OMPT (Clang, oneAPI : la
+**Boucles parallèles multi-thread avec OMPT : rien de la bibliothèque autour.** Dans un build OMPT (Clang, oneAPI : la
 bibliothèque embarque un outil OMPT, `CHUNK_OPT_OMPT`), le runtime OpenMP indique à la
 bibliothèque où chaque région commence et finit ; la boucle s'écrit donc comme pour un
 `std::vector` -- la même fonction remplit les deux :
