@@ -29,6 +29,7 @@
 ///        CHUNK_PMP_* macros below are the library's names for the queries.
 namespace shrink_array::pmp
 {
+using ::fast_alloc::pmp::active_level;
 using ::fast_alloc::pmp::backend;
 using ::fast_alloc::pmp::BackendKind;
 using ::fast_alloc::pmp::current_team;

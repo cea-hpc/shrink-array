@@ -94,6 +94,12 @@ the tag's checksum to the recipe.
   while another writer's uniform-chunk scan read it as a relaxed atomic -- a
   data race (found by TSan on the pool backend, present under OpenMP too).
   Same machine code on x86 and AArch64, so no value was wrong.
+- Pool backend: `finalize_parallel_phase()` closes the application phase
+  again. Its early return for a nested region tested `in_parallel()`, which
+  the application phase makes true: the phase never ended, and the check
+  builds stopped at `release_chunk_pools()`. It now tests an active team.
+  A `parallel_phase()` opened during an application phase is nested in it:
+  it no longer ends that phase, and its begin is not a second begin.
 
 ## 0.1.3 -- 2026-10-22
 

@@ -115,18 +115,19 @@ inline constexpr bool active = tracked && build_config::any_check;
 ///          and a second begin of the same thread in the phase is allowed
 ///          (same rank, same queue, its writes stay in program order; the
 ///          phase has no region whose end could have been forgotten). In a
-///          nested region it only stamps (see the file).
+///          nested region it only stamps (see the file); so does a team of
+///          the pool opened during an application phase, nested in it.
 inline void check_begin() noexcept
 {
     if constexpr (tracked)
     {
-        const int  level = CHUNK_PMP_LEVEL;
-        const bool app   = level == 0 && pmp::in_application_phase();
-        if (level == 0 && !app)
+        const int  level  = CHUNK_PMP_LEVEL;
+        const bool in_app = pmp::in_application_phase();
+        if (level == 0 && !in_app)
         {
             return;
         }
-        if (level == 1 && armed()) [[unlikely]]
+        if (level == 1 && !in_app && armed()) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED(
                 "[PHASE PROTOCOL] begin_parallel_phase() twice in the same phase on thread {}: the region before "
