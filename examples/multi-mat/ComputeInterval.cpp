@@ -16,16 +16,16 @@
 
 /**
  * @file ComputeInterval.cpp
- * @brief Simu::computeInterval(): the largest interval of a chunk and of a
+ * @brief Simu::compute_interval(): the largest interval of a chunk and of a
  *        vector material, from their average occupation of the mesh.
  */
 
 #include <cmath> // std::round
 #include <print> // std::println
 
-#include "Simu.h" // Simu::computeInterval
+#include "Simu.h" // Simu::compute_interval
 
-void Simu::computeInterval()
+void Simu::compute_interval()
 {
     if (!all_vector)
     {

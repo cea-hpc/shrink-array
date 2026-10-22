@@ -119,12 +119,12 @@ void fill_and_compress(Arr& arr, double v)
 /// @brief Chunks of @p arr still materialised.
 int materialised(const Arr& arr)
 {
-    const long S = static_cast<long>(arr.chunk_size());
+    const long s = static_cast<long>(arr.chunk_size());
     const long n = static_cast<long>(arr.size());
     int        m = 0;
-    for (long j = 0; j * S < n; ++j)
+    for (long j = 0; j * s < n; ++j)
     {
-        m += arr.written(static_cast<Ind>(j * S)) ? 1 : 0;
+        m += arr.written(static_cast<Ind>(j * s)) ? 1 : 0;
     }
     return m;
 }
@@ -158,10 +158,10 @@ int run(int /*argc*/, char** /*argv*/)
     int fails = 0;
     {
         Arr        a;
-        const long S = static_cast<long>(a.chunk_size());
-        a.resize(static_cast<Ind>(n_chunks * S));
+        const long s = static_cast<long>(a.chunk_size());
+        a.resize(static_cast<Ind>(n_chunks * s));
         a.set_second_value(1.0);
-        println("=== chunk2_registry_growth_validation  chunk_size={}  threads={}  others={} ===", S,
+        println("=== chunk2_registry_growth_validation  chunk_size={}  threads={}  others={} ===", s,
                 CHUNK_PMP_MAX_THREADS, n_others);
 
         // 1. `a` compressed to its second value.
@@ -177,7 +177,7 @@ int run(int /*argc*/, char** /*argv*/)
         std::vector<std::unique_ptr<Arr>> others;
         for (int k = 0; k < n_others; ++k)
         {
-            others.push_back(std::make_unique<Arr>(static_cast<Ind>(4 * S)));
+            others.push_back(std::make_unique<Arr>(static_cast<Ind>(4 * s)));
             others.back()->set_second_value(2.0 + k);
             fill_and_compress(*others.back(), 2.0 + k);
         }

@@ -281,7 +281,7 @@ namespace detail
  *        layout_tiled_dyn).
  */
 template <typename Derived, typename Extents>
-class tiled_mapping_base
+class TiledMappingBase
 {
   public:
     using extents_type = Extents;
@@ -379,7 +379,7 @@ class tiled_mapping_base
     }
 
   protected:
-    constexpr tiled_mapping_base() noexcept = default;
+    constexpr TiledMappingBase() noexcept = default;
 
     /// @brief Extents @p e cut in the tiles of the derived mapping (set
     ///        before this runs), row-major over the tiles.
@@ -415,7 +415,8 @@ class tiled_mapping_base
         grid_type             first{};
         grid_type             size{};
         grid_type             stride{};
-        [&]<std::size_t... K>(std::index_sequence<K...>) {
+        [&]<std::size_t... K>(std::index_sequence<K...>)
+        {
             (detail::tiled_slice<index_type>(slices, self.ext_.extent(K), first[K], size[K], stride[K]), ...);
         }(std::index_sequence_for<Slices...>{});
 
@@ -425,8 +426,8 @@ class tiled_mapping_base
             const index_type t   = self.tile_extent(r);
             const index_type end = first[r] + size[r];
             const bool       ok  = first[r] >= 0 && size[r] >= 0 && end <= self.ext_.extent(r) &&
-                            (stride[r] == 1 || size[r] <= 1) && first[r] % t == 0 &&
-                            (end % t == 0 || end == self.ext_.extent(r));
+                                   (stride[r] == 1 || size[r] <= 1) && first[r] % t == 0 &&
+                                   (end % t == 0 || end == self.ext_.extent(r));
             if (!ok) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("{}: submdspan slice {} = [{}, {}) (stride {}) of extent {}: a tiled sub-view "
@@ -469,9 +470,9 @@ template <std::size_t... Tile>
 struct layout_tiled
 {
     template <typename Extents>
-    class mapping : public detail::tiled_mapping_base<mapping<Extents>, Extents>
+    class mapping : public detail::TiledMappingBase<mapping<Extents>, Extents>
     {
-        using Base = detail::tiled_mapping_base<mapping<Extents>, Extents>;
+        using Base = detail::TiledMappingBase<mapping<Extents>, Extents>;
 
       public:
         using typename Base::extents_type;
@@ -554,9 +555,9 @@ template <std::size_t Rank>
 struct layout_tiled_dyn
 {
     template <typename Extents>
-    class mapping : public detail::tiled_mapping_base<mapping<Extents>, Extents>
+    class mapping : public detail::TiledMappingBase<mapping<Extents>, Extents>
     {
-        using Base = detail::tiled_mapping_base<mapping<Extents>, Extents>;
+        using Base = detail::TiledMappingBase<mapping<Extents>, Extents>;
 
       public:
         using typename Base::extents_type;

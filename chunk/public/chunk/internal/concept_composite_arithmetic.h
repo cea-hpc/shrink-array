@@ -36,7 +36,7 @@ concept IsProxy = requires { typename std::remove_cvref_t<T>::is_shrink_proxy_ta
  * Fundamental integer and floating-point types, as opposed to composite ones.
  */
 template <typename U>
-concept scalar_arithmetic = std::is_arithmetic_v<std::remove_cvref_t<U>>;
+concept ScalarArithmetic = std::is_arithmetic_v<std::remove_cvref_t<U>>;
 
 /**
  * @brief Concept for composite arithmetic types (non-scalar)
@@ -51,7 +51,7 @@ concept scalar_arithmetic = std::is_arithmetic_v<std::remove_cvref_t<U>>;
  *       their scalar type T (avoids circular dependencies).
  */
 template <typename U, typename T>
-concept composite_arithmetic =
-    !scalar_arithmetic<U> && !IsProxy<U> &&
+concept CompositeArithmetic =
+    !ScalarArithmetic<U> && !IsProxy<U> &&
     (std::is_constructible_v<std::remove_cvref_t<U>, T> || std::is_convertible_v<T, std::remove_cvref_t<U>>);
 } // namespace shrink_array

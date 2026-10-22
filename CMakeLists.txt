@@ -1,7 +1,13 @@
 # Copyright 2024-2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 cmake_minimum_required(VERSION 3.20)
-project(shrink_array VERSION 0.1.2 LANGUAGES CXX)
+# set(CACHE) keeps a normal variable of the same name (CMake 3.21+): a
+# subdirectory that declares a cache entry, such as an older chunk/ declaring
+# CHUNK_STATIC_SIZES, then still sees the list resolved here, not the raw "auto".
+if(POLICY CMP0126)
+    cmake_policy(SET CMP0126 NEW)
+endif()
+project(shrink_array VERSION 0.1.3 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
 # FetchContent)? PROJECT_IS_TOP_LEVEL says it from CMake 3.21; this is the same
@@ -84,8 +90,8 @@ option(CHUNK_SECOND_VALUE_INDEXED "Chunk2A: store second values as 4-byte identi
 # builds it so they keep compiling.
 option(CHUNK_MM_PROTECT "Read-only (mprotect) constant buffers: a stray write to a compressed chunk faults" OFF)
 
-# CHUNK_STATS: compression statistics (chunk_stats.h), printed by ParamChunk::ChunkStats().
-option(CHUNK_STATS "Collect compression statistics (ParamChunk::ChunkStats())" OFF)
+# CHUNK_STATS: compression statistics (chunk_stats.h), printed by ParamChunk::chunk_stats().
+option(CHUNK_STATS "Collect compression statistics (ParamChunk::chunk_stats())" OFF)
 
 # ── Sanitizer option ──────────────────────────────────────────────────────────
 set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, token")

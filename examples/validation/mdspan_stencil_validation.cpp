@@ -103,7 +103,7 @@ double apply(const In& in, long i, long j, long h)
     return s;
 }
 
-enum class border
+enum class Border
 {
     zero,
     value,
@@ -112,19 +112,19 @@ enum class border
 constexpr double border_value = 2.5;
 
 // The reference: the stencil through f[i, j] on a vector, the border applied.
-std::vector<double> reference(const std::vector<double>& field, long h, border b)
+std::vector<double> reference(const std::vector<double>& field, long h, Border b)
 {
     std::vector<double> out(field.size());
     const auto          at = [&](long i, long j)
     {
-        if (b == border::clamp)
+        if (b == Border::clamp)
         {
             i = std::clamp(i, 0L, nx - 1);
             j = std::clamp(j, 0L, ny - 1);
         }
         else if (i < 0 || i >= nx || j < 0 || j >= ny)
         {
-            return b == border::zero ? 0.0 : border_value;
+            return b == Border::zero ? 0.0 : border_value;
         }
         return field[static_cast<std::size_t>(i * ny + j)];
     };
@@ -180,7 +180,7 @@ const auto keep_uniform = [](const auto&, const double& v, double& out)
     return true;
 };
 
-enum class how
+enum class How
 {
     serial,
     range,
@@ -189,15 +189,15 @@ enum class how
 };
 
 template <typename Src, typename Dst, typename B, typename... U>
-void run_stencil(how w, const Src& src, const Dst& dst, long h, const B& bnd, U&&... uniform)
+void run_stencil(How w, const Src& src, const Dst& dst, long h, const B& bnd, U&&... uniform)
 {
     const auto kernel = kernel_for(h);
     switch (w)
     {
-        case how::serial:
+        case How::serial:
             md::stencil_tiles(src, dst, h, bnd, kernel, uniform...);
             break;
-        case how::range:
+        case How::range:
         {
             const auto nt = md::tile_count(src);
             parallel_phase(
@@ -212,10 +212,10 @@ void run_stencil(how w, const Src& src, const Dst& dst, long h, const B& bnd, U&
                 });
             break;
         }
-        case how::team:
+        case How::team:
             parallel_phase([&] { md::stencil_tiles_mt(src, dst, h, bnd, kernel, uniform...); });
             break;
-        case how::team_outside:
+        case How::team_outside:
             md::stencil_tiles_mt(src, dst, h, bnd, kernel, uniform...);
             break;
     }
@@ -223,7 +223,7 @@ void run_stencil(how w, const Src& src, const Dst& dst, long h, const B& bnd, U&
 
 // One case: a tiled view made by @p make over two arrays of @p size.
 template <typename Make>
-void case_2d(const char* name, long size, Make&& make, long h, border b, how w, bool with_uniform)
+void case_2d(const char* name, long size, Make&& make, long h, Border b, How w, bool with_uniform)
 {
     Array<double>       a(static_cast<int>(size));
     Array<double>       d(static_cast<int>(size));
@@ -240,14 +240,14 @@ void case_2d(const char* name, long size, Make&& make, long h, border b, how w, 
     }
     const auto want = reference(field, h, b);
     const auto src  = md::as_const(f);
-    if (b == border::clamp)
+    if (b == Border::clamp)
     {
         with_uniform ? run_stencil(w, src, g, h, md::clamp_boundary{}, keep_uniform)
                      : run_stencil(w, src, g, h, md::clamp_boundary{});
     }
     else
     {
-        const md::constant_boundary<double> bnd{b == border::zero ? 0.0 : border_value};
+        const md::constant_boundary<double> bnd{b == Border::zero ? 0.0 : border_value};
         with_uniform ? run_stencil(w, src, g, h, bnd, keep_uniform) : run_stencil(w, src, g, h, bnd);
     }
     long bad     = 0;
@@ -302,12 +302,12 @@ void case_2d(const char* name, long size, Make&& make, long h, border b, how w, 
     }
 }
 
-void tiled(how w)
+void tiled(How w)
 {
     const long S = static_cast<long>(Array<double>(1).chunk_size());
     for (const long h : {1L, 2L})
     {
-        for (const border b : {border::zero, border::value, border::clamp})
+        for (const Border b : {Border::zero, Border::value, Border::clamp})
         {
             for (const bool u : {false, true})
             {
@@ -322,11 +322,11 @@ void tiled(how w)
         }
     }
     // A halo as wide as a tile (8 x 8 tiles, halo 2 and 8 ... 8 only serially).
-    if (w == how::serial)
+    if (w == How::serial)
     {
         case_2d(
             "tiled 8 x 8, halo 2", static_cast<long>(md::tiled_size<8, 8>(nx, ny)),
-            [](auto& arr) { return md::tiled_view<8, 8>(arr, nx, ny); }, 2, border::clamp, w, true);
+            [](auto& arr) { return md::tiled_view<8, 8>(arr, nx, ny); }, 2, Border::clamp, w, true);
     }
 }
 
@@ -386,7 +386,7 @@ void rank3()
             {
                 const double want = at(i - 1, j, k) + at(i + 1, j, k) + at(i, j - 1, k) + at(i, j + 1, k) +
                                     at(i, j, k - 1) + at(i, j, k + 1) - 6 * at(i, j, k);
-                const double x = md::as_const(g)[i, j, k];
+                const double x    = md::as_const(g)[i, j, k];
                 bad += (x - want > 1e-12 || want - x > 1e-12) ? 1 : 0;
             }
         }
@@ -412,10 +412,10 @@ int main(int argc, char** argv)
     {
         return alias();
     }
-    tiled(how::serial);
-    tiled(how::range);
-    tiled(how::team);
-    tiled(how::team_outside);
+    tiled(How::serial);
+    tiled(How::range);
+    tiled(How::team);
+    tiled(How::team_outside);
     rank3();
     release_chunk_pools();
     destroy_block_chunk();

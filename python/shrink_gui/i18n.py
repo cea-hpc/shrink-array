@@ -17,6 +17,7 @@ EN = {
     # window, groups, form rows
     "shrink-array — runs sur inti (prototype)": "shrink-array — runs on inti (prototype)",
     "Calculateur :": "Machine:", "Vérifier la connexion": "Check connection",
+    "Connexion perdue": "Connection lost",
     "Où et comment": "Where and how", "Quoi": "What", "Partition": "Partition",
     "Soumission": "Submission", "Durée max (-T)": "Max time (-T)", "Directives": "Directives",
     "Lanceur (job)": "Launcher (job)", "Dépôt (inti)": "Repository (inti)", "Git (inti)": "Git (inti)",
@@ -438,6 +439,14 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"no master connection: run \1 in a terminal"),
     (r"connexion maître OK, mais python3 distant en échec \(voir la barre d'état\)",
      "master connection OK, but the remote python3 failed (see the status bar)"),
+    (r"connexion perdue : lancez (<b>ssh -fNM \S+</b>) dans un terminal",
+     r"connection lost: run \1 in a terminal"),
+    (r"^connexion à (\S+) rétablie$", r"connection to \1 restored"),
+    (r"^connexion à (\S+) perdue$", r"connection to \1 lost"),
+    (r"^La connexion à (\S+) ne répond plus\.\n\nRelancez ssh -fNM (\S+) dans un terminal : l'interface "
+     r"s'en apercevra d'elle-même\. Les runs déjà soumis continuent sur (\S+)\.$",
+     r"The connection to \1 no longer answers.\n\nRun ssh -fNM \2 again in a terminal: the interface "
+     r"will notice by itself. The runs already submitted go on on \3."),
     (r"connecté — ", "connected — "), (r"<b>ccc_msub introuvable</b>", "<b>ccc_msub not found</b>"),
     (r"Les options du script n'ont pas été lues : seuls les arguments en plus seront passés\.\n\n"
      r"Soumettre quand même \?",

@@ -2,6 +2,12 @@
 
 > English version: [README.md](README.md).
 
+[![CI](https://github.com/cea-hpc/shrink-array/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C.svg)](docs/getting_started_fr.md)
+[![Spack](https://img.shields.io/badge/Spack-package-0f6cbd.svg)](docs/getting_started_fr.md)
+[![Checked with GenMC](https://img.shields.io/badge/checked%20with-GenMC-8a2be2.svg)](docs/formal_models_fr.md)
+
 **shrink-array** donne aux codes de calcul C++ des tableaux qui se lisent et s'écrivent comme un
 `std::vector` -- mêmes `[]`, mêmes boucles, mêmes threads OpenMP -- mais cessent de payer pour
 les parties qui contiennent la même valeur. Sur le banc de référence, une charge d'un milliard
@@ -20,6 +26,32 @@ moins de mémoire, sans toucher aux boucles.
 *Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ est
 `shrink_array` ; le paquet CMake installé est `chunk` (`find_package(chunk)`, cibles
 `chunk::…`).*
+
+## En un coup d'œil
+
+Les boucles d'un code écrit pour `std::vector` restent telles quelles ; seul le type du tableau
+change :
+
+```diff
+-#include <vector>
++#include "chunk/array_chunk2A.h"
+
+-std::vector<double> a(n);
++shrink_array::ArrayChunk2A<double> a(n);
+
+ #pragma omp parallel for
+ for (int i = 0; i < n; ++i)
+     a[i] = field(i);
+```
+
+(La forme nue `#pragma omp parallel for` demande un build OMPT ; avec le `libgomp` de GCC,
+ouvrez la région avec `parallel_phase()`, voir [Un premier programme](#un-premier-programme).)
+
+![Mémoire du process au banc de référence : std::vector 125,9 Go, Chunk 40,2 Go, Chunk2 17,3 Go, Chunk2A 7,26 Go](docs/images/memory_bench_fr.png)
+
+*Banc de référence ([`shrink_bench`](examples/shrink_bench)) : environ 10⁹ éléments d'une
+douzaine de types, chunks statiques de 256, mémoire du process entier à la fin. Le prix est le
+temps d'accès, voir [En chiffres](#en-chiffres).*
 
 ## Un premier programme
 
@@ -109,6 +141,22 @@ ci-dessous.
 
 ## Comment ça marche
 
+```mermaid
+flowchart LR
+    subgraph arr["un ArrayChunk2A, découpé en chunks"]
+        c0["chunk 0<br/>valeurs variées<br/>tampon propre"]
+        c1["chunk 1<br/>tout à 3.5"]
+        c2["chunk 2<br/>tout à 3.5"]
+        c3["chunk 3<br/>tout à 0.0"]
+        c4["chunk 4<br/>valeurs variées<br/>tampon propre"]
+    end
+    k35[("tampon partagé<br/>de 3.5")]
+    k0[("tampon partagé<br/>de 0.0")]
+    c1 --> k35
+    c2 --> k35
+    c3 --> k0
+```
+
 Un tableau est découpé en **chunks** de `S` éléments consécutifs (`S` une puissance de deux ou
 un multiple de 64). Un chunk dont tous les éléments valent la même constante ne garde aucun
 tampon : il pointe sur un tampon partagé de cette constante et coûte quelques octets de
@@ -189,8 +237,21 @@ find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'in
 target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
 ```
 
-`add_subdirectory(shrink-array)` ou `FetchContent` marchent aussi (bibliothèques seulement, rien
-d'écrit dans votre cache). Avec Spack, la recette est dans le dépôt :
+`add_subdirectory(shrink-array)` marche aussi, et `FetchContent` aussi, sans rien installer
+(bibliothèques seulement, rien d'écrit dans votre cache) :
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(shrink_array
+  GIT_REPOSITORY https://github.com/cea-hpc/shrink-array.git
+  GIT_TAG        main)                 # ou un commit, pour figer la version
+set(OMP ON)                            # compiler les bibliothèques OpenMP
+FetchContent_MakeAvailable(shrink_array)
+
+target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+```
+
+Avec Spack, la recette est dans le dépôt :
 
 ```shell
 spack repo add <clone>/spack/spack_repo/shrink_array
@@ -268,6 +329,20 @@ tableau), [multi-mat](examples/multi-mat) (champs multi-matériaux, boucles écr
 les deux ; `multi-mat-md`, la même chose en 2D par `mdspan`), [validation](examples/validation) (un harnais par propriété, lancé par `ctest`).
 Chaque document existe en anglais et en français ([docs/README.md](docs/README.md)) ; ce qui a
 changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
+
+## État du projet et contributions
+
+shrink-array en est à la version 0.1 : avant la 1.0, une version mineure peut changer
+l'interface ([politique de versions](CHANGELOG.md)). Chaque push lance les vérifications des
+sources, les builds GCC 14 (OpenMP et série), les harnais de validation et les modèles GenMC
+([CI](.github/workflows/ci.yml)).
+
+L'essai sur vos propres données est le retour le plus utile : si la bibliothèque économise de
+la mémoire dans votre code -- ou n'en économise pas --
+[ouvrez une issue](https://github.com/cea-hpc/shrink-array/issues) en indiquant le type, la
+taille et ce que contient le tableau. Les rapports de bugs et les pull requests suivent
+[docs/contributing_fr.md](docs/contributing_fr.md). Si la bibliothèque vous sert, une étoile sur
+le dépôt aide d'autres personnes à la trouver.
 
 ## Licence
 

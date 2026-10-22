@@ -231,12 +231,12 @@ inline void on_op_free(void* ptr) noexcept
 //
 // State per block, with legal transitions (op : from -> to):
 //   b_alloc   : FREE   -> LIVE     fresh block from allocator/svcalloc
-//   b_pop     : PARKED -> LIVE     popped from a per-thread free-list
-//   b_park    : LIVE   -> PARKED   pushed into a per-thread free-list (recup / free_block_to_pool)
+//   b_pop     : parked -> LIVE     popped from a per-thread free-list
+//   b_park    : LIVE   -> parked   pushed into a per-thread free-list (recup / free_block_to_pool)
 //   b_release : LIVE   -> FREE     returned to allocator (free_elt_pow2)
 //
 // Illegal (each trips the assert, naming previous state + previous rank):
-//   double-park  (park a PARKED block)     → two chunks think they own it
+//   double-park  (park a parked block)     → two chunks think they own it
 //   pop LIVE     (hand a LIVE block twice) → one chunk inits a block another frees
 //   park/pop/discard of an UNTRACKED block → foreign or already-recycled ptr
 // A released block leaves the table (malloc may hand its address out again),
@@ -246,9 +246,9 @@ inline void on_op_free(void* ptr) noexcept
 /// @brief A value block's state in the block ledger.
 enum class BState : std::uint8_t
 {
-    FREE   = 0,
-    LIVE   = 1,
-    PARKED = 2
+    free   = 0,
+    live   = 1,
+    parked = 2
 };
 
 /// @brief Name of a block state.
@@ -257,11 +257,11 @@ inline const char* bstate_name(BState state) noexcept
 {
     switch (state)
     {
-        case BState::FREE:
+        case BState::free:
             return "FREE";
-        case BState::LIVE:
+        case BState::live:
             return "LIVE";
-        case BState::PARKED:
+        case BState::parked:
             return "PARKED";
     }
     return "??";
@@ -270,7 +270,7 @@ inline const char* bstate_name(BState state) noexcept
 /// @brief Block ledger record: current state and the rank and site of the last transition.
 struct BRec
 {
-    BState      state     = BState::FREE;
+    BState      state     = BState::free;
     int         last_rank = -1;
     const char* last_site = "";
 };
@@ -287,7 +287,7 @@ inline ankerl::unordered_dense::map<const void*, BRec>& block_live()
 // site). Enabled only when the ledger is on AND CHUNK_LEDGER_REPORT is set in
 // the environment, so it costs nothing otherwise. It separates the causes a
 // LeakSanitizer report cannot: a block left LIVE was allocated and never parked
-// nor released (its reference was dropped); a block left PARKED was parked but
+// nor released (its reference was dropped); a block left parked was parked but
 // not freed by the exit drain; a leaked block absent from the table was never
 // seen by the ledger's hooks at all.
 inline void report_live_blocks() noexcept
@@ -310,11 +310,11 @@ inline void report_live_blocks() noexcept
         for (const auto& kv : block_live())
         {
             const BRec& rec = kv.second;
-            if (rec.state == BState::FREE)
+            if (rec.state == BState::free)
             {
                 continue;
             }
-            if (rec.state == BState::LIVE)
+            if (rec.state == BState::live)
             {
                 ++n_live;
             }
@@ -436,7 +436,7 @@ inline void block_transition(const void* block,
             }
             // Don't record a brand-new entry as FREE: a released unknown block
             // should simply not be tracked (see erase rationale below).
-            if (next != BState::FREE)
+            if (next != BState::free)
             {
                 block_live().emplace(block, BRec{.state = next, .last_rank = rank, .last_site = site});
             }
@@ -455,7 +455,7 @@ inline void block_transition(const void* block,
         // Released back to the system (svfree): remove the entry. A released
         // block does not belong in a live-block ledger; malloc may re-hand the
         // same address later, so the next b_alloc on it starts clean.
-        if (next == BState::FREE)
+        if (next == BState::free)
         {
             block_live().erase(it);
             return;
@@ -473,21 +473,21 @@ inline void block_transition(const void* block,
 inline void on_block_alloc(const void* block, const char* site) noexcept
 {
     maybe_register_live_report();
-    block_transition(block, BState::FREE, BState::LIVE, site, "b_alloc", /*allow_unknown=*/true);
+    block_transition(block, BState::free, BState::live, site, "b_alloc", /*allow_unknown=*/true);
 }
-/// @brief Record a block popped from a free-list (PARKED -> LIVE).
+/// @brief Record a block popped from a free-list (parked -> LIVE).
 /// @param block Block address.
 /// @param site Label of the calling site.
 inline void on_block_pop(const void* block, const char* site) noexcept
 {
-    block_transition(block, BState::PARKED, BState::LIVE, site, "b_pop", /*allow_unknown=*/false);
+    block_transition(block, BState::parked, BState::live, site, "b_pop", /*allow_unknown=*/false);
 }
-/// @brief Record a block pushed into a free-list (LIVE -> PARKED).
+/// @brief Record a block pushed into a free-list (LIVE -> parked).
 /// @param block Block address.
 /// @param site Label of the calling site.
 inline void on_block_park(const void* block, const char* site) noexcept
 {
-    block_transition(block, BState::LIVE, BState::PARKED, site, "b_park", /*allow_unknown=*/false);
+    block_transition(block, BState::live, BState::parked, site, "b_park", /*allow_unknown=*/false);
 }
 /// @brief Record a block returned to the allocator (LIVE -> FREE); an untracked block is accepted.
 /// @param block Block address.
@@ -497,18 +497,18 @@ inline void on_block_release(const void* block, const char* site) noexcept
     // allow_unknown=true: a release of a never-tracked address is non-fatal here
     // (foreign/reused block, or a second release: the first one removed the
     // entry), letting the real svfree proceed so an ASan build still reports
-    // the double-free with both stacks. A release of a tracked PARKED block
+    // the double-free with both stacks. A release of a tracked parked block
     // still trips the ILLEGAL branch, with the site of its last transition.
-    block_transition(block, BState::LIVE, BState::FREE, site, "b_release", /*allow_unknown=*/true);
+    block_transition(block, BState::live, BState::free, site, "b_release", /*allow_unknown=*/true);
 }
-/// @brief Record a parked block freed straight from its reuse list (PARKED -> FREE).
+/// @brief Record a parked block freed straight from its reuse list (parked -> FREE).
 /// @param block Block address.
 /// @param site Label of the calling site.
 // Used when draining a reuse-list whose buffers are being svfree'd: they are
-// PARKED (not LIVE), so a plain release would be an illegal transition.
+// parked (not LIVE), so a plain release would be an illegal transition.
 inline void on_block_discard(const void* block, const char* site) noexcept
 {
-    block_transition(block, BState::PARKED, BState::FREE, site, "b_discard", /*allow_unknown=*/false);
+    block_transition(block, BState::parked, BState::free, site, "b_discard", /*allow_unknown=*/false);
 }
 
 } // namespace shrink_array::pool_ledger

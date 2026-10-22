@@ -48,7 +48,7 @@
 #include <memory>   // std::addressof
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
-#include "chunk/internal/in_t.h"                // in_t<T>
+#include "chunk/internal/in_t.h"                // InT<T>
 #include "chunk/chunk_traits.h"                 // ArrayChunkTraits, Proxy2
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
@@ -409,9 +409,9 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
          */
         void enter_chunk() noexcept
         {
-            if (num_chunk_ >= 0 && static_cast<std::size_t>(num_chunk_) < owner_->chunk_list.size()) [[likely]]
+            if (num_chunk_ >= 0 && static_cast<std::size_t>(num_chunk_) < owner_->chunk_list_.size()) [[likely]]
             {
-                chunk_ = &owner_->chunk_list[num_chunk_];
+                chunk_ = &owner_->chunk_list_[num_chunk_];
                 owner_->sync_chunk(*chunk_, num_chunk_, num_); // once per chunk
             }
             else
@@ -511,13 +511,13 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /** @brief Number of elements currently held. */
     [[nodiscard]] ind_type size() const noexcept
     {
-        return m_size;
+        return m_size_;
     }
 
     /** @brief True when the container holds no element. */
     [[nodiscard]] bool empty() const noexcept
     {
-        return m_size == 0;
+        return m_size_ == 0;
     }
 
     /**
@@ -539,7 +539,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      */
     [[nodiscard]] double stats(this const Derived& self)
     {
-        return self.nb_chunk ? (100.0 * self.get_nb_chunk_written() / self.nb_chunk) : 0.0;
+        return self.nb_chunk_ ? (100.0 * self.get_nb_chunk_written() / self.nb_chunk_) : 0.0;
     }
 
     // ── Capacity, and the growth by one ──────────────────────────────────────
@@ -553,7 +553,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /// @return The element count the current chunks can hold without a resize().
     [[nodiscard]] size_type capacity() const noexcept
     {
-        return static_cast<size_type>(nb_chunk) * static_cast<size_type>(size_policy_.size());
+        return static_cast<size_type>(nb_chunk_) * static_cast<size_type>(size_policy_.size());
     }
 
     /**
@@ -570,9 +570,9 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @details The derived arrays' resize(newsz) does the resizing (they name
      *          this overload back with a using-declaration).
      */
-    void resize(this Derived& self, ind_type newsz, in_t<T> val)
+    void resize(this Derived& self, ind_type newsz, InT<T> val)
     {
-        const ind_type old_size = self.m_size;
+        const ind_type old_size = self.m_size_;
         self.resize(newsz);
 
         // A team of its own outside a region (the library's threshold, the
@@ -588,17 +588,17 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *       resize(), a sequential point (see capacity()). Invalidates all
      *       iterators.
      */
-    void push_back(this Derived& self, in_t<T> val)
+    void push_back(this Derived& self, InT<T> val)
     {
-        if (static_cast<size_type>(self.m_size) < self.capacity()) [[likely]]
+        if (static_cast<size_type>(self.m_size_) < self.capacity()) [[likely]]
         {
-            ++self.m_size;
+            ++self.m_size_;
         }
         else
         {
-            self.resize(self.m_size + 1);
+            self.resize(self.m_size_ + 1);
         }
-        self[self.m_size - 1] = val;
+        self[self.m_size_ - 1] = val;
     }
 
     /**
@@ -626,7 +626,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /// @brief One past the last element.
     [[nodiscard]] const_iterator end(this const Derived& self) noexcept
     {
-        return const_iterator(std::addressof(self), self.m_size);
+        return const_iterator(std::addressof(self), self.m_size_);
     }
 
     /// @brief Same as begin().
@@ -716,9 +716,9 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             {
                 first = 0;
             }
-            if (last > m_size)
+            if (last > m_size_)
             {
-                last = m_size;
+                last = m_size_;
             }
             if (first >= last)
             {
@@ -738,7 +738,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     template <typename F>
     void for_each_value(F&& f) const
     {
-        for_each_value(ind_type{0}, m_size, std::forward<F>(f));
+        for_each_value(ind_type{0}, m_size_, std::forward<F>(f));
     }
 
     /**
@@ -816,7 +816,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     template <typename F>
     void for_each_span(F&& f) const
     {
-        for_each_span(ind_type{0}, m_size, std::forward<F>(f));
+        for_each_span(ind_type{0}, m_size_, std::forward<F>(f));
     }
 
     /**
@@ -867,7 +867,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     {
         if (!empty())
         {
-            --m_size;
+            --m_size_;
         }
     }
 
@@ -923,7 +923,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(this Derived& self, ind_type count, T val); // T, not in_t<T>: val may be a(i) -- resize() can free it
+    void assign(this Derived& self, ind_type count, T val); // T, not InT<T>: val may be a(i) -- resize() can free it
 
     /**
      * @brief assign(): the elements of [first, last), in order.
@@ -974,7 +974,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     {
         const int   num_chunk = self.chunk_index_of(i);
         const int   num       = self.offset_in_chunk(i);
-        const auto& chunk_t   = self.chunk_list[num_chunk];
+        const auto& chunk_t   = self.chunk_list_[num_chunk];
 
         self.sync_chunk(chunk_t, num_chunk, num);
 
@@ -992,7 +992,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     {
         const int num_chunk = self.chunk_index_of(i);
         const int num       = self.offset_in_chunk(i);
-        auto&     chunk_t   = self.chunk_list[num_chunk];
+        auto&     chunk_t   = self.chunk_list_[num_chunk];
 
         self.sync_chunk(chunk_t, num_chunk, num);
 
@@ -1020,7 +1020,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
         CHUNK_ASSUME(num_chunk >= 0);
         CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
-        const auto& chunk_t = self.chunk_list[num_chunk];
+        const auto& chunk_t = self.chunk_list_[num_chunk];
 
         self.sync_chunk(chunk_t, num_chunk, num);
 
@@ -1066,14 +1066,14 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     CHUNK_FLATTEN CHUNK_FORCE_INLINE proxy_type element_proxy(this Derived& self, ind_type i) noexcept
     {
         const int         num_chunk = self.chunk_index_of(i);
-        auto&             chunk_t   = self.chunk_list[num_chunk];
+        auto&             chunk_t   = self.chunk_list_[num_chunk];
         const int         num       = self.offset_in_chunk(i);
         const proxy_type& val       = chunk_t[num];
 
         // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
         // compression: in non-OpenMP builds too, set_num_tab() and
         // get_info_second_value() look ptr_on_array up in share_info_array.
-        val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab);
+        val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab_);
         val.arm_storage_generation(&self.storage_generation_); // check builds only
 
         // Chunk2 only: arm the proxy with this array's registry mirror, so the
@@ -1099,11 +1099,11 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     // them unqualified (the core is a dependent base).
     using Core::alloc_key_;
     using Core::assign_alloc_key;
-    using Core::chunk_list;
-    using Core::nb_chunk;
+    using Core::chunk_list_;
+    using Core::nb_chunk_;
     using Core::nb_tab;
     using Core::next_alloc_key_;
-    using Core::num_tab;
+    using Core::num_tab_;
     using Core::size_policy_;
 
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
@@ -1216,16 +1216,16 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         other.invalidate_proxies();
 
         using std::swap;
-        swap(self.chunk_list, other.chunk_list);
+        swap(self.chunk_list_, other.chunk_list_);
         swap(self.alloc_key_, other.alloc_key_);
         self.swap_dirty_bitset(other);
-        swap(self.m_size, other.m_size);
-        swap(self.nb_chunk, other.nb_chunk);
+        swap(self.m_size_, other.m_size_);
+        swap(self.nb_chunk_, other.nb_chunk_);
         swap(self.size_policy_, other.size_policy_);
         self.swap_identity(other);
     }
 
-    ind_type m_size; ///< Number of elements exposed by size().
+    ind_type m_size_; ///< Number of elements exposed by size().
 
     /// @brief Bumped by every operation that invalidates a proxy (see operator[]).
     ///        Check builds' proxies abort on use when it changed
@@ -1278,9 +1278,9 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         {
             first = 0;
         }
-        if (last > m_size)
+        if (last > m_size_)
         {
-            last = m_size;
+            last = m_size_;
         }
         if (first >= last)
         {
@@ -1293,7 +1293,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         {
             const int         lo = c == c_first ? offset_in_chunk(first) : 0;
             const int         hi = c == c_last ? offset_in_chunk(last - 1) + 1 : full;
-            const chunk_type& ch = chunk_list[static_cast<std::size_t>(c)];
+            const chunk_type& ch = chunk_list_[static_cast<std::size_t>(c)];
             // sync_chunk takes the derived array (deducing this).
             static_cast<const Derived&>(*this).sync_chunk(ch, c, lo);
             fn(ch, c, lo, hi);
@@ -1355,7 +1355,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             // pending counter, below.
             if (self.is_chunk_dirty(num_chunk)) [[unlikely]]
             {
-                // Precise per-chunk gate (DeferredReadGate, chunk_base.h).
+                // precise per-chunk gate (DeferredReadGate, chunk_base.h).
                 if (chunk_t.read_gate_should_wait(offset)) [[unlikely]]
                 {
                     chunk_t.wait_for_availability(offset);

@@ -22,7 +22,7 @@ namespace shrink_array
 {
 
 // ─────────────────────────────────────────────────────────────────────────────
-// in_t<T> — small-type parameter helper
+// InT<T> — small-type parameter helper
 //
 // Passes T by value when it is trivially copyable and ≤ 2*sizeof(void*)
 // (16 bytes on 64-bit), else by const reference. For parameters of hot
@@ -33,18 +33,18 @@ namespace shrink_array
 // For a parameter of type X, stop at the first "yes":
 //
 //   Q1. Is X deduced from the call-site argument (a function template
-//       parameter)?  → `const X&` or `X&&`, NOT in_t<X>. Rule (1).
+//       parameter)?  → `const X&` or `X&&`, NOT InT<X>. Rule (1).
 //   Q2. Does the body write, directly or transitively, to memory the caller
-//       could alias through that parameter?  → `X v` by value, NOT in_t<X>.
+//       could alias through that parameter?  → `X v` by value, NOT InT<X>.
 //       Rule (2).
-//   Q3. Otherwise → `in_t<X> v`: by value for small X, by const ref for large X.
+//   Q3. Otherwise → `InT<X> v`: by value for small X, by const ref for large X.
 //
 // ─── RULE (1): DEDUCTION ─────────────────────────────────────────────────────
 //
-// `in_t<X>` is a non-deducible context (small_type<X> needs X first):
+// `InT<X>` is a non-deducible context (SmallType<X> needs X first):
 //
 //     template <typename U>
-//     void f(in_t<U> v);        // caller f(3.14) → "no matching function"
+//     void f(InT<U> v);        // caller f(3.14) → "no matching function"
 //
 // Representative sites templated on U that keep `const U&` or a plain `U`
 // (illustrative; grep `template <typename U>` in the Proxy hierarchy):
@@ -62,18 +62,18 @@ namespace shrink_array
 //
 // The engines those operators call -- assign_impl (the three proxies),
 // ProxyBase::arithmetic_assign / bitwise_assign, Proxy::apply_compound_operation
-// -- DO take `in_t<U>`: their callers name U explicitly (`assign_impl<U>(v)`).
+// -- DO take `InT<U>`: their callers name U explicitly (`assign_impl<U>(v)`).
 //
 // ─── RULE (2): ALIASING ──────────────────────────────────────────────────────
 //
-// Do not use in_t<T> for a parameter when the body reads it and later
-// overwrites memory it may alias: for large T, `in_t<T> = const T&` may bind to
+// Do not use InT<T> for a parameter when the body reads it and later
+// overwrites memory it may alias: for large T, `InT<T> = const T&` may bind to
 // that memory and a later read returns the new value. Aggregate elements (a
-// struct of three doubles is 24 bytes) make in_t<T> a `const T&` in practice,
+// struct of three doubles is 24 bytes) make InT<T> a `const T&` in practice,
 // so the sites below keep `T v` for a real reason.
 //
 // The proxies' operator= (deduced, `const U&`) hand the operand to
-// assign_impl<U>, whose in_t<U> is safe: the operand comes from the caller (a
+// assign_impl<U>, whose InT<U> is safe: the operand comes from the caller (a
 // const read returns a VALUE, never a reference into a chunk buffer).
 //
 // Canonical alias site — writes the chunk's second-value slot through
@@ -103,16 +103,16 @@ namespace shrink_array
 //
 // ─── ANTI-PATTERN: `const T x = expr; return x;` ─────────────────────────────
 //
-// Unrelated to in_t but often seen next to snapshots: `const` on a returned
+// Unrelated to InT but often seen next to snapshots: `const` on a returned
 // local kills NRVO (a const object cannot be moved), forcing a copy. Prefer
 // `return expr;` (C++17 guaranteed elision).
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
 template <typename T>
-concept small_type = std::is_trivially_copyable_v<T> && sizeof(T) <= 2 * sizeof(void*); // 16 bytes on 64-bit
+concept SmallType = std::is_trivially_copyable_v<T> && sizeof(T) <= 2 * sizeof(void*); // 16 bytes on 64-bit
 
 template <typename T>
-using in_t = std::conditional_t<small_type<T>, T, const T&>;
+using InT = std::conditional_t<SmallType<T>, T, const T&>;
 
 } // namespace shrink_array

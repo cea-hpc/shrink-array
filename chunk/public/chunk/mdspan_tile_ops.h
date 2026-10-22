@@ -113,10 +113,10 @@ concept tiled_view_of_array = requires(const typename View::mapping_type& m) {
 namespace detail
 {
 template <typename View>
-using array_of = typename View::accessor_type::array_type;
+using ArrayOf = typename View::accessor_type::array_type;
 
 template <typename View>
-using value_of = typename array_of<View>::value_type;
+using ValueOf = typename ArrayOf<View>::value_type;
 
 /// @brief The block type a callback receives, row-major over the tile:
 ///        static extents Tile... (layout_tiled), dextents (layout_tiled_dyn).
@@ -150,14 +150,14 @@ block_t<View, E> make_block(const View& f, E* p)
  *        then allocates nothing for the usual chunk sizes.
  */
 template <typename View, typename T>
-class tile_buffer
+class TileBuffer
 {
     static constexpr bool        is_static = requires { View::mapping_type::tile_elems; };
     static constexpr std::size_t inline_n =
         is_static ? 1 : (sizeof(T) >= 8192 ? std::size_t{1} : 8192 / sizeof(T)); // dyn: inline capacity
 
   public:
-    explicit tile_buffer(const View& f)
+    explicit TileBuffer(const View& f)
     {
         if constexpr (!is_static)
         {
@@ -204,7 +204,7 @@ class tile_buffer
     }
 
   private:
-    struct none
+    struct None
     {
     };
     static constexpr std::size_t fixed_n = []
@@ -220,9 +220,9 @@ class tile_buffer
     }();
     // Left uninitialised, as a std::array<T, N> local was: gather() writes
     // every element before anything reads one.
-    [[no_unique_address]] std::conditional_t<is_static, std::array<T, fixed_n>, none>  fixed_;
-    [[no_unique_address]] std::conditional_t<is_static, none, std::array<T, inline_n>> small_;
-    [[no_unique_address]] std::conditional_t<is_static, none, std::vector<T>>          heap_;
+    [[no_unique_address]] std::conditional_t<is_static, std::array<T, fixed_n>, None>  fixed_;
+    [[no_unique_address]] std::conditional_t<is_static, None, std::array<T, inline_n>> small_;
+    [[no_unique_address]] std::conditional_t<is_static, None, std::vector<T>>          heap_;
     std::size_t                                                                        n_ = 0;
 };
 
@@ -349,7 +349,7 @@ bool gather(const Array& a, std::size_t lo, Buf& buf, T& cst, bool lazy)
     return uniform;
 }
 
-struct no_uniform
+struct NoUniform
 {
 };
 
@@ -360,7 +360,7 @@ struct no_uniform
  *        against the other writers and the compressor.
  */
 template <typename Array>
-struct range_writer
+struct RangeWriter
 {
     Array&     a;
     const bool in_region = CHUNK_PMP_IN_PARALLEL_REGION;
@@ -397,12 +397,12 @@ struct range_writer
 
 /// @brief Consecutive storage runs merged into one fill: one range op per run.
 template <typename Array, typename T>
-struct run_filler
+struct RunFiller
 {
-    range_writer<Array>& out;
-    const T&             v;
-    std::size_t          lo = 0;
-    std::size_t          hi = 0;
+    RangeWriter<Array>& out;
+    const T&            v;
+    std::size_t         lo = 0;
+    std::size_t         hi = 0;
 
     void add(std::size_t a, std::size_t b)
     {
@@ -647,7 +647,7 @@ inline std::size_t share_bound(std::size_t W, std::size_t t, std::size_t T)
 /// @brief What a tile weighs in a deal: its cells inside the box (a copy,
 ///        a fill: the work is the box's cells), or one (a callback on the
 ///        whole tile: the work is the tile).
-enum class deal_weight
+enum class DealWeight
 {
     cells,
     tiles,
@@ -664,7 +664,7 @@ void for_each_dealt_tile(const View&                                            
                          const std::array<typename View::index_type, View::rank()>& lo,
                          const std::array<typename View::index_type, View::rank()>& hi,
                          Fn&&                                                       fn,
-                         deal_weight                                                weight = deal_weight::cells)
+                         DealWeight                                                 weight = DealWeight::cells)
 {
     using Index         = typename View::index_type;
     constexpr auto rank = View::rank();
@@ -677,7 +677,7 @@ void for_each_dealt_tile(const View&                                            
         {
             return;
         }
-        if (weight == deal_weight::cells)
+        if (weight == DealWeight::cells)
         {
             W *= static_cast<std::size_t>(hi[r] - lo[r]);
         }
@@ -698,7 +698,7 @@ void for_each_dealt_tile(const View&                                            
                              {
                                  return;
                              }
-                             if (weight == deal_weight::tiles)
+                             if (weight == DealWeight::tiles)
                              {
                                  if (acc++ >= b0)
                                  {
@@ -817,7 +817,7 @@ std::size_t strided_at(const View& f, const std::array<typename View::index_type
 }
 
 /// @brief The whole box: [0, W).
-struct whole_box
+struct WholeBox
 {
     template <typename Index, std::size_t R>
     std::pair<std::size_t, std::size_t>
@@ -880,7 +880,7 @@ template <typename View>
 auto dealt_tiles(const View&                                                f,
                  const std::array<typename View::index_type, View::rank()>& lo,
                  const std::array<typename View::index_type, View::rank()>& hi,
-                 deal_weight                                                weight)
+                 DealWeight                                                 weight)
 {
     return [&f, lo, hi, weight](auto&& fn) { for_each_dealt_tile(f, lo, hi, fn, weight); };
 }
@@ -894,22 +894,22 @@ auto dealt_tiles(const View& f)
     {
         hi[r] = f.extent(r);
     }
-    return dealt_tiles(f, lo, hi, deal_weight::tiles);
+    return dealt_tiles(f, lo, hi, DealWeight::tiles);
 }
 
 /// @brief for_each_tile() on the tiles @p walk(fn) gives (fn(k) per tile).
 template <typename View, typename Walk, typename OnBlock, typename OnUniform>
 void read_tiles(const View& f, const char* who, Walk&& walk, OnBlock& on_block, OnUniform& on_uniform)
 {
-    using T          = value_of<View>;
+    using T          = ValueOf<View>;
     using Index      = typename View::index_type;
     const auto& a    = *f.data_handle();
     const auto  dims = tiles_per_dim(f);
     check_tile_on_chunks(a, f.mapping().tile_elements(), who);
-    constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, no_uniform>;
+    constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, NoUniform>;
 
-    tile_buffer<View, T> buf(f);
-    T                    cst{};
+    TileBuffer<View, T> buf(f);
+    T                   cst{};
     walk(
         [&](Index k)
         {
@@ -931,18 +931,18 @@ void read_tiles(const View& f, const char* who, Walk&& walk, OnBlock& on_block, 
 template <typename View, typename Walk, typename OnBlock, typename OnUniform>
 void write_tiles(const View& f, const char* who, Walk&& walk, OnBlock& on_block, OnUniform& on_uniform)
 {
-    using T                = detail::value_of<View>;
+    using T                = detail::ValueOf<View>;
     using Index            = typename View::index_type;
     const std::size_t N    = static_cast<std::size_t>(f.mapping().tile_elements());
     auto&             a    = *f.data_handle();
     const auto        dims = detail::tiles_per_dim(f);
     detail::check_tile_on_chunks(a, f.mapping().tile_elements(), who);
-    constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, detail::no_uniform>;
+    constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, detail::NoUniform>;
 
-    detail::tile_buffer<View, T>                 buf(f);
-    detail::tile_buffer<View, T>                 before(f); // a materialised tile as read: written back only if changed
-    T                                            cst{};
-    detail::range_writer<detail::array_of<View>> out{a};
+    detail::TileBuffer<View, T>                buf(f);
+    detail::TileBuffer<View, T>                before(f); // a materialised tile as read: written back only if changed
+    T                                          cst{};
+    detail::RangeWriter<detail::ArrayOf<View>> out{a};
     walk(
         [&](Index k)
         {
@@ -1002,7 +1002,7 @@ void write_tiles(const View& f, const char* who, Walk&& walk, OnBlock& on_block,
  * @warning See the file: no other thread writes these tiles meanwhile; in a
  *          parallel region a tile must be whole chunks.
  */
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::no_uniform>
+template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
 void for_each_tile(const View&               f,
                    typename View::index_type first,
                    typename View::index_type last,
@@ -1013,7 +1013,7 @@ void for_each_tile(const View&               f,
 }
 
 /// @brief for_each_tile() over every tile of @p f.
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::no_uniform>
+template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
 void for_each_tile(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {})
 {
     for_each_tile(f, typename View::index_type{0}, tile_count(f), std::forward<OnBlock>(on_block),
@@ -1047,7 +1047,7 @@ void for_each_tile(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {
  * @warning for_each_tile()'s. Writes are writes: inside a parallel region,
  *          within a phase (parallel_phase()).
  */
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::no_uniform>
+template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename View::element_type>)
 void update_tiles(const View&               f,
                   typename View::index_type first,
@@ -1059,7 +1059,7 @@ void update_tiles(const View&               f,
 }
 
 /// @brief update_tiles() over every tile of @p f.
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::no_uniform>
+template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename View::element_type>)
 void update_tiles(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {})
 {
@@ -1077,7 +1077,7 @@ void update_tiles(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {}
  *          callbacks gather is complete once every thread has returned.
  * @warning for_each_tile()'s; every thread of the team calls it.
  */
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::no_uniform>
+template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
 void for_each_tile_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {})
 {
     detail::read_tiles(f, "md::for_each_tile_mt", detail::dealt_tiles(f), on_block, on_uniform);
@@ -1088,7 +1088,7 @@ void for_each_tile_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform 
  *        to the view): those tiles dealt to the team, one unit each, in
  *        storage order. The callbacks get whole tiles, as for_each_tile()'s.
  */
-template <tiled_view_of_array View, std::integral I, typename OnBlock, typename OnUniform = detail::no_uniform>
+template <tiled_view_of_array View, std::integral I, typename OnBlock, typename OnUniform = detail::NoUniform>
 void for_each_tile_mt(const View&                        f,
                       const std::array<I, View::rank()>& box_lo,
                       const std::array<I, View::rank()>& box_hi,
@@ -1101,7 +1101,7 @@ void for_each_tile_mt(const View&                        f,
     {
         return;
     }
-    detail::read_tiles(f, "md::for_each_tile_mt", detail::dealt_tiles(f, lo, hi, detail::deal_weight::tiles), on_block,
+    detail::read_tiles(f, "md::for_each_tile_mt", detail::dealt_tiles(f, lo, hi, detail::DealWeight::tiles), on_block,
                        on_uniform);
 }
 
@@ -1115,7 +1115,7 @@ void for_each_tile_mt(const View&                        f,
  *        needed -- the deals differ.
  * @warning update_tiles()'s; every thread of the team calls it.
  */
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::no_uniform>
+template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename View::element_type>)
 void update_tiles_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {})
 {
@@ -1127,7 +1127,7 @@ void update_tiles_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform =
  *        to the view), dealt to the team one unit each. The callbacks get
  *        whole tiles: cells outside the box are theirs to leave alone.
  */
-template <tiled_view_of_array View, std::integral I, typename OnBlock, typename OnUniform = detail::no_uniform>
+template <tiled_view_of_array View, std::integral I, typename OnBlock, typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename View::element_type>)
 void update_tiles_mt(const View&                        f,
                      const std::array<I, View::rank()>& box_lo,
@@ -1141,7 +1141,7 @@ void update_tiles_mt(const View&                        f,
     {
         return;
     }
-    detail::write_tiles(f, "md::update_tiles_mt", detail::dealt_tiles(f, lo, hi, detail::deal_weight::tiles), on_block,
+    detail::write_tiles(f, "md::update_tiles_mt", detail::dealt_tiles(f, lo, hi, detail::DealWeight::tiles), on_block,
                         on_uniform);
 }
 
@@ -1208,21 +1208,21 @@ concept boundary_of = std::same_as<B, clamp_boundary> || std::same_as<B, constan
 ///        each (lazily: a uniform tile is its constant), kept while the walk
 ///        goes along a row of tiles.
 template <typename View, typename T>
-class tile_cache
+class TileCache
 {
     using Index = typename View::index_type;
 
   public:
-    struct entry
+    struct Entry
     {
-        explicit entry(const View& f) : buf(f) {}
-        Index                k       = std::numeric_limits<Index>::max();
-        bool                 uniform = false;
-        T                    cst{};
-        tile_buffer<View, T> buf;
+        explicit Entry(const View& f) : buf(f) {}
+        Index               k       = std::numeric_limits<Index>::max();
+        bool                uniform = false;
+        T                   cst{};
+        TileBuffer<View, T> buf;
     };
 
-    tile_cache(const View& f, std::size_t n) : f_(f), dims_(tiles_per_dim(f))
+    TileCache(const View& f, std::size_t n) : f_(f), dims_(tiles_per_dim(f))
     {
         e_.reserve(n);
         for (std::size_t i = 0; i < n; ++i)
@@ -1232,7 +1232,7 @@ class tile_cache
     }
 
     /// @brief The tile of coordinates @p c (in tiles), read.
-    entry& fetch(const std::array<Index, View::rank()>& c)
+    Entry& fetch(const std::array<Index, View::rank()>& c)
     {
         Index k = 0;
         for (std::size_t r = 0; r < View::rank(); ++r)
@@ -1246,7 +1246,7 @@ class tile_cache
                 return x;
             }
         }
-        entry& x     = e_[next_];
+        Entry& x     = e_[next_];
         next_        = (next_ + 1) % e_.size();
         const auto t = tile_at(f_, dims_, k);
         x.uniform    = gather(*f_.data_handle(), tile_storage(f_, t), x.buf, x.cst, /*lazy=*/true);
@@ -1262,7 +1262,7 @@ class tile_cache
   private:
     const View&                     f_;
     std::array<Index, View::rank()> dims_;
-    std::vector<entry>              e_;
+    std::vector<Entry>              e_;
     std::size_t                     next_ = 0;
 };
 
@@ -1289,14 +1289,14 @@ void stencil_on(const Src&                       src,
                 OnBlock&                         on_block,
                 OnUniform&                       on_uniform)
 {
-    using T             = value_of<Src>;
+    using T             = ValueOf<Src>;
     using Index         = typename Src::index_type;
     constexpr auto rank = Src::rank();
     static_assert(rank == Dst::rank(), "md::stencil_tiles: the source and the destination have one rank");
-    static_assert(std::same_as<T, value_of<Dst>>, "md::stencil_tiles: the source and the destination hold one type");
+    static_assert(std::same_as<T, ValueOf<Dst>>, "md::stencil_tiles: the source and the destination hold one type");
     static_assert(boundary_of<Boundary, T>,
                   "md::stencil_tiles: the boundary is md::clamp_boundary{} or md::constant_boundary<T>{v}");
-    constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, no_uniform>;
+    constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, NoUniform>;
     constexpr bool clamp       = std::same_as<Boundary, clamp_boundary>;
 
     // The two views: one shape, one tiling, two arrays.
@@ -1358,12 +1358,12 @@ void stencil_on(const Src&                       src,
         centre += static_cast<std::ptrdiff_t>(h) * hs[r];
     }
 
-    tile_cache<Src, T>          cache(src, 2 * neighbourhood<rank>());
-    const auto                  dims = cache.dims();
-    const std::size_t           N    = static_cast<std::size_t>(src.mapping().tile_elements());
-    tile_buffer<Dst, T>         outb(dst);
-    range_writer<array_of<Dst>> out{da};
-    T                           boundary_value{}; // the halo outside the view, constant_boundary's
+    TileCache<Src, T>         cache(src, 2 * neighbourhood<rank>());
+    const auto                dims = cache.dims();
+    const std::size_t         N    = static_cast<std::size_t>(src.mapping().tile_elements());
+    TileBuffer<Dst, T>        outb(dst);
+    RangeWriter<ArrayOf<Dst>> out{da};
+    T                         boundary_value{}; // the halo outside the view, constant_boundary's
     if constexpr (!clamp)
     {
         boundary_value = bnd.value;
@@ -1567,7 +1567,7 @@ template <tiled_view_of_array Src,
           tiled_view_of_array Dst,
           typename Boundary,
           typename OnBlock,
-          typename OnUniform = detail::no_uniform>
+          typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename Dst::element_type>)
 void stencil_tiles(const Src&               src,
                    const Dst&               dst,
@@ -1587,7 +1587,7 @@ template <tiled_view_of_array Src,
           tiled_view_of_array Dst,
           typename Boundary,
           typename OnBlock,
-          typename OnUniform = detail::no_uniform>
+          typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename Dst::element_type>)
 void stencil_tiles(const Src&               src,
                    const Dst&               dst,
@@ -1614,7 +1614,7 @@ template <tiled_view_of_array Src,
           tiled_view_of_array Dst,
           typename Boundary,
           typename OnBlock,
-          typename OnUniform = detail::no_uniform>
+          typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename Dst::element_type>)
 void stencil_tiles_mt(const Src&               src,
                       const Dst&               dst,
@@ -1634,7 +1634,7 @@ template <typename View, typename I, typename Walk>
 void fill_tiles(const View&                        f,
                 const std::array<I, View::rank()>& box_lo,
                 const std::array<I, View::rank()>& box_hi,
-                const value_of<View>&              v,
+                const ValueOf<View>&               v,
                 Walk&&                             walk)
 {
     using Index         = typename View::index_type;
@@ -1646,10 +1646,10 @@ void fill_tiles(const View&                        f,
     {
         return;
     }
-    auto&                                      a    = *f.data_handle();
-    const auto                                 dims = tiles_per_dim(f);
-    range_writer<array_of<View>>               out{a};
-    run_filler<array_of<View>, value_of<View>> runs{out, v};
+    auto&                                   a    = *f.data_handle();
+    const auto                              dims = tiles_per_dim(f);
+    RangeWriter<ArrayOf<View>>              out{a};
+    RunFiller<ArrayOf<View>, ValueOf<View>> runs{out, v};
     walk(lo, hi,
          [&](Index k)
          {
@@ -1694,7 +1694,7 @@ void fill_tiles(const View&                        f,
                          }
                      }
                  },
-                 [&](const auto&, value_of<View>& u) { return u == v; });
+                 [&](const auto&, ValueOf<View>& u) { return u == v; });
          });
     runs.flush();
 }
@@ -1723,7 +1723,7 @@ template <tiled_view_of_array View, std::integral I>
 void fill_box(const View&                        f,
               const std::array<I, View::rank()>& box_lo,
               const std::array<I, View::rank()>& box_hi,
-              const detail::value_of<View>&      v,
+              const detail::ValueOf<View>&       v,
               typename View::index_type          first,
               typename View::index_type          last)
 {
@@ -1737,7 +1737,7 @@ template <tiled_view_of_array View, std::integral I>
 void fill_box(const View&                        f,
               const std::array<I, View::rank()>& lo,
               const std::array<I, View::rank()>& hi,
-              const detail::value_of<View>&      v)
+              const detail::ValueOf<View>&       v)
 {
     fill_box(f, lo, hi, v, typename View::index_type{0}, tile_count(f));
 }
@@ -1757,10 +1757,10 @@ template <tiled_view_of_array View, std::integral I>
 void fill_box_mt(const View&                        f,
                  const std::array<I, View::rank()>& lo,
                  const std::array<I, View::rank()>& hi,
-                 const detail::value_of<View>&      v)
+                 const detail::ValueOf<View>&       v)
 {
     detail::fill_tiles(f, lo, hi, v, [&](const auto& blo, const auto& bhi, auto&& fn)
-                       { detail::for_each_dealt_tile(f, blo, bhi, fn, detail::deal_weight::cells); });
+                       { detail::for_each_dealt_tile(f, blo, bhi, fn, detail::DealWeight::cells); });
 }
 
 namespace detail
@@ -1773,7 +1773,7 @@ template <typename View, typename I, typename Share>
 void fill_strided(const View&                        f,
                   const std::array<I, View::rank()>& box_lo,
                   const std::array<I, View::rank()>& box_hi,
-                  const value_of<View>&              v,
+                  const ValueOf<View>&               v,
                   Share&&                            share)
 {
     using Index         = typename View::index_type;
@@ -1784,10 +1784,10 @@ void fill_strided(const View&                        f,
     {
         return;
     }
-    range_writer<array_of<View>>               out{*f.data_handle()};
-    run_filler<array_of<View>, value_of<View>> runs{out, v};
-    const bool                                 rows = f.stride(rank - 1) == 1;
-    const auto [c0, c1]                             = share(lo, hi, rows);
+    RangeWriter<ArrayOf<View>>              out{*f.data_handle()};
+    RunFiller<ArrayOf<View>, ValueOf<View>> runs{out, v};
+    const bool                              rows = f.stride(rank - 1) == 1;
+    const auto [c0, c1]                          = share(lo, hi, rows);
     for_each_row_piece(lo, hi, c0, c1,
                        [&](const std::array<Index, rank>& idx, std::size_t m)
                        {
@@ -1823,9 +1823,9 @@ template <detail::writable_strided_view_of_array View, std::integral I>
 void fill_box(const View&                        f,
               const std::array<I, View::rank()>& lo,
               const std::array<I, View::rank()>& hi,
-              const detail::value_of<View>&      v)
+              const detail::ValueOf<View>&       v)
 {
-    detail::fill_strided(f, lo, hi, v, detail::whole_box{});
+    detail::fill_strided(f, lo, hi, v, detail::WholeBox{});
 }
 
 /**
@@ -1843,7 +1843,7 @@ template <detail::writable_strided_view_of_array View, std::integral I>
 void fill_box_mt(const View&                        f,
                  const std::array<I, View::rank()>& lo,
                  const std::array<I, View::rank()>& hi,
-                 const detail::value_of<View>&      v)
+                 const detail::ValueOf<View>&       v)
 {
     detail::fill_strided(f, lo, hi, v, detail::team_share(f));
 }
@@ -1860,11 +1860,11 @@ template <typename View, typename I, typename Walk>
 void copy_tiles_out(const View&                        f,
                     const std::array<I, View::rank()>& box_lo,
                     const std::array<I, View::rank()>& box_hi,
-                    value_of<View>*                    dst,
+                    ValueOf<View>*                     dst,
                     const char*                        who,
                     Walk&&                             walk)
 {
-    using T                      = detail::value_of<View>;
+    using T                      = detail::ValueOf<View>;
     using Index                  = typename View::index_type;
     constexpr auto          rank = View::rank();
     std::array<Index, rank> lo{};
@@ -1880,11 +1880,11 @@ void copy_tiles_out(const View&                        f,
     {
         ext[r] = hi[r] - lo[r];
     }
-    const auto                   bs   = detail::row_major_strides(ext);
-    const auto                   ts   = detail::tile_strides(f);
-    const auto                   dims = detail::tiles_per_dim(f);
-    detail::tile_buffer<View, T> buf(f);
-    T                            cst{};
+    const auto                  bs   = detail::row_major_strides(ext);
+    const auto                  ts   = detail::tile_strides(f);
+    const auto                  dims = detail::tiles_per_dim(f);
+    detail::TileBuffer<View, T> buf(f);
+    T                           cst{};
     walk(lo, hi,
          [&](Index k)
          {
@@ -1915,11 +1915,11 @@ template <typename View, typename I, typename Walk>
 void copy_tiles_in(const View&                        f,
                    const std::array<I, View::rank()>& box_lo,
                    const std::array<I, View::rank()>& box_hi,
-                   const value_of<View>*              src,
+                   const ValueOf<View>*               src,
                    const char*                        who,
                    Walk&&                             walk)
 {
-    using T                      = detail::value_of<View>;
+    using T                      = detail::ValueOf<View>;
     using Index                  = typename View::index_type;
     constexpr auto          rank = View::rank();
     std::array<Index, rank> lo{};
@@ -1935,12 +1935,12 @@ void copy_tiles_in(const View&                        f,
     {
         ext[r] = hi[r] - lo[r];
     }
-    const auto                                   bs   = detail::row_major_strides(ext);
-    const auto                                   ts   = detail::tile_strides(f);
-    const auto                                   dims = detail::tiles_per_dim(f);
-    const std::size_t                            N    = static_cast<std::size_t>(f.mapping().tile_elements());
-    detail::tile_buffer<View, T>                 buf(f);
-    detail::range_writer<detail::array_of<View>> out{a};
+    const auto                                 bs   = detail::row_major_strides(ext);
+    const auto                                 ts   = detail::tile_strides(f);
+    const auto                                 dims = detail::tiles_per_dim(f);
+    const std::size_t                          N    = static_cast<std::size_t>(f.mapping().tile_elements());
+    detail::TileBuffer<View, T>                buf(f);
+    detail::RangeWriter<detail::ArrayOf<View>> out{a};
     walk(lo, hi,
          [&](Index k)
          {
@@ -1959,7 +1959,8 @@ void copy_tiles_in(const View&                        f,
              const auto copy_rows = [&](T* tile_data)
              {
                  detail::for_each_row(ilo, ihi,
-                                      [&](const std::array<Index, rank>& idx) {
+                                      [&](const std::array<Index, rank>& idx)
+                                      {
                                           std::copy_n(src + detail::offset_in(idx, lo, bs), n,
                                                       tile_data + detail::offset_in(idx, t.origin, ts));
                                       });
@@ -2009,7 +2010,7 @@ template <tiled_view_of_array View, std::integral I>
 void copy_box_out(const View&                        f,
                   const std::array<I, View::rank()>& box_lo,
                   const std::array<I, View::rank()>& box_hi,
-                  detail::value_of<View>*            dst,
+                  detail::ValueOf<View>*             dst,
                   typename View::index_type          first,
                   typename View::index_type          last)
 {
@@ -2022,7 +2023,7 @@ template <tiled_view_of_array View, std::integral I>
 void copy_box_out(const View&                        f,
                   const std::array<I, View::rank()>& lo,
                   const std::array<I, View::rank()>& hi,
-                  detail::value_of<View>*            dst)
+                  detail::ValueOf<View>*             dst)
 {
     copy_box_out(f, lo, hi, dst, typename View::index_type{0}, tile_count(f));
 }
@@ -2045,7 +2046,7 @@ template <tiled_view_of_array View, std::integral I>
 void copy_box_out_mt(const View&                        f,
                      const std::array<I, View::rank()>& box_lo,
                      const std::array<I, View::rank()>& box_hi,
-                     detail::value_of<View>*            dst)
+                     detail::ValueOf<View>*             dst)
 {
     detail::copy_tiles_out(f, box_lo, box_hi, dst, "md::copy_box_out_mt", [&](const auto& lo, const auto& hi, auto&& fn)
                            { detail::for_each_dealt_tile(f, lo, hi, fn); });
@@ -2078,7 +2079,7 @@ template <tiled_view_of_array View, std::integral I>
 void copy_box_in(const View&                        f,
                  const std::array<I, View::rank()>& box_lo,
                  const std::array<I, View::rank()>& box_hi,
-                 const detail::value_of<View>*      src,
+                 const detail::ValueOf<View>*       src,
                  typename View::index_type          first,
                  typename View::index_type          last)
 {
@@ -2092,7 +2093,7 @@ template <tiled_view_of_array View, std::integral I>
 void copy_box_in(const View&                        f,
                  const std::array<I, View::rank()>& lo,
                  const std::array<I, View::rank()>& hi,
-                 const detail::value_of<View>*      src)
+                 const detail::ValueOf<View>*       src)
 {
     copy_box_in(f, lo, hi, src, typename View::index_type{0}, tile_count(f));
 }
@@ -2114,7 +2115,7 @@ template <tiled_view_of_array View, std::integral I>
 void copy_box_in_mt(const View&                        f,
                     const std::array<I, View::rank()>& box_lo,
                     const std::array<I, View::rank()>& box_hi,
-                    const detail::value_of<View>*      src)
+                    const detail::ValueOf<View>*       src)
 {
     detail::copy_tiles_in(f, box_lo, box_hi, src, "md::copy_box_in_mt", [&](const auto& lo, const auto& hi, auto&& fn)
                           { detail::for_each_dealt_tile(f, lo, hi, fn); });
@@ -2128,11 +2129,11 @@ template <typename View, typename I, typename Share>
 void copy_strided_out(const View&                        f,
                       const std::array<I, View::rank()>& box_lo,
                       const std::array<I, View::rank()>& box_hi,
-                      value_of<View>*                    dst,
+                      ValueOf<View>*                     dst,
                       const char*                        who,
                       Share&&                            share)
 {
-    using T                      = value_of<View>;
+    using T                      = ValueOf<View>;
     using Index                  = typename View::index_type;
     constexpr auto          rank = View::rank();
     std::array<Index, rank> lo{};
@@ -2181,7 +2182,7 @@ void copy_strided_out(const View&                        f,
                                for (std::size_t j = 0; j < n; ++j, ++i[rank - 1])
                                {
                                    d[j] = static_cast<T>(
-                                       std::as_const(a)[static_cast<index_of<array_of<View>>>(strided_at(f, i))]);
+                                       std::as_const(a)[static_cast<index_of<ArrayOf<View>>>(strided_at(f, i))]);
                                }
                            }
                        });
@@ -2193,7 +2194,7 @@ template <typename View, typename I, typename Share>
 void copy_strided_in(const View&                        f,
                      const std::array<I, View::rank()>& box_lo,
                      const std::array<I, View::rank()>& box_hi,
-                     const value_of<View>*              src,
+                     const ValueOf<View>*               src,
                      const char*                        who,
                      Share&&                            share)
 {
@@ -2214,7 +2215,7 @@ void copy_strided_in(const View&                        f,
     const auto bs       = row_major_strides(ext);
     const bool rows     = f.stride(rank - 1) == 1;
     const auto [c0, c1] = share(lo, hi, rows);
-    range_writer<array_of<View>> out{a};
+    RangeWriter<ArrayOf<View>> out{a};
     for_each_row_piece(lo, hi, c0, c1,
                        [&](const std::array<Index, rank>& idx, std::size_t n)
                        {
@@ -2229,7 +2230,7 @@ void copy_strided_in(const View&                        f,
                                std::array<Index, rank> i = idx;
                                for (std::size_t j = 0; j < n; ++j, ++i[rank - 1])
                                {
-                                   a[static_cast<index_of<array_of<View>>>(strided_at(f, i))] = s[j];
+                                   a[static_cast<index_of<ArrayOf<View>>>(strided_at(f, i))] = s[j];
                                }
                            }
                        });
@@ -2250,9 +2251,9 @@ template <detail::strided_view_of_array View, std::integral I>
 void copy_box_out(const View&                        f,
                   const std::array<I, View::rank()>& lo,
                   const std::array<I, View::rank()>& hi,
-                  detail::value_of<View>*            dst)
+                  detail::ValueOf<View>*             dst)
 {
-    detail::copy_strided_out(f, lo, hi, dst, "md::copy_box_out", detail::whole_box{});
+    detail::copy_strided_out(f, lo, hi, dst, "md::copy_box_out", detail::WholeBox{});
 }
 
 /**
@@ -2272,9 +2273,9 @@ template <detail::writable_strided_view_of_array View, std::integral I>
 void copy_box_in(const View&                        f,
                  const std::array<I, View::rank()>& lo,
                  const std::array<I, View::rank()>& hi,
-                 const detail::value_of<View>*      src)
+                 const detail::ValueOf<View>*       src)
 {
-    detail::copy_strided_in(f, lo, hi, src, "md::copy_box_in", detail::whole_box{});
+    detail::copy_strided_in(f, lo, hi, src, "md::copy_box_in", detail::WholeBox{});
 }
 
 /**
@@ -2296,7 +2297,7 @@ template <detail::strided_view_of_array View, std::integral I>
 void copy_box_out_mt(const View&                        f,
                      const std::array<I, View::rank()>& lo,
                      const std::array<I, View::rank()>& hi,
-                     detail::value_of<View>*            dst)
+                     detail::ValueOf<View>*             dst)
 {
     detail::copy_strided_out(f, lo, hi, dst, "md::copy_box_out_mt", detail::team_share(f));
 }
@@ -2316,7 +2317,7 @@ template <detail::writable_strided_view_of_array View, std::integral I>
 void copy_box_in_mt(const View&                        f,
                     const std::array<I, View::rank()>& lo,
                     const std::array<I, View::rank()>& hi,
-                    const detail::value_of<View>*      src)
+                    const detail::ValueOf<View>*       src)
 {
     detail::copy_strided_in(f, lo, hi, src, "md::copy_box_in_mt", detail::team_share(f));
 }

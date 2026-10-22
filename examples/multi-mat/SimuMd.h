@@ -111,14 +111,14 @@ struct SimuMd
     bool parse(int argc, char** argv);
 
     /// @brief The storage of every material (option_chunk).
-    void drawStorage();
+    void draw_storage();
 
     /// @brief The three fields and the presence fraction of every material,
     ///        sized for the layout of the chunk mode.
-    void createTabs();
+    void create_tabs();
 
     /// @brief Cells a thread wrote (resets included), one per thread, padded:
-    ///        the balance of the deal (dealParts()).
+    ///        the balance of the deal (deal_parts()).
     struct alignas(64) WorkSlot
     {
         long cells = 0;
@@ -126,11 +126,11 @@ struct SimuMd
     std::vector<WorkSlot> work;
 
     /// @brief The box of every material at every iteration.
-    void computeDistribution();
+    void compute_distribution();
 
     /// @brief Elements every array holds: the tiled size in a tiled chunk
     ///        mode (the last tiles padded), nx * ny row-major.
-    [[nodiscard]] std::size_t storageSize() const;
+    [[nodiscard]] std::size_t storage_size() const;
 
     /// @brief A part of material mat's box: a thread's share of it.
     struct Share
@@ -151,14 +151,14 @@ struct SimuMd
      *          a unit goes to one thread only.
      */
     template <typename BoxOf, typename RowParts>
-    void dealParts(const BoxOf& box_of, const RowParts& row_parts, std::vector<Share>& mine) const;
+    void deal_parts(const BoxOf& box_of, const RowParts& row_parts, std::vector<Share>& mine) const;
 
     /**
      * @brief The iterations. Called by every thread of a parallel region.
      * @param value This thread's share of the gadget result.
      */
-    template <typename LOOPS, typename LOOPSCHUNK>
-    void computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double& value);
+    template <typename LoopsVec, typename LoopsChunk>
+    void compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, double& value);
 
     /**
      * @brief Replay the run serially on plain vectors, compare every array
@@ -166,30 +166,30 @@ struct SimuMd
      *        the absolute terms. Outside a parallel region.
      * @return The number of mismatches (0: the run is right).
      */
-    template <typename LOOPS, typename LOOPSCHUNK>
-    long verify(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double result) const;
+    template <typename LoopsVec, typename LoopsChunk>
+    long verify(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, double result) const;
 
     // ── The values ───────────────────────────────────────────────────────
 
     /// @brief The cell number of (i, j): what multi-mat's fields are made of.
-    [[nodiscard]] double cellNumber(int i, int j) const noexcept
+    [[nodiscard]] double cell_number(int i, int j) const noexcept
     {
         return static_cast<double>(i * ny + j);
     }
 
     /// @brief The presence fraction of cell (i, j) of box @p b: a ramp over
     ///        the interface_width cells along each side, 1 inside.
-    [[nodiscard]] double presenceFraction(const Box& b, int i, int j) const noexcept
+    [[nodiscard]] double presence_fraction(const Box& b, int i, int j) const noexcept
     {
         const int d = std::min(std::min(i - b.i0, b.i1() - 1 - i), std::min(j - b.j0, b.j1() - 1 - j));
         return d >= interface_width ? 1. : static_cast<double>(d + 1) / static_cast<double>(interface_width + 1);
     }
 
     /// @brief 1 when the cells [origin, origin + extent) all lie in the
-    ///        interior of @p b (presenceFraction() is 1 on all of them).
+    ///        interior of @p b (presence_fraction() is 1 on all of them).
     template <typename Arr>
     [[nodiscard]] std::optional<double>
-    fractionOnTile(const Box& b, const Arr& origin, const Arr& extent) const noexcept
+    fraction_on_tile(const Box& b, const Arr& origin, const Arr& extent) const noexcept
     {
         const int  oi     = static_cast<int>(origin[0]);
         const int  oj     = static_cast<int>(origin[1]);

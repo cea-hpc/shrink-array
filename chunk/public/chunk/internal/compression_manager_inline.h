@@ -188,7 +188,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
         const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
         // ─── Dekker held — execute deferred ops ───────────────────────────
 
-        using FlushLog = ScopedRingLogManualEnd<EV_FLUSH_BEGIN, EV_FLUSH_END>;
+        using FlushLog = ScopedRingLogManualEnd<ev_flush_begin, ev_flush_end>;
         FlushLog log(payload);
 
         int64_t flushed_here = 0;
@@ -206,7 +206,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
             {
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
-                    ring_log_op(get_tid(), EV_OP_FLUSH_ONE, static_cast<uint32_t>(num),
+                    ring_log_op(get_tid(), ev_op_flush_one, static_cast<uint32_t>(num),
                                 static_cast<const void*>(op_ptr.get()));
                 }
 
@@ -330,7 +330,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
         }
     }
 
-    using FlushLog = ScopedRingLogManualEnd<EV_FLUSH_BEGIN, EV_FLUSH_END>;
+    using FlushLog = ScopedRingLogManualEnd<ev_flush_begin, ev_flush_end>;
     FlushLog log(payload);
 
     bool flushed_any = false;
@@ -400,7 +400,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
 
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
-                    ring_log_op(get_tid(), EV_OP_FLUSH_ONE, static_cast<uint32_t>(num),
+                    ring_log_op(get_tid(), ev_op_flush_one, static_cast<uint32_t>(num),
                                 static_cast<const void*>(op_ptr.get()));
                 }
 
@@ -543,7 +543,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
 {
     if constexpr (chunk_config::ring_log_debug)
     {
-        ring_log_start(get_tid(), EV_COMPRESS_STARTED);
+        ring_log_start(get_tid(), ev_compress_started);
     }
 
     add_compression_active();
@@ -564,7 +564,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
         decrement_inflight();
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log_end(get_tid(), EV_COMPRESS_FINISHED);
+            ring_log_end(get_tid(), ev_compress_finished);
         }
 
         return false;
@@ -626,7 +626,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
                 decrement_inflight();
                 if constexpr (chunk_config::ring_log_debug)
                 {
-                    ring_log_end(get_tid(), EV_COMPRESS_FINISHED);
+                    ring_log_end(get_tid(), ev_compress_finished);
                 }
                 return false;
             }
@@ -661,7 +661,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
         decrement_inflight();
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log_end(get_tid(), EV_COMPRESS_FINISHED);
+            ring_log_end(get_tid(), ev_compress_finished);
         }
         return false;
     }
@@ -733,7 +733,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::finish()
 
     if constexpr (chunk_config::ring_log_debug)
     {
-        ring_log_end(get_tid(), EV_COMPRESS_FINISHED);
+        ring_log_end(get_tid(), ev_compress_finished);
     }
 }
 

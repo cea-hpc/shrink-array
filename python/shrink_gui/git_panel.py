@@ -86,6 +86,8 @@ class GitPanel:
 
         def done(r):
             self.git_busy -= 1
+            if getattr(self, "branches_again", False):    # asked for meanwhile
+                self.load_branches()
             if r is None:  # the error is already in the status bar
                 self.show_git_state()
                 return
@@ -108,14 +110,23 @@ class GitPanel:
 
     def load_branches(self):
         """git fetch on inti, then the "Branche (inti)" list: the local branches,
-        then the remote ones without a local branch; the current one selected."""
-        if not getattr(self, "inti_git", None) or getattr(self, "git_busy", 0):
+        then the remote ones without a local branch; the current one selected.
+        Asked again while a fetch is pending (the repository changed), it runs
+        again once that one answers, whose list is then dropped."""
+        if not getattr(self, "inti_git", None):
+            return
+        if getattr(self, "git_busy", 0):
+            self.branches_again = True
             return
         self.git_busy = getattr(self, "git_busy", 0) + 1
+        self.branches_again = False
         self.show_git_state()
 
         def done(r):
             self.git_busy -= 1
+            if self.branches_again:
+                self.load_branches()
+                return
             if r is None:  # the error is already in the status bar
                 self.show_git_state()
                 return
@@ -164,6 +175,8 @@ class GitPanel:
 
         def done(r):
             self.git_busy -= 1
+            if getattr(self, "branches_again", False):    # asked for meanwhile
+                self.load_branches()
             if r is None:
                 self.show_git_state()
                 return

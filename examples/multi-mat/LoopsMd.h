@@ -106,7 +106,7 @@ struct Box
 inline constexpr auto tile_shape = smd::tile_shape<2>(shrink_array::static_chunk_size);
 
 /// @brief The tiled layout of the chunk materials.
-using layout_tiles = smd::layout_tiled<tile_shape[0], tile_shape[1]>;
+using LayoutTiles = smd::layout_tiled<tile_shape[0], tile_shape[1]>;
 
 /// @brief Rows of a band: the tile's height, bands aligned on the tiles.
 inline constexpr int band_rows = static_cast<int>(tile_shape[0]);
@@ -184,7 +184,7 @@ const shrink_array::ArrayChunk2<T>& array_of(const VectChunk2<T>& v) noexcept
 }
 
 /// @brief No uniform-tile hint: the tile policy always takes the block path.
-struct no_hint
+struct NoHint
 {
 };
 
@@ -197,7 +197,7 @@ struct no_hint
  *         otherwise. Only the tile policy asks: it then writes the tile as
  *         one constant, or nothing when it already holds it.
  */
-template <typename View, typename Fn, typename Hint = no_hint>
+template <typename View, typename Fn, typename Hint = NoHint>
 struct BoxWrite
 {
     View f;
@@ -265,15 +265,15 @@ struct CellLoops
      *        cells of part @p p of box @p b; @p red is the calling thread's
      *        accumulator.
      */
-    template <typename Fn, typename VF, typename V0, typename V1, typename V2>
-    void reduce_box(const Box&  b,
-                    const Part& p,
-                    double&     red,
-                    const Fn&   fn,
-                    const VF&   fr,
-                    const V0&   t0,
-                    const V1&   t1,
-                    const V2&   t2) const
+    template <typename Fn, typename FractionView, typename V0, typename V1, typename V2>
+    void reduce_box(const Box&          b,
+                    const Part&         p,
+                    double&             red,
+                    const Fn&           fn,
+                    const FractionView& fr,
+                    const V0&           t0,
+                    const V1&           t1,
+                    const V2&           t2) const
     {
         const Box c = cells_of(b, p);
         for (int i = c.i0; i < c.i1(); ++i)
@@ -396,15 +396,15 @@ struct LoopsMdTiles
         (smd::fill_box(fs, b.lo(), b.hi(), 0., k0 + p.c_first, k0 + p.c_last), ...);
     }
 
-    template <typename Fn, typename VF, typename V0, typename V1, typename V2>
-    void reduce_box(const Box&  b,
-                    const Part& p,
-                    double&     red,
-                    const Fn&   fn,
-                    const VF&   fr,
-                    const V0&   t0,
-                    const V1&   t1,
-                    const V2&   t2) const
+    template <typename Fn, typename FractionView, typename V0, typename V1, typename V2>
+    void reduce_box(const Box&          b,
+                    const Part&         p,
+                    double&             red,
+                    const Fn&           fn,
+                    const FractionView& fr,
+                    const V0&           t0,
+                    const V1&           t1,
+                    const V2&           t2) const
     {
         const int r  = p.row_first / band_rows;
         const int k0 = r * per_row(fr);
@@ -511,7 +511,7 @@ struct LoopsMdTiles
                 }
             }
         };
-        if constexpr (std::is_same_v<Hint, no_hint>)
+        if constexpr (std::is_same_v<Hint, NoHint>)
         {
             smd::update_tiles(w.f, first, last, on_block);
         }

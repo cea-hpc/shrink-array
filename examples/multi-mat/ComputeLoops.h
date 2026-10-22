@@ -18,7 +18,7 @@
 
 /**
  * @file ComputeLoops.h
- * @brief The iterations of the simulation: Simu::computeLoops().
+ * @brief The iterations of the simulation: Simu::compute_loops().
  *
  * Runs on every thread of one parallel region, for the whole run. Each
  * iteration: the indirection of every material is rebuilt from the interval
@@ -39,14 +39,14 @@
 
 #include "config.h"       // multi_mat::begin_parallel_phase, barrier_phase, embedded_compression
 #include "Containers.h"   // VectChunk, dispatch
-#include "Dispatch.h"     // Dispatch::isChunk
+#include "Dispatch.h"     // Dispatch::is_chunk
 #include "MultiMatAlgo.h" // MultiMatAlgo
-#include "Simu.h"         // Simu: computeLoops() is defined here
+#include "Simu.h"         // Simu: compute_loops() is defined here
 
-template <typename LOOPS, typename LOOPSCHUNK>
-void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
-                        const std::function<void(bool)>& lbd_stats,
-                        double&                          value)
+template <typename LoopsVec, typename LoopsChunk>
+void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
+                         const std::function<void(bool)>&    lbd_stats,
+                         double&                             value)
 {
     multi_mat::begin_parallel_phase(); // manual executable only, see config.h
 
@@ -176,7 +176,7 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
                                      // 1 inside the material, a ramp at its two interfaces:
                                      // on a chunk array the interior writes hit chunks already
                                      // compressed to 1 and return without materialising them.
-                                     frac_ind[nn] = presenceFraction(nn - start, size);
+                                     frac_ind[nn] = presence_fraction(nn - start, size);
                                  });
                          }
                      });
@@ -242,17 +242,17 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
             mm_algo.loop(0, nbmat,
                          [&](int m, const auto& get_mat_vec, const auto&)
                          {
-                             if (dispatch.isChunk(m))
+                             if (dispatch.is_chunk(m))
                              {
                                  auto& tab0_ind = get_mat_vec(tabs[0]);
                                  using V        = std::remove_reference_t<decltype(tab0_ind)>;
 
-                                 using vec_chunk_real = VectChunk<double>;
+                                 using VecChunkReal = VectChunk<double>;
 
                                  // Compression only exists for 'chunk' arrays: `if constexpr` keeps the call out
                                  // of the std::vector instantiation.
 
-                                 if constexpr (std::is_same_v<V, vec_chunk_real>)
+                                 if constexpr (std::is_same_v<V, VecChunkReal>)
                                  {
                                      auto& tab1_ind = get_mat_vec(tabs[1]);
                                      auto& tab2_ind = get_mat_vec(tabs[2]);

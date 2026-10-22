@@ -43,7 +43,7 @@ class GlobalStatsChunkList
     /// @brief Record one element type's figures under @p name.
     void record(const std::string& name, long somme, int max_chunks, size_t elem_size)
     {
-        all_stats[name] = {.allocated_chunks = somme, .threshold_per_thr = max_chunks, .element_size = elem_size};
+        all_stats_[name] = {.allocated_chunks = somme, .threshold_per_thr = max_chunks, .element_size = elem_size};
     }
 
     /**
@@ -51,7 +51,7 @@ class GlobalStatsChunkList
      */
     void print() const
     {
-        if (all_stats.empty())
+        if (all_stats_.empty())
         {
             return;
         }
@@ -68,34 +68,34 @@ class GlobalStatsChunkList
         const std::string rule_eq(total_width, '=');
         const std::string rule_dash(total_width, '-');
 
-        std::println("\n{}{}{}", tc.CYAN, rule_eq, tc.RESET);
-        std::println("{}{}{:{}}GLOBAL COMPRESSION LISTS MONITORING{}", tc.BOLD, tc.CYAN, "", (total_width - 35) / 2,
-                     tc.RESET);
-        std::println("{} Configuration: {}{}{}{} active threads{}", tc.WHITE, tc.BOLD, nb_threads, tc.RESET, tc.WHITE,
-                     tc.RESET);
-        std::println("{}{}{}", tc.CYAN, rule_eq, tc.RESET);
+        std::println("\n{}{}{}", tc.cyan, rule_eq, tc.reset);
+        std::println("{}{}{:{}}GLOBAL COMPRESSION LISTS MONITORING{}", tc.bold, tc.cyan, "", (total_width - 35) / 2,
+                     tc.reset);
+        std::println("{} Configuration: {}{}{}{} active threads{}", tc.white, tc.bold, nb_threads, tc.reset, tc.white,
+                     tc.reset);
+        std::println("{}{}{}", tc.cyan, rule_eq, tc.reset);
 
-        std::println("{}{:<{}}{:>{}}{:>{}}{:>{}}{}", tc.BOLD, "Chunk Type Instance", col_type, "Allocated Chunks",
-                     col_data, "Op-List Capacity", col_list, "List Memory", col_mem, tc.RESET);
+        std::println("{}{:<{}}{:>{}}{:>{}}{:>{}}{}", tc.bold, "Chunk Type Instance", col_type, "Allocated Chunks",
+                     col_data, "Op-List Capacity", col_list, "List Memory", col_mem, tc.reset);
 
         std::println("{}", rule_dash);
 
-        for (const auto& [name, stats] : all_stats)
+        for (const auto& [name, stats] : all_stats_)
         {
             const long        total_list_capacity = static_cast<long>(nb_threads) * stats.threshold_per_thr;
             const long double type_list_bytes     = static_cast<long double>(total_list_capacity) * stats.element_size;
             total_metadata_mem += type_list_bytes;
 
-            std::println("{:<{}}{}{:>{}}{}{}{:>{}}{}{}{:>{}}{}", name, col_type, tc.GREEN, stats.allocated_chunks,
-                         col_data, tc.RESET, tc.YELLOW, total_list_capacity, col_list, tc.RESET, tc.RED,
-                         format_memory(type_list_bytes), col_mem, tc.RESET);
+            std::println("{:<{}}{}{:>{}}{}{}{:>{}}{}{}{:>{}}{}", name, col_type, tc.green, stats.allocated_chunks,
+                         col_data, tc.reset, tc.yellow, total_list_capacity, col_list, tc.reset, tc.red,
+                         format_memory(type_list_bytes), col_mem, tc.reset);
         }
 
         std::println("{}", rule_dash);
-        std::println("{}AGGREGATED METADATA OVERHEAD:{}", tc.BOLD, tc.RESET);
-        std::println("{:<40}: {}{}{}{}", " Total footprint for tracking lists", tc.BOLD, tc.GREEN,
-                     format_memory(total_metadata_mem), tc.RESET);
-        std::println("{}{}{}\n", tc.CYAN, rule_eq, tc.RESET);
+        std::println("{}AGGREGATED METADATA OVERHEAD:{}", tc.bold, tc.reset);
+        std::println("{:<40}: {}{}{}{}", " Total footprint for tracking lists", tc.bold, tc.green,
+                     format_memory(total_metadata_mem), tc.reset);
+        std::println("{}{}{}\n", tc.cyan, rule_eq, tc.reset);
     }
 
   private:
@@ -121,7 +121,7 @@ class GlobalStatsChunkList
         return std::format("{} bytes", static_cast<long long>(bytes));
     }
 
-    std::map<std::string, TypeStats> all_stats;
+    std::map<std::string, TypeStats> all_stats_;
 };
 
 } // namespace shrink_array

@@ -60,7 +60,7 @@ void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unuse
 
         if (static_cast<int>(ll_block_free_thr.size()) < mgr.get_size_buffer_reuse(key))
         {
-            // Ledger: LIVE -> PARKED (own free-list). Trips on double-park.
+            // Ledger: LIVE -> parked (own free-list). Trips on double-park.
             CHUNK_LEDGER_PARK(val, "free_block_to_pool.park_own");
             CHUNK_FREEPATH_INC(park_own);
             ll_block_free_thr.push_back(val);
@@ -88,7 +88,7 @@ void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unuse
             {
                 if (CHUNK_PMP_IN_PARALLEL_REGION)
                 {
-                    // Ledger: LIVE -> PARKED (own free-list, foreign-slab block).
+                    // Ledger: LIVE -> parked (own free-list, foreign-slab block).
                     CHUNK_LEDGER_PARK(val, "free_block_to_pool.park_own_foreign");
                     ll_block_free_thr.push_back(val);
                 }
@@ -134,7 +134,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     ensure_deferred_array_initialized();
 
     // Cached per thread: no guard check per call; the singleton outlives every thread.
-    thread_local auto* storage = &DeferredOpsStorage<per_thread_map>::instance();
+    thread_local auto* storage = &DeferredOpsStorage<PerThreadMap>::instance();
 
     auto* arr = storage->get(); // simple acquire load, always fresh
 
@@ -158,13 +158,13 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     // so an escaping exception would be a silent std::terminate: report where instead.
     try
     {
-        per_thread_map& thread_map = arr[thr_rank];
+        PerThreadMap& thread_map = arr[thr_rank];
 
         auto& ops_map_ptr = thread_map[chunk_ptr];
 
         if (!ops_map_ptr)
         {
-            ops_map_ptr = std::make_unique<unordered_map_deferred_operations>();
+            ops_map_ptr = std::make_unique<UnorderedMapDeferredOperations>();
         }
 
         // ── Same-offset re-enqueue: REPLACE, do not double-count ──────────────

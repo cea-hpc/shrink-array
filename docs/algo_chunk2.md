@@ -114,7 +114,7 @@ value, identified by an **index** `ind`.
 
 The second value **is not stored in the array**: it lives in the shared registry
 <tt>Proxy2\<T\>\::share_info_array</tt>, indexed by the **address** of the array. Each entry is an
-`inf_array_t` triplet:
+`InfArrayT` triplet:
 
 ```
 (second_value, ind, num_tab)
@@ -341,7 +341,7 @@ In-flight compression returns these chunks to `cst_val2` as the loop goes.
 Each thread keeps **one list of candidate chunks per second value**:
 
 ```
-manager_chunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
+ManagerChunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
 ```
 
 Each entry holds `(chunk, num_chunk, num_tab, number of elements)`. The number of elements

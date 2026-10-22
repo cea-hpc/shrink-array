@@ -57,7 +57,7 @@
 #include "chunk/param_chunk.h"                // ParamChunk
 
 #include "config.h"         // multi_mat::max_threads, embedded_compression
-#include "ComputeLoopsMd.h" // SimuMd::computeLoops, verify (SHRINK_ARRAY_HAS_MDSPAN)
+#include "ComputeLoopsMd.h" // SimuMd::compute_loops, verify (SHRINK_ARRAY_HAS_MDSPAN)
 #include "Dispatch.h"       // Dispatch
 
 using namespace shrink_array;
@@ -179,7 +179,7 @@ bool SimuMd::parse(int argc, char** argv)
     const bool ok = nx > 0 && ny > 0 && nbmat > 0 && iter_max > 0 && option_chunk >= 1 && option_chunk <= 4 &&
                     freq_rtz > 0 && freq_compress > 0 && interface_width >= 0 && pc_chunk > 0 && pc_chunk <= 100 &&
                     pc_vector > 0 && pc_vector <= 100 &&
-                    static_cast<long long>(storageSize()) <= static_cast<long long>(1 << 30);
+                    static_cast<long long>(storage_size()) <= static_cast<long long>(1 << 30);
     if (!ok)
     {
         std::println(stderr, "multi-mat-md: a parameter is out of range");
@@ -187,13 +187,13 @@ bool SimuMd::parse(int argc, char** argv)
     return ok;
 }
 
-std::size_t SimuMd::storageSize() const
+std::size_t SimuMd::storage_size() const
 {
     return chunk_mode == ChunkMode::rows ? static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny)
                                          : tiled_storage(nx, ny);
 }
 
-void SimuMd::drawStorage()
+void SimuMd::draw_storage()
 {
     std::mt19937 gen(seed != 0 ? seed : std::random_device{}());
     dis.assign(nbmat, option_chunk == 1);
@@ -214,9 +214,9 @@ void SimuMd::drawStorage()
     std::println("Number of chunk materials : {} on {}", nb_chunk, nbmat);
 }
 
-void SimuMd::createTabs()
+void SimuMd::create_tabs()
 {
-    const int size = static_cast<int>(storageSize());
+    const int size = static_cast<int>(storage_size());
     for (auto& t : tabs)
     {
         t.create(nbmat, size);
@@ -224,7 +224,7 @@ void SimuMd::createTabs()
     frac.create(nbmat, size);
 }
 
-void SimuMd::computeDistribution()
+void SimuMd::compute_distribution()
 {
     // The largest box of a kind covers pc % of the mesh's area: its sides are
     // sqrt(pc %) of the mesh's. Sides and corners uniform, as the intervals
@@ -260,8 +260,8 @@ void SimuMd::computeDistribution()
 
 /// @brief The chunk filling rates (written chunks, %) and the real occupation
 ///        of the chunk materials, averaged.
-template <typename MM>
-void print_stats(const SimuMd& s, const MM& mm_algo)
+template <typename MultiMatAlgoT>
+void print_stats(const SimuMd& s, const MultiMatAlgoT& mm_algo)
 {
     double fields = 0;
     double frac   = 0;
@@ -270,7 +270,7 @@ void print_stats(const SimuMd& s, const MM& mm_algo)
     mm_algo.loop(0, s.nbmat,
                  [&](int mat, const auto& get_mat_vec, const auto& loops)
                  {
-                     if (!dispatch.isChunk(mat))
+                     if (!dispatch.is_chunk(mat))
                      {
                          return;
                      }
@@ -330,14 +330,14 @@ double print_balance(const SimuMd& s)
 
 /// @brief The run with the policies of @p mm_algo: the iterations in one
 ///        parallel region, then the stats and the replay.
-template <typename MM>
-int run(SimuMd& s, const MM& mm_algo, const char* chunk_policy)
+template <typename MultiMatAlgoT>
+int run(SimuMd& s, const MultiMatAlgoT& mm_algo, const char* chunk_policy)
 {
     std::println("Chunk policy      : {}", chunk_policy);
     std::println("Vector policy     : {}\n", LoopsMdVector::name);
 
     auto t0 = std::chrono::steady_clock::now();
-    s.createTabs();
+    s.create_tabs();
     std::println("Elapsed time create arrays : {:g}s",
                  std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
 
@@ -346,7 +346,7 @@ int run(SimuMd& s, const MM& mm_algo, const char* chunk_policy)
     t0           = std::chrono::steady_clock::now();
     #pragma omp parallel reduction(+ : value)
     {
-        s.computeLoops(mm_algo, value);
+        s.compute_loops(mm_algo, value);
     }
     multi_mat::end_parallel_phase_after_region(); // manual executable only
     const double elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
@@ -414,10 +414,10 @@ int main(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    simu.drawStorage();
+    simu.draw_storage();
     dispatch.create(simu.nbmat);
     dispatch.set(simu.dis);
-    simu.computeDistribution();
+    simu.compute_distribution();
 
     switch (simu.chunk_mode)
     {

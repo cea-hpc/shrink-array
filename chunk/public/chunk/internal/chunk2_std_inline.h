@@ -24,7 +24,7 @@
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // ChunkElems, set_thread_chunk_size
-#include "chunk/internal/in_t.h"                // in_t<T>
+#include "chunk/internal/in_t.h"                // InT<T>
 #include "chunk/chunk2_std.h"                   // Chunk2, the class these bodies belong to
 #include "chunk/internal/proxy2.h"              // Proxy2<T>
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
@@ -122,18 +122,18 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk2<T>* v, std
  * @param n_elems    This chunk's own element count, captured when it was queued.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&           self,
-                                                                      vec_tuple_chunk2p_int2& ll_compt1,
-                                                                      vec_tuple_chunk2p_int2& ll_compt2,
-                                                                      const inf_array_t&      inf_array,
-                                                                      int                     num_chunk,
-                                                                      int                     num_tab,
-                                                                      unsigned int            n_elems)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&        self,
+                                                                      VecTupleChunk2pInt2& ll_compt1,
+                                                                      VecTupleChunk2pInt2& ll_compt2,
+                                                                      const InfArrayT&     inf_array,
+                                                                      int                  num_chunk,
+                                                                      int                  num_tab,
+                                                                      unsigned int         n_elems)
 {
-    // in_t: a reference into the (const, caller-owned) tuple when T is large.
-    const in_t<T> second_v = inf_array.second_value;
+    // InT: a reference into the (const, caller-owned) tuple when T is large.
+    const InT<T> second_v = inf_array.second_value;
     self.fill_list_to_compress_impl(
-        ll_compt1, ll_compt2, num_chunk, num_tab, [&second_v]() -> in_t<T> { return second_v; },
+        ll_compt1, ll_compt2, num_chunk, num_tab, [&second_v]() -> InT<T> { return second_v; },
         self.is_not_cst_val2(inf_array.ind), n_elems);
 }
 
@@ -150,12 +150,12 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Deriv
  * @param n_elems    This chunk's own element count, captured when it was queued.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_bool(this Derived&           self,
-                                                                           vec_tuple_chunk2p_int2& ll_compt1,
-                                                                           vec_tuple_chunk2p_int2& ll_compt2,
-                                                                           int                     num_chunk,
-                                                                           int                     num_tab,
-                                                                           unsigned int            n_elems)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_bool(this Derived&        self,
+                                                                           VecTupleChunk2pInt2& ll_compt1,
+                                                                           VecTupleChunk2pInt2& ll_compt2,
+                                                                           int                  num_chunk,
+                                                                           int                  num_tab,
+                                                                           unsigned int         n_elems)
 {
     self.fill_list_to_compress_impl(
         ll_compt1, ll_compt2, num_chunk, num_tab, [] { return true; }, self.is_not_cst_val2(), n_elems);
@@ -186,14 +186,14 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_bool(this 
  */
 template <typename T, typename Derived, bool Enabled>
 template <typename SecondValueFunc>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(this Derived&           self,
-                                                                           vec_tuple_chunk2p_int2& ll_compt1,
-                                                                           vec_tuple_chunk2p_int2& ll_compt2,
-                                                                           int                     num_chunk,
-                                                                           int                     num_tab,
-                                                                           SecondValueFunc&&       get_second_value,
-                                                                           bool                    check_cst_val2,
-                                                                           unsigned int            n_elems)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(this Derived&        self,
+                                                                           VecTupleChunk2pInt2& ll_compt1,
+                                                                           VecTupleChunk2pInt2& ll_compt2,
+                                                                           int                  num_chunk,
+                                                                           int                  num_tab,
+                                                                           SecondValueFunc&&    get_second_value,
+                                                                           bool                 check_cst_val2,
+                                                                           unsigned int         n_elems)
 {
     // Skip a chunk already compressed to either constant.
     if (self.Base::is_not_cst_val1() && check_cst_val2)
@@ -277,7 +277,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(this Derived&   se
 template <typename T, typename Derived, bool Enabled>
 void Chunk2FastCompPolicy<T, Derived, Enabled>::compress(this Derived&        self,
                                                          [[maybe_unused]] int thr_rank,
-                                                         const inf_array_t&   inf_array,
+                                                         const InfArrayT&     inf_array,
                                                          bool                 apply,
                                                          unsigned int         n_elems)
 {
@@ -337,7 +337,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool(this Derived&     
  *       team size); inside a region it sweeps the calling rank only.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const inf_array_t& inf_array, bool apply)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const InfArrayT& inf_array, bool apply)
 {
     // Everything the per-rank body touches is rank-local --
     // map_chunk2_to_compress_potentially_thr[thr_rank], the freed buffer goes to
@@ -395,7 +395,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
 template <typename T, typename Derived, bool Enabled>
 template <typename CompressFn>
 void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_par_impl(int          thr_rank,
-                                                                                       in_t<T>      key,
+                                                                                       InT<T>       key,
                                                                                        CompressFn&& compress_one)
 {
     // The store is a per-rank VECTOR of maps, sized by resize_all_list_block_free_thr();
@@ -407,7 +407,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
         return;
     }
 
-    auto* const vec_tuple_p = manager_chunk2::compress_candidates(thr_rank, key);
+    auto* const vec_tuple_p = ManagerChunk2::compress_candidates(thr_rank, key);
     assert(vec_tuple_p != nullptr && "key registered for every rank by add_second_value()");
     if (vec_tuple_p == nullptr) [[unlikely]]
     {
@@ -461,9 +461,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
  * @param apply          Forwarded to compress().
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_par(int                thr_rank,
-                                                                                  const inf_array_t& inf_array,
-                                                                                  bool               apply)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_par(int              thr_rank,
+                                                                                  const InfArrayT& inf_array,
+                                                                                  bool             apply)
 {
     compress_chunk_to_compress_in_par_impl(thr_rank, inf_array.second_value,
                                            [thr_rank, &inf_array, apply](auto* chunk_t, unsigned int n_elems)
@@ -501,10 +501,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool_
 template <typename T, typename Derived, bool Enabled>
 template <typename ScanFn>
 void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par_impl(int      thr_rank,
-                                                                                        in_t<T>  key,
+                                                                                        InT<T>   key,
                                                                                         ScanFn&& scan_one)
 {
-    const auto* const vec_tuple_p = manager_chunk2::compress_candidates(thr_rank, key);
+    const auto* const vec_tuple_p = ManagerChunk2::compress_candidates(thr_rank, key);
     assert(vec_tuple_p != nullptr && "key registered for every rank by add_second_value()");
     if (vec_tuple_p == nullptr) [[unlikely]]
     {
@@ -537,10 +537,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_p
  * @param inf_array (second_value, index, ...) selecting the list.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int                     thr_rank,
-                                                                                   vec_tuple_chunk2p_int2& ll_compt1,
-                                                                                   vec_tuple_chunk2p_int2& ll_compt2,
-                                                                                   const inf_array_t&      inf_array)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int                  thr_rank,
+                                                                                   VecTupleChunk2pInt2& ll_compt1,
+                                                                                   VecTupleChunk2pInt2& ll_compt2,
+                                                                                   const InfArrayT&     inf_array)
 {
     fill_list_chunk_to_compress_in_par_impl(
         thr_rank, inf_array.second_value,
@@ -564,10 +564,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_p
  * @param ll_compt2 Output: chunks compressible to `true`.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_bool_in_par(
-    int                     thr_rank,
-    vec_tuple_chunk2p_int2& ll_compt1,
-    vec_tuple_chunk2p_int2& ll_compt2)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_bool_in_par(int                  thr_rank,
+                                                                                        VecTupleChunk2pInt2& ll_compt1,
+                                                                                        VecTupleChunk2pInt2& ll_compt2)
 {
     fill_list_chunk_to_compress_in_par_impl(
         thr_rank, static_cast<T>(true),
@@ -611,7 +610,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     // without add_second_value reaches it via resize_common ->
     // make_block_compression. is_vec_tuple_to_compress_potentially_empty_thr()
     // is not enough: it only tests "no key anywhere".
-    auto&      map_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
+    auto&      map_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
     const auto it      = map_thr.find(second_value);
 
     if (it == map_thr.end() || !it->second)
@@ -692,8 +691,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
         }
     }
 
-    vec_tuple_chunk2p_int2 ll_compt1;
-    vec_tuple_chunk2p_int2 ll_compt2;
+    VecTupleChunk2pInt2 ll_compt1;
+    VecTupleChunk2pInt2 ll_compt2;
 
     ll_compt1.reserve((sz / 50) + 1);
     ll_compt2.reserve((sz / 50) + 1);
@@ -763,7 +762,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
         // chunk could be compressed to the OTHER array's constant, and its own
         // array, which only recognises its own constant, would then write into
         // that shared block, changing every chunk compressed to it.
-        if (proxy2->is_not_cst_val() && proxy2->second_value == second_value)
+        if (proxy2->is_not_cst_val() && proxy2->second_value_ == second_value)
         {
             proxy2->add_to_compression_list(vec_tuple_to_compress);
         }
@@ -781,13 +780,13 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
 // clear callables and hands them to the shared sweep. Instantiating it for bool
 // is a compile error (static_assert).
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int                thr_rank,
-                                                                       const inf_array_t& inf_array,
-                                                                       Proxy2<T>*         proxy2)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int              thr_rank,
+                                                                       const InfArrayT& inf_array,
+                                                                       Proxy2<T>*       proxy2)
 {
     if constexpr (is_not_bool)
     {
-        const in_t<T> second_value = inf_array.second_value; // the caller's record, alive for the call
+        const InT<T> second_value = inf_array.second_value; // the caller's record, alive for the call
 
         const auto lbd_clear_func = [thr_rank, &inf_array](auto* chunk_t, int clear_type)
         { chunk_t->clear_int_st(clear_type, inf_array.ind, thr_rank); };
@@ -836,13 +835,13 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
 {
     if constexpr (is_not_bool)
     {
-        const auto& ml = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
+        const auto& ml = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
 
         for (auto& elm : ml)
         {
-            const in_t<T> second_val = elm.first; // the map key, by reference when T is large
-            const auto    it = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].find(second_val);
-            if (it == manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
+            const InT<T> second_val = elm.first; // the map key, by reference when T is large
+            const auto   it         = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank].find(second_val);
+            if (it == ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
             {
                 continue;
             }
@@ -870,8 +869,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
             return;
         }
 
-        const auto it = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].find(true);
-        if (it == manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
+        const auto it = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank].find(true);
+        if (it == ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
         {
             return;
         }
@@ -964,10 +963,10 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_impl(this Derived&      
  *       apply_cas_or_recup().
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(this Derived&      self,
-                                                        bool               need_set_second_value,
-                                                        const inf_array_t& inf_array,
-                                                        int                thr_rank) noexcept
+void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(this Derived&    self,
+                                                        bool             need_set_second_value,
+                                                        const InfArrayT& inf_array,
+                                                        int              thr_rank) noexcept
 {
     if constexpr (is_not_bool)
     {
@@ -1058,13 +1057,13 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value_serial_impl(this Derived& 
         }
     };
 
-    self.values = self.Base::allocate_chunk_internal(0, init_func);
+    self.values_ = self.Base::allocate_chunk_internal(0, init_func);
 }
 
 template <typename T, typename Derived>
-void Chunk2OmpPolicy<T, Derived, false>::create_value(this Derived&      self,
-                                                      bool               need_set_second_value,
-                                                      const inf_array_t& inf_array) noexcept
+void Chunk2OmpPolicy<T, Derived, false>::create_value(this Derived&    self,
+                                                      bool             need_set_second_value,
+                                                      const InfArrayT& inf_array) noexcept
 {
     if constexpr (is_not_bool)
     {
@@ -1113,7 +1112,7 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_st(this Derived& self, int ind)
 {
     self.Base::debug_check_written(ind);
 
-    self.Base::free_values(self.values);
+    self.Base::free_values(self.values_);
     self.init_values_cst_val1();
 
     if constexpr (chunk_config::use_compression_with_counter)
@@ -1155,7 +1154,7 @@ void Chunk2OmpPolicy<T, Derived, false>::block_clear(this Derived& self,
     // CHUNK_STATS: as the OpenMP block_clear above.
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
-    self.Base::free_values(self.values);
+    self.Base::free_values(self.values_);
 
     self.init_values_cst_val(num_compress_value, ind);
     if constexpr (chunk_config::use_compression_with_counter)
@@ -1223,7 +1222,7 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(this Derived& self, int nu
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
 
-    self.Base::free_values(self.values);
+    self.Base::free_values(self.values_);
 
     if (num_compress_value == 0)
     {

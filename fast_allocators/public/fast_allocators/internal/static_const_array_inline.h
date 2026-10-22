@@ -54,10 +54,10 @@ decltype(auto) StaticConstArray::with_bucket(std::size_t i, F&& f)
 }
 
 /**
- * @copydoc StaticConstArray::getBlockAllocInt
+ * @copydoc StaticConstArray::get_block_alloc_int
  * @details The bucket is computed (bucket_index()), not searched for.
  */
-inline void* StaticConstArray::getBlockAllocInt(unsigned int sz)
+inline void* StaticConstArray::get_block_alloc_int(unsigned int sz)
 {
     if constexpr (alloc_config::use_std_alloc)
     {
@@ -67,7 +67,7 @@ inline void* StaticConstArray::getBlockAllocInt(unsigned int sz)
     return with_bucket(bucket_index(sz), [](auto& bucket) { return bucket.alloc(); });
 }
 
-inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
+inline void* StaticConstArray::get_block_alloc(unsigned int sz)
 {
     if constexpr (alloc_config::use_std_alloc)
     {
@@ -82,12 +82,12 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
         {
 #pragma omp critical(fast_alloc_ladder)
             {
-                vv = getBlockAllocInt(sz);
+                vv = get_block_alloc_int(sz);
             }
         }
         else
         {
-            vv = getBlockAllocInt(sz);
+            vv = get_block_alloc_int(sz);
         }
         return vv;
     }
@@ -97,12 +97,12 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
 
 
 /**
- * @copydoc StaticConstArray::freeBlockWithInt
- * @details Same bucket_index() as getBlockAllocInt(), which is what keeps the
+ * @copydoc StaticConstArray::free_block_with_int
+ * @details Same bucket_index() as get_block_alloc_int(), which is what keeps the
  *          two in agreement: a block released through a different bucket than
  *          the one it came from corrupts that bucket's free list.
  */
-inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
+inline void StaticConstArray::free_block_with_int(int sz, void* ptr)
 {
     if constexpr (alloc_config::use_std_alloc)
     {
@@ -119,7 +119,7 @@ inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
  *          under a single critical section when it fills -- which is also the
  *          only moment @p ptr itself is released, since a full batch refuses it.
  */
-inline bool StaticConstArray::freeBlock(int sz, void* ptr)
+inline bool StaticConstArray::try_free_block(int sz, void* ptr)
 {
     if constexpr (alloc_config::use_std_alloc)
     {
@@ -143,7 +143,7 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
             if (thr_rank >= tab_info_free_elt().nb_thr) [[unlikely]]
             {
 #pragma omp critical(fast_alloc_ladder)
-                freeBlockWithInt(sz, ptr);
+                free_block_with_int(sz, ptr);
                 return true;
             }
 
@@ -153,9 +153,9 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
             {
 #pragma omp critical(fast_alloc_ladder)
                 {
-                    freeBlockWithInt(sz, ptr);
+                    free_block_with_int(sz, ptr);
 
-                    clearInfoFreeElt(thr_rank);
+                    clear_info_free_elt(thr_rank);
                 }
 
                 tab_info_free_elt().reset(thr_rank);
@@ -163,7 +163,7 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
         }
         else
         {
-            freeBlockWithInt(sz, ptr);
+            free_block_with_int(sz, ptr);
         }
 
         return true;

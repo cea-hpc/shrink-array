@@ -45,7 +45,7 @@ struct get_base<T>
 
 /// @brief get_base<T>::type.
 template <typename T>
-using base_t = get_base<T>::type;
+using BaseT = get_base<T>::type;
 
 // --- 2. Simple Complex Detection ---
 /// @brief Is T a std::complex? No by default.
@@ -65,25 +65,24 @@ struct is_cplx<std::complex<T>> : public std::true_type
 template <typename T, typename U>
 concept IsCleanAssignment =
     // Rule 1: Perfect match (e.g., double = Proxy<double> or complex = complex)
-    std::is_same_v<std::remove_cvref_t<T>, base_t<U>> ||
+    std::is_same_v<std::remove_cvref_t<T>, BaseT<U>> ||
 
     // Rule 2: Floating point (double/float) receiving any integer
-    (std::is_floating_point_v<std::remove_cvref_t<T>> && std::is_integral_v<base_t<U>>) ||
+    (std::is_floating_point_v<std::remove_cvref_t<T>> && std::is_integral_v<BaseT<U>>) ||
 
     // Rule 3: Complex receiving its own scalar type (e.g., complex<double> = double/Proxy<double>)
-    (is_cplx<std::remove_cvref_t<T>>::value &&
-     std::is_same_v<typename std::remove_cvref_t<T>::value_type, base_t<U>>) ||
+    (is_cplx<std::remove_cvref_t<T>>::value && std::is_same_v<typename std::remove_cvref_t<T>::value_type, BaseT<U>>) ||
 
     // Rule 4: Complex receiving any integer (e.g., complex<double> = 0)
-    (is_cplx<std::remove_cvref_t<T>>::value && std::is_integral_v<base_t<U>>) ||
+    (is_cplx<std::remove_cvref_t<T>>::value && std::is_integral_v<BaseT<U>>) ||
 
     // Rule 5: Small integers from standard int
     ((std::is_same_v<std::remove_cvref_t<T>, short> || std::is_same_v<std::remove_cvref_t<T>, unsigned char> ||
       std::is_same_v<std::remove_cvref_t<T>, char>) &&
-     std::is_same_v<base_t<U>, int>) ||
+     std::is_same_v<BaseT<U>, int>) ||
 
     // Rule 6: the packed bool (ArrayChunkBits) receiving a bool
-    (shrink_array::is_packed_bit_v<std::remove_cvref_t<T>> && std::is_same_v<base_t<U>, bool>);
+    (shrink_array::is_packed_bit_v<std::remove_cvref_t<T>> && std::is_same_v<BaseT<U>, bool>);
 
 /// @brief A compound operation T op= U is clean when the assignment is.
 template <typename T, typename U>
@@ -95,7 +94,7 @@ concept IsCleanCompoundOp = IsCleanAssignment<T, U>;
  * 2. The shift amount (U) must be an integral type after unwrapping Proxy.
  */
 template <typename T, typename U>
-concept IsCleanShiftOp = std::is_integral_v<std::remove_cvref_t<T>> && std::is_integral_v<base_t<U>>;
+concept IsCleanShiftOp = std::is_integral_v<std::remove_cvref_t<T>> && std::is_integral_v<BaseT<U>>;
 
 // --- 4. What the element type itself can do ---
 // The proxies' compound operators exist only for element types that have the

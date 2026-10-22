@@ -125,7 +125,7 @@ static double pattern(long i)
  * @brief Write a whole array at chunk size @p csz, read it back, compare.
  * @return 0 if every element round-trips, 1 otherwise (details on stdout).
  */
-static int round_trip_at(unsigned int csz, long N)
+static int round_trip_at(unsigned int csz, long n)
 {
     // BOTH halves are needed, and this is the property under test: the array
     // side (set_active_chunk_size) and the allocator side (register_chunk_size).
@@ -133,7 +133,7 @@ static int round_trip_at(unsigned int csz, long N)
     set_thread_chunk_size(csz);
     ParamChunk::register_chunk_size(csz);
 
-    Array<double> arr(N);
+    Array<double> arr(n);
     maybe_set_second_value(arr, 2.0);
 
     if (arr.chunk_size() != csz)
@@ -142,8 +142,8 @@ static int round_trip_at(unsigned int csz, long N)
         return 1;
     }
 
-    std::vector<double> ref(N);
-    for (long i = 0; i < N; ++i)
+    std::vector<double> ref(n);
+    for (long i = 0; i < n; ++i)
     {
         const double v = pattern(i);
         arr[i]         = v;
@@ -152,7 +152,7 @@ static int round_trip_at(unsigned int csz, long N)
 
     long bad   = 0;
     long first = -1;
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         if (arr[i] != ref[i])
         {
@@ -170,22 +170,22 @@ static int round_trip_at(unsigned int csz, long N)
         // the buffer actually had, which names the geometry the allocator used.
         println("[{}/size={}] FAIL: {}/{} mismatches, first at i={} "
                 "(chunk #{}, offset {}) got={:g} expected={:g}",
-                variant_name(), csz, bad, N, first, first / (long)csz, first % (long)csz, (double)arr[first],
+                variant_name(), csz, bad, n, first, first / (long)csz, first % (long)csz, (double)arr[first],
                 ref[first]);
         return 1;
     }
 
-    println("[{}/size={}] OK: {} elements round-trip", variant_name(), csz, N);
+    println("[{}/size={}] OK: {} elements round-trip", variant_name(), csz, n);
     return 0;
 }
 
 static int run_body(int argc, char** argv)
 {
-    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
+    const long n = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
 
     ParamChunk::init_indexes(true);
 
-    println("=== dyn_geometry_validation [variant = {}]  N={} ===", variant_name(), N);
+    println("=== dyn_geometry_validation [variant = {}]  N={} ===", variant_name(), n);
 
     int fails = 0;
 
@@ -194,7 +194,7 @@ static int run_body(int argc, char** argv)
     // size here would test the refusal, not the round-trip.
     for (unsigned int csz = 64; csz <= shrink_array::cst_buffer_size; csz <<= 1)
     {
-        fails += round_trip_at(csz, N);
+        fails += round_trip_at(csz, n);
     }
 
     println("\n[{}] {}", variant_name(),

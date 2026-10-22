@@ -49,7 +49,7 @@
 
 #include "config.h"       // multi_mat::max_threads, embedded_compression
 #include "MultiMatAlgo.h" // MultiMatAlgo
-#include "ComputeLoops.h" // Simu::computeLoops, the template main() instantiates
+#include "ComputeLoops.h" // Simu::compute_loops, the template main() instantiates
 #include "Containers.h"   // VectChunk
 #include "Dispatch.h"     // Dispatch
 #include "Simu.h"         // Simu
@@ -58,12 +58,12 @@ using namespace shrink_array;
 
 /// @brief Bytes to MiB, and the figure written to memory_mo.txt for the
 ///        scripts that collect it.
-double convert_memory(double memoryValue)
+double convert_memory(double memory_value)
 {
     constexpr double byte_to_kb = 1.0 / 1024;
     constexpr double kb_to_mb   = 1.0 / 1024;
 
-    const double kilobytes = memoryValue * byte_to_kb;
+    const double kilobytes = memory_value * byte_to_kb;
     const double megabytes = kilobytes * kb_to_mb;
 
     std::ofstream fichier("memory_mo.txt");
@@ -88,7 +88,7 @@ using std::vector;
 /// @brief The storage of every material, read by the containers.
 Dispatch dispatch;
 
-void Simu::createTabs()
+void Simu::create_tabs()
 {
     for (auto& t : tabs)
     {
@@ -97,27 +97,27 @@ void Simu::createTabs()
     frac.create(nbmat, mesh_size);
 }
 
-int Simu::getNbmat() const
+int Simu::get_nbmat() const
 {
     return nbmat;
 }
 
-bool Simu::isVerbose() const
+bool Simu::is_verbose() const
 {
     return verbose;
 }
 
-int Simu::getOptionChunk() const
+int Simu::get_option_chunk() const
 {
     return option_chunk;
 }
 
-int Simu::getMeshSize() const
+int Simu::get_mesh_size() const
 {
     return mesh_size;
 }
 
-const vector<bool>& Simu::getDis() const
+const vector<bool>& Simu::get_dis() const
 {
     return dis;
 }
@@ -157,30 +157,30 @@ int main()
     ParamChunk::print_info_chunk();
     Simu simu;
 
-    simu.inputData();
+    simu.input_data();
 
-    const int nbmat = simu.getNbmat();
+    const int nbmat = simu.get_nbmat();
 
     MultiMatAlgo mm_algo;
 
-    const int mesh_size = simu.getMeshSize();
+    const int mesh_size = simu.get_mesh_size();
 
-    simu.computeInterval();
+    simu.compute_interval();
 
     auto start = std::chrono::steady_clock::now();
 
     std::println("\nCreate array :");
 
     dispatch.create(nbmat);
-    dispatch.set(simu.getDis());
-    simu.createTabs();
+    dispatch.set(simu.get_dis());
+    simu.create_tabs();
 
     auto                          end             = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
     std::println("\nElapsed time create array : {:g}s\n", elapsed_seconds.count());
     std::println("Compute distribution for all cycles (sequential)\n");
 
-    simu.computeDistribution();
+    simu.compute_distribution();
 
     double value_compute = 0;
 
@@ -198,20 +198,20 @@ int main()
         mm_algo.loop(0, nbmat,
                      [&](int& mat, const auto& get_mat_vec, const auto&)
                      {
-                         const auto& tab0_ind = get_mat_vec(simu.getTabs(0));
+                         const auto& tab0_ind = get_mat_vec(simu.get_tabs(0));
 
                          std::println("Material : {}", mat);
 
-                         if (dispatch.isChunk(mat))
+                         if (dispatch.is_chunk(mat))
                          {
                              have_chunk = true;
 
                              using CV = std::remove_reference_t<decltype(tab0_ind)>;
                              using V  = std::remove_const_t<CV>;
 
-                             using vec_chunk_real = VectChunk<double>;
+                             using VecChunkReal = VectChunk<double>;
 
-                             if constexpr (std::is_same_v<V, vec_chunk_real>)
+                             if constexpr (std::is_same_v<V, VecChunkReal>)
                              {
                                  const double sz0 = only_first_chunk ? tab0_ind.stats_seq() : tab0_ind.stats();
 
@@ -221,7 +221,7 @@ int main()
                                  // interface chunks should be materialised, the
                                  // interior ones are compressed to 1 and the empty
                                  // ones to 0.
-                                 const auto&  frac_ind = get_mat_vec(simu.getFrac());
+                                 const auto&  frac_ind = get_mat_vec(simu.get_frac());
                                  const double szf      = only_first_chunk ? frac_ind.stats_seq() : frac_ind.stats();
 
                                  std::println("  Fraction chunk filling rate (Chunk2) : {:.2f}%", szf);
@@ -253,11 +253,11 @@ int main()
 
 #pragma omp parallel reduction(+ : value_compute)
     {
-        simu.computeLoops(mm_algo, lbd_stats_chunk, value_compute);
+        simu.compute_loops(mm_algo, lbd_stats_chunk, value_compute);
     }
     multi_mat::end_parallel_phase_after_region(); // manual executable only
 
-    if (simu.isVerbose())
+    if (simu.is_verbose())
     {
         std::println("\nEnd iteration\n");
     }
@@ -288,7 +288,7 @@ int main()
     {
         if (have_chunk)
         {
-            ParamChunk::ChunkStats();
+            ParamChunk::chunk_stats();
         }
     }
 }

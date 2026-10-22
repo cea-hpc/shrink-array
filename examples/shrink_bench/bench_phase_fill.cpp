@@ -217,7 +217,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             tab_int[i]       = 0;
             tab_bool[i]      = false;
             tab_bool_bits[i] = false;
-            tab_complex[i]   = complex_double(1, 2);
+            tab_complex[i]   = ComplexDouble(1, 2);
         }
 
         begin_i = end_i;

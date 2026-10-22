@@ -31,7 +31,7 @@ namespace shrink_array
  * @brief Global storage for deferred operations.
  * Optimized to remove initialization overhead in high-frequency loops.
  */
-template <typename per_thread_map>
+template <typename PerThreadMap>
 class DeferredOpsStorage
 {
   public:
@@ -44,9 +44,9 @@ class DeferredOpsStorage
     /**
      * @brief Raw pointer to the thread maps (acquire: pairs with allocate()'s publication).
      */
-    per_thread_map* get() noexcept
+    PerThreadMap* get() noexcept
     {
-        return arr_raw.load(std::memory_order_acquire);
+        return arr_raw_.load(std::memory_order_acquire);
     }
 
     /**
@@ -60,22 +60,22 @@ class DeferredOpsStorage
     void allocate()
     {
         // Fast path: already allocated (lock-free).
-        if (arr_raw.load(std::memory_order_acquire) != nullptr)
+        if (arr_raw_.load(std::memory_order_acquire) != nullptr)
         {
             return;
         }
 
-        const std::scoped_lock lk(alloc_mutex);
+        const std::scoped_lock lk(alloc_mutex_);
         // Double-check under the lock.
-        if (arr_raw.load(std::memory_order_relaxed) != nullptr)
+        if (arr_raw_.load(std::memory_order_relaxed) != nullptr)
         {
             return;
         }
 
-        arr_owner = std::vector<per_thread_map>(static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY));
+        arr_owner_ = std::vector<PerThreadMap>(static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY));
         // Publish last, with release, so a reader that acquire-observes the
         // pointer also sees the constructed maps.
-        arr_raw.store(arr_owner.data(), std::memory_order_release);
+        arr_raw_.store(arr_owner_.data(), std::memory_order_release);
     }
 
     /**
@@ -84,15 +84,15 @@ class DeferredOpsStorage
      */
     void destroy()
     {
-        const std::scoped_lock lk(alloc_mutex);
-        if (arr_raw.load(std::memory_order_relaxed) == nullptr)
+        const std::scoped_lock lk(alloc_mutex_);
+        if (arr_raw_.load(std::memory_order_relaxed) == nullptr)
         {
             return;
         }
 
         // Invalidate the pointer first, then free.
-        arr_raw.store(nullptr, std::memory_order_release);
-        std::vector<per_thread_map>().swap(arr_owner); // frees the maps and their storage
+        arr_raw_.store(nullptr, std::memory_order_release);
+        std::vector<PerThreadMap>().swap(arr_owner_); // frees the maps and their storage
     }
 
   private:
@@ -101,13 +101,13 @@ class DeferredOpsStorage
     // The singleton's storage (deferred_ops_storage_instance below) builds it.
     friend union internal::Immortal<DeferredOpsStorage>;
 
-    std::vector<per_thread_map> arr_owner;
+    std::vector<PerThreadMap> arr_owner_;
 
     // Atomic pointer used by worker threads for O(1) access
-    alignas(64) std::atomic<per_thread_map*> arr_raw{nullptr};
+    alignas(64) std::atomic<PerThreadMap*> arr_raw_{nullptr};
 
     // Guards allocate()/destroy(). constexpr ctor -> constant-initialized.
-    std::mutex alloc_mutex;
+    std::mutex alloc_mutex_;
 };
 
 /**
@@ -116,13 +116,13 @@ class DeferredOpsStorage
  *          (chunk/internal/immortal.h), never destroyed: a global array still reaches it
  *          after main returns. Outside the class: an Immortal needs the class complete.
  */
-template <typename per_thread_map>
-inline constinit internal::Immortal<DeferredOpsStorage<per_thread_map>> deferred_ops_storage_instance{};
+template <typename PerThreadMap>
+inline constinit internal::Immortal<DeferredOpsStorage<PerThreadMap>> deferred_ops_storage_instance{};
 
-template <typename per_thread_map>
-DeferredOpsStorage<per_thread_map>& DeferredOpsStorage<per_thread_map>::instance() noexcept
+template <typename PerThreadMap>
+DeferredOpsStorage<PerThreadMap>& DeferredOpsStorage<PerThreadMap>::instance() noexcept
 {
-    return deferred_ops_storage_instance<per_thread_map>.value;
+    return deferred_ops_storage_instance<PerThreadMap>.value;
 }
 
 } // namespace shrink_array

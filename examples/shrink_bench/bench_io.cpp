@@ -81,8 +81,8 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
         std::abort();
     }
 
-    unsigned int originalLen = 0;
-    in_file.read(reinterpret_cast<char*>(&originalLen), sizeof(originalLen)); // Read the original size
+    unsigned int original_len = 0;
+    in_file.read(reinterpret_cast<char*>(&original_len), sizeof(original_len)); // Read the original size
     if (!in_file)
     {
         std::println(stderr, "Error reading compressed data size.");
@@ -91,7 +91,7 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 
     std::vector        source_buffer((std::istreambuf_iterator(in_file)), std::istreambuf_iterator<char>());
     const unsigned int source_len = source_buffer.size();
-    unsigned int       dest_len   = originalLen; // Initialize the size of the output buffer
+    unsigned int       dest_len   = original_len; // Initialize the size of the output buffer
 
     std::vector<char> dest_buffer(dest_len);
 

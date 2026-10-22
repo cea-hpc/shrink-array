@@ -210,7 +210,7 @@ tableau de chaque variante, avant toute écriture parallèle. Le résultat est r
 | build TSan (`CHUNK_TSAN_BUILD`), ou système non Linux | symétrique, choisie **à la compilation** (`chunk_config::asymmetric_dekker = false`) |
 
 Le protocole n'est donc jamais plus faible que la forme symétrique : il est seulement plus
-rapide quand il peut l'être. `ParamChunk::ChunkStats()` indique la forme qui a tourné
+rapide quand il peut l'être. `ParamChunk::chunk_stats()` indique la forme qui a tourné
 (`dekker::protocol_name()`).
 
 ### 4.4 Le prix, et la condition
@@ -467,7 +467,7 @@ est une violation du protocole.
 | `CHUNK_READ_RECLAIM_SLOTS` | 1 024 | nombre de threads lecteurs ayant chacun leur numéro de séquence |
 
 Les compteurs de la porte (passes démarrées, abandons pour un vidage, abandons sur attente
-trop longue, écritures différées) sont dans le rapport `CHUNK_STATS` (`ParamChunk::ChunkStats()`),
+trop longue, écritures différées) sont dans le rapport `CHUNK_STATS` (`ParamChunk::chunk_stats()`),
 avec la forme du protocole qui a tourné.
 
 ## 8. Où lire le code

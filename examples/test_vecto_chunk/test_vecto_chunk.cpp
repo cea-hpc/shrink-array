@@ -46,12 +46,12 @@
 using namespace shrink_array;
 
 
-double convert_memory(double memoryValue)
+double convert_memory(double memory_value)
 {
     const double byte_to_kb = 1.0 / 1024;
     const double kb_to_mb   = 1.0 / 1024;
 
-    const double kilobytes = memoryValue * byte_to_kb;
+    const double kilobytes = memory_value * byte_to_kb;
     const double megabytes = kilobytes * kb_to_mb;
 
     std::ofstream fichier("memory_mo.txt");
@@ -106,7 +106,7 @@ unsigned load_seed_to_file(const std::string& filename)
 }
 
 // Initialize random number generator with saved or new seed
-void initializeRNG(std::mt19937& rng, const std::string& seed_file_name)
+void initialize_rng(std::mt19937& rng, const std::string& seed_file_name)
 {
     // Try to load seed from file
     unsigned seed = load_seed_to_file(seed_file_name);
@@ -271,13 +271,13 @@ int main()
     const std::string str            = std::to_string(iter_max);
     const std::string seed_file_name = "seed" + str + ".txt"; // File to store the seed
     std::mt19937      rng;                                    // Random number generator
-    initializeRNG(rng, seed_file_name);
+    initialize_rng(rng, seed_file_name);
 
     // Create a uniform distribution for interval sizes
-    std::uniform_int_distribution sizeDistribution(1, interval);
+    std::uniform_int_distribution size_distribution(1, interval);
 
     // Create a uniform distribution for the starting points of the intervals
-    std::uniform_int_distribution startDistribution(min, max);
+    std::uniform_int_distribution start_distribution(min, max);
 
     std::println("Iteration ...");
 
@@ -288,8 +288,8 @@ int main()
 
     for (int k = 0; k < iter_max; ++k)
     {
-        const int size   = sizeDistribution(rng);
-        const int start0 = startDistribution(rng);
+        const int size   = size_distribution(rng);
+        const int start0 = start_distribution(rng);
         const int end0   = start0 + size;
         tab_size[k]      = size;
         tab_start[k]     = start0;
@@ -435,7 +435,7 @@ int main()
 
     if constexpr (chunk_config::stats)
     {
-        ParamChunk::ChunkStats();
+        ParamChunk::chunk_stats();
     }
 
     struct rusage usage{};

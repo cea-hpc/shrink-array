@@ -19,7 +19,7 @@
 #include <utility> // std::forward
 
 #include "chunk/internal/proxy2_base.h" // the declarations these bodies belong to
-#include "chunk/internal/in_t.h"        // in_t<T>
+#include "chunk/internal/in_t.h"        // InT<T>
 
 namespace shrink_array
 {
@@ -32,9 +32,9 @@ namespace shrink_array
 template <typename Derived, typename T, typename ChunkType>
 template <typename... Args>
 void Proxy2Base<Derived, T, ChunkType>::mark_for_compression_core(this const Derived& self,
-                                                                  in_t<T>             old_value,
-                                                                  in_t<T>             new_value,
-                                                                  in_t<T>             expected_in_memory,
+                                                                  InT<T>              old_value,
+                                                                  InT<T>              new_value,
+                                                                  InT<T>              expected_in_memory,
                                                                   bool                isv,
                                                                   Args&&... compression_args)
 {

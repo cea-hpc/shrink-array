@@ -109,7 +109,7 @@ inline constexpr bool have_bzip2 = false;
 // In a TEMPLATE it is different, and this is the exception that retired eleven
 // directives from bench_io.h: a discarded branch whose expressions are
 // DEPENDENT on the template's parameters is never instantiated. Hence
-// `template <typename VEC> read_check_binary_file` guarding chunk-only calls on
+// `template <typename Vec> read_check_binary_file` guarding chunk-only calls on
 // data_check with `if constexpr`, and compress_one(auto&) in
 // bench_phase_compress.cpp -- one abbreviated function template whose body is
 // genuinely discarded for std::vector.
@@ -130,7 +130,7 @@ inline constexpr bool have_bzip2 = false;
 //   3. a `using namespace`             (shrink_bench.cpp)
 //   4. a member only one variant has   (chunk_base.h's pending_ops_)
 //   5. the DEFINITION of an object whose TYPE is itself conditional --
-//      chunk_std.cpp's `ChunkStatsThr __chunk_stats[3][1024]`, where
+//      chunk_std.cpp's `ChunkStatsThr g_chunk_stats[3][1024]`, where
 //      ChunkStatsThr exists only under CHUNK_STATS. 576 KB of BSS, measured
 //      with nm, that a non-stats build has no reason to carry.
 //

@@ -133,7 +133,7 @@ struct Pattern
 {
     [[nodiscard]] double at(long i) const
     {
-        switch ((i / S) % 3)
+        switch ((i / s) % 3)
         {
             case 0:
                 return 0.0;
@@ -146,7 +146,7 @@ struct Pattern
 
     double sv;   ///< this array's second value
     double base; ///< offset of its data chunks
-    long   S;    ///< chunk size
+    long   s;    ///< chunk size
 };
 
 template <typename Arr>
@@ -183,7 +183,7 @@ int verify(const char* step, const char* name, const Arr& a, const Pattern& p, l
             if (bad < 5)
             {
                 println("[{}/{}] FAIL {}[{}] = {:g}, expected {:g} (chunk {})", variant_name(), step, name, i, got,
-                        want, i / p.S);
+                        want, i / p.s);
             }
             ++bad;
         }
@@ -196,47 +196,47 @@ int check_swap()
     const char*   step = "swap";
     Array<double> a;
     Array<double> b;
-    const long    S = static_cast<long>(a.chunk_size());
+    const long    s = static_cast<long>(a.chunk_size());
     // Different sizes: the per-array tables (indexed by num_tab) have one row
     // per chunk, so chunks exchanged without their identity would index rows
     // of the wrong length.
-    const long N  = (30 * S) + 11;
-    const long NB = (47 * S) + 5;
-    a.resize(static_cast<int>(N));
-    b.resize(static_cast<int>(NB));
-    const Pattern pa{2.0, 10.0, S};
-    const Pattern pb{5.0, 500.0, S};
+    const long n  = (30 * s) + 11;
+    const long nb = (47 * s) + 5;
+    a.resize(static_cast<int>(n));
+    b.resize(static_cast<int>(nb));
+    const Pattern pa{2.0, 10.0, s};
+    const Pattern pb{5.0, 500.0, s};
     maybe_set_second_value(a, pa.sv);
     maybe_set_second_value(b, pb.sv);
-    fill(a, pa, N);
-    fill(b, pb, NB);
+    fill(a, pa, n);
+    fill(b, pb, nb);
     compress_in_region(a);
     compress_in_region(b);
 
     int bad =
-        verify(step, "a (before)", std::as_const(a), pa, N) + verify(step, "b (before)", std::as_const(b), pb, NB);
+        verify(step, "a (before)", std::as_const(a), pa, n) + verify(step, "b (before)", std::as_const(b), pb, nb);
 
     a.swap(b);
-    bad += verify(step, "a (swapped)", std::as_const(a), pb, NB) + verify(step, "b (swapped)", std::as_const(b), pa, N);
+    bad += verify(step, "a (swapped)", std::as_const(a), pb, nb) + verify(step, "b (swapped)", std::as_const(b), pa, n);
 
     // The exchanged metadata must keep working: a pass, a rewrite, a pass.
     compress_in_region(a);
     compress_in_region(b);
-    bad += verify(step, "a (compressed)", std::as_const(a), pb, NB) +
-           verify(step, "b (compressed)", std::as_const(b), pa, N);
-    const Pattern pb2{pb.sv, 900.0, S};
-    const Pattern pa2{pa.sv, 90.0, S};
-    fill(a, pb2, NB);
-    fill(b, pa2, N);
+    bad += verify(step, "a (compressed)", std::as_const(a), pb, nb) +
+           verify(step, "b (compressed)", std::as_const(b), pa, n);
+    const Pattern pb2{pb.sv, 900.0, s};
+    const Pattern pa2{pa.sv, 90.0, s};
+    fill(a, pb2, nb);
+    fill(b, pa2, n);
     compress_in_region(a);
     compress_in_region(b);
-    bad += verify(step, "a (rewritten)", std::as_const(a), pb2, NB) +
-           verify(step, "b (rewritten)", std::as_const(b), pa2, N);
+    bad += verify(step, "a (rewritten)", std::as_const(a), pb2, nb) +
+           verify(step, "b (rewritten)", std::as_const(b), pa2, n);
 
     if (!bad)
     {
         println("[{}/{}] OK: N={}, second values {:g}/{:g} exchanged with the chunks, compressed and rewritten",
-                variant_name(), step, N, pa.sv, pb.sv);
+                variant_name(), step, n, pa.sv, pb.sv);
     }
     return bad ? 1 : 0;
 }
@@ -246,23 +246,23 @@ int check_move()
     const char*   step = "move";
     Array<double> src;
     Array<double> dst;
-    const long    S = static_cast<long>(src.chunk_size());
-    const long    N = (25 * S) + 3;
-    const long    M = (12 * S) + 5;
-    src.resize(static_cast<int>(N));
-    dst.resize(static_cast<int>(M));
-    const Pattern ps{3.0, 30.0, S};
-    const Pattern pd{7.0, 700.0, S};
+    const long    s = static_cast<long>(src.chunk_size());
+    const long    n = (25 * s) + 3;
+    const long    m = (12 * s) + 5;
+    src.resize(static_cast<int>(n));
+    dst.resize(static_cast<int>(m));
+    const Pattern ps{3.0, 30.0, s};
+    const Pattern pd{7.0, 700.0, s};
     maybe_set_second_value(src, ps.sv);
     maybe_set_second_value(dst, pd.sv);
-    fill(src, ps, N);
-    fill(dst, pd, M);
+    fill(src, ps, n);
+    fill(dst, pd, m);
     compress_in_region(src);
     compress_in_region(dst);
 
     dst = std::move(src);
 
-    int bad = verify(step, "dst (moved into)", std::as_const(dst), ps, N);
+    int bad = verify(step, "dst (moved into)", std::as_const(dst), ps, n);
     // Reading the moved-from array is the point: the move-assignment's
     // contract leaves it empty and valid, and that is what is checked here.
     // NOLINTNEXTLINE(bugprone-use-after-move)
@@ -273,20 +273,20 @@ int check_move()
         ++bad;
     }
     compress_in_region(dst);
-    bad += verify(step, "dst (compressed)", std::as_const(dst), ps, N);
+    bad += verify(step, "dst (compressed)", std::as_const(dst), ps, n);
 
     // The moved-from array is empty, not broken.
-    const Pattern pr{pd.sv, 800.0, S};
+    const Pattern pr{pd.sv, 800.0, s};
     maybe_set_second_value(src, pr.sv);
-    src.resize(static_cast<int>(M));
-    fill(src, pr, M);
+    src.resize(static_cast<int>(m));
+    fill(src, pr, m);
     compress_in_region(src);
-    bad += verify(step, "src (reused)", std::as_const(src), pr, M);
-    bad += verify(step, "dst (untouched)", std::as_const(dst), ps, N);
+    bad += verify(step, "src (reused)", std::as_const(src), pr, m);
+    bad += verify(step, "dst (untouched)", std::as_const(dst), ps, n);
 
     if (!bad)
     {
-        println("[{}/{}] OK: N={} moved over M={}, the source reused", variant_name(), step, N, M);
+        println("[{}/{}] OK: N={} moved over M={}, the source reused", variant_name(), step, n, m);
     }
     return bad ? 1 : 0;
 }
@@ -295,18 +295,18 @@ int check_move_construct()
 {
     const char*   step = "move-construct";
     Array<double> src;
-    const long    S = static_cast<long>(src.chunk_size());
-    const long    N = (20 * S) + 9;
-    const long    M = (7 * S) + 1;
-    src.resize(static_cast<int>(N));
-    const Pattern ps{4.0, 40.0, S};
+    const long    s = static_cast<long>(src.chunk_size());
+    const long    n = (20 * s) + 9;
+    const long    m = (7 * s) + 1;
+    src.resize(static_cast<int>(n));
+    const Pattern ps{4.0, 40.0, s};
     maybe_set_second_value(src, ps.sv);
-    fill(src, ps, N);
+    fill(src, ps, n);
     compress_in_region(src);
 
     Array<double> dst(std::move(src));
 
-    int bad = verify(step, "dst (constructed)", std::as_const(dst), ps, N);
+    int bad = verify(step, "dst (constructed)", std::as_const(dst), ps, n);
     // Reading the moved-from array is the point, as in check_move().
     // NOLINTNEXTLINE(bugprone-use-after-move)
     if (!src.empty() || src.chunk_count() != 0)
@@ -316,19 +316,19 @@ int check_move_construct()
         ++bad;
     }
     compress_in_region(dst);
-    bad += verify(step, "dst (compressed)", std::as_const(dst), ps, N);
+    bad += verify(step, "dst (compressed)", std::as_const(dst), ps, n);
 
-    const Pattern pr{6.0, 600.0, S};
+    const Pattern pr{6.0, 600.0, s};
     maybe_set_second_value(src, pr.sv);
-    src.resize(static_cast<int>(M));
-    fill(src, pr, M);
+    src.resize(static_cast<int>(m));
+    fill(src, pr, m);
     compress_in_region(src);
-    bad += verify(step, "src (reused)", std::as_const(src), pr, M);
-    bad += verify(step, "dst (untouched)", std::as_const(dst), ps, N);
+    bad += verify(step, "src (reused)", std::as_const(src), pr, m);
+    bad += verify(step, "dst (untouched)", std::as_const(dst), ps, n);
 
     if (!bad)
     {
-        println("[{}/{}] OK: N={} moved into a new array, the source reused", variant_name(), step, N);
+        println("[{}/{}] OK: N={} moved into a new array, the source reused", variant_name(), step, n);
     }
     return bad ? 1 : 0;
 }
@@ -342,35 +342,35 @@ int check_vector_realloc()
     std::vector<Array<double>> v;
     v.reserve(1);
     v.emplace_back(0);
-    const long    S = static_cast<long>(v[0].chunk_size());
-    const long    N = (18 * S) + 7;
-    const long    M = (9 * S) + 2;
-    const Pattern p0{2.0, 20.0, S};
-    const Pattern p1{8.0, 80.0, S};
-    v[0].resize(static_cast<int>(N));
+    const long    s = static_cast<long>(v[0].chunk_size());
+    const long    n = (18 * s) + 7;
+    const long    m = (9 * s) + 2;
+    const Pattern p0{2.0, 20.0, s};
+    const Pattern p1{8.0, 80.0, s};
+    v[0].resize(static_cast<int>(n));
     maybe_set_second_value(v[0], p0.sv);
-    fill(v[0], p0, N);
+    fill(v[0], p0, n);
     compress_in_region(v[0]);
-    const auto* const chunks_before = v[0].getChunkList().data();
+    const auto* const chunks_before = v[0].get_chunk_list().data();
 
-    v.emplace_back(static_cast<int>(M)); // capacity 1: reallocates, moving v[0]
+    v.emplace_back(static_cast<int>(m)); // capacity 1: reallocates, moving v[0]
 
     int bad = 0;
-    if (v[0].getChunkList().data() != chunks_before)
+    if (v[0].get_chunk_list().data() != chunks_before)
     {
         println("[{}/{}] FAIL the reallocation copied the array instead of moving it", variant_name(), step);
         ++bad;
     }
     maybe_set_second_value(v[1], p1.sv);
-    fill(v[1], p1, M);
+    fill(v[1], p1, m);
     compress_in_region(v[1]);
     compress_in_region(v[0]);
-    bad += verify(step, "v[0] (moved)", std::as_const(v[0]), p0, N);
-    bad += verify(step, "v[1]", std::as_const(v[1]), p1, M);
+    bad += verify(step, "v[0] (moved)", std::as_const(v[0]), p0, n);
+    bad += verify(step, "v[1]", std::as_const(v[1]), p1, m);
 
     if (!bad)
     {
-        println("[{}/{}] OK: N={} moved by the reallocation, chunk list kept", variant_name(), step, N);
+        println("[{}/{}] OK: N={} moved by the reallocation, chunk list kept", variant_name(), step, n);
     }
     return bad ? 1 : 0;
 }

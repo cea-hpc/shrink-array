@@ -35,26 +35,26 @@
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
-#include "chunk/internal/in_t.h"                        // in_t<T>
+#include "chunk/internal/in_t.h"                        // InT<T>
 
 namespace shrink_array
 {
 
-template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
+template <ArrayChunkElement T, typename IndType>
+void ArrayChunk<T, IndType>::rebuild_storage(IndType sz)
 {
     if (sz)
     {
         if (this->size_policy_.size())
         {
-            nb_chunk = this->chunks_for(sz);
-            manager_chunk::increm_somme_chunk_create(nb_chunk);
-            manager_chunk::compute_size_buffer_reuse();
-            manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
+            nb_chunk_ = this->chunks_for(sz);
+            Manager::increm_somme_chunk_create(nb_chunk_);
+            Manager::compute_size_buffer_reuse();
+            Manager::compute_size_max_number_of_chunk_to_check_compress();
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                Proxy<T>::resize_tab_is_int(this->num_tab, nb_chunk);
+                Proxy<T>::resize_tab_is_int(this->num_tab_, nb_chunk_);
             }
         }
         else if (sz && !this->size_policy_.size())
@@ -62,27 +62,27 @@ void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
             CHUNK_INVARIANT_FAILED("create({} elements): the chunk size is 0 (no geometry set)", sz);
         }
 
-        if (nb_chunk)
+        if (nb_chunk_)
         {
-            this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk));
-            this->alloc_dirty_bitset(nb_chunk);
+            this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk_));
+            this->alloc_dirty_bitset(nb_chunk_);
             this->assign_alloc_key(); // own slabs if large enough (see alloc_key_)
 
             // A team of its own outside a region; the calling thread inside one
             // (an orphaned `omp for` would initialise 1/N of an array created by
             // each thread, and hang one created under `omp single`).
-            parallel_storage_init::for_each_chunk(nb_chunk,
+            parallel_storage_init::for_each_chunk(nb_chunk_,
                                                   [this](int i) { this->construct_chunk(i).init_values_cst_val(); });
         }
     }
 
-    m_size = sz;
+    m_size_ = sz;
 }
 
-template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
+template <ArrayChunkElement T, typename IndType>
+void ArrayChunk<T, IndType>::print_compression_stats(std::ostream& os) const
 {
-    if (nb_chunk == 0)
+    if (nb_chunk_ == 0)
     {
         return;
     }
@@ -105,10 +105,11 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
     int n_compressed  = 0;
     int n_would_be_t2 = 0;
 
-#pragma omp parallel for reduction(+ : n_compressed, n_would_be_t2) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-    for (int j = 0; j < nb_chunk; ++j)
+#pragma omp parallel for reduction(+ : n_compressed, \
+                                       n_would_be_t2) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500)
+    for (int j = 0; j < nb_chunk_; ++j)
     {
-        const auto& ck = chunk_list[j];
+        const auto& ck = chunk_list_[j];
         if (!ck.written())
         {
             ++n_compressed; // collapsed to first_value
@@ -137,13 +138,13 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
         // Dyn-only end-of-life size distribution (see chunk_stats.h).
         record_chunk_size_at_exit<Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
-    print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk,
+    print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk_,
                                 /*n_t1=*/0, "Chunk",
                                 /*n_cross=*/n_would_be_t2, /*cross_name=*/"Chunk2");
 }
 
-template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::clear()
+template <ArrayChunkElement T, typename IndType>
+void ArrayChunk<T, IndType>::clear()
 {
     this->invalidate_proxies();
     // Per-array compression stats, read BEFORE the drain below mutates state.
@@ -155,8 +156,8 @@ void ArrayChunk<T, ind_type>::clear()
     clear_core();
 }
 
-template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::clear_core()
+template <ArrayChunkElement T, typename IndType>
+void ArrayChunk<T, IndType>::clear_core()
 {
     // Pin the ambient size to THIS array's geometry before the sweep:
     // get_chunk_allocator() routes on thread_chunk_size(), not on the buffer, so
@@ -179,13 +180,13 @@ void ArrayChunk<T, ind_type>::clear_core()
     {
         const auto& sh_inf   = *Proxy<T>::share_info_array;
         const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
-        manager_chunk::remove_from_compress_list_chunk_by_num_tab(num_tab_);
+        Manager::remove_from_compress_list_chunk_by_num_tab(num_tab_);
     }
 
-    if (!nb_chunk)
+    if (!nb_chunk_)
     {
-        m_size = 0;
-        chunk_list.clear();
+        m_size_ = 0;
+        chunk_list_.clear();
         return;
     }
 
@@ -195,26 +196,26 @@ void ArrayChunk<T, ind_type>::clear_core()
     // otherwise it climbs by orders of magnitude, compressions become rare and
     // buffers stop returning to the reuse lists. Also balances rechunk_to()
     // (clear_core() -> rebuild_storage()).
-    manager_chunk::decrem_somme_chunk_create(nb_chunk);
+    Manager::decrem_somme_chunk_create(nb_chunk_);
     // And recompute what derives from the total, as rebuild_storage() does: a
     // re-chunk would otherwise keep a threshold sized for the old geometry
     // (several times too large, a large throughput loss).
-    manager_chunk::compute_size_buffer_reuse();
-    manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
+    Manager::compute_size_buffer_reuse();
+    Manager::compute_size_max_number_of_chunk_to_check_compress();
 
     if constexpr (build_config::use_openmp)
     {
 #pragma omp parallel
         {
-            const int nb_chunk0 = get_size_max_tab_omp(nb_chunk);
+            const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_);
 
             std::vector<Chunk<T>*> ll_chunk_loc;
             ll_chunk_loc.reserve(nb_chunk0);
 
 #pragma omp for schedule(static) nowait
-            for (int j = 0; j < nb_chunk; ++j)
+            for (int j = 0; j < nb_chunk_; ++j)
             {
-                if (chunk_list[j].written())
+                if (chunk_list_[j].written())
                 {
                     if constexpr (chunk_config::stats)
                     {
@@ -223,7 +224,7 @@ void ArrayChunk<T, ind_type>::clear_core()
                         add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
                                                             static_cast<long>(this->size_policy_.size()));
                     }
-                    ll_chunk_loc.push_back(&chunk_list[j]);
+                    ll_chunk_loc.push_back(&chunk_list_[j]);
                 }
             }
 
@@ -238,15 +239,15 @@ void ArrayChunk<T, ind_type>::clear_core()
                 // the LEGACY list, which drain_reuse_list_for_size() never
                 // drains: those blocks then stay until teardown.
                 const unsigned int my_sz = this->size_policy_.size();
-                auto&              lbf   = Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                auto&              lbf   = Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                 for (int k = 0; k < nb; ++k)
                 {
-                    T*          values_loc = ll_chunk_loc[k]->values;
+                    T*          values_loc = ll_chunk_loc[k]->values_;
                     constexpr T zero{};
                     std::uninitialized_fill_n(values_loc, my_sz, zero);
 
-                    // Ledger LIVE -> PARKED (no-op when the ledger is off).
+                    // Ledger LIVE -> parked (no-op when the ledger is off).
                     CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
                     lbf.push_back(values_loc);
 
@@ -263,9 +264,9 @@ void ArrayChunk<T, ind_type>::clear_core()
     else
     {
 #pragma omp for schedule(static) nowait
-        for (int j = 0; j < nb_chunk; ++j)
+        for (int j = 0; j < nb_chunk_; ++j)
         {
-            if (chunk_list[j].written())
+            if (chunk_list_[j].written())
             {
                 if constexpr (chunk_config::stats)
                 {
@@ -273,15 +274,15 @@ void ArrayChunk<T, ind_type>::clear_core()
                 }
                 // release_st: counted as teardown_clear above, not also as a
                 // compression.
-                chunk_list[j].release_st();
+                chunk_list_[j].release_st();
             }
         }
     }
-    m_size = 0;
+    m_size_ = 0;
 
     this->release_chunk_list(); // Mandatory with the new allocator (a re-chunk keeps the buffer)
 
-    nb_chunk = 0;
+    nb_chunk_ = 0;
 
     // An array with its own slab affinity gives its memory back NOW: its parked
     // buffers go home to its allocator set, whose slabs then empty (and
@@ -295,11 +296,11 @@ void ArrayChunk<T, ind_type>::clear_core()
     // The candidate flags (one byte per chunk): released now that the purge
     // at the top has run and the chunks are gone -- a re-chunk's old storage
     // dies under its own num_tab, which nothing reuses.
-    Proxy<T>::release_tab_is_int(this->num_tab);
+    Proxy<T>::release_tab_is_int(this->num_tab_);
 }
 
-template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::compress_int(bool verbose)
+template <ArrayChunkElement T, typename IndType>
+void ArrayChunk<T, IndType>::compress_int(bool verbose)
 {
     // Pin the ambient size to THIS array's geometry (see clear_core()).
     if constexpr (build_config::chunk_dynamic)
@@ -308,15 +309,15 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
     }
 
 
-    const int nb_chunk0 = get_size_max_tab_omp(nb_chunk, true);
+    const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_, true);
 
     std::vector<int> ll;
     ll.reserve(nb_chunk0);
 
 #pragma omp for schedule(static) nowait
-    for (int j = 0; j < nb_chunk; ++j)
+    for (int j = 0; j < nb_chunk_; ++j)
     {
-        const auto& chunk = chunk_list[j];
+        const auto& chunk = chunk_list_[j];
 
         if (chunk.written())
         {
@@ -351,15 +352,15 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
             compress,
             "residual ArrayChunk<{}, {}>: {} chunk(s) constant at zero, still materialised (awaiting the next "
             "compression pass): {}",
-            type_name<T>(), type_name<ind_type>(), nb,
-            internal::chunk_index_sample(sample, ll, static_cast<ind_type>(this->size_policy_.size())));
+            type_name<T>(), type_name<IndType>(), nb,
+            internal::chunk_index_sample(sample, ll, static_cast<IndType>(this->size_policy_.size())));
     }
 }
 
 // make_block_compression() is FastBlockSupport<ArrayChunk, true>'s
 // (array_chunk_parallel_inline.h); the false specialisation is a no-op.
-template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
+template <ArrayChunkElement T, typename IndType>
+void ArrayChunk<T, IndType>::release_chunk_range(int first, int last)
 {
     if (first >= last)
     {
@@ -380,10 +381,10 @@ void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
             first, last, [my_sz]() -> auto&
-            { return Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
+            { return Chunk<T>::Manager::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this, my_sz](int j, auto& lbf)
             {
-                if (chunk_list[j].written())
+                if (chunk_list_[j].written())
                 {
                     if constexpr (chunk_config::stats)
                     {
@@ -391,12 +392,12 @@ void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
                         add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
                     }
                     // As clear_core(): v1's reuse lists hold zeroed buffers.
-                    T*          values_loc = chunk_list[j].values;
+                    T*          values_loc = chunk_list_[j].values_;
                     constexpr T zero{};
                     std::uninitialized_fill_n(values_loc, my_sz, zero);
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
                     lbf.push_back(values_loc);
-                    chunk_list[j].init_values_cst_val();
+                    chunk_list_[j].init_values_cst_val();
                 }
             });
     }
@@ -404,20 +405,20 @@ void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
     {
         for (int j = first; j < last; ++j)
         {
-            if (chunk_list[j].written())
+            if (chunk_list_[j].written())
             {
                 if constexpr (chunk_config::stats)
                 {
                     increm_chunk_teardown_clear<Chunk<T>>();
                 }
-                chunk_list[j].release_st();
+                chunk_list_[j].release_st();
             }
         }
     }
 }
 
-template <ArrayChunkElement T, typename ind_type>
-void ArrayChunk<T, ind_type>::resize(ind_type newsz)
+template <ArrayChunkElement T, typename IndType>
+void ArrayChunk<T, IndType>::resize(IndType newsz)
 {
     this->invalidate_proxies();
 
@@ -438,31 +439,31 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 
     const int num_tab = sh_inf.get_num_tab(this->registry_key());
 
-    const ind_type old_size = m_size; // the stale-tail reset at the end
+    const IndType old_size = m_size_; // the stale-tail reset at the end
 
-    m_size = newsz;
+    m_size_ = newsz;
 
-    const int old_nb_chunk = nb_chunk;
+    const int old_nb_chunk = nb_chunk_;
 
-    nb_chunk = this->chunks_for(newsz);
+    nb_chunk_ = this->chunks_for(newsz);
 
     // Shrink: ~Chunk() releases nothing, so release the dropped chunks' buffers
     // first (the pass above emptied the candidate lists).
-    if (nb_chunk < old_nb_chunk)
+    if (nb_chunk_ < old_nb_chunk)
     {
-        release_chunk_range(nb_chunk, old_nb_chunk);
+        release_chunk_range(nb_chunk_, old_nb_chunk);
     }
 
-    chunk_list.resize(nb_chunk);
-    Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk);
+    chunk_list_.resize(nb_chunk_);
+    Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk_);
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        Proxy<T>::resize_tab_is_int(num_tab, nb_chunk);
+        Proxy<T>::resize_tab_is_int(num_tab, nb_chunk_);
     }
-    manager_chunk::increm_somme_chunk_create(nb_chunk - old_nb_chunk);
-    manager_chunk::compute_size_buffer_reuse();
-    manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
+    Manager::increm_somme_chunk_create(nb_chunk_ - old_nb_chunk);
+    Manager::compute_size_buffer_reuse();
+    Manager::compute_size_max_number_of_chunk_to_check_compress();
     // An array built empty (the default) only becomes worth its own slabs
     // here; idempotent for one that already has a key.
     this->assign_alloc_key();
@@ -470,7 +471,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     // The new chunks [old_nb_chunk, nb_chunk): a team of its own outside a
     // region, the calling thread inside one -- never an orphaned `omp for`
     // (it would construct only 1/N of a thread's own array).
-    parallel_storage_init::for_each_chunk(nb_chunk - old_nb_chunk, [this, old_nb_chunk](int k)
+    parallel_storage_init::for_each_chunk(nb_chunk_ - old_nb_chunk, [this, old_nb_chunk](int k)
                                           { this->construct_chunk(old_nb_chunk + k).init_values_cst_val(); });
 
     // std::vector semantics: the regrown range [old_size, newsz) reads T{}. The
@@ -479,14 +480,14 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     // `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
-        const auto csz = static_cast<ind_type>(this->chunk_size());
+        const auto csz = static_cast<IndType>(this->chunk_size());
         // Up to the end of the OLD chunk count: chunks_for() keeps a spare chunk
         // when old_size falls on a boundary, stale too. In long long:
         // old_nb_chunk * csz may pass ind_type's range.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
-        const ind_type  stale_end = newsz < old_cover ? newsz : old_cover;
-        for (ind_type i = old_size; i < stale_end; ++i)
+        const IndType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IndType>(cover_ll) : newsz;
+        const IndType   stale_end = newsz < old_cover ? newsz : old_cover;
+        for (IndType i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};
         }

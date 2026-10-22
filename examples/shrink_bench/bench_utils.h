@@ -36,12 +36,12 @@
 // Cache-line-padded uint64 used as a per-thread accumulator to avoid false
 // sharing when threads write their local checksum contribution.
 // -----------------------------------------------------------------------------
-struct uint64_t_padding
+struct Uint64Padding
 {
     /// @brief Zero-initialise the value.
-    uint64_t_padding() : value(0) {}
+    Uint64Padding() : value(0) {}
     /// @brief Initialise the value to @p val.
-    uint64_t_padding(uint64_t val) : value(val) {}
+    Uint64Padding(uint64_t val) : value(val) {}
 
     /// @brief The stored value.
     operator uint64_t() const
@@ -56,7 +56,7 @@ struct uint64_t_padding
 
     /// @brief Add @p other's value to this one.
     /// @return Reference to the stored value.
-    uint64_t& operator+=(const uint64_t_padding& other)
+    uint64_t& operator+=(const Uint64Padding& other)
     {
         value += other.value;
         return value;
@@ -85,7 +85,7 @@ std::string bench_text(const V& v)
     {
         return std::format("{:g}", v);
     }
-    else if constexpr (std::is_same_v<V, complex_double>)
+    else if constexpr (std::is_same_v<V, ComplexDouble>)
     {
         return std::format("({:g},{:g})", v.real(), v.imag());
     }
@@ -257,7 +257,7 @@ template <typename V>
 #if defined(__GNUC__) && !defined(__NVCOMPILER) && !defined(__clang__)
 __attribute__((optimize("O2")))
 #endif
-void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_thr)
+void calculate_checksum_0(const V& vec, std::vector<Uint64Padding>& checksum_thr)
 {
     using T      = V::value_type;
     const Int nn = vec.size();
@@ -274,7 +274,7 @@ void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_
         if (element != zero)
         {
             checksum +=
-                static_cast<uint64_t_padding>(bench_checksum::contribution(static_cast<std::uint64_t>(k), element));
+                static_cast<Uint64Padding>(bench_checksum::contribution(static_cast<std::uint64_t>(k), element));
         }
     }
 }
@@ -283,14 +283,14 @@ void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_
 template <typename V>
 struct VectorChecksum
 {
-    /// @brief Keep a reference to @p vec_ and size checksum_thr to CHUNK_PMP_MAX_THREADS zeroed slots.
-    /// @param vec_ Container to checksum.
-    VectorChecksum(const V& vec_) : vec(vec_)
+    /// @brief Keep a reference to @p container and size checksum_thr to CHUNK_PMP_MAX_THREADS zeroed slots.
+    /// @param container Container to checksum.
+    VectorChecksum(const V& container) : vec(container)
     {
         checksum_thr.resize(CHUNK_PMP_MAX_THREADS, 0);
     }
-    const V&                      vec;
-    std::vector<uint64_t_padding> checksum_thr;
+    const V&                   vec;
+    std::vector<Uint64Padding> checksum_thr;
 };
 
 // -----------------------------------------------------------------------------
@@ -322,7 +322,7 @@ void maybe_set_debug_name(Arr& a, const char* name)
 // -----------------------------------------------------------------------------
 // Non-template utilities defined in bench_utils.cpp.
 // -----------------------------------------------------------------------------
-extern bool __debug_flag;
+extern bool debug_flag;
 
 extern const std::vector<std::string> valid_args;
 
@@ -337,12 +337,12 @@ unsigned load_seed_to_file(const std::string& filename);
 /// @brief Seed @p rng from @p seed_file_name; when that yields 0, draw a seed from std::random_device and save it.
 /// @param rng Generator to seed.
 /// @param seed_file_name Seed file.
-void initializeRNG(std::mt19937& rng, const std::string& seed_file_name);
+void initialize_rng(std::mt19937& rng, const std::string& seed_file_name);
 
 /// @brief Bytes to MiB (the bench's "Mo"). A pure conversion: no I/O.
-/// @param memoryValue Size in bytes.
+/// @param memory_value Size in bytes.
 /// @return The same size in MiB.
-double convert_memory(double memoryValue);
+double convert_memory(double memory_value);
 /// @brief Print the memory line labelled @p msg: peak and current resident size, plus the parked (and, with
 ///        CHUNK_STATS, materialised) bytes in shrink builds.
 /// @param msg Label of the line.

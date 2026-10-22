@@ -429,7 +429,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 const long     creates = churn::Materialisations<T>::total(key);
                 const long     phases  = churn::phase_ends();
                 const long     mat_now = static_cast<long>(rep.table[static_cast<std::size_t>(rep.cur)].mat);
-                const unsigned S       = rep.current_size;
+                const unsigned s       = rep.current_size;
                 if (key != 0 && h.churn_creates >= 0 && key == h.churn_key)
                 {
                     const long   d_creates = creates - h.churn_creates;
@@ -437,18 +437,18 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                     const long   growth    = mat_now - h.churn_mat;
                     const double transient =
                         static_cast<double>(d_creates - (growth > 0 ? growth : 0)) / static_cast<double>(d_phases);
-                    const double mb_S   = transient * S * sizeof(T) / 1e6;
+                    const double mb_s   = transient * s * sizeof(T) / 1e6;
                     const double mb_64s = transient * 64. * sizeof(T) / 1e6; // same chunk count at 64
                     CHUNK_LOG(info, rechunk,
                               "churn {} S={}: {} materialisations over {} phases since the last tick ({:.0f}/phase), "
                               "resident materialised {} -> {}: transient ~{:.0f} chunks/phase = {:.1f} MB at S={}; at "
                               "S=64: {:.1f} MB if scattered, {:.1f} MB if grouped",
-                              name, S, d_creates, d_phases, static_cast<double>(d_creates) / d_phases, h.churn_mat,
-                              mat_now, transient, mb_S, S, mb_64s, mb_S);
+                              name, s, d_creates, d_phases, static_cast<double>(d_creates) / d_phases, h.churn_mat,
+                              mat_now, transient, mb_s, s, mb_64s, mb_s);
                 }
                 else
                 {
-                    CHUNK_LOG(info, rechunk, "churn {} S={}: baseline (key {})", name, S, key);
+                    CHUNK_LOG(info, rechunk, "churn {} S={}: baseline (key {})", name, s, key);
                 }
                 h.churn_key     = key;
                 h.churn_creates = creates;

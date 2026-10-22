@@ -67,10 +67,9 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int                    thr,
-                                                                                  vec_tuple_chunkp_int2& ll_compt)
+void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int thr, VecTupleChunkpInt2& ll_compt)
 {
-    const auto& vec_tup = Derived::manager_chunk::chunk_to_compress_potentially_thr[thr];
+    const auto& vec_tup = Derived::Manager::chunk_to_compress_potentially_thr[thr];
 
     const int sz = vec_tup.size();
 
@@ -94,11 +93,11 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_pa
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&          self,
-                                                                     vec_tuple_chunkp_int2& ll_compt,
-                                                                     int                    num_chunk,
-                                                                     int                    num_tab,
-                                                                     unsigned int           n_elems)
+void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&       self,
+                                                                     VecTupleChunkpInt2& ll_compt,
+                                                                     int                 num_chunk,
+                                                                     int                 num_tab,
+                                                                     unsigned int        n_elems)
 {
     if (self.written())
     {
@@ -142,7 +141,7 @@ void Chunk<T>::compress_sweep_rank(int thr)
 {
     // Bypasses CompressionManager::start(): see check_no_flush_outside_start.
     check_no_flush_outside_start<Proxy<T>>("Chunk::compress_sweep_rank");
-    auto& chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
+    auto& chunk_t = Manager::chunk_to_compress_potentially_thr[thr];
     // Dynamic geometry: pin the ambient chunk size to EACH candidate's own (its ChunkElems),
     // restored after the loop. free_block_to_pool() parks in the list of the AMBIENT size,
     // which after a re-chunk may be another array's: a 64-buffer parked in the 128 list
@@ -186,14 +185,14 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 template <typename T, typename Derived, bool Enabled>
 bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_thr)
 {
-    if (manager_chunk::chunk_to_compress_potentially_thr.empty())
+    if (Manager::chunk_to_compress_potentially_thr.empty())
     {
         return false;
     }
 
     for (int thr = 0; thr < max_thr; ++thr)
     {
-        const auto& chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
+        const auto& chunk_t = Manager::chunk_to_compress_potentially_thr[thr];
 
         const bool is_empty = chunk_t.empty();
         if (!is_empty)
@@ -253,7 +252,7 @@ void ChunkOmpPolicy<T, Derived, false>::create_value(this Derived& self) noexcep
 {
     // Serially there is no reuse list: the first initialiser is ignored (serial
     // ChunkAllocPolicy).
-    self.values = self.Base::allocate_chunk_internal(
+    self.values_ = self.Base::allocate_chunk_internal(
         0, [](T*) noexcept {},
         [](T* vals) noexcept
         {
@@ -270,12 +269,12 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
 {
     // Before the first parallel region the per-rank lists do not exist (sized at region
     // begin), yet ArrayChunk::resize() calls this from create(): do not index them.
-    if (thr < 0 || static_cast<size_t>(thr) >= manager_chunk::chunk_to_compress_potentially_thr.size())
+    if (thr < 0 || static_cast<size_t>(thr) >= Manager::chunk_to_compress_potentially_thr.size())
     {
         return;
     }
 
-    auto& vec_tuple_to_compress = manager_chunk::chunk_to_compress_potentially_thr[thr];
+    auto& vec_tuple_to_compress = Manager::chunk_to_compress_potentially_thr[thr];
 
     const int sz = vec_tuple_to_compress.size();
 
@@ -330,7 +329,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
         }
     }
 
-    vec_tuple_chunkp_int2 ll_compt;
+    VecTupleChunkpInt2 ll_compt;
 
     ll_compt.reserve((sz / 10) + 1);
 
@@ -419,7 +418,7 @@ void Chunk<T>::block_clear(this auto& self, [[maybe_unused]] int thr_rank)
 
     if constexpr (build_config::use_openmp)
     {
-        self.Base::free_block_to_pool(thr_rank, self.values);
+        self.Base::free_block_to_pool(thr_rank, self.values_);
     }
     else
     {
@@ -490,11 +489,11 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(this Derived& self,
     // get_list_block_free_thr(thr) routes by thread_chunk_size(), i.e. by whichever array
     // wrote last. With two geometries alive, a 64-element buffer would land in the 256 list
     // and be popped for a 256-element chunk (overflow). The memset and the push must agree.
-    auto& ll_block_free_thr = manager_chunk::get_list_block_free_thr_for_size(thr_rank, n_elems);
+    auto& ll_block_free_thr = Manager::get_list_block_free_thr_for_size(thr_rank, n_elems);
 
-    Base::init_block(self.values.load(), n_elems);
-    CHUNK_LEDGER_PARK(self.values.load(), "clear_st.park"); // LIVE -> PARKED before it re-enters the pool
-    ll_block_free_thr.push_back(self.values);
+    Base::init_block(self.values_.load(), n_elems);
+    CHUNK_LEDGER_PARK(self.values_.load(), "clear_st.park"); // LIVE -> parked before it re-enters the pool
+    ll_block_free_thr.push_back(self.values_);
 
     self.init_values_cst_val();
 }

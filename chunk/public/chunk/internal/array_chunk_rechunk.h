@@ -42,7 +42,7 @@
 #include "chunk/config.h"                     // build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // ChunkSizeError, static_chunk_size (try_rechunk_to)
 #include "chunk/chunk_traits.h"               // ArrayChunkTraits
-#include "chunk/internal/in_t.h"              // in_t<T>: the captured state
+#include "chunk/internal/in_t.h"              // InT<T>: the captured state
 #include "chunk/internal/array_chunk_for.h"   // ArrayChunkCore -- rechunk_all_to's registry keys
 
 namespace shrink_array
@@ -175,9 +175,9 @@ class RechunkSupport<Derived, true>
         return T{};
     }
     /** @brief Apply the captured state to the fresh array (default: no-op). */
-    static void rechunk_seed_fresh(in_t<T> /*state*/) {}
+    static void rechunk_seed_fresh(InT<T> /*state*/) {}
     /** @brief Post-swap fixup so the dying temporary does not take state with it (default: no-op). */
-    static void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
+    static void rechunk_reown_after_swap(Derived& /*tmp*/, InT<T> /*state*/) {}
     /** @brief Swap registry identity with the temporary (default: nothing to swap, succeeds). */
     static bool rechunk_swap_identity(Derived& /*tmp*/)
     {
@@ -266,9 +266,9 @@ class RechunkSupport<Derived, false>
         return T{};
     }
     /** @brief No state to apply. */
-    static void rechunk_seed_fresh(in_t<T> /*state*/) {}
+    static void rechunk_seed_fresh(InT<T> /*state*/) {}
     /** @brief Nothing to re-own. */
-    static void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
+    static void rechunk_reown_after_swap(Derived& /*tmp*/, InT<T> /*state*/) {}
     /** @brief Nothing to swap; succeeds. */
     static bool rechunk_swap_identity(Derived& /*tmp*/)
     {

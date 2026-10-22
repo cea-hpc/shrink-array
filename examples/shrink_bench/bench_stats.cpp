@@ -18,7 +18,7 @@
 /// @brief The value census and filling-rate report. See bench_phases.h.
 
 #include <algorithm>   // std::max (name_padding)
-#include <complex>     // operator== on complex_double
+#include <complex>     // operator== on ComplexDouble
 #include <cstddef>     // std::size_t
 #include <string>      // std::string
 #include <type_traits> // std::is_same_v
@@ -57,7 +57,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     {
         using value_type           = std::remove_reference_t<std::remove_const_t<decltype(tab)>>::value_type;
         constexpr bool is_not_bool = !shrink_array::is_bool_like_v<value_type>; // bool, Bit
-        constexpr bool is_complex  = std::is_same_v<value_type, complex_double>;
+        constexpr bool is_complex  = std::is_same_v<value_type, ComplexDouble>;
 
         Int nbz = 0;
         Int nbv = 0;

@@ -125,7 +125,7 @@ void Chunk2Base<T, Derived>::clear_impl(this Derived&     self,
     }
 
     auto& ll_block_free_thr = self.get_manager().get_list_block_free_thr(thr_rank);
-    ll_block_free_thr.push_back(self.values.load());
+    ll_block_free_thr.push_back(self.values_.load());
 
     // Chunk2A specific cleanup
     if constexpr (std::is_same_v<IndexType, std::nullopt_t>)

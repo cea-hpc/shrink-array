@@ -38,6 +38,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
     # the tabs under the runs table, in this order
     TAB_LOG, TAB_SUMMARY, TAB_CHART, TAB_ERRORS = range(4)
     ACTIVE = ("en cours", "en attente", "démarrage")
+    WATCH_MS = 30000           # connection watch period
 
     def __init__(self):
         super().__init__()
@@ -55,6 +56,9 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.build_info = {}     # arch suffix -> act_build_targets (the "Choisir…" lists)
         self.local_info = None   # this machine, from the check: machine, cpus, mem_gb
         self.rescan = False      # read the options again at the next check (machine changed)
+        self.conn_ok = False     # the cluster answered at the last check or watch
+        self.watch_busy = False  # a watch_connection ping is pending
+        self.conn_box = None     # the "Connexion perdue" window, while shown
 
         # --- connection: the cluster through ssh, or this machine
         self.host = QLineEdit(self._get("host"))
@@ -387,6 +391,10 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.t_clock = QTimer(self)
         self.t_clock.timeout.connect(self.tick_durations)
         self.t_clock.start(1000)
+        # is the cluster still answering (a popup when it stops)
+        self.t_watch = QTimer(self)
+        self.t_watch.timeout.connect(self.watch_connection)
+        self.t_watch.start(self.WATCH_MS)
         self.set_tooltips()
         self.translate_widgets()
         QTimer.singleShot(0, self.check)
@@ -452,6 +460,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.t_list.stop()
         self.t_tail.stop()
         self.t_clock.stop()
+        self.t_watch.stop()
         # The runs live on inti: only the pending ssh calls are dropped here.
         for p in list(self.remote.procs):
             p.finished.disconnect()

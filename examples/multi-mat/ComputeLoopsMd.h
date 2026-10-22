@@ -18,7 +18,7 @@
 
 /**
  * @file ComputeLoopsMd.h
- * @brief The iterations of multi-mat-md (SimuMd::computeLoops()) and their
+ * @brief The iterations of multi-mat-md (SimuMd::compute_loops()) and their
  *        serial replay (SimuMd::verify()).
  *
  * The iteration of multi-mat, in 2D: the fields and the presence fraction
@@ -50,7 +50,7 @@ namespace multi_mat::md
 {
 
 template <typename BoxOf, typename RowParts>
-void SimuMd::dealParts(const BoxOf& box_of, const RowParts& row_parts, std::vector<Share>& mine) const
+void SimuMd::deal_parts(const BoxOf& box_of, const RowParts& row_parts, std::vector<Share>& mine) const
 {
     const long nth = multi_mat::team_size();
     const long me  = multi_mat::thread_rank();
@@ -112,8 +112,8 @@ void SimuMd::dealParts(const BoxOf& box_of, const RowParts& row_parts, std::vect
     }
 }
 
-template <typename LOOPS, typename LOOPSCHUNK>
-void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double& value)
+template <typename LoopsVec, typename LoopsChunk>
+void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, double& value)
 {
     multi_mat::begin_parallel_phase(); // manual executable only, see config.h
 
@@ -126,12 +126,12 @@ void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double
     // the team idle).
     std::vector<Share> mine;
     // The unit of a material's parts: its policy's (LoopsMd.h).
-    const auto row_parts = [](int mat) { return dispatch.isChunk(mat) ? LOOPSCHUNK::row_parts : LOOPS::row_parts; };
+    const auto row_parts = [](int mat) { return dispatch.is_chunk(mat) ? LoopsChunk::row_parts : LoopsVec::row_parts; };
     mine.reserve(static_cast<std::size_t>(nbmat));
     const int me = multi_mat::thread_rank();
 
     // Every array zero over the whole mesh, as multi-mat's initialisation.
-    dealParts([&mesh](int) { return mesh; }, row_parts, mine);
+    deal_parts([&mesh](int) { return mesh; }, row_parts, mine);
     for (const Share& sh : mine)
     {
         mm_algo.loop(sh.mat, sh.mat + 1,
@@ -177,7 +177,7 @@ void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double
 
         // This thread's parts of this iteration's boxes: the writes and the
         // reads below take the same.
-        dealParts([&bx, it](int mat) { return bx[it, mat]; }, row_parts, mine);
+        deal_parts([&bx, it](int mat) { return bx[it, mat]; }, row_parts, mine);
         for (const Share& sh : mine)
         {
             const Box c = cells_of(bx[it, sh.mat], sh.part);
@@ -205,17 +205,17 @@ void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double
                              {
                                  const double t = static_cast<double>(it);
                                  loops.write_box(
-                                     b, sh.part, write(f0, [this, t](int i, int j) { return cellNumber(i, j) + t; }),
-                                     write(f1, [this, t](int i, int j) { return 2 * cellNumber(i, j) + t; }),
-                                     write(f2, [this, t](int i, int j) { return 3 * cellNumber(i, j) + t; }),
+                                     b, sh.part, write(f0, [this, t](int i, int j) { return cell_number(i, j) + t; }),
+                                     write(f1, [this, t](int i, int j) { return 2 * cell_number(i, j) + t; }),
+                                     write(f2, [this, t](int i, int j) { return 3 * cell_number(i, j) + t; }),
                                      // 1 inside the box, a ramp along its sides: on a chunk
                                      // material in tiles, a tile of the interior already at 1
                                      // is left alone (the hint), compressed. [&], not [this, &b]:
                                      // clang warns on `this` in a generic lambda the cell
                                      // policies never instantiate.
                                      write(
-                                         fr, [this, &b](int i, int j) { return presenceFraction(b, i, j); },
-                                         [&](const auto& o, const auto& e) { return fractionOnTile(b, o, e); }));
+                                         fr, [this, &b](int i, int j) { return presence_fraction(b, i, j); },
+                                         [&](const auto& o, const auto& e) { return fraction_on_tile(b, o, e); }));
                              }
                          });
         }
@@ -258,7 +258,7 @@ void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double
             mm_algo.loop(0, nbmat,
                          [&](int m, const auto& get_mat_vec, const auto&)
                          {
-                             if (dispatch.isChunk(m))
+                             if (dispatch.is_chunk(m))
                              {
                                  auto& t0 = get_mat_vec(tabs[0]);
                                  using V  = std::remove_cvref_t<decltype(t0)>;
@@ -278,8 +278,8 @@ void SimuMd::computeLoops(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double
     multi_mat::end_parallel_phase_in_region(); // manual executable only
 }
 
-template <typename LOOPS, typename LOOPSCHUNK>
-long SimuMd::verify(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double result) const
+template <typename LoopsVec, typename LoopsChunk>
+long SimuMd::verify(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, double result) const
 {
     const std::size_t n  = static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny);
     const auto        bx = boxes();
@@ -310,10 +310,10 @@ long SimuMd::verify(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double resul
                 {
                     const std::size_t c = static_cast<std::size_t>(i) * static_cast<std::size_t>(ny) + j;
                     const bool        z = it % freq_rtz == 0;
-                    r0[c]               = z ? 0. : cellNumber(i, j) + t;
-                    r1[c]               = z ? 0. : 2 * cellNumber(i, j) + t;
-                    r2[c]               = z ? 0. : 3 * cellNumber(i, j) + t;
-                    rf[c]               = z ? 0. : presenceFraction(b, i, j);
+                    r0[c]               = z ? 0. : cell_number(i, j) + t;
+                    r1[c]               = z ? 0. : 2 * cell_number(i, j) + t;
+                    r2[c]               = z ? 0. : 3 * cell_number(i, j) + t;
+                    rf[c]               = z ? 0. : presence_fraction(b, i, j);
                 }
             }
             for (int p = 0; p < 5; ++p)
@@ -365,7 +365,7 @@ long SimuMd::verify(const MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, double resul
                 if (w != 0)
                 {
                     std::println("verify: material {} ({}): {} cells wrong", m,
-                                 dispatch.isChunk(m) ? "chunk" : "vector", w);
+                                 dispatch.is_chunk(m) ? "chunk" : "vector", w);
                 }
                 wrong += w;
             });

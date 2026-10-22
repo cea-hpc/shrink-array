@@ -61,7 +61,7 @@ The source checks run with the others (`ctest -R check_`):
 | test | rule |
 |---|---|
 | `check_includes` | every `#include` says why it is there; system and project headers are not mixed in one block |
-| `check_naming` | every `constexpr` variable, and every constant with a `k` prefix, has a snake_case name |
+| `check_naming` | the naming convention of section 3, as far as a line shows it: snake_case constants, enumerators, functions and variables, PascalCase types, aliases and template parameters, no reserved `__` name |
 | `check_headers` | every C++ file opens with the Apache license header (years up to date) and carries no IDE `Created by` stamp; scripts and build files (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) carry `# Copyright ... CEA` and `# SPDX-License-Identifier: Apache-2.0`; the vendored headers, their upstream SPDX line; `scripts/check_headers.py --fix` repairs |
 | `check_raw_reads` | every raw read of a chunk buffer in the library says why it is safe |
 | `check_tracked` | every file the sources name (a quoted `#include`, a relative Python import, a CMake source or harness, a Markdown link) is tracked by git, not only present on the disk |
@@ -75,10 +75,28 @@ The source checks run with the others (`ctest -R check_`):
   target before the push (`git rebase -i --autosquash origin/<branch>`): once published it can
   only stay. The CI refuses a push that brings one.
 - **clang-format** with the repository's `.clang-format`, on the lines you touch.
-- **Constants are snake_case**, as the standard library's (`std::dynamic_extent`):
-  `cst_buffer_size`, not `kCstBufferSize` nor `CST_BUFFER_SIZE`. UPPER_CASE is for macros
-  (`CHUNK_SIZE`): a constant spelled like one reads as one, and may meet one. `check_naming`
-  enforces it.
+- **Names.** One convention, the standard library's for what it names and PascalCase for the
+  types:
+
+  | what | case | example |
+  |---|---|---|
+  | functions, methods, variables, parameters, namespaces | snake_case | `get_chunk_list`, `num_tab` |
+  | private and protected data members | snake_case ending in `_` | `chunk_list_`, `num_` |
+  | constants (`constexpr`) and enumerators | snake_case | `cst_buffer_size`, `ev_flush_begin` |
+  | classes, structs, concepts, type aliases, template parameters | PascalCase | `ArrayChunk2A`, `AllocT`, `ChunkT` |
+  | macros | UPPER_CASE | `CHUNK_SIZE` |
+
+  UPPER_CASE is for macros only: a constant or an enumerator spelled like one reads as one, and
+  may meet one. The standard library's shapes keep their spelling: the member types of its
+  protocols and the `xxx_type` ones (`value_type`, `chunk_type`), the traits and tags (`is_cplx`,
+  `rebind`). So do the public `md::` types of `chunk/mdspan.h` and `chunk/mdspan_tile_ops.h`,
+  spelt as `std::mdspan` spells its own (`layout_tiled`, `accessor`, `constant_boundary`): a view
+  written against `std::mdspan` reads the same with them (`STD_STYLE_API` in
+  `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `chunk2a`; file names (`array_chunk2A.h`)
+  stay as they are. Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
+  that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
+  `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`
+  checks the rest (the member suffix, the parameters) with `scripts/clang_tidy_naming.yaml`.
 - **No preprocessor where `if constexpr` works.** The rules that decide which `#ifdef` can go,
   and the ones that must stay, are written at the top of `examples/shrink_bench/bench_config.h`.
 - **Comments state the rule, not the story.** Write why the code is the way it is, and what

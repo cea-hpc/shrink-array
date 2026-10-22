@@ -87,7 +87,7 @@ CHUNK_FORCE_INLINE constexpr decltype(auto) unwrap(U&& u) noexcept
                       ""
                       "a named element proxy is used as an operand: `auto v = a[i];` keeps a PROXY that follows the "
                       "element -- write `T v = a[i];` (or pass std::move(v) where the proxy is meant)");
-        return std::forward<U>(u).proxy_();
+        return std::forward<U>(u).proxy();
     }
     else
     {
@@ -363,7 +363,7 @@ class ElementRef
     }
 
     /// @brief The proxy, for element_ref_detail::unwrap (a temporary only).
-    [[nodiscard]] CHUNK_FORCE_INLINE P& proxy_() && noexcept
+    [[nodiscard]] CHUNK_FORCE_INLINE P& proxy() && noexcept
     {
         return p_;
     }

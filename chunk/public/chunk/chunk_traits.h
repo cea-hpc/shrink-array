@@ -25,11 +25,11 @@ namespace shrink_array
 // 1. PRIMARY FORWARD DECLARATIONS (With default arguments)
 // ============================================================================
 
-template <ArrayChunkElement T, typename ind_type = int>
+template <ArrayChunkElement T, typename IndType = int>
 class ArrayChunk;
-template <ArrayChunkElement T, typename ind_type = int>
+template <ArrayChunkElement T, typename IndType = int>
 class ArrayChunk2;
-template <ArrayChunkElement T, typename ind_type = int>
+template <ArrayChunkElement T, typename IndType = int>
 class ArrayChunk2A;
 
 template <typename T>
@@ -92,37 +92,37 @@ template <typename Derived>
 struct ArrayChunkTraits;
 
 /// @brief ArrayChunk<T, ind_type> maps to Chunk<T>, Proxy<T>, ManagerChunk<Chunk, T>, value T and index ind_type.
-template <ArrayChunkElement T, typename ind_type>
-struct ArrayChunkTraits<ArrayChunk<T, ind_type>>
+template <ArrayChunkElement T, typename IndType>
+struct ArrayChunkTraits<ArrayChunk<T, IndType>>
 {
     using chunk_type   = Chunk<T>;               ///< Chunk type the array holds.
     using proxy_type   = Proxy<T>;               ///< Write proxy returned by the non-const accessors.
     using manager_type = ManagerChunk<Chunk, T>; ///< Per-type manager owning the compression machinery.
     using value_type   = T;                      ///< Stored element type.
-    using index_type   = ind_type;               ///< Signed global index type.
+    using index_type   = IndType;                ///< Signed global index type.
 };
 
 /// @brief ArrayChunk2A<T, ind_type> maps to Chunk2A<T>, Proxy2A<T>, ManagerChunk<Chunk2A, T>, value T and index
 /// ind_type.
-template <ArrayChunkElement T, typename ind_type>
-struct ArrayChunkTraits<ArrayChunk2A<T, ind_type>>
+template <ArrayChunkElement T, typename IndType>
+struct ArrayChunkTraits<ArrayChunk2A<T, IndType>>
 {
     using chunk_type   = Chunk2A<T>;               ///< Chunk type the array holds.
     using proxy_type   = Proxy2A<T>;               ///< Write proxy returned by the non-const accessors.
     using manager_type = ManagerChunk<Chunk2A, T>; ///< Per-type manager owning the compression machinery.
     using value_type   = T;                        ///< Stored element type.
-    using index_type   = ind_type;                 ///< Signed global index type.
+    using index_type   = IndType;                  ///< Signed global index type.
 };
 
 /// @brief ArrayChunk2<T, ind_type> maps to Chunk2<T>, Proxy2<T>, ManagerChunk<Chunk2, T>, value T and index ind_type.
-template <ArrayChunkElement T, typename ind_type>
-struct ArrayChunkTraits<ArrayChunk2<T, ind_type>>
+template <ArrayChunkElement T, typename IndType>
+struct ArrayChunkTraits<ArrayChunk2<T, IndType>>
 {
     using chunk_type   = Chunk2<T>;               ///< Chunk type the array holds.
     using proxy_type   = Proxy2<T>;               ///< Write proxy returned by the non-const accessors.
     using manager_type = ManagerChunk<Chunk2, T>; ///< Per-type manager owning the compression machinery.
     using value_type   = T;                       ///< Stored element type.
-    using index_type   = ind_type;                ///< Signed global index type.
+    using index_type   = IndType;                 ///< Signed global index type.
 };
 
 } // namespace shrink_array

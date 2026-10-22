@@ -24,7 +24,7 @@
 #include <vector>   // std::vector
 
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/in_t.h"               // in_t<T>
+#include "chunk/internal/in_t.h"               // InT<T>
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
@@ -38,14 +38,14 @@
 #include "chunk/internal/proxy2_base.h"                 // Proxy2Base
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 
 // compression_manager.h (CompressionManagerType) comes unconditionally through proxy_base.h.
 
 namespace shrink_array
 {
 
-template <template <typename> class CHUNK_T, typename T>
+template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
 template <typename T>
@@ -68,10 +68,10 @@ template <typename T, typename Derived>
 class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 {
   public:
-    using ChunkType       = Chunk2<T>;
-    using Base            = Proxy2Base<Derived, T, Chunk2<T>>;
-    using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
-    using inf_array_t     = SecondValueInfo<T>;
+    using ChunkType     = Chunk2<T>;
+    using Base          = Proxy2Base<Derived, T, Chunk2<T>>;
+    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkType>::ValuesTypeRef;
+    using InfArrayT     = SecondValueInfo<T>;
 
     using Base::Base;
 
@@ -110,16 +110,16 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     [[nodiscard]] T get_second_value() const noexcept
     {
-        return second_value;
+        return second_value_;
     }
 
     /**
      * @brief The cached (second_value, ind, num_tab) metadata tuple.
      * @return Reference to inf_array.
      */
-    const inf_array_t& get_inf_array() const noexcept
+    const InfArrayT& get_inf_array() const noexcept
     {
-        return inf_array;
+        return inf_array_;
     }
 
     /// @brief Arm this proxy with the owning array's registry mirror
@@ -127,7 +127,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     /// @details Called by ArrayChunkBase::operator[]. An unarmed proxy (deferred-replay
     ///          reconstruction, *_from_key path) resolves the tuple through share_info_array.
     /// @note Without it every write scans the registry, a large share of the write cost.
-    void arm_inf_array(const inf_array_t* src) const noexcept
+    void arm_inf_array(const InfArrayT* src) const noexcept
     {
         inf_array_src_ = src;
     }
@@ -140,7 +140,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     [[nodiscard]] T make_second_value() const noexcept
     {
-        return inf_array.second_value;
+        return inf_array_.second_value;
     }
 
     /**
@@ -154,7 +154,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     [[nodiscard]] int armed_num_tab(this const Derived& self)
     {
-        if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
+        if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
         {
             return src->num_tab;
         }
@@ -166,7 +166,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     ///        every write anyway (and waits for the store again).
     [[gnu::noinline, gnu::cold]] int unarmed_num_tab() const noexcept
     {
-        return inf_array.num_tab;
+        return inf_array_.num_tab;
     }
 
     /**
@@ -174,7 +174,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      * @details Used for second-level compression. When a chunk contains mostly
      *          this value (and first_value), it can be compressed to save memory.
      */
-    T second_value;
+    T second_value_;
 
     /**
      * @brief Index into the chunk's second-value table
@@ -182,27 +182,27 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      *          identifies which slot this chunk uses.
      */
 
-    int ind;
+    int ind_;
 
     /**
      * @brief Cached compression metadata tuple
      * @details Contains (second_value, ind, num_tab) to avoid repeated lookups.
      *          Populated by load_inf_array().
      */
-    inf_array_t inf_array; ///< Compression metadata associated with this proxy.
+    InfArrayT inf_array_; ///< Compression metadata associated with this proxy.
 
   private:
     /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
-    [[nodiscard]] inf_array_t load_inf_array(this const Derived& self);
+    [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
     ///        load_inf_array()'s copy: see set_info_on_chunk().
-    [[nodiscard]] const inf_array_t* armed_inf_array(this const Derived& self);
+    [[nodiscard]] const InfArrayT* armed_inf_array(this const Derived& self);
 
     /// Owning array's registry mirror; nullptr until armed.
-    mutable const inf_array_t* inf_array_src_ = nullptr;
+    mutable const InfArrayT* inf_array_src_ = nullptr;
 };
 
 // bool and Bit (bit.h): the second constant is `true`, only num_tab is per array.
@@ -211,18 +211,18 @@ template <typename T, typename Derived>
 class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
 {
   public:
-    using Base        = Proxy2Base<Derived, T, Chunk2<T>>;
-    using inf_array_t = SecondValueInfo<T>;
+    using Base      = Proxy2Base<Derived, T, Chunk2<T>>;
+    using InfArrayT = SecondValueInfo<T>;
 
     using ChunkType = Chunk2<T>;
 
-    using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
+    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkType>::ValuesTypeRef;
 
     using Base::Base;
 
     /// @brief Arm this proxy with the owning array's registry mirror (see the non-bool
     ///        ProxySpec2::arm_inf_array()).
-    void arm_inf_array(const inf_array_t* src) const noexcept
+    void arm_inf_array(const InfArrayT* src) const noexcept
     {
         inf_array_src_ = src;
     }
@@ -242,7 +242,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     void set_info_second_value_ind(this Derived& self)
     {
-        static_cast<ProxySpec2&>(self).inf_array = self.load_inf_array();
+        static_cast<ProxySpec2&>(self).inf_array_ = self.load_inf_array();
     }
 
     /**
@@ -253,11 +253,12 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     void set_info_second_value_ind_from_key(this Derived& self, const void* key)
     {
-        static_cast<ProxySpec2&>(self).inf_array = self.get_info_second_value(key);
+        static_cast<ProxySpec2&>(self).inf_array_ = self.get_info_second_value(key);
     }
 
   protected:
-    static constexpr bool second_value = true;
+    // Named as the generic ProxySpec2 member, for the using-declarations both share.
+    static constexpr bool second_value_ = true;
 
     /**
      * @brief Bool-only: the second constant is always `true`.
@@ -279,7 +280,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     [[nodiscard]] int armed_num_tab(this const Derived& self)
     {
-        if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
+        if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
         {
             return src->num_tab;
         }
@@ -291,7 +292,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
     ///        every write anyway (and waits for the store again).
     [[gnu::noinline, gnu::cold]] int unarmed_num_tab() const noexcept
     {
-        return inf_array.num_tab;
+        return inf_array_.num_tab;
     }
 
     /**
@@ -299,19 +300,19 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      * @details Contains (second_value, ind, num_tab) to avoid repeated lookups.
      *          Populated by load_inf_array().
      */
-    inf_array_t inf_array; ///< Compression metadata associated with this proxy.
+    InfArrayT inf_array_; ///< Compression metadata associated with this proxy.
 
     /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
-    [[nodiscard]] inf_array_t load_inf_array(this const Derived& self);
+    [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
     ///        load_inf_array()'s copy: see set_info_on_chunk().
-    [[nodiscard]] const inf_array_t* armed_inf_array(this const Derived& self);
+    [[nodiscard]] const InfArrayT* armed_inf_array(this const Derived& self);
 
     /// Owning array's registry mirror; nullptr until armed.
-    mutable const inf_array_t* inf_array_src_ = nullptr;
+    mutable const InfArrayT* inf_array_src_ = nullptr;
 };
 
 /**
@@ -325,22 +326,22 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     using Base2 = Proxy2Base<Derived, T, Chunk2<T>>;
     using Base  = ProxyBase<Derived, T, Chunk2<T>>;
 
-    using Base::chunk;
-    using Base::num;
+    using Base::chunk_;
+    using Base::num_;
     using Base::read_values;
     using Base::read_values_async;
     using Base::tab_is_inside_chunk_list_to_compress;
-    using Base::values;
-    using ProxySpec2<T, Derived>::inf_array;
+    using Base::values_;
+    using ProxySpec2<T, Derived>::inf_array_;
 
     // second_value is in a dependent base: import it for unqualified use (two-phase lookup).
-    using ProxySpec2<T, Derived>::second_value;
+    using ProxySpec2<T, Derived>::second_value_;
 
-    using manager_chunk2 = ManagerChunk<Chunk2, T>;
+    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
-    using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
+    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkType>::ValuesTypeRef;
 
     using ProxySpec2<T, Derived>::ProxySpec2;
 
@@ -363,7 +364,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      */
     static void note_candidate_pushed(const auto& vec) noexcept
     {
-        if (static_cast<int>(vec.size()) > manager_chunk2::get_size_max_number_of_chunk_to_check_compress())
+        if (static_cast<int>(vec.size()) > ManagerChunk2::get_size_max_number_of_chunk_to_check_compress())
         {
             list_over_threshold_ = true;
         }
@@ -379,12 +380,12 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *        materialise the chunk referenced by `ctx` if it is at either
      *        constant, run `operation` on the reloaded values pointer, then
      *        mark for compression based on the old/new values.
-     * @tparam LAMBDA Callable performing the actual in-place modification.
+     * @tparam Lambda Callable performing the actual in-place modification.
      * @param ctx Async write context.
      * @param operation The operation to run.
      */
-    template <typename LAMBDA>
-    void execute_inplace_operation_async(auto* ctx, LAMBDA operation) const;
+    template <typename Lambda>
+    void execute_inplace_operation_async(auto* ctx, Lambda operation) const;
 
   private:
     /// @brief The calling thread pushed a candidate that took its list past
@@ -399,12 +400,12 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *        materialise the chunk referenced by `ctx` if it is at either
      *        constant, run `operation` on the reloaded values pointer, then
      *        mark for compression based on the old/new values.
-     * @tparam LAMBDA Callable performing the actual write.
+     * @tparam Lambda Callable performing the actual write.
      * @param ctx Async write context.
      * @param operation The write to perform.
      */
-    template <typename LAMBDA>
-    void execute_simple_operation_async(auto* ctx, LAMBDA operation);
+    template <typename Lambda>
+    void execute_simple_operation_async(auto* ctx, Lambda operation);
 
     /**
      * @brief Async-context counterpart of Proxy2::execute_arithmetic_compound_operation().
@@ -415,16 +416,16 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          the result directly and marks for compression. If the chunk
      *          is at the second constant AND the result would stay there,
      *          this is a no-op (the chunk remains correctly compressed).
-     * @tparam OP Binary operator (e.g. std::multiplies<>, std::divides<>).
-     * @tparam LAMBDA Callable used only on the materialise-and-apply path.
+     * @tparam Op Binary operator (e.g. std::multiplies<>, std::divides<>).
+     * @tparam Lambda Callable used only on the materialise-and-apply path.
      * @tparam U Type of the operand.
      * @param ctx Async write context.
      * @param op The operator to apply.
      * @param operand Operand to combine with the current value.
      * @param operation Called (with `op`) when the chunk had to be materialised.
      */
-    template <typename OP, typename LAMBDA, typename U>
-    void execute_arithmetic_compound_operation_async(auto* ctx, OP op, const U& operand, LAMBDA operation) const;
+    template <typename Op, typename Lambda, typename U>
+    void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& operand, Lambda operation) const;
 
     /**
      * @brief This proxy's second constant value. Bool: always true.
@@ -434,7 +435,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     {
         if constexpr (is_not_bool)
         {
-            return second_value;
+            return second_value_;
         }
         else
         {
@@ -454,7 +455,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
         const auto second_value = get_second_value();
         // find(), not operator[]: operator[] INSERTS a null entry for a missing
         // key, which have_chunk_to_compress() would dereference later.
-        auto&      candidates = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        auto&      candidates = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
         const auto it         = candidates.find(second_value);
         if (it == candidates.end() || it->second == nullptr) [[unlikely]]
         {
@@ -474,7 +475,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
         const auto second_value = get_second_value(ctx);
         // find(), not operator[]: operator[] INSERTS a null entry for a missing
         // key, which have_chunk_to_compress() would dereference later.
-        auto&      candidates = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        auto&      candidates = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
         const auto it         = candidates.find(second_value);
         if (it == candidates.end() || it->second == nullptr) [[unlikely]]
         {
@@ -491,9 +492,9 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          race conditions in multi-threaded environments.
      */
 
-    void mark_for_compression_if_needed_with_value(this const Derived& self, in_t<T> old_value, in_t<T> new_value)
+    void mark_for_compression_if_needed_with_value(this const Derived& self, InT<T> old_value, InT<T> new_value)
     {
-        self.Base2::mark_for_compression_if_needed(self.second_value, old_value, new_value, Chunk2<T>::first_value);
+        self.Base2::mark_for_compression_if_needed(self.second_value_, old_value, new_value, Chunk2<T>::first_value);
     }
 
     /**
@@ -530,7 +531,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @pre num_tab must be < tab_is_inside_chunk_list_to_compress.size()
      */
 
-    static chunk_flag_row_t& get_tab_is_inside_list_to_compress(int num_tab)
+    static ChunkFlagRowT& get_tab_is_inside_list_to_compress(int num_tab)
     {
         return tab_is_inside_chunk_list_to_compress[num_tab];
     }
@@ -574,10 +575,8 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @param first_value First constant value for comparison
      * @return true if the chunk should be marked for compression
      */
-    [[nodiscard]] static bool should_mark_for_compression(in_t<T> old_value,
-                                                          in_t<T> new_value,
-                                                          in_t<T> second_value,
-                                                          in_t<T> first_value) noexcept
+    [[nodiscard]] static bool
+    should_mark_for_compression(InT<T> old_value, InT<T> new_value, InT<T> second_value, InT<T> first_value) noexcept
     {
         return CompressionManagerType::should_mark_for_compression(old_value, new_value, second_value, first_value);
     }
@@ -589,12 +588,12 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @details Deferred-compression form: the result is compared with the second constant
      *          BEFORE the store, then the write is marked for compression. The serial
      *          specialisation keeps per-chunk counters instead.
-     * @tparam OP Binary operator to apply.
-     * @tparam LAMBDA Callable `(op)` used on the materialise-and-apply path.
+     * @tparam Op Binary operator to apply.
+     * @tparam Lambda Callable `(op)` used on the materialise-and-apply path.
      * @tparam U Type of the operand.
      */
-    template <typename OP, typename LAMBDA, typename U>
-    void execute_arithmetic_compound_operation(this Derived& self, OP op, const U& operand, LAMBDA operation);
+    template <typename Op, typename Lambda, typename U>
+    void execute_arithmetic_compound_operation(this Derived& self, Op op, const U& operand, Lambda operation);
 
     /**
      * @brief Mark chunk for compression if new value creates compression opportunity
@@ -605,9 +604,9 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          Atomically adds chunk to compression list if needed.
      * @note Thread safety: Uses compare_exchange for atomic list insertion
      */
-    void mark_for_compression_if_needed(this const Derived& self, in_t<T> new_value)
+    void mark_for_compression_if_needed(this const Derived& self, InT<T> new_value)
     {
-        self.Base2::mark_for_compression_if_needed(self.second_value, new_value, Chunk2<T>::first_value);
+        self.Base2::mark_for_compression_if_needed(self.second_value_, new_value, Chunk2<T>::first_value);
     }
 
   private:
@@ -622,11 +621,11 @@ template <typename Derived, typename T, typename ChunkType>
 class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, Derived>
 {
   public:
-    using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
-    using Base            = ProxyBase<Derived, T, Chunk2<T>>;
-    using Base::chunk;
-    using ProxySpec2<T, Derived>::second_value;
-    using ProxySpec2<T, Derived>::inf_array;
+    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkType>::ValuesTypeRef;
+    using Base          = ProxyBase<Derived, T, Chunk2<T>>;
+    using Base::chunk_;
+    using ProxySpec2<T, Derived>::second_value_;
+    using ProxySpec2<T, Derived>::inf_array_;
 
     using ProxySpec2<T, Derived>::ProxySpec2;
 
@@ -660,13 +659,13 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
         }
         if constexpr (is_not_bool)
         {
-            chunk.clear_st(0, this->ind);
+            chunk_.clear_st(0, this->ind_);
         }
         else
         {
-            chunk.clear_st(0, 0); // bool: ind ignored by bool-aware clear_int_st
+            chunk_.clear_st(0, 0); // bool: ind ignored by bool-aware clear_int_st
         }
-        chunk.values = static_cast<T*>(chunk.get_cst_val1());
+        chunk_.values_ = static_cast<T*>(chunk_.get_cst_val1());
     }
 
     /**
@@ -684,11 +683,11 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
         }
         if constexpr (is_not_bool)
         {
-            chunk.clear_st(1, this->ind);
+            chunk_.clear_st(1, this->ind_);
         }
         else
         {
-            chunk.clear_st(1, 0); // bool: ind ignored by bool-aware clear_int_st
+            chunk_.clear_st(1, 0); // bool: ind ignored by bool-aware clear_int_st
         }
     }
 
@@ -698,10 +697,10 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
      *        counter path -- a chunk leaving its second constant gets its
      *        second-value counter set, and `operation` writes through the
      *        values pointer it is handed.
-     * @tparam LAMBDA Callable `(op, T* values)`.
+     * @tparam Lambda Callable `(op, T* values)`.
      */
-    template <typename OP, typename LAMBDA, typename U>
-    void execute_arithmetic_compound_operation(this Derived& self, OP op, const U& operand, LAMBDA operation);
+    template <typename Op, typename Lambda, typename U>
+    void execute_arithmetic_compound_operation(this Derived& self, Op op, const U& operand, Lambda operation);
 
   private:
     // Used by the counter-based handlers above (the Enabled=true specialisation has its own).
@@ -735,31 +734,31 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     using Base::set_num_tab;
 
     using BaseSpec = ProxySpec2<T, Proxy2>;
-    using BaseSpec::second_value;
+    using BaseSpec::second_value_;
 
   private:
     /// Alias for the chunk manager associated with type T.
-    using manager_chunk2 = ManagerChunk<Chunk2, T>;
+    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
 
-    using Base::chunk;        ///< Reference to the associated chunk.
-    using Base::num;          ///< Index of the current element within the chunk.
-    using Base::num_chunk;    ///< Index of the chunk within the source array.
-    using Base::num_tab;      ///< Index used for compression table lookup.
-    using Base::ptr_on_array; ///< pointer to array (for tab lookup)
+    using Base::chunk_;        ///< Reference to the associated chunk.
+    using Base::num_;          ///< Index of the current element within the chunk.
+    using Base::num_chunk_;    ///< Index of the chunk within the source array.
+    using Base::num_tab_;      ///< Index used for compression table lookup.
+    using Base::ptr_on_array_; ///< pointer to array (for tab lookup)
     using Base::read_values;
-    using Base::values; ///< Pointer to chunk's data array
+    using Base::values_; ///< Pointer to chunk's data array
 
-    using BaseSpec::inf_array;
-    using inf_array_t = BaseSpec::inf_array_t;
+    using BaseSpec::inf_array_;
+    using InfArrayT = BaseSpec::InfArrayT;
 
-    using values_type_ref = Base::atomic_ptr_ref_t; // C++20: no typename in an alias
+    using ValuesTypeRef = Base::AtomicPtrRefT; // C++20: no typename in an alias
 
     // Both members exist in both ProxyBaseFastCompPolicy specialisations: no guard needed.
     // Do not add `using Base::read_values_async;`: it exists only in the Enabled=true
     // specialisation (imported in Proxy2FastCompPolicy<..., true>), so it breaks builds
     // without fast block compression.
-    using Base::ptr_is_inside_chunk_list_to_compress; ///< Per-chunk compression flag pointer
-    using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
+    using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
+    using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
 
     // Declared per Proxy2FastCompPolicy specialisation: the deferred and counter forms are
     // different algorithms (and pass `operation` different arguments).
@@ -783,7 +782,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @return true if the write is worth examining further.
      */
     [[nodiscard]] bool
-    pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    pre_check_mark_for_compression(InT<T> new_value, InT<T> first_value, InT<T> second_val) const noexcept
     {
         return this->pre_check_mark_for_compression_strict(new_value, first_value, second_val) &&
                has_candidate_list(second_val);
@@ -824,11 +823,11 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         }
         if constexpr (is_not_bool)
         {
-            chunk.create_value(is_cst2, inf_array);
+            chunk_.create_value(is_cst2, inf_array_);
         }
         else
         {
-            chunk.create_value_bool(is_cst2);
+            chunk_.create_value_bool(is_cst2);
         }
     }
 
@@ -841,7 +840,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *          - Actual value write
      * @note Thread safety: Caller must ensure appropriate locking
      */
-    void perform_core_assignment(in_t<T> v) const noexcept;
+    void perform_core_assignment(InT<T> v) const noexcept;
 
     /// @brief Materialise the chunk if it is compressed (cst_val1 / cst_val2), so `values`
     ///        points at writable heap storage.
@@ -856,20 +855,20 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @brief Run an arbitrary write operation on this element, materialising
      *        the chunk first if it is currently compressed, then marking
      *        for compression based on the old/new values.
-     * @tparam LAMBDA Callable performing the actual write.
+     * @tparam Lambda Callable performing the actual write.
      * @param operation The write to perform.
      */
-    template <typename LAMBDA>
-    void execute_simple_operation(LAMBDA operation);
+    template <typename Lambda>
+    void execute_simple_operation(Lambda operation);
 
     /**
      * @brief Run an arbitrary in-place operation on this element,
      *        materialising the chunk first if it is currently compressed.
-     * @tparam LAMBDA Callable performing the actual in-place modification.
+     * @tparam Lambda Callable performing the actual in-place modification.
      * @param operation The operation to run.
      */
-    template <typename LAMBDA>
-    void execute_inplace_operation(LAMBDA operation);
+    template <typename Lambda>
+    void execute_inplace_operation(Lambda operation);
 
     // ========================================================================
     // ASSIGNMENT OPERATOR
@@ -894,9 +893,9 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @note Thread safety: Thread-safe via fast-path counters or slow-path lock.
      */
     template <typename U>
-    // in_t<U>, not const U&: this frame is not inlined into the caller, so small types pass
+    // InT<U>, not const U&: this frame is not inlined into the caller, so small types pass
     // in registers. Non-deducible, hence the explicit assign_impl<U>(v).
-    [[nodiscard]] T assign_impl(in_t<U> v) noexcept;
+    [[nodiscard]] T assign_impl(InT<U> v) noexcept;
 
     // ========================================================================
     // COMPOUND ARITHMETIC OPERATORS
@@ -918,17 +917,17 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *       (reader_sync) so the RMW cannot clobber it.
      */
     template <typename U, typename Op>
-    void apply_compound_operation(Op op, in_t<U> v) noexcept; // in_t: see assign_impl
+    void apply_compound_operation(Op op, InT<U> v) noexcept; // InT: see assign_impl
 
   public:
     /**
      * @brief Construct a proxy for element `num_` of `chunk_`.
-     * @param values_ Reference to the chunk's values pointer.
-     * @param num_ Element offset within the chunk.
-     * @param chunk_ Owning chunk.
+     * @param values Reference to the chunk's values pointer.
+     * @param num Element offset within the chunk.
+     * @param chunk Owning chunk.
      */
-    explicit Proxy2(values_type_ref values_, int num_, Chunk2<T>& chunk_) noexcept
-        : Proxy2FastCompPolicy<Proxy2, T, Chunk2<T>, chunk_config::use_fast_block_compression>(values_, num_, chunk_)
+    explicit Proxy2(ValuesTypeRef values, int num, Chunk2<T>& chunk) noexcept
+        : Proxy2FastCompPolicy<Proxy2, T, Chunk2<T>, chunk_config::use_fast_block_compression>(values, num, chunk)
     {
     }
 
@@ -970,8 +969,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     {
         if (std::addressof(from) != this) // operator& is deleted
         {
-            const in_t<T> v = static_cast<T>(from); // complete before the write starts
-            static_cast<void>(assign_impl<T>(v));   // the value written: not needed here
+            const InT<T> v = static_cast<T>(from); // complete before the write starts
+            static_cast<void>(assign_impl<T>(v));  // the value written: not needed here
         }
         return *this;
     }
@@ -986,7 +985,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     [[nodiscard]] const T* get_ptr_on_array() const noexcept
     {
-        return static_cast<const T*>(ptr_on_array);
+        return static_cast<const T*>(ptr_on_array_);
     }
 
     // ========================================================================
@@ -1004,7 +1003,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     {
         if constexpr (is_not_bool)
         {
-            return chunk.is_cst_val2(ind);
+            return chunk_.is_cst_val2(ind);
         }
         else
         {
@@ -1023,11 +1022,11 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     {
         if constexpr (is_not_bool)
         {
-            return chunk.is_cst_val2(BaseSpec::ind);
+            return chunk_.is_cst_val2(BaseSpec::ind_);
         }
         else
         {
-            return chunk.is_cst_val2();
+            return chunk_.is_cst_val2();
         }
     }
 
@@ -1043,11 +1042,11 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     {
         if constexpr (is_not_bool)
         {
-            return vals == chunk.get_cst_val2(BaseSpec::ind);
+            return vals == chunk_.get_cst_val2(BaseSpec::ind_);
         }
         else
         {
-            return vals == chunk.get_cst_val2();
+            return vals == chunk_.get_cst_val2();
         }
     }
 
@@ -1062,7 +1061,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     void set_num_tab() noexcept
     {
-        num_tab = BaseSpec::armed_num_tab(); // not inf_array.num_tab: see armed_num_tab()
+        num_tab_ = BaseSpec::armed_num_tab(); // not inf_array.num_tab: see armed_num_tab()
     }
 
     /**
@@ -1098,11 +1097,11 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *          outside the parallel phases. Always true in builds without the
      *          per-value lists (no OpenMP / no fast block compression).
      */
-    [[nodiscard]] static bool has_candidate_list(in_t<T> second_val) noexcept
+    [[nodiscard]] static bool has_candidate_list(InT<T> second_val) noexcept
     {
         if constexpr (build_config::use_openmp && chunk_config::use_fast_block_compression)
         {
-            const auto& per_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr;
+            const auto& per_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr;
             const int   thr     = get_thr_rank_fast();
             if (thr < 0 || static_cast<std::size_t>(thr) >= per_thr.size()) [[unlikely]]
             {
@@ -1125,7 +1124,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @param ptr Array pointer to look up.
      * @return The registered metadata tuple.
      */
-    [[nodiscard]] static inf_array_t get_info_second_value(const void* ptr) noexcept
+    [[nodiscard]] static InfArrayT get_info_second_value(const void* ptr) noexcept
     {
         return share_info_array->get_info_second_value(ptr);
     }

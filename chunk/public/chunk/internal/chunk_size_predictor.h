@@ -54,10 +54,10 @@
 namespace shrink_array
 {
 
-/// @brief Predicted figures at chunk size S_prime: memory, constant blocks and total blocks.
+/// @brief Predicted figures at chunk size s_prime: memory, constant blocks and total blocks.
 struct PredictorPoint
 {
-    unsigned    S_prime;
+    unsigned    s_prime;
     std::size_t mem_bytes;
     int         n_const_blocks;
     int         n_blocks;
@@ -66,9 +66,9 @@ struct PredictorPoint
 // Pure aggregation — unit-testable without any array.
 template <typename T>
 [[nodiscard]] PredictorPoint
-predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned S, unsigned k, std::size_t meta_per_block)
+predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned s, unsigned k, std::size_t meta_per_block)
 {
-    const unsigned Sp       = S * k;
+    const unsigned sp       = s * k;
     int            n_blocks = 0;
     int            n_const  = 0;
 
@@ -88,16 +88,16 @@ predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned S, 
         }
     }
 
-    const std::size_t mem = (static_cast<std::size_t>(n_blocks - n_const) * Sp * sizeof(T)) +
+    const std::size_t mem = (static_cast<std::size_t>(n_blocks - n_const) * sp * sizeof(T)) +
                             (static_cast<std::size_t>(n_blocks) * meta_per_block);
-    return {.S_prime = Sp, .mem_bytes = mem, .n_const_blocks = n_const, .n_blocks = n_blocks};
+    return {.s_prime = sp, .mem_bytes = mem, .n_const_blocks = n_const, .n_blocks = n_blocks};
 }
 
 // Predict memory for S' in {S,2S,4S,...} from a summary the array collected,
 // and log current vs predicted-optimal. Log only — no re-chunk.
 template <typename T>
 void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
-                            unsigned                               S,
+                            unsigned                               s,
                             int                                    num_tab,
                             const char*                            variant,
                             std::size_t                            meta_per_block,
@@ -109,7 +109,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
         return;
     }
 
-    PredictorPoint best{.S_prime = S, .mem_bytes = ~0uz, .n_const_blocks = 0, .n_blocks = 0};
+    PredictorPoint best{.s_prime = s, .mem_bytes = ~0uz, .n_const_blocks = 0, .n_blocks = 0};
     PredictorPoint current{};
     bool           have_current = false;
 
@@ -119,7 +119,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
         {
             break;
         }
-        const PredictorPoint point = predict_at_multiple<T>(summary, S, k, meta_per_block);
+        const PredictorPoint point = predict_at_multiple<T>(summary, s, k, meta_per_block);
         if (k == 1)
         {
             current      = point;
@@ -136,7 +136,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
         return;
     }
 
-    if (best.S_prime != current.S_prime && best.mem_bytes < current.mem_bytes)
+    if (best.s_prime != current.s_prime && best.mem_bytes < current.mem_bytes)
     {
         const double gain_pct =
             100.0 * static_cast<double>(current.mem_bytes - best.mem_bytes) / static_cast<double>(current.mem_bytes);
@@ -145,7 +145,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
             CHUNK_LOG(info, advisor,
                       "size prediction {} tab={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
                       "blocks constant)",
-                      variant, num_tab, S, current.mem_bytes, best.S_prime, best.mem_bytes, gain_pct,
+                      variant, num_tab, s, current.mem_bytes, best.s_prime, best.mem_bytes, gain_pct,
                       best.n_const_blocks, best.n_blocks);
         }
     }

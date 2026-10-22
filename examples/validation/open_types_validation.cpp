@@ -190,24 +190,24 @@ struct Scenario
  * @return 0 if every element reads back as expected, 1 otherwise.
  */
 template <typename T>
-static int round_trip(const char* label, long N, const Scenario<T>& sc)
+static int round_trip(const char* label, long n, const Scenario<T>& sc)
 {
-    Array<T> arr(N);
+    Array<T> arr(n);
     maybe_set_second_value(arr, sc.second);
 
-    std::vector<T> ref(N);
+    std::vector<T> ref(n);
 
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             arr[i] = sc.varied(i);
         }
     }
     end_phase();
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         ref[i] = sc.varied(i);
     }
@@ -216,7 +216,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             const long run = (i / run_len) % 3;
             if (run == 0)
@@ -230,7 +230,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
         }
     }
     end_phase();
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const long run = (i / run_len) % 3;
         if (run == 0)
@@ -254,20 +254,20 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N / 4; ++i)
+        for (long i = 0; i < n / 4; ++i)
         {
             arr[i] = sc.refill;
         }
     }
     end_phase();
-    for (long i = 0; i < N / 4; ++i)
+    for (long i = 0; i < n / 4; ++i)
     {
         ref[i] = sc.refill;
     }
 
     long bad   = 0;
     long first = -1;
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const T got = arr[i];
         if (!(got == ref[i]))
@@ -284,11 +284,11 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
     if (bad)
     {
         println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {})", variant_name(), label,
-                bad, N, first, first / csz, first % csz, (first / run_len) % 3);
+                bad, n, first, first / csz, first % csz, (first / run_len) % 3);
     }
     else
     {
-        println("[{}/{}] OK: {} elements of {} bytes round-trip at chunk_size={}", variant_name(), label, N, sizeof(T),
+        println("[{}/{}] OK: {} elements of {} bytes round-trip at chunk_size={}", variant_name(), label, n, sizeof(T),
                 csz);
     }
 
@@ -298,13 +298,13 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
 
 int run(int argc, char** argv)
 {
-    const long N = argc > 1 ? std::strtol(argv[1], nullptr, 10) : (1L << 19);
+    const long n = argc > 1 ? std::strtol(argv[1], nullptr, 10) : (1L << 19);
 
     // No type list: each array registers its own element type at its
     // construction (AllTypeChunk::ensure_manager). The process-wide setup alone.
     ParamChunk::init_indexes(true);
 
-    println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), N, CHUNK_PMP_MAX_THREADS);
+    println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), n, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -336,9 +336,9 @@ int run(int argc, char** argv)
         {-3, 3},
         [](long i) { return Pair16{static_cast<std::int16_t>(i % 1000), static_cast<std::int16_t>(i % 13)}; }};
 
-    fails += round_trip<Point3>("Point3", N, sp);
-    fails += round_trip<Padded>("Padded", N, sd);
-    fails += round_trip<Color>("Color", N, sc);
+    fails += round_trip<Point3>("Point3", n, sp);
+    fails += round_trip<Padded>("Padded", n, sd);
+    fails += round_trip<Color>("Color", n, sc);
 
     // dyn builds: a second geometry declared now, before Quad and Pair16 have
     // ever been seen -- their registration must replay it (register_manager),
@@ -349,8 +349,8 @@ int run(int argc, char** argv)
         ParamChunk::register_chunk_size(2 * base_size);
     }
 
-    fails += round_trip<Quad>("Quad", N, sq);
-    fails += round_trip<Pair16>("Pair16", N, s16);
+    fails += round_trip<Quad>("Quad", n, sq);
+    fails += round_trip<Pair16>("Pair16", n, s16);
 
     // The vector-like surface on a struct element: emplace_back from the
     // members, reserve/capacity, the (first, last) and {...} constructors, a
@@ -405,7 +405,7 @@ int run(int argc, char** argv)
         // And an array of a late type AT that late geometry.
         set_active_chunk_size(2 * base_size);
         set_thread_chunk_size(2 * base_size);
-        fails += round_trip<Pair16>("Pair16@2xsize", N, s16);
+        fails += round_trip<Pair16>("Pair16@2xsize", n, s16);
         set_active_chunk_size(base_size);
         set_thread_chunk_size(base_size);
     }

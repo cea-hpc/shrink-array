@@ -50,7 +50,7 @@ void ArrayChunkBase<Derived>::create(this Derived& self, ind_type sz)
 template <typename Derived>
 void ArrayChunkBase<Derived>::create_common(this Derived& self)
 {
-    self.nb_chunk = 0;
+    self.nb_chunk_ = 0;
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
@@ -73,7 +73,7 @@ bool ArrayChunkBase<Derived>::is_written_at(this const Derived& self, int j) noe
     else
     {
         // ArrayChunk and ArrayChunk2A: the chunk knows by itself.
-        return self.chunk_list[j].written();
+        return self.chunk_list_[j].written();
     }
 }
 
@@ -123,7 +123,7 @@ template <typename Derived>
 int ArrayChunkBase<Derived>::get_nb_chunk_written(this const Derived& self)
 {
     int        nb_written = 0;
-    const int  nb_chunk   = self.nb_chunk;
+    const int  nb_chunk   = self.nb_chunk_;
     const auto lbd        = [&](int j) { return static_cast<int>(self.is_written_at(j)); };
 
     // Inside a region: the calling thread counts them all (an orphaned
@@ -150,7 +150,7 @@ template <typename Derived>
 int ArrayChunkBase<Derived>::get_nb_chunk_written_seq(this const Derived& self)
 {
     int nb_chunk_written = 0;
-    for (int j = 0; j < self.nb_chunk; ++j)
+    for (int j = 0; j < self.nb_chunk_; ++j)
     {
         nb_chunk_written += static_cast<int>(self.is_written_at(j));
     }
@@ -160,12 +160,12 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written_seq(this const Derived& self)
 template <typename Derived>
 double ArrayChunkBase<Derived>::stats_seq(this const Derived& self)
 {
-    if (self.nb_chunk == 0)
+    if (self.nb_chunk_ == 0)
     {
         return 0.0;
     }
     const int nb_chunk_written = self.get_nb_chunk_written_seq();
-    return 100.0 * static_cast<double>(nb_chunk_written) / self.nb_chunk;
+    return 100.0 * static_cast<double>(nb_chunk_written) / self.nb_chunk_;
 }
 
 template <typename Derived>
@@ -252,15 +252,15 @@ void ArrayChunkBase<Derived>::reserve(this Derived& self, ind_type new_capacity)
         return;
     }
     // resize() builds the storage; reserve() then restores the size.
-    const ind_type keep = self.m_size;
+    const ind_type keep = self.m_size_;
     self.resize(new_capacity);
-    self.m_size = keep;
+    self.m_size_ = keep;
 }
 
 template <typename Derived>
 void ArrayChunkBase<Derived>::copy_from(this Derived& self, const Derived& from)
 {
-    const ind_type from_size = from.m_size;
+    const ind_type from_size = from.m_size_;
     self.resize(from_size);
     // Const reads of @p from (through its gate) from every thread of the team:
     // nothing writes it meanwhile.
@@ -277,7 +277,7 @@ void ArrayChunkBase<Derived>::shrink_to_fit()
 template <typename Derived>
 ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(this const Derived& self, ind_type i)
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size)) [[unlikely]]
+    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size_)) [[unlikely]]
     {
         throw std::out_of_range("ArrayChunk::at: index out of range");
     }
@@ -287,7 +287,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(this const 
 template <typename Derived>
 ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(this Derived& self, ind_type i)
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size)) [[unlikely]]
+    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size_)) [[unlikely]]
     {
         throw std::out_of_range("ArrayChunk::at: index out of range");
     }
@@ -321,7 +321,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::back(this cons
     {
         throw std::out_of_range("ArrayChunk::back: container is empty");
     }
-    return self[self.m_size - 1];
+    return self[self.m_size_ - 1];
 }
 
 template <typename Derived>
@@ -331,7 +331,7 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back(this Derived& s
     {
         throw std::out_of_range("ArrayChunk::back: container is empty");
     }
-    return self[self.m_size - 1];
+    return self[self.m_size_ - 1];
 }
 
 } // namespace shrink_array

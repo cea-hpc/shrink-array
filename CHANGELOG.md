@@ -66,39 +66,8 @@ the tag's checksum to the recipe.
   re-chunk decider uses `try_rechunk_to()`: a refused size is a warning and
   no event, where it was recorded as performed. `rechunk_to(0)` is now a
   refusal with its warning, where it returned silently.
-
-### Fixed (cpp23)
-
-- `set_chunk_size(n)` / `try_set_chunk_size(n)` refuse a size wider than
-  `cst_buffer_size` (`exceeds_buffer`), as `rechunk_to()` does: they accepted
-  it on an empty array, whose chunks then read the shared constant buffers
-  out of bounds.
-
-### Added
-
-- `examples/getting_started/getting_started_ompt.cpp`: the first program with
-  plain `#pragma omp parallel for` loops and no `parallel_phase()`, for an OMPT
-  build (Clang, oneAPI), checked element by element against the same function
-  run on a `std::vector` (ctest `getting_started_ompt`, OMPT builds only).
-- Reduced models of the three lock-free handshakes -- writer / compressor,
-  compressor / flush, readers / buffer reclamation -- checked by GenMC
-  (`formal/`, `docs/formal_models.md`): the protocols of the source verified
-  under RC11 and IMM, twelve mutations refused (six of them the library
-  as it once was, the lost replay without the compressor's second look
-  among them) and four findings: three fixed (see Fixed: F2 to F4), one
-  closed by removing the build it was in (F1, see Removed). A fourth model checks the in-place
-  constant switch of `store_range_mt` (`fill_constant_st`) against the pass. New ctest label
-  `formal`.
-- One log for both libraries (`chunk/log.h`, built on
-  `fast_allocators/internal/log_core.h`): every message has a level and a
-  channel, `CHUNK_LOG` (default `warn`) says which are written, e.g.
-  `CHUNK_LOG=warn,rechunk=debug`, and `CHUNK_LOG_FILE` where (stderr by
-  default). A program can set the levels with `shrink_array::logging::configure()`
-  and receive every message in its own logger with
-  `shrink_array::logging::set_sink()`. A message is formatted on the stack (no
-  allocation) and written as one line, `[shrink_array][channel][level][tid] text`.
-  New harness `log_validation`. The library's other stderr messages move to it
-  in the next steps.
+- A fourth GenMC model (`formal/`) checks the in-place constant switch of `store_range_mt`
+  (`fill_constant_st`) against the pass.
 - `multi-mat-md`, the multi-material example in 2D through `mdspan`
   (`examples/multi-mat`): every material occupies a box of an `nx x ny` mesh
   at each iteration; its arrays are seen through `md::tiled_view` (chunk
@@ -167,6 +136,110 @@ the tag's checksum to the recipe.
   `md::tiled_view_dyn()`'s; `md::tiled_view` checks it has one tile extent
   per dimension.
 
+### Changed (cpp23)
+
+- `copy_range_mt` and `transform_range_mt` (and the tile writes of
+  `md::update_tiles` inside a region) store a chunk span in one block copy and
+  compare its values in a loop the compiler vectorises: the copy into the
+  span buffer tested `same && v == v0` element by element, which kept both
+  loops scalar. 1.7 times faster in cache (4 arrays of 64 K doubles,
+  1 thread), about 1.3 times out of cache (2.56 M doubles, v1).
+- `fill_range_mt` and `copy_range_mt` on Chunk2A switch a compressed chunk
+  that a uniform span covers whole to the span's value in place, as
+  `fill_range` does serially (`fill_constant_st`'s compressed branch, within
+  the write session: no buffer allocated, filled, queued and scanned by the
+  end-of-phase pass). A materialised chunk is still written and left to the
+  pass, which waits out the readers before freeing it. `md::update_tiles` and
+  `md::fill_box` inside a region inherit it: `mdspan_tiles 2048`, 2 threads,
+  the update by tile 3.1-4.3 -> 1.1-1.25 ms, the 64 rectangles 5.4-7.0 ->
+  2.9-3.2 ms. `constant_switch_validation`: the same switches from every
+  thread, with the chunks materialised counted inside the region (64 per
+  step before, 0 now).
+- `copy_range` on a v1 or Chunk2 chunk compressed at a constant c skips the
+  source elements equal to c before arming the chunk: a span equal to c
+  writes nothing, a span that starts with c materialises the chunk from its
+  first other value. They went through the proxy one by one (every write a
+  no-op): 2.56 M doubles, 1 thread, a source equal to the chunk's constant
+  3.5-7.4 -> 0.7 ns per element (v1 at first_value, Chunk2 at either
+  constant). `internal::held_constant()` gives the constant of a compressed
+  v1 / Chunk2 chunk (`holds_constant()` is built on it).
+  `copy_range_constant_validation`: cases `same-first`, `same-part`,
+  `same-second` and `prefix`, the materialised chunks checked on every
+  variant.
+- `fill_range` on Chunk2 compresses a chunk it covers whole with one of the
+  array's constants (first_value or its second value) at once, as v1 does for
+  first_value: a materialised chunk releases its buffer through the pass's own
+  clear (`clear_st(num, ind)`), with nothing stored, scanned or queued; a
+  chunk compressed at the other constant is armed, then compressed rather than
+  queued. 2.56 M doubles over materialised chunks: 0.85-1.1 -> 0.08-0.15 ns
+  per element, and no chunk left materialised (100 % before, until the next
+  pass). `fill_range_constant_validation`: Chunk2 checked after a fill of a
+  constant (the old code leaves 40 of 40 chunks materialised), new scenario
+  `second-value`.
+- `chunk/mdspan.h` and `chunk/mdspan_tile_ops.h` are declared experimental
+  until 1.0: their names and signatures may change in a MINOR release (the
+  versioning policy above, `docs/mdspan.md`, the headers). Checked on Clang 19
+  with libc++ 19, whose `std::mdspan` has no `submdspan`: every view and tile
+  harness passes, the `submdspan` ones are skipped.
+
+### Fixed (cpp23)
+
+- `set_chunk_size(n)` / `try_set_chunk_size(n)` refuse a size wider than
+  `cst_buffer_size` (`exceeds_buffer`), as `rechunk_to()` does: they accepted
+  it on an empty array, whose chunks then read the shared constant buffers
+  out of bounds.
+- docs/mdspan(_fr).md, `chunk/mdspan.h`: `std::mdspan` comes with
+  libstdc++ 16, not 15 (libstdc++ 15 has no `<mdspan>`: a GCC 15 build takes
+  kokkos/mdspan, or none). The checked toolchains now include GCC 15 (with
+  kokkos/mdspan, and alone: the `mdspan` harnesses skipped) and GCC 16 in
+  C++23 (`std::mdspan`) and C++26 (`std::submdspan`, which the tiled layouts
+  serve as kokkos's does).
+- `fill_range` on v1 compresses a whole chunk filled with first_value at once
+  again (its buffer released), and passes over a chunk already at first_value:
+  the guard of that shortcut asked for both spellings of `Chunk::clear_st`,
+  and since the OpenMP / serial policy split each build has only one, so it
+  never ran -- every element went through the proxy. The guard is now the
+  variant (`internal::is_v1_v`), with a `static_assert` on the spelling of the
+  build. `fill_range` and `fill_range_mt` also pass over a v1 or Chunk2 chunk
+  already compressed at the value, whole or in part (`fill_range_mt`: with no
+  deferred write pending on it): 2 to 9 ns per element before, about 0.01 ns
+  now (2.56 M doubles, 2 threads). `fill_range_constant_validation` checks v1
+  after a fill of first_value, and a new scenario `constant` (a fill of the
+  constant the chunks hold, serial and from every thread: nothing
+  materialised).
+- The library did not compile with libc++ 19: `chunk_size_advisor.h` used
+  `std::views::enumerate`, which libc++ has from 20 only (an index loop now).
+- A harness that must stop, run where it has nothing to check (exit 77), was
+  reported failed: `expect_stop.cmake` reports it skipped
+  (`mdspan_submdspan_misaligned` without `submdspan`).
+
+## 0.1.3 -- 2026-10-22
+
+### Added
+
+- `examples/getting_started/getting_started_ompt.cpp`: the first program with
+  plain `#pragma omp parallel for` loops and no `parallel_phase()`, for an OMPT
+  build (Clang, oneAPI), checked element by element against the same function
+  run on a `std::vector` (ctest `getting_started_ompt`, OMPT builds only).
+- Reduced models of the three lock-free handshakes -- writer / compressor,
+  compressor / flush, readers / buffer reclamation -- checked by GenMC
+  (`formal/`, `docs/formal_models.md`): the protocols of the source verified
+  under RC11 and IMM, twelve mutations refused (six of them the library
+  as it once was, the lost replay without the compressor's second look
+  among them) and four findings: three fixed (see Fixed: F2 to F4), one
+  closed by removing the build it was in (F1, see Removed). New ctest label
+  `formal`.
+- One log for both libraries (`chunk/log.h`, built on
+  `fast_allocators/internal/log_core.h`): every message has a level and a
+  channel, `CHUNK_LOG` (default `warn`) says which are written, e.g.
+  `CHUNK_LOG=warn,rechunk=debug`, and `CHUNK_LOG_FILE` where (stderr by
+  default). A program can set the levels with `shrink_array::logging::configure()`
+  and receive every message in its own logger with
+  `shrink_array::logging::set_sink()`. A message is formatted on the stack (no
+  allocation) and written as one line, `[shrink_array][channel][level][tid] text`.
+  New harness `log_validation`. The library's other stderr messages move to it
+  in the next steps.
+
 ### Changed
 
 - Aggressive compression is a run-time switch, `CHUNK_AGGRESSIVE_COMPRESSION=1`
@@ -197,6 +270,13 @@ the tag's checksum to the recipe.
   macros. 84 names change, all internal but one: `fast_alloc::SIZE_BLOCK` is now
   `fast_alloc::size_block`, the former name kept as a deprecated alias. `check_naming` (a
   source check, in ctest and the CI) keeps it so.
+- One naming convention over the whole tree ([docs/contributing.md](docs/contributing.md)
+  section 3): snake_case functions, variables, constants and enumerators, a `_` at the end of
+  private and protected data members, PascalCase types, aliases, concepts and template
+  parameters, `chunk2a` inside a snake_case name, no reserved `__` name. About 400 names
+  change, all internal but those listed under Deprecated. `check_naming` now checks the
+  enumerators, the camelCase names, the types and template parameters and the reserved names;
+  `scripts/clang_tidy_naming.yaml` gives clang-tidy the rest.
 - An invariant failure is reported by one thread only (when a race is seen by
   several threads at once, their reports no longer interleave), as one block
   on stderr followed by the backtrace, and its message is formatted without
@@ -265,49 +345,8 @@ the tag's checksum to the recipe.
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.
-- `copy_range_mt` and `transform_range_mt` (and the tile writes of
-  `md::update_tiles` inside a region) store a chunk span in one block copy and
-  compare its values in a loop the compiler vectorises: the copy into the
-  span buffer tested `same && v == v0` element by element, which kept both
-  loops scalar. 1.7 times faster in cache (4 arrays of 64 K doubles,
-  1 thread), about 1.3 times out of cache (2.56 M doubles, v1).
-- `fill_range_mt` and `copy_range_mt` on Chunk2A switch a compressed chunk
-  that a uniform span covers whole to the span's value in place, as
-  `fill_range` does serially (`fill_constant_st`'s compressed branch, within
-  the write session: no buffer allocated, filled, queued and scanned by the
-  end-of-phase pass). A materialised chunk is still written and left to the
-  pass, which waits out the readers before freeing it. `md::update_tiles` and
-  `md::fill_box` inside a region inherit it: `mdspan_tiles 2048`, 2 threads,
-  the update by tile 3.1-4.3 -> 1.1-1.25 ms, the 64 rectangles 5.4-7.0 ->
-  2.9-3.2 ms. `constant_switch_validation`: the same switches from every
-  thread, with the chunks materialised counted inside the region (64 per
-  step before, 0 now).
-- `copy_range` on a v1 or Chunk2 chunk compressed at a constant c skips the
-  source elements equal to c before arming the chunk: a span equal to c
-  writes nothing, a span that starts with c materialises the chunk from its
-  first other value. They went through the proxy one by one (every write a
-  no-op): 2.56 M doubles, 1 thread, a source equal to the chunk's constant
-  3.5-7.4 -> 0.7 ns per element (v1 at first_value, Chunk2 at either
-  constant). `internal::held_constant()` gives the constant of a compressed
-  v1 / Chunk2 chunk (`holds_constant()` is built on it).
-  `copy_range_constant_validation`: cases `same-first`, `same-part`,
-  `same-second` and `prefix`, the materialised chunks checked on every
-  variant.
-- `fill_range` on Chunk2 compresses a chunk it covers whole with one of the
-  array's constants (first_value or its second value) at once, as v1 does for
-  first_value: a materialised chunk releases its buffer through the pass's own
-  clear (`clear_st(num, ind)`), with nothing stored, scanned or queued; a
-  chunk compressed at the other constant is armed, then compressed rather than
-  queued. 2.56 M doubles over materialised chunks: 0.85-1.1 -> 0.08-0.15 ns
-  per element, and no chunk left materialised (100 % before, until the next
-  pass). `fill_range_constant_validation`: Chunk2 checked after a fill of a
-  constant (the old code leaves 40 of 40 chunks materialised), new scenario
-  `second-value`.
-- `chunk/mdspan.h` and `chunk/mdspan_tile_ops.h` are declared experimental
-  until 1.0: their names and signatures may change in a MINOR release (the
-  versioning policy above, `docs/mdspan.md`, the headers). Checked on Clang 19
-  with libc++ 19, whose `std::mdspan` has no `submdspan`: every view and tile
-  harness passes, the `submdspan` ones are skipped.
+- fast_allocators 2.2.0 (the log, the snake_case names with their deprecated aliases);
+  `CHUNK_FAST_ALLOCATORS_VERSION` follows.
 
 ### Deprecated
 
@@ -318,6 +357,14 @@ the tag's checksum to the recipe.
   (`alloc=trace`). Still accepted -- each sets its level, with a warning -- and to be removed in
   0.3.0. They are developer settings ([docs/developer_settings.md](docs/developer_settings.md)),
   outside the versioning policy; the deprecation period is a courtesy to the scripts that set them.
+- `getChunkList()` (ArrayChunk, ArrayChunk2, ArrayChunk2A) and `ParamChunk::ChunkStats()`,
+  renamed `get_chunk_list()` and `ParamChunk::chunk_stats()`: functions and methods are
+  snake_case. The former names stay, `[[deprecated]]`, until 1.0.
+- fast_allocators (`fast_allocators/tc_allocator.h`): `VTCTypeAllocator::addAllocatedSize()`,
+  `TCTypeAllocatorEBC::addAllocatedSize()`, `add_TCTypeAllocator_inst()` and
+  `remove_TCTypeAllocator_inst()`, renamed `add_allocated_size()`, `add_tc_type_allocator_inst()`
+  and `remove_tc_type_allocator_inst()`. The former names stay, `[[deprecated]]`, until
+  fast_allocators 3.0; a class derived from `VTCTypeAllocator` overrides the new name.
 
 ### Removed
 
@@ -332,25 +379,6 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
-- docs/mdspan(_fr).md, `chunk/mdspan.h`: `std::mdspan` comes with
-  libstdc++ 16, not 15 (libstdc++ 15 has no `<mdspan>`: a GCC 15 build takes
-  kokkos/mdspan, or none). The checked toolchains now include GCC 15 (with
-  kokkos/mdspan, and alone: the `mdspan` harnesses skipped) and GCC 16 in
-  C++23 (`std::mdspan`) and C++26 (`std::submdspan`, which the tiled layouts
-  serve as kokkos's does).
-- `fill_range` on v1 compresses a whole chunk filled with first_value at once
-  again (its buffer released), and passes over a chunk already at first_value:
-  the guard of that shortcut asked for both spellings of `Chunk::clear_st`,
-  and since the OpenMP / serial policy split each build has only one, so it
-  never ran -- every element went through the proxy. The guard is now the
-  variant (`internal::is_v1_v`), with a `static_assert` on the spelling of the
-  build. `fill_range` and `fill_range_mt` also pass over a v1 or Chunk2 chunk
-  already compressed at the value, whole or in part (`fill_range_mt`: with no
-  deferred write pending on it): 2 to 9 ns per element before, about 0.01 ns
-  now (2.56 M doubles, 2 threads). `fill_range_constant_validation` checks v1
-  after a fill of first_value, and a new scenario `constant` (a fill of the
-  constant the chunks hold, serial and from every thread: nothing
-  materialised).
 - Two top-level OpenMP teams writing arrays at once -- opened by two host
   threads, two components each on its own `std::thread` -- shared ranks 0..n-1
   of the per-thread structures: one team's phase end replayed the other's
@@ -397,11 +425,13 @@ the tag's checksum to the recipe.
   had no back-off.
 - An invariant failure inside a program's log sink, while the log was reading
   its configuration, blocked instead of stopping the program.
-- The library did not compile with libc++ 19: `chunk_size_advisor.h` used
-  `std::views::enumerate`, which libc++ has from 20 only (an index loop now).
-- A harness that must stop, run where it has nothing to check (exit 77), was
-  reported failed: `expect_stop.cmake` reports it skipped
-  (`mdspan_submdspan_misaligned` without `submdspan`).
+- The Spack recipe pinned, for 0.1.0, 0.1.1 and 0.1.2, commits of before a history rewrite that
+  are not on GitHub: an install of one of those versions could not fetch. It now pins what each
+  tag points to.
+- A cache entry declared by a subdirectory no longer hides the list the top level resolved
+  (policy CMP0126 NEW, CMake 3.21+): an older `chunk/CMakeLists.txt`, which declared
+  `CHUNK_STATIC_SIZES` in the cache, configured over a cached `auto` saw `auto` and stopped on
+  `CHUNK_DEFAULT_SIZE=256 is not in CHUNK_STATIC_SIZES`.
 
 ## 0.1.2 -- 2026-10-16
 
@@ -473,7 +503,7 @@ the tag's checksum to the recipe.
   `md::tile_shape<Rank>(n)`: a tile of exactly `n` elements, as square as the
   divisors allow (384 -> 16 x 24); `md::tiled_view_dyn(a, ext...)` takes a tile
   of `a.chunk_size()` elements, `md::tiled_size_dyn` sizes the array. The two
-  layouts share one implementation (`detail::tiled_mapping_base`); the tile
+  layouts share one implementation (`detail::TiledMappingBase`); the tile
   operations read the tile from the mapping, their buffer inline up to 8 KiB.
   2048 x 2048, 1 thread: `f[i, j]` as fast as with `layout_tiled`,
   `update_tiles` about 10 % slower. Harness `mdspan_tiled_dyn_validation`

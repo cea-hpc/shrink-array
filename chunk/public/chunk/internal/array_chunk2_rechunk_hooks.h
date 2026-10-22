@@ -35,7 +35,7 @@
 
 #include "chunk/config.h"        // build_config::chunk_dynamic
 #include "chunk/chunk_traits.h"  // ArrayChunkTraits
-#include "chunk/internal/in_t.h" // in_t<T>: the captured state
+#include "chunk/internal/in_t.h" // InT<T>: the captured state
 
 namespace shrink_array
 {
@@ -82,7 +82,7 @@ class RechunkHooks2<Derived, true>
      * @brief Re-declare the captured state on the freshly built array.
      * @param state value returned by rechunk_capture_state()
      */
-    void rechunk_seed_fresh(this Derived& self, in_t<value_type> state);
+    void rechunk_seed_fresh(this Derived& self, InT<value_type> state);
 
     /**
      * @brief Exchange identity with the scratch array built at the new geometry.
@@ -99,7 +99,7 @@ class RechunkHooks2<Derived, true>
      *          that tmp's destructor does not erase an entry the survivor still
      *          needs -- see ArrayChunk2's destructor, second warning.
      */
-    void rechunk_reown_after_swap(this Derived& self, Derived& tmp, in_t<value_type> state);
+    void rechunk_reown_after_swap(this Derived& self, Derived& tmp, InT<value_type> state);
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────
@@ -125,14 +125,14 @@ class RechunkHooks2<Derived, false>
         return value_type{};
     }
     /** @brief No-op: there is no fresh array to seed. */
-    void rechunk_seed_fresh(in_t<value_type> /*state*/) const noexcept {}
+    void rechunk_seed_fresh(InT<value_type> /*state*/) const noexcept {}
     /** @brief No-op: there is no temporary array to swap identities with. */
     bool rechunk_swap_identity(Derived& /*tmp*/) const noexcept
     {
         return true;
     }
     /** @brief No-op: no identity was swapped, so nothing to re-own. */
-    void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<value_type> /*state*/) const noexcept {}
+    void rechunk_reown_after_swap(Derived& /*tmp*/, InT<value_type> /*state*/) const noexcept {}
 };
 
 } // namespace shrink_array

@@ -63,7 +63,7 @@ void AllTypeChunk::ensure_ready()
     std::call_once(once,
                    []
                    {
-                       auto& reg   = SingletonChk<AllTypeChunk>::getRef();
+                       auto& reg   = SingletonChk<AllTypeChunk>::get_ref();
                        bool  ready = false;
                        {
                            const std::scoped_lock lock(reg.registry_mutex_);
@@ -169,7 +169,7 @@ void finalize_parallel_phase_only_flush()
         //    which is stable inside the current parallel region
 #pragma omp barrier
 
-        auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+        auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         ens_type_chunk.flush_all_deferred(true);
 
         // Empirically load-bearing (a checksum corruption appears without it).
@@ -188,7 +188,7 @@ void finalize_parallel_phase_after_flush()
     }
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
-        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         ens_type_chunk.destroy_after_flush(false);
 
         reset_all();
@@ -226,7 +226,7 @@ void finalize_parallel_phase()
     }
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
-        auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+        auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         ens_type_chunk.flush_all_deferred(false);
 
         reset_all();
@@ -254,7 +254,7 @@ bool finalize_barrier_phase()
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         // NOT const: flush_all_deferred() mutates the managers it drains.
-        auto&      ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+        auto&      ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         const bool flushed        = ens_type_chunk.flush_all_deferred(true);
 
         // Empirically load-bearing (see the note in
@@ -265,13 +265,13 @@ bool finalize_barrier_phase()
     return false;
 }
 
-// pushManagerChunk<CHUNK_T, T> and fillManagerChunk<CHUNK_T, Types>() are
+// pushManagerChunk<ChunkT, T> and fill_manager_chunk<ChunkT, Types>() are
 // defined in chunk/internal/all_type_chunk_inline.h (template definitions belong in a
 // header); registration is driven by the consumer's type tuple.
 
 void AllTypeChunk::resize_chunk_to_compress_potentially() const
 {
-    for (const auto& elm : getListTypeChunk())
+    for (const auto& elm : get_list_type_chunk())
     {
         elm->resize_chunk_to_compress_potentially();
     }
@@ -279,7 +279,7 @@ void AllTypeChunk::resize_chunk_to_compress_potentially() const
 
 void AllTypeChunk::force_chunk_to_compress() const
 {
-    for (const auto& elm : getListTypeChunk())
+    for (const auto& elm : get_list_type_chunk())
     {
         elm->force_chunk_to_compress();
     }
@@ -292,7 +292,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     // one, and each type's pass costs a fork/join even on empty lists.
     const int                     max_thr = CHUNK_PMP_RANK_BOUND;
     std::vector<ManagerChunkInt*> work;
-    for (const auto& elm : getListTypeChunk())
+    for (const auto& elm : get_list_type_chunk())
     {
         if (elm->have_chunk_to_compress_potentially(max_thr))
         {
@@ -370,7 +370,7 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
 {
     const int max_thr = CHUNK_PMP_RANK_BOUND;
 
-    return std::ranges::any_of(getListTypeChunk(),
+    return std::ranges::any_of(get_list_type_chunk(),
                                [max_thr](const auto* elm) { return elm->have_chunk_to_compress_potentially(max_thr); });
 }
 
@@ -378,7 +378,7 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(this const Derived& self, bool in_parallel)
 {
-    for (const auto& elm : self.getListTypeChunk())
+    for (const auto& elm : self.get_list_type_chunk())
     {
         elm->destroy_after_flush(in_parallel);
     }
@@ -408,7 +408,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(this Deriv
         serial_ownership.emplace();
     }
 
-    for (const auto& elm : self.getListTypeChunk())
+    for (const auto& elm : self.get_list_type_chunk())
     {
         elm->flush_all_deferred(in_parallel, have_flushed);
     }
@@ -438,7 +438,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(this Deriv
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::load_balance_list_block_free(this const Derived& self)
 {
-    for (const auto& elm : self.getListTypeChunk())
+    for (const auto& elm : self.get_list_type_chunk())
     {
         elm->load_balance_list_block_free();
     }
@@ -447,7 +447,7 @@ void AllTypeChunkParallelInterface<Derived, true>::load_balance_list_block_free(
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_thr(this const Derived& self)
 {
-    for (const auto& elm : self.getListTypeChunk())
+    for (const auto& elm : self.get_list_type_chunk())
     {
         elm->resize_all_list_block_free_thr();
     }
@@ -460,7 +460,7 @@ void AllTypeChunkParallelInterface<Derived, true>::init_manager(ManagerChunkInt&
     // slot indexed by rank; nothing needs the rank's own thread. Reached
     // through Derived's alias so that the calls stay dependent: the other
     // thread model's interface does not declare them.
-    typename Derived::manager_int_t& mm = manager;
+    typename Derived::ManagerIntT& mm = manager;
     mm.resize_all_list_block_free_thr();
     // std-alloc: the two below are no-ops on the manager.
     mm.alloc_chunk_allocator_thr();
@@ -471,7 +471,7 @@ template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::alloc_chunk_allocator_thr(this const Derived& self)
 {
     // std-alloc: each manager's alloc_chunk_allocator_thr() is a no-op.
-    for (const auto& elm : self.getListTypeChunk())
+    for (const auto& elm : self.get_list_type_chunk())
     {
         elm->alloc_chunk_allocator_thr();
     }
@@ -480,7 +480,7 @@ void AllTypeChunkParallelInterface<Derived, true>::alloc_chunk_allocator_thr(thi
 std::size_t AllTypeChunk::reuse_pool_bytes() const
 {
     std::size_t total = 0;
-    for (const auto& elm : getListTypeChunk())
+    for (const auto& elm : get_list_type_chunk())
     {
         total += elm->reuse_pool_bytes_int();
     }
@@ -490,7 +490,7 @@ std::size_t AllTypeChunk::reuse_pool_bytes() const
 std::size_t AllTypeChunk::trim_reuse_pools(std::size_t keep_per_thread) const
 {
     std::size_t freed = 0;
-    for (const auto& elm : getListTypeChunk())
+    for (const auto& elm : get_list_type_chunk())
     {
         freed += elm->trim_reuse_pools_int(keep_per_thread);
     }
@@ -509,7 +509,7 @@ std::size_t AllTypeChunk::trim_reuse_pools(std::size_t keep_per_thread) const
 
 void AllTypeChunk::print_reuse_pool_breakdown(const char* label) const
 {
-    for (const auto& elm : getListTypeChunk())
+    for (const auto& elm : get_list_type_chunk())
     {
         elm->print_reuse_pool_breakdown_int(label);
     }
@@ -517,7 +517,7 @@ void AllTypeChunk::print_reuse_pool_breakdown(const char* label) const
 
 void print_all_reuse_pool_breakdown(const char* label)
 {
-    SingletonChk<AllTypeChunk>::getRef().print_reuse_pool_breakdown(label);
+    SingletonChk<AllTypeChunk>::get_ref().print_reuse_pool_breakdown(label);
 }
 
 template <typename Derived>
@@ -543,7 +543,7 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr(thi
     // to release through the one it came from.
     //
     // Called at teardown, outside any other parallel region.
-    const auto& types = self.getListTypeChunk();
+    const auto& types = self.get_list_type_chunk();
 
     // One prepare per type, in list order (views::transform is lazy: ranges::to
     // runs it once per element, front to back).
@@ -584,7 +584,7 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr(thi
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::delete_list_block_chunk_free_itself(this const Derived& self)
 {
-    for (const auto& elm : self.getListTypeChunk())
+    for (const auto& elm : self.get_list_type_chunk())
     {
         elm->delete_list_block_chunk_free_itself();
     }
@@ -593,7 +593,7 @@ void AllTypeChunkParallelInterface<Derived, true>::delete_list_block_chunk_free_
 template <typename Derived>
 bool AllTypeChunkParallelInterface<Derived, true>::need_load_balance_list_block_free(this const Derived& self)
 {
-    return std::ranges::any_of(self.getListTypeChunk(),
+    return std::ranges::any_of(self.get_list_type_chunk(),
                                [](const auto* elm) { return elm->need_load_balance_list_block_free(); });
 }
 
@@ -602,7 +602,7 @@ void AllTypeChunkParallelInterface<Derived, false>::init_manager(const ManagerCh
 {
     // std-alloc: the manager's init_allocator() is a no-op. Through Derived's
     // alias so that the call stays dependent (see the OpenMP body).
-    const typename Derived::manager_int_t& mm = manager;
+    const typename Derived::ManagerIntT& mm = manager;
     mm.init_allocator(block_size);
 }
 
@@ -610,7 +610,7 @@ template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, false>::delete_chunk_allocator(this const Derived& self)
 {
     // std-alloc: each manager's delete_chunk_allocator() is a no-op.
-    for (const auto& elm : self.getListTypeChunk())
+    for (const auto& elm : self.get_list_type_chunk())
     {
         elm->delete_chunk_allocator();
     }
@@ -630,7 +630,7 @@ void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(this Derived& 
     {
         self.registered_sizes_.push_back(size);
     }
-    for (const auto& elm : self.getListTypeChunk())
+    for (const auto& elm : self.get_list_type_chunk())
     {
         elm->register_chunk_size(size, block_size);
     }
@@ -640,7 +640,7 @@ void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(this Derived& 
 void AllTypeChunk::destroy_block_chunk() const
 {
     // std-alloc: each manager's destroy_block_chunk() is a no-op (NullValueAllocator).
-    for (const auto& elm : getListTypeChunk())
+    for (const auto& elm : get_list_type_chunk())
     {
         elm->destroy_block_chunk();
     }

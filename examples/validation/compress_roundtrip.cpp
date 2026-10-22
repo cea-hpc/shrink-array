@@ -155,9 +155,9 @@ struct Scenario
  * @return 0 if every element reads back as expected, 1 otherwise.
  */
 template <typename T>
-static int round_trip(const char* label, long N, const Scenario<T>& sc, bool declare_second)
+static int round_trip(const char* label, long n, const Scenario<T>& sc, bool declare_second)
 {
-    Array<T> arr(N);
+    Array<T> arr(n);
     if (declare_second)
     {
         maybe_set_second_value(arr, sc.second);
@@ -169,7 +169,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             arr[i] = sc.varied(i);
         }
@@ -180,7 +180,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             const long run = (i / run_len) % 3;
             if (run == 0)
@@ -209,7 +209,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < N / 4; ++i)
+        for (long i = 0; i < n / 4; ++i)
         {
             arr[i] = sc.refill;
         }
@@ -220,7 +220,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     long first = -1;
     T    got_first{};
     T    exp_first{};
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const long run      = (i / run_len) % 3;
         T          expected = sc.varied(i);
@@ -232,7 +232,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
         {
             expected = sc.second;
         }
-        if (i < N / 4)
+        if (i < n / 4)
         {
             expected = sc.refill;
         }
@@ -255,12 +255,12 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     {
         println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {}) "
                 "got={:g} expected={:g}",
-                variant_name(), label, bad, N, first, first / csz, first % csz, (first / run_len) % 3, (double)got_first,
-                (double)exp_first);
+                variant_name(), label, bad, n, first, first / csz, first % csz, (first / run_len) % 3,
+                (double)got_first, (double)exp_first);
     }
     else
     {
-        println("[{}/{}] OK: {} elements round-trip through compress() at chunk_size={}", variant_name(), label, N,
+        println("[{}/{}] OK: {} elements round-trip through compress() at chunk_size={}", variant_name(), label, n,
                 csz);
     }
 
@@ -270,11 +270,11 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
 
 int run(int argc, char** argv)
 {
-    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
+    const long n = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
     ParamChunk::init_indexes(true);
 
-    println("=== compress_roundtrip [variant = {}]  N={}  threads={} ===", variant_name(), N, CHUNK_PMP_MAX_THREADS);
+    println("=== compress_roundtrip [variant = {}]  N={}  threads={} ===", variant_name(), n, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -282,10 +282,10 @@ int run(int argc, char** argv)
     const Scenario<int>    si{7, 11, [](long i) { return static_cast<int>(i); }};
     const Scenario<bool>   sb{true, true, [](long i) { return (i % 3) == 0; }};
 
-    fails += round_trip<double>("double", N, sd, /*declare_second=*/true);
-    fails += round_trip<double>("double/no-second-value", N, sd, /*declare_second=*/false);
-    fails += round_trip<int>("int", N, si, /*declare_second=*/true);
-    fails += round_trip<bool>("bool", N, sb, /*declare_second=*/true);
+    fails += round_trip<double>("double", n, sd, /*declare_second=*/true);
+    fails += round_trip<double>("double/no-second-value", n, sd, /*declare_second=*/false);
+    fails += round_trip<int>("int", n, si, /*declare_second=*/true);
+    fails += round_trip<bool>("bool", n, sb, /*declare_second=*/true);
 
     // The library's own teardown: releases the reuse lists (one region, the
     // frees shared out over the team) and the allocators. A double free or a

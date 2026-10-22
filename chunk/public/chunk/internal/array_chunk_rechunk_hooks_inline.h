@@ -46,7 +46,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
         int num_tab = 0;
         if constexpr (is_chunk2a)
         {
-            num_tab = self.num_tab; // 2A keys its candidates by the num_tab MEMBER
+            num_tab = self.num_tab_; // 2A keys its candidates by the num_tab MEMBER
         }
         else
         {
@@ -103,7 +103,7 @@ bool RechunkHooks<Derived, true>::rechunk_swap_identity(this Derived& self, Deri
     // swap the member AND make the registry agree (get_num_tab(registry_key())
     // -> the new row).
     using std::swap;
-    swap(self.num_tab, tmp.num_tab);
+    swap(self.num_tab_, tmp.num_tab_);
     return proxy_type::share_info_array->swap_keys(self.registry_key(), tmp.registry_key());
 }
 

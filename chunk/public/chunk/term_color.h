@@ -27,14 +27,14 @@ namespace shrink_array
 /// allocation that throws terminates before main (bugprone-throwing-static-initialization).
 struct TermColor
 {
-    const char* RESET;   ///< Reset all attributes (SGR 0).
-    const char* BOLD;    ///< Bold (SGR 1).
-    const char* RED;     ///< Red foreground.
-    const char* GREEN;   ///< Green foreground.
-    const char* YELLOW;  ///< Yellow foreground.
-    const char* CYAN;    ///< Cyan foreground.
-    const char* WHITE;   ///< White foreground.
-    const char* MAGENTA; ///< Magenta foreground.
+    const char* reset;   ///< Reset all attributes (SGR 0).
+    const char* bold;    ///< Bold (SGR 1).
+    const char* red;     ///< Red foreground.
+    const char* green;   ///< Green foreground.
+    const char* yellow;  ///< Yellow foreground.
+    const char* cyan;    ///< Cyan foreground.
+    const char* white;   ///< White foreground.
+    const char* magenta; ///< Magenta foreground.
 };
 
 /// @brief The one shared instance.
@@ -44,14 +44,14 @@ inline const TermColor tc = []() noexcept
 {
     const bool i = isatty(STDOUT_FILENO) != 0;
     return TermColor{
-        .RESET   = i ? "\033[0m" : "",
-        .BOLD    = i ? "\033[1m" : "",
-        .RED     = i ? "\033[31m" : "",
-        .GREEN   = i ? "\033[32m" : "",
-        .YELLOW  = i ? "\033[33m" : "",
-        .CYAN    = i ? "\033[36m" : "",
-        .WHITE   = i ? "\033[37m" : "",
-        .MAGENTA = i ? "\033[35m" : "",
+        .reset   = i ? "\033[0m" : "",
+        .bold    = i ? "\033[1m" : "",
+        .red     = i ? "\033[31m" : "",
+        .green   = i ? "\033[32m" : "",
+        .yellow  = i ? "\033[33m" : "",
+        .cyan    = i ? "\033[36m" : "",
+        .white   = i ? "\033[37m" : "",
+        .magenta = i ? "\033[35m" : "",
     };
 }();
 

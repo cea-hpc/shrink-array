@@ -76,7 +76,7 @@ double val(long i, long j)
     return static_cast<double>(i * 1000 + j) + 0.5;
 }
 
-using range = std::pair<long, long>;
+using Range = std::pair<long, long>;
 
 // ── Row-major ───────────────────────────────────────────────────────────────
 void row_major()
@@ -94,7 +94,7 @@ void row_major()
     }
 
     // A block.
-    auto s = md::submdspan(f, range{3, 20}, range{5, 40});
+    auto s = md::submdspan(f, Range{3, 20}, Range{5, 40});
     expect(s.extent(0) == 17 && s.extent(1) == 35, "block extents", static_cast<long>(s.extent(0)),
            static_cast<long>(s.extent(1)));
     expect(s.data_handle().base == 3 * ny + 5, "block base", static_cast<long>(s.data_handle().base));
@@ -111,7 +111,7 @@ void row_major()
     s[2, 7] = val(5, 12);
 
     // A read-only view of the block.
-    const auto cs = md::submdspan(md::view(std::as_const(a), nx, ny), range{3, 20}, range{5, 40});
+    const auto cs = md::submdspan(md::view(std::as_const(a), nx, ny), Range{3, 20}, Range{5, 40});
     expect(static_cast<double>(cs[16, 34]) == val(19, 39), "const block read");
 
     // A row and a column: index slices.
@@ -192,7 +192,7 @@ void tiled()
 
     // [16, 64) x [32, 90): ends on a tile in i, at the extent in j.
     constexpr long i0 = 16, i1 = 64, j0 = 32, j1 = 90;
-    auto           s = md::submdspan(f, range{i0, i1}, range{j0, j1});
+    auto           s = md::submdspan(f, Range{i0, i1}, Range{j0, j1});
     static_assert(std::is_same_v<typename decltype(s)::layout_type, md::layout_tiled<16, 16>>,
                   "a tiled sub-view is tiled");
     expect(s.extent(0) == i1 - i0 && s.extent(1) == j1 - j0, "tiled sub extents");
@@ -297,7 +297,7 @@ void tiled()
     }
 
     // A sub-view of the sub-view: [16, 48) x [16, 58) of s.
-    auto ss = md::submdspan(s, range{16, 48}, range{16, 58});
+    auto ss = md::submdspan(s, Range{16, 48}, Range{16, 58});
     for (long i = 0; i < 32; ++i)
     {
         for (long j = 0; j < 42; ++j)
@@ -314,7 +314,7 @@ int misaligned()
 {
     Array<double> a(static_cast<long>(md::tiled_size<16, 16>(nx, ny)));
     auto          f = md::tiled_view<16, 16>(a, nx, ny);
-    auto          s = md::submdspan(f, range{8, 40}, md::full_extent);
+    auto          s = md::submdspan(f, Range{8, 40}, md::full_extent);
     println("mdspan_submdspan_validation: a slice off the tiles was accepted ({} x {})", s.extent(0), s.extent(1));
     return 1;
 }

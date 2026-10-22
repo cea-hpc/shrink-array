@@ -75,7 +75,7 @@ using namespace shrink_array;
 static_assert(chunk_config::use_chunk2a, "cst2_registry_validation is Chunk2A's registry: link chunk_v2a_<size>");
 
 using Arr      = ArrayChunk2A<double>;
-using Registry = Chunk2A<double>::tab_cst_val2_holder::global_vec_holder;
+using Registry = Chunk2A<double>::Holder::VecHolder;
 
 static void begin_phase()
 {
@@ -158,8 +158,8 @@ static void expect_values(std::string_view where, const Arr& a, long n, double v
 ///        at the 17th registration; returning means it ran on.
 static int run_id_limit_child()
 {
-    const long S  = static_cast<long>(Arr(0).chunk_size());
-    const int  ni = static_cast<int>(40 * S);
+    const long s  = static_cast<long>(Arr(0).chunk_size());
+    const int  ni = static_cast<int>(40 * s);
     Arr        a(ni);
 #pragma omp parallel
     {
@@ -167,7 +167,7 @@ static int run_id_limit_child()
 #pragma omp for schedule(static)
         for (int i = 0; i < ni; ++i)
         {
-            a[i] = 100. + static_cast<double>(i / S);
+            a[i] = 100. + static_cast<double>(i / s);
         }
     }
     end_phase();
@@ -214,10 +214,10 @@ int run(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     const long nchunks = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
-    const long S       = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
-    const long N       = nchunks * S;
+    const long s       = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
+    const long n       = nchunks * s;
 
-    println("=== cst2_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, S,
+    println("=== cst2_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, s,
             CHUNK_PMP_MAX_THREADS);
     expect("start", 0, -1);
 
@@ -227,9 +227,9 @@ int run(int argc, char** argv)
     {
         const double v = 7. + g;
         {
-            Arr a(static_cast<int>(N));
-            fill(a, N, v);
-            expect_values("gen alive: values", a, N, v);
+            Arr a(static_cast<int>(n));
+            fill(a, n, v);
+            expect_values("gen alive: values", a, n, v);
             expect(std::format("gen {} alive (value {:g})", g + 1, v), 1, 1);
         }
         expect(std::format("gen {} destroyed", g + 1), 0, -1);
@@ -238,28 +238,28 @@ int run(int argc, char** argv)
     // B: an outer array alive across an inner one's life.
     println("B  overlapping lifetimes");
     {
-        Arr outer(static_cast<int>(N));
-        fill(outer, N, 21.);
+        Arr outer(static_cast<int>(n));
+        fill(outer, n, 21.);
         expect("outer alive", 1, 1);
         {
-            Arr inner(static_cast<int>(N));
-            fill(inner, N, 22.);
+            Arr inner(static_cast<int>(n));
+            fill(inner, n, 22.);
             expect("outer + inner alive", 2, 2);
-            expect_values("inner: values", inner, N, 22.);
+            expect_values("inner: values", inner, n, 22.);
         }
         expect("inner destroyed (outer alive)", 1, 1);
-        expect_values("outer after inner's teardown: values", outer, N, 21.);
-        fill(outer, N, 23.); // the registry is still usable
-        expect_values("outer rewritten: values", outer, N, 23.);
+        expect_values("outer after inner's teardown: values", outer, n, 21.);
+        fill(outer, n, 23.); // the registry is still usable
+        expect_values("outer rewritten: values", outer, n, 23.);
     }
     expect("outer destroyed", 0, -1);
 
     // C: the reinstalled registry works.
     println("C  after the extinctions");
     {
-        Arr a(static_cast<int>(N));
-        fill(a, N, 31.);
-        expect_values("fresh array: values", a, N, 31.);
+        Arr a(static_cast<int>(n));
+        fill(a, n, 31.);
+        expect_values("fresh array: values", a, n, 31.);
         expect("fresh array alive", 1, 1);
     }
     expect("fresh array destroyed", 0, -1);

@@ -38,10 +38,10 @@ namespace fast_alloc
 
 /**
  * @brief Process-wide lazily-constructed instance of T, shared by every thread.
- * @details Created on the first getInstance() and never destroyed unless
- *          deleteInstance() is called: an intentional leak, marked for LSan.
+ * @details Created on the first get_instance() and never destroyed unless
+ *          delete_instance() is called: an intentional leak, marked for LSan.
  *          The chunk library reaches it as shrink_array::SingletonChk
- *          (chunk/singleton.h). deleteInstance() is for outside code only.
+ *          (chunk/singleton.h). delete_instance() is for outside code only.
  * @tparam T The type to host; default-constructible.
  */
 template <typename T>
@@ -55,22 +55,22 @@ class Singleton
     Singleton& operator=(Singleton&&)      = delete;
     ~Singleton()                           = default;
 
-    /// @brief getInstance(), as a reference.
+    /// @brief get_instance(), as a reference.
     /// @return The instance.
-    static T& getRef()
+    static T& get_ref()
     {
-        return *getInstance();
+        return *get_instance();
     }
 
     /**
-     * @brief Destroy the instance, if any; the next getInstance() recreates it.
+     * @brief Destroy the instance, if any; the next get_instance() recreates it.
      * @warning Only once NO thread can touch the instance any more, thread_local
      *          destructors included. Never from an atexit handler or a static
      *          destructor: exit-time destruction races those TLS destructors,
-     *          which is why the instance is immortal. Earlier getInstance()
+     *          which is why the instance is immortal. Earlier get_instance()
      *          pointers dangle afterwards.
      */
-    static void deleteInstance()
+    static void delete_instance()
     {
         const std::scoped_lock lock(unique_instance_mutex);
         delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
@@ -80,17 +80,17 @@ class Singleton
     /// IMMORTAL raw pointer, created once under the mutex and NEVER deleted.
     /// Do not make it a std::unique_ptr: its exit-time destructor would race
     /// worker-thread TLS destructors that still touch the singleton. Atomic so
-    /// getInstance() can read it without the mutex (double-checked locking).
+    /// get_instance() can read it without the mutex (double-checked locking).
     static inline std::atomic<T*> unique_instance{nullptr};
 
     /// Guards lazy construction (without it two first users could both create
     /// the instance). Taken only while the instance does not exist yet:
-    /// getInstance() is on a hot path, its steady state must not lock.
+    /// get_instance() is on a hot path, its steady state must not lock.
     static inline std::mutex unique_instance_mutex;
 
     /// @brief The instance, created on first use (double-checked locking).
     /// @return Never null.
-    static T* getInstance()
+    static T* get_instance()
     {
         // Fast path: one acquire load, no lock (reached by every thread at each
         // barrier). The acquire pairs with the release store below: seeing the

@@ -157,11 +157,11 @@ static double plain(int i)
 ///        written (the array has one more, empty, that no phase touches).
 static int materialised(const Array<double>& arr)
 {
-    const int S = static_cast<int>(arr.chunk_size());
+    const int s = static_cast<int>(arr.chunk_size());
     int       n = 0;
     for (int j = 0; j < n_chunks; ++j)
     {
-        n += arr.written(j * S);
+        n += arr.written(j * s);
     }
     return n;
 }
@@ -178,13 +178,13 @@ static int materialised(const Array<double>& arr)
 /// included (Chunk2A::compress_chunk_to_compress runs the writers' pass rank
 /// by rank when no OMPT callback does it).
 template <typename Fn>
-static void phase(Array<double>& arr, int N, Fn&& body)
+static void phase(Array<double>& arr, int n, Fn&& body)
 {
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static)
-        for (int i = 0; i < N; ++i)
+        for (int i = 0; i < n; ++i)
         {
             body(i);
         }
@@ -244,56 +244,56 @@ int run(int /*argc*/, char** /*argv*/)
     ParamChunk::init_indexes(true);
 
     // The geometry this build runs at, read off a throwaway array.
-    const int S = static_cast<int>(Array<double>(1).chunk_size());
-    const int N = n_chunks * S;
+    const int s = static_cast<int>(Array<double>(1).chunk_size());
+    const int n = n_chunks * s;
 
-    println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(), S,
+    println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(), s,
             n_chunks, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
     // A: materialised by a plain value, then the first constant everywhere.
     {
-        Array<double> a(N);
+        Array<double> a(n);
         maybe_set_second_value(a, 1.0);
-        phase(a, N, [&](int i) { a[i] = plain(i); });
+        phase(a, n, [&](int i) { a[i] = plain(i); });
         fails += check("A", "plain", a, Kind::plain);
-        phase(a, N, [&](int i) { a[i] = 0.0; });
+        phase(a, n, [&](int i) { a[i] = 0.0; });
         fails += check("A", "first", a, Kind::first);
         a.clear();
     }
 
     // B: the second constant, a plain value, the second constant, the first.
     {
-        Array<double> b(N);
+        Array<double> b(n);
         maybe_set_second_value(b, 1.0);
-        phase(b, N, [&](int i) { b[i] = 1.0; });
+        phase(b, n, [&](int i) { b[i] = 1.0; });
         fails += check("B", "second", b, Kind::declared);
-        phase(b, N, [&](int i) { b[i] = plain(i); });
+        phase(b, n, [&](int i) { b[i] = plain(i); });
         fails += check("B", "plain", b, Kind::plain);
-        phase(b, N, [&](int i) { b[i] = 1.0; });
+        phase(b, n, [&](int i) { b[i] = 1.0; });
         fails += check("B", "second", b, Kind::declared);
-        phase(b, N, [&](int i) { b[i] = 0.0; });
+        phase(b, n, [&](int i) { b[i] = 0.0; });
         fails += check("B", "first", b, Kind::first);
         b.clear();
     }
 
     // C: no second value declared, next to an array that declared 7.0.
     {
-        Array<double> other(N);
+        Array<double> other(n);
         maybe_set_second_value(other, 7.0);
-        Array<double> c(N);
-        phase(c, N, [&](int i) { c[i] = plain(i); });
+        Array<double> c(n);
+        phase(c, n, [&](int i) { c[i] = plain(i); });
         fails += check("C", "plain", c, Kind::plain);
-        phase(c, N, [&](int i) { c[i] = 0.0; });
+        phase(c, n, [&](int i) { c[i] = 0.0; });
         fails += check("C", "first", c, Kind::first);
-        phase(c, N, [&](int i) { c[i] = 7.0; });
+        phase(c, n, [&](int i) { c[i] = 7.0; });
         fails += check("C", "other", c, Kind::other);
-        phase(c, N, [&](int i) { c[i] = 0.0; });
+        phase(c, n, [&](int i) { c[i] = 0.0; });
         fails += check("C", "first", c, Kind::first);
 
         long bad = 0;
-        for (int i = 0; i < N; ++i)
+        for (int i = 0; i < n; ++i)
         {
             bad += (std::as_const(c)[i] != 0.0);
         }
@@ -308,21 +308,21 @@ int run(int /*argc*/, char** /*argv*/)
 
     // D: second constant, plain, then a third and a fourth value everywhere.
     {
-        Array<double> d(N);
+        Array<double> d(n);
         maybe_set_second_value(d, 1.0);
-        phase(d, N, [&](int i) { d[i] = 1.0; });
+        phase(d, n, [&](int i) { d[i] = 1.0; });
         fails += check("D", "second", d, Kind::declared);
-        phase(d, N, [&](int i) { d[i] = plain(i); });
+        phase(d, n, [&](int i) { d[i] = plain(i); });
         fails += check("D", "plain", d, Kind::plain);
-        phase(d, N, [&](int i) { d[i] = 5.0; });
+        phase(d, n, [&](int i) { d[i] = 5.0; });
         fails += check("D", "third", d, Kind::other);
-        phase(d, N, [&](int i) { d[i] = 6.0; });
+        phase(d, n, [&](int i) { d[i] = 6.0; });
         fails += check("D", "fourth", d, Kind::other);
 
         // Compressed at a value that is not the chunk's former second value:
         // every element must read back that value.
         long bad = 0;
-        for (int i = 0; i < N; ++i)
+        for (int i = 0; i < n; ++i)
         {
             bad += (std::as_const(d)[i] != 6.0);
         }

@@ -79,7 +79,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
     using Base::is_not_cst_val1;
     using Base::m_ptr_cst_val1;
     using Base::read_value;
-    using Base::values;
+    using Base::values_;
     using Base::values_load;
     using Base::values_store;
 

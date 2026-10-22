@@ -115,10 +115,10 @@ struct Count
 
 Count count(const sa::ArrayChunk2A<double>& a)
 {
-    Count c{static_cast<long>(a.nb_chunk), 0};
+    Count c{static_cast<long>(a.nb_chunk_), 0};
     for (long k = 0; k < c.chunks; ++k)
     {
-        const auto& ch = a.chunk_list[k];
+        const auto& ch = a.chunk_list_[k];
         if (!ch.is_cst_val1() && !ch.is_cst_val2())
         {
             ++c.materialised;
