@@ -30,11 +30,11 @@
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_chunk_steal_mark
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/internal/proxy2A.h"       // Proxy2A<T>
-#include "chunk/internal/manager_chunk.h" // ManagerChunk2A:: (dependent calls the include tools cannot attribute)
+#include "chunk/internal/proxy2A.h"             // Proxy2A<T>
+#include "chunk/internal/manager_chunk.h"       // ManagerChunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
-#include "chunk/chunk_traits.h"                        // ChunkTraits<ChunkT>::proxy_type (wait_before_materialise)
+#include "chunk/chunk_traits.h"                        // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
@@ -180,8 +180,8 @@ void Chunk2A<T>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
         }
 
         // The first element is the candidate second constant.
-        const InT<T>  second_v = Base::read_value_scan(0);
-        const auto    scan     = Base::scan_constants(first_value, second_v, size.count());
+        const InT<T> second_v = Base::read_value_scan(0);
+        const auto   scan     = Base::scan_constants(first_value, second_v, size.count());
 
         if (scan.first)
         {
@@ -732,7 +732,7 @@ void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank)
 {
     if constexpr (chunk_config::use_chunk_steal_mark)
     {
-        using Policy = WriteCompressSyncPolicy<typename ChunkTraits<ChunkT>::proxy_type>;
+        using Policy = WriteCompressSyncPolicy<typename ChunkTraits<ChunkT>::ProxyType>;
         if (Policy::is_thread_writing_on(thr_rank, static_cast<const void*>(&chunk)))
         {
             return; // our own write session: the pass holding the mark is parked on our flag

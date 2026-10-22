@@ -59,7 +59,7 @@
 #include <utility>   // std::pair
 #include <vector>    // std::vector
 
-#include "chunk/chunk_traits.h"          // forward decls + default ind_type = int (ArrayChunk2<bool>)
+#include "chunk/chunk_traits.h"          // forward decls + default IndT = int (ArrayChunk2<bool>)
 #include "chunk/array_chunk_bits.h"      // ArrayChunkBits, Bit (and ArrayChunk2 with them)
 #include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, and their _mt forms

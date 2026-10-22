@@ -54,7 +54,7 @@ namespace shrink_array
 {
 
 /// @brief The bit-packed bool container (see the file comment).
-template <typename IndType = int>
-using ArrayChunkBits = ArrayChunk2<Bit, IndType>;
+template <typename IndT = int>
+using ArrayChunkBits = ArrayChunk2<Bit, IndT>;
 
 } // namespace shrink_array

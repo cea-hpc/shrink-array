@@ -52,7 +52,7 @@
 #include <memory> // std::unique_ptr, std::make_unique
 #include <vector> // std::vector
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/chunk_traits.h"   // forward decls + default IndT = int
 #include "chunk/array_chunk2.h"   // ArrayChunk2
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
 #include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
@@ -72,7 +72,7 @@ namespace
 {
 
 using Arr = ArrayChunk2<double>;
-using Ind = Arr::ind_type;
+using Ind = Arr::IndType;
 
 constexpr int n_chunks = 64; ///< chunks of `a`
 constexpr int n_others = 40; ///< arrays declaring a new second value each: several vector growths

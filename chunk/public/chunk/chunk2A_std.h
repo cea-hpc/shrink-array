@@ -41,7 +41,7 @@ namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <typename T>
@@ -471,8 +471,8 @@ template <typename T, typename Derived>
 class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 {
   public:
-    using Base            = Chunk2Base<T, Derived>;
-    using ManagerChunk2A  = ManagerChunk<Chunk2A, T>;
+    using Base           = Chunk2Base<T, Derived>;
+    using ManagerChunk2A = ManagerChunk<Chunk2A, T>;
 
     using Base::derived;
     using Base::is_bool;

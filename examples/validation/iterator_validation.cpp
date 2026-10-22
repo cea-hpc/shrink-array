@@ -65,7 +65,7 @@
 #include <format>           // std::format
 #include <utility>          // std::forward
 
-#include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
+#include "chunk/chunk_traits.h"          // forward decls + default IndT = int
 #include "chunk/array_chunk.h"           // ArrayChunk
 #include "chunk/array_chunk2.h"          // ArrayChunk2
 #include "chunk/array_chunk2A.h"         // ArrayChunk2A
@@ -97,7 +97,7 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 
 using Arr = Array<double>;
 using It  = Arr::const_iterator;
-using Ind = Arr::ind_type;
+using Ind = Arr::IndType;
 
 // ── The compile-time half ────────────────────────────────────────────────────
 static_assert(std::random_access_iterator<It>, "const_iterator must model std::random_access_iterator");
@@ -305,7 +305,7 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
     const long dl[] = {
         0, 1, -1, 2, -2, s - 1, -(s - 1), s, -s, s + 1, -(s + 1), (3 * s) + 7, -((3 * s) + 7), 11 * s, -(11 * s)};
 
-    const It b = a.begin();
+    const It b     = a.begin();
     long     count = 0;
     for (const long k : pos)
     {
@@ -426,8 +426,9 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
 /// @brief Values present, between, below and above the range.
 std::vector<double> queries(const std::vector<double>& ref)
 {
-    std::vector<double> q{-1.0, 0.0, 0.5, 10.0, second_value - 0.5, second_value, second_value + 0.5, ref.back(), ref.back() + 1.0};
-    const std::size_t   step = std::max<std::size_t>(1, ref.size() / 1500);
+    std::vector<double> q{
+        -1.0, 0.0, 0.5, 10.0, second_value - 0.5, second_value, second_value + 0.5, ref.back(), ref.back() + 1.0};
+    const std::size_t step = std::max<std::size_t>(1, ref.size() / 1500);
     for (std::size_t i = 0; i < ref.size(); i += step)
     {
         q.push_back(ref[i]);
@@ -485,17 +486,17 @@ int search_mismatch(const Arr& a, const std::vector<double>& ref, double q, long
 }
 
 constexpr const char* search_names[] = {"",
-                                       "std::lower_bound",
-                                       "std::upper_bound",
-                                       "std::equal_range.first",
-                                       "std::equal_range.second",
-                                       "std::binary_search",
-                                       "std::ranges::lower_bound",
-                                       "std::ranges::upper_bound",
-                                       "std::ranges::equal_range.begin",
-                                       "std::ranges::equal_range.end",
-                                       "std::ranges::binary_search",
-                                       "std::lower_bound on the reverse range"};
+                                        "std::lower_bound",
+                                        "std::upper_bound",
+                                        "std::equal_range.first",
+                                        "std::equal_range.second",
+                                        "std::binary_search",
+                                        "std::ranges::lower_bound",
+                                        "std::ranges::upper_bound",
+                                        "std::ranges::equal_range.begin",
+                                        "std::ranges::equal_range.end",
+                                        "std::ranges::binary_search",
+                                        "std::lower_bound on the reverse range"};
 
 int check_searches(const Arr& a, const std::vector<double>& ref)
 {

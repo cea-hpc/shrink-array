@@ -411,8 +411,8 @@ void Proxy2A<T>::ensure_writable_storage()
  * @note Reached only from the async materialisers, never from a deferred
  *       replay, so `proxy.chunk_size()` is the live geometry here.
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_storage_async(const Derived& proxy) const
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage_async(const Derived& proxy) const
 {
     const bool is_val2 = proxy.is_cst_val2();
 
@@ -823,9 +823,9 @@ void Proxy2A<T>::execute_simple_operation(ModifyFn modify_fn)
  * @param ctx       Deferred-operation context being replayed.
  * @param operation Write body.
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
+void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
 {
     int retry_count = 0;
 
@@ -946,12 +946,12 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(Op op, const U& v, Modify
  * @param v   Operand.
  * @param lbd Store body, invoked as `lbd(op)`.
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Op, typename Body, typename U>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation_async(auto*    ctx,
-                                                                                                        Op       op,
-                                                                                                        const U& v,
-                                                                                                        Body lbd) const
+void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(auto*    ctx,
+                                                                                                     Op       op,
+                                                                                                     const U& v,
+                                                                                                     Body     lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -1134,10 +1134,10 @@ void Proxy2A<T>::execute_inplace_operation(ModifyFn modify_fn)
 
 // Replay twin of execute_inplace_operation(), under the retry protocol. Check
 // builds assert the chunk did not go back to a constant during the store.
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_operation_async(auto*  ctx,
-                                                                                            Lambda operation) const
+void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(auto*  ctx,
+                                                                                         Lambda operation) const
 {
     int retry_count = 0;
 
@@ -1159,7 +1159,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
             continue;
         }
 
-        internal::modify_element<ChunkType, T>(values_before, ctx->num, operation);
+        internal::modify_element<ChunkT, T>(values_before, ctx->num, operation);
 
         const T* values_after = ctx->chunk.values_load();
         if (values_after != values_before) [[unlikely]]

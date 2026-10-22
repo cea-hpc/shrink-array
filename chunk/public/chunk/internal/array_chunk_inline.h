@@ -39,8 +39,8 @@
 namespace shrink_array
 {
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk<T, IndType>::rebuild_storage(IndType sz)
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk<T, IndT>::rebuild_storage(IndT sz)
 {
     if (sz)
     {
@@ -78,8 +78,8 @@ void ArrayChunk<T, IndType>::rebuild_storage(IndType sz)
     m_size_ = sz;
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk<T, IndType>::print_compression_stats(std::ostream& os) const
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk<T, IndT>::print_compression_stats(std::ostream& os) const
 {
     if (nb_chunk_ == 0)
     {
@@ -142,8 +142,8 @@ void ArrayChunk<T, IndType>::print_compression_stats(std::ostream& os) const
                                 /*n_cross=*/n_would_be_t2, /*cross_name=*/"Chunk2");
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk<T, IndType>::clear()
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk<T, IndT>::clear()
 {
     this->invalidate_proxies();
     // Per-array compression stats, read BEFORE the drain below mutates state.
@@ -155,8 +155,8 @@ void ArrayChunk<T, IndType>::clear()
     clear_core();
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk<T, IndType>::clear_core()
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk<T, IndT>::clear_core()
 {
     // Pin the ambient size to THIS array's geometry before the sweep:
     // get_chunk_allocator() routes on thread_chunk_size(), not on the buffer, so
@@ -298,8 +298,8 @@ void ArrayChunk<T, IndType>::clear_core()
     Proxy<T>::release_tab_is_int(this->num_tab_);
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk<T, IndType>::compress_int(bool verbose)
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk<T, IndT>::compress_int(bool verbose)
 {
     // Pin the ambient size to THIS array's geometry (see clear_core()).
     if constexpr (build_config::chunk_dynamic)
@@ -351,15 +351,15 @@ void ArrayChunk<T, IndType>::compress_int(bool verbose)
             compress,
             "residual ArrayChunk<{}, {}>: {} chunk(s) constant at zero, still materialised (awaiting the next "
             "compression pass): {}",
-            type_name<T>(), type_name<IndType>(), nb,
-            internal::chunk_index_sample(sample, ll, static_cast<IndType>(this->size_policy_.size())));
+            type_name<T>(), type_name<IndT>(), nb,
+            internal::chunk_index_sample(sample, ll, static_cast<IndT>(this->size_policy_.size())));
     }
 }
 
 // make_block_compression() is FastBlockSupport<ArrayChunk, true>'s
 // (array_chunk_parallel_inline.h); the false specialisation is a no-op.
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk<T, IndType>::release_chunk_range(int first, int last)
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk<T, IndT>::release_chunk_range(int first, int last)
 {
     if (first >= last)
     {
@@ -416,8 +416,8 @@ void ArrayChunk<T, IndType>::release_chunk_range(int first, int last)
     }
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk<T, IndType>::resize(IndType newsz)
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk<T, IndT>::resize(IndT newsz)
 {
     this->invalidate_proxies();
 
@@ -438,7 +438,7 @@ void ArrayChunk<T, IndType>::resize(IndType newsz)
 
     const int num_tab = sh_inf.get_num_tab(this->registry_key());
 
-    const IndType old_size = m_size_; // the stale-tail reset at the end
+    const IndT old_size = m_size_; // the stale-tail reset at the end
 
     m_size_ = newsz;
 
@@ -479,14 +479,14 @@ void ArrayChunk<T, IndType>::resize(IndType newsz)
     // `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
-        const auto csz = static_cast<IndType>(this->chunk_size());
+        const auto csz = static_cast<IndT>(this->chunk_size());
         // Up to the end of the OLD chunk count: chunks_for() keeps a spare chunk
         // when old_size falls on a boundary, stale too. In long long:
-        // old_nb_chunk * csz may pass ind_type's range.
+        // old_nb_chunk * csz may pass IndType's range.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const IndType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IndType>(cover_ll) : newsz;
-        const IndType   stale_end = newsz < old_cover ? newsz : old_cover;
-        for (IndType i = old_size; i < stale_end; ++i)
+        const IndT      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IndT>(cover_ll) : newsz;
+        const IndT      stale_end = newsz < old_cover ? newsz : old_cover;
+        for (IndT i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};
         }

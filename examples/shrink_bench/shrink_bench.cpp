@@ -480,13 +480,13 @@ int main(int argc, char* argv[])
             type_instances);
     };
 
-    Array<double>         tab1(sz);
-    Array<double>         tab2(sz);
-    Array<double>         tab3(sz);
-    Array<double>         tab4(sz);
-    Array<double>         tab5(sz);
-    Array<int>            tab_int(sz);
-    Array<ComplexDouble>  tab_complex(sz);
+    Array<double>        tab1(sz);
+    Array<double>        tab2(sz);
+    Array<double>        tab3(sz);
+    Array<double>        tab4(sz);
+    Array<double>        tab5(sz);
+    Array<int>           tab_int(sz);
+    Array<ComplexDouble> tab_complex(sz);
 
     Array<float>         tab_float(2 * sz);
     Array<short>         tab_short(sz / 2);
@@ -686,13 +686,13 @@ int main(int argc, char* argv[])
     start           = end;
     std::cout << "\nElapsed time distribution : " << elapsed_seconds.count() << "s\n";
 
-    double         val_sum      = 0;
-    ComplexDouble  cv_val_sum   = zero_complex;
-    long           long_val_sum = 0;
-    double         point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
-    long           mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
-    double         v_real       = 0;
-    double         v_im         = 0;
+    double        val_sum      = 0;
+    ComplexDouble cv_val_sum   = zero_complex;
+    long          long_val_sum = 0;
+    double        point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
+    long          mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
+    double        v_real       = 0;
+    double        v_im         = 0;
 
     // Checksums: bench_stats.cpp.
 
@@ -833,7 +833,7 @@ int main(int argc, char* argv[])
                     // branch is still checked, and Array<T> is ArrayChunk<T> --
                     // which has no gc_mark_report -- in a v1/v2 build. `Int`
                     // is what matters here: ArrayChunk2A<double> would take the
-                    // default ind_type (int), a DIFFERENT instantiation from the
+                    // default IndType (int), a DIFFERENT instantiation from the
                     // one the bench fills in an int64 build, and the report would
                     // be of an array nothing ever touched.
                     ArrayChunk2A<double, Int>::gc_mark_report();

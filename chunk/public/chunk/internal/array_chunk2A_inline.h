@@ -48,8 +48,8 @@
 namespace shrink_array
 {
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk2A<T, IndType>::rebuild_storage(IndType sz)
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk2A<T, IndT>::rebuild_storage(IndT sz)
 {
     if (sz)
     {
@@ -108,8 +108,8 @@ void print_type_name(int nb_val2)
               << " → Number of compression values : " << nb_val2 << "\n";
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk2A<T, IndType>::print_compression_stats(std::ostream& os) const
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk2A<T, IndT>::print_compression_stats(std::ostream& os) const
 {
     if (nb_chunk_ == 0)
     {
@@ -179,8 +179,8 @@ void ArrayChunk2A<T, IndType>::print_compression_stats(std::ostream& os) const
                                 /*n_cross=*/-1, /*cross_name=*/"", /*bool_elements=*/std::is_same_v<T, bool>);
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk2A<T, IndType>::clear()
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk2A<T, IndT>::clear()
 {
     this->invalidate_proxies();
     // Chunk-size predictor (log only, no re-chunk; any_check only): scans the
@@ -219,8 +219,8 @@ void ArrayChunk2A<T, IndType>::clear()
     clear_core();
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk2A<T, IndType>::clear_core()
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk2A<T, IndT>::clear_core()
 {
     // Pin the ambient size to THIS array's own geometry before the sweep
     // below. Same rule as ArrayChunk2::clear_core() -- see that
@@ -511,8 +511,8 @@ void ArrayChunk2A<T, IndType>::clear_core()
     }
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk2A<T, IndType>::compress_int()
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk2A<T, IndT>::compress_int()
 {
     // Pin the ambient size to THIS array's geometry: the frees below route on
     // thread_chunk_size(), not on the buffer (see clear_core()); left to the
@@ -582,15 +582,15 @@ void ArrayChunk2A<T, IndType>::compress_int()
         CHUNK_LOG(info, compress,
                   "residual ArrayChunk2A<{}, {}>: {} block(s) constant at {}, still materialised (awaiting the next "
                   "compression pass): {}",
-                  type_name<T>(), type_name<IndType>(), tab.size(), at,
-                  internal::chunk_index_sample(sample, tab, static_cast<IndType>(this->size_policy_.size())));
+                  type_name<T>(), type_name<IndT>(), tab.size(), at,
+                  internal::chunk_index_sample(sample, tab, static_cast<IndT>(this->size_policy_.size())));
     };
     report(tab_nb1, "first_value");
     report(tab_nb2, "the second value");
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk2A<T, IndType>::make_block_compression()
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk2A<T, IndT>::make_block_compression()
 {
     // Every rank's list, drained serially by the caller (no region opened
     // here, no writer handshake: nullptr proxy).
@@ -600,8 +600,8 @@ void ArrayChunk2A<T, IndType>::make_block_compression()
     }
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk2A<T, IndType>::release_chunk_range(int first, int last)
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk2A<T, IndT>::release_chunk_range(int first, int last)
 {
     if (first >= last)
     {
@@ -662,15 +662,15 @@ void ArrayChunk2A<T, IndType>::release_chunk_range(int first, int last)
     }
 }
 
-template <ArrayChunkElement T, typename IndType>
-void ArrayChunk2A<T, IndType>::resize(IndType newsz)
+template <ArrayChunkElement T, typename IndT>
+void ArrayChunk2A<T, IndT>::resize(IndT newsz)
 {
     this->invalidate_proxies();
     const auto& sh_inf = *Proxy2A<T>::share_info_array;
 
-    const int     num_tab      = sh_inf.get_num_tab(this->registry_key());
-    const int     old_nb_chunk = nb_chunk_;
-    const IndType old_size     = this->m_size_; // the stale-tail reset at the end
+    const int  num_tab      = sh_inf.get_num_tab(this->registry_key());
+    const int  old_nb_chunk = nb_chunk_;
+    const IndT old_size     = this->m_size_; // the stale-tail reset at the end
 
     Base2::resize_common(newsz);
     if (nb_chunk_ > 0)
@@ -703,15 +703,15 @@ void ArrayChunk2A<T, IndType>::resize(IndType newsz)
     // `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
-        const auto csz = static_cast<IndType>(this->chunk_size());
+        const auto csz = static_cast<IndT>(this->chunk_size());
         // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
         // the last element, so when old_size falls on a chunk boundary that
         // spare chunk holds stale values too.
-        // In long long: old_nb_chunk * csz may pass ind_type's range near its top.
+        // In long long: old_nb_chunk * csz may pass IndType's range near its top.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const IndType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IndType>(cover_ll) : newsz;
-        const IndType   stale_end = newsz < old_cover ? newsz : old_cover;
-        for (IndType i = old_size; i < stale_end; ++i)
+        const IndT      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IndT>(cover_ll) : newsz;
+        const IndT      stale_end = newsz < old_cover ? newsz : old_cover;
+        for (IndT i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};
         }

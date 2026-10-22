@@ -96,8 +96,8 @@ template <typename Derived>
 class FastBlockSupport2<Derived, true>
 {
   public:
-    using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using chunk_type = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
+    using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
 
     /**
      * @brief Compress every chunk of this array currently queued as a candidate.

@@ -20,14 +20,14 @@
  * @file array_chunk_core.h
  * @brief The part of a chunked array that does not depend on its index type.
  *
- * @details ArrayChunk*<T, ind_type> are distinct types for every ind_type, but
+ * @details ArrayChunk*<T, IndT> are distinct types for every IndT, but
  *          the machinery around them -- proxies, chunks, managers, the per-T
  *          registries (<tt>Proxy*\<T\>\::share_info_array</tt>) -- is templated on T alone
  *          and reaches the array through a type-erased pointer (the proxy's
  *          ptr_on_array, the registries' keys). Do not cast that pointer back to
  *          `ArrayChunk*<T, int>`: on a `<T, long>` array the fields sit elsewhere.
  *
- *          ArrayChunkCore<chunk_type> is what that code may see: everything it
+ *          ArrayChunkCore<ChunkType> is what that code may see: everything it
  *          reads, laid out identically whatever the index type. The pointer
  *          handed out is the address of THIS subobject (registry_key()), so a
  *          static_cast from the void* back to ArrayChunkCore is well-defined.
@@ -52,7 +52,7 @@
 #include <vector>      // std::vector (chunk_list)
 
 #include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
-#include "chunk/chunk_traits.h"                      // ChunkTraits (proxy_type, manager_type)
+#include "chunk/chunk_traits.h"                      // ChunkTraits (ProxyType, ManagerType)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
 #include "chunk/internal/parallel_storage_init.h"    // NoInitAllocator (chunk_list)
@@ -126,16 +126,16 @@ inline bool g_releasing_rechunk_storage = false;
 // value-init sweep on the calling thread. The resize sites and their init loops:
 // ArrayChunk*::create (through acquire_chunk_list) and ArrayChunk*::resize.
 
-/// @brief The index-type-independent part of a chunked array of ChunkType (see the description at the top of
+/// @brief The index-type-independent part of a chunked array of ChunkT (see the description at the top of
 ///        this file).
-template <typename ChunkType>
-class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
+template <typename ChunkT>
+class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
 {
   public:
-    using chunk_type      = ChunkType;                                            ///< Chunk type held in chunk_list.
-    using chunk_list_type = std::vector<chunk_type, NoInitAllocator<chunk_type>>; ///< chunk_list's type.
-    using proxy_type      = ChunkTraits<ChunkType>::proxy_type;   ///< Proxy type owning the per-T registry.
-    using manager_type    = ChunkTraits<ChunkType>::manager_type; ///< Per-T manager owning the allocators.
+    using ChunkType     = ChunkT;                                             ///< Chunk type held in chunk_list.
+    using ChunkListType = std::vector<ChunkType, NoInitAllocator<ChunkType>>; ///< chunk_list's type.
+    using ProxyType     = ChunkTraits<ChunkT>::ProxyType;                     ///< Proxy type owning the per-T registry.
+    using ManagerType   = ChunkTraits<ChunkT>::ManagerType;                   ///< Per-T manager owning the allocators.
 
     /// @brief The chunk geometry: elements per chunk.
     [[nodiscard]] unsigned int chunk_size() const noexcept
@@ -181,13 +181,13 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      *
      * @param i chunk index; the caller guarantees 0 <= i < nb_chunk
      */
-    [[nodiscard]] chunk_type& chunk_ref(std::size_t i) noexcept
+    [[nodiscard]] ChunkType& chunk_ref(std::size_t i) noexcept
     {
         return chunk_list_[i];
     }
 
     /// @brief Const overload of chunk_ref(): the same chunk, read-only.
-    [[nodiscard]] const chunk_type& chunk_ref(std::size_t i) const noexcept
+    [[nodiscard]] const ChunkType& chunk_ref(std::size_t i) const noexcept
     {
         return chunk_list_[i];
     }
@@ -244,7 +244,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         {
             return;
         }
-        const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk_) * sizeof(chunk_type);
+        const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk_) * sizeof(ChunkType);
         if (meta_bytes < build_config::alloc_affinity_min_bytes)
         {
             return;
@@ -254,7 +254,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         // Keep the key ONLY if the manager built its allocator set: a key with no registered
         // set makes route_omp_dynamic_alloc fall through to the legacy single allocator,
         // which is neither this size's nor this array's.
-        alloc_key_ = manager_type::register_alloc_key(key, size_policy_.size(), nb_chunk_) ? key : 0u;
+        alloc_key_ = ManagerType::register_alloc_key(key, size_policy_.size(), nb_chunk_) ? key : 0u;
     }
 
     /**
@@ -289,7 +289,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      * @param i the chunk index, below chunk_list.size()
      * @return the chunk
      */
-    chunk_type& construct_chunk(int i) noexcept
+    ChunkType& construct_chunk(int i) noexcept
     {
         return *std::construct_at(&chunk_list_[static_cast<std::size_t>(i)]);
     }
@@ -307,7 +307,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
             chunk_list_.capacity() > spare_chunk_list_.capacity())
         {
             chunk_list_.swap(spare_chunk_list_);
-            chunk_list_type().swap(chunk_list_); // frees the smaller one
+            ChunkListType().swap(chunk_list_); // frees the smaller one
         }
     }
 
@@ -320,8 +320,8 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 
-    chunk_list_type chunk_list_;  ///< The chunks, in index order.
-    int             nb_chunk_{0}; ///< Number of live chunks in `chunk_list`.
+    ChunkListType chunk_list_;  ///< The chunks, in index order.
+    int           nb_chunk_{0}; ///< Number of live chunks in `chunk_list`.
 
     int num_tab_{0}; ///< Identity of this array in the per-type registries.
     /// @brief Number of arrays of this element type created so far (source of
@@ -340,7 +340,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 
     /// The chunk_list buffer a re-chunk's old storage left (empty, capacity
     /// only), for the next re-chunk's new storage. See acquire_chunk_list().
-    static inline chunk_list_type spare_chunk_list_{};
+    static inline ChunkListType spare_chunk_list_{};
 
     /// @brief The derived array's rechunk_to(), installed by ArrayChunkBase.
     void (*rechunk_fn_)(ArrayChunkCore&, unsigned int) = nullptr;

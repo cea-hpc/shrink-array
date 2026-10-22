@@ -260,7 +260,7 @@ inline Int get_size_data(double multiplier = 1.0, double divisor = 1.0)
  *              size <= interval);
  *            - i + 2 * k in the compute phase (i < sz, k < iter_max);
  *            - end0 + 256, the tail loop;
- *            - the library's Int indices (ind_type = Int): the element count,
+ *            - the library's Int indices (IndT = Int): the element count,
  *              and chunk count x chunk size, up to sz + one chunk (65536
  *              covers any geometry the rechunk reaches).
  *          Beyond that the bench and the library need 64-bit indices, which
@@ -341,7 +341,7 @@ inline void check_size_limits(double multiplier, double divisor, Int iter_max)
     {
         std::cerr << "       No --multiply fits with --divisor " << real(divisor) << ": raise --divisor.\n";
     }
-    std::cerr << "       Beyond that the bench and the library (ind_type = Int) need 64-bit indices:\n"
+    std::cerr << "       Beyond that the bench and the library (IndT = Int) need 64-bit indices:\n"
                  "       rebuild with -DSHRINK_BENCH_INT64=ON and run the int64 executable\n"
                  "       (shrink_bench_<variant>_int64_<1024|dyn>, perf only).\n";
     std::exit(1);

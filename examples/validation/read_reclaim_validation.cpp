@@ -121,7 +121,7 @@
 #include <type_traits> // std::conditional_t
 #include <omp.h>       // omp_get_thread_num, omp_get_max_threads
 
-#include "chunk/chunk_traits.h"        // forward decls + default ind_type = int
+#include "chunk/chunk_traits.h"        // forward decls + default IndT = int
 #include "chunk/array_chunk.h"         // ArrayChunk
 #include "chunk/array_chunk2.h"        // ArrayChunk2
 #include "chunk/array_chunk2A.h"       // ArrayChunk2A
@@ -150,7 +150,7 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
                                  std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
 
 using Arr = Array<double>;
-using Ind = Arr::ind_type;
+using Ind = Arr::IndType;
 
 constexpr const char* variant_name()
 {
@@ -279,7 +279,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
                     for (long c = 0; c < n_victims; ++c)
                     {
                         const Ind v0 = static_cast<Ind>((base_v + c) * S);
-                        a[v0]        = 1.0;     // materialise (filled with V)
+                        a[v0]        = 1.0;          // materialise (filled with V)
                         a[v0]        = second_value; // uniform again: a candidate
 
                         // Polluters, as a ring: the chunk half a ring behind goes
@@ -354,7 +354,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
                                     "expected {:g} -- a compound operation was lost{}",
                                     variant_name(), static_cast<long>(idx), w * per_writer + c, k, v, second_value,
                                     v == second_value / 2 ? " (a *= 2 dropped)"
-                                                     : (v == second_value * 2 ? " (a *= 0.5 dropped)" : ""));
+                                                          : (v == second_value * 2 ? " (a *= 0.5 dropped)" : ""));
                         }
                         ++bad;
                     }

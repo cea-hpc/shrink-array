@@ -50,7 +50,7 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
+#include "chunk/chunk_traits.h"               // forward decls + default IndT = int
 #include "chunk/array_chunk.h"                // ArrayChunk
 #include "chunk/array_chunk2.h"               // ArrayChunk2
 #include "chunk/array_chunk2A.h"              // ArrayChunk2A
@@ -127,7 +127,7 @@ static void end_phase()
 // Serial builds free a cleared array's buffers outright; OpenMP parks them.
 constexpr bool parks_on_clear = build_config::use_openmp;
 
-using Manager = ArrayChunkTraits<Array<double>>::manager_type;
+using Manager = ArrayChunkTraits<Array<double>>::ManagerType;
 
 static int  g_fails = 0;
 static void expect(bool ok, const char* what, long got, long want)

@@ -62,7 +62,7 @@
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>   // getpid
 
-#include "chunk/chunk_traits.h"               // forward decls (Chunk2A) + default ind_type = int
+#include "chunk/chunk_traits.h"               // forward decls (Chunk2A) + default IndT = int
 #include "chunk/array_chunk2A.h"              // ArrayChunk2A, Chunk2A complete (its registry types)
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
 #include "chunk/config.h"                     // chunk_config::use_chunk2a, build_config::has_not_ompt
@@ -220,9 +220,9 @@ static void check_rounds_under_limit(const char* self, long nch)
     const std::string log   = "/tmp/cst2_reclaim_" + std::to_string(getpid()) + ".log";
     const std::string cmd = "CHUNK_CST_VAL2_ID_LIMIT=" + std::to_string(limit) + " " + validation::self_command(self) +
                             " --rounds " + std::to_string(nch) + " 12 > \"" + log + "\" 2>&1";
-    const int         status = std::system(cmd.c_str());
-    const bool        ok     = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    bool              said   = false;
+    const int  status = std::system(cmd.c_str());
+    const bool ok     = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    bool       said   = false;
     {
         std::ifstream in(log);
         std::string   line;

@@ -44,7 +44,7 @@ namespace shrink_array
 {
 
 // `Int` is the bench's index type (bench_int.h): `int` by default, `long`
-// under -DBENCH_INT64. It is handed to the library as `ind_type`, so the array
+// under -DBENCH_INT64. It is handed to the library as `IndT`, so the array
 // indexes exactly as wide as the bench computes -- a 64-bit bench on a 32-bit
 // array would overflow inside the library instead of inside main().
 template <typename T>
@@ -104,13 +104,13 @@ inline constexpr short second_value_s2 = 4;
 inline constexpr unsigned char second_value_c0 = 3;
 inline constexpr unsigned char second_value_c1 = 4;
 
-inline constexpr int            second_value_i       = 1;
-inline constexpr int            other_second_value_i = 10;
-inline constexpr long           second_value_l       = 1L;
-inline constexpr unsigned long  second_value_ul      = 1UL;
-inline constexpr bool           second_value_b       = true;
-inline constexpr ComplexDouble  second_value_c       = std::complex<double>(1., 0.);
-inline constexpr ComplexDouble  other_second_value_c = std::complex<double>(10., 20.);
+inline constexpr int           second_value_i       = 1;
+inline constexpr int           other_second_value_i = 10;
+inline constexpr long          second_value_l       = 1L;
+inline constexpr unsigned long second_value_ul      = 1UL;
+inline constexpr bool          second_value_b       = true;
+inline constexpr ComplexDouble second_value_c       = std::complex<double>(1., 0.);
+inline constexpr ComplexDouble other_second_value_c = std::complex<double>(10., 20.);
 
 inline constexpr ComplexDouble zero_complex = std::complex<double>(0., 0.);
 /// @}
@@ -276,18 +276,18 @@ struct BenchArrays
     Array<double>& tab4;
     Array<double>& tab5;
 
-    Array<int>&            tab_int;
-    BenchBoolArray&        tab_bool;
-    BenchBoolBitsArray&    tab_bool_bits; ///< tab_bool's twin, bit-packed in a chunk2 build
-    Array<ComplexDouble>&  tab_complex;
-    Array<float>&          tab_float;
-    Array<short>&          tab_short;
-    Array<unsigned char>&  tab_char;
-    Array<long>&           tab_long;
-    Array<unsigned long>&  tab_ulong;
-    Array<double>&         tab_quant; ///< quantised: up to bench_double_bands distinct second values
-    Array<Point3>&         tab_point; ///< an aggregate element: three doubles (bench_struct.h)
-    Array<Cell>&           tab_cell;  ///< an aggregate element: an Int and a float
+    Array<int>&           tab_int;
+    BenchBoolArray&       tab_bool;
+    BenchBoolBitsArray&   tab_bool_bits; ///< tab_bool's twin, bit-packed in a chunk2 build
+    Array<ComplexDouble>& tab_complex;
+    Array<float>&         tab_float;
+    Array<short>&         tab_short;
+    Array<unsigned char>& tab_char;
+    Array<long>&          tab_long;
+    Array<unsigned long>& tab_ulong;
+    Array<double>&        tab_quant; ///< quantised: up to bench_double_bands distinct second values
+    Array<Point3>&        tab_point; ///< an aggregate element: three doubles (bench_struct.h)
+    Array<Cell>&          tab_cell;  ///< an aggregate element: an Int and a float
     BenchMaskArray&
         tab_mask; ///< mask_scale * sz bools (--mask_scale, default 1/32): masks and flags (bench_phase_mask.cpp)
 

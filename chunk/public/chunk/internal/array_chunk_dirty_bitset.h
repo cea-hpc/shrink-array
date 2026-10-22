@@ -73,7 +73,7 @@ static_assert(sizeof(PaddedDirtyWord) == build_config::dirty_word_align,
 /**
  * @brief Per-chunk dirty bitset, present only when the build has OpenMP.
  *
- * @tparam Derived the array core that owns it, ArrayChunkCore<chunk_type>
+ * @tparam Derived the array core that owns it, ArrayChunkCore<ChunkType>
  *         (needed by clear_all_dirty_bitsets to walk the per-type registry,
  *         whose keys are addresses of that core).
  * @tparam Enabled defaulted to build_config::use_openmp; never pass it
@@ -148,8 +148,8 @@ class DirtyBitsetSupport<Derived, true>
      */
     static void clear_all_dirty_bitsets()
     {
-        using proxy_type = Derived::proxy_type;
-        proxy_type::share_info_array->for_each_key(
+        using ProxyType = Derived::ProxyType;
+        ProxyType::share_info_array->for_each_key(
             [](const void* key)
             {
                 if (key)

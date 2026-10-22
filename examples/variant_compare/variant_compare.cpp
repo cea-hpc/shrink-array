@@ -78,7 +78,7 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"       // the ind_type = int default of ArrayChunk2<T> / ArrayChunk2A<T>
+#include "chunk/chunk_traits.h"       // the IndT = int default of ArrayChunk2<T> / ArrayChunk2A<T>
 #include "chunk/array_chunk2.h"       // ArrayChunk2
 #include "chunk/array_chunk2A.h"      // ArrayChunk2A
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
@@ -104,8 +104,8 @@ constexpr const char* variant_name()
 }
 
 /// The first value is 0; the second values, the first of them declared.
-constexpr double second_value[]     = {9., 11., 13., 17., 19., 23., 29., 31.};
-constexpr int    max_constants = static_cast<int>(sizeof(second_value) / sizeof(second_value[0]));
+constexpr double second_value[] = {9., 11., 13., 17., 19., 23., 29., 31.};
+constexpr int    max_constants  = static_cast<int>(sizeof(second_value) / sizeof(second_value[0]));
 
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 static void begin_phase()
@@ -184,9 +184,9 @@ int main(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     long n_elems = 1L << 28;
-    int  iters  = 20;
-    int  nconst = 1;
-    bool verify = false;
+    int  iters   = 20;
+    int  nconst  = 1;
+    bool verify  = false;
     for (int a = 1; a < argc; ++a)
     {
         const std::string o = argv[a];

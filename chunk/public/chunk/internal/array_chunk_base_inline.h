@@ -36,11 +36,11 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::create(ind_type sz)
+void ArrayChunkBase<Derived>::create(IndType sz)
 {
     // The first array of this element type registers its manager; every
     // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<manager_type>();
+    AllTypeChunk::ensure_manager<ManagerType>();
 
     create_common();
 
@@ -59,7 +59,7 @@ void ArrayChunkBase<Derived>::create_common()
     // In ALL modes, do not gate on use_fast_block_compression: Proxy2A needs
     // its tab_* containers (tab_second_value, ...) even without OpenMP; for
     // Proxy / Proxy2 it is a no-op stub outside OpenMP.
-    proxy_type::resize_tab_is_int(nb_tab);
+    ProxyType::resize_tab_is_int(nb_tab);
 }
 
 template <typename Derived>
@@ -152,13 +152,13 @@ double ArrayChunkBase<Derived>::stats_seq() const
 
 template <typename Derived>
 template <typename ValueAt>
-void ArrayChunkBase<Derived>::write_range_by_chunks(ind_type first, ind_type last, ValueAt&& value_at)
+void ArrayChunkBase<Derived>::write_range_by_chunks(IndType first, IndType last, ValueAt&& value_at)
 {
     if (first >= last)
     {
         return;
     }
-    // In long long: (c + 1) * chunk_size() may pass ind_type's range near its top.
+    // In long long: (c + 1) * chunk_size() may pass IndType's range near its top.
     const auto csz     = static_cast<long long>(chunk_size());
     const int  c_first = chunk_index_of(first);
     const int  c_last  = chunk_index_of(last - 1) + 1;
@@ -166,9 +166,9 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(ind_type first, ind_type las
     {
         const long long lo_ll = static_cast<long long>(c) * csz;
         const long long hi_ll = lo_ll + csz;
-        const ind_type  lo    = lo_ll > static_cast<long long>(first) ? static_cast<ind_type>(lo_ll) : first;
-        const ind_type  hi    = hi_ll < static_cast<long long>(last) ? static_cast<ind_type>(hi_ll) : last;
-        for (ind_type i = lo; i < hi; ++i)
+        const IndType   lo    = lo_ll > static_cast<long long>(first) ? static_cast<IndType>(lo_ll) : first;
+        const IndType   hi    = hi_ll < static_cast<long long>(last) ? static_cast<IndType>(hi_ll) : last;
+        for (IndType i = lo; i < hi; ++i)
         {
             (*this)[i] = value_at(i);
         }
@@ -197,25 +197,25 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(ind_type first, ind_type las
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::assign(ind_type count, T val)
+void ArrayChunkBase<Derived>::assign(IndType count, T val)
 {
     derived().resize(count);
-    write_range_by_chunks(0, count, [&val](ind_type) { return val; });
+    write_range_by_chunks(0, count, [&val](IndType) { return val; });
 }
 
 template <typename Derived>
 template <std::forward_iterator It>
 void ArrayChunkBase<Derived>::assign(It first, It last)
 {
-    const auto n = static_cast<ind_type>(std::distance(first, last));
+    const auto n = static_cast<IndType>(std::distance(first, last));
     derived().resize(n);
     if constexpr (std::random_access_iterator<It>)
     {
-        write_range_by_chunks(0, n, [&first](ind_type i) { return static_cast<T>(first[i]); });
+        write_range_by_chunks(0, n, [&first](IndType i) { return static_cast<T>(first[i]); });
     }
     else
     {
-        ind_type i = 0;
+        IndType i = 0;
         for (; first != last; ++first)
         {
             (*this)[i++] = static_cast<T>(*first);
@@ -224,14 +224,14 @@ void ArrayChunkBase<Derived>::assign(It first, It last)
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::reserve(ind_type new_capacity)
+void ArrayChunkBase<Derived>::reserve(IndType new_capacity)
 {
     if (static_cast<size_type>(new_capacity) <= capacity())
     {
         return;
     }
     // resize() builds the storage; reserve() then restores the size.
-    const ind_type keep = m_size_;
+    const IndType keep = m_size_;
     derived().resize(new_capacity);
     m_size_ = keep;
 }
@@ -239,11 +239,11 @@ void ArrayChunkBase<Derived>::reserve(ind_type new_capacity)
 template <typename Derived>
 void ArrayChunkBase<Derived>::copy_from(const Derived& from)
 {
-    const ind_type from_size = from.m_size_;
+    const IndType from_size = from.m_size_;
     derived().resize(from_size);
     // Const reads of @p from (through its gate) from every thread of the team:
     // nothing writes it meanwhile.
-    write_range_by_chunks(0, from_size, [&from](ind_type i) { return std::as_const(from)[i]; });
+    write_range_by_chunks(0, from_size, [&from](IndType i) { return std::as_const(from)[i]; });
 }
 
 template <typename Derived>
@@ -254,7 +254,7 @@ void ArrayChunkBase<Derived>::shrink_to_fit()
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(ind_type i) const
+ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndType i) const
 {
     if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
@@ -264,13 +264,13 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(ind_type i)
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(ind_type i)
+ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(IndType i)
 {
     if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
         throw std::out_of_range("ArrayChunk::at: index out of range");
     }
-    return (*this)[i]; // non-const operator[] -> proxy_type (write entry)
+    return (*this)[i]; // non-const operator[] -> ProxyType (write entry)
 }
 
 template <typename Derived>

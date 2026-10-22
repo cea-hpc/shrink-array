@@ -63,11 +63,11 @@ template <typename Derived>
 class RechunkSupport<Derived, true>
 {
   public:
-    using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using T          = Traits::value_type;        ///< Stored element type.
-    using ind_type   = Traits::index_type;        ///< Signed global index type.
-    using chunk_type = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
-    using proxy_type = Traits::proxy_type;        ///< Proxy type owning the per-type array registry.
+    using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using T         = Traits::value_type;        ///< Stored element type.
+    using IndType   = Traits::IndexType;         ///< Signed global index type.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
+    using ProxyType = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
 
   protected:
     // ---- Re-chunk to a new geometry S' (SEQUENTIAL / quiescent point) --------
@@ -198,7 +198,7 @@ class RechunkSupport<Derived, true>
      */
     static void rechunk_all_to(unsigned int new_size)
     {
-        proxy_type::share_info_array->for_each_key(
+        ProxyType::share_info_array->for_each_key(
             [new_size](const void* key)
             {
                 if (key)
@@ -206,7 +206,7 @@ class RechunkSupport<Derived, true>
                     // The key is an array's core, and the arrays of this
                     // element type may differ in index type: reach each one's
                     // own rechunk_to() through the core.
-                    auto* arr = static_cast<ArrayChunkCore<chunk_type>*>(const_cast<void*>(key));
+                    auto* arr = static_cast<ArrayChunkCore<ChunkType>*>(const_cast<void*>(key));
                     arr->rechunk_erased(new_size);
                 }
             });
@@ -228,9 +228,9 @@ template <typename Derived>
 class RechunkSupport<Derived, false>
 {
   public:
-    using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using T          = Traits::value_type;        ///< Stored element type.
-    using chunk_type = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
+    using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using T         = Traits::value_type;        ///< Stored element type.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
 
   protected:
     /** @brief No-op: the geometry is fixed at compile time. */

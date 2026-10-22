@@ -260,7 +260,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // (allocator_pool_serial_) routes each allocation to the right size, so the
     // old and new geometries coexist during the refill.
 
-    const ind_type total = self().m_size_;
+    const IndType total = self().m_size_;
     if (total <= 0)
     {
         self().set_chunk_size(new_size); // legal on an empty array
@@ -359,7 +359,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    constant (only materialised chunks are written).
         // CHUNK_STATS: one geometry change, plus the per-chunk work it costs
         // (counted inside rebuild_one below).
-        increm_chunk_rechunk<chunk_type>();
+        increm_chunk_rechunk<ChunkType>();
         t2_out = t_now();
         self().rechunk_refill(tmp, old_size, new_size);
         t3_out   = t_now();
@@ -486,14 +486,14 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // Every rank, both keys, into ONE sweep: the abandoned set's slabs were
         // carved back to back across ranks, so one madvise per contiguous run
         // instead of one per slab (each one a TLB shootdown on every CPU).
-        typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::SlabSweep sweep;
+        typename std::remove_reference_t<decltype(ChunkType::get_chunk_allocator(0, 0u))>::SlabSweep sweep;
         for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
         {
             if (old_key != 0)
             {
-                chunk_type::get_chunk_allocator(r, old_key).collect_empty_slabs(sweep);
+                ChunkType::get_chunk_allocator(r, old_key).collect_empty_slabs(sweep);
             }
-            chunk_type::get_chunk_allocator(r, 0u).collect_empty_slabs(sweep);
+            ChunkType::get_chunk_allocator(r, 0u).collect_empty_slabs(sweep);
         }
         sweep.flush();
         set_thread_chunk_size(saved_sz);
@@ -514,7 +514,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
                 set_thread_chunk_size(old_size);
                 for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                 {
-                    const auto& allocator = chunk_type::get_chunk_allocator(r, key);
+                    const auto& allocator = ChunkType::get_chunk_allocator(r, key);
                     for (const auto* node : {allocator.block, allocator.block_full})
                     {
                         for (; node != nullptr; node = node->next)
@@ -596,8 +596,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     // cst1" == "not yet materialised" for every variant.
     if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a)
     {
-        const ind_type total = self().m_size_;
-        const int      n_new = tmp.nb_chunk_;
+        const IndType total = self().m_size_;
+        const int     n_new = tmp.nb_chunk_;
         // Geometry is per-array (this.size_=old, tmp.size_=new), so operator[]
         // maps correctly without the global. Only alloc_chunk_count()
         // (= thread_chunk_size(), TLS) needs the size, set per thread below.
@@ -691,13 +691,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         };
         const auto rebuild_one = [&](int new_chunk, std::vector<T>& buf, RebuildTally& tally)
         {
-            const ind_type base = static_cast<ind_type>(new_chunk) * static_cast<ind_type>(new_size);
+            const IndType base = static_cast<IndType>(new_chunk) * static_cast<IndType>(new_size);
             if (base >= total)
             {
                 return;
             }
-            const ind_type end = (base + new_size) < total ? (base + new_size) : total;
-            const ind_type len = end - base;
+            const IndType end = (base + new_size) < total ? (base + new_size) : total;
+            const IndType len = end - base;
 
             const int old_first = static_cast<int>(base / old_size);
             const int old_last  = static_cast<int>((end - 1) / old_size);
@@ -768,10 +768,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             {
                 // Nothing to rebuild: the whole span was still the compressible
                 // constant, so the new chunk stays compressed (work avoided).
-                increm_chunk_rechunk_skipped<chunk_type>();
+                increm_chunk_rechunk_skipped<ChunkType>();
                 return; // fresh cst1, leave it
             }
-            increm_chunk_rechunk_rebuilt<chunk_type>();
+            increm_chunk_rechunk_rebuilt<ChunkType>();
 
             // 2A: all sources are the same second constant -> install it.
             // Filling a buffer and folding it back (below) gives the same state,
@@ -793,7 +793,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     const auto psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
                     char*      ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
                     (void)nch.find_or_set_ind_cst_val2(v, psv);
-                    chunk_type::set_cst_val_to_cst_val2(ptc);
+                    ChunkType::set_cst_val_to_cst_val2(ptc);
                     nch.init_values_cst_val(ptc, psv);
                     ++tally.folded;
                     ++tally.installed;
@@ -830,10 +830,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 for (int oc = old_first; oc <= old_last; ++oc)
                 {
                     const auto&    och     = self().chunk_list_[static_cast<std::size_t>(oc)];
-                    const ind_type oc_base = static_cast<ind_type>(oc) * static_cast<ind_type>(old_size);
-                    const ind_type lo      = base > oc_base ? base : oc_base;
-                    const ind_type oc_end  = oc_base + static_cast<ind_type>(old_size);
-                    const ind_type hi      = end < oc_end ? end : oc_end;
+                    const IndType  oc_base = static_cast<IndType>(oc) * static_cast<IndType>(old_size);
+                    const IndType  lo      = base > oc_base ? base : oc_base;
+                    const IndType  oc_end  = oc_base + static_cast<IndType>(old_size);
+                    const IndType  hi      = end < oc_end ? end : oc_end;
                     const auto     n       = static_cast<std::size_t>(hi - lo);
                     const auto     off     = static_cast<std::size_t>(lo - oc_base);
                     const T* const vals    = och.values_load();
@@ -864,7 +864,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} copied {} elements, span is {}",
                                                new_chunk, k, static_cast<std::size_t>(len));
                     }
-                    const auto check_at = [&](ind_type j)
+                    const auto check_at = [&](IndType j)
                     {
                         const T ref = static_cast<T>(std::as_const(self())[base + j]);
                         if (std::memcmp(&ref, &buf[static_cast<std::size_t>(j)], sizeof(T)) != 0) [[unlikely]]
@@ -876,7 +876,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 new_size);
                         }
                     };
-                    for (ind_type j = 0; j < len; j += 64)
+                    for (IndType j = 0; j < len; j += 64)
                     {
                         check_at(j);
                     }
@@ -885,7 +885,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             }
             else
             {
-                for (ind_type k = 0; k < len; ++k)
+                for (IndType k = 0; k < len; ++k)
                 {
                     buf[static_cast<std::size_t>(k)] = static_cast<T>(std::as_const(self())[base + k]);
                 }
@@ -921,16 +921,16 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 const int thr = get_thr_rank_fast();
                 for (int oc = old_first; oc <= old_last; ++oc)
                 {
-                    const ind_type oc_base = static_cast<ind_type>(oc) * static_cast<ind_type>(old_size);
-                    const ind_type oc_end  = oc_base + static_cast<ind_type>(old_size);
+                    const IndType oc_base = static_cast<IndType>(oc) * static_cast<IndType>(old_size);
+                    const IndType oc_end  = oc_base + static_cast<IndType>(old_size);
                     if (!aligned_coarsening)
                     {
                         // Old chunk oc's readers: the new chunks overlapping its
                         // elements [oc_base, min(oc_end, total)). Release it with
                         // the last of them to finish, whoever that is.
-                        const ind_type last_elem = (oc_end < total ? oc_end : total) - 1;
-                        const auto     readers   = static_cast<int>((last_elem / static_cast<ind_type>(new_size)) -
-                                                                    (oc_base / static_cast<ind_type>(new_size)) + 1);
+                        const IndType last_elem = (oc_end < total ? oc_end : total) - 1;
+                        const auto    readers   = static_cast<int>((last_elem / static_cast<IndType>(new_size)) -
+                                                                   (oc_base / static_cast<IndType>(new_size)) + 1);
                         if (old_done[static_cast<std::size_t>(oc)].fetch_add(1, std::memory_order_acq_rel) + 1 !=
                             readers)
                         {
@@ -1088,7 +1088,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
 
         // Slice boundaries run INSIDE the slice's region (see the loop): the
         // team drain's scratch lives across them, and so do the trace timers.
-        using ManagerT = Traits::manager_type;
+        using ManagerT = Traits::ManagerType;
         typename ManagerT::TeamDrainScratch team_drain;
         // Slab recycling at the slice boundaries (internal::g_rechunk_recycle):
         // the ranks the team holds (each recycles its own slabs, one thread
@@ -1182,11 +1182,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // no enqueue). Safe: each thread rebuilds DISJOINT new chunks,
                 // so the bypassed gate guards nothing. Per-thread
                 // (thread_local), so it lives inside the region.
-                const typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
-                std::vector<T>                buf(static_cast<std::size_t>(new_size));
-                RebuildTally                  tally; // this thread's fold counts for this slice
-                                                     // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                                                     // (internal::rebuild_schedule).
+                const typename CompressionManager<T, ChunkType>::FlushReplayGuard rechunk_replay_guard;
+                std::vector<T> buf(static_cast<std::size_t>(new_size));
+                RebuildTally   tally; // this thread's fold counts for this slice
+                                      // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
+                                      // (internal::rebuild_schedule).
                 const SliceClock::time_point sp_w0 = sp_on ? SliceClock::now() : SliceClock::time_point{};
                 // nowait + the explicit barrier below: the same closing barrier,
                 // with each thread's loop end observable (rechunk=debug).
@@ -1299,7 +1299,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                     const unsigned int saved_sz =
                                         thread_chunk_size(); // this thread's, as the slice left it
                                     set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                                    chunk_type::get_chunk_allocator(me, old_key_refill)
+                                    ChunkType::get_chunk_allocator(me, old_key_refill)
                                         .detach_empty_slabs(recycle_scratch[static_cast<std::size_t>(me)]);
                                     set_thread_chunk_size(saved_sz);
                                 }
@@ -1311,7 +1311,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 for (std::size_t r = 0; r < recycle_held.size(); ++r)
                                 {
                                     auto& allocator =
-                                        chunk_type::get_chunk_allocator(static_cast<int>(r), old_key_refill);
+                                        ChunkType::get_chunk_allocator(static_cast<int>(r), old_key_refill);
                                     if (recycle_held[r] == 0)
                                     {
                                         // A rank no team member holds (a
@@ -1348,11 +1348,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 // a slab found empty is empty.
                                 // One sweep across ranks: one madvise per
                                 // contiguous run.
-                                typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(
+                                typename std::remove_reference_t<decltype(ChunkType::get_chunk_allocator(
                                     0, 0u))>::SlabSweep sweep;
                                 for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                                 {
-                                    chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
+                                    ChunkType::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
                                 }
                                 const auto sc1 = trace_on ? SliceClock::now() : SliceClock::time_point{};
                                 sweep.flush();
@@ -1415,7 +1415,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             {
                 const auto a0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                chunk_type::get_chunk_allocator(0, old_key_refill)
+                ChunkType::get_chunk_allocator(0, old_key_refill)
                     .advise_recycled_slabs(internal::g_rechunk_keep_recycled_bytes);
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (trace_on)
@@ -1475,22 +1475,22 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     {
         // bool chunks (bit-packed) and anything not covered above: tiled
         // element transcription through the proxy (no raw-fill).
-        const ind_type     total = self().m_size;
-        constexpr ind_type tile  = ind_type{1} << 20;
-        const ind_type     bsz   = total < tile ? total : tile;
-        std::vector<T>     buf(static_cast<std::size_t>(bsz));
-        for (ind_type base = 0; base < total; base += bsz)
+        const IndType     total = self().m_size;
+        constexpr IndType tile  = IndType{1} << 20;
+        const IndType     bsz   = total < tile ? total : tile;
+        std::vector<T>    buf(static_cast<std::size_t>(bsz));
+        for (IndType base = 0; base < total; base += bsz)
         {
-            const ind_type len = (total - base) < bsz ? (total - base) : bsz;
+            const IndType len = (total - base) < bsz ? (total - base) : bsz;
             set_active_chunk_size(old_size);
             set_thread_chunk_size(old_size);
-            for (ind_type k = 0; k < len; ++k)
+            for (IndType k = 0; k < len; ++k)
             {
                 buf[static_cast<std::size_t>(k)] = static_cast<T>(self()[base + k]);
             }
             set_active_chunk_size(new_size);
             set_thread_chunk_size(new_size);
-            for (ind_type k = 0; k < len; ++k)
+            for (IndType k = 0; k < len; ++k)
             {
                 tmp[base + k] = static_cast<T>(buf[static_cast<std::size_t>(k)]);
             }

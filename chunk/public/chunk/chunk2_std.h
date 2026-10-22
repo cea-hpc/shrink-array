@@ -48,7 +48,7 @@ namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <template <typename> class ChunkT, typename T>
@@ -379,10 +379,10 @@ template <typename T, typename Derived, bool Enabled = build_config::use_openmp>
 class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
 {
   public:
-    using Base           = Chunk2Base<T, Derived>;
-    using BaseSpec       = ChunkSpec2<T>;
-    using ManagerChunk2  = ManagerChunk<Chunk2, T>;
-    using InfArrayT      = SecondValueInfo<T>;
+    using Base          = Chunk2Base<T, Derived>;
+    using BaseSpec      = ChunkSpec2<T>;
+    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
+    using InfArrayT     = SecondValueInfo<T>;
 
     using Base::derived;
     using Base::first_value;
@@ -395,7 +395,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     /// @warning `new Chunk2<T>[n]` runs the default constructors after this, which
     ///          overwrite that initialisation; it only matters for placement-new
     ///          arrays. The library never array-news a chunk (ArrayChunk* use a
-    ///          std::vector<chunk_type>).
+    ///          std::vector<ChunkType>).
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
@@ -522,9 +522,9 @@ template <typename T, typename Derived>
 class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 {
   public:
-    using Base        = Chunk2Base<T, Derived>;
-    using BaseSpec    = ChunkSpec2<T>;
-    using InfArrayT   = SecondValueInfo<T>;
+    using Base      = Chunk2Base<T, Derived>;
+    using BaseSpec  = ChunkSpec2<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     using Base::derived;
     using Base::first_value;
@@ -594,9 +594,9 @@ template <typename T, typename Derived, bool Enabled>
 class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Derived>
 {
   public:
-    using ManagerChunk2  = ManagerChunk<Chunk2, T>;
-    using Base           = Chunk2Base<T, Derived>;
-    using BaseSpec       = ChunkSpec2<T>;
+    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
+    using Base          = Chunk2Base<T, Derived>;
+    using BaseSpec      = ChunkSpec2<T>;
 
     using Base::derived;
     using Base::first_value;
@@ -823,7 +823,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * The candidate is compressed BEFORE its "already queued" flag is cleared;
      * see the definition for why that order is the safe one.
      *
-     * \tparam CompressFn callable (chunk_type*, ChunkElems count).
+     * \tparam CompressFn callable (ChunkType*, ChunkElems count).
      */
     template <typename CompressFn>
     static void compress_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, CompressFn&& compress_one);
@@ -849,7 +849,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     /**
      * \brief Shared body of the two fill_list_chunk_to_compress_in_par entry
      *        points: they differ only in the map key and the per-chunk scan.
-     * \tparam ScanFn callable (chunk_type*, num_chunk, num_tab, ChunkElems count).
+     * \tparam ScanFn callable (ChunkType*, num_chunk, num_tab, ChunkElems count).
      */
     template <typename ScanFn>
     static void fill_list_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, ScanFn&& scan_one);

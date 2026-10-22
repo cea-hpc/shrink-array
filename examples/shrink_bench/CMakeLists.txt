@@ -131,7 +131,7 @@ endfunction()
 # 64-bit index declination (int64).
 #
 # The bench spells every size and index `Int` (bench_int.h), and hands that same
-# type to the library as `ind_type` (bench_array.h). `Int` is `int` here and
+# type to the library as `IndT` (bench_array.h). `Int` is `int` here and
 # `long` under BENCH_INT64, so an int64 target is the SAME sources built with
 # 64-bit indices -- which is what a run past INT_MAX elements needs: `--mode
 # perf` already starts at 1e9, and `--multiply 2` is refused at 32 bits by

@@ -139,7 +139,7 @@ is compared with the registry.
 The read operator returns a **value**, never a reference:
 
 ```cpp
-CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](ind_type i) const noexcept
+CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType i) const noexcept
 {
     const int num_chunk = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
@@ -171,11 +171,11 @@ the buffer: **use it only on a materialised chunk**, since it bypasses the proxy
 ### 6.1 The write `operator[]`: an armed proxy
 
 ```cpp
-proxy_type operator[](ind_type i) noexcept
+ProxyType operator[](IndType i) noexcept
 {
     const int num_chunk = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
-    const proxy_type& val = chunk_list[num_chunk][num];
+    const ProxyType& val = chunk_list[num_chunk][num];
     val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);   // array, chunk, num_tab
     val.arm_inf_array(derived().registry_mirror());                // Chunk2: the mirror
     return val;

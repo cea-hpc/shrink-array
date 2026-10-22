@@ -139,7 +139,7 @@ est comparée au registre.
 L'opérateur de lecture renvoie une **valeur**, jamais une référence :
 
 ```cpp
-CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](ind_type i) const noexcept
+CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType i) const noexcept
 {
     const int num_chunk = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
@@ -171,11 +171,11 @@ le tampon : **à n'utiliser que sur un chunk matérialisé**, puisqu'il contourn
 ### 6.1 L'`operator[]` d'écriture : un proxy armé
 
 ```cpp
-proxy_type operator[](ind_type i) noexcept
+ProxyType operator[](IndType i) noexcept
 {
     const int num_chunk = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
-    const proxy_type& val = chunk_list[num_chunk][num];
+    const ProxyType& val = chunk_list[num_chunk][num];
     val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);   // tableau, chunk, num_tab
     val.arm_inf_array(derived().registry_mirror());                // Chunk2 : le miroir
     return val;

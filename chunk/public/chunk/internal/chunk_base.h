@@ -88,7 +88,7 @@ namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <typename Derived>
@@ -919,7 +919,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         bool second = false; ///< every element equals the second constant -- never together with `first`
     };
 
-    using cst_val1_type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
+    using CstVal1Type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
 
     ChunkBase()                            = default;
     ~ChunkBase()                           = default;
@@ -1526,7 +1526,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     // its reads load 64-bit words (element_access.h). constinit, every element
     // T{} (= first_value): a global array reaches it before any dynamic
     // initialisation. Unused under MM_PROTECT (null; see get_cst_val1()).
-    alignas(bits::WordT) static inline constinit cst_val1_type m_ptr_cst_val1{};
+    alignas(bits::WordT) static inline constinit CstVal1Type m_ptr_cst_val1{};
 
   protected:
     /**

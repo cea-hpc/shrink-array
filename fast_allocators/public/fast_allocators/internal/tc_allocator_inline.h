@@ -175,7 +175,7 @@ inline void TCSlab<Links>::free_block(int i) noexcept
     else
     {
         link(i)    = first_free;
-        first_free = static_cast<index_type>(i);
+        first_free = static_cast<IndexType>(i);
     }
 
     --nn_ref;

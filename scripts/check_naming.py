@@ -20,7 +20,7 @@ Over chunk/, fast_allocators/ and examples/:
 - Types are PascalCase: a class or struct definition, a type alias, a
   template type parameter (`ChunkT`, not `CHUNK_T`). Standard-library shapes
   keep their spelling: the member types of the std protocols (value_type,
-  iterator, ...) and any `xxx_type`, the traits and tags (is_..., has_...,
+  iterator, ...), the traits and tags (is_..., has_...,
   ..._t, ..._tag, rebind).
 - No identifier of the implementation's reserved `__` form, but the
   compiler's and the runtime's (__builtin_..., __cxa_..., __kmp_...).
@@ -57,7 +57,7 @@ LITERAL = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])+'")
 CAMEL = re.compile(r"(?<![\w:.>])([a-z][a-z0-9]*[A-Z][A-Za-z0-9]*)\b")
 SNAKE_WITH_CAPITAL = re.compile(r"(?<![\w:.>])([a-z][a-z0-9]*(?:_[a-z0-9]+)*_?[a-z0-9]*[A-Z]\w*)\b")
 ALIAS = re.compile(r"\busing\s+([A-Za-z_]\w*)\s*=")
-TYPE_DEF = re.compile(r"\b(?:class|struct|union)\s+([A-Za-z_]\w*)\s*(?:final\b\s*)?(?=\{|:(?!:)|$)")
+TYPE_DEF = re.compile(r"\b(?:class|struct|union)\s+([A-Za-z_]\w*)\s*(?:final\b\s*)?(?=\{|:(?!:)|<|;|$)")
 TEMPLATE_PARAM = re.compile(r"\b(?:typename|class)\s+([A-Z][A-Z_]*[A-Z_][A-Z0-9_]*)\b")  # T, T2, A0 pass
 RESERVED = re.compile(r"(?<![\w])(__[a-z]\w*)")
 RESERVED_OK = re.compile(r"__(cpp_|has_|attribute__|builtin_|int128|asm__|volatile__|cxa_|sanitizer_|alloc_token_|"
@@ -76,9 +76,9 @@ STD_TYPE_NAMES = {
 
 
 def std_shaped(name):
-    """A type name the standard library's style allows: a protocol member type,
-    an `xxx_type`, a trait or a tag."""
-    return (name in STD_TYPE_NAMES or name.endswith(("_type", "_tag", "_t"))
+    """A type name the standard library's style allows: a protocol member type
+    (the list above, not any `xxx_type`: chunk_type is ours), a trait or a tag."""
+    return (name in STD_TYPE_NAMES or name.endswith(("_tag", "_t"))
             or name.startswith(("is_", "has_")) or name.startswith("propagate_on_"))
 
 

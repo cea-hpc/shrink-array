@@ -37,12 +37,12 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     using Base = ArrayChunkBase<Derived>;
 
   public:
-    using Traits       = Base::Traits;       ///< Traits specialisation of the concrete array.
-    using chunk_type   = Base::chunk_type;   ///< Chunk type held in chunk_list.
-    using manager_type = Base::manager_type; ///< Per-type manager owning the compression machinery.
-    using T            = Base::T;            ///< Stored element type.
-    using ind_type     = Base::ind_type;     ///< Signed global index type.
-    using proxy_type   = Base::proxy_type;   ///< Write proxy returned by the non-const accessors.
+    using Traits      = Base::Traits;      ///< Traits specialisation of the concrete array.
+    using ChunkType   = Base::ChunkType;   ///< Chunk type held in chunk_list.
+    using ManagerType = Base::ManagerType; ///< Per-type manager owning the compression machinery.
+    using T           = Base::T;           ///< Stored element type.
+    using IndType     = Base::IndType;     ///< Signed global index type.
+    using ProxyType   = Base::ProxyType;   ///< Write proxy returned by the non-const accessors.
 
     using Base::derived;
 
@@ -57,7 +57,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
      * @brief Allocates storage for a specific chunk if it's currently constant.
      * Uses the metadata provided by the derived class.
      */
-    void alloc_chunk(ind_type i)
+    void alloc_chunk(IndType i)
     {
         const int num_chunk = this->chunk_index_of(i);
 
@@ -70,7 +70,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     /**
      * @brief Thread-aware allocation for a specific chunk.
      */
-    void alloc_chunk(ind_type i, int thr_rank)
+    void alloc_chunk(IndType i, int thr_rank)
     {
         const int num_chunk = this->chunk_index_of(i);
         // See alloc_chunk(i) above: deliberately no dirty-marking.
@@ -103,7 +103,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     ///        pending candidates, drain the deferred ops, then grow or shrink
     ///        chunk_list (with its dirty bitset and the manager's counters).
     ///        The variant's resize() materialises or seeds the new chunks.
-    void resize_common(ind_type newsz)
+    void resize_common(IndType newsz)
     {
         // Drain deferred ops on the CURRENT chunks while nb_chunk, chunk_list and the dirty
         // bitset still have the OLD size (after nb_chunk grows, is_chunk_dirty(j) would read
@@ -121,7 +121,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // nothing, so afterwards every list is empty and every dedup flag 0 -- the
         // precondition of Proxy2A::resize_tab_is_int(num_tab, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
-                      (build_config::not_use_openmp && std::is_same_v<Derived, ArrayChunk2A<T, ind_type>>))
+                      (build_config::not_use_openmp && std::is_same_v<Derived, ArrayChunk2A<T, IndType>>))
         {
             derived().make_block_compression();
         }
@@ -140,9 +140,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
             Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk_);
 
             // Fewer chunks alive: so is the count the compression threshold and reuse budget use.
-            manager_type::increm_somme_chunk_create(nb_chunk_ - old_nb_chunk);
-            manager_type::compute_size_buffer_reuse();
-            manager_type::compute_size_max_number_of_chunk_to_check_compress();
+            ManagerType::increm_somme_chunk_create(nb_chunk_ - old_nb_chunk);
+            ManagerType::compute_size_buffer_reuse();
+            ManagerType::compute_size_max_number_of_chunk_to_check_compress();
             return;
         }
         if (nb_chunk_ == old_nb_chunk)
@@ -153,9 +153,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         chunk_list_.resize(nb_chunk_);
         Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk_);
 
-        manager_type::increm_somme_chunk_create(nb_chunk_ - old_nb_chunk);
-        manager_type::compute_size_buffer_reuse();
-        manager_type::compute_size_max_number_of_chunk_to_check_compress();
+        ManagerType::increm_somme_chunk_create(nb_chunk_ - old_nb_chunk);
+        ManagerType::compute_size_buffer_reuse();
+        ManagerType::compute_size_max_number_of_chunk_to_check_compress();
         // An array built empty (the default) only becomes worth its own slabs
         // here; idempotent for one that already has a key.
         this->assign_alloc_key();

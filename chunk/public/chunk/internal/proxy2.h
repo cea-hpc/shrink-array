@@ -370,7 +370,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
  * @brief Policy to handle Fast Block Compression specific logic for Proxy2.
  * Encapsulates per-thread list management and trigger logic.
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
 {
   public:
@@ -393,9 +393,9 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     using CRTPSupport<Derived>::derived;
     using CRTPSupport<Derived>::self;
 
-    using CompressionManagerType = CompressionManager<T, ChunkType>;
+    using CompressionManagerType = CompressionManager<T, ChunkT>;
 
-    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkType>::ValuesTypeRef;
+    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkT>::ValuesTypeRef;
 
     using ProxySpec2<T, Derived>::ProxySpec2;
 
@@ -671,12 +671,12 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
 /**
  * @brief Specialization for Disabled Fast Compression (Zero Overhead).
  */
-template <typename Derived, typename T, typename ChunkType>
-class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, Derived>
+template <typename Derived, typename T, typename ChunkT>
+class Proxy2FastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec2<T, Derived>
 {
   public:
-    using ValuesTypeRef   = Proxy2Base<Derived, T, ChunkType>::ValuesTypeRef;
-    using Base            = ProxyBase<Derived, T, Chunk2<T>>;
+    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkT>::ValuesTypeRef;
+    using Base          = ProxyBase<Derived, T, Chunk2<T>>;
     using Base::chunk_;
     using CRTPSupport<Derived>::derived;
     using ProxySpec2<T, Derived>::second_value_;
@@ -813,7 +813,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     // specialisation (imported in Proxy2FastCompPolicy<..., true>), so it breaks builds
     // without fast block compression.
     using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
-    using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
+    using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
 
     // Declared per Proxy2FastCompPolicy specialisation: the deferred and counter forms are
     // different algorithms (and pass `operation` different arguments).
@@ -1024,8 +1024,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     {
         if (std::addressof(from) != this) // operator& is deleted
         {
-            const InT<T> v = static_cast<T>(from);  // complete before the write starts
-            static_cast<void>(assign_impl<T>(v));   // the value written: not needed here
+            const InT<T> v = static_cast<T>(from); // complete before the write starts
+            static_cast<void>(assign_impl<T>(v));  // the value written: not needed here
         }
         return *this;
     }

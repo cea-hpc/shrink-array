@@ -46,11 +46,11 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
     {
         if constexpr (Derived::is_not_bool)
         {
-            chunk_type::make_block_compression(thr, self().get_info_second_value(), nullptr);
+            ChunkType::make_block_compression(thr, self().get_info_second_value(), nullptr);
         }
         else
         {
-            chunk_type::make_block_compression_bool(thr, nullptr);
+            ChunkType::make_block_compression_bool(thr, nullptr);
         }
     };
 
@@ -71,8 +71,8 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
         // Sequential point: outside a region only.
         if constexpr (Derived::is_not_bool)
         {
-            using ProxyT   = typename Traits::proxy_type;
-            using ManagerT = typename Traits::manager_type;
+            using ProxyT   = typename Traits::ProxyType;
+            using ManagerT = typename Traits::ManagerType;
 
             const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
             const auto inf      = self().get_info_second_value();

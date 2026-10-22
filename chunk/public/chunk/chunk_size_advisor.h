@@ -159,8 +159,8 @@ struct ChunkSizeAdvisor
         const uint32_t s  = tab.chunk_size();
         const int64_t  nc = tab.nb_chunk_;
         rep.current_size  = s;
-        rep.meta_bytes    = static_cast<double>(sizeof(typename Arr::chunk_type)) + opt.meta_extra_bytes;
-        rep.elem_bytes    = s != 0 ? static_cast<double>(Arr::chunk_type::storage_units(s)) * sizeof(T) / s : 0.;
+        rep.meta_bytes    = static_cast<double>(sizeof(typename Arr::ChunkType)) + opt.meta_extra_bytes;
+        rep.elem_bytes    = s != 0 ? static_cast<double>(Arr::ChunkType::storage_units(s)) * sizeof(T) / s : 0.;
 
         if (nc <= 0)
         {
@@ -192,9 +192,9 @@ struct ChunkSizeAdvisor
         // a constant? (classify() below asks whether a chunk already is one.)
         // v1: first_value only. Chunk2: also the array's second value, when
         // designated (otherwise only first_value: the conservative answer).
-        const InT<T>  cst1_value = Arr::chunk_type::first_value;
-        bool          has_cst2   = false;
-        T             cst2_value = cst1_value;
+        const InT<T> cst1_value = Arr::ChunkType::first_value;
+        bool         has_cst2   = false;
+        T            cst2_value = cst1_value;
         if constexpr ((chunk_config::use_chunk2 || chunk_config::use_chunk2a) && requires { tab.get_second_value(); })
         {
             cst2_value = tab.get_second_value();
@@ -612,9 +612,9 @@ struct ChunkSizeAdvisor
                         auto              below = static_cast<bits::WordT>(w[0] & 1u);
                         for (std::size_t k = 0; k < nw; ++k)
                         {
-                            const bits::WordT x  = w[k];
-                            bits::WordT       t  = x ^ ((x << 1) | below);
-                            below                = x >> (bits::word_bits - 1);
+                            const bits::WordT x = w[k];
+                            bits::WordT       t = x ^ ((x << 1) | below);
+                            below               = x >> (bits::word_bits - 1);
                             while (t != 0)
                             {
                                 const std::size_t i =
@@ -755,7 +755,7 @@ struct ChunkSizeAdvisor
             est.cst       = nch - mat;
             est.exact     = exact;
             est.mem_bytes = (static_cast<double>(nch) * rep.meta_bytes) +
-                            (static_cast<double>(mat) * static_cast<double>(Arr::chunk_type::storage_units(c)) *
+                            (static_cast<double>(mat) * static_cast<double>(Arr::ChunkType::storage_units(c)) *
                              sizeof(T)); // Bit: size / 8 bytes, not size
             rep.table.push_back(est);
         }

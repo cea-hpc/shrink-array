@@ -20,7 +20,7 @@
 // other harnesses here.
 // ============================================================================
 //
-// The arrays take their index type as a template parameter (ind_type, `int`
+// The arrays take their index type as a template parameter (IndT, `int`
 // by default). Guards the two things a `long` index needs:
 //
 //   past-int-max  one ArrayChunk*<char, long> of more than INT_MAX elements,
@@ -54,7 +54,7 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
+#include "chunk/chunk_traits.h"               // forward decls + default IndT = int
 #include "chunk/array_chunk.h"                // ArrayChunk
 #include "chunk/array_chunk2.h"               // ArrayChunk2
 #include "chunk/array_chunk2A.h"              // ArrayChunk2A
@@ -282,7 +282,7 @@ int verify_mixed(const char* label, const char* step, const Arr& a, int which, l
     for (long i = 0; i < m; ++i)
     {
         const double want = pattern(which, i, s);
-        const double got  = a[static_cast<Arr::ind_type>(i)];
+        const double got  = a[static_cast<Arr::IndType>(i)];
         if (got != want)
         {
             if (nbad < 5)

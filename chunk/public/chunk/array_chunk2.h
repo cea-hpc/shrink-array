@@ -56,13 +56,13 @@ class ManagerChunk;
  *          hooks (2A has three).
  *
  * @tparam T        stored element type
- * @tparam IndType index type used for sizes and element positions
+ * @tparam IndT index type used for sizes and element positions
  */
-template <ArrayChunkElement T, typename IndType>
-class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
-                    public ParallelSupport2<ArrayChunk2<T, IndType>>,
-                    public FastBlockSupport2<ArrayChunk2<T, IndType>>,
-                    public RechunkHooks2<ArrayChunk2<T, IndType>>
+template <ArrayChunkElement T, typename IndT>
+class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
+                    public ParallelSupport2<ArrayChunk2<T, IndT>>,
+                    public FastBlockSupport2<ArrayChunk2<T, IndT>>,
+                    public RechunkHooks2<ArrayChunk2<T, IndT>>
 {
   public:
     using Base2      = ArrayChunk2Base<ArrayChunk2>;   ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
@@ -78,12 +78,19 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
     friend class RechunkHooks2;
 
     // Re-declared, not only inherited: the mixins declare them too, and an
-    // outside `Arr::chunk_type` would be ambiguous between base subobjects.
-    using Traits       = Base2::Traits;       ///< ArrayChunkTraits<ArrayChunk2>.
-    using chunk_type   = Base2::chunk_type;   ///< Chunk2<T>, the chunk type held in chunk_list.
-    using manager_type = Base2::manager_type; ///< ManagerChunk<Chunk2, T>, the per-type manager.
-    using proxy_type   = Base2::proxy_type;   ///< Proxy2<T>, the write proxy of the non-const accessors.
-    using value_type   = T;                   ///< Stored element type.
+    // outside `Arr::ChunkType` would be ambiguous between base subobjects.
+    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<ArrayChunk2>.
+    using ChunkType   = Base2::ChunkType;   ///< Chunk2<T>, the chunk type held in chunk_list.
+    using ManagerType = Base2::ManagerType; ///< ManagerChunk<Chunk2, T>, the per-type manager.
+    using ProxyType   = Base2::ProxyType;   ///< Proxy2<T>, the write proxy of the non-const accessors.
+    using value_type  = T;                  ///< Stored element type.
+
+    // The former snake_case spellings, kept until 1.0 (types are PascalCase).
+    using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
+    using manager_type [[deprecated("types are PascalCase: use ManagerType")]]      = ManagerType;
+    using proxy_type [[deprecated("types are PascalCase: use ProxyType")]]          = ProxyType;
+    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IndT;
+    using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
     using Base2::chunk_list_;
 
@@ -96,7 +103,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
     using InfArrayT = SecondValueInfo<T>;
 
-    using ManagerChunk2 = ManagerChunk<Chunk2, T>; ///< Same type as manager_type.
+    using ManagerChunk2 = ManagerChunk<Chunk2, T>; ///< Same type as ManagerType.
 
     // Required, not decoration: ArrayChunkBase re-exports RechunkSupport's hook
     // DEFAULTS under these names, so a hook call through self() would be
@@ -117,7 +124,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit ArrayChunk2(IndType sz = 0)
+    explicit ArrayChunk2(IndT sz = 0)
     {
         if constexpr (build_config::use_openmp)
         {
@@ -159,7 +166,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    ArrayChunk2(It first, It last) : ArrayChunk2(static_cast<IndType>(std::distance(first, last)))
+    ArrayChunk2(It first, It last) : ArrayChunk2(static_cast<IndT>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
@@ -280,14 +287,14 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
      * @param i element index
      * @return false while that chunk is still compressed to a constant
      */
-    [[nodiscard]] bool written(IndType i) const
+    [[nodiscard]] bool written(IndT i) const
     {
         return chunk_written(this->chunk_index_of(i));
     }
 
     /**
      * @brief Is chunk @p j materialised?
-     * @param j CHUNK index (not an element index -- see written(ind_type))
+     * @param j CHUNK index (not an element index -- see written(IndType))
      * @return false while that chunk is compressed to either constant
      * @note Chunk2::written() needs the array's second-value index: see
      *       has_chunk_written_v (array_chunk_base.h).
@@ -313,7 +320,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list keeps its capacity.
      */
-    void resize(IndType newsz);
+    void resize(IndT newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
@@ -348,13 +355,13 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
     void compress();
 
     /// @brief Read-only access to the underlying chunk list.
-    [[nodiscard]] const Base::chunk_list_type& get_chunk_list() const noexcept
+    [[nodiscard]] const Base::ChunkListType& get_chunk_list() const noexcept
     {
         return chunk_list_;
     }
 
     /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
-    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::chunk_list_type&
+    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::ChunkListType&
     getChunkList() const noexcept
     {
         return chunk_list_;
@@ -367,7 +374,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
      * @brief Register the array and allocate its storage.
      * @param sz element count
      */
-    void create(IndType sz);
+    void create(IndT sz);
 
     /**
      * @brief (Re)allocate storage at the current active geometry.
@@ -376,12 +383,12 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndType>>,
      *          array switching geometry (rechunk_to()).
      * @param sz element count to allocate for
      */
-    void rebuild_storage(IndType sz);
+    void rebuild_storage(IndT sz);
 
     /// @brief CRTP hook: the metadata the base needs for any element.
     /// @return this array's shared second-value tuple (element index unused,
     ///         since the value is array-wide -- unlike ArrayChunk2A)
-    auto get_metadata(IndType /*ind*/) const noexcept
+    auto get_metadata(IndT /*ind*/) const noexcept
     {
         return this->get_info_second_value();
     }

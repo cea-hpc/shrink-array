@@ -210,11 +210,11 @@ class alignas(64) TCSlab
     static constexpr bool side_links = Links == FreeLinks::side_array;
 
     /// @brief An element index on the free list.
-    using index_type = std::conditional_t<side_links, unsigned short, int>;
+    using IndexType = std::conditional_t<side_links, unsigned short, int>;
 
     /// @brief Free-list terminator. With side links it is also the exclusive
     ///        upper bound on #block_size: the side array indexes elements with it.
-    static constexpr index_type free_list_end = static_cast<index_type>(side_links ? 32767 : -1);
+    static constexpr IndexType free_list_end = static_cast<IndexType>(side_links ? 32767 : -1);
 
     /// @brief Leaves the slab unusable; init() is what makes it a slab.
     TCSlab() = default;
@@ -352,7 +352,7 @@ class alignas(64) TCSlab
 
     uintptr_t block_allocator = 0; ///< Block size in bytes; a power of two.
 
-    index_type first_free{free_list_end}; ///< Head of the free list; #free_list_end if empty.
+    IndexType first_free{free_list_end}; ///< Head of the free list; #free_list_end if empty.
 
     int nn_ref{0}; ///< Elements currently out. 0 == releasable, #block_size == full.
 
@@ -396,7 +396,7 @@ class alignas(64) TCSlab
     };
 
     /// @brief The free-list link of element @p i.
-    [[nodiscard]] index_type& link(int i) noexcept
+    [[nodiscard]] IndexType& link(int i) noexcept
     {
         if constexpr (side_links)
         {

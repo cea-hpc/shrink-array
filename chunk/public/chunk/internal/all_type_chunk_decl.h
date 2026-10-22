@@ -358,7 +358,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * @brief The manager of @p ManagerT exists after this call -- registered
      *        now if this is the first array of its type, a no-op otherwise.
      *
-     * Called by the arrays' create() with their ArrayChunkTraits::manager_type.
+     * Called by the arrays' create() with their ArrayChunkTraits::ManagerType.
      * One function-local static per instantiation: the first call of a type
      * registers under the mutex, every later one costs a guard load; two
      * threads constructing the first arrays of the same type at once are

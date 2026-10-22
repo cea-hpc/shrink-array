@@ -382,7 +382,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
  * !CHUNK_PMP_IN_PARALLEL_REGION), so either order works; this one stays
  * correct if that precondition slips, as on Chunk2A.
  *
- * @tparam CompressFn callable `(chunk_type*, unsigned int n_elems)`.
+ * @tparam CompressFn callable `(ChunkType*, unsigned int n_elems)`.
  * @param thr_rank     Rank whose list is drained.
  * @param key          Second value indexing the per-rank candidate map.
  * @param compress_one Per-chunk compression.
@@ -488,7 +488,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool_
  * two things the caller supplies. Null chunk pointers are batch sentinels and
  * are skipped; each live entry is scanned at the geometry it carries.
  *
- * @tparam ScanFn callable `(chunk_type*, int num_chunk, int num_tab, ChunkElems)`.
+ * @tparam ScanFn callable `(ChunkType*, int num_chunk, int num_tab, ChunkElems)`.
  * @param thr_rank Rank whose candidate list is scanned.
  * @param key      Second value indexing the per-rank candidate map.
  * @param scan_one Per-chunk scan.

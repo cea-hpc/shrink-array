@@ -59,10 +59,10 @@ template <typename Derived>
 class RechunkHooks2<Derived, true>
 {
   public:
-    using Traits       = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using value_type   = Traits::value_type;        ///< Stored element type.
-    using proxy_type   = Traits::proxy_type;        ///< Proxy type owning the per-type array registry.
-    using manager_type = Traits::manager_type;      ///< Per-type manager owning the candidate store.
+    using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using value_type  = Traits::value_type;        ///< Stored element type.
+    using ProxyType   = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
+    using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the candidate store.
 
     /// @brief Drop this array's queued compression candidates before teardown.
     void rechunk_drop_candidates();

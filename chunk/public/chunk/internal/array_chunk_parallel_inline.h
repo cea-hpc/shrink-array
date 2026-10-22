@@ -46,12 +46,12 @@ void FastBlockSupport<Derived, true>::make_block_compression()
     {
         for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
         {
-            chunk_type::make_block_compression(thr, nullptr);
+            ChunkType::make_block_compression(thr, nullptr);
         }
     }
     else
     {
-        chunk_type::make_block_compression(CHUNK_PMP_THREAD_RANK, nullptr);
+        ChunkType::make_block_compression(CHUNK_PMP_THREAD_RANK, nullptr);
     }
 }
 

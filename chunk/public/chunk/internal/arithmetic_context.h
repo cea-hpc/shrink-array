@@ -33,8 +33,8 @@ class Proxy;
 /// @brief The proxy's num_tab: its armed value where the proxy keeps one
 ///        (get_num_tab_cached, v1), get_num_tab(array_ptr) where the proxy
 ///        takes the array, get_num_tab() otherwise.
-template <typename ProxyType>
-constexpr int get_num_tab_helper(const ProxyType& proxy, const void* array_ptr) noexcept
+template <typename ProxyT>
+constexpr int get_num_tab_helper(const ProxyT& proxy, const void* array_ptr) noexcept
 {
     if constexpr (requires { proxy.get_num_tab_cached(array_ptr); })
     {
@@ -60,13 +60,13 @@ constexpr int get_num_tab_helper(const ProxyType& proxy, const void* array_ptr) 
  *          needed) or any cached compression metadata: a deferred write never
  *          uses stale state.
  */
-template <typename T, typename ProxyType, typename ChunkType = Chunk<T>>
+template <typename T, typename ProxyT, typename ChunkT = Chunk<T>>
 struct BaseArithmeticContext
 {
     /// @brief Capture the proxy's position, chunk, geometry and allocation key.
     /// @param prox Proxy the context is built from.
     /// @param array_ptr Owning array, stored in ptr_on_array and used to compute num_tab.
-    BaseArithmeticContext(const ProxyType& prox, const void* array_ptr)
+    BaseArithmeticContext(const ProxyT& prox, const void* array_ptr)
         : num(prox.get_num())
         , chunk(prox.get_chunk())
         , num_chunk(prox.get_num_chunk())
@@ -91,7 +91,7 @@ struct BaseArithmeticContext
     BaseArithmeticContext& operator=(BaseArithmeticContext&&)      = delete;
 
     int         num;          ///< index of the element in its chunk
-    ChunkType&  chunk;        ///< the chunk written
+    ChunkT&     chunk;        ///< the chunk written
     int         num_chunk;    ///< index of the chunk in its array
     int         num_tab;      ///< logical array index
     const void* ptr_on_array; ///< the owning array
@@ -169,30 +169,30 @@ struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, Proxy<T
 };
 
 /// @brief Context of a deferred Proxy2 / Proxy2A write without operation.
-template <typename T, typename ChunkType, typename ProxyType>
-struct ArithmeticContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
+template <typename T, typename ChunkT, typename ProxyT>
+struct ArithmeticContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {
-    using Base = BaseArithmeticContext<T, ProxyType, ChunkType>;
+    using Base = BaseArithmeticContext<T, ProxyT, ChunkT>;
 
     /// @brief Build the context from @p proxy.
     /// @param proxy Proxy the context is built from.
     /// @param array_ptr Owning array.
-    ArithmeticContext(const ProxyType& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
+    ArithmeticContext(const ProxyT& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
 };
 
 /// @brief Context of a deferred Proxy2 / Proxy2A compound operation: the
 ///        operand and the operation.
-template <typename T, typename Op, typename ChunkType, typename ProxyType>
-struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
+template <typename T, typename Op, typename ChunkT, typename ProxyT>
+struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {
-    using Base = BaseArithmeticContext<T, ProxyType, ChunkType>;
+    using Base = BaseArithmeticContext<T, ProxyT, ChunkT>;
 
     /// @brief Build the context from @p proxy with an operand and the operation to apply.
     /// @param proxy Proxy the context is built from.
     /// @param op_value Right-hand operand.
     /// @param op Functor implementing the operation.
     /// @param array_ptr Owning array.
-    ArithmeticOperationContext(const ProxyType& proxy, InT<T> op_value, Op op, const void* array_ptr)
+    ArithmeticOperationContext(const ProxyT& proxy, InT<T> op_value, Op op, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }
@@ -202,16 +202,16 @@ struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyType, C
 };
 
 /// @brief Context of a deferred Proxy2 / Proxy2A assignment: the assigned value.
-template <typename T, typename U, typename ChunkType, typename ProxyType>
-struct ArithmeticAffectationContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
+template <typename T, typename U, typename ChunkT, typename ProxyT>
+struct ArithmeticAffectationContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {
-    using Base = BaseArithmeticContext<T, ProxyType, ChunkType>;
+    using Base = BaseArithmeticContext<T, ProxyT, ChunkT>;
 
     /// @brief Build the context from @p proxy with the value to assign.
     /// @param proxy Proxy the context is built from.
     /// @param op_value Assigned value, stored in operand.
     /// @param array_ptr Owning array.
-    ArithmeticAffectationContext(const ProxyType& proxy, InT<U> op_value, const void* array_ptr)
+    ArithmeticAffectationContext(const ProxyT& proxy, InT<U> op_value, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value)
     {
     }

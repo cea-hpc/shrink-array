@@ -70,7 +70,7 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"       // forward decls + default ind_type = int
+#include "chunk/chunk_traits.h"       // forward decls + default IndT = int
 #include "chunk/array_chunk.h"        // ArrayChunk
 #include "chunk/array_chunk2.h"       // ArrayChunk2
 #include "chunk/array_chunk2A.h"      // ArrayChunk2A

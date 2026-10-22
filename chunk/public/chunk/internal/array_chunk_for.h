@@ -27,23 +27,23 @@ class Chunk2;
 template <typename T>
 class Chunk2A;
 
-template <typename ChunkType>
+template <typename ChunkT>
 class ArrayChunkCore;
 
 /**
- * @brief What a proxy of @p ChunkType may cast its type-erased ptr_on_array to.
+ * @brief What a proxy of @p ChunkT may cast its type-erased ptr_on_array to.
  * @details The index-independent core of the array, never the array itself: a
  *          chunk type has one array type per index type (`ArrayChunk2A<T, int>`,
  *          `ArrayChunk2A<T, long>`), and ptr_on_array is the address of the core
  *          (ArrayChunkCore::registry_key()) for all of them.
  */
-template <typename ChunkType>
+template <typename ChunkT>
 struct ArrayChunkFor
 {
-    using type = ArrayChunkCore<ChunkType>;
+    using type = ArrayChunkCore<ChunkT>;
 };
 
-template <typename ChunkType>
-using ArrayChunkForT = ArrayChunkFor<ChunkType>::type;
+template <typename ChunkT>
+using ArrayChunkForT = ArrayChunkFor<ChunkT>::type;
 
 } // namespace shrink_array

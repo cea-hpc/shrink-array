@@ -62,7 +62,7 @@
 #include <cmath>       // std::floor, std::sin
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
+#include "chunk/chunk_traits.h"               // forward decls + default IndT = int
 #include "chunk/array_chunk.h"                // ArrayChunk
 #include "chunk/array_chunk2.h"               // ArrayChunk2
 #include "chunk/array_chunk2A.h"              // ArrayChunk2A
@@ -654,7 +654,7 @@ int check_index_split(const char* label)
     label                   = lab_s.c_str();
     const unsigned ambient  = active_chunk_size();
 
-    long bad = 0;
+    long bad   = 0;
     long count = 0;
     for (unsigned d = 32; d <= 4096; d += (d < 64 ? 32 : 64))
     {

@@ -37,7 +37,7 @@ namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <template <typename> class ChunkT, typename T>
@@ -216,9 +216,9 @@ template <typename T, typename Derived, bool Enabled = build_config::use_openmp>
 class ChunkOmpPolicy : public ChunkBase<T, Derived>
 {
   public:
-    using Base          = ChunkBase<T, Derived>;
-    using ChunkType     = Derived;
-    using Manager       = ManagerChunk<Chunk, T>;
+    using Base      = ChunkBase<T, Derived>;
+    using ChunkType = Derived;
+    using Manager   = ManagerChunk<Chunk, T>;
 
     using Base::derived;
     using Base::init_block;
@@ -370,8 +370,8 @@ class ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
     // NOT alloc_chunk_count() (the CONSUMING thread's ambient size, may differ).
     using VecTupleChunkpInt2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
-    using Manager       = ManagerChunk<Chunk, T>;
-    using Base          = ChunkBase<T, Derived>;
+    using Manager = ManagerChunk<Chunk, T>;
+    using Base    = ChunkBase<T, Derived>;
 
     using Base::derived;
     using Base::self;

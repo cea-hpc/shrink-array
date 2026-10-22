@@ -46,10 +46,10 @@ template <typename Derived>
 class ParallelSupportCommon
 {
   public:
-    using Traits       = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using value_type   = Traits::value_type;        ///< Stored element type.
-    using chunk_type   = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
-    using manager_type = Traits::manager_type;      ///< Per-type manager owning the free-lists.
+    using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using value_type  = Traits::value_type;        ///< Stored element type.
+    using ChunkType   = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
+    using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the free-lists.
 
     /**
      * @brief Drain the deferred writes still queued on this array's chunks.

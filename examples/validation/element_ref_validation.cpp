@@ -71,7 +71,7 @@ void expect(const char* what, const T& got, const T& want)
 #ifndef ELEMENT_REF_CASE
 int usage()
 {
-    static_assert(std::is_same_v<Array<double>::reference, ElementRef<Array<double>::proxy_type, double>> ||
+    static_assert(std::is_same_v<Array<double>::reference, ElementRef<Array<double>::ProxyType, double>> ||
                       !build_config::strict_element_ref,
                   "operator[] returns an ElementRef (the bare proxy with -DCHUNK_LOOSE_ELEMENT_REF)");
     constexpr int n = 1000;

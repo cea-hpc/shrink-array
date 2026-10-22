@@ -56,7 +56,7 @@
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>   // getpid
 
-#include "chunk/chunk_traits.h"       // forward decls (Chunk2A) + default ind_type = int
+#include "chunk/chunk_traits.h"       // forward decls (Chunk2A) + default IndT = int
 #include "chunk/array_chunk2A.h"      // ArrayChunk2A, Chunk2A complete (its registry types)
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/config.h"             // chunk_config::use_chunk2a, build_config::has_not_ompt
@@ -180,12 +180,12 @@ static int run_id_limit_child()
 ///        value_by_id[] out of bounds.
 static void check_id_limit(const char* self)
 {
-    const std::string log     = "/tmp/cst2_id_limit_" + std::to_string(getpid()) + ".log";
-    const std::string cmd     = std::string("CHUNK_CST_VAL2_ID_LIMIT=16 ") + validation::self_command(self) +
-                                " --id-limit > \"" + log + "\" 2>&1";
-    const int         status  = std::system(cmd.c_str());
-    const bool        stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
-    bool              said    = false;
+    const std::string log = "/tmp/cst2_id_limit_" + std::to_string(getpid()) + ".log";
+    const std::string cmd = std::string("CHUNK_CST_VAL2_ID_LIMIT=16 ") + validation::self_command(self) +
+                            " --id-limit > \"" + log + "\" 2>&1";
+    const int  status  = std::system(cmd.c_str());
+    const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
+    bool       said    = false;
     {
         std::ifstream in(log);
         std::string   line;

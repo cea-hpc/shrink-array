@@ -45,11 +45,11 @@ namespace shrink_array
  * Contains the logic specific to chunks with two constant values.
  */
 
-template <typename Derived, typename T, typename ChunkType>
-class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
+template <typename Derived, typename T, typename ChunkT>
+class Proxy2Base : public ProxyBase<Derived, T, ChunkT>
 {
   public:
-    using Base = ProxyBase<Derived, T, ChunkType>;
+    using Base = ProxyBase<Derived, T, ChunkT>;
     friend Base;
 
     using Base::add_to_compression_list;
@@ -202,7 +202,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param num Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit Proxy2Base(ValuesTypeRef values, int num, ChunkType& chunk) noexcept : Base(values, num, chunk) {}
+    explicit Proxy2Base(ValuesTypeRef values, int num, ChunkT& chunk) noexcept : Base(values, num, chunk) {}
 
     /**
      * @brief Negation of is_cst_val2().

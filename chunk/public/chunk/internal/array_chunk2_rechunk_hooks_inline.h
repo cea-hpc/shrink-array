@@ -21,7 +21,7 @@
 #include <tuple> // std::get on candidate tuples
 
 #include "chunk/internal/array_chunk2_rechunk_hooks.h" // RechunkHooks2, the class these bodies belong to
-#include "chunk/internal/manager_chunk.h"              // manager_type — candidate store + reuse free-lists
+#include "chunk/internal/manager_chunk.h"              // ManagerType — candidate store + reuse free-lists
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
@@ -39,13 +39,13 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
     // be re-queued. bool has no second value and is only dropped.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const int num_tab = proxy_type::share_info_array->get_num_tab(self().registry_key());
+        const int num_tab = ProxyType::share_info_array->get_num_tab(self().registry_key());
         if constexpr (Derived::is_not_bool && build_config::use_openmp)
         {
             const auto inf = self().get_info_second_value();
             const int  thr = get_thr_rank_fast();
             shrink_array::set_thread_chunk_size(self().size_policy_.size());
-            for (const auto& per_rank : manager_type::map_chunk2_to_compress_potentially_thr)
+            for (const auto& per_rank : ManagerType::map_chunk2_to_compress_potentially_thr)
             {
                 for (const auto& kv : per_rank)
                 {
@@ -63,14 +63,14 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
                 }
             }
         }
-        manager_type::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+        ManagerType::remove_from_compress_list_chunk2_by_num_tab(num_tab);
     }
 }
 
 template <typename Derived>
 void RechunkHooks2<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size) const
 {
-    manager_type::drain_reuse_list_for_size(new_size);
+    ManagerType::drain_reuse_list_for_size(new_size);
 }
 
 template <typename Derived>
@@ -112,7 +112,7 @@ bool RechunkHooks2<Derived, true>::rechunk_swap_identity(Derived& tmp)
     // identity comes from share_info_array, and the members may be
     // uninitialized (swapping would read indeterminate values). The mirrors are
     // re-read in rechunk_reown_after_swap().
-    return proxy_type::share_info_array->swap_entries(self().registry_key(), tmp.registry_key());
+    return ProxyType::share_info_array->swap_entries(self().registry_key(), tmp.registry_key());
 }
 
 template <typename Derived>
@@ -133,7 +133,7 @@ void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<va
 
                 arr.inf_array_    = tmp.inf_array_; // tmp's is valid (set_second_value ran)
                 arr.ind_cst_val2_ = tmp.ind_cst_val2_;
-                proxy_type::share_info_array->insert(state, &arr.inf_array_);
+                ProxyType::share_info_array->insert(state, &arr.inf_array_);
             }
         }
     }

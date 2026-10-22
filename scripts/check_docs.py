@@ -55,6 +55,8 @@ ALLOWED = {
     # removed names that CHANGELOG.md records as removed
     "FAST_ALLOC_MAX_CONST_BLOCK_SIZE", "internal/static_const_array_define.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
+    # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
+    "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh",
     # C++ standard library, compiler, language

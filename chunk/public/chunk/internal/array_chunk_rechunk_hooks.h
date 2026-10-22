@@ -76,13 +76,13 @@ template <typename Derived>
 class RechunkHooks<Derived, true>
 {
   public:
-    using Traits       = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using value_type   = Traits::value_type;        ///< Stored element type.
-    using proxy_type   = Traits::proxy_type;        ///< Proxy type owning the per-type array registry.
-    using manager_type = Traits::manager_type;      ///< Per-type manager owning the candidate store.
+    using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using value_type  = Traits::value_type;        ///< Stored element type.
+    using ProxyType   = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
+    using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the candidate store.
 
     /// @brief ArrayChunk2A (otherwise ArrayChunk, v1): selects the candidate lists and the compress() call.
-    static constexpr bool is_chunk2a = std::is_same_v<typename Traits::chunk_type, Chunk2A<value_type>>;
+    static constexpr bool is_chunk2a = std::is_same_v<typename Traits::ChunkType, Chunk2A<value_type>>;
 
     /**
      * @brief Compress, then drop, this array's queued compression candidates, by num_tab.
@@ -127,11 +127,11 @@ class RechunkHooks<Derived, true>
     {
         if constexpr (is_chunk2a)
         {
-            return manager_type::chunk2a_to_compress_potentially_thr;
+            return ManagerType::chunk2a_to_compress_potentially_thr;
         }
         else
         {
-            return manager_type::chunk_to_compress_potentially_thr;
+            return ManagerType::chunk_to_compress_potentially_thr;
         }
     }
     /// @brief The manager's single candidate list of this variant (serial builds).
@@ -139,11 +139,11 @@ class RechunkHooks<Derived, true>
     {
         if constexpr (is_chunk2a)
         {
-            return manager_type::chunk2a_to_compress_potentially;
+            return ManagerType::chunk2a_to_compress_potentially;
         }
         else
         {
-            return manager_type::chunk_to_compress_potentially;
+            return ManagerType::chunk_to_compress_potentially;
         }
     }
     /// @brief Remove every candidate of the array @p num_tab from this variant's lists.
@@ -151,11 +151,11 @@ class RechunkHooks<Derived, true>
     {
         if constexpr (is_chunk2a)
         {
-            manager_type::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
+            ManagerType::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
         }
         else
         {
-            manager_type::remove_from_compress_list_chunk_by_num_tab(num_tab);
+            ManagerType::remove_from_compress_list_chunk_by_num_tab(num_tab);
         }
     }
 };

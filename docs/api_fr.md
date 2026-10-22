@@ -24,12 +24,12 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 
 | classe | en-tête | compresse les chunks uniformes à… |
 |---|---|---|
-| `ArrayChunk<T, ind_type = int>` | `chunk/array_chunk.h` | `T{}` |
-| `ArrayChunk2<T, ind_type = int>` | `chunk/array_chunk2.h` | `T{}` ou la seconde valeur du tableau |
-| `ArrayChunk2A<T, ind_type = int>` | `chunk/array_chunk2A.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
+| `ArrayChunk<T, IndT = int>` | `chunk/array_chunk.h` | `T{}` |
+| `ArrayChunk2<T, IndT = int>` | `chunk/array_chunk2.h` | `T{}` ou la seconde valeur du tableau |
+| `ArrayChunk2A<T, IndT = int>` | `chunk/array_chunk2A.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
 | `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds Chunk2) |
 
-`ind_type` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
+`IndT` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
 celle de la bibliothèque liée (`chunk::chunk_v2a`, ...) ; `chunk_config::use_chunk`,
 `chunk_config::use_chunk2` et `chunk_config::use_chunk2a` indiquent laquelle, à la compilation.
 

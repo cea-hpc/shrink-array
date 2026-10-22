@@ -71,7 +71,7 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"       // the ind_type = int default of the arrays
+#include "chunk/chunk_traits.h"       // the IndT = int default of the arrays
 #include "chunk/array_chunk.h"        // ArrayChunk
 #include "chunk/array_chunk2.h"       // ArrayChunk2
 #include "chunk/array_chunk2A.h"      // ArrayChunk2A
@@ -363,7 +363,8 @@ double minimum(const std::vector<double>& x)
     return *std::min_element(x.begin(), x.end());
 }
 
-constexpr const char* case_names[] = {"read-varied", "read-constant", "read-random", "write-varied", "write-fresh", "rmw"};
+constexpr const char* case_names[] = {"read-varied",  "read-constant", "read-random",
+                                      "write-varied", "write-fresh",   "rmw"};
 constexpr int         n_cases      = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
 } // namespace
 
@@ -372,9 +373,9 @@ int main(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     long n_elems = 1L << 27;
-    int  reps   = 5;
-    bool csv    = false;
-    bool verify = false;
+    int  reps    = 5;
+    bool csv     = false;
+    bool verify  = false;
     for (int a = 1; a < argc; ++a)
     {
         const std::string o = argv[a];
@@ -432,7 +433,8 @@ int main(int argc, char** argv)
     {
         if (vs != as)
         {
-            std::fprintf(stderr, "access_cost: %s: the array sums to %.17g, the vector to %.17g\n", case_names[c], as, vs);
+            std::fprintf(stderr, "access_cost: %s: the array sums to %.17g, the vector to %.17g\n", case_names[c], as,
+                         vs);
             ++sum_mismatch;
         }
     };
@@ -533,8 +535,8 @@ int main(int argc, char** argv)
             const double per = 1e9 / static_cast<double>(n_elems);
             const double vm  = median(t[c][0]) * per;
             const double am  = median(t[c][1]) * per;
-            println("{:<14} {:>14.3f} {:>14.3f} {:>14.3f} {:>14.3f} {:>8.2f}", case_names[c], vm, minimum(t[c][0]) * per,
-                    am, minimum(t[c][1]) * per, vm > 0. ? am / vm : 0.);
+            println("{:<14} {:>14.3f} {:>14.3f} {:>14.3f} {:>14.3f} {:>8.2f}", case_names[c], vm,
+                    minimum(t[c][0]) * per, am, minimum(t[c][1]) * per, vm > 0. ? am / vm : 0.);
         }
         println("(ns per element, wall clock / n; ratio = array median / vector median)");
     }
