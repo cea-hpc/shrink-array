@@ -16,7 +16,7 @@
 
 #pragma once
 
-// Out-of-line bodies of ArrayChunk2A's OpenMP-only surface (ParallelSupport2A).
+// Out-of-line bodies of zero_any::Array's OpenMP-only surface (ParallelSupport2A).
 // Included at the end of array_chunk2A.h, after the class and its own inline
 // file, so the CRTP self() down-cast sees a complete Derived. The one body left,
 // flush_pending_deferred_ops(), is the shared one.

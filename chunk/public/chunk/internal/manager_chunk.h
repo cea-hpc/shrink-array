@@ -32,12 +32,12 @@
 #include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/chunk_def.h"                  // ChunkDef::size_min_buffer_reuse
 #include "chunk/chunk2A_def.h"                // Chunk2ADef: the reuse budget constants
-#include "chunk/config.h"                     // build_config::use_openmp, chunk_config::chunk_dynamic
+#include "chunk/config.h"                     // build_config::threaded, chunk_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // thread_chunk_size, set_thread_chunk_size
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_REUSE_SHARE_DIV, CHUNK_REUSE_FLOOR_KB)
 #include "chunk/log.h"                        // CHUNK_LOG_ALWAYS (pool breakdown)
 #include "chunk/internal/TChunk.h"            // TChunkComp, TChunk2CompMap, TChunk2AComp
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_CAPACITY (max_thr)
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_CAPACITY (max_thr), pmp::team
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_DISCARD (drain_reuse_list_for_size)
 #include "chunk/type_name.h"                  // type_name<T> (pool breakdown)
 #include "fast_allocators/internal/svalloc.h" // svfree (drain_reuse_list_for_size)
@@ -108,9 +108,9 @@ struct ManagerChunkDynInterface<false>
  *          reuse lists, deferred ops; serial: one allocator), hence two
  *          specializations rather than one set with no-ops.
  *
- * @tparam UseOpenMP Whether the parallel surface is the one compiled in.
+ * @tparam Threaded Whether the parallel surface is the one compiled in.
  */
-template <bool UseOpenMP = build_config::use_openmp>
+template <bool Threaded = build_config::threaded>
 struct ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: per-thread allocators, reuse lists and deferred ops.
@@ -293,7 +293,7 @@ struct ManagerChunkDynImpl<ChunkT, T, false> : public virtual ManagerChunkDynInt
  *          bodies reach ManagerChunk's state through `mgr` (statics) and a CRTP
  *          down-cast (max_thr); ManagerChunk befriends the policies for that.
  */
-template <template <typename> class ChunkT, typename T, bool UseOpenMP = build_config::use_openmp>
+template <template <typename> class ChunkT, typename T, bool Threaded = build_config::threaded>
 class ManagerChunkParallelImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the per-rank allocator and free-list overrides.
@@ -722,7 +722,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         std::size_t collected = 0;
         // OpenMP builds only, like the re-chunk's sweep: the serial
         // TCTypeAllocator has no SlabSweep / collect_empty_slabs.
-        if constexpr (chunk_config::use_fast_alloc && build_config::use_openmp)
+        if constexpr (chunk_config::use_fast_alloc && build_config::threaded)
         {
             if (CHUNK_PMP_IN_PARALLEL_REGION)
             {
@@ -1211,28 +1211,32 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
                         if constexpr (chunk_config::not_use_compression_with_ompt)
                         {
-// Serial call sites. Not under OMPT: opening a region there
-// would fire compression callbacks that must not run here.
-#pragma omp parallel
-                            {
-                                sort_own_list(CHUNK_PMP_THREAD_RANK);
-                            }
+                            // Serial call sites. Not under OMPT: opening a region there
+                            // would fire compression callbacks that must not run here.
+                            pmp::team(pmp::Options{},
+                                      [&](pmp::Team& /*team*/) { sort_own_list(CHUNK_PMP_THREAD_RANK); });
                             // Ranks a smaller team did not cover (cheap when empty).
                             for (int q = 0; q < n_thr; ++q)
-                                sort_own_list(q);
-#pragma omp parallel
                             {
-                                free_own_buckets(CHUNK_PMP_THREAD_RANK);
+                                sort_own_list(q);
                             }
+                            pmp::team(pmp::Options{},
+                                      [&](pmp::Team& /*team*/) { free_own_buckets(CHUNK_PMP_THREAD_RANK); });
                             for (int r = 0; r < n_thr; ++r)
+                            {
                                 free_own_buckets(r);
+                            }
                         }
                         else
                         {
                             for (int q = 0; q < n_thr; ++q)
+                            {
                                 sort_own_list(q);
+                            }
                             for (int r = 0; r < n_thr; ++r)
+                            {
                                 free_own_buckets(r);
+                            }
                         }
                     }
                 }
@@ -1375,9 +1379,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     };
 
     /**
-     * @brief drain_reuse_list_for_size() run by the WHOLE team of the enclosing
-     *        parallel region: every thread of the team must call it, at the
-     *        same point (it contains worksharing constructs and barriers).
+     * @brief drain_reuse_list_for_size() run by the WHOLE @p team: every thread
+     *        of the team must call it, at the same point (it shares work and
+     *        meets barriers on @p team).
      *
      * @details Same owner-routed drain and ownership discipline, but inside the
      *          caller's region (the serial drain opens two regions per list set,
@@ -1388,52 +1392,58 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @pre A quiescent point for the lists of @p size: no thread parks into
      *      them or pops from them meanwhile (the refill's slice barrier).
      *      Fast-alloc OpenMP dynamic builds; a no-op otherwise.
+     * @param team the team running the drain (the refill's)
+     * @param size the geometry whose reuse lists are drained
+     * @param s    scratch kept across calls (the bucket matrix, the flags)
      */
-    static void drain_reuse_list_for_size_team([[maybe_unused]] unsigned int      size,
+    static void drain_reuse_list_for_size_team([[maybe_unused]] pmp::Team&        team,
+                                               [[maybe_unused]] unsigned int      size,
                                                [[maybe_unused]] TeamDrainScratch& s) noexcept
     {
-        if constexpr (chunk_config::chunk_dynamic && chunk_config::use_fast_alloc && build_config::use_openmp)
+        if constexpr (chunk_config::chunk_dynamic && chunk_config::use_fast_alloc && build_config::threaded)
         {
             using AllocT = std::remove_reference_t<decltype(ChunkT<T>::get_chunk_allocator(0))>;
-#pragma omp single
-            {
-                s.sets.clear();
-                if (const auto it = list_block_free_thr_by_size_->find(size); it != list_block_free_thr_by_size_->end())
+            team.single(
+                [&]
                 {
-                    s.sets.push_back(&it->second);
-                }
-                for (auto& kv : *list_block_free_thr_keyed_)
-                {
-                    if (static_cast<unsigned int>(kv.first & 0xffffffffu) == size)
+                    s.sets.clear();
+                    if (const auto it = list_block_free_thr_by_size_->find(size);
+                        it != list_block_free_thr_by_size_->end())
                     {
-                        s.sets.push_back(&kv.second);
+                        s.sets.push_back(&it->second);
                     }
-                }
-                std::size_t n = 0;
-                for (const auto* set : s.sets)
-                {
-                    n = std::max(n, set->size());
-                }
-                if (s.bucket.size() < n)
-                {
-                    s.bucket.assign(n, std::vector<std::vector<T*>>(n));
-                }
-                if (s.n_flags < n)
-                {
-                    s.held    = std::make_unique<std::atomic<unsigned char>[]>(n);
-                    s.dirty   = std::make_unique<std::atomic<unsigned char>[]>(n);
-                    s.n_flags = n;
-                }
-                for (std::size_t r = 0; r < s.n_flags; ++r)
-                {
-                    s.held[r].store(0, std::memory_order_relaxed);
-                    s.dirty[r].store(0, std::memory_order_relaxed);
-                }
-                const unsigned int saved_sz = shrink_array::thread_chunk_size();
-                shrink_array::set_thread_chunk_size(size);
-                s.geometry = &ChunkT<T>::get_chunk_allocator(0, 0u);
-                shrink_array::set_thread_chunk_size(saved_sz);
-            } // implicit barrier: s is complete for every thread
+                    for (auto& kv : *list_block_free_thr_keyed_)
+                    {
+                        if (static_cast<unsigned int>(kv.first & 0xffffffffu) == size)
+                        {
+                            s.sets.push_back(&kv.second);
+                        }
+                    }
+                    std::size_t n = 0;
+                    for (const auto* set : s.sets)
+                    {
+                        n = std::max(n, set->size());
+                    }
+                    if (s.bucket.size() < n)
+                    {
+                        s.bucket.assign(n, std::vector<std::vector<T*>>(n));
+                    }
+                    if (s.n_flags < n)
+                    {
+                        s.held    = std::make_unique<std::atomic<unsigned char>[]>(n);
+                        s.dirty   = std::make_unique<std::atomic<unsigned char>[]>(n);
+                        s.n_flags = n;
+                    }
+                    for (std::size_t r = 0; r < s.n_flags; ++r)
+                    {
+                        s.held[r].store(0, std::memory_order_relaxed);
+                        s.dirty[r].store(0, std::memory_order_relaxed);
+                    }
+                    const unsigned int saved_sz = shrink_array::thread_chunk_size();
+                    shrink_array::set_thread_chunk_size(size);
+                    s.geometry = &ChunkT<T>::get_chunk_allocator(0, 0u);
+                    shrink_array::set_thread_chunk_size(saved_sz);
+                }); // implicit barrier: s is complete for every thread
             auto* const geometry = static_cast<AllocT*>(s.geometry);
             const int   me       = CHUNK_PMP_THREAD_RANK;
             auto* const held     = s.held.get();
@@ -1449,38 +1459,40 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 const auto is_set  = [](const std::atomic<unsigned char>* f, int r) noexcept
                 { return f[r].load(std::memory_order_relaxed) != 0; };
                 drain_sort_rank(per_thr, n_thr, me, geometry, s.bucket, dirty);
-#pragma omp barrier
-#pragma omp single
-                {
-                    // Ranks no team member holds (a smaller team than the
-                    // capacity); cheap for the lists just emptied.
-                    for (int q = 0; q < n_thr; ++q)
+                team.barrier();
+                team.single(
+                    [&]
                     {
-                        if (!is_set(held, q))
+                        // Ranks no team member holds (a smaller team than the
+                        // capacity); cheap for the lists just emptied.
+                        for (int q = 0; q < n_thr; ++q)
                         {
-                            drain_sort_rank(per_thr, n_thr, q, geometry, s.bucket, dirty);
+                            if (!is_set(held, q))
+                            {
+                                drain_sort_rank(per_thr, n_thr, q, geometry, s.bucket, dirty);
+                            }
                         }
-                    }
-                } // implicit barrier: every row is sorted, every dirty flag raised
+                    }); // implicit barrier: every row is sorted, every dirty flag raised
                 if (me >= 0 && me < n_thr && is_set(dirty, me))
                 {
                     drain_free_rank(n_thr, me, geometry, s.bucket, /*release_cells=*/false);
                 }
-#pragma omp barrier
-#pragma omp single
-                {
-                    for (int r = 0; r < n_thr; ++r)
+                team.barrier();
+                team.single(
+                    [&]
                     {
-                        if (!is_set(held, r) && is_set(dirty, r))
+                        for (int r = 0; r < n_thr; ++r)
                         {
-                            drain_free_rank(n_thr, r, geometry, s.bucket, /*release_cells=*/false);
+                            if (!is_set(held, r) && is_set(dirty, r))
+                            {
+                                drain_free_rank(n_thr, r, geometry, s.bucket, /*release_cells=*/false);
+                            }
                         }
-                    }
-                    for (int r = 0; r < n_thr; ++r) // the next set starts clean
-                    {
-                        dirty[r].store(0, std::memory_order_relaxed);
-                    }
-                } // implicit barrier: this set is drained
+                        for (int r = 0; r < n_thr; ++r) // the next set starts clean
+                        {
+                            dirty[r].store(0, std::memory_order_relaxed);
+                        }
+                    }); // implicit barrier: this set is drained
             }
         }
     }
@@ -1495,7 +1507,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // a call fail to compile there.
     /// @brief The Chunk2A candidate list (serial builds: a single one).
     static auto& get_chunk2a_to_compress_potentially() noexcept
-        requires(!build_config::use_openmp)
+        requires(!build_config::threaded)
     {
         return chunk2a_to_compress_potentially;
     }
@@ -1503,7 +1515,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ///        serial build).
     static auto& get_chunk2a_to_compress_potentially([[maybe_unused]] int thr) noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             return chunk2a_to_compress_potentially_thr[thr];
         }
@@ -1516,7 +1528,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     /// @brief Is no Chunk2A chunk queued for compression, on any thread?
     [[nodiscard]] static bool is_chunk2a_to_compress_potentially_empty() noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             return chunk2a_to_compress_potentially_thr.empty();
         }
@@ -1548,7 +1560,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             const void* ptr = static_cast<const void*>(std::get<0>(tup));
             return ptr >= lo && ptr < hi;
         };
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto nthr = static_cast<int>(chunk2a_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
@@ -1564,14 +1576,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     /**
      * @brief Drop every queued Chunk2A candidate of array @p num_tab, in every
-     *        rank's list (ArrayChunk2A::clear_core and rechunk_to).
+     *        rank's list (zero_any::Array::clear_core and rechunk_to).
      * @param num_tab tab index whose candidates are removed
      * @note Keeps other arrays' candidates. At teardown prefer
      *       remove_from_compress_list_chunk2a_by_ptr_range() (see why there).
      */
     static void remove_from_compress_list_chunk2a_by_num_tab(int num_tab) noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto nthr = static_cast<int>(chunk2a_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
@@ -1589,7 +1601,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @brief Chunk2 analogue: drop every queued Chunk2 candidate for @p num_tab.
      *
      * @details Removes the matching tuples from every rank and second-value
-     *          bucket, WITHOUT compressing. Called from ArrayChunk2::clear_core()
+     *          bucket, WITHOUT compressing. Called from zero_one_value::Array::clear_core()
      *          so no Chunk2* of a torn-down or re-chunked array dangles there.
      *
      * @param num_tab tab index whose candidates are removed
@@ -1598,7 +1610,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      */
     static void remove_from_compress_list_chunk2_by_num_tab([[maybe_unused]] int num_tab) noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto nthr = static_cast<int>(map_chunk2_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
@@ -1617,12 +1629,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /// @brief Drop every queued Chunk (v1) candidate of array @p num_tab
-    ///        (ArrayChunk::clear_core and rechunk_to).
+    ///        (zero::Array::clear_core and rechunk_to).
     /// @details Removes this array's candidates without compressing, and keeps
     ///          other arrays' intact.
     static void remove_from_compress_list_chunk_by_num_tab(int num_tab) noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto nthr = static_cast<int>(chunk_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
@@ -1657,7 +1669,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return it != by_value.end() ? it->second.get() : nullptr;
     }
     /// @brief Chunk2: per rank, one list per second-value index, copied by
-    ///        ArrayChunk2 into map_chunk2_to_compress_potentially_thr when it
+    ///        zero_one_value::Array into map_chunk2_to_compress_potentially_thr when it
     ///        registers a second value.
     static inline constinit internal::Immortal<TChunk2CompThr<ChunkT, T>> chunk2_to_compress_potentially_thr_storage_{};
     static inline TChunk2CompThr<ChunkT, T>&                              chunk2_to_compress_potentially_thr =

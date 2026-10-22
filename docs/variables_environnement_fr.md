@@ -30,6 +30,7 @@
 | option | défaut | effet |
 |---|---|---|
 | `OMP` | `OFF` | construire avec OpenMP |
+| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `auto` | tailles de chunk statiques construites (cibles `_<taille>`) ; `auto` : `256;1024`, `256` seule dans un build Debug ou sanitizer |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi une bibliothèque à géométrie dynamique (`_dyn`) par variante |
 | `CHUNK_STD_ALLOC` | `OFF` | allocateur standard pour les tampons de chunks au lieu de `fast_allocators` (utile sous ASan : chaque tampon est un vrai `malloc`) |

@@ -1,4 +1,4 @@
-# L'algorithme d'ArrayChunk2
+# L'algorithme d'zero_one_value::Array
 
 > English version: [algo_chunk2.md](algo_chunk2.md).
 
@@ -15,7 +15,7 @@
 
 ## 1. Objectif
 
-`ArrayChunk2<T>` est un tableau découpé en **chunks** (blocs de taille fixe, une puissance de 2 ou un multiple de 64)
+`zero_one_value::Array<T>` est un tableau découpé en **chunks** (blocs de taille fixe, une puissance de 2 ou un multiple de 64)
 qui se **compressent** dès que tous leurs éléments valent l'une de **deux constantes** :
 
 - la **première valeur** `first_value` (0, la valeur d'initialisation) ;
@@ -28,11 +28,11 @@ Les trois variantes de la bibliothèque se distinguent par ce qu'elles savent co
 
 | variante | constantes compressibles | métadonnée de seconde valeur |
 |---|---|---|
-| `ArrayChunk` (v1) | `first_value` seulement | aucune |
-| **`ArrayChunk2`** | `first_value` **et une seconde valeur par tableau** | une entrée par tableau |
-| `ArrayChunk2A` | `first_value` et **une seconde valeur par chunk** | une entrée par chunk |
+| `zero::Array` (v1) | `first_value` seulement | aucune |
+| **`zero_one_value::Array`** | `first_value` **et une seconde valeur par tableau** | une entrée par tableau |
+| `zero_any::Array` | `first_value` et **une seconde valeur par chunk** | une entrée par chunk |
 
-`ArrayChunk2` est donc le bon choix quand les données ont **une seule valeur dominante
+`zero_one_value::Array` est donc le bon choix quand les données ont **une seule valeur dominante
 non nulle** : ses métadonnées sont plus légères que celles de Chunk2A.
 
 ---
@@ -40,7 +40,7 @@ non nulle** : ses métadonnées sont plus légères que celles de Chunk2A.
 ## 2. Utilisation
 
 ```cpp
-ArrayChunk2<double> tab(n);
+zero_one_value::Array<double> tab(n);
 tab.set_second_value(1.0);      // à déclarer avant les phases parallèles
 
 #pragma omp parallel for
@@ -59,7 +59,7 @@ L'interface est proche d'un `std::vector` : `size()`, `resize()`, `at()`, itéra
 - **`set_second_value()` doit être appelé hors région parallèle**, avant les écritures : il
   enregistre la seconde valeur dans le registre et crée les listes de candidats à la
   compression pour cette valeur. Un tableau qui ne déclare jamais de seconde valeur se
-  comporte comme un `ArrayChunk` (compression vers 0 seulement).
+  comporte comme un `zero::Array` (compression vers 0 seulement).
 - **Les opérations sur plages** (`fill_range`, `copy_range`, `fill_range_mt` dans
   `array_chunk_range_ops.h`) écrivent une plage en une décision par chunk, et
   `fill_range_mt` peut être appelée par plusieurs threads à la fois (section 10).
@@ -108,7 +108,7 @@ valeur déclarée, repéré par un **indice** `ind`.
 > Attention : `Chunk2::written()` **sans argument** est réservé à `bool` et renvoie `false`
 > pour tout autre type. Pour savoir si un chunk non booléen est matérialisé, il faut
 > `written(ind)` avec l'indice de la seconde valeur du tableau
-> (`ArrayChunk2::chunk_written(j)` le fait).
+> (`zero_one_value::Array::chunk_written(j)` le fait).
 
 ### 4.2 Le registre des secondes valeurs
 
@@ -125,7 +125,7 @@ triplet `InfArrayT` :
   (par exemple les drapeaux « déjà candidat à la compression »).
 
 Le registre reste la source de vérité, mais chaque tableau en garde un **miroir**
-(`ArrayChunk2::inf_array`), relu (`sync_registry_mirror()`) après les trois seuls endroits qui
+(`zero_one_value::Array::inf_array`), relu (`sync_registry_mirror()`) après les trois seuls endroits qui
 écrivent le registre : `create()`, `set_second_value()` et l'échange d'identité du rechunk.
 L'`operator[]` d'écriture **arme chaque proxy avec l'adresse de ce miroir**
 (`registry_mirror()`, `arm_inf_array()`) : le chemin d'écriture copie le triplet au lieu de
@@ -139,7 +139,7 @@ est comparée au registre.
 L'opérateur de lecture renvoie une **valeur**, jamais une référence :
 
 ```cpp
-CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](ind_type i) const noexcept
+CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType i) const noexcept
 {
     const int num_chunk = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
@@ -171,11 +171,11 @@ le tampon : **à n'utiliser que sur un chunk matérialisé**, puisqu'il contourn
 ### 6.1 L'`operator[]` d'écriture : un proxy armé
 
 ```cpp
-proxy_type operator[](this Derived& self, ind_type i) noexcept
+ProxyType operator[](this Derived& self, IndType i) noexcept
 {
     const int num_chunk = self.chunk_index_of(i);
     const int num       = self.offset_in_chunk(i);
-    const proxy_type& val = self.chunk_list[num_chunk][num];
+    const ProxyType& val = self.chunk_list[num_chunk][num];
     val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab); // tableau, chunk, num_tab
     val.arm_inf_array(self.registry_mirror());                                 // Chunk2 : le miroir
     return val;

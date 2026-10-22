@@ -27,10 +27,10 @@ namespace shrink_array
 {
 
 template <typename T, typename Derived>
-template <typename IndexType>
+template <typename IndexT>
 void Chunk2Base<T, Derived>::block_clear_common(this Derived&        self,
                                                 int                  num_compress_value,
-                                                IndexType            index_opt,
+                                                IndexT               index_opt,
                                                 [[maybe_unused]] int thr_rank,
                                                 char*                ptr_type_cst,
                                                 SecondValueRef<T>    ptr_second_value,
@@ -84,15 +84,15 @@ void Chunk2Base<T, Derived>::block_clear_common(this Derived&        self,
 }
 
 template <typename T, typename Derived>
-template <typename IndexType>
+template <typename IndexT>
 void Chunk2Base<T, Derived>::clear_impl(this Derived&     self,
-                                        IndexType         index_opt,
+                                        IndexT            index_opt,
                                         int               thr_rank,
                                         char*             ptr_type_cst,
                                         SecondValueRef<T> ptr_second_value)
 {
     bool is_written = false;
-    if constexpr (std::is_same_v<IndexType, std::nullopt_t>)
+    if constexpr (std::is_same_v<IndexT, std::nullopt_t>)
     {
         is_written = self.written();
     }
@@ -128,7 +128,7 @@ void Chunk2Base<T, Derived>::clear_impl(this Derived&     self,
     ll_block_free_thr.push_back(self.values_.load());
 
     // Chunk2A specific cleanup
-    if constexpr (std::is_same_v<IndexType, std::nullopt_t>)
+    if constexpr (std::is_same_v<IndexT, std::nullopt_t>)
     {
         ptr_second_value.reset();
         self.set_cst_val_to_cst_val1(ptr_type_cst);

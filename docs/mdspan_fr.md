@@ -26,7 +26,7 @@ d'écriture, la même compression, les mêmes règles.
 
 namespace sa = shrink_array;
 
-sa::ArrayChunk2A<double> a(nx * ny);
+sa::zero_any::Array<double> a(nx * ny);
 auto f = sa::md::view(a, nx, ny);         // ligne par ligne : f[i, j] est a[i * ny + j]
 f[i, j] = 1.0;
 f[i, j] += 2.0;                           // opérateurs composés, par le proxy
@@ -303,7 +303,7 @@ rechunk) : une tuile d'un chunk ne peut pas être un argument template.
 tuiles, `submdspan` et `fill_box` la prennent comme elles prennent `layout_tiled`.
 
 ```cpp
-ArrayChunk2A<double> a(md::tiled_size_dyn(md::tile_shape<2, long>(chunk_size), std::array<long, 2>{nx, ny}));
+zero_any::Array<double> a(md::tiled_size_dyn(md::tile_shape<2, long>(chunk_size), std::array<long, 2>{nx, ny}));
 auto f = md::tiled_view_dyn(a, nx, ny);                          // une tuile de a.chunk_size() éléments
 auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // ou toute autre tuile
 ```

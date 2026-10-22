@@ -27,9 +27,9 @@
  *          per-chunk gate. Both the marking and the testing exist only under
  *          OpenMP — in a serial build there is no deferred path, sync_chunk
  *          compiles to nothing and the flush loops are behind
- *          `if constexpr (build_config::use_openmp)`.
+ *          `if constexpr (build_config::threaded)`.
  *
- *          Splitting it into DirtyBitsetSupport<Derived, use_openmp> makes the
+ *          Splitting it into DirtyBitsetSupport<Derived, threaded> makes the
  *          serial version an empty class (no member, no allocation, zero bytes
  *          via the empty-base optimisation) whose verbs are no-ops the
  *          optimiser deletes -- a serial array would otherwise pay one heap
@@ -46,7 +46,7 @@
 #include <utility>   // std::swap
 #include <vector>    // std::vector
 
-#include "chunk/config.h"                         // build_config::use_openmp
+#include "chunk/config.h"                         // build_config::threaded
 #include "chunk/internal/parallel_storage_init.h" // NoInitVector, make_filled: the words built by a team
 
 namespace shrink_array
@@ -73,14 +73,14 @@ static_assert(sizeof(PaddedDirtyWord) == build_config::dirty_word_align,
 /**
  * @brief Per-chunk dirty bitset, present only when the build has OpenMP.
  *
- * @tparam Derived the array core that owns it, ArrayChunkCore<chunk_type>
+ * @tparam Derived the array core that owns it, ArrayChunkCore<ChunkType>
  *         (needed by clear_all_dirty_bitsets to walk the per-type registry,
  *         whose keys are addresses of that core).
- * @tparam Enabled defaulted to build_config::use_openmp; never pass it
+ * @tparam Enabled defaulted to build_config::threaded; never pass it
  *         explicitly outside of tests — the point of the parameter is that the
  *         two specialisations below are selected by the build mode.
  */
-template <typename Derived, bool Enabled = build_config::use_openmp>
+template <typename Derived, bool Enabled = build_config::threaded>
 class DirtyBitsetSupport;
 
 // ── OpenMP build: the real bitset ────────────────────────────────────────────
@@ -148,8 +148,8 @@ class DirtyBitsetSupport<Derived, true>
      */
     static void clear_all_dirty_bitsets()
     {
-        using proxy_type = Derived::proxy_type;
-        proxy_type::share_info_array->for_each_key(
+        using ProxyType = Derived::ProxyType;
+        ProxyType::share_info_array->for_each_key(
             [](const void* key)
             {
                 if (key)
@@ -289,7 +289,7 @@ class DirtyBitsetSupport<Derived, true>
  * @brief Serial specialisation: an empty class with the same verbs, all inert.
  *
  * @details Nothing in a serial build ever queries a dirty bit — sync_chunk is
- *          behind `if constexpr (build_config::use_openmp)` and every
+ *          behind `if constexpr (build_config::threaded)` and every
  *          flush_pending_deferred_ops() body is too — so is_chunk_dirty() can
  *          answer false unconditionally and the array carries no bitset at all.
  *          The verbs are kept (rather than compiled out at every call site) so

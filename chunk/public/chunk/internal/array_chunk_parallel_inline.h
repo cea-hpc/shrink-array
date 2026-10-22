@@ -16,7 +16,7 @@
 
 #pragma once
 
-// Out-of-line bodies of ArrayChunk's mode-gated surfaces (ParallelSupport,
+// Out-of-line bodies of zero::Array's mode-gated surfaces (ParallelSupport,
 // FastBlockSupport). Included at the end of array_chunk.h, after the class and
 // its own inline file, so the CRTP self() down-cast sees a complete Derived and
 // so the compression manager stays out of the container declaration itself.
@@ -46,12 +46,12 @@ void FastBlockSupport<Derived, true>::make_block_compression(this Derived& self)
     {
         for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
         {
-            chunk_type::make_block_compression(thr, nullptr);
+            ChunkType::make_block_compression(thr, nullptr);
         }
     }
     else
     {
-        chunk_type::make_block_compression(CHUNK_PMP_THREAD_RANK, nullptr);
+        ChunkType::make_block_compression(CHUNK_PMP_THREAD_RANK, nullptr);
     }
 }
 

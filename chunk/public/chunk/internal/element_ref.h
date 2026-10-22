@@ -113,7 +113,7 @@ template <typename P, typename T>
 class ElementRef
 {
   public:
-    using proxy_type = P; ///< The wrapped proxy.
+    using ProxyType  = P; ///< The wrapped proxy.
     using value_type = T; ///< The element type.
 
     /// @brief Wrap @p p (operator[] and the operators below).

@@ -34,15 +34,14 @@
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
-#include "chunk/config.h"                               // for use_openmp, g_in_rechunk_rebuild
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values)
-#include "chunk/log.h"                                  // CHUNK_LOG (reclaim_second_values: a degraded index)
-#include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
-#include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
-#include "chunk/internal/array_chunk_core.h"            // the core the bases share
-#include "chunk/internal/proxy2A.h"                     // Proxy2A<T> and its tables
-#include "chunk/chunk2A_std.h"                          // Chunk2A<T>
-#include "chunk/log.h"                                  // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
+#include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
+#include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
+#include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
+#include "chunk/internal/array_chunk_core.h"           // the core the bases share
+#include "chunk/internal/proxy2A.h"                    // Proxy2A<T> and its tables
+#include "chunk/chunk2A_std.h"                         // Chunk2A<T>
+#include "chunk/log.h"                                 // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
 
 namespace shrink_array
 {
@@ -50,7 +49,7 @@ namespace shrink_array
 template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
-/// @brief Why ArrayChunk2A<T>::try_reclaim_second_values() refuses to run.
+/// @brief Why zero_any::Array<T>::try_reclaim_second_values() refuses to run.
 enum class ReclaimRefusal : std::uint8_t
 {
     parallel_region,     ///< called inside a parallel region
@@ -73,10 +72,13 @@ enum class ReclaimRefusal : std::uint8_t
     return "?";
 }
 
+namespace zero_any
+{
+
 /**
  * @brief Chunked array whose chunks may each compress to their OWN second value.
  *
- * @details Same layout as ArrayChunk2, but where ArrayChunk2 shares a SINGLE second value
+ * @details Same layout as zero_one_value::Array, but where zero_one_value::Array shares a SINGLE second value
  *          across the array, here every chunk registers its own (find-or-set), so a chunk
  *          compresses as soon as all its elements equal any one constant. Costs a per-chunk
  *          second-value table (ProxySpec2A), garbage-collected through GlobalVecHolder.
@@ -87,30 +89,37 @@ enum class ReclaimRefusal : std::uint8_t
  *          released in the destructor.
  *
  * @tparam T        stored element type
- * @tparam IndType index type used for sizes and element positions
+ * @tparam IndT index type used for sizes and element positions
  */
-template <ArrayChunkElement T, typename IndType>
-class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
-                     public ParallelSupport2A<ArrayChunk2A<T, IndType>>,
-                     public RechunkHooks<ArrayChunk2A<T, IndType>>
+template <ArrayChunkElement T, typename IndT>
+class Array : public ArrayChunk2Base<Array<T, IndT>>,
+              public ParallelSupport2A<Array<T, IndT>>,
+              public RechunkHooks<Array<T, IndT>>
 {
   public:
-    using ManagerChunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as manager_type.
+    using ManagerChunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as ManagerType.
 
-    using Base2   = ArrayChunk2Base<ArrayChunk2A>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
-    using Base    = ArrayChunkBase<ArrayChunk2A>;  ///< Base shared by every variant.
-    using Hooks2A = RechunkHooks<ArrayChunk2A>;    ///< Re-chunk hooks (dynamic geometry).
+    using Base2   = ArrayChunk2Base<Array>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
+    using Base    = ArrayChunkBase<Array>;  ///< Base shared by every variant.
+    using Hooks2A = RechunkHooks<Array>;    ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2;                        ///< The CRTP base reaches this class's private members.
-    friend ArrayChunkBase<ArrayChunk2A>; ///< For swap_identity().
+    friend Base2;                 ///< The CRTP base reaches this class's private members.
+    friend ArrayChunkBase<Array>; ///< For swap_identity().
 
     // Re-declared (not only inherited): the mixins declare them too, so an outside
-    // `Arr::chunk_type` would be ambiguous between base subobjects (lookup precedes access).
-    using Traits       = Base2::Traits;       ///< ArrayChunkTraits<ArrayChunk2A>.
-    using chunk_type   = Base2::chunk_type;   ///< Chunk2A<T>, the chunk type held in chunk_list.
-    using manager_type = Base2::manager_type; ///< ManagerChunk<Chunk2A, T>, the per-type manager.
-    using proxy_type   = Base2::proxy_type;   ///< Proxy2A<T>, the write proxy of the non-const accessors.
-    using value_type   = T;                   ///< Stored element type.
+    // `Arr::ChunkType` would be ambiguous between base subobjects (lookup precedes access).
+    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<zero_any::Array>.
+    using ChunkType   = Base2::ChunkType;   ///< Chunk2A<T>, the chunk type held in chunk_list.
+    using ManagerType = Base2::ManagerType; ///< ManagerChunk<Chunk2A, T>, the per-type manager.
+    using ProxyType   = Base2::ProxyType;   ///< Proxy2A<T>, the write proxy of the non-const accessors.
+    using value_type  = T;                  ///< Stored element type.
+
+    // The former snake_case spellings, kept until 1.0 (types are PascalCase).
+    using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
+    using manager_type [[deprecated("types are PascalCase: use ManagerType")]]      = ManagerType;
+    using proxy_type [[deprecated("types are PascalCase: use ProxyType")]]          = ProxyType;
+    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IndT;
+    using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
     using Base2::chunk_list_;
     using Base2::m_size_;
@@ -134,9 +143,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit ArrayChunk2A(IndType sz = 0)
+    explicit Array(IndT sz = 0)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             WriteCompressSyncPolicy<Proxy2A<T>>::ensure_initialized();
         }
@@ -152,7 +161,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
 
     /// @brief Deep copy: from.size() elements read from @p from. Sequential context.
     /// @param from Source array.
-    ArrayChunk2A(const ArrayChunk2A& from) : ArrayChunk2A(from.size())
+    Array(const Array& from) : Array(from.size())
     {
         this->copy_from(from);
     }
@@ -167,7 +176,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      *       registration, the deferred-write drain) fails only on memory exhaustion or a
      *       corrupt registry, already fatal: std::terminate.
      */
-    ArrayChunk2A(ArrayChunk2A&& other) noexcept : ArrayChunk2A(0)
+    Array(Array&& other) noexcept : Array(0)
     {
         this->swap_storage_and_identity(other);
     }
@@ -176,14 +185,14 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    ArrayChunk2A(It first, It last) : ArrayChunk2A(static_cast<IndType>(std::distance(first, last)))
+    Array(It first, It last) : Array(static_cast<IndT>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
 
     /// @brief Build an array holding the elements of @p il.
     /// @param il Source values.
-    ArrayChunk2A(std::initializer_list<T> il) : ArrayChunk2A(il.begin(), il.end()) {}
+    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /**
      * @brief Release the storage, then the registry entry.
@@ -191,7 +200,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      *          arrays, e.g. rechunk_to()'s @c tmp) would inherit the stale num_tab
      *          (get_num_tab() returns the FIRST match) and corrupt another tab's metadata.
      */
-    ~ArrayChunk2A()
+    ~Array()
     {
         clear();
         Proxy2A<T>::share_info_array->erase(this->registry_key());
@@ -205,7 +214,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      *          chunks keep their metadata rows (num_tab). Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    ArrayChunk2A& operator=(ArrayChunk2A&& other) noexcept
+    Array& operator=(Array&& other) noexcept
     {
         if (this != &other)
         {
@@ -217,7 +226,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op; num_tab is not copied, identity stays with the address.
-    ArrayChunk2A& operator=(const ArrayChunk2A& from)
+    Array& operator=(const Array& from)
     {
         if (this != &from)
         {
@@ -231,7 +240,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      * @param i element index
      * @return false while that chunk is still compressed to a constant
      */
-    [[nodiscard]] bool written(IndType i) const noexcept
+    [[nodiscard]] bool written(IndT i) const noexcept
     {
         return chunk_list_[this->chunk_index_of(i)].written();
     }
@@ -243,7 +252,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list keeps its capacity.
      */
-    void resize(IndType newsz);
+    void resize(IndT newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) (a shrinking resize()). Same
@@ -260,7 +269,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      * @note Fills [0, count), not only the new elements: Base2::resize(count, val) has
      *       std::vector::resize semantics, so this goes through ArrayChunkBase::assign.
      */
-    void assign(IndType count, T val) // T, not InT<T>: see ArrayChunkBase::assign
+    void assign(IndT count, T val) // T, not InT<T>: see ArrayChunkBase::assign
     {
         Base::assign(count, val);
     }
@@ -275,7 +284,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      *       (parallel_storage_init::for_each_chunk); a difference found stops
      *       the chunks not yet started. Neither array may be written meanwhile.
      */
-    bool operator==(const ArrayChunk2A& other) const noexcept
+    bool operator==(const Array& other) const noexcept
     {
         if (m_size_ != other.m_size_)
         {
@@ -299,7 +308,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
                 const long long hi = std::min(lo + csz, static_cast<long long>(m_size_));
                 for (long long i = lo; i < hi; ++i)
                 {
-                    if (Base2::read_value(static_cast<IndType>(i)) != other.read_value(static_cast<IndType>(i)))
+                    if (Base2::read_value(static_cast<IndT>(i)) != other.read_value(static_cast<IndT>(i)))
                     {
                         differ.store(true, std::memory_order_relaxed);
                         return;
@@ -317,18 +326,27 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      */
     void clear();
 
-    /// @brief Run a compression pass over this array's chunks.
-    void compress_int();
+    /// @brief Run a compression pass over this array's chunks, shared over
+    ///        @p team (the one compress() opens, or the caller's region).
+    void compress_int(pmp::Team& team);
+
+    /// @brief compress_int() on the calling thread's current team
+    ///        (pmp::current_team(): the caller's region, or a team of one).
+    void compress_int()
+    {
+        pmp::Team team = pmp::current_team();
+        compress_int(team);
+    }
 
     /// @brief Read-only access to the underlying chunk list.
     /// @return const reference to the chunks backing this array
-    [[nodiscard]] const Base::chunk_list_type& get_chunk_list() const noexcept
+    [[nodiscard]] const Base::ChunkListType& get_chunk_list() const noexcept
     {
         return chunk_list_;
     }
 
     /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
-    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::chunk_list_type&
+    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::ChunkListType&
     getChunkList() const noexcept
     {
         return chunk_list_;
@@ -351,7 +369,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
     }
 
     /**
-     * @brief Free the second values that no chunk of any ArrayChunk2A<T>
+     * @brief Free the second values that no chunk of any zero_any::Array<T>
      *        refers to any more, so that the registry reuses their
      *        identifiers instead of carving new ones.
      *
@@ -362,7 +380,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      *            - a chunk compressed to a second value: its values pointer is the slot;
      *            - a per-chunk second-value slot (Proxy2A's table) naming a registered value
      *              (init_values_cst_val() finds the slot from it by value).
-     *          O(chunks of every ArrayChunk2A<T>) + O(registered values).
+     *          O(chunks of every zero_any::Array<T>) + O(registered values).
      *
      * @return How many identifiers were freed, or why the call was refused
      *         (ReclaimRefusal): inside a parallel region, during a re-chunk
@@ -372,7 +390,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      *         (reclaim_second_values() returns 0 and says a degraded index once).
      *
      * @pre   A sequential point over the whole TYPE, not one array: no thread
-     *        writes to or compresses ANY ArrayChunk2A<T> of the program
+     *        writes to or compresses ANY zero_any::Array<T> of the program
      *        (whatever its index type, whoever owns it) from the call to its
      *        return, nor holds the result of a second-value lookup it has not
      *        recorded yet. A hard precondition, guarded by contract only (no
@@ -382,9 +400,14 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      *          identifier to another value, and that chunk reads the other
      *          value. The refusals above see the CALLING thread only: a
      *          std::thread / TBB pool or a team started by another host thread
-     *          is not detected. Check builds fail an invariant on any lookup or
-     *          registration overlapping the reclaim (GlobalVecHolder's
-     *          LookupGuard / ReclaimScope); release builds check nothing.
+     *          is not detected -- except under the std backend between a
+     *          begin_parallel_phase() and the finalize_parallel_phase() of the
+     *          phase contract, where in_parallel() is true on every thread
+     *          (the application phase, docs/threading_backends.md step 7c;
+     *          std_thread_validation checks the refusal). Check builds fail an
+     *          invariant on any lookup or registration overlapping the reclaim
+     *          (GlobalVecHolder's LookupGuard / ReclaimScope); release builds
+     *          check nothing.
      */
     static std::expected<std::size_t, ReclaimRefusal> try_reclaim_second_values()
     {
@@ -505,7 +528,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      * @details Running out of identifiers stops the run; sampled at the
      *          application's own checkpoints, in_use() / capacity is the
      *          early warning, and refused() tells a reclaim that freed
-     *          nothing because it could not run. Covers every ArrayChunk2A<T>,
+     *          nothing because it could not run. Covers every zero_any::Array<T>,
      *          whatever its index type, like reclaim_second_values(). Relaxed
      *          reads, callable at any time, from any thread: exact at a
      *          sequential point. All zero for bool (no registry).
@@ -561,14 +584,14 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
      *
      * @param sz element count to allocate for
      */
-    void rebuild_storage(IndType sz);
+    void rebuild_storage(IndT sz);
 
     /**
      * @brief Second value registered for the chunk holding element @p i.
      * @param i element index
      * @return this chunk's own second value (2A registers one per chunk)
      */
-    auto get_metadata(IndType i) const noexcept
+    auto get_metadata(IndT i) const noexcept
     {
         return Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(i));
     }
@@ -590,7 +613,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
     /**
      * @brief Take this array's reference on the cst2 registry, once, as soon
      *        as it has chunks.
-     * @details The registry is shared by every ArrayChunk2A<T> and reference-counted (the
+     * @details The registry is shared by every zero_any::Array<T> and reference-counted (the
      *          last release frees everything). Given back in clear_core() only if taken: an
      *          array built empty and grown by resize() needs one too, and an empty array's
      *          teardown must not drop one it never took.
@@ -607,7 +630,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
     /// @brief The identity step of swap(): num_tab and the registry entry (the
     ///        per-chunk metadata rows follow the chunks), the cst2 registry
     ///        reference (it goes with the chunks that need it).
-    void swap_identity(ArrayChunk2A& other)
+    void swap_identity(Array& other)
     {
         using std::swap;
         swap(this->num_tab_, other.num_tab_);
@@ -620,7 +643,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
     /**
      * @brief Mark phase of the cst2 garbage collection: collect live buffers.
      *
-     * @details Scans every live ArrayChunk2A<T> through the shared registry and inserts the
+     * @details Scans every live zero_any::Array<T> through the shared registry and inserts the
      *          cst2 buffer pointer of each chunk compressed to its second value. Read-only:
      *          safe at any quiescent point.
      *
@@ -651,6 +674,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
     bool holds_cst2_registry_ = false;
 };
 
+} // namespace zero_any
+
 } // namespace shrink_array
 
 // Template method bodies, after the class definition.
@@ -658,6 +683,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndType>>,
 #include "chunk/internal/array_chunk2A_inline.h" // the template bodies
 
 // Bodies of the two mode-specific mixins. After array_chunk2A_inline.h, so their
-// CRTP self() sees a complete ArrayChunk2A.
+// CRTP self() sees a complete zero_any::Array.
 #include "chunk/internal/array_chunk2A_parallel_inline.h"    // ParallelSupport2A's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

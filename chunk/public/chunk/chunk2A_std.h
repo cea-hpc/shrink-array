@@ -24,7 +24,7 @@
 #include <type_traits>     // std::is_same_v (concurrent-ops base)
 #include <vector>          // std::vector
 
-#include "chunk/config.h"                       // build_config::use_openmp, chunk_config
+#include "chunk/config.h"                       // build_config::threaded, chunk_config
 #include "chunk/internal/invariant_check.h"     // invariant_failed
 #include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder, SecondValueRef
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_THREAD_RANK
@@ -41,7 +41,7 @@ namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <typename T>
@@ -199,7 +199,7 @@ class Chunk2AConcurrentOps
 };
 
 // Read-side counterpart of Chunk2AConcurrentOps: lock-free classification of `values`. Needed in
-// every build, so mixed into Chunk2A UNCONDITIONALLY (not gated on use_openmp). Same
+// every build, so mixed into Chunk2A UNCONDITIONALLY (not gated on threaded). Same
 // deducing-this pattern, const-qualified: every query is a pure read.
 /// @brief Chunk2A's lock-free reads of its constant state (cst_val1 / cst_val2 / written), every build.
 template <typename T, typename Derived>
@@ -326,9 +326,9 @@ class Chunk2AStateQueries
  *
  * @tparam T       stored element type
  * @tparam Derived CRTP derived chunk type (Chunk2A<T>)
- * @tparam Enabled build_config::use_openmp
+ * @tparam Enabled build_config::threaded
  */
-template <typename T, typename Derived, bool Enabled = build_config::use_openmp>
+template <typename T, typename Derived, bool Enabled = build_config::threaded>
 class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrentOps<T, Derived>
 {
   public:
@@ -344,7 +344,7 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
     ///        first constant (init_chunks_cst_val).
     /// @warning `new Chunk2A<T>[n]` runs the DEFAULT CONSTRUCTORS after this, overwriting
     ///          that initialisation; it pays off only for a placement-new array. Nothing in
-    ///          the library array-news a chunk (ArrayChunk* hold a std::vector).
+    ///          the library array-news a chunk (zero::Array* hold a std::vector).
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
@@ -508,8 +508,8 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     friend class Chunk2Base<T, Chunk2A>;
     friend class Proxy2A<T>;
 
-    using Base      = Chunk2Base<T, Chunk2A>;                                 ///< The CRTP chunk base.
-    using OmpPolicy = Chunk2AOmpPolicy<T, Chunk2A, build_config::use_openmp>; ///< This build's thread-model policy.
+    using Base      = Chunk2Base<T, Chunk2A>;                               ///< The CRTP chunk base.
+    using OmpPolicy = Chunk2AOmpPolicy<T, Chunk2A, build_config::threaded>; ///< This build's thread-model policy.
 
     using ManagerChunk2A = ManagerChunk<Chunk2A, T>;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
@@ -667,7 +667,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                 increm_chunk_write<ChunkType>();
             }
 
-            if constexpr (build_config::use_openmp)
+            if constexpr (build_config::threaded)
             {
                 if constexpr (is_not_bool)
                 {
@@ -713,7 +713,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     ///        make_block_compression().
     [[nodiscard]] static constexpr bool compress_sweep_mops_up(bool apply) noexcept
     {
-        return build_config::use_openmp && chunk_config::not_use_compression_with_ompt && apply;
+        return build_config::threaded && chunk_config::not_use_compression_with_ompt && apply;
     }
     static bool have_chunk_to_compress(int max_thr);
 
@@ -733,7 +733,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     ///        serial build)?
     [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             return ManagerChunk2A::is_chunk2a_to_compress_potentially_empty();
         }

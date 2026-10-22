@@ -1,4 +1,4 @@
-# L'algorithme de ArrayChunk (Chunk, v1)
+# L'algorithme de zero::Array (Chunk, v1)
 
 > English version: [algo_chunk.md](algo_chunk.md).
 

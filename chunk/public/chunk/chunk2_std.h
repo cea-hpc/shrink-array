@@ -31,7 +31,7 @@
 #include "chunk/internal/in_t.h"                        // InT
 #include "chunk/internal/element_access.h"              // Bit buffers: words of bits
 #include "chunk/internal/bit_words.h"                   // bits::fill_bits, bits::WordT
-#include "chunk/config.h"                               // build_config::use_openmp, chunk_config
+#include "chunk/config.h"                               // build_config::threaded, chunk_config
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/PMP_CHUNK.h"                            // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
@@ -47,7 +47,7 @@ namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <template <typename> class ChunkT, typename T>
@@ -372,9 +372,9 @@ class Chunk2CounterPolicy
  *
  * @tparam T       stored element type
  * @tparam Derived CRTP derived chunk type (Chunk2<T>)
- * @tparam Enabled build_config::use_openmp
+ * @tparam Enabled build_config::threaded
  */
-template <typename T, typename Derived, bool Enabled = build_config::use_openmp>
+template <typename T, typename Derived, bool Enabled = build_config::threaded>
 class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
 {
   public:
@@ -392,8 +392,8 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     ///        first constant (init_chunks_cst_val).
     /// @warning `new Chunk2<T>[n]` runs the default constructors after this, which
     ///          overwrite that initialisation; it only matters for placement-new
-    ///          arrays. The library never array-news a chunk (ArrayChunk* use a
-    ///          std::vector<chunk_type>).
+    ///          arrays. The library never array-news a chunk (zero::Array* use a
+    ///          std::vector<ChunkType>).
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
@@ -824,7 +824,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * The candidate is compressed BEFORE its "already queued" flag is cleared;
      * see the definition for why that order is the safe one.
      *
-     * \tparam CompressFn callable (chunk_type*, ChunkElems count).
+     * \tparam CompressFn callable (ChunkType*, ChunkElems count).
      */
     template <typename CompressFn>
     static void compress_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, CompressFn&& compress_one);
@@ -854,7 +854,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     /**
      * \brief Shared body of the two fill_list_chunk_to_compress_in_par entry
      *        points: they differ only in the map key and the per-chunk scan.
-     * \tparam ScanFn callable (chunk_type*, num_chunk, num_tab, ChunkElems count).
+     * \tparam ScanFn callable (ChunkType*, num_chunk, num_tab, ChunkElems count).
      */
     template <typename ScanFn>
     static void fill_list_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, ScanFn&& scan_one);
@@ -1023,7 +1023,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     using CounterPolicy = Chunk2CounterPolicy; ///< The counter base, Chunk2CounterPolicy<use_compression_with_counter>.
 
     using FastCompPolicy = Chunk2FastCompPolicy<T, Chunk2, chunk_config::use_fast_block_compression>;
-    using OmpPolicy      = Chunk2OmpPolicy<T, Chunk2, build_config::use_openmp>;
+    using OmpPolicy      = Chunk2OmpPolicy<T, Chunk2, build_config::threaded>;
 
     // Both OmpPolicy specialisations declare these (with mode-specific
     // signatures); the in-class bodies below call them unqualified.
@@ -1080,7 +1080,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      */
     Chunk2(const Chunk2& other) : CounterPolicy(other)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             values_.store(other.values_.load());
         }
@@ -1106,7 +1106,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         // See the copy ctor: the counters must follow `values`.
         CounterPolicy::operator=(other);
 
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             T* loaded_value = other.values.load();
             values_.store(loaded_value);
@@ -1356,7 +1356,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
                 increm_chunk_write<ChunkType>();
             }
 
-            if constexpr (build_config::use_openmp)
+            if constexpr (build_config::threaded)
             {
                 if constexpr (is_not_bool)
                 {
@@ -1402,7 +1402,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      */
     void values_store(T* ptr) noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             values_.store(ptr, std::memory_order_release);
         }

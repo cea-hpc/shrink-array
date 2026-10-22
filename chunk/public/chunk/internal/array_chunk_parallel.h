@@ -18,24 +18,24 @@
 
 /**
  * @file array_chunk_parallel.h
- * @brief ArrayChunk's (v1) two mode-gated surfaces -- the OpenMP-only one (the
+ * @brief zero::Array's (v1) two mode-gated surfaces -- the OpenMP-only one (the
  *        deferred-op flush) and the fast-block-only one
  *        (make_block_compression) -- isolated in their own mixins so they
  *        disappear entirely from a build that has neither.
  *
- * @details ParallelSupport<Derived, use_openmp> carries
+ * @details ParallelSupport<Derived, threaded> carries
  *          flush_pending_deferred_ops(), which drains the deferred writes
  *          queued on this array's chunks (ParallelSupportCommon, shared with the
  *          two other variants); the serial specialisation is an empty class
  *          whose flush is a no-op. FastBlockSupport<Derived,
  *          use_fast_block_compression> carries the fast-block compression pass,
- *          whose gate is stricter than use_openmp.
+ *          whose gate is stricter than threaded.
  *
  * @see array_chunk_parallel_inline.h for the body
  * @see array_chunk_parallel_common.h for the shared part
  */
 
-#include "chunk/config.h"       // build_config::use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/config.h"       // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/chunk_traits.h" // ArrayChunkTraits
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
 
@@ -45,12 +45,12 @@ namespace shrink_array
 /**
  * @brief The OpenMP-only members of an array, present only when the build has OpenMP.
  *
- * @tparam Derived the concrete array type (only ArrayChunk today).
- * @tparam Enabled defaulted to build_config::use_openmp; never pass it
+ * @tparam Derived the concrete array type (only zero::Array today).
+ * @tparam Enabled defaulted to build_config::threaded; never pass it
  *         explicitly outside of tests — the point of the parameter is that the
  *         two specialisations below are selected by the build mode.
  */
-template <typename Derived, bool Enabled = build_config::use_openmp>
+template <typename Derived, bool Enabled = build_config::threaded>
 struct ParallelSupport;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
@@ -74,14 +74,14 @@ struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Deri
 };
 
 /**
- * @brief ArrayChunk's fast-block compression pass, present only in that mode.
+ * @brief zero::Array's fast-block compression pass, present only in that mode.
  *
- * @tparam Derived the concrete array type (only ArrayChunk today).
+ * @tparam Derived the concrete array type (only zero::Array today).
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *
  * @details v1's copy of FastBlockSupport2 (array_chunk2_parallel.h). The only
- *          call site (ArrayChunk::resize) guards with the same constexpr and
+ *          call site (zero::Array::resize) guards with the same constexpr and
  *          so still names a declared member in every mode.
  */
 template <typename Derived, bool Enabled = chunk_config::use_fast_block_compression>
@@ -96,8 +96,8 @@ template <typename Derived>
 class FastBlockSupport<Derived, true>
 {
   public:
-    using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using chunk_type = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
+    using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
 
     /**
      * @brief Compress every chunk of this array currently queued as a candidate.

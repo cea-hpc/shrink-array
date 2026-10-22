@@ -32,14 +32,14 @@
  * point for code outside the library.
  *
  * @par Threading
- * A bucket is not thread-safe: every ladder access inside a parallel region is
- * in `omp critical`. To keep frees from serialising, a freed block is batched in
- * a per-thread fast_alloc::InfoFreeElt, released at once when the batch fills.
+ * A bucket is not thread-safe: every ladder access inside a parallel region
+ * holds ladder_mutex(). To keep frees from serialising, a freed block is
+ * batched in a per-thread fast_alloc::InfoFreeElt, released at once when the batch fills.
  *
- * The critical sections all share one NAME (fast_alloc_ladder), so allocation
- * and free exclude each other. Do not make them unnamed: that is the one lock
- * every unnamed `omp critical` shares, so a caller already inside its own
- * unnamed critical would deadlock (not reentrant).
+ * Allocation and free hold the same mutex, so they exclude each other. It is
+ * the ladder's own (it replaced `omp critical(fast_alloc_ladder)`, threads
+ * branch step 2): never shared with a lock of the caller's, and not reentrant
+ * -- nothing that runs under it may allocate from or free to the ladder.
  *
  * @par Configuration
  * The macros are read in alloc_config.h; the bodies branch with `if constexpr`.
@@ -50,6 +50,7 @@
 #include <bit>     // std::bit_width (bucket_index)
 #include <cassert> // TypeAllocator::alloc: the size its free will route by
 #include <cstddef> // std::size_t
+#include <mutex>   // std::mutex (ladder_mutex)
 #include <tuple>   // std::tuple, std::get, std::apply (the ladder)
 
 #include "fast_allocators/internal/svalloc.h" // fast_alloc::alignment
@@ -172,7 +173,7 @@ class StaticConstArray
 
     /// @brief Flush every thread's batch and reset it.
     /// @warning Quiescent point only: no rank may be freeing meanwhile (no
-    ///          `omp critical` here). Called by the chunk library's OMPT
+    ///          ladder_mutex() here). Called by the chunk library's OMPT
     ///          parallel_end callback, so a region's parked blocks do not
     ///          outlive it.
     static void clear_info_free_elt();
@@ -285,6 +286,15 @@ class StaticConstArray
     {
         static auto* const batches = new InfoFreeElt();
         return *batches;
+    }
+
+    /// @brief The lock of the ladder inside a parallel region (see Threading
+    ///        at the top of this file). IMMORTAL and built at first use, like
+    ///        the ladder it guards, for the same reason.
+    [[nodiscard]] static std::mutex& ladder_mutex()
+    {
+        static auto* const mutex = new std::mutex();
+        return *mutex;
     }
 };
 

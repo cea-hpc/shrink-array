@@ -83,16 +83,16 @@ The source checks run with the others (`ctest -R check_`):
   | functions, methods, variables, parameters, namespaces | snake_case | `get_chunk_list`, `num_tab` |
   | private and protected data members | snake_case ending in `_` | `chunk_list_`, `num_` |
   | constants (`constexpr`) and enumerators | snake_case | `cst_buffer_size`, `ev_flush_begin` |
-  | classes, structs, concepts, type aliases, template parameters | PascalCase | `ArrayChunk2A`, `AllocT`, `ChunkT` |
+  | classes, structs, concepts, type aliases, template parameters | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |
   | macros | UPPER_CASE | `CHUNK_SIZE` |
 
   UPPER_CASE is for macros only: a constant or an enumerator spelled like one reads as one, and
   may meet one. The standard library's shapes keep their spelling: the member types of its
-  protocols and the `xxx_type` ones (`value_type`, `chunk_type`), the traits and tags (`is_cplx`,
-  `rebind`). So do the public `md::` types of `chunk/mdspan.h` and `chunk/mdspan_tile_ops.h`,
-  spelt as `std::mdspan` spells its own (`layout_tiled`, `accessor`, `constant_boundary`): a view
-  written against `std::mdspan` reads the same with them (`STD_STYLE_API` in
-  `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `chunk2a`; file names (`array_chunk2A.h`)
+  protocols (`value_type`, `size_type`, ...; our own member types are PascalCase, `ChunkType`),
+  the traits and tags (`is_cplx`, `rebind`). So do the public `md::` types of `chunk/mdspan.h`
+  and `chunk/mdspan_tile_ops.h`, spelt as `std::mdspan` spells its own (`layout_tiled`,
+  `accessor`, `constant_boundary`): a view written against `std::mdspan` reads the same with them
+  (`STD_STYLE_API` in `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `chunk2a`; file names (`array_chunk2A.h`)
   stay as they are. Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
   that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`

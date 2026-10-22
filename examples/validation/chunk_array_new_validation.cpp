@@ -30,7 +30,7 @@
 //
 //   The initialisation splits on a threshold (500 chunks) and on whether a
 //   parallel region is open, and nothing in the library calls it: the arrays
-//   hold a std::vector<chunk_type> and initialise it with their own loops, so
+//   hold a std::vector<ChunkType> and initialise it with their own loops, so
 //   a fault here would surface in no other test. Two hazards:
 //
 //     - the sizes tested below bracket the threshold, where an off-by-one
@@ -52,7 +52,7 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
+#include "chunk/chunk_traits.h"   // forward decls + default IndT = int
 #include "chunk/array_chunk.h"    // Chunk<T> complete (chunk_std.h): its operator new[]
 #include "chunk/array_chunk2.h"   // Chunk2<T> complete (chunk2_std.h): its operator new[]
 #include "chunk/array_chunk2A.h"  // Chunk2A<T> complete (chunk2A_std.h): its operator new[]

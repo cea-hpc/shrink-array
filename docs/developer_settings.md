@@ -61,7 +61,7 @@ still work: each sets the level it stands for, with a deprecation warning.
 | `CHUNK_ADVISOR_TABLE` | `1` or `=name`: the full advisor table at each pass (all arrays or a single one) |
 | `CHUNK_RECHUNK_CHURN` | `1` or `=name`: materialisations per pass and an estimate of the transient cost they imply (level info of channel rechunk, which it switches on) |
 | `CHUNK_LOG=affinity=debug` (formerly `CHUNK_AFFINITY_TRACE`) | each per-array set of allocators created (key, size, budget) |
-| `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and Chunk2A's constant blocks never queued; the compression residual of an audit (`compress()` on ArrayChunk2 / ArrayChunk2A); `compress=debug` adds ArrayChunk2's per-chunk detail |
+| `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and Chunk2A's constant blocks never queued; the compression residual of an audit (`compress()` on zero_one_value::Array / zero_any::Array); `compress=debug` adds zero_one_value::Array's per-chunk detail |
 | `CHUNK_ARENA_REPORT` | the summary of the buffer arena (slabs handed out, given back to the system); a report: written whatever `CHUNK_LOG` says (channel `arena`) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (formerly `CHUNK_RECYCLE_TRACE`) | check builds: the foreign blocks the deferred-write pool drops, on a doubling schedule / one line per block |
 | `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry), at exit; a report: written whatever `CHUNK_LOG` says (channel `ledger`) |
@@ -131,7 +131,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `SHRINK_INTEL_LIBM` | `ON` | x86-64: link Intel's libm if it is found |
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64: link ArmPL's `libamath` (no gain measured on Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | workaround for an icpx internal error on three files |
-| `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (debugging build; `compile_all.sh` builds it so that its branches keep compiling) |
+| `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (debugging build) |
 | `CHUNK_LIB_UNITY` | `ON` | each variant archive (`chunk_v2a_256`, ...) compiled as a single unit (unity build, 4 to 6 times less compilation); a file that has its own compile options stays separate |
 | `SHRINK_BENCH_UNITY` | `ON` | each `shrink_bench` executable compiled as a single unit (unity build, 3.5 to 4 times less compilation); `OFF` to compare timings with earlier campaigns, since inlining across benchmark files can change them; `SHRINK_BENCH_UNITY_BATCH` files per unit (0 = all) |
 | `CHUNK_DEBUG_INFO` | `auto` | debug information of the optimised builds: `full` (`-g`), `lines` (`-g1`: function names and line tables, enough for perf and gdb backtraces, not the locals), `none`; `auto`: `full` with `CHECK_OPTIM` or a sanitizer, `lines` otherwise. The machine code is the same; `lines` compiles 20 to 27 % faster with 40 % less peak memory. Debug builds always get `-g` |
@@ -188,3 +188,12 @@ the common options. `--help` gives the full list.
 `compile_all_gnu.sh` also accepts `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). The compilation
 memory per job is set by `CHUNK_MEM_PER_JOB_MB` (3,072 MB by default, twice that for
 sanitizer builds).
+
+The std threading backend (`CHUNK_THREADS=std`) has its own builds: `std-gnu`, `std-gnu-check`
+and a ThreadSanitizer one from `compile_all_gnu.sh`, `std-llvm`, `std-llvm-check` and a
+ThreadSanitizer one from `compile_all.sh`. They lengthen the compilation (`--target='omp-*'`
+leaves them out, `--target='std-*'` makes them alone). The TBB bench (`shrink_bench_tbb_*`) and
+`tbb_validation` need oneTBB in those builds: the scripts add `CHUNK_WITH_TBB=ON` when `TBBROOT`
+is set (by oneAPI's environment script or `spack load intel-oneapi-tbb`) or when `CHUNK_WITH_TBB=1`, and say
+so at the start; `CHUNK_WITH_TBB=0` leaves TBB out. The ThreadSanitizer std builds take TBB
+only from `CHUNK_TBB_TSAN_DIR`, the CMake package directory of a oneTBB built with TSan.

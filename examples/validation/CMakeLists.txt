@@ -121,10 +121,10 @@
 #                           allocates a buffer and reclaim_second_values()
 #                           frees the constants no chunk holds any more.
 #   fill_range_mt_v1v2_validation  the range ops in a TWO-variant build
-#                           (chunk_v1v2): an ArrayChunk and an ArrayChunk2 side
+#                           (chunk_v1v2): an zero::Array and an zero_one_value::Array side
 #                           by side, fill_range_mt of each compressible value.
 #                           The ops must dispatch on the array's type, not on
-#                           the build flags -- otherwise an ArrayChunk2
+#                           the build flags -- otherwise an zero_one_value::Array
 #                           filled with its second value stays materialised.
 #                           The one harness that is not variant-agnostic.
 #   cst2_registry_validation  Chunk2A's second-value registry is freed by the
@@ -132,13 +132,31 @@
 #                           first (its reinstall took a phantom reference),
 #                           and overlapping arrays free nothing early.
 #                           Chunk2A only, default static size.
-#   cst2_reclaim_validation  ArrayChunk2A::reclaim_second_values() frees
+#   cst2_reclaim_validation  zero_any::Array::reclaim_second_values() frees
 #                           exactly the second values nothing refers to,
 #                           every element still reads back, and the
 #                           identifiers are reused (a run past the
 #                           identifier limit reaches its end), and across a
 #                           re-chunk (dyn). Chunk2A only, default static
 #                           size and dyn.
+#   std_thread_validation   std builds: arrays written from the application's
+#                           own std::threads -- new ones every phase, then
+#                           long-lived ones on a barrier -- each with a rank
+#                           of the registry, begin_parallel_phase() on every
+#                           writer and finalize_parallel_phase() once after
+#                           the join; the array equals a std::vector after
+#                           every phase, the ranks of a phase are distinct,
+#                           in_parallel() is true during the phase only.
+#   tbb_validation          CHUNK_WITH_TBB, std and serial builds: arrays
+#                           written from a TBB program through
+#                           shrink_array::tbb::parallel_for -- each
+#                           partitioner, the index form, compression and
+#                           deferred writes in the phase, a nested
+#                           parallel_for, a body that throws, a narrower
+#                           task_arena; the array equals a std::vector after
+#                           every phase, every thread keeps one rank, distinct
+#                           from the others', in_parallel() is true in the
+#                           pieces only.
 #   iterator_validation     the read-only const_iterator is random access:
 #                           jumps (it + n, it[n], it2 - it1, orderings) on
 #                           and around chunk boundaries, a ++/-- right after
@@ -267,6 +285,10 @@ function(validation_harness_executable tgt libbase vmacro geom)
   target_include_directories(${tgt} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(${tgt} PRIVATE ${libbase}_${geom})
   validation_variant_defs(${tgt} ${vmacro} ${geom})
+  # tbb_validation: a TBB program (CHUNK_WITH_TBB); the library itself does not link TBB.
+  if ("tbb_validation" IN_LIST ARGN)
+    target_link_libraries(${tgt} PRIVATE TBB::tbb)
+  endif()
   if (RECHUNK_TRACE_POOL AND "rechunk_validation" IN_LIST ARGN)
     target_compile_definitions(${tgt} PRIVATE RECHUNK_TRACE_POOL)
   endif()
@@ -328,7 +350,7 @@ foreach(_geom IN LISTS _rt_geometries)
     if (OMP)
       list(APPEND _group chunk_array_new_validation)
     endif()
-    # bits_container_validation: ArrayChunkBits (ArrayChunk2<Bit>) against
+    # bits_container_validation: ArrayChunkBits (zero_one_value::Array<Bit>) against
     # std::vector<bool>. Chunk2 libraries only, every geometry.
     if (_vname STREQUAL "chunk2")
       list(APPEND _group bits_container_validation)
@@ -362,6 +384,22 @@ foreach(_geom IN LISTS _rt_geometries)
     # 1 and 8 threads. Every variant and geometry: its replay path reads the
     # frozen geometry a dynamic build alone has.
     list(APPEND _group deferred_path_validation)
+    # std_thread_validation: arrays driven from the application's own
+    # std::threads (registered ranks, the application phase of the serial
+    # contract), fresh threads every phase and long-lived ones. Std builds
+    # only (an OpenMP build numbers only OpenMP's threads), every variant and
+    # geometry, at 1 and 8 threads.
+    if (CHUNK_THREADS_BACKEND STREQUAL "std")
+      list(APPEND _group std_thread_validation)
+    endif()
+    # tbb_validation: arrays driven from a TBB program through
+    # shrink_array::tbb::parallel_for (chunk/tbb_adaptor.h): every partitioner,
+    # the index form, work in the phase, a nested parallel_for, a body that
+    # throws. CHUNK_WITH_TBB builds, std and serial backends (an OpenMP build
+    # refuses the adaptor), every variant and geometry, at 1 and 8 threads.
+    if (CHUNK_WITH_TBB AND NOT CHUNK_THREADS_BACKEND STREQUAL "openmp")
+      list(APPEND _group tbb_validation)
+    endif()
     # read_reclaim_validation: a read or a compound op against an in-region
     # pass that releases the buffer, and a pass that must not erase another
     # pass's claim (the harness says why). OpenMP builds only, default static
@@ -500,7 +538,7 @@ endif()
 
 # --- fill_range_mt_v1v2_validation: the two-variant library (CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes
-# the phase calls, as multi-mat does), ArrayChunk and ArrayChunk2 in one
+# the phase calls, as multi-mat does), zero::Array and zero_one_value::Array in one
 # program. At 1 and 8 threads like the others.
 if (TARGET chunk_v1v2_${CHUNK_DEFAULT_SIZE})
   set(_tgt fill_range_mt_v1v2_validation)
@@ -543,6 +581,22 @@ chunk_require_cxx_std(bit_words_validation PRIVATE)
 add_test(NAME bit_words_validation COMMAND bit_words_validation)
 set_property(TEST bit_words_validation PROPERTY LABELS validation)
 
+# --- rank_registry_validation: the rank registry of the threading backend
+# (fast_allocators/internal/pmp_runtime.h) alone, header only, driven from
+# std::threads: dense, unique, bounded ranks, given back at thread exit and
+# reused; the serial backend's queries are those of one thread. Every build,
+# with OpenMP when on (the backend the build selects).
+add_executable(rank_registry_validation rank_registry_validation.cpp)
+chunk_add_alloc_token_rt(rank_registry_validation)
+target_include_directories(rank_registry_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(rank_registry_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(rank_registry_validation PRIVATE OpenMP::OpenMP_CXX)
+endif ()
+chunk_require_cxx_std(rank_registry_validation PRIVATE)
+add_test(NAME rank_registry_validation COMMAND rank_registry_validation)
+set_property(TEST rank_registry_validation PROPERTY LABELS validation)
+
 # --- log_validation: the library's log (fast_allocators/internal/log_core.h)
 # alone -- CHUNK_LOG / CHUNK_LOG_FILE, the filter, a sink, the rate-limited
 # macros, the cut of a long message, no allocation on the path of a message,
@@ -557,9 +611,32 @@ target_link_libraries(log_validation PRIVATE Threads::Threads)
 if (OMP)
   target_link_libraries(log_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
 endif()
+# ... and for the library's backend: the std backend's macro, which the chunk:: targets
+# carry PUBLIC, but this target links none of them.
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  target_compile_definitions(log_validation PRIVATE FAST_ALLOC_PMP_STD=1)
+endif()
 chunk_require_cxx_std(log_validation PRIVATE)
 add_test(NAME log_validation COMMAND log_validation)
 set_property(TEST log_validation PROPERTY LABELS validation)
+
+# --- team_loops_validation: pmp::Team's static loops (for_static,
+# for_static_chunks and their _simd forms, fast_allocators/internal/
+# pmp_loops.h) alone, on the build's backend: every iteration once, on the
+# rank OpenMP gives it, the same share in two nowait loops in a row -- what
+# the bench's barrier-free regions rely on. Header-only: no library, no variant.
+add_executable(team_loops_validation team_loops_validation.cpp)
+target_include_directories(team_loops_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(team_loops_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(team_loops_validation PRIVATE OpenMP::OpenMP_CXX)
+endif()
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  target_compile_definitions(team_loops_validation PRIVATE FAST_ALLOC_PMP_STD=1)
+endif()
+chunk_require_cxx_std(team_loops_validation PRIVATE)
+add_test(NAME team_loops_validation COMMAND team_loops_validation)
+set_property(TEST team_loops_validation PROPERTY LABELS validation)
 
 # --- blk_allocator_validation: fast_allocators' public size-dispatching front
 # end (BlkAllocator) alone. Nothing in the library calls it, so this is what

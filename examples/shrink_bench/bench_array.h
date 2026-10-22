@@ -36,24 +36,24 @@
 // The bulk range API: the chunked arrays' overloads (constrained on the
 // ChunkedArray concept, so they select nothing in the std::vector build) on
 // top of the std::vector fallback they include. Also what drags in the
-// ArrayChunk* definitions the alias below selects between.
-#include "chunk/array_chunk_range_ops.h" // the bulk range API and the ArrayChunk* definitions (see above)
+// zero::Array* definitions the alias below selects between.
+#include "chunk/array_chunk_range_ops.h" // the bulk range API and the zero::Array* definitions (see above)
 #include "chunk/array_chunk_bits.h"      // tab_bool_bits, tab_mask: bools packed 8 per byte
 
 namespace shrink_array
 {
 
 // `Int` is the bench's index type (bench_int.h): `int` by default, `long`
-// under -DBENCH_INT64. It is handed to the library as `ind_type`, so the array
+// under -DBENCH_INT64. It is handed to the library as `IndT`, so the array
 // indexes exactly as wide as the bench computes -- a 64-bit bench on a 32-bit
 // array would overflow inside the library instead of inside main().
 template <typename T>
 using ActiveArray = std::conditional_t<
     chunk_config::use_chunk2a,
-    ArrayChunk2A<T, Int>,
+    zero_any::Array<T, Int>,
     std::conditional_t<chunk_config::use_chunk2,
-                       ArrayChunk2<T, Int>,
-                       std::conditional_t<chunk_config::use_chunk, ArrayChunk<T, Int>, BaselineVector<T>>>>;
+                       zero_one_value::Array<T, Int>,
+                       std::conditional_t<chunk_config::use_chunk, zero::Array<T, Int>, BaselineVector<T>>>>;
 
 
 // Runtime chunk size for CHUNK_DYNAMIC builds. Seeded into g_active_chunk_size
@@ -130,7 +130,7 @@ using BenchBoolArray =
  *          workload -- memory (chunk filling rate, pools) and write cost:
  *            - chunk2 builds: ArrayChunkBits (bit.h), 8 bools per byte in a
  *              materialised chunk, one atomic 64-bit read-modify-write per
- *              write; tab_bool stays ArrayChunk2<bool>, one byte per bool;
+ *              write; tab_bool stays zero_one_value::Array<bool>, one byte per bool;
  *            - chunk (v1) / chunk2a builds: the variant's Array<bool>, i.e.
  *              tab_bool's own type -- ArrayChunkBits is chunk2's machinery;
  *            - the std::vector baseline: std::vector<short>, as tab_bool

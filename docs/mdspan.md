@@ -26,7 +26,7 @@ compression, the same rules.
 
 namespace sa = shrink_array;
 
-sa::ArrayChunk2A<double> a(nx * ny);
+sa::zero_any::Array<double> a(nx * ny);
 auto f = sa::md::view(a, nx, ny);         // row-major: f[i, j] is a[i * ny + j]
 f[i, j] = 1.0;
 f[i, j] += 2.0;                           // compound operators, through the proxy
@@ -294,7 +294,7 @@ array agree); the tile operations, `submdspan` and `fill_box` take it as they ta
 `layout_tiled`.
 
 ```cpp
-ArrayChunk2A<double> a(md::tiled_size_dyn(md::tile_shape<2, long>(chunk_size), std::array<long, 2>{nx, ny}));
+zero_any::Array<double> a(md::tiled_size_dyn(md::tile_shape<2, long>(chunk_size), std::array<long, 2>{nx, ny}));
 auto f = md::tiled_view_dyn(a, nx, ny);                          // a tile of a.chunk_size() elements
 auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // or any tile
 ```

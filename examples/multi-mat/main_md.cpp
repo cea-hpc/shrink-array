@@ -379,7 +379,7 @@ int run(SimuMd& s, const MultiMatAlgoT& mm_algo, const char* chunk_policy)
     {
         if (s.option_chunk != 2)
         {
-            ParamChunk::ChunkStats();
+            ParamChunk::chunk_stats();
         }
     }
     return rc;

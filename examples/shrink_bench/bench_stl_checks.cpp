@@ -44,7 +44,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
     // ─────────────────────────────────────────────────────────────────────────
     // STL-interface self-checks (--test_stl). Exercises the vector-like surface
-    // added to ArrayChunk (typedefs, at/front/back, iterators, rbegin/rend,
+    // added to zero::Array (typedefs, at/front/back, iterators, rbegin/rend,
     // assign/swap) against an independent oracle. Works in BOTH chunk and vector
     // modes: everything used here (const iteration, at, front/back, assign, swap)
     // exists on std::vector too, so the same code validates the "vector-like"

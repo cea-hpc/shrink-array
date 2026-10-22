@@ -34,7 +34,7 @@
  * writer wait), so a flush beginning after this check is caught as before.
  */
 
-#include "chunk/config.h"                              // build_config::use_openmp
+#include "chunk/config.h"                              // build_config::threaded
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_gate_start*
 #include "chunk/internal/invariant_check.h"            // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h" // any_thread_flushing
@@ -46,26 +46,26 @@ namespace shrink_array
  * @brief Would compression_mgr.start() decline right now because a flush is in
  *        progress? If so, count it as start() would, and tell the caller to
  *        return before marking anything.
- * @tparam ProxyType the proxy whose WriteCompressSyncPolicy start() consults
- * @tparam ChunkType the chunk type the gate counters are kept for
+ * @tparam ProxyT the proxy whose WriteCompressSyncPolicy start() consults
+ * @tparam ChunkT the chunk type the gate counters are kept for
  * @param max_thr rank bound passed on to any_thread_flushing()
  */
-template <typename ProxyType, typename ChunkType>
+template <typename ProxyT, typename ChunkT>
 [[nodiscard]] inline bool block_pass_yields_to_flush([[maybe_unused]] int max_thr) noexcept
 {
-    if constexpr (!build_config::use_openmp)
+    if constexpr (!build_config::threaded)
     {
         return false;
     }
     else
     {
-        if (!WriteCompressSyncPolicy<ProxyType>::any_thread_flushing(max_thr))
+        if (!WriteCompressSyncPolicy<ProxyT>::any_thread_flushing(max_thr))
         {
             return false;
         }
         // What a declined start() counts: an attempt, yielded to a flush.
-        increm_chunk_gate_start<ChunkType>();
-        increm_chunk_gate_start_flush_yield<ChunkType>();
+        increm_chunk_gate_start<ChunkT>();
+        increm_chunk_gate_start_flush_yield<ChunkT>();
         return true;
     }
 }
@@ -79,15 +79,15 @@ template <typename ProxyType, typename ChunkType>
  *          only where no drain can run; this turns a violation into a
  *          CHUNK_INVARIANT_FAILED instead of a silently lost write. A
  *          tripwire, not a lock: a flush announced after the check is not seen.
- * @tparam ProxyType the proxy whose WriteCompressSyncPolicy the drains announce on
+ * @tparam ProxyT the proxy whose WriteCompressSyncPolicy the drains announce on
  * @param where caller, for the message
  */
-template <typename ProxyType>
+template <typename ProxyT>
 inline void check_no_flush_outside_start([[maybe_unused]] const char* where) noexcept
 {
-    if constexpr (build_config::use_openmp && build_config::any_check)
+    if constexpr (build_config::threaded && build_config::any_check)
     {
-        if (WriteCompressSyncPolicy<ProxyType>::any_thread_flushing(0)) [[unlikely]]
+        if (WriteCompressSyncPolicy<ProxyT>::any_thread_flushing(0)) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("{}: compresses outside CompressionManager::start() while a deferred-op flush is in "
                                    "progress; a v1 replay storing into this chunk would be lost (proxy_inline.h)",

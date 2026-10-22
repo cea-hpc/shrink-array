@@ -27,7 +27,7 @@
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h"   // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
 #include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools -- shrink_to_fit()
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
 #include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
@@ -36,11 +36,11 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::create(this Derived& self, ind_type sz)
+void ArrayChunkBase<Derived>::create(this Derived& self, IndType sz)
 {
     // The first array of this element type registers its manager; every
     // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<manager_type>();
+    AllTypeChunk::ensure_manager<ManagerType>();
 
     self.create_common();
 
@@ -59,7 +59,7 @@ void ArrayChunkBase<Derived>::create_common(this Derived& self)
     // In ALL modes, do not gate on use_fast_block_compression: Proxy2A needs
     // its tab_* containers (tab_second_value, ...) even without OpenMP; for
     // Proxy / Proxy2 it is a no-op stub outside OpenMP.
-    proxy_type::resize_tab_is_int(self.nb_tab);
+    ProxyType::resize_tab_is_int(self.nb_tab);
 }
 
 template <typename Derived>
@@ -67,12 +67,12 @@ bool ArrayChunkBase<Derived>::is_written_at(this const Derived& self, int j) noe
 {
     if constexpr (has_chunk_written_v<Derived>)
     {
-        // ArrayChunk2: Chunk2::written() needs the second-value index.
+        // zero_one_value::Array: Chunk2::written() needs the second-value index.
         return self.chunk_written(j);
     }
     else
     {
-        // ArrayChunk and ArrayChunk2A: the chunk knows by itself.
+        // zero::Array and zero_any::Array: the chunk knows by itself.
         return self.chunk_list_[j].written();
     }
 }
@@ -137,11 +137,8 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written(this const Derived& self)
     }
     else
     {
-#pragma omp parallel for reduction(+ : nb_written)
-        for (int j = 0; j < nb_chunk; ++j)
-        {
-            nb_written += lbd(j);
-        }
+        nb_written =
+            pmp::parallel_sum<int, 1>(0, nb_chunk, pmp::Options{}, [&](int j, auto& acc) { acc[0] += lbd(j); })[0];
     }
     return nb_written;
 }
@@ -170,16 +167,13 @@ double ArrayChunkBase<Derived>::stats_seq(this const Derived& self)
 
 template <typename Derived>
 template <typename ValueAt>
-void ArrayChunkBase<Derived>::write_range_by_chunks(this Derived& self,
-                                                    ind_type      first,
-                                                    ind_type      last,
-                                                    ValueAt&&     value_at)
+void ArrayChunkBase<Derived>::write_range_by_chunks(this Derived& self, IndType first, IndType last, ValueAt&& value_at)
 {
     if (first >= last)
     {
         return;
     }
-    // In long long: (c + 1) * chunk_size() may pass ind_type's range near its top.
+    // In long long: (c + 1) * chunk_size() may pass IndType's range near its top.
     const auto csz     = static_cast<long long>(self.chunk_size());
     const int  c_first = self.chunk_index_of(first);
     const int  c_last  = self.chunk_index_of(last - 1) + 1;
@@ -187,27 +181,20 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(this Derived& self,
     {
         const long long lo_ll = static_cast<long long>(c) * csz;
         const long long hi_ll = lo_ll + csz;
-        const ind_type  lo    = lo_ll > static_cast<long long>(first) ? static_cast<ind_type>(lo_ll) : first;
-        const ind_type  hi    = hi_ll < static_cast<long long>(last) ? static_cast<ind_type>(hi_ll) : last;
-        for (ind_type i = lo; i < hi; ++i)
+        const IndType   lo    = lo_ll > static_cast<long long>(first) ? static_cast<IndType>(lo_ll) : first;
+        const IndType   hi    = hi_ll < static_cast<long long>(last) ? static_cast<IndType>(hi_ll) : last;
+        for (IndType i = lo; i < hi; ++i)
         {
             self[i] = value_at(i);
         }
     };
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if (parallel_storage_init::use_own_team(static_cast<long>(c_last) - c_first))
         {
-            parallel_phase(
-                [&]
-                {
-#pragma omp for schedule(static)
-                    for (int c = c_first; c < c_last; ++c)
-                    {
-                        span(c);
-                    }
-                });
+            // The team parallel_phase opens is the calling thread's current one.
+            parallel_phase([&] { pmp::current_team().for_static<int>(c_first, c_last, [&](int c) { span(c); }); });
             return;
         }
     }
@@ -218,25 +205,25 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(this Derived& self,
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::assign(this Derived& self, ind_type count, T val)
+void ArrayChunkBase<Derived>::assign(this Derived& self, IndType count, T val)
 {
     self.resize(count);
-    self.write_range_by_chunks(0, count, [&val](ind_type) { return val; });
+    self.write_range_by_chunks(0, count, [&val](IndType) { return val; });
 }
 
 template <typename Derived>
 template <std::forward_iterator It>
 void ArrayChunkBase<Derived>::assign(this Derived& self, It first, It last)
 {
-    const auto n = static_cast<ind_type>(std::distance(first, last));
+    const auto n = static_cast<IndType>(std::distance(first, last));
     self.resize(n);
     if constexpr (std::random_access_iterator<It>)
     {
-        self.write_range_by_chunks(0, n, [&first](ind_type i) { return static_cast<T>(first[i]); });
+        self.write_range_by_chunks(0, n, [&first](IndType i) { return static_cast<T>(first[i]); });
     }
     else
     {
-        ind_type i = 0;
+        IndType i = 0;
         for (; first != last; ++first)
         {
             self[i++] = static_cast<T>(*first);
@@ -245,14 +232,14 @@ void ArrayChunkBase<Derived>::assign(this Derived& self, It first, It last)
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::reserve(this Derived& self, ind_type new_capacity)
+void ArrayChunkBase<Derived>::reserve(this Derived& self, IndType new_capacity)
 {
     if (static_cast<size_type>(new_capacity) <= self.capacity())
     {
         return;
     }
     // resize() builds the storage; reserve() then restores the size.
-    const ind_type keep = self.m_size_;
+    const IndType keep = self.m_size_;
     self.resize(new_capacity);
     self.m_size_ = keep;
 }
@@ -260,11 +247,11 @@ void ArrayChunkBase<Derived>::reserve(this Derived& self, ind_type new_capacity)
 template <typename Derived>
 void ArrayChunkBase<Derived>::copy_from(this Derived& self, const Derived& from)
 {
-    const ind_type from_size = from.m_size_;
+    const IndType from_size = from.m_size_;
     self.resize(from_size);
     // Const reads of @p from (through its gate) from every thread of the team:
     // nothing writes it meanwhile.
-    self.write_range_by_chunks(0, from_size, [&from](ind_type i) { return std::as_const(from)[i]; });
+    self.write_range_by_chunks(0, from_size, [&from](IndType i) { return std::as_const(from)[i]; });
 }
 
 template <typename Derived>
@@ -275,23 +262,23 @@ void ArrayChunkBase<Derived>::shrink_to_fit()
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(this const Derived& self, ind_type i)
+ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(this const Derived& self, IndType i)
 {
     if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size_)) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::at: index out of range");
+        throw std::out_of_range("zero::Array::at: index out of range");
     }
     return self[i]; // const operator[] -> T (value)
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(this Derived& self, ind_type i)
+ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(this Derived& self, IndType i)
 {
     if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size_)) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::at: index out of range");
+        throw std::out_of_range("zero::Array::at: index out of range");
     }
-    return self[i]; // non-const operator[] -> proxy_type (write entry)
+    return self[i]; // non-const operator[] -> ProxyType (write entry)
 }
 
 template <typename Derived>
@@ -299,7 +286,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::front(this con
 {
     if (self.empty()) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::front: container is empty");
+        throw std::out_of_range("zero::Array::front: container is empty");
     }
     return self[0];
 }
@@ -309,7 +296,7 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::front(this Derived& 
 {
     if (self.empty()) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::front: container is empty");
+        throw std::out_of_range("zero::Array::front: container is empty");
     }
     return self[0];
 }
@@ -319,7 +306,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::back(this cons
 {
     if (self.empty()) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::back: container is empty");
+        throw std::out_of_range("zero::Array::back: container is empty");
     }
     return self[self.m_size_ - 1];
 }
@@ -329,7 +316,7 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back(this Derived& s
 {
     if (self.empty()) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::back: container is empty");
+        throw std::out_of_range("zero::Array::back: container is empty");
     }
     return self[self.m_size_ - 1];
 }

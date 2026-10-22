@@ -16,7 +16,7 @@
 
 // Template method bodies live in chunk/internal/array_chunk_inline.h, included
 // transitively via chunk/array_chunk.h. No explicit instantiations: each
-// ArrayChunk<T> the consumer uses is instantiated at its use site (weak-symbol
+// zero::Array<T> the consumer uses is instantiated at its use site (weak-symbol
 // dedup).
 
-#include "chunk/array_chunk.h" // its own header: ArrayChunk<T>, bodies in array_chunk_inline.h
+#include "chunk/array_chunk.h" // its own header: zero::Array<T>, bodies in array_chunk_inline.h

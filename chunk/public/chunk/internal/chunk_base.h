@@ -42,15 +42,15 @@
 #include "chunk/internal/element_access.h"              // elem_get: Bit buffers are words of bits
 #include "chunk/internal/relaxed_element.h"             // element_at<true>: the marking filter's reads
 #include "fast_allocators/internal/svalloc.h"           // svcalloc_align, svfree
-#include "chunk/config.h"                               // build_config::use_openmp, chunk_config::stats
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/ring_log_debug.h"                       // ev_value_alloc/FREE (debug ring log)
-#include "chunk/internal/global_check.h"                // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
-#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/deferred_op_pool.h"            // DeferredOpPtr
-#include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* block-lifecycle checks (check builds)
-#include "chunk/internal/chunk_stats.h"                 // increm_chunk_* / add_chunk_* (CHUNK_STATS)
-#include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
+#include "chunk/config.h"                               // build_config::threaded, chunk_config::stats
+#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
+#include "chunk/ring_log_debug.h"            // ev_value_alloc/FREE (debug ring log)
+#include "chunk/internal/global_check.h"     // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
+#include "chunk/internal/invariant_check.h"  // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/deferred_op_pool.h" // DeferredOpPtr
+#include "chunk/internal/pool_ledger.h"      // CHUNK_LEDGER_* block-lifecycle checks (check builds)
+#include "chunk/internal/chunk_stats.h"      // increm_chunk_* / add_chunk_* (CHUNK_STATS)
+#include "chunk/internal/bad_ptr_check.h"    // CHUNK_CHECK_VALUES_PTR (check builds)
 
 #include "chunk/internal/freepath_counters.h" // [FREEPATH] counters, needed in std-alloc builds too
 #include "chunk/internal/test_hooks.h"        // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
@@ -90,7 +90,7 @@ namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <typename Derived>
@@ -113,12 +113,12 @@ struct ProxyTypeTrait<Chunk<T>>
 // that one is in fast_alloc, this one is inside `namespace shrink_array`.
 //
 // Load-bearing: in a SERIAL build this incomplete declaration deliberately
-// SHADOWS the real (OpenMP per-rank) fast_alloc::TCTypeCAllocator for the rest
-// of the namespace, so the OpenMP-only allocator pool below (allocator_pool_,
+// SHADOWS the real (threaded, per-rank) fast_alloc::TCTypeCAllocator for the rest
+// of the namespace, so the threaded-only allocator pool below (allocator_pool_,
 // alloc_chunk_allocator_thr) parses against a type that is never completed nor
 // instantiated. Removing the guard or the declaration would bind those uses to
 // the real type; no `if constexpr` can "declare a different type".
-#ifndef _OPENMP
+#if !FAST_ALLOC_PMP_THREADED
 template <typename T>
 class TCTypeCAllocator;
 #else
@@ -137,8 +137,8 @@ using fast_alloc::TCTypeAllocator;
 // some builds only, and a discarded branch would still phase-1-look-up a
 // missing member. Each specialization names ONLY the members of its config.
 //
-//   None    (serial, !use_openmp)            : nothing can be pending -> no-op
-//   precise (OpenMP + per-chunk pending_ops_) : precise pending_ops_ load
+//   None    (serial, !threaded)               : nothing can be pending -> no-op
+//   precise (threaded + per-chunk pending_ops_): precise pending_ops_ load
 // ============================================================================
 enum class DeferReadGate : std::uint8_t
 {
@@ -147,7 +147,7 @@ enum class DeferReadGate : std::uint8_t
 };
 
 inline constexpr DeferReadGate defer_read_gate_mode =
-    build_config::use_openmp ? DeferReadGate::precise : DeferReadGate::none;
+    build_config::threaded ? DeferReadGate::precise : DeferReadGate::none;
 
 template <typename Derived, DeferReadGate Mode = defer_read_gate_mode>
 class DeferredReadGate; // primary left undefined: only the 2 specializations exist
@@ -374,14 +374,14 @@ class DeferredReadGate<Derived, DeferReadGate::precise>
 
 // ============================================================================
 // ChunkAllocPolicy: OpenMP vs serial chunk allocation, selected by
-// build_config::use_openmp. A genuine two-implementation split: BOTH modes
+// build_config::threaded. A genuine two-implementation split: BOTH modes
 // allocate, initialise and keep stats/ledger in sync; only OpenMP tries the
 // per-thread free list first. static_cast<Derived&>(*this), not an explicit
 // object parameter: allocate_chunk_internal is called as
 // Base::allocate_chunk_internal(...) from sibling policies (Chunk2OmpPolicy...),
 // whose *this is not a Derived and would not bind to `this Derived&`.
 // ----------------------------------------------------------------------------
-template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
+template <typename T, typename Derived, bool Threaded = build_config::threaded>
 struct ChunkAllocPolicy; // primary left undefined: only the 2 specializations exist
 
 // OpenMP: thread-local free-list reuse first, fresh allocation otherwise.
@@ -568,7 +568,7 @@ struct ChunkAllocPolicy<T, Derived, false>
 // ChunkAllocPolicy, compare_and_swap_gen / recup_value are called as Base::...
 // from sibling policies whose *this is not a Derived.
 // ----------------------------------------------------------------------------
-template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
+template <typename T, typename Derived, bool Threaded = build_config::threaded>
 class ChunkDeferredOpsPolicy; // primary left undefined: only the 2 specializations exist
 
 template <typename T, typename Derived>
@@ -879,7 +879,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
 
   public:
     // Atomic pointer type conditional on OpenMP availability
-    using AtomicPtrT = std::conditional_t<build_config::use_openmp, std::atomic<T*>, T*>;
+    using AtomicPtrT = std::conditional_t<build_config::threaded, std::atomic<T*>, T*>;
 
     using ProxyType = ProxyTypeTrait<Derived>::Type;
 
@@ -908,7 +908,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
 
     using AllocatorType = std::conditional_t<
         build_config::use_fast_alloc,
-        std::conditional_t<build_config::use_openmp, std::vector<TCTypeCAllocator<T>>, TCTypeAllocator<T>>,
+        std::conditional_t<build_config::threaded, std::vector<TCTypeCAllocator<T>>, TCTypeAllocator<T>>,
         NullValueAllocator>;
 
     /// @brief Outcome of scan_constants(): which hypothesis survived the walk.
@@ -918,7 +918,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         bool second = false; ///< every element equals the second constant -- never together with `first`
     };
 
-    using cst_val1_type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
+    using CstVal1Type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
 
     ChunkBase()                            = default;
     ~ChunkBase()                           = default;
@@ -935,7 +935,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /// @return Pointer to the chunk data
     [[nodiscard]] T* values_load() const noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             return values_.load(std::memory_order_acquire);
         }
@@ -950,7 +950,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     void values_store(T* new_values) noexcept
     {
         CHUNK_CHECK_VALUES_PTR_C(new_values, "values_store", this);
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             values_.store(new_values, std::memory_order_release);
         }
@@ -1390,7 +1390,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     ///          routing (per-size pool vs the single legacy allocator) is
     ///          delegated to Derived::route_omp_dynamic_alloc()/
     ///          route_serial_dynamic_alloc(), selected on
-    ///          build_config::use_openmp.
+    ///          build_config::threaded.
     /// @param thr_rank Calling thread's rank; only meaningful in OpenMP
     ///                 builds (ignored in serial builds).
     /// @return Reference to the allocator to use for this thread/build mode.
@@ -1402,7 +1402,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         if constexpr (build_config::use_fast_alloc)
         {
             // Dynamic-vs-static routing lives on ChunkDynamicAllocPolicy.
-            if constexpr (build_config::use_openmp)
+            if constexpr (build_config::threaded)
             {
                 return Derived::route_omp_dynamic_alloc(thr_rank, key);
             }
@@ -1526,7 +1526,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     // its reads load 64-bit words (element_access.h). constinit, every element
     // T{} (= first_value): a global array reaches it before any dynamic
     // initialisation. Unused under MM_PROTECT (null; see get_cst_val1()).
-    alignas(bits::WordT) static inline constinit cst_val1_type m_ptr_cst_val1{};
+    alignas(bits::WordT) static inline constinit CstVal1Type m_ptr_cst_val1{};
 
   protected:
     /**
@@ -1559,15 +1559,16 @@ class ChunkBase : public DeferredReadGate<Derived>,
         else
         {
             int team = 0;
-#pragma omp parallel
-            {
-                const int thr = CHUNK_PMP_THREAD_RANK;
-                if (thr == 0) // one writer; `master` is deprecated since OpenMP 5.1
-                {
-                    team = CHUNK_PMP_NUM_THREADS;
-                }
-                sweep(thr);
-            }
+            pmp::team(pmp::Options{},
+                      [&](pmp::Team& /*team*/)
+                      {
+                          const int thr = CHUNK_PMP_THREAD_RANK;
+                          if (thr == 0) // one writer; `master` is deprecated since OpenMP 5.1
+                          {
+                              team = CHUNK_PMP_NUM_THREADS;
+                          }
+                          sweep(thr);
+                      });
             if (mop_up)
             {
                 for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
@@ -1650,16 +1651,16 @@ class ChunkBase : public DeferredReadGate<Derived>,
     alignas(std::atomic<T*>) AtomicPtrT values_;
 
   public:
-#if defined(_OPENMP)
+#if FAST_ALLOC_PMP_THREADED
     /// Per-chunk count of deferred ops currently pending (enqueued but not yet
     /// drained), plus its owner tag: see DeferredReadGate<Derived, precise>.
-    /// Present only where the deferred-op machinery exists: OpenMP builds.
+    /// Present only where the deferred-op machinery exists: threaded builds.
     /// Protocol: see DeferredReadGate (publish before the map insert, retire
     /// after the drain, acquire-loaded by the read gates).
     ///
     /// A `#if`, not `if constexpr`: gcc still phase-1-looks-up a member named in
     /// a discarded branch. Its readers live in DeferredReadGate<precise>, which
-    /// is selected under the same condition (use_openmp).
+    /// is selected under the same condition (threaded).
     std::atomic<int32_t> pending_ops_{0};
 
   private:
@@ -1726,8 +1727,8 @@ class ChunkBase : public DeferredReadGate<Derived>,
         steal_mark_.store(0, std::memory_order_release);
     }
 #else
-    // No mark without OpenMP (no concurrent compressor): the write gate is
-    // the global one.
+    // No mark in a serial build (no concurrent compressor): the write gate
+    // is the global one.
     /// @brief No per-chunk mark in this configuration: never marked.
     [[nodiscard]] static constexpr bool steal_marked() noexcept
     {

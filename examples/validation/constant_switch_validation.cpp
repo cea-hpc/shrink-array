@@ -53,9 +53,9 @@
 #include <vector>      // std::vector (the copy sources)
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"           // ArrayChunk
-#include "chunk/array_chunk2.h"          // ArrayChunk2
-#include "chunk/array_chunk2A.h"         // ArrayChunk2A
+#include "chunk/array_chunk.h"           // zero::Array
+#include "chunk/array_chunk2.h"          // zero_one_value::Array
+#include "chunk/array_chunk2A.h"         // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, fill_range_mt, copy_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
@@ -71,9 +71,10 @@ namespace validation::constant_switch_validation
 using namespace shrink_array;
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_chunk2a,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -218,7 +219,7 @@ static void check(const char* step, const Array<double>& arr, Expect&& expect, i
 template <typename Arr, typename Expect>
 static void check_reclaim(const Arr& a, Expect&& expect)
 {
-    if constexpr (std::is_same_v<Arr, ArrayChunk2A<double>>)
+    if constexpr (std::is_same_v<Arr, zero_any::Array<double>>)
     {
         (void)Arr::reclaim_second_values();
         const long in_use = static_cast<long>(Arr::second_value_stats().in_use());
@@ -235,7 +236,7 @@ static void check_reclaim(const Arr& a, Expect&& expect)
     }
     else
     {
-        static_assert(!chunk_config::use_chunk2a, "check_reclaim: a Chunk2A build tests an ArrayChunk2A");
+        static_assert(!chunk_config::use_chunk2a, "check_reclaim: a Chunk2A build tests an zero_any::Array");
     }
 }
 

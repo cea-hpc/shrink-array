@@ -78,9 +78,9 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"       // the ind_type = int default of ArrayChunk2<T> / ArrayChunk2A<T>
-#include "chunk/array_chunk2.h"       // ArrayChunk2
-#include "chunk/array_chunk2A.h"      // ArrayChunk2A
+#include "chunk/chunk_traits.h"       // the IndT = int default of zero_one_value::Array<T> / zero_any::Array<T>
+#include "chunk/array_chunk2.h"       // zero_one_value::Array
+#include "chunk/array_chunk2A.h"      // zero_any::Array
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/config.h"             // chunk_config::use_chunk2a, build_config::use_openmp
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
@@ -96,7 +96,7 @@ static_assert(chunk_config::use_chunk2or2a,
               "variant_compare compares chunk2 and chunk2a: link chunk_v2_* or chunk_v2a_*");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>, ArrayChunk2<T>>;
+using Array = std::conditional_t<chunk_config::use_chunk2a, zero_any::Array<T>, zero_one_value::Array<T>>;
 
 constexpr const char* variant_name()
 {

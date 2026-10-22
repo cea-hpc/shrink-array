@@ -20,7 +20,7 @@
 
 #include <utility> // std::as_const
 
-#include "chunk/array_chunk2A.h"  // shrink_array::ArrayChunk2A
+#include "chunk/array_chunk2A.h"  // shrink_array::zero_any::Array
 #include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"    // parallel_phase
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
@@ -49,8 +49,8 @@ int main()
 
     int bad = 0;
     {
-        const int                n = 1 << 24; // 16 M doubles: 128 MiB as a std::vector
-        sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer allocated yet
+        const int                   n = 1 << 24; // 16 M doubles: 128 MiB as a std::vector
+        sa::zero_any::Array<double> a(n);        // every element 0.0, no buffer allocated yet
 
         // Write, in parallel. a[i] is a write proxy: it decides whether the
         // chunk must be materialised, and queues it for compression when it

@@ -32,7 +32,7 @@
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists (dependent calls)
 #include "chunk/internal/proxy.h"               // Proxy<T>: the compression pass's proxy
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
@@ -268,7 +268,7 @@ template <typename T, typename Derived, bool Enabled>
 void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, const Proxy<T>* proxy)
 {
     // Before the first parallel region the per-rank lists do not exist (sized at region
-    // begin), yet ArrayChunk::resize() calls this from create(): do not index them.
+    // begin), yet zero::Array::resize() calls this from create(): do not index them.
     if (thr < 0 || static_cast<size_t>(thr) >= Manager::chunk_to_compress_potentially_thr.size())
     {
         return;
@@ -284,8 +284,13 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
     }
 
     const int max_thr = CHUNK_PMP_MAX_THREADS;
+    // Other threads may write the candidates: a team of more than one, or --
+    // std backend -- an application phase, whose threads no team counts (a
+    // team of one there still has the application's writers around it). Taken
+    // once: the start() below and its finish() at the end must agree.
+    const bool guarded = proxy != nullptr && (max_thr > 1 || pmp::in_application_phase());
 
-    if (proxy && max_thr > 1)
+    if (guarded)
     {
         // A flush in progress makes start() decline: ask first, before marking, or the pass
         // spins in mark/unmark rounds (block_pass_precheck.h).
@@ -384,7 +389,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
     vec_tuple_to_compress.clear();
     vec_tuple_to_compress.reserve((sz / 10) + 1);
 
-    if (proxy && max_thr > 1)
+    if (guarded)
     {
         if (proxy->is_not_cst_val())
         {
@@ -406,7 +411,7 @@ void Chunk<T>::block_clear(this auto& self, [[maybe_unused]] int thr_rank)
         increm_chunk_compress<Chunk<T>>();
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             increm_chunk_release_pool<Chunk<T>>();
         }
@@ -416,7 +421,7 @@ void Chunk<T>::block_clear(this auto& self, [[maybe_unused]] int thr_rank)
         }
     }
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         self.Base::free_block_to_pool(thr_rank, self.values_);
     }

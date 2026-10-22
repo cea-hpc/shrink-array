@@ -26,7 +26,7 @@ namespace
 {
 /// @brief tab.compress() in a shrink build, nothing in the std::vector baseline.
 ///
-/// compress() exists on the ArrayChunk* alone, and `if constexpr` in a plain
+/// compress() exists on the zero::Array* alone, and `if constexpr` in a plain
 /// function still type-checks its discarded branch -- but the body of a
 /// TEMPLATE is genuinely not instantiated, so routing the thirteen calls through
 /// one abbreviated function template lets the guard below be `if constexpr`.
@@ -88,7 +88,7 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         // drain (it would nest a parallel region), so a candidate still queued
         // by the serial writes of the iteration (fill_range / copy_range) was
         // reported as a miss its self-heal had to compress.
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
             {
@@ -100,68 +100,65 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
             }
         }
 
-#pragma omp parallel
+        // Every array's pass, each announced by say(name). Team regions (OpenMP,
+        // std): every thread of the region calls compress(), a team-wide pass
+        // that shares the chunks out, and one of them prints. TBB tasks are no
+        // team of the library: each array is compressed once, at this serial
+        // point, where its pass runs on the library's own team.
+        const auto all = [&](auto&& say)
         {
-#pragma omp single nowait
-            announce("  tab1");
+            say("  tab1");
             compress_one(tab1);
-#pragma omp single nowait
-            announce("  tab2");
+            say("  tab2");
             compress_one(tab2);
-#pragma omp single nowait
-            announce("  tab3");
+            say("  tab3");
             compress_one(tab3);
-#pragma omp single nowait
-            announce("  tab4");
+            say("  tab4");
             compress_one(tab4);
-#pragma omp single nowait
-            announce("  tab5");
+            say("  tab5");
             compress_one(tab5);
-#pragma omp single nowait
-            announce("  tab_int");
+            say("  tab_int");
             compress_one(tab_int);
-#pragma omp single nowait
-            announce("  tab_bool");
+            say("  tab_bool");
             compress_one(tab_bool);
-#pragma omp single nowait
-            announce("  tab_bool_bits");
+            say("  tab_bool_bits");
             compress_one(tab_bool_bits);
-#pragma omp single nowait
-            announce(" tab_complex");
+            say(" tab_complex");
             compress_one(tab_complex);
-#pragma omp single nowait
-            announce(" tab_float");
+            say(" tab_float");
             compress_one(tab_float);
-#pragma omp single nowait
-            announce(" tab_char");
+            say(" tab_char");
             compress_one(tab_char);
-#pragma omp single nowait
-            announce(" tab_short");
+            say(" tab_short");
             compress_one(tab_short);
-#pragma omp single nowait
-            announce(" tab_long");
+            say(" tab_long");
             compress_one(tab_long);
-#pragma omp single nowait
-            announce(" tab_ulong");
+            say(" tab_ulong");
             compress_one(tab_ulong);
-#pragma omp single nowait
-            announce(" tab_quant");
+            say(" tab_quant");
             compress_one(tab_quant);
             if (bench_arr.with_struct) // --no_struct
             {
-#pragma omp single nowait
-                announce(" tab_point");
+                say(" tab_point");
                 compress_one(tab_point);
-#pragma omp single nowait
-                announce(" tab_cell");
+                say(" tab_cell");
                 compress_one(tab_cell);
             }
             if (bench_arr.with_mask) // --no_mask
             {
-#pragma omp single nowait
-                announce(" tab_mask");
+                say(" tab_mask");
                 compress_one(tab_mask);
             }
+        };
+        if constexpr (bench_par::team_regions)
+        {
+            bench_par::region(
+                [&]([[maybe_unused]] bench_par::Team& t)
+                { all([&](const char* name) { t.single([&] { announce(name); }, bench_par::nowait); }); });
+        }
+        else
+        {
+            all([](const char* name) { announce(name); });
         }
 
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);

@@ -18,32 +18,32 @@
 
 /**
  * @file array_chunk2A_parallel.h
- * @brief The OpenMP-only surface of ArrayChunk2A -- the deferred-op flush --
+ * @brief The OpenMP-only surface of zero_any::Array -- the deferred-op flush --
  *        isolated in its own mixin so it disappears entirely from a serial
  *        build.
  *
  * @details Same split as ParallelSupport / ParallelSupport2 do for the other
- *          two variants: ParallelSupport2A<Derived, use_openmp> carries
+ *          two variants: ParallelSupport2A<Derived, threaded> carries
  *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
  *          three variants), a no-op in the serial specialisation.
  *
  * @see array_chunk_parallel.h, array_chunk2_parallel.h for the other two variants
  */
 
-#include "chunk/config.h"                               // build_config::use_openmp
+#include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
 
 namespace shrink_array
 {
 
 /**
- * @brief The OpenMP-only members of ArrayChunk2A, present only when the build has OpenMP.
+ * @brief The OpenMP-only members of zero_any::Array, present only when the build has OpenMP.
  *
- * @tparam Derived the concrete array type (only ArrayChunk2A today).
- * @tparam Enabled defaulted to build_config::use_openmp; never pass it
+ * @tparam Derived the concrete array type (only zero_any::Array today).
+ * @tparam Enabled defaulted to build_config::threaded; never pass it
  *         explicitly outside of tests.
  */
-template <typename Derived, bool Enabled = build_config::use_openmp>
+template <typename Derived, bool Enabled = build_config::threaded>
 struct ParallelSupport2A;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────

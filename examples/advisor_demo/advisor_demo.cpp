@@ -22,7 +22,7 @@
 #include <iterator> // std::size
 #include <vector>   // std::vector
 
-#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/array_chunk2A.h"              // zero_any::Array
 #include "chunk/chunk2A_std.h"                // Chunk2A
 #include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
@@ -75,7 +75,7 @@ struct Truth
     double    mem;
 };
 
-static Truth ground_truth(const ArrayChunk2A<double>& tab, double meta)
+static Truth ground_truth(const zero_any::Array<double>& tab, double meta)
 {
     Truth t{tab.nb_chunk_, 0, 0.};
     for (long long j = 0; j < t.chunks; ++j)
@@ -109,9 +109,9 @@ int main()
     for (const unsigned cs : sizes)
     {
         set_thread_chunk_size(cs);
-        ArrayChunk2A<double> tab(1); // proven pattern (test_multisize):
-        tab.set_chunk_size(cs);      // register per-array size FIRST,
-        tab.resize(n_elems);         // THEN size the geometry
+        zero_any::Array<double> tab(1); // proven pattern (test_multisize):
+        tab.set_chunk_size(cs);         // register per-array size FIRST,
+        tab.resize(n_elems);            // THEN size the geometry
         fill_and_compress(tab);
         if (meta == 0.)
         {
@@ -141,7 +141,7 @@ int main()
     {
         const unsigned ref_size = run.ref_size;
         set_thread_chunk_size(ref_size);
-        ArrayChunk2A<double> ref(1);
+        zero_any::Array<double> ref(1);
         ref.set_chunk_size(ref_size);
         ref.resize(n_elems);
         fill_and_compress(ref);

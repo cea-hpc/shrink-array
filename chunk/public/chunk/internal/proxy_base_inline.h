@@ -58,7 +58,7 @@
 #include "chunk/ring_log_debug.h"              // ScopedRingLog, ring_log, get_tid
 #include "chunk/internal/arithmetic_context.h" // ArithmeticProxyContext, ArithmeticContext
 #include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
-#include "chunk/internal/concept_chunk.h"      // IsChunk2, chunk_template_of
+#include "chunk/internal/concept_chunk.h"      // IsChunk2, ChunkTemplateOf
 #include "chunk/internal/concept_is_clean_assignement.h" // BaseT
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
@@ -118,8 +118,8 @@ void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab,
  *       one-argument branch is never instantiated (no `get_num_tab_async(ctx)`
  *       overload exists for it).
  */
-template <typename ProxyType>
-constexpr int get_num_tab_async_helper(auto* ctx, const ProxyType& proxy, const void* ptr) noexcept
+template <typename ProxyT>
+constexpr int get_num_tab_async_helper(auto* ctx, const ProxyT& proxy, const void* ptr) noexcept
 {
     if constexpr (requires { proxy.get_num_tab(ptr); })
     {
@@ -140,8 +140,8 @@ constexpr int get_num_tab_async_helper(auto* ctx, const ProxyType& proxy, const 
  *
  * @param ctx Deferred-operation context carrying num_tab and num_chunk.
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::set_ptr_is_inside_chunk_list_to_compress_async(auto* ctx)
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::set_ptr_is_inside_chunk_list_to_compress_async(auto* ctx)
 {
     const int tab       = ctx->num_tab;
     const int num_chunk = ctx->num_chunk;
@@ -165,10 +165,10 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::set_ptr_is_inside_
  * @pre `ptr_is_inside_chunk_list_to_compress` is armed, i.e. set_info_on_chunk()
  *      ran on this write path (checked under `build_config::any_check`).
  */
-template <typename Derived, typename T, typename ChunkType>
-void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] auto& vec_tuple) const
+template <typename Derived, typename T, typename ChunkT>
+void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] auto& vec_tuple) const
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if constexpr (build_config::any_check)
         {
@@ -207,7 +207,7 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
             }
             if constexpr (chunk_config::stats)
             {
-                increm_chunk_mark_ok<ChunkType>();
+                increm_chunk_mark_ok<ChunkT>();
             }
             push_to_compress_list(vec_tuple, &chunk_, num_chunk_, num_tab_, ChunkElems{this->chunk_size()});
         }
@@ -216,7 +216,7 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
             // CHUNK_STATS: flag ALREADY 1, normal while the chunk waits in the list.
             // mark_refused growing while mark_ok stays flat means the flag is not
             // reset after the compression sweep.
-            increm_chunk_mark_refused<ChunkType>();
+            increm_chunk_mark_refused<ChunkT>();
         }
     }
 }
@@ -235,8 +235,8 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
  * @pre `ptr_is_inside_chunk_list_to_compress` is armed (checked under
  *      `build_config::any_check`).
  */
-template <typename Derived, typename T, typename ChunkType>
-void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derived& self)
+template <typename Derived, typename T, typename ChunkT>
+void ProxyBase<Derived, T, ChunkT>::add_to_compression_list(this const Derived& self)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -257,7 +257,7 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
         {
             if constexpr (chunk_config::stats)
             {
-                increm_chunk_mark_refused<ChunkType>();
+                increm_chunk_mark_refused<ChunkT>();
             }
         }
         else
@@ -268,7 +268,7 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_mark_ok<ChunkType>();
+                    increm_chunk_mark_ok<ChunkT>();
                 }
                 const int thr = get_thr_rank_fast();
                 auto&     vec = self.get_vec_tuple_to_compress_potentially_thr(thr);
@@ -290,7 +290,7 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
                 }
 
                 push_to_compress_list(vec, &self.chunk_, self.num_chunk_, self.num_tab_, ChunkElems{self.chunk_size()});
-                if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+                if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
                 {
                     Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
                 }
@@ -299,7 +299,7 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
     }
     else
     {
-        if constexpr (build_config::not_use_openmp)
+        if constexpr (build_config::not_threaded)
         {
             if (!(*self.ptr_is_inside_chunk_list_to_compress_))
             {
@@ -326,16 +326,16 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
  * @tparam ProxyType Proxy type to rebuild.
  * @tparam Ctx       Context type recorded at enqueue time.
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
-template <typename ProxyType, typename Ctx>
-ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_with_info(Ctx* ctx)
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+template <typename ProxyT, typename Ctx>
+ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_info(Ctx* ctx)
 {
     auto&     chunk = ctx->chunk;
     const int num   = ctx->num;
 
     std::atomic<T*>& atomic_values = chunk.values_;
 
-    ProxyType proxy(atomic_values, num, chunk);
+    ProxyT proxy(atomic_values, num, chunk);
 
     proxy.set_num_chunk(ctx->num_chunk);
 
@@ -347,7 +347,7 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
         proxy.BaseSpec::set_info_second_value_ind_from_key(ctx->ptr_on_array);
     }
 
-    if constexpr (requires(ProxyType proxy) { proxy.set_num_tab(0); })
+    if constexpr (requires(ProxyT proxy) { proxy.set_num_tab(0); })
     {
         proxy.set_num_tab(ctx->num_tab);
     }
@@ -380,9 +380,9 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
  */
 // Deducing this: `self` replaces the CRTP down-cast. The class keeps its
 // Derived parameter; the calls go through the explicit object parameter.
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression_list_async(this const auto& self,
-                                                                                            auto*            ctx)
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_list_async(this const auto& self,
+                                                                                         auto*            ctx)
 {
     auto&     chunk = ctx->chunk;
     const int num   = ctx->num;
@@ -409,7 +409,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
 
         auto& vec = [&]() -> auto&
         {
-            if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+            if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
             {
                 return self.get_vec_tuple_to_compress_potentially_async_thr(ctx, thr);
             }
@@ -420,7 +420,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
         }();
 
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, self.chunk_size());
-        if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+        if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
         {
             Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
         }
@@ -460,12 +460,12 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
  * @return True if the write did NOT happen and must be deferred by the caller;
  *         false if it was applied.
  */
-template <typename Derived, typename T, typename ChunkType>
+template <typename Derived, typename T, typename ChunkT>
 template <typename WriteCallable, typename LbdInfo>
 [[nodiscard]] CHUNK_FORCE_INLINE bool
-ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]] this Derived& self,
-                                                                WriteCallable&&                write_body,
-                                                                [[maybe_unused]] LbdInfo       lbd_info) noexcept
+ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl([[maybe_unused]] this Derived& self,
+                                                             WriteCallable&&                write_body,
+                                                             [[maybe_unused]] LbdInfo       lbd_info) noexcept
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -502,7 +502,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
         [[maybe_unused]] int own_replay_excl_rank = -1;
         // Read once here, reused by the WAW guard below: see there.
         [[maybe_unused]] bool entry_pending = false;
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             entry_pending = self.chunk_.pending_any();
             if (entry_pending) [[unlikely]]
@@ -618,12 +618,12 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
                 // ─── WAW guard ───────────────────────────────────────────────
                 // Writes do not flush, so an OLDER deferred op for THIS offset
                 // may sit on our own rank: discard it before the direct store,
-                // else a later replay clobbers the fresh value. use_openmp keeps
+                // else a later replay clobbers the fresh value. threaded keeps
                 // the branch un-instantiated in serial builds (OpenMP-only
                 // machinery). entry_pending is enough as a first test: only this
                 // rank's own thread enqueues on it, so no own op can have
                 // appeared since the entry read found the chunk clear.
-                if constexpr (build_config::use_openmp)
+                if constexpr (build_config::threaded)
                 {
                     if (entry_pending && self.chunk_.pending_any()) [[unlikely]]
                     {
@@ -666,7 +666,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
                     // no compressor in the way, rather than from the deferred
                     // path (see to_be_queued_for_deferred_processing). One TLS
                     // load when the rank holds nothing.
-                    if constexpr (build_config::use_openmp)
+                    if constexpr (build_config::threaded)
                     {
                         if (CompressionManagerType::thread_may_have_ops_own()) [[unlikely]]
                         {
@@ -728,7 +728,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
         // Chunk2A only: its compression algorithm is identical in OMP and
         // non-OMP. Chunk/Chunk2 have distinct non-OMP paths and must NOT be
         // triggered here.
-        if constexpr (build_config::not_use_openmp && std::is_same_v<ChunkType, Chunk2A<T>>)
+        if constexpr (build_config::not_threaded && std::is_same_v<ChunkT, Chunk2A<T>>)
         {
             // Skip during rechunk_refill / flush replay (in_flush_replay): the refill
             // materialises a chunk here and RAW-fills it right after; compressing it in
@@ -753,8 +753,8 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
  *
  * @return The number of elements per chunk.
  */
-template <typename Derived, typename T, typename ChunkType>
-unsigned int ProxyBase<Derived, T, ChunkType>::chunk_size() const noexcept
+template <typename Derived, typename T, typename ChunkT>
+unsigned int ProxyBase<Derived, T, ChunkT>::chunk_size() const noexcept
 {
     // Armed (non-zero) on replay: do NOT dereference ptr_on_array there.
     if (chunk_size_frozen_ != 0U) [[unlikely]]
@@ -762,18 +762,18 @@ unsigned int ProxyBase<Derived, T, ChunkType>::chunk_size() const noexcept
         return chunk_size_frozen_;
     }
 
-    using ArrayType = ArrayChunkForT<ChunkType>;
+    using ArrayType = ArrayChunkForT<ChunkT>;
     return static_cast<const ArrayType*>(ptr_on_array_)->chunk_size();
 }
 
-template <typename Derived, typename T, typename ChunkType>
-unsigned int ProxyBase<Derived, T, ChunkType>::alloc_key() const noexcept
+template <typename Derived, typename T, typename ChunkT>
+unsigned int ProxyBase<Derived, T, ChunkT>::alloc_key() const noexcept
 {
     if (chunk_size_frozen_ != 0u) [[unlikely]]
     {
         return alloc_key_frozen_;
     }
-    using ArrayType = ArrayChunkForT<ChunkType>;
+    using ArrayType = ArrayChunkForT<ChunkT>;
     return static_cast<const ArrayType*>(ptr_on_array_)->alloc_key();
 }
 
@@ -788,16 +788,16 @@ unsigned int ProxyBase<Derived, T, ChunkType>::alloc_key() const noexcept
  * @tparam CtxType    Context type holding the write location and operands.
  * @tparam LambdaBody Callable replaying the write from that context.
  */
-template <typename Derived, typename T, typename ChunkType>
+template <typename Derived, typename T, typename ChunkT>
 template <typename CtxType, typename LambdaBody>
-void ProxyBase<Derived, T, ChunkType>::enqueue_deferred_write(CtxType* ctx, LambdaBody&& body) const
+void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaBody&& body) const
 {
-    using ArrayType = ArrayChunkForT<ChunkType>;
+    using ArrayType = ArrayChunkForT<ChunkT>;
     // This const guards the proxy, not the array: enqueueing marks the array's
     // dirty bitset now, the write itself replays at the phase end.
     auto* arr = static_cast<ArrayType*>(const_cast<void*>(ptr_on_array_));
     arr->mark_chunk_dirty(ctx->num_chunk);
-    increm_chunk_gate_deferred<ChunkType>();
+    increm_chunk_gate_deferred<ChunkT>();
 
     // The moment the protocol matters: this write is about to be parked in a
     // per-thread queue that only the phase end drains. See phase_guard.h.
@@ -827,17 +827,17 @@ void ProxyBase<Derived, T, ChunkType>::enqueue_deferred_write(CtxType* ctx, Lamb
  * @param operation  Operation to replay.
  * @param async_body Replay body.
  */
-template <typename Derived, typename T, typename ChunkType>
+template <typename Derived, typename T, typename ChunkT>
 template <typename U, typename Op, typename AsyncBody>
-void ProxyBase<Derived, T, ChunkType>::enqueue_async_arithmetic(this Derived& self,
-                                                                const U&      v,
-                                                                Op            operation,
-                                                                AsyncBody&&   async_body)
+void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(this Derived& self,
+                                                             const U&      v,
+                                                             Op            operation,
+                                                             AsyncBody&&   async_body)
 {
     using ProxyType = Derived;
 
     using CtxType = std::conditional_t<is_simple_proxy<ProxyType>::value, ArithmeticOperationProxyContext<T, Op>,
-                                       ArithmeticOperationContext<T, Op, ChunkType, ProxyType>>;
+                                       ArithmeticOperationContext<T, Op, ChunkT, ProxyType>>;
 
     auto* ctx = pool_new_ctx<CtxType>(self, static_cast<T>(v), operation, self.ptr_on_array_);
 
@@ -891,14 +891,14 @@ constexpr bool check_is_cst_val2([[maybe_unused]] const P& proxy)
  * @tparam U  Operand type.
  * @tparam Op Binary operation, invocable as `T(T, U)`.
  */
-template <typename Derived, typename T, typename ChunkType>
+template <typename Derived, typename T, typename ChunkT>
 template <typename U, typename Op>
     requires std::is_invocable_r_v<T, Op, T, U>
-void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(this Derived& self, Op operation, const U& v, InT<T> v_old)
+void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(this Derived& self, Op operation, const U& v, InT<T> v_old)
 {
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(v);
+        increm_chunk_write<ChunkT>(v);
     }
 
     using CalcType = std::common_type_t<T, BaseT<U>>;
@@ -1037,14 +1037,14 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(this Derived& self, Op op
 // as in apply_atomic_op. Returns nothing: the operators return the proxy, and on
 // the deferred path the result does not exist yet anyway. The reader_sync below
 // is what makes v_old -- the input of the read-modify-write -- trustworthy.
-template <typename Derived, typename T, typename ChunkType>
+template <typename Derived, typename T, typename ChunkT>
 template <typename U, typename Op>
-void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(this Derived& self, InT<U> v, Op operation) noexcept
+void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U> v, Op operation) noexcept
 {
     self.check_not_stale();
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(v);
+        increm_chunk_write<ChunkT>(v);
     }
 
     // ── Cross-rank RMW materialisation ──────────────────────────────────────
@@ -1154,7 +1154,7 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(this Derived& self, InT
                                 ring_log(get_tid(), ev_lambda_async_arith, info);
                             }
 
-                            if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
+                            if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
                             {
                                 internal::store_element_relaxed(values + ctx->num, static_cast<T>(final_val));
                             }
@@ -1176,15 +1176,15 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(this Derived& self, InT
 // (execute_inplace_operation), so there is no load/store pair to guard -- only
 // the promotion to std::common_type_t and the truncation back to T. Returns
 // nothing, so the whole operation can be deferred without anyone waiting.
-template <typename Derived, typename T, typename ChunkType>
+template <typename Derived, typename T, typename ChunkT>
 template <typename U, typename Op>
-void ProxyBase<Derived, T, ChunkType>::bitwise_assign(this Derived& self, InT<U> v, Op operation) noexcept
+void ProxyBase<Derived, T, ChunkT>::bitwise_assign(this Derived& self, InT<U> v, Op operation) noexcept
     requires std::is_integral_v<T> && std::is_integral_v<U>
 {
     self.check_not_stale();
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(v);
+        increm_chunk_write<ChunkT>(v);
     }
 
     // Cross-rank RMW materialisation, as in arithmetic_assign: this engine
@@ -1239,11 +1239,11 @@ void ProxyBase<Derived, T, ChunkType>::bitwise_assign(this Derived& self, InT<U>
 // enqueues the async one. Context type follows the proxy family: the light
 // ArithmeticProxyContext for Proxy<T>, the chunk-aware ArithmeticContext for
 // Proxy2<T> / Proxy2A<T>.
-template <typename Derived, typename T, typename ChunkType>
+template <typename Derived, typename T, typename ChunkT>
 template <typename SyncOp, typename AsyncOp>
-void ProxyBase<Derived, T, ChunkType>::apply_inplace_operation(this Derived&            self,
-                                                               SyncOp                   sync_op,
-                                                               [[maybe_unused]] AsyncOp async_op) noexcept
+void ProxyBase<Derived, T, ChunkT>::apply_inplace_operation(this Derived&            self,
+                                                            SyncOp                   sync_op,
+                                                            [[maybe_unused]] AsyncOp async_op) noexcept
 {
     self.check_not_stale();
     // Cross-rank RMW materialisation, outside begin_write: see arithmetic_assign.
@@ -1258,8 +1258,8 @@ void ProxyBase<Derived, T, ChunkType>::apply_inplace_operation(this Derived&    
             using ProxyType = Derived;
 
             using CtxType = std::conditional_t<is_simple_proxy<ProxyType>::value,
-                                               ArithmeticProxyContext<T>,                 // Proxy<T>
-                                               ArithmeticContext<T, ChunkType, ProxyType> // Proxy2<T>, Proxy2A<T>
+                                               ArithmeticProxyContext<T>,              // Proxy<T>
+                                               ArithmeticContext<T, ChunkT, ProxyType> // Proxy2<T>, Proxy2A<T>
                                                >;
             auto* ctx     = pool_new_ctx<CtxType>(self, self.ptr_on_array_);
 

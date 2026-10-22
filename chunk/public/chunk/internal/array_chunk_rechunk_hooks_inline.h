@@ -16,7 +16,7 @@
 
 #pragma once
 
-// Out-of-line bodies of the re-chunk hooks of ArrayChunk and ArrayChunk2A
+// Out-of-line bodies of the re-chunk hooks of zero::Array and zero_any::Array
 // (RechunkHooks<Derived, true>). Included at the end of array_chunk.h and of
 // array_chunk2A.h, after the class, so `self` (deducing this) is a complete
 // Derived and so the manager include stays out of the container declaration itself.
@@ -24,8 +24,8 @@
 #include <utility> // std::swap
 
 #include "chunk/internal/array_chunk_rechunk_hooks.h" // RechunkHooks, the class these bodies belong to
-#include "chunk/internal/manager_chunk.h"             // manager_type — candidate store + reuse free-lists
-#include "chunk/config.h"                       // build_config::use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/internal/manager_chunk.h"             // ManagerType — candidate store + reuse free-lists
+#include "chunk/config.h"                       // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/block_pass_precheck.h" // check_no_flush_outside_start
@@ -53,8 +53,8 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
             // v1 only: this pass bypasses CompressionManager::start(), and v1's
             // replay bodies rely on no compressor changing `values` during a flush
             // drain (see check_no_flush_outside_start, proxy_inline.h).
-            check_no_flush_outside_start<proxy_type>("RechunkHooks::rechunk_drop_candidates");
-            num_tab = proxy_type::share_info_array->get_num_tab(self.registry_key());
+            check_no_flush_outside_start<ProxyType>("RechunkHooks::rechunk_drop_candidates");
+            num_tab = ProxyType::share_info_array->get_num_tab(self.registry_key());
         }
         const int thr = get_thr_rank_fast();
         shrink_array::set_thread_chunk_size(self.size_policy_.size());
@@ -75,7 +75,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
                 }
             }
         };
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             for (auto& list : candidate_lists_thr())
             {
@@ -93,7 +93,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
 template <typename Derived>
 void RechunkHooks<Derived, true>::rechunk_drain_reuse_list(this Derived& /*self*/, unsigned int new_size)
 {
-    manager_type::drain_reuse_list_for_size(new_size);
+    ManagerType::drain_reuse_list_for_size(new_size);
 }
 
 template <typename Derived>
@@ -104,7 +104,7 @@ bool RechunkHooks<Derived, true>::rechunk_swap_identity(this Derived& self, Deri
     // -> the new row).
     using std::swap;
     swap(self.num_tab_, tmp.num_tab_);
-    return proxy_type::share_info_array->swap_keys(self.registry_key(), tmp.registry_key());
+    return ProxyType::share_info_array->swap_keys(self.registry_key(), tmp.registry_key());
 }
 
 } // namespace shrink_array

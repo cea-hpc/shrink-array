@@ -16,7 +16,7 @@
 
 #pragma once
 
-// Out-of-line bodies of ArrayChunk2's mode-gated surfaces (ParallelSupport2,
+// Out-of-line bodies of zero_one_value::Array's mode-gated surfaces (ParallelSupport2,
 // FastBlockSupport2). Included at the end of array_chunk2.h, so self() sees a complete
 // Derived.
 
@@ -47,11 +47,11 @@ void FastBlockSupport2<Derived, true>::make_block_compression(this Derived& self
     {
         if constexpr (Derived::is_not_bool)
         {
-            chunk_type::make_block_compression(thr, self.get_info_second_value(), nullptr);
+            ChunkType::make_block_compression(thr, self.get_info_second_value(), nullptr);
         }
         else
         {
-            chunk_type::make_block_compression_bool(thr, nullptr);
+            ChunkType::make_block_compression_bool(thr, nullptr);
         }
     };
 
@@ -72,8 +72,8 @@ void FastBlockSupport2<Derived, true>::make_block_compression(this Derived& self
         // Sequential point: outside a region only.
         if constexpr (Derived::is_not_bool)
         {
-            using ProxyT   = typename Traits::proxy_type;
-            using ManagerT = typename Traits::manager_type;
+            using ProxyT   = typename Traits::ProxyType;
+            using ManagerT = typename Traits::ManagerType;
 
             const int  num_tab  = ProxyT::share_info_array->get_num_tab(self.registry_key());
             const auto inf      = self.get_info_second_value();

@@ -5,8 +5,8 @@
 race:shrink_bench.cpp
 
 # --- Setup / teardown : allocation et destruction des tableaux ---
-race:ArrayChunk2A*::resize
-race:ArrayChunk2A*::clear
+race:zero_any::Array*::resize
+race:zero_any::Array*::clear
 race:ManagerChunk*::clearListBlockFreeThr
 race:ArrayChunk2Base*::resize
 

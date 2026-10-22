@@ -83,17 +83,18 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   | fonctions, méthodes, variables, paramètres, namespaces | snake_case | `get_chunk_list`, `num_tab` |
   | données membres privées et protégées | snake_case terminé par `_` | `chunk_list_`, `num_` |
   | constantes (`constexpr`) et énumérateurs | snake_case | `cst_buffer_size`, `ev_flush_begin` |
-  | classes, structs, concepts, alias de type, paramètres de template | PascalCase | `ArrayChunk2A`, `AllocT`, `ChunkT` |
+  | classes, structs, concepts, alias de type, paramètres de template | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |
   | macros | MAJUSCULES | `CHUNK_SIZE` |
 
   Les MAJUSCULES sont réservées aux macros : une constante ou un énumérateur écrit comme une macro
   se lit comme une macro, et peut en rencontrer une. Les formes de la bibliothèque standard
-  gardent leur graphie : les types membres de ses protocoles et ceux en `xxx_type` (`value_type`,
-  `chunk_type`), les traits et les tags (`is_cplx`, `rebind`). De même pour les types publics
-  `md::` de `chunk/mdspan.h` et `chunk/mdspan_tile_ops.h`, écrits comme `std::mdspan` écrit les
-  siens (`layout_tiled`, `accessor`, `constant_boundary`) : une vue écrite pour `std::mdspan` se
-  lit de même avec eux (`STD_STYLE_API` dans `scripts/check_naming.py`) ; leurs aides `detail::`
-  sont en PascalCase. Dans un nom en snake_case, la
+  gardent leur graphie : les types membres de ses protocoles (`value_type`, `size_type`, ... ;
+  nos propres types membres sont en PascalCase, `ChunkType`), les traits et les tags (`is_cplx`,
+  `rebind`). De même pour les types publics `md::` de `chunk/mdspan.h` et
+  `chunk/mdspan_tile_ops.h`, écrits comme `std::mdspan` écrit les siens (`layout_tiled`,
+  `accessor`, `constant_boundary`) : une vue écrite pour `std::mdspan` se lit de même avec eux
+  (`STD_STYLE_API` dans `scripts/check_naming.py`) ; leurs aides `detail::` sont en PascalCase.
+  Dans un nom en snake_case, la
   variante s'écrit `chunk2a` ; les noms de fichiers (`array_chunk2A.h`) restent tels quels. Les
   globales prennent le préfixe `g_` ; aucun nom ne commence par `__` (réservé). Un nom public qui
   change garde son ancienne graphie en alias `[[deprecated]]` jusqu'à la 1.0. `check_naming`

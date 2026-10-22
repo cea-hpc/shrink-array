@@ -75,9 +75,9 @@ struct ManagerChunkInt;
 /**
  * @brief The threading-dependent half of the registry.
  * @tparam Derived AllTypeChunk (CRTP, for get_list_type_chunk()).
- * @tparam Enabled build_config::use_openmp.
+ * @tparam Enabled build_config::threaded.
  */
-template <typename Derived, bool Enabled = build_config::use_openmp>
+template <typename Derived, bool Enabled = build_config::threaded>
 class AllTypeChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: per-thread allocators, per-thread free lists, and a
@@ -357,7 +357,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * @brief The manager of @p ManagerT exists after this call -- registered
      *        now if this is the first array of its type, a no-op otherwise.
      *
-     * Called by the arrays' create() with their ArrayChunkTraits::manager_type.
+     * Called by the arrays' create() with their ArrayChunkTraits::ManagerType.
      * One function-local static per instantiation: the first call of a type
      * registers under the mutex, every later one costs a guard load; two
      * threads constructing the first arrays of the same type at once are

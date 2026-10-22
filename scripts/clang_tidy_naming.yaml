@@ -19,7 +19,7 @@ CheckOptions:
   readability-identifier-naming.UnionCase: CamelCase
   readability-identifier-naming.EnumCase: CamelCase
   readability-identifier-naming.TypeAliasCase: CamelCase
-  readability-identifier-naming.TypeAliasIgnoredRegexp: '^([a-z0-9_]+_type|[a-z0-9_]+_tag|value_type|reference|const_reference|pointer|const_pointer|iterator|const_iterator|reverse_iterator|const_reverse_iterator|iterator_category|iterator_concept|other|type|is_always_equal|is_transparent|propagate_on_[a-z_]+)$'
+  readability-identifier-naming.TypeAliasIgnoredRegexp: '^([a-z0-9_]+_tag|value_type|size_type|difference_type|element_type|allocator_type|key_type|mapped_type|reference|const_reference|pointer|const_pointer|iterator|const_iterator|reverse_iterator|const_reverse_iterator|iterator_category|iterator_concept|other|type|is_always_equal|is_transparent|propagate_on_[a-z_]+)$'
   readability-identifier-naming.TypedefCase: CamelCase
   readability-identifier-naming.TemplateParameterCase: CamelCase
   readability-identifier-naming.ValueTemplateParameterCase: CamelCase

@@ -25,7 +25,7 @@
 
 #include "chunk/internal/proxy2A.h"            // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"               // InT<T>
-#include "chunk/array_chunk2A.h"               // ArrayChunk2A (dependent calls the include tools cannot attribute)
+#include "chunk/array_chunk2A.h"               // zero_any::Array (dependent calls the include tools cannot attribute)
 #include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h" // ArithmeticAffectationContext
@@ -35,6 +35,7 @@
 #include "chunk/internal/bad_ptr_check.h"                // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_stats.h"                  // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/relaxed_element.h"              // store_element_relaxed (the deferred replay)
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/parallel_storage_init.h" // make_filled, resize_filled, for_each_chunk
@@ -256,7 +257,7 @@ void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
 {
     const auto& vec_to_compress_potantially = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr_rank);
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         const int szm = ManagerChunk2A::get_size_max_number_of_chunk_to_check_compress();
 
@@ -302,7 +303,7 @@ void Proxy2A<T>::perform_compression() noexcept
     {
         // Serial builds defer nothing, and flush_deferred exists only in the
         // OpenMP policy specialisation.
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
         }
@@ -320,7 +321,7 @@ void Proxy2A<T>::perform_compression() noexcept
     // Cleared whether or not there was work. Do not move it inside the `if`:
     // a list drained meanwhile would keep the rank on the slow path for every
     // write (see mark_list_dangerous_for_thread). OpenMP only, as the trigger.
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         CompressionManagerType::mark_list_safe_for_thread(thr_rank);
     }
@@ -411,8 +412,8 @@ void Proxy2A<T>::ensure_writable_storage()
  * @note Reached only from the async materialisers, never from a deferred
  *       replay, so `proxy.chunk_size()` is the live geometry here.
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_storage_async(const Derived& proxy) const
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage_async(const Derived& proxy) const
 {
     const bool is_val2 = proxy.is_cst_val2();
 
@@ -644,7 +645,7 @@ T Proxy2A<T>::assign_impl(InT<U> v) noexcept
         need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body_bool);
     }
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if (need_async)
         {
@@ -728,8 +729,19 @@ T Proxy2A<T>::assign_impl(InT<U> v) noexcept
                         }
                     }
 
-                    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                    values_before[num] = static_cast<T>(ctx->operand);
+                    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers.
+                    // A relaxed atomic store where Chunk2A's element stores must be one
+                    // (relaxed_element.h): other writers' scans (may_become_uniform)
+                    // read this element meanwhile -- as the compound ops' replay does.
+                    if constexpr (internal::relaxed_element_stores_v<Chunk2A<T>, T>)
+                    {
+                        internal::store_element_relaxed(values_before + num, static_cast<T>(ctx->operand));
+                    }
+                    else
+                    {
+                        // raw-read: deferred replay, after materialisation (as above)
+                        values_before[num] = static_cast<T>(ctx->operand);
+                    }
 
                     // Post-store confirmation.
                     const T* values_after = chunk.values_load();
@@ -823,11 +835,11 @@ void Proxy2A<T>::execute_simple_operation(ModifyFn modify_fn)
  * @param ctx       Deferred-operation context being replayed.
  * @param operation Write body.
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(this Derived& self,
-                                                                                           auto*         ctx,
-                                                                                           Lambda        operation)
+void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(this Derived& self,
+                                                                                        auto*         ctx,
+                                                                                        Lambda        operation)
 {
     int retry_count = 0;
 
@@ -948,12 +960,12 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(Op op, const U& v, Modify
  * @param v   Operand.
  * @param lbd Store body, invoked as `lbd(op)`.
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Op, typename Body, typename U>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation_async(auto*    ctx,
-                                                                                                        Op       op,
-                                                                                                        const U& v,
-                                                                                                        Body lbd) const
+void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(auto*    ctx,
+                                                                                                     Op       op,
+                                                                                                     const U& v,
+                                                                                                     Body     lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -1136,11 +1148,11 @@ void Proxy2A<T>::execute_inplace_operation(ModifyFn modify_fn)
 
 // Replay twin of execute_inplace_operation(), under the retry protocol. Check
 // builds assert the chunk did not go back to a constant during the store.
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_operation_async(this const Derived& self,
-                                                                                            auto*               ctx,
-                                                                                            Lambda operation)
+void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(this const Derived& self,
+                                                                                         auto*               ctx,
+                                                                                         Lambda              operation)
 {
     int retry_count = 0;
 
@@ -1162,7 +1174,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
             continue;
         }
 
-        internal::modify_element<ChunkType, T>(values_before, ctx->num, operation);
+        internal::modify_element<ChunkT, T>(values_before, ctx->num, operation);
 
         const T* values_after = ctx->chunk.values_load();
         if (values_after != values_before) [[unlikely]]

@@ -20,7 +20,7 @@
 #include <iostream> // std::cout
 #include <utility>  // std::cmp_not_equal
 
-#include "chunk/config.h"                     // build_config::use_openmp, chunk_dynamic
+#include "chunk/config.h"                     // build_config::threaded, chunk_dynamic
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size, static_chunk_shift, static_chunk_mask
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, chunk_size_error
 #include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
@@ -68,7 +68,7 @@ namespace shrink_array
 
 /**
  * @brief The thread-model half of the startup: one verb, two bodies.
- * @tparam Enabled build_config::use_openmp.
+ * @tparam Enabled build_config::threaded.
  * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING -- see below.
  *
  * @note AllT looks redundant (it is only ever AllTypeChunk) and is not: it keeps the two
@@ -79,7 +79,7 @@ namespace shrink_array
  *       SingletonChk<AllTypeChunk>), or phase-1 lookup rejects the other build's body. Same
  *       reason as the Derived parameter of AllTypeChunkParallelInterface.
  */
-template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
+template <bool Enabled = build_config::threaded, typename AllT = AllTypeChunk>
 struct ParamChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: init_thread_structures() prints the allocator / thread-model banner.
@@ -316,8 +316,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @tparam T the element type concerned
      * @param second_value the additional value to store as a constant
      * @warning Not implemented: deleted, so a use fails at compile time. A
-     *          placeholder for the second-constant support that ArrayChunk2
-     *          offers per array (ArrayChunk2::set_second_value) and chunk2A per
+     *          placeholder for the second-constant support that zero_one_value::Array
+     *          offers per array (zero_one_value::Array::set_second_value) and chunk2A per
      *          chunk.
      */
     template <typename T>

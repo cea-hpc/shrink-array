@@ -7,6 +7,10 @@
 > [performance_measurement.md](performance_measurement.md)). When in doubt, the code is the
 > reference.
 
+> Names in the code: `zero::Array` is Chunk, `zero_one_value::Array` is Chunk2, `zero_any::Array`
+> is Chunk2A (the former class names `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` are
+> deprecated aliases until 1.0). This document keeps the variants' historical names.
+
 ***
 
 ## 1. The common principle

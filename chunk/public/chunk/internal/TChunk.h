@@ -45,7 +45,7 @@ using MapTypeChunk2P = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<ChunkTe
 
 /// @brief Chunk2's candidate lists, one per second value.
 /// @details Copied into map_chunk2_to_compress_potentially_thr's shared_ptr
-///          (ArrayChunk2::set_second_value): same tuples as MapTypeChunk2P.
+///          (zero_one_value::Array::set_second_value): same tuples as MapTypeChunk2P.
 template <template <typename> class ChunkTemplate, typename T>
 using TChunk2Comp = std::vector<VectorTuple4ChunkInt2<ChunkTemplate, T>>;
 

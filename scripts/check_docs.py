@@ -50,11 +50,22 @@ PAIRS = {
     "performance_measurement.md": "mesures_performance_fr.md",
 }
 
+# Documents with no French version, and why.
+ENGLISH_ONLY = {
+    # the threads branch's working plan, status and decisions: it goes with the
+    # branch, not into a release
+    "threading_backends.md",
+    # the plan of the pattern::Array variant: replaced by algo_ documents when it exists
+    "pattern_design.md",
+}
+
 # Real names that are not defined in this tree.
 ALLOWED = {
     # removed names that CHANGELOG.md records as removed
     "FAST_ALLOC_MAX_CONST_BLOCK_SIZE", "internal/static_const_array_define.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
+    # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
+    "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh",
     # C++ standard library, compiler, language
@@ -71,7 +82,9 @@ ALLOWED = {
     "omp_get_max_threads", "omp_get_num_procs", "omp_get_thread_num", "omp_get_thread_limit",
     "omp_get_ancestor_thread_num", "omp_set_num_threads", "omp_in_parallel", "ompt_start_tool",
     "OMP_NUM_THREADS", "OMP_PROC_BIND", "OMP_PLACES", "OMP_TOOL", "OMP_TOOL_LIBRARIES",
-    "OMP_TOOL_VERBOSE_INIT", "gomp_barrier_wait_end",
+    "OMP_TOOL_VERBOSE_INIT", "gomp_barrier_wait_end", "parallel_begin",
+    # oneTBB
+    "task_scheduler_observer",
     # Linux, glibc, tools
     "membarrier", "MEMBARRIER_CMD_PRIVATE_EXPEDITED", "MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED",
     "madvise", "MADV_DONTNEED", "MADV_HUGEPAGE", "MADV_COLLAPSE", "mincore", "mprotect", "mmap",
@@ -219,7 +232,7 @@ def check_pairs(root):
     bad = []
     d = root / "docs"
     for en in sorted(d.glob("*.md")):
-        if en.name.endswith("_fr.md") or en.name == "README.md":
+        if en.name.endswith("_fr.md") or en.name == "README.md" or en.name in ENGLISH_ONLY:
             continue
         fr = d / PAIRS.get(en.name, en.name[:-3] + "_fr.md")
         if not fr.exists():
