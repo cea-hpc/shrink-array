@@ -404,7 +404,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::destroy_after_flush(bool in_para
                 // region does not nest. Each thread drains only its own index (disjoint, race-free) and
                 // recycles into its own pool. Compiled out under OMPT: opening a region would fire the
                 // parallel_end compression callback, which must not run from a teardown drain.
-                pmp::team(pmp::options{}, [&](pmp::Team& /*team*/) { drain_index(CHUNK_PMP_THREAD_RANK); });
+                pmp::team(pmp::Options{}, [&](pmp::Team& /*team*/) { drain_index(CHUNK_PMP_THREAD_RANK); });
             }
 
             // Serial mop-up: the OMPT build (no region above) and any index the team did
@@ -510,7 +510,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_paral
             }
 
             int  team         = 0;
-            bool pass_flushed = pmp::team_any(pmp::options{},
+            bool pass_flushed = pmp::team_any(pmp::Options{},
                                               [&](pmp::Team& /*team*/, bool& flushed)
                                               {
                                                   const int thr_rank = CHUNK_PMP_THREAD_RANK;

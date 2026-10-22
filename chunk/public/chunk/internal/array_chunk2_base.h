@@ -94,7 +94,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         }
         else
         {
-            pmp::team(pmp::options{}, [&](pmp::Team& team) { derived().compress_int(team); });
+            pmp::team(pmp::Options{}, [&](pmp::Team& team) { derived().compress_int(team); });
         }
     }
 

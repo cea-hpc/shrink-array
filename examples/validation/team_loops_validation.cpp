@@ -42,7 +42,7 @@
 #include <vector>  // std::vector
 #include <utility> // std::pair
 
-#include "fast_allocators/internal/pmp_loops.h" // fast_alloc::pmp::team, Team, options, wait_mode
+#include "fast_allocators/internal/pmp_loops.h" // fast_alloc::pmp::team, Team, Options, WaitMode
 
 namespace pmp = fast_alloc::pmp;
 
@@ -81,7 +81,7 @@ int chunks_owner(long long k, int c, int size)
     return static_cast<int>((k / c) % size);
 }
 
-enum class loop_kind
+enum class LoopKind
 {
     static_blocks,
     static_blocks_simd,
@@ -89,43 +89,43 @@ enum class loop_kind
     static_chunks_simd,
 };
 
-const char* name_of(loop_kind k)
+const char* name_of(LoopKind k)
 {
     switch (k)
     {
-        case loop_kind::static_blocks:
+        case LoopKind::static_blocks:
             return "for_static";
-        case loop_kind::static_blocks_simd:
+        case LoopKind::static_blocks_simd:
             return "for_static_simd";
-        case loop_kind::static_chunks:
+        case LoopKind::static_chunks:
             return "for_static_chunks";
-        case loop_kind::static_chunks_simd:
+        case LoopKind::static_chunks_simd:
             return "for_static_chunks_simd";
     }
     return "?";
 }
 
-bool is_chunked(loop_kind k)
+bool is_chunked(LoopKind k)
 {
-    return k == loop_kind::static_chunks || k == loop_kind::static_chunks_simd;
+    return k == LoopKind::static_chunks || k == LoopKind::static_chunks_simd;
 }
 
 /// @brief One loop of kind @p k on @p t, the body writing what @p body writes.
 template <typename Index, typename Body>
-void run_loop(pmp::Team& t, loop_kind k, Index first, Index last, int chunk, pmp::wait_mode w, Body&& body)
+void run_loop(pmp::Team& t, LoopKind k, Index first, Index last, int chunk, pmp::WaitMode w, Body&& body)
 {
     switch (k)
     {
-        case loop_kind::static_blocks:
+        case LoopKind::static_blocks:
             t.for_static(first, last, body, w);
             return;
-        case loop_kind::static_blocks_simd:
+        case LoopKind::static_blocks_simd:
             t.for_static_simd(first, last, body, w);
             return;
-        case loop_kind::static_chunks:
+        case LoopKind::static_chunks:
             t.for_static_chunks(first, last, chunk, body, w);
             return;
-        case loop_kind::static_chunks_simd:
+        case LoopKind::static_chunks_simd:
             t.for_static_chunks_simd(first, last, chunk, body, w);
             return;
     }
@@ -140,7 +140,7 @@ void run_loop(pmp::Team& t, loop_kind k, Index first, Index last, int chunk, pmp
  *          on the wrong rank in owner[].
  */
 template <typename Index>
-void check_one(loop_kind k, int nt, Index first, Index n, int chunk)
+void check_one(LoopKind k, int nt, Index first, Index n, int chunk)
 {
     const Index      last = static_cast<Index>(first + n);
     const auto       un   = static_cast<std::size_t>(n);
@@ -151,7 +151,7 @@ void check_one(loop_kind k, int nt, Index first, Index n, int chunk)
     std::vector<int> hits_a(un, 0);
     int              size = 0;
 
-    pmp::team(pmp::options{.num_threads = nt},
+    pmp::team(pmp::Options{.num_threads = nt},
               [&](pmp::Team& t)
               {
                   const int r = t.rank();
@@ -163,7 +163,7 @@ void check_one(loop_kind k, int nt, Index first, Index n, int chunk)
                   t.single([&] { size = t.size(); }); // a barrier: size set for all
 
                   // 4: the wait form.
-                  run_loop(t, k, first, last, chunk, pmp::wait_mode::wait,
+                  run_loop(t, k, first, last, chunk, pmp::WaitMode::wait,
                            [&](Index i)
                            {
                                ow[i - first] = r;
@@ -225,13 +225,13 @@ void check_all()
     const std::vector<std::pair<long long, long long>> ranges = {
         {0, 0}, {0, 1}, {0, 5}, {7, 5}, {0, 100}, {13, 1001}, {-50, 333}, {0, 4096}, {1000, 8 * 64},
     };
-    const loop_kind kinds[] = {loop_kind::static_blocks, loop_kind::static_blocks_simd, loop_kind::static_chunks,
-                               loop_kind::static_chunks_simd};
+    const LoopKind kinds[] = {LoopKind::static_blocks, LoopKind::static_blocks_simd, LoopKind::static_chunks,
+                              LoopKind::static_chunks_simd};
     for (const int nt : {1, 2, 3, 8})
     {
         for (const auto& [first, n] : ranges)
         {
-            for (const loop_kind k : kinds)
+            for (const LoopKind k : kinds)
             {
                 if (is_chunked(k))
                 {
@@ -253,9 +253,9 @@ void check_all()
 
 int main()
 {
-    const char* backend = pmp::backend == pmp::backend_kind::openmp ? "openmp"
-                        : pmp::backend == pmp::backend_kind::pool   ? "pool"
-                                                                     : "serial";
+    const char* backend = pmp::backend == pmp::BackendKind::openmp ? "openmp"
+                          : pmp::backend == pmp::BackendKind::pool ? "pool"
+                                                                   : "serial";
     std::printf("team_loops_validation: backend %s\n", backend);
     check_all<int>();
     check_all<long long>();

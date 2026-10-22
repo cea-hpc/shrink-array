@@ -447,7 +447,7 @@ void ArrayChunk2<T, IndType>::print_compression_stats(std::ostream& os) const
     const auto         csz_audit = static_cast<unsigned int>(this->size_policy_.size());
     int                n_t0      = 0; // compressed (or compressible) to first_value
     int                n_t1      = 0; // ... to the second value
-    const pmp::options team_opt{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500};
+    const pmp::Options team_opt{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500};
 
     if constexpr (is_not_bool)
     {
@@ -687,7 +687,7 @@ void ArrayChunk2<T, IndType>::clear_core()
     }
     else
     {
-        pmp::team(pmp::options{},
+        pmp::team(pmp::Options{},
                   [&](pmp::Team& team)
                   {
                       const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_);

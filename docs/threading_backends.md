@@ -96,7 +96,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    reduction(+ : ...)` regions), `current_team()` (the innermost team: the
    library's, the caller's region, or a team of one) and `Team` (`rank`,
    `size`, `for_static`, `for_dynamic`, `barrier`, `single`, `masked`, each
-   with `wait_mode::nowait` where OpenMP has it). Converted: the
+   with `WaitMode::nowait` where OpenMP has it). Converted: the
    `compress()` / `compress_int()` passes of the three variants
    (`compress_int(pmp::Team&)`, the old signatures kept as forwarders on
    `current_team()`), their `clear_core()` teams, and the loop of

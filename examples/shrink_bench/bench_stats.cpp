@@ -64,7 +64,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         const Int ssz = tab.size();
 
         // `omp parallel for schedule(static) reduction(+ : ...)` with OpenMP.
-        const auto census = shrink_array::pmp::parallel_sum<Int, 3>(Int{0}, ssz, shrink_array::pmp::options{},
+        const auto census = shrink_array::pmp::parallel_sum<Int, 3>(Int{0}, ssz, shrink_array::pmp::Options{},
                                                                     [&](Int k, auto& acc)
                                                                     {
                                                                         auto& nbz = acc[0];
@@ -183,7 +183,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         const Int ssz = tab.size();
 
         // `omp parallel for schedule(static) reduction(+ : nbz)` with OpenMP.
-        const Int nbz = shrink_array::pmp::parallel_sum<Int, 1>(Int{0}, ssz, shrink_array::pmp::options{},
+        const Int nbz = shrink_array::pmp::parallel_sum<Int, 1>(Int{0}, ssz, shrink_array::pmp::Options{},
                                                                 [&](Int k, auto& acc)
                                                                 {
                                                                     if (tab[k] == 0.0)

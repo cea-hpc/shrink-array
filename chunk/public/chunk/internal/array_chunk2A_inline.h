@@ -135,7 +135,7 @@ void ArrayChunk2A<T, IndType>::print_compression_stats(std::ostream& os) const
 
     // acc[0]: compressed (or compressible) to first_value, acc[1]: to a second value.
     const auto counts = pmp::parallel_sum<int, 2>(
-        0, nb_chunk_, pmp::options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
+        0, nb_chunk_, pmp::Options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
         [&](int j, auto& acc)
         {
             const auto& ck = chunk_list_[j];
@@ -182,7 +182,7 @@ void ArrayChunk2A<T, IndType>::clear()
         {
             const auto                      csz = static_cast<unsigned int>(this->size_policy_.size());
             std::vector<std::pair<bool, T>> summary(static_cast<std::size_t>(nb_chunk_));
-            pmp::parallel_for(0, nb_chunk_, pmp::options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
+            pmp::parallel_for(0, nb_chunk_, pmp::Options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
                               [&](int j)
                               {
                                   const auto& ck = chunk_list_[j];
@@ -402,7 +402,7 @@ void ArrayChunk2A<T, IndType>::clear_core()
     {
         // acc[0]: the second values the registry release counted (one thread's).
         const int nb_val2 = pmp::team_sum<int, 1>(
-            pmp::options{},
+            pmp::Options{},
             [&](pmp::Team& team, auto& acc)
             {
                 const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_);

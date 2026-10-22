@@ -1559,7 +1559,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         else
         {
             int team = 0;
-            pmp::team(pmp::options{},
+            pmp::team(pmp::Options{},
                       [&](pmp::Team& /*team*/)
                       {
                           const int thr = CHUNK_PMP_THREAD_RANK;

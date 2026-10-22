@@ -185,7 +185,7 @@ struct FastAllocatorBase
  *          runtime: their pools stay in the thread_local, as before.
  */
 inline constexpr bool deferred_pools_outlive_thread =
-    build_config::use_fast_alloc && ::fast_alloc::pmp::backend == ::fast_alloc::pmp::backend_kind::pool;
+    build_config::use_fast_alloc && ::fast_alloc::pmp::backend == ::fast_alloc::pmp::BackendKind::pool;
 
 namespace detail
 {

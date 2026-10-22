@@ -30,25 +30,25 @@
 namespace shrink_array::pmp
 {
 using ::fast_alloc::pmp::backend;
-using ::fast_alloc::pmp::backend_kind;
+using ::fast_alloc::pmp::BackendKind;
 using ::fast_alloc::pmp::current_team;
 using ::fast_alloc::pmp::enter_application_phase;
 using ::fast_alloc::pmp::in_application_phase;
 using ::fast_alloc::pmp::leave_application_phase;
 using ::fast_alloc::pmp::nowait;
-using ::fast_alloc::pmp::options;
+using ::fast_alloc::pmp::Options;
 using ::fast_alloc::pmp::parallel_for;
 using ::fast_alloc::pmp::parallel_for_local;
 using ::fast_alloc::pmp::parallel_sum;
-using ::fast_alloc::pmp::sched_kind;
-using ::fast_alloc::pmp::schedule;
+using ::fast_alloc::pmp::SchedKind;
+using ::fast_alloc::pmp::Schedule;
 using ::fast_alloc::pmp::team;
 using ::fast_alloc::pmp::Team;
 using ::fast_alloc::pmp::team_any;
 using ::fast_alloc::pmp::team_sum;
 using ::fast_alloc::pmp::thread_rank;
 using ::fast_alloc::pmp::threaded;
-using ::fast_alloc::pmp::wait_mode;
+using ::fast_alloc::pmp::WaitMode;
 
 static_assert(build_config::threaded == threaded,
               "chunk: the build's threading flag (CHUNK_OPT_THREADED) and the backend pmp_runtime.h selects disagree");
@@ -135,7 +135,7 @@ inline constexpr int capacity_floor = 256;
     {
         int cap = std::max({::fast_alloc::pmp::max_threads(), ::fast_alloc::pmp::num_procs(), capacity_floor});
         cap     = std::max(cap, shrink_array::env_number<int>("CHUNK_THREAD_CAPACITY", 0));
-        if constexpr (::fast_alloc::pmp::backend == ::fast_alloc::pmp::backend_kind::pool)
+        if constexpr (::fast_alloc::pmp::backend == ::fast_alloc::pmp::BackendKind::pool)
         {
             // false when the registry already exists (the allocator asked a rank
             // first): it was then sized by the same rule, see thread_rank_registry().
@@ -196,7 +196,7 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 [[nodiscard]] inline int chunk_pmp_library_rank() noexcept
 {
     namespace rt = ::fast_alloc::pmp;
-    if constexpr (rt::backend == rt::backend_kind::pool)
+    if constexpr (rt::backend == rt::BackendKind::pool)
     {
         if (rt::active_level() > 1) [[unlikely]]
         {

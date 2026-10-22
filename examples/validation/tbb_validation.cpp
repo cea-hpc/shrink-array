@@ -113,7 +113,7 @@ constexpr const char* variant_name()
     }
 }
 
-constexpr bool pool_build = pmp::backend == pmp::backend_kind::pool;
+constexpr bool pool_build = pmp::backend == pmp::BackendKind::pool;
 
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
@@ -248,22 +248,22 @@ class PhaseRecord
     int                              threads_ = 0;
 };
 
-enum class part
+enum class Part
 {
     automatic,
     simple,
     fixed, ///< static_partitioner
 };
 
-constexpr const char* part_name(part k)
+constexpr const char* part_name(Part k)
 {
     switch (k)
     {
-        case part::automatic:
+        case Part::automatic:
             return "auto";
-        case part::simple:
+        case Part::simple:
             return "simple";
-        case part::fixed:
+        case Part::fixed:
             return "static";
     }
     return "?";
@@ -271,7 +271,7 @@ constexpr const char* part_name(part k)
 
 /// The range form, with partitioner @p k.
 template <typename T>
-int range_form(const char* label, long N, int phases, part k, const Scenario<T>& sc)
+int range_form(const char* label, long N, int phases, Part k, const Scenario<T>& sc)
 {
     Array<T>       arr(N);
     std::vector<T> ref(static_cast<std::size_t>(N), T(0));
@@ -291,14 +291,14 @@ int range_form(const char* label, long N, int phases, part k, const Scenario<T>&
         };
         switch (k)
         {
-            case part::automatic:
+            case Part::automatic:
                 shrink_array::tbb::parallel_for(blocked_range<long>(0, N), body);
                 break;
-            case part::simple:
+            case Part::simple:
                 shrink_array::tbb::parallel_for(blocked_range<long>(0, N, run_len / 4), body,
                                                 oneapi::tbb::simple_partitioner{});
                 break;
-            case part::fixed:
+            case Part::fixed:
                 shrink_array::tbb::parallel_for(blocked_range<long>(0, N), body, oneapi::tbb::static_partitioner{});
                 break;
         }
@@ -634,7 +634,7 @@ int run(int argc, char** argv)
     arena.execute(
         [&]
         {
-            for (const part k : {part::automatic, part::simple, part::fixed})
+            for (const Part k : {Part::automatic, Part::simple, Part::fixed})
             {
                 fails += range_form<double>("double", N, phases, k, sd);
                 fails += range_form<int>("int", N, phases, k, si);
@@ -656,7 +656,7 @@ int run(int argc, char** argv)
 
     // A narrower arena for one call: its threads are TBB's same workers.
     oneapi::tbb::task_arena narrow(std::min(nt, 2));
-    narrow.execute([&] { fails += range_form<double>("double, arena of 2", N, phases, part::fixed, sd); });
+    narrow.execute([&] { fails += range_form<double>("double, arena of 2", N, phases, Part::fixed, sd); });
 
     if constexpr (pool_build)
     {

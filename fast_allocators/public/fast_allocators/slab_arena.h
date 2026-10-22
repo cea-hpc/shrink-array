@@ -532,7 +532,7 @@ class EmptySlabSweep
         if (pmp::threaded && nthr > 1 && !pmp::in_parallel() && n_runs >= 4L * nthr)
         {
             const Run* runs = runs_.data();
-            pmp::parallel_for(0L, n_runs, pmp::options{.num_threads = nthr, .sched = pmp::schedule::dynamic(16)},
+            pmp::parallel_for(0L, n_runs, pmp::Options{.num_threads = nthr, .sched = pmp::Schedule::dynamic(16)},
                               [runs](long i)
                               { ::madvise(detail::addr_ptr(runs[i].begin), runs[i].len, MADV_DONTNEED); });
             return;
@@ -853,7 +853,7 @@ class SlabArena
         if (pmp::threaded && nthr > 1 && !pmp::in_parallel() && n_runs >= 4L * nthr)
         {
             const Span* run = spans.data();
-            pmp::parallel_for(0L, n_runs, pmp::options{.num_threads = nthr, .sched = pmp::schedule::dynamic(16)},
+            pmp::parallel_for(0L, n_runs, pmp::Options{.num_threads = nthr, .sched = pmp::Schedule::dynamic(16)},
                               [run](long i) { ::madvise(detail::addr_ptr(run[i].begin), run[i].len, MADV_DONTNEED); });
         }
         else

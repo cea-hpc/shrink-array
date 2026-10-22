@@ -136,7 +136,7 @@ class BaselineVector : public std::vector<T, DefaultInitAllocator<T>>
             const std::ptrdiff_t b = static_cast<std::ptrdiff_t>(first);
             const std::ptrdiff_t e = static_cast<std::ptrdiff_t>(this->size());
             // `omp parallel for schedule(static) if (...)` with OpenMP.
-            pmp::parallel_for(b, e, pmp::options{.use_team = static_cast<std::size_t>(e - b) >= parallel_min},
+            pmp::parallel_for(b, e, pmp::Options{.use_team = static_cast<std::size_t>(e - b) >= parallel_min},
                               [p](std::ptrdiff_t i) { p[i] = T{}; });
         }
     }

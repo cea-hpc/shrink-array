@@ -66,7 +66,7 @@
 namespace fast_alloc::pmp
 {
 /// @brief The threading backends a build can run the library on.
-enum class backend_kind : int
+enum class BackendKind : int
 {
     serial, ///< One thread: rank 0, no region, no team.
     openmp, ///< OpenMP: the queries are the omp_* calls, the teams OpenMP regions.
@@ -74,12 +74,12 @@ enum class backend_kind : int
 };
 
 /// @brief The backend of this build (fixed at compile time).
-inline constexpr backend_kind backend = FAST_ALLOC_PMP_BACKEND_POOL ? backend_kind::pool
-                                        : FAST_ALLOC_PMP_THREADED   ? backend_kind::openmp
-                                                                    : backend_kind::serial;
+inline constexpr BackendKind backend = FAST_ALLOC_PMP_BACKEND_POOL ? BackendKind::pool
+                                       : FAST_ALLOC_PMP_THREADED   ? BackendKind::openmp
+                                                                   : BackendKind::serial;
 
 /// @brief Whether the backend runs threads: false only for the serial backend.
-inline constexpr bool threaded = backend != backend_kind::serial;
+inline constexpr bool threaded = backend != BackendKind::serial;
 
 // ---------------------------------------------------------------------------
 // The queries. OpenMP: the omp_* call of the same meaning. Serial: one thread.
@@ -280,14 +280,14 @@ inline void set_max_active_levels([[maybe_unused]] int levels) noexcept
 
 /// @brief A runtime schedule: the omp_sched_t value as an int (static 1, dynamic 2,
 ///        guided 3, auto 4, modifier bits included) and its chunk (0: the default).
-struct runtime_schedule
+struct RuntimeSchedule
 {
     int kind  = 1; ///< omp_sched_t value; 1 = static.
     int chunk = 0; ///< Chunk size; 0 lets the runtime pick its default.
 };
 
 /// @brief The calling task's schedule of the `schedule(runtime)` loops (omp_get_schedule).
-[[nodiscard]] inline runtime_schedule get_runtime_schedule() noexcept
+[[nodiscard]] inline RuntimeSchedule get_runtime_schedule() noexcept
 {
 #ifdef _OPENMP
     omp_sched_t kind  = omp_sched_static;
@@ -303,7 +303,7 @@ struct runtime_schedule
 }
 
 /// @brief Set the calling task's schedule of the `schedule(runtime)` loops (omp_set_schedule).
-inline void set_runtime_schedule([[maybe_unused]] runtime_schedule s) noexcept
+inline void set_runtime_schedule([[maybe_unused]] RuntimeSchedule s) noexcept
 {
 #ifdef _OPENMP
     omp_set_schedule(static_cast<omp_sched_t>(s.kind), s.chunk);

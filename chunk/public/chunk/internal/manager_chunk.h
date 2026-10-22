@@ -1236,14 +1236,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                         {
                             // Serial call sites. Not under OMPT: opening a region there
                             // would fire compression callbacks that must not run here.
-                            pmp::team(pmp::options{},
+                            pmp::team(pmp::Options{},
                                       [&](pmp::Team& /*team*/) { sort_own_list(CHUNK_PMP_THREAD_RANK); });
                             // Ranks a smaller team did not cover (cheap when empty).
                             for (int q = 0; q < n_thr; ++q)
                             {
                                 sort_own_list(q);
                             }
-                            pmp::team(pmp::options{},
+                            pmp::team(pmp::Options{},
                                       [&](pmp::Team& /*team*/) { free_own_buckets(CHUNK_PMP_THREAD_RANK); });
                             for (int r = 0; r < n_thr; ++r)
                             {

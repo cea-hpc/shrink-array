@@ -95,7 +95,7 @@
 #include <oneapi/tbb/blocked_range.h> // oneapi::tbb::blocked_range (the index forms)
 #include <oneapi/tbb/parallel_for.h>  // oneapi::tbb::parallel_for
 
-#include "chunk/PMP_CHUNK.h"   // pmp::backend, pmp::backend_kind
+#include "chunk/PMP_CHUNK.h"   // pmp::backend, pmp::BackendKind
 #include "chunk/manage_ompt.h" // begin_parallel_phase, finalize_parallel_phase
 
 namespace shrink_array::tbb
@@ -105,7 +105,7 @@ namespace detail
 /// @brief True; a dependent false for the OpenMP backend, so the refusal fires
 ///        only when the adaptor is called, not when the header is included.
 template <typename T>
-inline constexpr bool backend_supported = pmp::backend != pmp::backend_kind::openmp || std::is_same_v<T, void>;
+inline constexpr bool backend_supported = pmp::backend != pmp::BackendKind::openmp || std::is_same_v<T, void>;
 
 /// @brief The message of that refusal.
 #define SHRINK_TBB_ADAPTOR_OPENMP_REFUSED                                                                             \
@@ -196,7 +196,7 @@ template <typename Range, typename Body, typename... Extra>
 void parallel_for(const Range& range, const Body& body, Extra&&... extra)
 {
     static_assert(detail::backend_supported<Body>, SHRINK_TBB_ADAPTOR_OPENMP_REFUSED);
-    if constexpr (pmp::backend == pmp::backend_kind::serial)
+    if constexpr (pmp::backend == pmp::BackendKind::serial)
     {
         Range whole = range;
         body(whole);
@@ -231,7 +231,7 @@ void parallel_for(Index first, Index last, Index step, const Function& f, Extra&
         throw std::invalid_argument("shrink_array::tbb::parallel_for: step must be positive"); // as TBB
     }
     const Index n = detail::iterations(first, last, step);
-    if constexpr (pmp::backend == pmp::backend_kind::serial)
+    if constexpr (pmp::backend == pmp::BackendKind::serial)
     {
         for (Index k = 0; k < n; ++k)
         {

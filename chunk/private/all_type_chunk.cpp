@@ -341,7 +341,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
     int team = 0;
-    pmp::team(pmp::options{},
+    pmp::team(pmp::Options{},
               [&](pmp::Team& /*team*/)
               {
                   const int thr = CHUNK_PMP_THREAD_RANK;
@@ -567,7 +567,7 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
         nb_buckets.push_back(elm->clear_list_block_free_prepare());
     }
 
-    pmp::team(pmp::options{},
+    pmp::team(pmp::Options{},
               [&](pmp::Team& team)
               {
                   const int thr_rank = CHUNK_PMP_THREAD_RANK;

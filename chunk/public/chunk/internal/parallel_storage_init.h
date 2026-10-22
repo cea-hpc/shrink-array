@@ -142,7 +142,7 @@ void for_each_chunk(int n, Init&& init)
     {
         if (use_own_team(n))
         {
-            pmp::parallel_for(0, n, pmp::options{}, init);
+            pmp::parallel_for(0, n, pmp::Options{}, init);
             return;
         }
     }
@@ -175,7 +175,7 @@ void for_each_chunk_in(int first, int last, MakeCtx&& make_ctx, Body&& body)
     {
         if (use_own_team(static_cast<long>(last) - first))
         {
-            pmp::parallel_for_local(first, last, pmp::options{}, make_ctx, body);
+            pmp::parallel_for_local(first, last, pmp::Options{}, make_ctx, body);
             return;
         }
     }
@@ -200,7 +200,7 @@ void construct_range(T* base, std::size_t first, std::size_t last, Make&& make)
     {
         if ((last - first) * sizeof(T) >= first_touch_min_bytes && can_open_team())
         {
-            pmp::parallel_for(static_cast<long>(first), static_cast<long>(last), pmp::options{},
+            pmp::parallel_for(static_cast<long>(first), static_cast<long>(last), pmp::Options{},
                               [base, &make](long i) { make(base + i); });
             return;
         }

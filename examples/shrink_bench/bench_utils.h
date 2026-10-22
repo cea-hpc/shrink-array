@@ -205,7 +205,7 @@ uint64_t calculate_checksum(const V& vec)
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
     // `omp parallel for schedule(static) reduction(+ : ...)` with OpenMP.
-    checksum = shrink_array::pmp::parallel_sum<uint64_t, 1>(Int{0}, nn, shrink_array::pmp::options{},
+    checksum = shrink_array::pmp::parallel_sum<uint64_t, 1>(Int{0}, nn, shrink_array::pmp::Options{},
                                                             [&](Int k, auto& acc)
                                                             {
                                                                 const T element = vec[k];

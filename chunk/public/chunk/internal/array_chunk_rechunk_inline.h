@@ -1171,7 +1171,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 sp.n.store(0, std::memory_order_relaxed);
                 sp_a = SliceClock::now();
             }
-            pmp::team(pmp::options{},
+            pmp::team(pmp::Options{},
                       [&](pmp::Team& team)
                       {
                           const SliceClock::time_point sp_e = sp_on ? SliceClock::now() : SliceClock::time_point{};

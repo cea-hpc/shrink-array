@@ -302,7 +302,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndType>>,
         }
         else
         {
-            pmp::team(pmp::options{}, [&](pmp::Team& team) { compress_int(team, verbose); });
+            pmp::team(pmp::Options{}, [&](pmp::Team& team) { compress_int(team, verbose); });
         }
     }
 

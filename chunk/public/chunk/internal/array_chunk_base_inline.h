@@ -120,7 +120,7 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written() const
     else
     {
         nb_written =
-            pmp::parallel_sum<int, 1>(0, nb_chunk_, pmp::options{}, [&](int j, auto& acc) { acc[0] += lbd(j); })[0];
+            pmp::parallel_sum<int, 1>(0, nb_chunk_, pmp::Options{}, [&](int j, auto& acc) { acc[0] += lbd(j); })[0];
     }
     return nb_written;
 }

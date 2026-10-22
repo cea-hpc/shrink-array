@@ -19,7 +19,7 @@
 // The pool backend of the library's threading (docs/threading_backends.md,
 // step 7): the loops and teams of pmp_loops.h on std::jthread workers of the
 // library's own. Included by pmp_loops.h only, after its shared types
-// (options, schedule, wait_mode), in a build with FAST_ALLOC_PMP_POOL=1.
+// (Options, Schedule, WaitMode), in a build with FAST_ALLOC_PMP_POOL=1.
 //
 // The model is OpenMP's, so the call sites need no change:
 //   - a team: the calling thread is rank 0, workers 1..n-1 of a process-wide
@@ -269,7 +269,7 @@ class Team
 
     /// @brief One contiguous block per thread (`schedule(static)`).
     template <typename Index, typename Body>
-    void for_static(Index first, Index last, Body&& body, wait_mode w = wait_mode::wait)
+    void for_static(Index first, Index last, Body&& body, WaitMode w = WaitMode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
         long long b = 0;
@@ -287,7 +287,7 @@ class Team
 
     /// @brief Round-robin blocks of @p chunk iterations (`schedule(static, chunk)`).
     template <typename Index, typename Body>
-    void for_static_chunks(Index first, Index last, int chunk, Body&& body, wait_mode w = wait_mode::wait)
+    void for_static_chunks(Index first, Index last, int chunk, Body&& body, WaitMode w = WaitMode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
         const long long n  = static_cast<long long>(last) - static_cast<long long>(first);
@@ -307,21 +307,21 @@ class Team
     /// @brief for_static(): the same share. No OpenMP here to say `simd` to: the
     ///        loop is the auto-vectoriser's, as in the OpenMP backend without it.
     template <typename Index, typename Body>
-    void for_static_simd(Index first, Index last, Body&& body, wait_mode w = wait_mode::wait)
+    void for_static_simd(Index first, Index last, Body&& body, WaitMode w = WaitMode::wait)
     {
         for_static(first, last, std::forward<Body>(body), w);
     }
 
     /// @brief for_static_chunks(): the same blocks (see for_static_simd()).
     template <typename Index, typename Body>
-    void for_static_chunks_simd(Index first, Index last, int chunk, Body&& body, wait_mode w = wait_mode::wait)
+    void for_static_chunks_simd(Index first, Index last, int chunk, Body&& body, WaitMode w = WaitMode::wait)
     {
         for_static_chunks(first, last, chunk, std::forward<Body>(body), w);
     }
 
     /// @brief Blocks of @p chunk iterations, first come first served (`schedule(dynamic, chunk)`).
     template <typename Index, typename Body>
-    void for_dynamic(Index first, Index last, int chunk, Body&& body, wait_mode w = wait_mode::wait)
+    void for_dynamic(Index first, Index last, int chunk, Body&& body, WaitMode w = WaitMode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
         const long long n = static_cast<long long>(last) - static_cast<long long>(first);
@@ -352,7 +352,7 @@ class Team
     /// @brief The run-time schedule (set_runtime_schedule; `schedule(runtime)`):
     ///        static (chunk 0: blocks), dynamic, guided as dynamic, auto as static.
     template <typename Index, typename Body>
-    void for_runtime(Index first, Index last, Body&& body, wait_mode w = wait_mode::wait)
+    void for_runtime(Index first, Index last, Body&& body, WaitMode w = WaitMode::wait)
     {
         const auto& s     = pool::settings();
         const int   kind  = s.sched_kind.load(std::memory_order_relaxed) & 0x7FFFFFFF; // monotonic bit off
@@ -382,7 +382,7 @@ class Team
 
     /// @brief Run @p f on ONE thread of the team, whichever gets here first.
     template <typename F>
-    void single(F&& f, wait_mode w = wait_mode::wait)
+    void single(F&& f, WaitMode w = WaitMode::wait)
     {
         if (ctx_ == nullptr)
         {
@@ -410,9 +410,9 @@ class Team
     }
 
   private:
-    void end_construct(wait_mode w) noexcept
+    void end_construct(WaitMode w) noexcept
     {
-        if (w == wait_mode::wait)
+        if (w == WaitMode::wait)
         {
             barrier();
         }
@@ -432,7 +432,7 @@ class Team
 
 /// @brief Run @p body(team) on every thread of a new team.
 template <typename Body>
-void team(const options& opt, Body&& body)
+void team(const Options& opt, Body&& body)
 {
     pool::open_team<Team>(opt.use_team, detail::team_size(opt), body);
 }
@@ -441,17 +441,17 @@ namespace detail
 {
 /// @brief One thread's share of a loop of @p opt's schedule, on @p t.
 template <typename Index, typename Body>
-void share(Team& t, Index first, Index last, const options& opt, Body&& body)
+void share(Team& t, Index first, Index last, const Options& opt, Body&& body)
 {
     switch (opt.sched.kind)
     {
-        case sched_kind::dynamic:
+        case SchedKind::dynamic:
             t.for_dynamic(first, last, chunk_of(opt.sched), std::forward<Body>(body), nowait);
             return;
-        case sched_kind::static_chunks:
+        case SchedKind::static_chunks:
             t.for_static_chunks(first, last, chunk_of(opt.sched), std::forward<Body>(body), nowait);
             return;
-        case sched_kind::static_blocks:
+        case SchedKind::static_blocks:
             break;
     }
     t.for_static(first, last, std::forward<Body>(body), nowait);
@@ -460,7 +460,7 @@ void share(Team& t, Index first, Index last, const options& opt, Body&& body)
 
 /// @brief Run @p body(i) for every i in [@p first, @p last), on a team.
 template <typename Index, typename Body>
-void parallel_for(Index first, Index last, const options& opt, Body&& body)
+void parallel_for(Index first, Index last, const Options& opt, Body&& body)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     team(opt, [&](Team& t) { detail::share(t, first, last, opt, body); });
@@ -469,7 +469,7 @@ void parallel_for(Index first, Index last, const options& opt, Body&& body)
 /// @brief Run @p body(i, local) for every i in [@p first, @p last), on a team,
 ///        with local = @p make_local() taken once per thread.
 template <typename Index, typename MakeLocal, typename Body>
-void parallel_for_local(Index first, Index last, const options& opt, MakeLocal&& make_local, Body&& body)
+void parallel_for_local(Index first, Index last, const Options& opt, MakeLocal&& make_local, Body&& body)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     team(opt,
@@ -483,7 +483,7 @@ void parallel_for_local(Index first, Index last, const options& opt, MakeLocal&&
 /// @brief Sum @p N counters over [@p first, @p last), on a team (each thread
 ///        into its own copy, the copies summed in rank order).
 template <typename T, std::size_t N, typename Index, typename Body>
-[[nodiscard]] std::array<T, N> parallel_sum(Index first, Index last, const options& opt, Body&& body)
+[[nodiscard]] std::array<T, N> parallel_sum(Index first, Index last, const Options& opt, Body&& body)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     static_assert(std::is_arithmetic_v<T> && N > 0, "N arithmetic counters");
@@ -512,7 +512,7 @@ template <typename T, std::size_t N, typename Index, typename Body>
 /// @brief Run @p body(team, acc) on every thread of a new team, each thread
 ///        with its own acc[0..N) (zero to start); return their sums.
 template <typename T, std::size_t N, typename Body>
-[[nodiscard]] std::array<T, N> team_sum(const options& opt, Body&& body)
+[[nodiscard]] std::array<T, N> team_sum(const Options& opt, Body&& body)
 {
     static_assert(std::is_arithmetic_v<T> && N > 0, "N arithmetic counters");
     std::vector<std::array<T, N>> parts(static_cast<std::size_t>(detail::team_size(opt)));
@@ -540,7 +540,7 @@ template <typename T, std::size_t N, typename Body>
 /// @brief Run @p body(team, flag) on every thread of a new team, each thread
 ///        with its own flag (false to start); return whether any set it.
 template <typename Body>
-[[nodiscard]] bool team_any(const options& opt, Body&& body)
+[[nodiscard]] bool team_any(const Options& opt, Body&& body)
 {
     std::vector<char> flags(static_cast<std::size_t>(detail::team_size(opt)), 0);
     team(opt,

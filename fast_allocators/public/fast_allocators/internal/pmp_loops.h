@@ -73,7 +73,7 @@ namespace fast_alloc::pmp
 {
 
 /// @brief How the iterations are shared out over the team.
-enum class sched_kind : int
+enum class SchedKind : int
 {
     static_blocks, ///< one contiguous block per thread (`schedule(static)`)
     static_chunks, ///< round-robin blocks of `chunk` iterations (`schedule(static, chunk)`)
@@ -81,53 +81,53 @@ enum class sched_kind : int
 };
 
 /// @brief A loop schedule: its kind and, for the chunked ones, the block size.
-struct schedule
+struct Schedule
 {
-    sched_kind kind  = sched_kind::static_blocks; ///< How the iterations are shared out.
-    int        chunk = 0;                         ///< Block size (chunked kinds; below 1 means 1).
+    SchedKind kind  = SchedKind::static_blocks; ///< How the iterations are shared out.
+    int       chunk = 0;                        ///< Block size (chunked kinds; below 1 means 1).
 
     /// @brief One contiguous block per thread: first touch where the static
     ///        per-chunk loops will use the data. The default.
-    [[nodiscard]] static constexpr schedule static_blocks() noexcept
+    [[nodiscard]] static constexpr Schedule static_blocks() noexcept
     {
         return {};
     }
     /// @brief Round-robin blocks of @p c iterations.
-    [[nodiscard]] static constexpr schedule static_chunks(int c) noexcept
+    [[nodiscard]] static constexpr Schedule static_chunks(int c) noexcept
     {
-        return {.kind = sched_kind::static_chunks, .chunk = c};
+        return {.kind = SchedKind::static_chunks, .chunk = c};
     }
     /// @brief Blocks of @p c iterations, taken by whichever thread is free.
-    [[nodiscard]] static constexpr schedule dynamic(int c) noexcept
+    [[nodiscard]] static constexpr Schedule dynamic(int c) noexcept
     {
-        return {.kind = sched_kind::dynamic, .chunk = c};
+        return {.kind = SchedKind::dynamic, .chunk = c};
     }
 };
 
 /// @brief Whether a worksharing construct ends with a barrier.
-enum class wait_mode : bool
+enum class WaitMode : bool
 {
     wait,   ///< every thread waits at the end (the default)
     nowait, ///< no barrier at the end: a thread goes on as soon as its share is done
 };
 
-/// @brief Shorthand for wait_mode::nowait.
-inline constexpr wait_mode nowait = wait_mode::nowait;
+/// @brief Shorthand for WaitMode::nowait.
+inline constexpr WaitMode nowait = WaitMode::nowait;
 
 /// @brief How a loop runs.
-struct options
+struct Options
 {
     /// false: no team. OpenMP: the region still opens, with one thread (the
     /// `if` clause), so its OMPT callbacks fire as for any region.
     bool     use_team    = true;
     int      num_threads = 0;  ///< Team size; 0 or less: the backend's default.
-    schedule sched       = {}; ///< How the iterations are shared out.
+    Schedule sched       = {}; ///< How the iterations are shared out.
 };
 
 namespace detail
 {
 /// @brief The team size to ask for: @p opt's, or the backend's default.
-[[nodiscard]] inline int team_size([[maybe_unused]] const options& opt) noexcept
+[[nodiscard]] inline int team_size([[maybe_unused]] const Options& opt) noexcept
 {
 #ifdef _OPENMP
     return opt.num_threads > 0 ? opt.num_threads : omp_get_max_threads();
@@ -139,7 +139,7 @@ namespace detail
 }
 
 /// @brief The block size of a chunked schedule (at least 1).
-[[nodiscard]] constexpr int chunk_of(const schedule& s) noexcept
+[[nodiscard]] constexpr int chunk_of(const Schedule& s) noexcept
 {
     return s.chunk > 0 ? s.chunk : 1;
 }
@@ -166,7 +166,7 @@ namespace fast_alloc::pmp
  * @param body  callable `void(Index)`; iterations must be independent
  */
 template <typename Index, typename Body>
-void parallel_for(Index first, Index last, [[maybe_unused]] const options& opt, Body&& body)
+void parallel_for(Index first, Index last, [[maybe_unused]] const Options& opt, Body&& body)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     #ifdef _OPENMP
@@ -175,21 +175,21 @@ void parallel_for(Index first, Index last, [[maybe_unused]] const options& opt, 
     const int  c  = detail::chunk_of(opt.sched);
     switch (opt.sched.kind)
     {
-        case sched_kind::dynamic:
+        case SchedKind::dynamic:
         #pragma omp parallel for schedule(dynamic, c) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
                 body(i);
             }
             return;
-        case sched_kind::static_chunks:
+        case SchedKind::static_chunks:
         #pragma omp parallel for schedule(static, c) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
                 body(i);
             }
             return;
-        case sched_kind::static_blocks:
+        case SchedKind::static_blocks:
             break;
     }
         #pragma omp parallel for schedule(static) if (on) num_threads(nt)
@@ -219,7 +219,7 @@ void parallel_for(Index first, Index last, [[maybe_unused]] const options& opt, 
 template <typename Index, typename MakeLocal, typename Body>
 void parallel_for_local(Index                           first,
                         Index                           last,
-                        [[maybe_unused]] const options& opt,
+                        [[maybe_unused]] const Options& opt,
                         MakeLocal&&                     make_local,
                         Body&&                          body)
 {
@@ -228,28 +228,28 @@ void parallel_for_local(Index                           first,
     const bool       on   = opt.use_team;
     const int        nt   = detail::team_size(opt);
     const int        c    = detail::chunk_of(opt.sched);
-    const sched_kind kind = opt.sched.kind;
+    const SchedKind  kind = opt.sched.kind;
         #pragma omp parallel if (on) num_threads(nt)
     {
         decltype(auto) local = make_local();
         // Every thread takes the same branch: each meets the same `omp for`.
         switch (kind)
         {
-            case sched_kind::dynamic:
+            case SchedKind::dynamic:
         #pragma omp for schedule(dynamic, c)
                 for (Index i = first; i < last; ++i)
                 {
                     body(i, local);
                 }
                 break;
-            case sched_kind::static_chunks:
+            case SchedKind::static_chunks:
         #pragma omp for schedule(static, c)
                 for (Index i = first; i < last; ++i)
                 {
                     body(i, local);
                 }
                 break;
-            case sched_kind::static_blocks:
+            case SchedKind::static_blocks:
         #pragma omp for schedule(static)
                 for (Index i = first; i < last; ++i)
                 {
@@ -282,7 +282,7 @@ void parallel_for_local(Index                           first,
  * @return the N sums
  */
 template <typename T, std::size_t N, typename Index, typename Body>
-[[nodiscard]] std::array<T, N> parallel_sum(Index first, Index last, [[maybe_unused]] const options& opt, Body&& body)
+[[nodiscard]] std::array<T, N> parallel_sum(Index first, Index last, [[maybe_unused]] const Options& opt, Body&& body)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     static_assert(std::is_arithmetic_v<T> && N > 0, "N arithmetic counters");
@@ -293,21 +293,21 @@ template <typename T, std::size_t N, typename Index, typename Body>
     const int  c  = detail::chunk_of(opt.sched);
     switch (opt.sched.kind)
     {
-        case sched_kind::dynamic:
+        case SchedKind::dynamic:
         #pragma omp parallel for schedule(dynamic, c) reduction(+ : acc[ : N]) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
                 body(i, acc);
             }
             break;
-        case sched_kind::static_chunks:
+        case SchedKind::static_chunks:
         #pragma omp parallel for schedule(static, c) reduction(+ : acc[ : N]) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
                 body(i, acc);
             }
             break;
-        case sched_kind::static_blocks:
+        case SchedKind::static_blocks:
         #pragma omp parallel for schedule(static) reduction(+ : acc[ : N]) if (on) num_threads(nt)
             for (Index i = first; i < last; ++i)
             {
@@ -367,14 +367,14 @@ class Team
      * @param first first index
      * @param last  one past the last index
      * @param body  called as body(i), once per index
-     * @param w wait_mode::nowait: no barrier at the end.
+     * @param w WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
-    void for_static(Index first, Index last, Body&& body, [[maybe_unused]] wait_mode w = wait_mode::wait)
+    void for_static(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode w = WaitMode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     #ifdef _OPENMP
-        if (w == wait_mode::nowait)
+        if (w == WaitMode::nowait)
         {
         #pragma omp for schedule(static) nowait
             for (Index i = first; i < last; ++i)
@@ -403,14 +403,14 @@ class Team
      *          a compute kernel). Not for loops through the arrays' proxies:
      *          there `simd` fails (-Wpass-failed) and can leave the sibling
      *          loops of the same outlined region unvectorised too.
-     * @param w wait_mode::nowait: no barrier at the end.
+     * @param w WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
-    void for_static_simd(Index first, Index last, Body&& body, [[maybe_unused]] wait_mode w = wait_mode::wait)
+    void for_static_simd(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode w = WaitMode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     #ifdef _OPENMP
-        if (w == wait_mode::nowait)
+        if (w == WaitMode::nowait)
         {
         #pragma omp for simd schedule(static) nowait
             for (Index i = first; i < last; ++i)
@@ -443,19 +443,16 @@ class Team
      *          (EmitOMPWorksharingLoop) on a chunk that is a capture of the
      *          region's lambda.
      * @param chunk the block size (below 1 means 1)
-     * @param w     wait_mode::nowait: no barrier at the end.
+     * @param w     WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
-    void for_static_chunks(Index                       first,
-                           Index                       last,
-                           int                         chunk,
-                           Body&&                      body,
-                           [[maybe_unused]] wait_mode w = wait_mode::wait)
+    void
+    for_static_chunks(Index first, Index last, int chunk, Body&& body, [[maybe_unused]] WaitMode w = WaitMode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
         [[maybe_unused]] const int c = chunk > 0 ? chunk : 1;
     #ifdef _OPENMP
-        if (w == wait_mode::nowait)
+        if (w == WaitMode::nowait)
         {
         #pragma omp for schedule(static, c) nowait
             for (Index i = first; i < last; ++i)
@@ -482,19 +479,19 @@ class Team
      *        the same blocks (no `simd:` modifier, which would round them),
      *        the loop vectorised. Serial build: for_static_chunks().
      * @param chunk the block size (below 1 means 1)
-     * @param w     wait_mode::nowait: no barrier at the end.
+     * @param w     WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
-    void for_static_chunks_simd(Index                       first,
-                                Index                       last,
-                                int                         chunk,
-                                Body&&                      body,
-                                [[maybe_unused]] wait_mode w = wait_mode::wait)
+    void for_static_chunks_simd(Index                     first,
+                                Index                     last,
+                                int                       chunk,
+                                Body&&                    body,
+                                [[maybe_unused]] WaitMode w = WaitMode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
         [[maybe_unused]] const int c = chunk > 0 ? chunk : 1;
     #ifdef _OPENMP
-        if (w == wait_mode::nowait)
+        if (w == WaitMode::nowait)
         {
         #pragma omp for simd schedule(static, c) nowait
             for (Index i = first; i < last; ++i)
@@ -524,15 +521,15 @@ class Team
      * @param last  one past the last index
      * @param chunk iterations handed out at a time
      * @param body  called as body(i), once per index
-     * @param w wait_mode::nowait: no barrier at the end.
+     * @param w WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
-    void for_dynamic(Index first, Index last, int chunk, Body&& body, [[maybe_unused]] wait_mode w = wait_mode::wait)
+    void for_dynamic(Index first, Index last, int chunk, Body&& body, [[maybe_unused]] WaitMode w = WaitMode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
         [[maybe_unused]] const int c = chunk > 0 ? chunk : 1;
     #ifdef _OPENMP
-        if (w == wait_mode::nowait)
+        if (w == WaitMode::nowait)
         {
         #pragma omp for schedule(dynamic, c) nowait
             for (Index i = first; i < last; ++i)
@@ -562,14 +559,14 @@ class Team
      * @param first first index
      * @param last  one past the last index
      * @param body  called as body(i), once per index
-     * @param w wait_mode::nowait: no barrier at the end.
+     * @param w WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
-    void for_runtime(Index first, Index last, Body&& body, [[maybe_unused]] wait_mode w = wait_mode::wait)
+    void for_runtime(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode w = WaitMode::wait)
     {
         static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     #ifdef _OPENMP
-        if (w == wait_mode::nowait)
+        if (w == WaitMode::nowait)
         {
         #pragma omp for schedule(runtime) nowait
             for (Index i = first; i < last; ++i)
@@ -603,14 +600,14 @@ class Team
      * @brief Run @p f on ONE thread of the team, whichever gets here first
      *        (`omp single`).
      * @param f called once, without argument
-     * @param w wait_mode::wait (the default): the others wait for it at the
+     * @param w WaitMode::wait (the default): the others wait for it at the
      *          end; nowait: they go on.
      */
     template <typename F>
-    void single(F&& f, [[maybe_unused]] wait_mode w = wait_mode::wait)
+    void single(F&& f, [[maybe_unused]] WaitMode w = WaitMode::wait)
     {
     #ifdef _OPENMP
-        if (w == wait_mode::nowait)
+        if (w == WaitMode::nowait)
         {
         #pragma omp single nowait
             f();
@@ -649,7 +646,7 @@ class Team
  * @param body callable `void(Team&)`
  */
 template <typename Body>
-void team(const options& opt, Body&& body)
+void team(const Options& opt, Body&& body)
 {
     #ifdef _OPENMP
     const bool on = opt.use_team;
@@ -674,7 +671,7 @@ void team(const options& opt, Body&& body)
  * @param body callable `void(Team&, T (&)[N])`
  */
 template <typename T, std::size_t N, typename Body>
-[[nodiscard]] std::array<T, N> team_sum(const options& opt, Body&& body)
+[[nodiscard]] std::array<T, N> team_sum(const Options& opt, Body&& body)
 {
     static_assert(std::is_arithmetic_v<T> && N > 0, "N arithmetic counters");
     T acc[N] = {}; // NOLINT(cppcoreguidelines-avoid-c-arrays): an OpenMP array-section reduction
@@ -707,7 +704,7 @@ template <typename T, std::size_t N, typename Body>
  * @param body callable `void(Team&, bool&)`
  */
 template <typename Body>
-[[nodiscard]] bool team_any(const options& opt, Body&& body)
+[[nodiscard]] bool team_any(const Options& opt, Body&& body)
 {
     bool flag = false;
     #ifdef _OPENMP

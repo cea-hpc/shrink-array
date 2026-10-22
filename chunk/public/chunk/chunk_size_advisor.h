@@ -392,7 +392,7 @@ struct ChunkSizeAdvisor
         };
 
         pmp::team(
-            pmp::options{.use_team = nc > 16384},
+            pmp::Options{.use_team = nc > 16384},
             [&](pmp::Team& team)
             {
                 team.single(

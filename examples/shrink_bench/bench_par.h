@@ -74,7 +74,7 @@
 #include <utility>       // std::forward
 
 #include "bench_int.h"       // Int
-#include "chunk/PMP_CHUNK.h" // shrink_array::pmp::team, pmp::Team, pmp::options, pmp::backend
+#include "chunk/PMP_CHUNK.h" // shrink_array::pmp::team, pmp::Team, pmp::Options, pmp::backend
 
 #if defined(BENCH_PAR_TBB) && BENCH_PAR_TBB
     #include <oneapi/tbb/blocked_range.h>  // oneapi::tbb::blocked_range (the virtual ranks)
@@ -93,7 +93,7 @@ inline constexpr auto nowait = shrink_array::pmp::nowait;
     #ifdef _OPENMP
         #error "BENCH_PAR_TBB: the TBB bench is not an OpenMP program (CHUNK_THREADS=pool)"
     #endif
-static_assert(shrink_array::pmp::backend == shrink_array::pmp::backend_kind::pool,
+static_assert(shrink_array::pmp::backend == shrink_array::pmp::BackendKind::pool,
               "the TBB bench needs the pool backend: TBB's threads write the arrays (CHUNK_THREADS=pool)");
 
 /// @brief false: the regions are TBB tasks, not a team of the library -- a
@@ -176,9 +176,9 @@ class Team
 
     /// @brief Run @p f in ONE task of the region (nowait only).
     template <typename F>
-    void single(F&& f, shrink_array::pmp::wait_mode w)
+    void single(F&& f, shrink_array::pmp::WaitMode w)
     {
-        if (w != shrink_array::pmp::wait_mode::nowait)
+        if (w != shrink_array::pmp::WaitMode::nowait)
         {
             detail::refuse("bench_par: a single with a barrier in a TBB region (only nowait)\n");
         }
@@ -190,7 +190,7 @@ class Team
 
     /// @brief One contiguous block per rank, libgomp's split (`schedule(static)`; nowait only).
     template <typename Index, typename Body>
-    void for_static(Index first, Index last, Body&& body, shrink_array::pmp::wait_mode w)
+    void for_static(Index first, Index last, Body&& body, shrink_array::pmp::WaitMode w)
     {
         require_nowait(w, "bench_par: a static loop with a barrier in a TBB region (only nowait)\n");
         const long long n = static_cast<long long>(last) - static_cast<long long>(first);
@@ -210,7 +210,7 @@ class Team
 
     /// @brief for_static(): the same share (no OpenMP in a TBB bench).
     template <typename Index, typename Body>
-    void for_static_simd(Index first, Index last, Body&& body, shrink_array::pmp::wait_mode w)
+    void for_static_simd(Index first, Index last, Body&& body, shrink_array::pmp::WaitMode w)
     {
         for_static(first, last, std::forward<Body>(body), w);
     }
@@ -218,7 +218,7 @@ class Team
     /// @brief Blocks of @p chunk iterations, block k to rank k % size()
     ///        (`schedule(static, chunk)`; nowait only).
     template <typename Index, typename Body>
-    void for_static_chunks(Index first, Index last, int chunk, Body&& body, shrink_array::pmp::wait_mode w)
+    void for_static_chunks(Index first, Index last, int chunk, Body&& body, shrink_array::pmp::WaitMode w)
     {
         require_nowait(w, "bench_par: a static loop with a barrier in a TBB region (only nowait)\n");
         const long long n  = static_cast<long long>(last) - static_cast<long long>(first);
@@ -236,16 +236,16 @@ class Team
 
     /// @brief for_static_chunks(): the same blocks (no OpenMP in a TBB bench).
     template <typename Index, typename Body>
-    void for_static_chunks_simd(Index first, Index last, int chunk, Body&& body, shrink_array::pmp::wait_mode w)
+    void for_static_chunks_simd(Index first, Index last, int chunk, Body&& body, shrink_array::pmp::WaitMode w)
     {
         for_static_chunks(first, last, chunk, std::forward<Body>(body), w);
     }
 
     /// @brief Blocks of @p chunk iterations, first come first served (nowait only).
     template <typename Index, typename Body>
-    void for_dynamic(Index first, Index last, int chunk, Body&& body, shrink_array::pmp::wait_mode w)
+    void for_dynamic(Index first, Index last, int chunk, Body&& body, shrink_array::pmp::WaitMode w)
     {
-        if (w != shrink_array::pmp::wait_mode::nowait)
+        if (w != shrink_array::pmp::WaitMode::nowait)
         {
             detail::refuse("bench_par: a dynamic loop with a barrier in a TBB region (only nowait)\n");
         }
@@ -264,9 +264,9 @@ class Team
     }
 
   private:
-    static void require_nowait(shrink_array::pmp::wait_mode w, const char* what) noexcept
+    static void require_nowait(shrink_array::pmp::WaitMode w, const char* what) noexcept
     {
-        if (w != shrink_array::pmp::wait_mode::nowait)
+        if (w != shrink_array::pmp::WaitMode::nowait)
         {
             detail::refuse(what);
         }
@@ -337,14 +337,14 @@ inline constexpr bool team_regions = true;
 template <typename Body>
 void region(Body&& body)
 {
-    shrink_array::pmp::team(shrink_array::pmp::options{}, std::forward<Body>(body));
+    shrink_array::pmp::team(shrink_array::pmp::Options{}, std::forward<Body>(body));
 }
 
 /// @brief Run @p body(Team&) on every thread of a new team of @p num_threads threads.
 template <typename Body>
 void region(int num_threads, Body&& body)
 {
-    shrink_array::pmp::team(shrink_array::pmp::options{.num_threads = num_threads}, std::forward<Body>(body));
+    shrink_array::pmp::team(shrink_array::pmp::Options{.num_threads = num_threads}, std::forward<Body>(body));
 }
 
 #endif

@@ -103,7 +103,7 @@ void ArrayChunk<T, IndType>::print_compression_stats(std::ostream& os) const
 
     // acc[0]: compressed (or compressible to first_value), acc[1]: would be type-2.
     const auto counts = pmp::parallel_sum<int, 2>(
-        0, nb_chunk_, pmp::options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
+        0, nb_chunk_, pmp::Options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
         [&](int j, auto& acc)
         {
             const auto& ck = chunk_list_[j];
@@ -204,7 +204,7 @@ void ArrayChunk<T, IndType>::clear_core()
 
     if constexpr (build_config::threaded)
     {
-        pmp::team(pmp::options{},
+        pmp::team(pmp::Options{},
                   [&](pmp::Team& team)
                   {
                       const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_);

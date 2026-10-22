@@ -243,7 +243,7 @@ int main()
     check_registered_rank();
     check_queries();
     std::printf("rank_registry_validation: backend %s, %s\n",
-                pmp::backend == pmp::backend_kind::openmp ? "openmp" : "serial",
+                pmp::backend == pmp::BackendKind::openmp ? "openmp" : "serial",
                 g_failures == 0 ? "all checks hold" : "FAILED");
     return g_failures == 0 ? 0 : 1;
 }

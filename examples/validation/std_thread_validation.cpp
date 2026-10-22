@@ -704,7 +704,7 @@ int run(int argc, char** argv)
     println("=== std_thread_validation [variant = {}]  N={}  threads={}  phases={}  capacity={} ===", variant_name(), N,
             nt, phases, chunk_thread_capacity());
 
-    if constexpr (pmp::backend != pmp::backend_kind::pool)
+    if constexpr (pmp::backend != pmp::BackendKind::pool)
     {
         println("not a pool build: skipped");
         return 77;
