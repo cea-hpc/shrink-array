@@ -1,6 +1,7 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """Reading a run's output: memory, checksums, CHUNK_STATS counters, seeds."""
+import json
 import os
 import re as _re
 
@@ -83,12 +84,50 @@ _STATS_CEXEC_RE  = _re.compile(r"^\s*compress \(during exec\)\s*=\s*(\d+)", _re.
 _STATS_MIN_CREATE_FOR_GUARD = 10_000
 
 
+# A build with C++26 reflection (the cpp26 branch, GCC 16) also prints every
+# counter of a CHUNK_STATS block as one JSON line after it:
+#   CHUNK_STATS_JSON {"variant": "chunk2a", "alloc": 12, ..., "mark_ok": 3, ...}
+# Read first when present: one line, every counter under its field name in
+# ChunkStatsThr (chunk/internal/chunk_stats.h), nothing to keep in step with
+# the text layout. The text blocks stay the source for the other builds.
+_CHUNK_STATS_JSON_RE = _re.compile(r"^CHUNK_STATS_JSON (\{.*\})\s*$", _re.MULTILINE)
+
+
+def chunk_stats_json(stdout_text):
+    """{variant: {counter: int}} from the CHUNK_STATS_JSON lines, {} when the
+    build printed none (no reflection, or no CHUNK_STATS). A line that does not
+    parse is skipped."""
+    out = {}
+    for m in _CHUNK_STATS_JSON_RE.finditer(stdout_text or ""):
+        try:
+            d = json.loads(m.group(1))
+        except ValueError:
+            continue
+        variant = d.pop("variant", None)
+        if variant is not None:
+            out[variant] = d
+    return out
+
+
 def parse_chunk_stats_counters(stdout_text):
     """Return {stat_tag: {"mark": int, "create": int, "compress_exec": int|None}}
     for every CHUNK_STATS block in the output (tag = 'chunk', 'chunk2',
-    'chunk2a'...). Missing counters are omitted from the inner dict."""
+    'chunk2a'...). Missing counters are omitted from the inner dict.
+
+    From the CHUNK_STATS_JSON lines when the build printed them, with the
+    text's omissions: `mark` (mark_ok + mark_refused) only when non-zero, as
+    the text block prints it."""
     out = {}
     if not stdout_text:
+        return out
+    js = chunk_stats_json(stdout_text)
+    if js:
+        for tag, c in js.items():
+            d = {"create": c.get("create", 0), "compress_exec": c.get("compress", 0)}
+            marks = c.get("mark_ok", 0) + c.get("mark_refused", 0)
+            if marks != 0:
+                d["mark"] = marks
+            out[tag] = d
         return out
     for m in _CHUNK_STATS_BLOCK_RE.finditer(stdout_text):
         tag, body = m.group(1), m.group(2)
@@ -143,7 +182,15 @@ _SEED_FALLBACK_RE = _re.compile(r"Save seed in file")
 def _parse_still_at_exit(stdout_text, variant_base):
     """`still compressed (at exit)` from `variant_base`'s CHUNK_STATS block in
     this run's stdout, or None if that block never appeared (e.g. the binary
-    reports a different stat_variant tag than expected, or zero activity)."""
+    reports a different stat_variant tag than expected, or zero activity).
+    From the CHUNK_STATS_JSON line when present (None for 0, as the text
+    block omits the line then)."""
+    js = chunk_stats_json(stdout_text)
+    if js:
+        c = js.get(variant_base)
+        if c is None:
+            return None
+        return c.get("still_compressed_at_exit") or None
     for m in _CHUNK_STATS_BLOCK_RE.finditer(stdout_text):
         if m.group(1) == variant_base:
             sm = _STILL_AT_EXIT_RE.search(m.group(2))

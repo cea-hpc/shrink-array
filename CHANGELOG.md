@@ -98,6 +98,18 @@ the tag's checksum to the recipe.
   switch, kept for the other builds, has no `default:` any more and a
   `static_assert` checks it against the enumerators. `bstate_name()` (pool
   ledger) gets the same check.
+- CHUNK_STATS: the 35 counters of `ChunkStatsThr` are summed by reflection
+  (`chunk/internal/reflect_fields.h`: `add_fields`), where they were listed by
+  hand twice -- the totals of `ParamChunk::chunk_stats()` had already lost
+  `released`. The hand lists stay for the builds without reflection, and a
+  `static_assert` on the field count stops a reflection build when a counter
+  is added without them. A variant is skipped only when every counter is zero
+  (it tested 16 of the 35: a variant with only `still compressed (at exit)`
+  lost its block), and `still compressed (at exit)` is no longer printed twice.
+  A reflection build adds, after each block, one line with every counter:
+  `CHUNK_STATS_JSON {"variant": "chunk2a", "alloc": ..., ...}`, which
+  `python/bench_runner/parsing.py` reads first (the text blocks for the other
+  builds; both give the same figures).
 
 ### Added (cpp23)
 

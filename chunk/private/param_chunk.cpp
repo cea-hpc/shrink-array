@@ -30,8 +30,10 @@
 #include <algorithm> // std::max
 #include <chrono>    // steady_clock, the gate rates (CHUNK_STATS report only)
 #include <cstddef>   // std::size_t (CHUNK_STATS report only: the retention)
+#include <format>    // std::format (the CHUNK_STATS_JSON line)
 #include <mutex>     // std::scoped_lock (CHUNK_STATS report only: the size distribution)
 #include <print>     // std::println (the CHUNK_STATS report)
+#include <string>    // std::string (the CHUNK_STATS_JSON line)
 #include <utility>   // std::cmp_greater
 #include <unistd.h>  // sysconf(_SC_PAGESIZE): page-aware slab floor
 
@@ -40,6 +42,7 @@
 #include "chunk/internal/chunk_size_config.h"          // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"          // active_chunk_size
 #include "chunk/internal/chunk_stats.h"                // per-variant stats reduce/print
+#include "chunk/internal/reflect_fields.h"             // add_fields, append_json (CHUNK_STATS report only)
 #include "chunk/param_chunk.h"                         // the declarations defined here
 #include "chunk/PMP_CHUNK.h"                           // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
@@ -163,6 +166,9 @@ void ParamChunk::chunk_stats()
     for (int v = 0; v < chunk_stats_n_variant; ++v)
     {
         const ChunkStatsThr stats = reduce_chunk_stats(v);
+#if SHRINK_ARRAY_HAS_REFLECT_FIELDS
+        add_fields(all, stats); // every counter (the list below is the other builds')
+#else
         all.alloc += stats.alloc;
         all.write += stats.write;
         all.read += stats.read;
@@ -175,6 +181,7 @@ void ParamChunk::chunk_stats()
         all.bytes_reused += stats.bytes_reused;
         all.bytes_freed += stats.bytes_freed;
         all.teardown_clear += stats.teardown_clear;
+        all.released += stats.released;
         all.compress += stats.compress;
         all.still_compressed_at_exit += stats.still_compressed_at_exit;
         all.release_park += stats.release_park;
@@ -197,6 +204,7 @@ void ParamChunk::chunk_stats()
         all.gate_mark_hit += stats.gate_mark_hit;
         all.rechunk_rebuilt += stats.rechunk_rebuilt;
         all.rechunk_skipped += stats.rechunk_skipped;
+#endif
     }
 
     std::print("\n===== CHUNK_STATS (instrumentation counters, -DCHUNK_STATS) =====\n");
@@ -276,12 +284,10 @@ void ParamChunk::chunk_stats()
     for (int v = 0; v < chunk_stats_n_variant; ++v)
     {
         const ChunkStatsThr stats = reduce_chunk_stats(v);
-        // Skip a variant with no activity at all.
-        const bool any = stats.alloc != 0 || stats.write != 0 || stats.read != 0 || stats.read_cst != 0 ||
-                         stats.create != 0 || stats.list != 0 || stats.teardown_clear != 0 || stats.compress != 0 ||
-                         stats.compress_attempt != 0 || stats.rechunk != 0 || stats.read_sync != 0 ||
-                         stats.mark_ok != 0 || stats.mark_refused != 0 || stats.gate_start != 0 ||
-                         stats.gate_flush != 0 || stats.gate_driver != 0;
+        // Skip a variant with no activity at all: every counter zero (all of
+        // them -- a variant whose arrays were only born compressed and
+        // destroyed still has its block, and its `still compressed (at exit)`).
+        const bool any = !(stats == ChunkStatsThr{});
         if (!any)
         {
             continue;
@@ -374,10 +380,6 @@ void ParamChunk::chunk_stats()
         }
         // Scan yield and cost (scan_read is kept out of `read`, which counts the
         // application's own accesses).
-        if (stats.still_compressed_at_exit != 0)
-        {
-            std::println("  still compressed (at exit) = {}", stats.still_compressed_at_exit);
-        }
         if (stats.compress_attempt != 0)
         {
             std::println("    attempts     = {}  ({:.1f}% succeed)", stats.compress_attempt,
@@ -441,6 +443,16 @@ void ParamChunk::chunk_stats()
             }
         }
         std::println("-------------------------------------");
+#if SHRINK_ARRAY_HAS_REFLECT_FIELDS
+        // The same counters, every one of them, as one JSON line for scripts
+        // (python/bench_runner/parsing.py): no regular expression per field,
+        // and a counter added to ChunkStatsThr appears here by itself.
+        {
+            std::string json;
+            append_json(json, stats, std::format("\"variant\": \"{}\", ", chunk_variant_name[v]));
+            std::println("CHUNK_STATS_JSON {}", json);
+        }
+#endif
     }
 
     // ── Retention, not counted by any of the above ───────────────────────────

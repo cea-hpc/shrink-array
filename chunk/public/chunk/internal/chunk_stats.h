@@ -40,10 +40,12 @@
 #include <map>         // std::map
 #include <mutex>       // std::mutex, std::scoped_lock
 #include <concepts>    // ChunkStatsZeroComparable
+#include <cstddef>     // std::size_t (chunk_stats_listed_fields)
 #include <string_view> // chunk_variant_name
 
-#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
-#include "chunk/config.h"    // build_config::chunk_dynamic
+#include "chunk/PMP_CHUNK.h"               // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
+#include "chunk/config.h"                  // build_config::chunk_dynamic
+#include "chunk/internal/reflect_fields.h" // add_fields, field_count (the counters, by reflection)
 
 namespace shrink_array
 {
@@ -116,7 +118,22 @@ struct alignas(64) ChunkStatsThr
     long gate_mark_hit       = 0; ///< ... of which because ITS chunk was marked by a compressor's pass
     long gate_wait_yields    = 0; ///< ... yields spent there (one per 1000 pauses)
     long gate_driver         = 0; ///< run_slow_path() drivers (a writer sent to the slow path)
+
+    /// Every counter equal: `stats == ChunkStatsThr{}` is "no activity at all".
+    bool operator==(const ChunkStatsThr&) const = default;
 };
+
+/// @brief The counters the hand-written lists name: reduce_chunk_stats() and
+///        the totals of ParamChunk::chunk_stats(), in the builds without
+///        reflection. A reflection build sums every field by itself, and fails
+///        here when a counter was added to ChunkStatsThr: add it to those two
+///        lists, then raise this number.
+inline constexpr std::size_t chunk_stats_listed_fields = 35;
+#if SHRINK_ARRAY_HAS_REFLECT_FIELDS
+static_assert(field_count<ChunkStatsThr>() == chunk_stats_listed_fields,
+              "ChunkStatsThr gained or lost a counter: update reduce_chunk_stats() and ParamChunk::chunk_stats() "
+              "(the builds without reflection), then chunk_stats_listed_fields");
+#endif
 
 /// @brief Program start, for the per-second rates ParamChunk::chunk_stats() shows
 ///        next to the gate counters. Static init: as early as the counters.
@@ -464,6 +481,9 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
     for (int t = 0; t < nthr; ++t)
     {
         const ChunkStatsThr& slot = g_chunk_stats[variant][t];
+#if SHRINK_ARRAY_HAS_REFLECT_FIELDS
+        add_fields(acc, slot); // every counter, named by the struct itself
+#else
         acc.alloc += slot.alloc;
         acc.write += slot.write;
         acc.read += slot.read;
@@ -499,6 +519,7 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
         acc.gate_wait += slot.gate_wait;
         acc.gate_wait_yields += slot.gate_wait_yields;
         acc.gate_mark_hit += slot.gate_mark_hit;
+#endif
     }
     return acc;
 }
