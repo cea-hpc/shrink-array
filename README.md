@@ -319,7 +319,8 @@ exists in French ([docs/README.md](docs/README.md)); the changes from one versio
 
 shrink-array is at version 0.1: before 1.0, a minor release may change the interface
 ([versioning policy](CHANGELOG.md)). Every push runs the source checks, the GCC 14 builds
-(OpenMP and serial), the validation harnesses and the GenMC models
+(OpenMP, serial and std threads with oneTBB), the validation harnesses, the std backend under
+ThreadSanitizer and the GenMC models
 ([CI](.github/workflows/ci.yml)).
 
 Trying it on your own data is the most useful feedback: if it saves memory in your code -- or

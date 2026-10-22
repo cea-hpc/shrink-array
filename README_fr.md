@@ -327,7 +327,8 @@ changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 
 shrink-array en est à la version 0.1 : avant la 1.0, une version mineure peut changer
 l'interface ([politique de versions](CHANGELOG.md)). Chaque push lance les vérifications des
-sources, les builds GCC 14 (OpenMP et série), les harnais de validation et les modèles GenMC
+sources, les builds GCC 14 (OpenMP, série et threads std avec oneTBB), les harnais de validation, le backend std
+sous ThreadSanitizer et les modèles GenMC
 ([CI](.github/workflows/ci.yml)).
 
 L'essai sur vos propres données est le retour le plus utile : si la bibliothèque économise de

@@ -52,6 +52,7 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- CI: the per-push workflow builds and validates the std backend with oneTBB, and runs it under ThreadSanitizer.
 - OpenMP is no longer required: the library runs its own parallel work on a
   backend chosen at build time, CMake `CHUNK_THREADS=openmp|std|serial`
   (empty, the default: from `OMP`, as before). `std` runs the teams on

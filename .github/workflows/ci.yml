@@ -1,11 +1,12 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 #
-# The per-push CI: the source checks, then gcc 14 in an OpenMP and a serial
-# build with the check-mode switches (CHECK_OPTIM), the validation harnesses at
-# chunk size 256 (`check` target: ctest -L validation) and the native runs of
-# the GenMC models (ctest -L formal). The long builds -- sanitizers, _dyn,
-# clang, AArch64, GenMC itself -- belong to a nightly workflow, not here.
+# The per-push CI: the source checks, then gcc 14 in an OpenMP, a serial and a
+# std-threads (+ oneTBB) build with the check-mode switches (CHECK_OPTIM), the
+# validation harnesses at chunk size 256 (`check` target: ctest -L validation),
+# the native runs of the GenMC models (ctest -L formal) and the std backend under
+# ThreadSanitizer. The long builds -- the other sanitizers, _dyn, clang, AArch64,
+# GenMC itself -- belong to a nightly workflow, not here.
 
 name: CI
 
@@ -84,13 +85,24 @@ jobs:
           echo "no fixup commit in $range"
 
   build-test:
-    name: gcc 14, OMP=${{ matrix.omp }}
+    name: gcc 14, ${{ matrix.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        omp: [ON, OFF]
+        include:
+          - name: OpenMP
+            cmake_args: -DOMP=ON
+            formal: true
+          - name: serial
+            cmake_args: -DOMP=OFF
+            formal: true
+          # The std backend (the library's own std::jthread team, no OpenMP) and
+          # the TBB adaptor: std_thread_validation and tbb_validation.
+          - name: std + TBB
+            cmake_args: -DCHUNK_THREADS=std -DCHUNK_WITH_TBB=ON
+            tbb: true
     env:
       CC: gcc-14
       CXX: g++-14
@@ -102,21 +114,55 @@ jobs:
       - name: Toolchain
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev ${{ matrix.tbb && 'libtbb-dev' || '' }}
           g++-14 --version
           cmake --version
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DOMP=${{ matrix.omp }}
+          ${{ matrix.cmake_args }}
           -DCHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
       - name: GenMC models, native runs
+        if: matrix.formal
         run: |
           targets=$(ninja -C build -t targets all | sed -n 's/^\(formal_native_[a-z_]*\):.*/\1/p' | sort -u)
           cmake --build build --target $targets
           ctest --test-dir build -L formal --output-on-failure
+
+  # The std backend runs its own threads (std::jthread team, thread-rank registry,
+  # the TBB adaptor on top): ThreadSanitizer sees those as it does not see OpenMP's.
+  # The check target builds and runs std_thread_validation and tbb_validation too.
+  std-tsan:
+    name: std backend, ThreadSanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev libtbb-dev
+          # ThreadSanitizer aborts on the runners' default address-space randomization.
+          sudo sysctl vm.mmap_rnd_bits=28
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCHUNK_THREADS=std
+          -DCHUNK_WITH_TBB=ON
+          -DSANITIZER=thread
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
