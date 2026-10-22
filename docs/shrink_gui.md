@@ -53,6 +53,11 @@ version, and the commit of the cluster's repository, compared with your local cl
 gave one ("Local repository"). Without a master connection it shows the `ssh -fNM` command to
 run.
 
+Then, every 30 s, it checks that the cluster still answers (master connection, then an
+`ssh <cluster> true` limited to 20 s). When the connection is lost, a window says so (once),
+and so does the system tray; run `ssh -fNM` again: when the connection is back, the full check
+runs again by itself.
+
 ## 3. The window
 
 ### Where and how

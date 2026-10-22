@@ -6,7 +6,7 @@ import json
 import pathlib
 import shlex
 
-from PySide6.QtCore import QProcess
+from PySide6.QtCore import QProcess, QTimer
 
 from shrink_gui.config import LOCAL, LOCAL_SHELL, NEWEST_PY, SSH
 
@@ -28,19 +28,30 @@ class Remote:
     def is_local(self):
         return self.host_fn() == LOCAL
 
-    def _run(self, args, stdin_text, done, binary=False, program=None):
+    def _run(self, args, stdin_text, done, binary=False, program=None, timeout_ms=None, quiet=False):
+        """quiet: a failure only gives done(None), not on_error. timeout_ms:
+        the process is killed after that long (a dead network leaves ssh
+        waiting), which counts as a failure."""
         program = program or SSH
         p = QProcess(self.parent)
         self.procs.add(p)
         out = bytearray()
         p.readyReadStandardOutput.connect(lambda: out.extend(bytes(p.readAllStandardOutput())))
+        if timeout_ms:
+            t = QTimer(p)            # dies with p
+            t.setSingleShot(True)
+            t.timeout.connect(p.kill)
+            t.start(timeout_ms)
 
-        def finished(code, _status):
+        def finished(code, status):
             out.extend(bytes(p.readAllStandardOutput()))
             err = bytes(p.readAllStandardError()).decode("utf-8", "replace").strip()
             self.procs.discard(p)
             p.deleteLater()
-            if code != 0:
+            if code != 0 or status != QProcess.NormalExit:
+                if quiet:
+                    done(None)
+                    return
                 where = "local" if self.is_local() else f"ssh {self.host_fn()}"
                 self.on_error(f"{where} : code {code}\n{err[-2000:]}")
                 done(None)
@@ -49,7 +60,7 @@ class Remote:
 
         p.finished.connect(finished)
         p.errorOccurred.connect(
-            lambda e: self.on_error(f"{program} : {e}") if e == QProcess.FailedToStart else None)
+            lambda e: self.on_error(f"{program} : {e}") if e == QProcess.FailedToStart and not quiet else None)
         p.start(program, args)
         if stdin_text is not None:
             p.write(stdin_text.encode())
@@ -60,6 +71,24 @@ class Remote:
             done(True)
             return
         self._run(["-O", "check", self.host_fn()], None, lambda o: done(o is not None))
+
+    def ping(self, done, timeout_ms=20000):
+        """done(True) when the host answers through the master connection
+        within timeout_ms; no message on failure (the caller reports it).
+        `ssh -O check` alone only sees the local master process, which
+        outlives a dead network until ssh's own keepalive gives up."""
+        if self.is_local():
+            done(True)
+            return
+
+        def master(o):
+            if o is None:
+                done(False)
+                return
+            self._run(["-o", "BatchMode=yes", self.host_fn(), "true"], None,
+                      lambda o2: done(o2 is not None), timeout_ms=timeout_ms, quiet=True)
+
+        self._run(["-O", "check", self.host_fn()], None, master, timeout_ms=timeout_ms, quiet=True)
 
     def helper(self, action, args, done, binary=False):
         py = f'"{NEWEST_PY}"' if action in ("options", "validate") else "python3"

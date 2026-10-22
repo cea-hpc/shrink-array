@@ -53,6 +53,11 @@ de Python, et le commit du dépôt du calculateur, comparé à celui de votre cl
 avez donné un (« Dépôt local »). Sans connexion maître, elle affiche la commande `ssh -fNM` à
 lancer.
 
+Ensuite, toutes les 30 s, elle vérifie que le calculateur répond encore (connexion maître, puis
+un `ssh <calculateur> true` limité à 20 s). Si la connexion se perd, une fenêtre le signale (une
+seule fois), ainsi que la zone de notification ; relancez `ssh -fNM` : au retour de la
+connexion, la vérification complète est refaite d'elle-même.
+
 ## 3. La fenêtre
 
 ### Où et comment
