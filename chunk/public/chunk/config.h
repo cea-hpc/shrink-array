@@ -113,6 +113,9 @@ inline constexpr bool has_ompt = CHUNK_OPT_OMPT != 0;
 // For call-site readability.
 inline constexpr bool has_not_ompt = !has_ompt;
 
+/// C++26 static reflection (P2996) in this build (CMake: CHUNK_REFLECTION, GCC 16 -freflection).
+inline constexpr bool has_reflection = CHUNK_OPT_REFLECTION != 0;
+
 /// Every written value checked for NaN (CMake: CHUNK_DO_CHECK).
 inline constexpr bool do_check = CHUNK_OPT_DO_CHECK != 0;
 

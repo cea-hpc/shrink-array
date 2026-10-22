@@ -569,36 +569,91 @@ if(NOT USE_MOLD STREQUAL "OFF")
     endif()
 endif()
 
-# ── C++ standard: C++23, required ────────────────────────────────────────────
-# The code uses C++23 unconditionally (deducing this in the CRTP bases,
-# [[assume]], std::unreachable), so every target is built with it; a compiler
-# without it -- nvc++, AOCC 5 (LLVM 17 with libstdc++ 15) -- cannot build the
-# library.
+# ── C++ standard: C++26 (cpp26 branch) ──────────────────────────────────────
+# The cpp26 branch builds every target as C++26. The code itself needs C++23
+# (deducing this in the CRTP bases, [[assume]], std::unreachable) and uses the
+# C++26 features behind their feature-test macros, so GCC 14 and Clang 18 still
+# build it (their -std=gnu++26 is partial); a compiler without C++23 -- nvc++,
+# AOCC 5 -- cannot.
 #
-# The portable request (target_compile_features cxx_std_23) needs CMake to know
-# that feature for this compiler. An older CMake may not list it for a newer
-# compiler (IntelLLVM 2026.0 with CMake 3.20), and NVHPC is never in its table:
-# then the -std flag is passed directly. Defined before the first
-# add_subdirectory(), so it is visible in chunk/ and examples/. fast_allocators
-# keeps its own inline equivalent because it is installable standalone (own
-# project()) and must not depend on this umbrella-level helper.
-# CHUNK_CXX_STANDARD (a 20-or-23 switch for a few days) is gone: drop a stale
-# cache entry so it does not suggest it still does something.
+# The portable request (target_compile_features cxx_std_26) needs CMake to know
+# that feature for this compiler (CMake 3.25 and later, for a compiler it
+# knows). Otherwise -- an older CMake, a newer compiler, NVHPC -- the -std flag
+# is passed directly. Defined before the first add_subdirectory(), so it is
+# visible in chunk/ and examples/. fast_allocators stays C++23 (its own
+# project(), installable standalone): nothing there needs C++26.
 unset(CHUNK_CXX_STANDARD CACHE)
-if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
-  set(CHUNK_CXX_STD_FLAG "-std=gnu++23")
-  message(STATUS "C++ standard: C++23 via ${CHUNK_CXX_STD_FLAG} (CMake ${CMAKE_VERSION} has no cxx_std_23 entry "
+if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+  set(CHUNK_CXX_STD_FLAG "-std=gnu++26")
+  message(STATUS "C++ standard: C++26 via ${CHUNK_CXX_STD_FLAG} (CMake ${CMAKE_VERSION} has no cxx_std_26 entry "
                  "for ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION})")
 else()
   set(CHUNK_CXX_STD_FLAG "")
-  message(STATUS "C++ standard: C++23")
+  message(STATUS "C++ standard: C++26")
+endif()
+
+# ── Static reflection (C++26, P2996) ─────────────────────────────────────────
+# CHUNK_REFLECTION: AUTO (default) turns it on when the compiler has it, ON
+# requires it, OFF leaves it out. Today only GCC 16 has it (-freflection,
+# experimental); Clang 23 has none, so Clang and oneAPI builds -- the OMPT
+# ones -- go without. The flag is PUBLIC on the libraries (a consumer must
+# parse the same headers), and recorded in chunk/build_options.h
+# (CHUNK_OPT_REFLECTION, build_config::has_reflection), which refuses a
+# consumer compiled without it.
+set(CHUNK_REFLECTION "AUTO" CACHE STRING "C++26 static reflection: AUTO, ON or OFF")
+set_property(CACHE CHUNK_REFLECTION PROPERTY STRINGS AUTO ON OFF)
+set(CHUNK_REFLECTION_FLAG "")
+set(CHUNK_HAVE_REFLECTION OFF)
+if (NOT CHUNK_REFLECTION STREQUAL "OFF")
+  include(CheckCXXSourceCompiles)
+  set(_chunk_refl_std "${CHUNK_CXX_STD_FLAG}")
+  if (NOT _chunk_refl_std)
+    set(_chunk_refl_std "-std=gnu++26")
+  endif()
+  set(_chunk_refl_src [=[
+#include <meta>
+struct S { int a; double b; };
+static_assert(std::meta::nonstatic_data_members_of(^^S, std::meta::access_context::unchecked()).size() == 2);
+#if !defined(__cpp_impl_reflection) || !defined(__cpp_lib_reflection)
+#error no reflection
+#endif
+int main() { return 0; }
+]=])
+  set(CMAKE_REQUIRED_QUIET ON)
+  set(CMAKE_REQUIRED_FLAGS "${_chunk_refl_std} -freflection")
+  check_cxx_source_compiles("${_chunk_refl_src}" CHUNK_REFLECTION_WITH_FLAG)
+  if (CHUNK_REFLECTION_WITH_FLAG)
+    set(CHUNK_REFLECTION_FLAG "-freflection")
+    set(CHUNK_HAVE_REFLECTION ON)
+  else()
+    # A compiler that turns it on with C++26 alone.
+    set(CMAKE_REQUIRED_FLAGS "${_chunk_refl_std}")
+    check_cxx_source_compiles("${_chunk_refl_src}" CHUNK_REFLECTION_BUILTIN)
+    if (CHUNK_REFLECTION_BUILTIN)
+      set(CHUNK_HAVE_REFLECTION ON)
+    endif()
+  endif()
+  unset(CMAKE_REQUIRED_FLAGS)
+  unset(CMAKE_REQUIRED_QUIET)
+  if (CHUNK_REFLECTION STREQUAL "ON" AND NOT CHUNK_HAVE_REFLECTION)
+    message(FATAL_ERROR "CHUNK_REFLECTION=ON, but ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} has no "
+                        "C++26 static reflection (GCC 16 or later: -freflection)")
+  endif()
+endif()
+if (CHUNK_HAVE_REFLECTION)
+  message(STATUS "C++26 static reflection: on ${CHUNK_REFLECTION_FLAG}")
+else()
+  message(STATUS "C++26 static reflection: off (CHUNK_REFLECTION=${CHUNK_REFLECTION})")
 endif()
 
 function(chunk_require_cxx_std target scope)
   if (CHUNK_CXX_STD_FLAG)
     target_compile_options(${target} ${scope} ${CHUNK_CXX_STD_FLAG})
   else()
-    target_compile_features(${target} ${scope} cxx_std_23)
+    target_compile_features(${target} ${scope} cxx_std_26)
+  endif()
+  if (CHUNK_REFLECTION_FLAG)
+    target_compile_options(${target} ${scope} ${CHUNK_REFLECTION_FLAG})
   endif()
 endfunction()
 

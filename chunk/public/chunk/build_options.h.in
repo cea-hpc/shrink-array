@@ -33,6 +33,7 @@
 #define CHUNK_OPT_STD_ALLOC                @CHUNK_OPT_STD_ALLOC@
 #define CHUNK_OPT_FAST_ALLOC               @CHUNK_OPT_FAST_ALLOC@
 #define CHUNK_OPT_OMPT                     @CHUNK_OPT_OMPT@
+#define CHUNK_OPT_REFLECTION               @CHUNK_OPT_REFLECTION@
 #define CHUNK_OPT_DEBUG                    @CHUNK_OPT_DEBUG@
 #define CHUNK_OPT_CHECK_OPTIM              @CHUNK_OPT_CHECK_OPTIM@
 #define CHUNK_OPT_STATS                    @CHUNK_OPT_STATS@
@@ -56,4 +57,8 @@
     #error "the chunk library was built with OpenMP: compile this file with OpenMP as well (-fopenmp, -fiopenmp, -mp), or link a library built without it"
 #elif !CHUNK_OPT_OPENMP && defined(_OPENMP)
     #error "the chunk library was built without OpenMP: compile this file without OpenMP, or link a library built with it"
+#endif
+
+#if CHUNK_OPT_REFLECTION && !defined(__cpp_impl_reflection)
+    #error "the chunk library was built with C++26 static reflection: compile this file with it as well (-std=c++26 -freflection, GCC 16 or later), or link a library built without it"
 #endif

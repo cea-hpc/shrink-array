@@ -157,3 +157,9 @@ endif()
 # A 2D field through the mdspan view (chunk/mdspan.h), row-major against tiles
 # (chunk_v2a_256: left out with chunk2a, mdspan_tiles/CMakeLists.txt).
 add_subdirectory(mdspan_tiles)
+
+# SoaArray<T> (chunk/soa_array.h): a struct stored one compressed array per
+# member, by C++26 static reflection -- only where the compiler has it.
+if ("chunk2a" IN_LIST CHUNK_VARIANTS AND CHUNK_HAVE_REFLECTION)
+    add_subdirectory(soa_array)
+endif()
