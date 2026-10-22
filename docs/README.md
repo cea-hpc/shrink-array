@@ -46,6 +46,7 @@
 | [developer_settings.md](developer_settings.md) / [reglages_developpeur_fr.md](reglages_developpeur_fr.md) | the developers' switches, with their removal dates: tuning, traces, forced rechunks, benchmark, macros, debugging options, build scripts |
 | [performance_measurement.md](performance_measurement.md) / [mesures_performance_fr.md](mesures_performance_fr.md) | measurement traps (`VmRSS`, timing noise), method, recipes |
 | [shrink_gui.md](shrink_gui.md) / [shrink_gui_fr.md](shrink_gui_fr.md) | the GUI that submits `compile_all.sh`, `bench_and_test.py` and `multi_launch_stress.py` on the cluster and follows them: start, window, git pull, site configuration |
+| [pattern_design.md](pattern_design.md) | design note of the pattern::Array variant (a chunk = a shared motif + an offset; integers; connectivity), English only |
 | `example_bench_test.txt`, `example_multi_launch_stress.txt` | how to launch `bench_and_test.py` and `multi_launch_stress.py` |
 
 ## The code on one page / Le code en une page
