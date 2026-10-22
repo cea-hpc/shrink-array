@@ -44,28 +44,26 @@
 
 #pragma once
 
-#include <sys/mman.h> // mmap, madvise
-#include <unistd.h>   // sysconf(_SC_PAGESIZE)
-#include <algorithm>  // std::max, the high-water mark
-#include <cstddef>    // std::size_t
-#include <cstdint>    // std::uintptr_t, std::uint8_t
-#include <cstdlib>    // std::getenv
-#include <functional> // std::less (the sweep orders slab pointers)
-#include <utility>    // std::cmp_less
-#include <vector>     // std::vector
-#include <mutex>      // std::mutex, std::scoped_lock
-#include <atomic>     // std::atomic, std::memory_order_relaxed
-#include <charconv>   // std::from_chars (CHUNK_RECLAIM_THREADS)
-#include <chrono>     // the sweep timer
-#include <cstring>    // std::strlen
-#ifdef _OPENMP
-    #include <omp.h> // omp_in_parallel, omp_get_max_threads (parallel sweep)
-#endif
+#include <sys/mman.h>    // mmap, madvise
+#include <unistd.h>      // sysconf(_SC_PAGESIZE)
+#include <algorithm>     // std::max, the high-water mark
+#include <cstddef>       // std::size_t
+#include <cstdint>       // std::uintptr_t, std::uint8_t
+#include <cstdlib>       // std::getenv
+#include <functional>    // std::less (the sweep orders slab pointers)
+#include <utility>       // std::cmp_less
+#include <vector>        // std::vector
+#include <mutex>         // std::mutex, std::scoped_lock
+#include <atomic>        // std::atomic, std::memory_order_relaxed
+#include <charconv>      // std::from_chars (CHUNK_RECLAIM_THREADS)
+#include <chrono>        // the sweep timer
+#include <cstring>       // std::strlen
 #include <unordered_map> // std::unordered_map
 #include <unordered_set> // std::unordered_set
 #include <system_error>  // std::errc (std::from_chars)
 
 #include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
+#include "fast_allocators/internal/pmp_alloc.h"    // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
 #include "fast_allocators/internal/fatal.h"        // FAST_ALLOC_FATAL
 #include "fast_allocators/internal/log_core.h"     // CHUNK_LOG, CHUNK_LOG_ALWAYS (CHUNK_ARENA_REPORT)
 
@@ -214,19 +212,18 @@ inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) no
 }
 
 /// @brief CHUNK_RECLAIM_THREADS (default 1 = serial): threads issuing the
-///        sweep's madvise calls; 0 = omp_get_max_threads().
+///        sweep's madvise calls; 0 = the backend's team size (pmp::max_threads(),
+///        1 in a serial build).
 inline int reclaim_sweep_threads() noexcept
 {
     static const int n = []
     {
         const std::size_t v = reclaim_env_number("CHUNK_RECLAIM_THREADS", 1);
-#ifdef _OPENMP
         if (v == 0)
         {
-            return omp_get_max_threads();
+            return pmp::max_threads();
         }
-#endif
-        return v == 0 ? 1 : static_cast<int>(std::min<std::size_t>(v, 4096));
+        return static_cast<int>(std::min<std::size_t>(v, 4096));
     }();
     return n;
 }
@@ -525,25 +522,21 @@ class EmptySlabSweep
         std::size_t    len;   ///< bytes, page multiple
     };
 
-    /// @brief madvise every run of runs_, serially or from an OpenMP team.
+    /// @brief madvise every run of runs_, serially or from a team of the backend.
     void advise_runs() noexcept
     {
         const auto n_runs = static_cast<long>(runs_.size());
-#ifdef _OPENMP
-        const int nthr = detail::reclaim_sweep_threads();
+        const int  nthr   = detail::reclaim_sweep_threads();
         // No nested team (the sweep is meant for a quiescent, serial point),
         // and not for a handful of runs: a team costs more than it saves.
-        if (nthr > 1 && omp_in_parallel() == 0 && n_runs >= 4L * nthr)
+        if (pmp::threaded && nthr > 1 && !pmp::in_parallel() && n_runs >= 4L * nthr)
         {
             const Run* runs = runs_.data();
-    #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
-            for (long i = 0; i < n_runs; ++i)
-            {
-                ::madvise(detail::addr_ptr(runs[i].begin), runs[i].len, MADV_DONTNEED);
-            }
+            pmp::parallel_for(0L, n_runs, pmp::Options{.num_threads = nthr, .sched = pmp::Schedule::dynamic(16)},
+                              [runs](long i)
+                              { ::madvise(detail::addr_ptr(runs[i].begin), runs[i].len, MADV_DONTNEED); });
             return;
         }
-#endif
         for (long i = 0; i < n_runs; ++i)
         {
             ::madvise(detail::addr_ptr(runs_[i].begin), runs_[i].len, MADV_DONTNEED);
@@ -855,20 +848,15 @@ class SlabArena
         // Serial, or from a team of CHUNK_RECLAIM_THREADS as the slab sweep
         // (EmptySlabSweep::advise_runs): still under the lock, which the team
         // does not need, so no allocate() takes a slab mid-advise.
-#ifdef _OPENMP
         const auto n_runs = static_cast<long>(runs);
         const int  nthr   = detail::reclaim_sweep_threads();
-        if (nthr > 1 && omp_in_parallel() == 0 && n_runs >= 4L * nthr)
+        if (pmp::threaded && nthr > 1 && !pmp::in_parallel() && n_runs >= 4L * nthr)
         {
             const Span* run = spans.data();
-    #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
-            for (long i = 0; i < n_runs; ++i)
-            {
-                ::madvise(detail::addr_ptr(run[i].begin), run[i].len, MADV_DONTNEED);
-            }
+            pmp::parallel_for(0L, n_runs, pmp::Options{.num_threads = nthr, .sched = pmp::Schedule::dynamic(16)},
+                              [run](long i) { ::madvise(detail::addr_ptr(run[i].begin), run[i].len, MADV_DONTNEED); });
         }
         else
-#endif
         {
             for (std::size_t i = 0; i < runs; ++i)
             {

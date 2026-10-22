@@ -52,229 +52,247 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
     const Int sz       = bench_arr.sz;
     const Int interval = bench_arr.interval;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = 0; i < 256; ++i)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& t)
         {
-            if (i % 3 == 0)
-            {
-                tab1[i] = second_value_d;
-                tab2[i] = std::sin(i);
-                tab3[i] = 0;
-            }
-            else
-            {
-                tab1[i] = 0;
-                tab2[i] = 0;
-                tab3[i] = std::sin(i);
-            }
+            begin_parallel_phase_g();
 
-            tab4[i] = 0;
-            tab5[i] = 0;
+            t.for_static<Int>(
+                0, 256,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    if (i % 3 == 0)
+                    {
+                        tab1[i] = second_value_d;
+                        tab2[i] = std::sin(i);
+                        tab3[i] = 0;
+                    }
+                    else
+                    {
+                        tab1[i] = 0;
+                        tab2[i] = 0;
+                        tab3[i] = std::sin(i);
+                    }
 
-            tab_float[i] = 0;
-            tab_char[i]  = 0;
+                    tab4[i] = 0;
+                    tab5[i] = 0;
 
-            tab_short[i] = 0;
+                    tab_float[i] = 0;
+                    tab_char[i]  = 0;
 
-            tab_int[i] = 0;
+                    tab_short[i] = 0;
 
-            tab_bool[i]      = false;
-            tab_bool_bits[i] = false;
-            tab_complex[i]   = zero_complex;
-        }
+                    tab_int[i] = 0;
 
-        BENCH_OMP_FOR_STATIC_NOWAIT
-        for (Int i = 256; i < sz / 4; ++i)
-        {
-            tab_short[i] = 0;
-        }
+                    tab_bool[i]      = false;
+                    tab_bool_bits[i] = false;
+                    tab_complex[i]   = zero_complex;
+                },
+                bench_par::nowait);
 
-        BENCH_OMP_FOR_STATIC_NOWAIT
-        for (Int i = sz / 4; i < sz / 2; ++i)
-        {
-            tab_short[i] = second_value_s0;
-        }
+            bench_par::for_static_vec(t, 256, sz / 4,
+                                      [&](const Int i) __attribute__((always_inline)) { tab_short[i] = 0; });
 
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = 256; i < sz / 2; ++i)
-        {
-            tab1[i] = second_value_d;
-            tab2[i] = second_value_d;
-            tab3[i] = 0;
-            tab4[i] = 0;
-            tab5[i] = 0;
+            bench_par::for_static_vec(t, sz / 4, sz / 2, [&](const Int i) __attribute__((always_inline))
+                                      { tab_short[i] = second_value_s0; });
 
-            tab_int[i]       = 0;
-            tab_bool[i]      = false;
-            tab_bool_bits[i] = false;
+            t.for_static<Int>(
+                256, sz / 2,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab1[i] = second_value_d;
+                    tab2[i] = second_value_d;
+                    tab3[i] = 0;
+                    tab4[i] = 0;
+                    tab5[i] = 0;
 
-            tab_float[i] = 0;
-            tab_char[i]  = 0;
+                    tab_int[i]       = 0;
+                    tab_bool[i]      = false;
+                    tab_bool_bits[i] = false;
 
-            tab_complex[i] = zero_complex;
-        }
+                    tab_float[i] = 0;
+                    tab_char[i]  = 0;
 
-        Int begin_i = sz / 2;
-        Int end_i   = sz - (sz / 3);
+                    tab_complex[i] = zero_complex;
+                },
+                bench_par::nowait);
 
-#pragma omp single nowait
-        {
-            end             = std::chrono::steady_clock::now();
-            elapsed_seconds = end - start;
-            start           = end;
-            std::cout << "\nElapsed time init zero loops : " << elapsed_seconds.count() << "s\n";
-        }
+            Int begin_i = sz / 2;
+            Int end_i   = sz - (sz / 3);
 
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = begin_i; i < end_i; ++i)
-        {
-            tab1[i] = second_value_d;
-            tab2[i] = 0;
-            tab3[i] = second_value_d;
+            t.single(
+                [&]
+                {
+                    end             = std::chrono::steady_clock::now();
+                    elapsed_seconds = end - start;
+                    start           = end;
+                    std::cout << "\nElapsed time init zero loops : " << elapsed_seconds.count() << "s\n";
+                },
+                bench_par::nowait);
 
-            tab4[i] = second_value_d1;
-            tab5[i] = second_value_d2;
+            t.for_static<Int>(
+                begin_i, end_i,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab1[i] = second_value_d;
+                    tab2[i] = 0;
+                    tab3[i] = second_value_d;
 
-            tab_int[i]       = second_value_i;
-            tab_bool[i]      = second_value_b;
-            tab_bool_bits[i] = second_value_b;
+                    tab4[i] = second_value_d1;
+                    tab5[i] = second_value_d2;
 
-            tab_complex[i] = second_value_c;
+                    tab_int[i]       = second_value_i;
+                    tab_bool[i]      = second_value_b;
+                    tab_bool_bits[i] = second_value_b;
 
-            tab_long[i]  = second_value_l;
-            tab_ulong[i] = second_value_ul;
-            // One level per BAND of bench_quant_band elements, spread over the
-            // array: this is the line that exercises the registry, at up to
-            // 2 * bench_double_bands + 1 distinct second values instead of the
-            // one every other array declares. The level must be constant over
-            // a whole chunk: sin(i) of the element index changes at every
-            // element (sin of consecutive integers jumps around), so no chunk
-            // was ever constant and the registry saw nothing from this array.
-            // A fixed band, not chunk_size(): the same data in every build
-            // (std::vector reference, 64 / 256 / 1024, dyn), so the checksums
-            // still compare; 1024 is a multiple of each of those geometries.
-            constexpr Int bench_quant_band = 1024;
-            tab_quant[i] = std::round(std::sin(static_cast<double>(i / bench_quant_band)) * bench_double_bands) /
-                           bench_double_bands;
-        }
+                    tab_complex[i] = second_value_c;
 
-        begin_i = end_i;
-        end_i   = sz - (sz / 4);
+                    tab_long[i]  = second_value_l;
+                    tab_ulong[i] = second_value_ul;
+                    // One level per BAND of bench_quant_band elements, spread over the
+                    // array: this is the line that exercises the registry, at up to
+                    // 2 * bench_double_bands + 1 distinct second values instead of the
+                    // one every other array declares. The level must be constant over
+                    // a whole chunk: sin(i) of the element index changes at every
+                    // element (sin of consecutive integers jumps around), so no chunk
+                    // was ever constant and the registry saw nothing from this array.
+                    // A fixed band, not chunk_size(): the same data in every build
+                    // (std::vector reference, 64 / 256 / 1024, dyn), so the checksums
+                    // still compare; 1024 is a multiple of each of those geometries.
+                    constexpr Int bench_quant_band = 1024;
+                    tab_quant[i] =
+                        std::round(std::sin(static_cast<double>(i / bench_quant_band)) * bench_double_bands) /
+                        bench_double_bands;
+                },
+                bench_par::nowait);
 
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = begin_i; i < end_i; ++i)
-        {
-            tab1[i] = second_value_d0;
-            tab2[i] = second_value_d0;
-            tab3[i] = second_value_d0;
+            begin_i = end_i;
+            end_i   = sz - (sz / 4);
 
-            tab4[i]      = 2 * second_value_d0;
-            tab5[i]      = 3 * second_value_d0;
-            tab_float[i] = 3 * second_value_f0;
+            t.for_static<Int>(
+                begin_i, end_i,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab1[i] = second_value_d0;
+                    tab2[i] = second_value_d0;
+                    tab3[i] = second_value_d0;
 
-            tab_int[i]       = other_second_value_i;
-            tab_bool[i]      = second_value_b;
-            tab_bool_bits[i] = second_value_b;
+                    tab4[i]      = 2 * second_value_d0;
+                    tab5[i]      = 3 * second_value_d0;
+                    tab_float[i] = 3 * second_value_f0;
 
-            tab_complex[i] = other_second_value_c;
+                    tab_int[i]       = other_second_value_i;
+                    tab_bool[i]      = second_value_b;
+                    tab_bool_bits[i] = second_value_b;
 
-            tab_char[i] = 2 * second_value_c0;
-        }
+                    tab_complex[i] = other_second_value_c;
 
-#pragma omp single nowait
-        {
-            end             = std::chrono::steady_clock::now();
-            elapsed_seconds = end - start;
-            start           = end;
-            std::cout << "\nElapsed time init 2nd values loops : " << elapsed_seconds.count() << "s\n";
-        }
+                    tab_char[i] = 2 * second_value_c0;
+                },
+                bench_par::nowait);
 
-        begin_i = end_i;
-        end_i   = std::min(begin_i + interval, sz);
+            t.single(
+                [&]
+                {
+                    end             = std::chrono::steady_clock::now();
+                    elapsed_seconds = end - start;
+                    start           = end;
+                    std::cout << "\nElapsed time init 2nd values loops : " << elapsed_seconds.count() << "s\n";
+                },
+                bench_par::nowait);
 
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = begin_i; i < end_i; ++i)
-        {
-            tab1[i] = 2;
-            tab2[i] = 2;
-            tab3[i] = 1;
-            tab4[i] = 1;
-            tab5[i] = second_value_d2 + 10;
+            begin_i = end_i;
+            end_i   = std::min(begin_i + interval, sz);
 
-            tab1[i] *= 2;
-            tab2[i] /= 2;
-            tab3[i] += 1;
+            t.for_static<Int>(
+                begin_i, end_i,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab1[i] = 2;
+                    tab2[i] = 2;
+                    tab3[i] = 1;
+                    tab4[i] = 1;
+                    tab5[i] = second_value_d2 + 10;
 
-            tab4[i] -= 1;
-            tab5[i] -= 10;
-            tab_char[i] += 1;
-            tab_float[i] = second_value_f0 + 1;
+                    tab1[i] *= 2;
+                    tab2[i] /= 2;
+                    tab3[i] += 1;
 
-            tab_int[i]       = 0;
-            tab_bool[i]      = false;
-            tab_bool_bits[i] = false;
-            tab_complex[i]   = ComplexDouble(1, 2);
-        }
+                    tab4[i] -= 1;
+                    tab5[i] -= 10;
+                    tab_char[i] += 1;
+                    tab_float[i] = second_value_f0 + 1;
 
-        begin_i = end_i;
-        end_i   = std::min(begin_i + interval, sz);
+                    tab_int[i]       = 0;
+                    tab_bool[i]      = false;
+                    tab_bool_bits[i] = false;
+                    tab_complex[i]   = ComplexDouble(1, 2);
+                },
+                bench_par::nowait);
 
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = begin_i; i < end_i; ++i)
-        {
-            tab1[i] = 1;
-            tab2[i] = 2;
-            tab3[i] = 2;
+            begin_i = end_i;
+            end_i   = std::min(begin_i + interval, sz);
 
-            tab4[i]          = second_value_d1;
-            tab5[i]          = second_value_d2;
-            tab_char[i]      = second_value_c1;
-            tab_float[i]     = second_value_f1;
-            tab_int[i]       = 0;
-            tab_bool[i]      = false;
-            tab_bool_bits[i] = false;
-            tab_complex[i]   = zero_complex;
-        }
+            t.for_static<Int>(
+                begin_i, end_i,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab1[i] = 1;
+                    tab2[i] = 2;
+                    tab3[i] = 2;
 
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = end_i; i < sz; ++i)
-        {
-            tab1[i] = 0;
-            tab2[i] = 0;
-            tab3[i] = 0;
-            tab4[i] = 0;
-            tab5[i] = 0;
+                    tab4[i]          = second_value_d1;
+                    tab5[i]          = second_value_d2;
+                    tab_char[i]      = second_value_c1;
+                    tab_float[i]     = second_value_f1;
+                    tab_int[i]       = 0;
+                    tab_bool[i]      = false;
+                    tab_bool_bits[i] = false;
+                    tab_complex[i]   = zero_complex;
+                },
+                bench_par::nowait);
 
-            tab_int[i]       = 0;
-            tab_bool[i]      = false;
-            tab_bool_bits[i] = false;
-            tab_complex[i]   = zero_complex;
-        }
+            t.for_static<Int>(
+                end_i, sz,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab1[i] = 0;
+                    tab2[i] = 0;
+                    tab3[i] = 0;
+                    tab4[i] = 0;
+                    tab5[i] = 0;
 
-        // Scalar: LLVM reports this one "uncountable" under `simd`, with the
-        // char store alone as well (the short fills above vectorise). A
-        // zeroing loop the idiom pass turns into memset anyway.
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = end_i; i < 2 * sz; ++i)
-        {
-            tab_char[i]  = 0;
-            tab_float[i] = 0;
-        }
+                    tab_int[i]       = 0;
+                    tab_bool[i]      = false;
+                    tab_bool_bits[i] = false;
+                    tab_complex[i]   = zero_complex;
+                },
+                bench_par::nowait);
 
-#pragma omp single nowait
-        {
-            end             = std::chrono::steady_clock::now();
-            elapsed_seconds = end - start;
-            start           = end;
-            std::cout << "\nElapsed time other loops : " << elapsed_seconds.count() << "s\n";
-        }
+            // Scalar: LLVM reports this one "uncountable" under `simd`, with the
+            // char store alone as well (the short fills above vectorise). A
+            // zeroing loop the idiom pass turns into memset anyway.
+            t.for_static<Int>(
+                end_i, 2 * sz,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab_char[i]  = 0;
+                    tab_float[i] = 0;
+                },
+                bench_par::nowait);
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            t.single(
+                [&]
+                {
+                    end             = std::chrono::steady_clock::now();
+                    elapsed_seconds = end - start;
+                    start           = end;
+                    std::cout << "\nElapsed time other loops : " << elapsed_seconds.count() << "s\n";
+                },
+                bench_par::nowait);
+
+            finalize_parallel_phase_only_flush_g();
+        });
 
     finalize_parallel_phase_after_flush_g();
 }

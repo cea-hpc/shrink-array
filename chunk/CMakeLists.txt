@@ -117,6 +117,15 @@ macro(_chunk_opt name value)
   endif()
 endmacro()
 _chunk_opt(CHUNK_OPT_OPENMP CHUNK_OMP)
+if (NOT DEFINED CHUNK_THREADED)
+  set(CHUNK_THREADED ${CHUNK_OMP})
+endif()
+_chunk_opt(CHUNK_OPT_THREADED CHUNK_THREADED)
+if ("${CHUNK_THREADS_BACKEND}" STREQUAL "std")
+  set(CHUNK_OPT_STD_THREADS 1)
+else()
+  set(CHUNK_OPT_STD_THREADS 0)
+endif()
 _chunk_opt(CHUNK_OPT_STD_ALLOC CHUNK_STD_ALLOC)
 if (CHUNK_OPT_STD_ALLOC)
   set(CHUNK_OPT_FAST_ALLOC 0)
@@ -332,6 +341,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/deferred_lifecycle_check.h
         public/chunk/internal/deferred_op_pool.h
         public/chunk/internal/deferred_ops_storage.h
+        public/chunk/internal/diag_mutex.h
         public/chunk/internal/for_each_type.h
         public/chunk/internal/freepath_counters.h
         public/chunk/internal/func_p2.h
@@ -479,10 +489,11 @@ function(chunk_add_variant target_name variant_define size is_dyn)
   # generated chunk/build_options.h, on the include path below.
 
   if (CHUNK_STD_ALLOC)
-    # No fast_allocators library here, but four of its headers -- svalloc.h,
-    # singleton.h, log_core.h and fatal.h, standard library only -- are chunk's too
-    # (one copy, see them): their directory stays on the include path.
-    # Installed below.
+    # No fast_allocators library here, but some of its headers -- svalloc.h,
+    # singleton.h, log_core.h, fatal.h and the threading backend (pmp_loops.h,
+    # pmp_runtime.h, pmp_std.h, pmp_std_state.h), standard library (and
+    # <omp.h>) only -- are chunk's too (one copy, see them): their directory
+    # stays on the include path. Installed below.
     target_include_directories(${target_name}
             PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/fast_allocators/public>)
   else()
@@ -518,6 +529,12 @@ function(chunk_add_variant target_name variant_define size is_dyn)
   # consumer must be compiled with OpenMP exactly when the library was.
   if (CHUNK_OMP)
     target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_CXX)
+  endif ()
+  # PUBLIC, for the same reason: the std backend is selected in the headers
+  # (fast_allocators/internal/pmp_runtime.h) by this definition, which
+  # build_options.h checks against the library's.
+  if (CHUNK_OPT_STD_THREADS)
+    target_compile_definitions(${target_name} PUBLIC FAST_ALLOC_PMP_STD=1)
   endif ()
   # The library and its headers use threads (std::thread, std::call_once:
   # exact_rss.h's RSS sampler, the flush waits, the ring log), OpenMP or not.
@@ -670,12 +687,17 @@ install(FILES ${CHUNK_GENERATED_INCLUDE_DIR}/chunk/build_options.h
         COMPONENT chunk-devel)
 
 # A std-alloc build installs no fast_allocators, yet chunk's headers include
-# its svalloc.h, singleton.h, log_core.h and fatal.h: install those four with chunk then.
+# its svalloc.h, singleton.h, log_core.h, fatal.h and the backend's pmp_*.h:
+# install those with chunk then.
 if (CHUNK_STD_ALLOC)
   install(FILES ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/svalloc.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/singleton.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/log_core.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/fatal.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_loops.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_runtime.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std_state.h
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fast_allocators/internal
           COMPONENT chunk-devel)
 endif()

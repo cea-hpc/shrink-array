@@ -34,7 +34,7 @@
  * writer wait), so a flush beginning after this check is caught as before.
  */
 
-#include "chunk/config.h"                              // build_config::use_openmp
+#include "chunk/config.h"                              // build_config::threaded
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_gate_start*
 #include "chunk/internal/invariant_check.h"            // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h" // any_thread_flushing
@@ -53,7 +53,7 @@ namespace shrink_array
 template <typename ProxyT, typename ChunkT>
 [[nodiscard]] inline bool block_pass_yields_to_flush([[maybe_unused]] int max_thr) noexcept
 {
-    if constexpr (!build_config::use_openmp)
+    if constexpr (!build_config::threaded)
     {
         return false;
     }
@@ -85,7 +85,7 @@ template <typename ProxyT, typename ChunkT>
 template <typename ProxyT>
 inline void check_no_flush_outside_start([[maybe_unused]] const char* where) noexcept
 {
-    if constexpr (build_config::use_openmp && build_config::any_check)
+    if constexpr (build_config::threaded && build_config::any_check)
     {
         if (WriteCompressSyncPolicy<ProxyT>::any_thread_flushing(0)) [[unlikely]]
         {

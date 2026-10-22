@@ -1,10 +1,12 @@
 # Builds for multi_launch_stress.py --builds build_arm.txt, on the
-# ARM cluster: every optimised (Release / RelWithDebInfo) OpenMP build that
-# compile_all.sh and compile_all_gnu.sh make there -- oneapi and aocc are
-# x86-only, nvhpc is left out on purpose, and the -cs build only exists when
-# asked for (--llvm-cs=<size>). No debug, no sanitizer build: those have
-# runners of their own (bench_and_test.py --sanitizers). The non-OpenMP
-# builds are not in: the random thread count is what this runner is for.
+# ARM cluster: every optimised (Release / RelWithDebInfo) threaded build that
+# compile_all.sh and compile_all_gnu.sh make there: the OpenMP ones and the
+# std-backend ones (CHUNK_THREADS=std; their TBB bench tbb_* runs too, when the
+# build has it). oneapi and aocc are x86-only, nvhpc is left out on purpose,
+# and the -cs build only exists when asked for (--llvm-cs=<size>). No debug,
+# no sanitizer build: those have runners of their own (bench_and_test.py
+# --sanitizers). The serial builds are not in: the random thread count is
+# what this runner is for.
 # The runs cycle through this list, in this order.
 omp-gnu
 omp-gnu-have-aggressive-compression
@@ -16,3 +18,7 @@ omp-llvm-have-aggressive-compression
 omp-llvm-std-alloc
 omp-llvm-stats
 omp-llvm-check
+std-gnu
+std-gnu-check
+std-llvm
+std-llvm-check

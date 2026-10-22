@@ -123,8 +123,8 @@ struct Segment
     static constexpr int slots_per_segment = 64; ///< Slots per segment.
 
     std::array<T*, slots_per_segment> slots{};        ///< The slots, one per registered value.
-    int                  used = 0;       ///< How many leading slots are occupied.
-    Segment*             next = nullptr; ///< Next block, or null at the tail.
+    int                               used = 0;       ///< How many leading slots are occupied.
+    Segment*                          next = nullptr; ///< Next block, or null at the tail.
 };
 
 template <typename T>
@@ -1016,7 +1016,7 @@ class GlobalVecHolder
 #endif
 
     static constexpr size_t index_cap       = size_t{1} << chunk_cst_val2_index_loc; ///< Initial capacity.
-    static constexpr int    index_max_probe = 64;                                    ///< Bounded; giving up means fallback.
+    static constexpr int    index_max_probe = 64; ///< Bounded; giving up means fallback.
 
     /// @brief Reserve the region. Idempotent; called by init().
     static void region_init()
@@ -1242,8 +1242,8 @@ class TabCstVal2Holder
     {
         // Up to the record in the second-value table, which the reclaim's mark
         // scans: a reclaim must not run in between (LookupGuard).
-        const typename VecHolder::LookupGuard         in_flight;
-        T*                                            buf = find_or_register(second_v);
+        const typename VecHolder::LookupGuard in_flight;
+        T*                                    buf = find_or_register(second_v);
         ptr_second_value.set_from_array(buf);
         return buf;
     }

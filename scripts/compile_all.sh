@@ -184,6 +184,14 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    nor -DCHUNK_UBSAN=ON to the address-sanitizer builds (default: added).
   --llvm-cs=<N>    Also build an llvm RelWithDebInfo variant with CHUNK_SIZE=N (power of two).
   -h, --help    Show this help.
+
+The std threading backend (CHUNK_THREADS=std) is built next to the OpenMP one:
+std-llvm and std-llvm-check here, std-gnu, std-gnu-check and the TSan build in
+compile_all_gnu.sh. They lengthen the build; --target='omp-*' leaves them out.
+Their TBB bench (shrink_bench_tbb_*) and tbb_validation need oneTBB: made when
+TBBROOT is set (oneAPI vars.sh, spack load intel-oneapi-tbb) or CHUNK_WITH_TBB=1,
+left out with CHUNK_WITH_TBB=0 (the script says which at the start). The std
+TSan build gets TBB from CHUNK_TBB_TSAN_DIR only (a oneTBB built with TSan).
 EOF
 }
 
@@ -320,6 +328,11 @@ source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
 # --target=<glob> that matches none of the configurations either script knows:
 # stop here with the closest names, before a single configure runs.
 check_target_arg $(known_build_names "$0" "$CHUNK_SCRIPT_DIR/compile_all_gnu.sh")
+
+# oneTBB for the std-backend builds (TBB bench, tbb_validation): TBB_CMAKE_OPT
+# and TBB_TSAN_CMAKE_OPT, see set_tbb_options in functions_for_compile.sh. Said
+# here, once: compile_all_gnu.sh, run below, finds CHUNK_TBB_NOTICE_DONE set.
+set_tbb_options
 
 # Hardening switch, read by hardening_opts_for (functions_for_compile.sh) for
 # every cmake configure issued here, and inherited by compile_all_gnu.sh.
@@ -571,6 +584,26 @@ else
 fi
 fi
 
+# TSan on the std backend (CHUNK_THREADS=std), optimised, CHECK_OPTIM: the
+# teams are std::jthreads synchronised with std::atomic wait/notify and
+# std::barrier, all of which TSan instruments, so a report here is not a
+# barrier the tool missed (the libomp twin above relies on Archer's
+# annotations). The bench runs it at OMP_NUM_THREADS=8, which is the team size
+# of that backend too. Its TBB bench is made only with an instrumented oneTBB
+# (CHUNK_TBB_TSAN_DIR): an uninstrumented libtbb hides the hand-off of every
+# task from TSan.
+if [ "$enable_sanitizers" = true ]; then
+set_build_header 'Compiling llvm relwithdebinfo std check thread sanitizer:'
+if skip_release; then
+   echo "[debug-only] skipping llvm relwithdebinfo std check thread-sanitizer build"
+else
+   if [ "$BUILD_ONLY" = false ]; then
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread $TBB_TSAN_CMAKE_OPT"
+   fi
+   launch_build "$build_rep/cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer/$arch"
+fi
+fi
+
 if [ "$enable_sanitizers" = true ]; then
 
 # Token (alloc-token census) on the std_alloc axis only: it instruments
@@ -660,6 +693,35 @@ else
       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-std-alloc/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
    launch_build "$build_rep/cmake-build-omp-llvm-std-alloc/$arch"
+fi
+
+# The std backend (CHUNK_THREADS=std, docs/threading_backends.md): the library's
+# teams on std::jthread workers of its own, no OpenMP (it forces OMP OFF; the
+# team size is still OMP_NUM_THREADS / CHUNK_NUM_THREADS). Release, for the
+# timings against OpenMP -- with the TBB bench (shrink_bench_tbb_*) when oneTBB
+# is there, see set_tbb_options -- and CHECK_OPTIM, for the validations
+# (std_thread_validation, and tbb_validation with oneTBB). They add two
+# configurations to the matrix and, with TBB, three more bench targets per
+# size: the build takes longer. --target='std-*' makes them alone,
+# --target='omp-*' leaves them out.
+set_build_header 'Compiling llvm std backend (no openmp):'
+if skip_release; then
+   echo "[debug-only] skipping llvm std-backend release build"
+else
+   if [ "$BUILD_ONLY" = false ]; then
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+   fi
+   launch_build "$build_rep/cmake-build-std-llvm/$arch"
+fi
+
+set_build_header 'Compiling llvm std backend with check (CHECK_OPTIM):'
+if skip_release; then
+   echo "[debug-only] skipping llvm std-backend with check"
+else
+   if [ "$BUILD_ONLY" = false ]; then
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-llvm-check/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+   fi
+   launch_build "$build_rep/cmake-build-std-llvm-check/$arch"
 fi
 
 # No -have-aggressive-compression build any more: the switch is a run-time one

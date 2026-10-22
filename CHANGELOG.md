@@ -50,6 +50,42 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- OpenMP is no longer required: the library runs its own parallel work on a
+  backend chosen at build time, CMake `CHUNK_THREADS=openmp|std|serial`
+  (empty, the default: from `OMP`, as before). `std` runs the teams on
+  `std::jthread` workers of the library's own, standard C++ only. Recorded
+  in the installed package as `chunk_THREADS`; the targets of a std build
+  carry `FAST_ALLOC_PMP_STD=1`, and a file compiled without it is refused.
+- Under the std backend, the arrays can be written from the program's own
+  threads -- `std::thread`, TBB, a pool of its own. Each takes a dense rank
+  from a registry (given back when the thread exits); the phase contract is
+  the serial one: `begin_parallel_phase()` on every thread that writes,
+  `finalize_parallel_phase()` once, after they stopped
+  ([docs/getting_started.md](docs/getting_started.md) §5). New harness
+  `std_thread_validation`.
+- `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`, header-only):
+  `oneapi::tbb::parallel_for` with the phase calls made for it, for a TBB
+  program on the std backend. The library never links TBB. CMake
+  `CHUNK_WITH_TBB` (off) builds what needs oneTBB: the harness
+  `tbb_validation` and the TBB bench `shrink_bench_tbb_<variant>_<size>`.
+- shrink_bench runs on every backend from one source
+  (`examples/shrink_bench/bench_par.h`): OpenMP builds keep the same
+  worksharing pragmas (the reductions are per-thread partials, in every
+  build); std builds, which compiled the bench without OpenMP and so ran
+  its loops on one thread, now run them on the std backend; the TBB bench runs them
+  as TBB tasks.
+- The test tooling runs the std backend and the TBB bench. `compile_all.sh` builds
+  `std-llvm`, `std-llvm-check` and a ThreadSanitizer build, next to the `std-gnu*` builds of
+  `compile_all_gnu.sh` (the builds take longer; `--target='omp-*'` leaves them out), and says at
+  the start whether oneTBB is used. `bench_and_test.py` runs the std builds by default and the
+  TBB bench as the variants `tbb_chunk`, `tbb_chunk2`, `tbb_chunk2a`. `multi_launch_stress.py`
+  runs `tbb_chunk2` next to `chunk2` by default, the six variants with `--all_exec`, and its
+  build lists include the std builds.
+- Spack: variant `threads=openmp|std|serial` (default `openmp`), and `+tbb`
+  for the TBB examples (with `+examples threads=std`).
+
 ### Changed
 
 - Types are PascalCase, with no `xxx_type` exception: the member aliases of the arrays
@@ -62,6 +98,19 @@ the tag's checksum to the recipe.
   `[[deprecated]]` aliases until 1.0. Only the standard library's own names (`value_type`,
   `size_type`, ...) keep their shape; `scripts/check_naming.py` and
   `scripts/clang_tidy_naming.yaml` now say so.
+- The library's `omp critical` sections are `std::mutex`es and its
+  `omp atomic` updates `std::atomic_ref`s; every OpenMP construct sits in one
+  file of the backend (`fast_allocators/internal/pmp_loops.h`). The OpenMP
+  build runs the same regions, with the same clauses.
+- Spack: the variant `openmp` is replaced by `threads` (`+openmp` is now
+  `threads=openmp`, `~openmp` `threads=serial`).
+
+### Fixed
+
+- Chunk2A: the deferred replay of `=` stored the element with a plain store
+  while another writer's uniform-chunk scan read it as a relaxed atomic -- a
+  data race (found by TSan on the std backend, present under OpenMP too).
+  Same machine code on x86 and AArch64, so no value was wrong.
 
 ## 0.1.3 -- 2026-10-22
 

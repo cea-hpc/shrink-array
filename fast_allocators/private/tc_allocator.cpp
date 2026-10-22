@@ -22,7 +22,7 @@
 namespace fast_alloc
 {
 
-#ifndef _OPENMP // not under OpenMP: the allocator would re-enter itself -> deadlock
+#if !FAST_ALLOC_PMP_THREADED // serial builds only: threaded, the allocator would re-enter itself -> deadlock
 template <>
 void* TCSlab<FreeLinks::in_payload>::operator new(size_t size)
 {

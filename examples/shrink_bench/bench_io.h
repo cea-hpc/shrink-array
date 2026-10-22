@@ -144,10 +144,7 @@ void write_binary_file(const std::string& filename,
                 std::cerr << std::format("Error open file : {}\n", filename_check_sum);
                 std::abort();
             }
-#pragma omp critical
-            {
-                std::cout << std::format("Write : {} (checksum only)\n", filename_check_sum);
-            }
+            bench_par::critical([&] { std::cout << std::format("Write : {} (checksum only)\n", filename_check_sum); });
             file_check_sum.write(reinterpret_cast<const char*>(&checksum), sizeof(uint64_t));
             file_check_sum.close();
             unlink(filename.c_str());
@@ -171,11 +168,12 @@ void write_binary_file(const std::string& filename,
         }
         const size_t size = data.size();
 
-#pragma omp critical
-        {
-            std::cout << std::format("Write : {}\n", filename_check_sum);
-            std::cout << std::format("Write : {}\n", filename);
-        }
+        bench_par::critical(
+            [&]
+            {
+                std::cout << std::format("Write : {}\n", filename_check_sum);
+                std::cout << std::format("Write : {}\n", filename);
+            });
 
         file_check_sum.write(reinterpret_cast<const char*>(&checksum), sizeof(uint64_t));
         file_check_sum.close();
@@ -222,10 +220,7 @@ void write_binary_file(const std::string& filename,
     if constexpr (have_bzip2)
     {
         compress_file(filename, filename_gz);
-#pragma omp critical
-        {
-            std::cout << std::format("Compression : {} -> {}\n", filename, filename_gz);
-        }
+        bench_par::critical([&] { std::cout << std::format("Compression : {} -> {}\n", filename, filename_gz); });
         unlink(filename.c_str());
     }
 }
@@ -260,10 +255,7 @@ void read_check_binary_file(Int                ind,
     const std::string filename_check_sum = filename + "_check_sum";
 
     uint64_t lchs_read = 0;
-#pragma omp critical
-    {
-        std::cout << std::format("Read : {}\n", filename_check_sum);
-    }
+    bench_par::critical([&] { std::cout << std::format("Read : {}\n", filename_check_sum); });
     std::ifstream file_check_sum(filename_check_sum, std::ios::binary);
     if (!file_check_sum)
     {
@@ -275,10 +267,7 @@ void read_check_binary_file(Int                ind,
 
     if (lchs_read == lchs && !read_trace)
     {
-#pragma omp critical
-        {
-            std::cout << tab_name << " Checksum OK !\n";
-        }
+        bench_par::critical([&] { std::cout << tab_name << " Checksum OK !\n"; });
         return;
     }
     else
@@ -301,15 +290,16 @@ void read_check_binary_file(Int                ind,
     // through a missing-file error further down.
     if (::access(filename.c_str(), F_OK) != 0 && ::access(filename_gz.c_str(), F_OK) != 0)
     {
-#pragma omp critical
-        {
-            std::cerr << std::format(
-                "{}: iteration {}: elements cannot be compared (checksum read {}, calculated {}): the reference "
-                "has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
-                "full reference (vector baseline without --checksum_only) to locate the "
-                "diverging element.\n",
-                tab_name, ind, lchs_read, lchs, filename, filename_gz);
-        }
+        bench_par::critical(
+            [&]
+            {
+                std::cerr << std::format(
+                    "{}: iteration {}: elements cannot be compared (checksum read {}, calculated {}): the reference "
+                    "has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
+                    "full reference (vector baseline without --checksum_only) to locate the "
+                    "diverging element.\n",
+                    tab_name, ind, lchs_read, lchs, filename, filename_gz);
+            });
         std::abort();
     }
 
@@ -334,10 +324,7 @@ void read_check_binary_file(Int                ind,
             bin_is_temp = true;
         }
     }
-#pragma omp critical
-    {
-        std::cout << "Read : " << filename << std::endl;
-    }
+    bench_par::critical([&] { std::cout << "Read : " << filename << std::endl; });
     std::ifstream file(filename, std::ios::binary);
     if (!file)
     {

@@ -33,14 +33,14 @@
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
-#include "chunk/config.h"                               // for use_openmp, g_in_rechunk_rebuild
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values)
-#include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
-#include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
-#include "chunk/internal/array_chunk_core.h"            // the core the bases share
-#include "chunk/internal/proxy2A.h"                     // Proxy2A<T> and its tables
-#include "chunk/chunk2A_std.h"                          // Chunk2A<T>
-#include "chunk/log.h"                                  // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
+#include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
+#include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
+#include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
+#include "chunk/internal/array_chunk_core.h"           // the core the bases share
+#include "chunk/internal/proxy2A.h"                    // Proxy2A<T> and its tables
+#include "chunk/chunk2A_std.h"                         // Chunk2A<T>
+#include "chunk/log.h"                                 // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
 
 namespace shrink_array
 {
@@ -118,7 +118,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndT>>,
      */
     explicit ArrayChunk2A(IndT sz = 0)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             WriteCompressSyncPolicy<Proxy2A<T>>::ensure_initialized();
         }
@@ -299,8 +299,17 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndT>>,
      */
     void clear();
 
-    /// @brief Run a compression pass over this array's chunks.
-    void compress_int();
+    /// @brief Run a compression pass over this array's chunks, shared over
+    ///        @p team (the one compress() opens, or the caller's region).
+    void compress_int(pmp::Team& team);
+
+    /// @brief compress_int() on the calling thread's current team
+    ///        (pmp::current_team(): the caller's region, or a team of one).
+    void compress_int()
+    {
+        pmp::Team team = pmp::current_team();
+        compress_int(team);
+    }
 
     /// @brief Read-only access to the underlying chunk list.
     /// @return const reference to the chunks backing this array
@@ -362,9 +371,14 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, IndT>>,
      *          identifier to another value, and that chunk reads the other
      *          value. The refusals above see the CALLING thread only: a
      *          std::thread / TBB pool or a team started by another host thread
-     *          is not detected. Check builds fail an invariant on any lookup or
-     *          registration overlapping the reclaim (GlobalVecHolder's
-     *          LookupGuard / ReclaimScope); release builds check nothing.
+     *          is not detected -- except under the std backend between a
+     *          begin_parallel_phase() and the finalize_parallel_phase() of the
+     *          phase contract, where in_parallel() is true on every thread
+     *          (the application phase, docs/threading_backends.md step 7c;
+     *          std_thread_validation checks the refusal). Check builds fail an
+     *          invariant on any lookup or registration overlapping the reclaim
+     *          (GlobalVecHolder's LookupGuard / ReclaimScope); release builds
+     *          check nothing.
      */
     static std::size_t reclaim_second_values()
     {

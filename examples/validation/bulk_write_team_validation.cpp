@@ -34,6 +34,7 @@
 // ============================================================================
 
 #include <forward_list> // std::forward_list (assign from a forward iterator)
+#include <mutex>        // std::mutex, std::scoped_lock (the in-region arrays, one at a time)
 #include <type_traits>  // std::conditional_t
 #include <utility>      // std::as_const
 #include <vector>       // std::vector
@@ -218,19 +219,22 @@ int run_type(const char* type, long n)
     fails += check(type, "resize-grow-again", a, ref_grow);
 
     // Inside a region: each thread its own small array, on the calling thread.
-    // One thread at a time (critical): creating, resizing or destroying arrays
-    // from several threads at once is outside the library's contract --
-    // create_common() takes no lock and the Chunk2A registry
-    // (PointerMapChunk2A) is not thread-safe (see region_storage_validation).
-    int region_fails = 0;
+    // One thread at a time (a mutex, not `omp critical`: the region is a team
+    // of the build's backend, the std backend's too, where an OpenMP pragma is
+    // ignored): creating, resizing or destroying arrays from several threads
+    // at once is outside the library's contract -- create_common() takes no
+    // lock and the Chunk2A registry (PointerMapChunk2A) is not thread-safe
+    // (see region_storage_validation).
+    int        region_fails = 0;
+    std::mutex one_at_a_time;
     parallel_phase(
         [&]
         {
-#pragma omp critical(bulk_write_team_in_region)
             {
-                const int      n_region = 3000;
-                std::vector<T> r(static_cast<std::size_t>(n_region));
-                Array<T>       s(n_region);
+                const std::scoped_lock lock(one_at_a_time);
+                const int              n_region = 3000;
+                std::vector<T>         r(static_cast<std::size_t>(n_region));
+                Array<T>               s(n_region);
                 for (int i = 0; i < n_region; ++i)
                 {
                     r[static_cast<std::size_t>(i)] = value_at<T>(i);
@@ -241,7 +245,7 @@ int run_type(const char* type, long n)
                 t.assign(n_region, static_cast<T>(4));
                 f += compare(type, "in-region-assign", t,
                              std::vector<T>(static_cast<std::size_t>(n_region), static_cast<T>(4)));
-                region_fails += f; // under the critical
+                region_fails += f; // under the lock
             }
         });
     fails += region_fails;

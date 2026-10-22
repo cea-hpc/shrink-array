@@ -24,20 +24,20 @@
  *        disappear entirely from a build that has neither.
  *
  * @details Same split as ParallelSupport does for ArrayChunk (v1):
- *          ParallelSupport2<Derived, use_openmp> carries
+ *          ParallelSupport2<Derived, threaded> carries
  *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
  *          three variants), a no-op in the serial specialisation.
  *
  *          make_block_compression() gets its own mixin rather than joining
  *          the first one: its gate is chunk_config::use_fast_block_compression,
- *          which is STRICTER than use_openmp (it also needs embedded -- i.e. not
+ *          which is STRICTER than threaded (it also needs embedded -- i.e. not
  *          manual -- compression).
  *
  * @see array_chunk2_parallel_inline.h for the body
  * @see array_chunk_parallel.h for v1's version of the same split
  */
 
-#include "chunk/config.h"       // build_config::use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/config.h"       // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/chunk_traits.h" // ArrayChunkTraits
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
 
@@ -48,10 +48,10 @@ namespace shrink_array
  * @brief The OpenMP-only members of ArrayChunk2, present only when the build has OpenMP.
  *
  * @tparam Derived the concrete array type (only ArrayChunk2 today).
- * @tparam Enabled defaulted to build_config::use_openmp; never pass it
+ * @tparam Enabled defaulted to build_config::threaded; never pass it
  *         explicitly outside of tests.
  */
-template <typename Derived, bool Enabled = build_config::use_openmp>
+template <typename Derived, bool Enabled = build_config::threaded>
 struct ParallelSupport2;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────

@@ -72,7 +72,7 @@
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
-#include "fast_allocators/internal/alloc_config.h"    // alloc_config::use_std_alloc / is_debug / use_openmp
+#include "fast_allocators/internal/alloc_config.h"    // alloc_config::use_std_alloc / is_debug / threaded
 #include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/fatal.h"           // FAST_ALLOC_FATAL
 #include "fast_allocators/internal/log_core.h"        // CHUNK_LOG, logging::enabled (the eviction trace)
@@ -337,8 +337,8 @@ class alignas(64) TCSlab
 
 // Declaration-level switch, so it stays a directive: serial builds route slab
 // headers through their own pool (tc_allocator.cpp, ::TCAllocator only),
-// OpenMP builds use the global operators.
-#ifndef _OPENMP
+// threaded builds (OpenMP, std) use the global operators.
+#if !FAST_ALLOC_PMP_THREADED
     void* operator new(size_t size);  ///< Slab headers come from their own pool.
     void  operator delete(void* ptr); ///< Counterpart of the above.
 #endif
@@ -443,9 +443,9 @@ using TCAllocator = TCSlab<FreeLinks::in_payload>;
 ///        (TCTypeCAllocator::collect_empty_slabs).
 using TCCAllocator = TCSlab<FreeLinks::side_array>;
 
-#ifndef _OPENMP
+#if !FAST_ALLOC_PMP_THREADED
 // Defined in tc_allocator.cpp. Only the in-payload slab is ever created in a
-// serial build: ::TCTypeCAllocator exists in OpenMP builds only.
+// serial build: ::TCTypeCAllocator exists in threaded builds only.
 template <>
 void* TCSlab<FreeLinks::in_payload>::operator new(size_t size);
 template <>
@@ -1333,8 +1333,8 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
 };
 
 // Declaration-level switch, so it stays a directive: this type exists only in
-// OpenMP builds. Serial builds use ::TCTypeAllocator throughout.
-#ifdef _OPENMP
+// threaded builds (OpenMP, std). Serial builds use ::TCTypeAllocator throughout.
+#if FAST_ALLOC_PMP_THREADED
 
 /**
  * @brief Owns every fast_alloc::TCCAllocator slab serving one element size.

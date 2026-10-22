@@ -23,19 +23,19 @@
  *        (make_block_compression) -- isolated in their own mixins so they
  *        disappear entirely from a build that has neither.
  *
- * @details ParallelSupport<Derived, use_openmp> carries
+ * @details ParallelSupport<Derived, threaded> carries
  *          flush_pending_deferred_ops(), which drains the deferred writes
  *          queued on this array's chunks (ParallelSupportCommon, shared with the
  *          two other variants); the serial specialisation is an empty class
  *          whose flush is a no-op. FastBlockSupport<Derived,
  *          use_fast_block_compression> carries the fast-block compression pass,
- *          whose gate is stricter than use_openmp.
+ *          whose gate is stricter than threaded.
  *
  * @see array_chunk_parallel_inline.h for the body
  * @see array_chunk_parallel_common.h for the shared part
  */
 
-#include "chunk/config.h"       // build_config::use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/config.h"       // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/chunk_traits.h" // ArrayChunkTraits
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
 
@@ -46,11 +46,11 @@ namespace shrink_array
  * @brief The OpenMP-only members of an array, present only when the build has OpenMP.
  *
  * @tparam Derived the concrete array type (only ArrayChunk today).
- * @tparam Enabled defaulted to build_config::use_openmp; never pass it
+ * @tparam Enabled defaulted to build_config::threaded; never pass it
  *         explicitly outside of tests — the point of the parameter is that the
  *         two specialisations below are selected by the build mode.
  */
-template <typename Derived, bool Enabled = build_config::use_openmp>
+template <typename Derived, bool Enabled = build_config::threaded>
 struct ParallelSupport;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────

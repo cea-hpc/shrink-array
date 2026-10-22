@@ -1309,11 +1309,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param chunk_t Reference to the actual chunk for OMP checks.
      * @param num_chunk Index of the chunk for bitset lookup.
      * @param offset Offset within the chunk.
-     * @note Compiles to nothing in a serial build (`if constexpr (use_openmp)`).
+     * @note Compiles to nothing in a serial build (`if constexpr (threaded)`).
      */
     CHUNK_FORCE_INLINE void sync_chunk(const ChunkType& chunk_t, int num_chunk, int offset) const noexcept
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             // Coarse pre-filter: the deferred-enqueue path marks this bit with
             // the CHUNK index (proxy_base_inline.h), so a clear bit means no

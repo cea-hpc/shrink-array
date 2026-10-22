@@ -67,8 +67,10 @@ their own `ArrayChunk2A<double>`, the sequential point must hold for all of them
   other value, with no crash and no message.
 - *What is refused, in every build*: a call inside a parallel region of the calling thread,
   during a re-chunk, or while the second-value index is degraded (it returns 0). Threads the
-  call cannot see are not detected: a `std::thread` or TBB pool, or an OpenMP team started by
-  another host thread.
+  call cannot see are not detected: a `std::thread` or TBB pool outside the phase contract, or
+  an OpenMP team started by another host thread. Under the std backend the application's
+  threads are seen between `begin_parallel_phase()` and `finalize_parallel_phase()`: the call is
+  refused there.
 - *What detects it*: check builds (Debug, `CHECK_OPTIM`) stop on any second-value lookup or
   registration that overlaps a reclaim. Run the application once in a check build with its
   reclaim calls in place; release builds pay nothing and check nothing.
@@ -130,10 +132,17 @@ otherwise, and in serial builds.
 | `finalize_parallel_phase_only_flush()` + `finalize_parallel_phase_after_flush()` | the same, split: the first inside the region (it emits a barrier), the second after it |
 | `finalize_barrier_phase()` | inside a region, after an explicit `omp barrier`: makes the writes before it visible after it |
 | `parallel_phase([n,] body)` | instead of the first two: a parallel region (`n` threads, or the runtime's) running `body` on every thread, with `begin_parallel_phase()` before it and `finalize_parallel_phase()` after the region; the worksharing (`omp for`) goes in `body` |
+| `tbb::parallel_for(...)` | a TBB program, std or serial backend (`chunk/tbb_adaptor.h`): the arguments of `oneapi::tbb::parallel_for`, with `begin_parallel_phase()` before every piece and `finalize_parallel_phase()` after the call |
 
 A `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region stops
 the program, in every build. Check builds (Debug, `CHECK_OPTIM`) also stop on a deferred write
 in a region by a thread that did not call `begin_parallel_phase()`.
+
+The application's own threads (`std::thread`, TBB) need the std backend (`CHUNK_THREADS=std`):
+every thread that writes calls `begin_parallel_phase()` before its first write, and one thread
+calls `finalize_parallel_phase()` once they have stopped. `shrink_array::tbb::parallel_for`
+makes both calls for a TBB loop; the header is installed with the others, and the program links
+TBB itself (the library does not).
 
 ## 7. Adaptive chunk size (`_dyn` libraries)
 
@@ -152,6 +161,7 @@ The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptiv
 | name | meaning |
 |---|---|
 | `build_config::use_openmp` | built with OpenMP |
+| `build_config::threaded` | the library runs threads (`CHUNK_THREADS` `openmp` or `std`) |
 | `build_config::has_ompt`, `build_config::has_not_ompt` | built with the OMPT tool, or not |
 | `build_config::chunk_dynamic` | dynamic geometry (`_dyn` library) |
 | `chunk_config::use_chunk`, `chunk_config::use_chunk2`, `chunk_config::use_chunk2a` | the variant |

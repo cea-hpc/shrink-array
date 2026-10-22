@@ -57,6 +57,7 @@ Les options qui comptent pour un utilisateur :
 | option | défaut | effet |
 |---|---|---|
 | `OMP` | `OFF` | construire avec OpenMP. Un programme qui utilise les tableaux dans des régions OpenMP a besoin d'une bibliothèque construite avec |
+| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `auto` | les tailles de chunk fixées à la compilation, une bibliothèque par taille et par variante ; `auto` : `256;1024`, mais `256` seule dans un build Debug ou sanitizer de ce projet (pas d'un projet qui l'inclut) |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi les bibliothèques dont la taille de chunk est choisie à l'exécution, et peut changer (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allouer les tampons des chunks avec l'allocateur standard plutôt qu'avec `fast_allocators`, fourni avec la bibliothèque (utile sous AddressSanitizer) |
@@ -196,7 +197,7 @@ int main()
 
 Résultat attendu : environ 12 % des chunks ont un tampon. Un `std::vector` les aurait tous.
 
-## 5. OpenMP : les règles
+## 5. Threads : les règles
 
 **Ce qui se fait sans synchronisation.** Comme avec un `std::vector`, des threads différents
 peuvent lire et écrire des **éléments différents** en même temps, même dans un même chunk :
@@ -300,8 +301,9 @@ toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la
 `rechunk_to()`, et, pour Chunk2, `set_second_value()`.
 
 **Les threads.** Les structures par thread sont dimensionnées une fois pour
-`max(omp_get_max_threads(), nombre de cœurs, 256)` threads (environ 1 Kio par type d'élément et
-par thread). Un programme qui lance plus de threads que cela fixe `CHUNK_THREAD_CAPACITY=<n>` ;
+`max(omp_get_max_threads(), nombre de cœurs, 256)` threads (dans un build std, la taille
+d'équipe -- `CHUNK_NUM_THREADS`, sinon `OMP_NUM_THREADS` -- tient lieu de
+`omp_get_max_threads()` ; environ 1 Kio par type d'élément et par thread). Un programme qui lance plus de threads que cela fixe `CHUNK_THREAD_CAPACITY=<n>` ;
 un thread au-delà de la capacité arrête le programme avec un message.
 
 **À côté d'autres composants.** La bibliothèque garde son état par processus, pas par tableau :
@@ -332,6 +334,43 @@ shrink-array, par exemple -- partagent tout cela. Ce que cela leur demande :
   vident les listes libres de tout le monde (un tableau encore vivant garde ce qu'il lui faut) :
   une fois, à la fin du programme, ou pas du tout. `reclaim_second_values()` couvre tous les
   tableaux d'un type ; `CHUNK_LOG` et `logging::set_sink()` sont un seul réglage pour tous.
+
+**Sans OpenMP : vos propres threads, TBB.** Une bibliothèque construite avec
+`CHUNK_THREADS=std` fait tourner son propre travail sur un pool de `std::jthread` et accepte les
+écritures de n'importe quel thread du programme : `std::thread`, TBB, un pool de threads à vous.
+Les phases sont alors toujours explicites : chaque thread qui écrit appelle
+`begin_parallel_phase()` avant sa première écriture, et **un seul** thread appelle
+`finalize_parallel_phase()` une fois que tous les écrivains se sont arrêtés (après le `join()`) :
+
+```cpp
+std::vector<std::thread> workers;
+for (int t = 0; t < nt; ++t)
+    workers.emplace_back([&, t] {
+        sa::begin_parallel_phase();               // chaque thread qui écrit
+        for (long i = t; i < n; i += nt)
+            a[i] = f(i);
+    });
+for (auto& w : workers)
+    w.join();
+sa::finalize_parallel_phase();                    // une fois, après le join
+```
+
+Un programme TBB utilise `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`) : les
+arguments de `oneapi::tbb::parallel_for`, les deux appels faits à votre place. L'en-tête est
+fourni avec la bibliothèque ; le programme lie TBB lui-même (`TBB::tbb`), la bibliothèque non :
+
+```cpp
+#include "chunk/tbb_adaptor.h"
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r) {
+    for (long i = r.begin(); i != r.end(); ++i)
+        a[i] = f(i);
+});
+```
+
+Entre `begin` et `finalize`, la bibliothèque compte les threads du programme comme une région
+parallèle (les points séquentiels ci-dessus ne doivent pas y être appelés, comme dans une région OpenMP), et
+chacun d'eux occupe une des places par thread tant qu'il vit. Un build OpenMP ne numérote que
+les threads d'OpenMP : pour les autres, utilisez le backend std.
 
 ## 6. Pièges
 

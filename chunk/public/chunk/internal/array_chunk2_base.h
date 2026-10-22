@@ -17,10 +17,10 @@
 #pragma once
 
 #include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
-#include "chunk/config.h"                    // build_config::not_use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/config.h"                    // build_config::not_threaded, chunk_config::use_fast_block_compression
 #include "chunk/chunk_traits.h"              // ArrayChunk2A forward declaration
 #include "chunk/internal/in_t.h"             // InT<T>
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
 #include "chunk/internal/read_reclaim.h"     // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
@@ -81,7 +81,8 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     // (array_chunk_parallel_common.h), a sibling base: reach it through derived().
 
     /// @brief Compress every compressible chunk now, by every thread of the
-    ///        region compress_int() runs in (opened here when called outside one).
+    ///        team compress_int() runs on (the caller's region, or one opened
+    ///        here when called outside any).
     void compress()
     {
         if (CHUNK_PMP_IN_PARALLEL_REGION)
@@ -93,8 +94,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         }
         else
         {
-#pragma omp parallel
-            derived().compress_int();
+            pmp::team(pmp::Options{}, [&](pmp::Team& team) { derived().compress_int(team); });
         }
     }
 
@@ -121,7 +121,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // nothing, so afterwards every list is empty and every dedup flag 0 -- the
         // precondition of Proxy2A::resize_tab_is_int(num_tab, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
-                      (build_config::not_use_openmp && std::is_same_v<Derived, ArrayChunk2A<T, IndType>>))
+                      (build_config::not_threaded && std::is_same_v<Derived, ArrayChunk2A<T, IndType>>))
         {
             derived().make_block_compression();
         }

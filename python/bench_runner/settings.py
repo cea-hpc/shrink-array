@@ -52,6 +52,16 @@ DEFAULT_CONFIGS = [
     "cmake-build-omp-llvm",                            # release LLVM
     "cmake-build-omp-llvm-have-aggressive-compression",
     "cmake-build-omp-llvm-std-alloc",
+    # The std backend (CHUNK_THREADS=std: the library's teams on std::jthread
+    # workers of its own, no OpenMP; OMP_NUM_THREADS still sets the team size).
+    # The release builds carry the TBB bench too (tbb_* variants below) when
+    # oneTBB was there at compile time. The -check builds (CHECK_OPTIM) run the
+    # validation harnesses of that backend -- std_thread_validation,
+    # tbb_validation -- and the check runs; never timed (PERF_EXCLUDED_CONFIGS).
+    "cmake-build-std-gnu",                             # release GNU, std backend
+    "cmake-build-std-llvm",                            # release LLVM, std backend
+    "cmake-build-std-gnu-check",                       # CHECK_OPTIM, std backend
+    "cmake-build-std-llvm-check",
     # x86-64 only: the other two OpenMP compilers compile_all.sh builds there
     # (both OMPT builds). On ARM their directories do not exist and the
     # absent-config step drops them with one note.
@@ -73,7 +83,17 @@ DEFAULT_CONFIGS = [
     "cmake-build-gnu-stats",                           # non-OMP GNU, CHUNK_STATS
 ]
 
-DEFAULT_VARIANTS       = ["vector", "chunk", "chunk2", "chunk2a", "std_alloc"]
+# The TBB bench: the same sources with the regions run as TBB tasks
+# (shrink_bench_tbb_<variant>_<size>, examples/shrink_bench/CMakeLists.txt). It
+# exists only in the std-backend builds made with CHUNK_WITH_TBB, so these
+# variants are looked for there and nowhere else (builds.skip_variant_on_config).
+TBB_VARIANTS = ["tbb_chunk", "tbb_chunk2", "tbb_chunk2a"]
+DEFAULT_VARIANTS       = ["vector", "chunk", "chunk2", "chunk2a", "std_alloc"] + TBB_VARIANTS
+
+
+def is_tbb_variant(var):
+    """True for a TBB bench variant ("tbb_chunk2a", "tbb_chunk2a@256")."""
+    return var.split("@", 1)[0] in TBB_VARIANTS
 
 # ── Sanitizer CHECK configs ──────────────────────────────────────────────────
 # Two llvm sanitizer build dirs (created by compile_all.sh) run in the CHECK
@@ -88,6 +108,12 @@ DEFAULT_VARIANTS       = ["vector", "chunk", "chunk2", "chunk2a", "std_alloc"]
 SANITIZER_CONFIGS = [
     "cmake-build-omp-llvm-debug-std-alloc-address-sanitizer",  # ASan + std-alloc (sees what the arenas hide)
     "cmake-build-omp-llvm-debug-thread-sanitizer",             # TSan (ARM race net)
+    # TSan on the std backend, optimised, CHECK_OPTIM: standard C++ all the way
+    # down, so TSan sees every synchronisation of the library's teams (libomp's
+    # annotations are not needed). Its TBB bench only exists when the build was
+    # given an instrumented oneTBB (CHUNK_TBB_TSAN_DIR); the phase skips what is
+    # not built.
+    "cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer",
 ]
 SANITIZER_THREADS = 8
 # One run per (config, variant): a sanitizer hit is deterministic enough on a
@@ -150,6 +176,10 @@ def sanitizer_skip_reason(config):
 # never timed.
 PERF_EXCLUDED_CONFIGS = [
     "cmake-build-omp-llvm-std-alloc",
+    # CHECK_OPTIM builds of the std backend: there for the checks and the
+    # validation harnesses; the release std builds carry the timings.
+    "cmake-build-std-gnu-check",
+    "cmake-build-std-llvm-check",
     # Instrumented builds: their timings measure the counters, not the library.
     "cmake-build-omp-gnu-stats",
     "cmake-build-gnu-stats",

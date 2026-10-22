@@ -8,15 +8,15 @@ from pathlib import Path
 
 from .builds import (
     CURRENT_MACHINE, ORACLE_MARKER, config_dir_present, exe_fingerprint, is_compression_only_config,
-    is_omp_config, oracle_dir, oracle_exe_fingerprint, resolve_exe, short_config_label,
+    is_threaded_config, oracle_dir, oracle_exe_fingerprint, resolve_exe, short_config_label,
     size_not_built, skip_variant_on_config,
 )
 from .phases.fuzz import FUZZ_THREADS
 from .phases.stl import stl_representative_exes
 from .settings import (
-    DEFAULT_CONFIGS, DEFAULT_SEQ_OMP_THREADS, DEFAULT_THREADS_CHECK, MODE_PRESETS,
+    DEFAULT_CONFIGS, DEFAULT_SEQ_OMP_THREADS, DEFAULT_VARIANTS, DEFAULT_THREADS_CHECK, MODE_PRESETS,
     PERF_EXCLUDED_CONFIGS, REFERENCE_THREADS, SANITIZER_CONFIGS, SANITIZER_REPS, sanitizer_skip_reason,
-    SANITIZER_THREADS, fit_threads, is_stats_config, machine_cpus,
+    SANITIZER_THREADS, fit_threads, is_stats_config, is_tbb_variant, machine_cpus,
 )
 from .term import bold, cyan, dim, red, yellow
 
@@ -82,6 +82,10 @@ def resolve_run_parameters(args):
     # geometry and is left as-is. light_variants get the same treatment so a
     # light variant like std_alloc still resolves to real per-size binaries.
     SIZE_AGNOSTIC = {"vector"}
+    # The TBB bench is part of the default variants but only exists where
+    # oneTBB was found at compile time: a missing one is a note, not a warning,
+    # unless the variants were named on the command line.
+    args.tbb_implicit = args.variants == DEFAULT_VARIANTS
 
     def _expand_with_sizes(variant_list):
         out = []
@@ -140,7 +144,7 @@ def reduce_matrix(args):
         #    3h29 of a 5 h run, to time a single-threaded build whose numbers do
         #    not move between campaigns. `--mode normal` and `--mode full` still
         #    measure them.
-        _serial = [c for c in args.configs if not is_omp_config(c)]
+        _serial = [c for c in args.configs if not is_threaded_config(c)]
         if _serial:
             perf_excluded |= set(_serial)
             print(dim(f"   fast: skipping the PERF phase of the serial configs "
@@ -220,6 +224,7 @@ def discover_binaries(args, perf_excluded):
     # running the vector variant on it.
     baseline_check_exe_of = {}
     missing_perf, missing_check = [], []
+    no_tbb_cfgs = []      # std-backend configs without the TBB bench (default variants only)
     sizes_not_built = {}  # config -> sizes it does not build (CHUNK_STATIC_SIZES)
 
     for cfg in args.configs:
@@ -236,6 +241,14 @@ def discover_binaries(args, perf_excluded):
                 # e.g. @1024 on a Debug or sanitizer build: 256 alone by default.
                 sizes_not_built.setdefault(cfg, set()).add(var.split("@", 1)[1])
                 continue
+            if is_tbb_variant(var) and getattr(args, "tbb_implicit", False):
+                # Asked for by default, not by name: a std build made without
+                # oneTBB has no TBB bench, which is not a defect. One note per
+                # config; any other config of the run is unaffected.
+                if not resolve_exe(args.build_root, cfg, var, "check"):
+                    if cfg not in no_tbb_cfgs:
+                        no_tbb_cfgs.append(cfg)
+                    continue
             if cfg in perf_excluded:
                 pass  # kept in CHECK, dropped from PERF (redundant with gnu-std-alloc)
             else:
@@ -259,6 +272,10 @@ def discover_binaries(args, perf_excluded):
     def _fmt(cfg, var):
         return f"[{short_config_label(cfg):40} / {var:10}]"
 
+    for cfg in no_tbb_cfgs:
+        print(dim(f"   ℹ️  {short_config_label(cfg)}: no TBB bench (shrink_bench_tbb_*) built there "
+                  f"-- oneTBB was not found when it was compiled (TBBROOT, CHUNK_WITH_TBB=1); "
+                  f"the tbb_* variants are skipped"))
     for cfg, sizes in sorted(sizes_not_built.items()):
         print(dim(f"   ℹ️  {short_config_label(cfg)}: size(s) {', '.join(sorted(sizes))} "
                   f"not built there (CHUNK_STATIC_SIZES), skipped"))
@@ -443,13 +460,13 @@ class Plan:
         args = self.args
         if self.is_light(var, cfg):
             return [args.light_threads]
-        # A build without OpenMP ignores OMP_NUM_THREADS, so sweeping it just
-        # runs the SAME measurement N times. It showed: in the aarch64 fast
+        # A serial build (neither OpenMP nor the std backend) ignores
+        # OMP_NUM_THREADS, so sweeping it just runs the SAME measurement N times. It showed: in the aarch64 fast
         # campaign, gnu-noomp vector came out at 109.154 / 108.772 / 109.094 s
         # for 16 / 64 / 128 threads, and the two noomp configs alone took 3h29
         # of a 5h run -- two thirds of it for nothing. Keep one count, preferring
         # the reference one so the noomp rows line up with the OMP rows.
-        if not is_omp_config(cfg):
+        if not is_threaded_config(cfg):
             if self.full_reps_tc:
                 for tc in args.threads:
                     if tc in self.full_reps_tc:
@@ -465,7 +482,7 @@ class Plan:
         # yields identical timings, so one run is enough (and saves a lot of
         # wall time — a noomp chunk run can be minutes). OMP configs keep the
         # full repetition count (scheduling / NUMA / contention add real noise).
-        if not is_omp_config(cfg):
+        if not is_threaded_config(cfg):
             return 1
         if var == args.baseline_variant:
             return 1
@@ -477,7 +494,7 @@ class Plan:
         # Non-OMP builds are single-threaded and deterministic: one CHECK run is
         # enough (repeating gives identical results). OMP configs keep the full
         # reps_check count, where scheduling/contention make repetition useful.
-        if not is_omp_config(cfg):
+        if not is_threaded_config(cfg):
             return 1
         return self.args.reps_check
 

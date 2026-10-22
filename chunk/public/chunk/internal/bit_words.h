@@ -50,9 +50,9 @@ namespace shrink_array::bits
 
 using WordT = std::uint64_t; ///< the storage word
 
-inline constexpr std::size_t word_bits  = 64;             ///< bits per word
-inline constexpr WordT       word_ones  = ~WordT{0};      ///< a word of 1 bits
-inline constexpr std::size_t word_bytes = sizeof(WordT);  ///< bytes per word
+inline constexpr std::size_t word_bits  = 64;            ///< bits per word
+inline constexpr WordT       word_ones  = ~WordT{0};     ///< a word of 1 bits
+inline constexpr std::size_t word_bytes = sizeof(WordT); ///< bytes per word
 
 /// @brief Words holding @p n bits.
 [[nodiscard]] constexpr std::size_t words_for(std::size_t n) noexcept
@@ -180,11 +180,11 @@ inline void fill_bit_range_atomic(WordT* w, std::size_t lo, std::size_t hi, bool
     std::size_t i = lo;
     while (i < hi)
     {
-        const std::size_t             k   = i / word_bits;
-        const std::size_t             off = i % word_bits;
-        const std::size_t             end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
-        const WordT                   m   = span_mask(off, end);
-        const std::atomic_ref<WordT>  word(w[k]);
+        const std::size_t            k   = i / word_bits;
+        const std::size_t            off = i % word_bits;
+        const std::size_t            end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
+        const WordT                  m   = span_mask(off, end);
+        const std::atomic_ref<WordT> word(w[k]);
         if (m == word_ones)
         {
             word.store(v ? word_ones : 0, std::memory_order_relaxed);
@@ -220,9 +220,9 @@ inline void store_bit_range(WordT* w, std::size_t lo, std::size_t hi, Get&& get)
         {
             x |= static_cast<WordT>(static_cast<bool>(get((k * word_bits) + b))) << b;
         }
-        const WordT m  = span_mask(off, end);
-        w[k]           = (w[k] & ~m) | x;
-        i              = (k * word_bits) + end;
+        const WordT m = span_mask(off, end);
+        w[k]          = (w[k] & ~m) | x;
+        i             = (k * word_bits) + end;
     }
 }
 

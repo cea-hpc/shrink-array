@@ -58,8 +58,8 @@
 #include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
 #include "chunk/config.h"                     // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS, pmp::current_team
+#include "chunk/manage_ompt.h"                // parallel_phase
 #include "chunk/chunk_def.h"                  // ChunkDef
 #include "chunk/chunk2_def.h"                 // Chunk2Def
 #include "chunk/chunk2A_def.h"                // Chunk2ADef
@@ -108,24 +108,11 @@ void maybe_set_second_value(Arr& a, const Val& v)
     }
 }
 
-// The phase brackets (see compress_roundtrip.cpp): no-ops under OMPT and serially.
-static void begin_phase()
-{
-    if constexpr (build_config::has_not_ompt)
-    {
-        shrink_array::begin_parallel_phase();
-    }
-}
-static void end_phase()
-{
-    if constexpr (build_config::has_not_ompt)
-    {
-        shrink_array::finalize_parallel_phase();
-    }
-}
+// The phase brackets: parallel_phase() (manage_ompt.h) places them.
 
-// Serial builds free a cleared array's buffers outright; OpenMP parks them.
-constexpr bool parks_on_clear = build_config::use_openmp;
+// Serial builds free a cleared array's buffers outright; threaded ones
+// (OpenMP, std) park them.
+constexpr bool parks_on_clear = build_config::threaded;
 
 using Manager = ArrayChunkTraits<Array<double>>::ManagerType;
 
@@ -143,19 +130,14 @@ static void expect(bool ok, const char* what, long got, long want)
     }
 }
 
-/// Materialise every chunk of @p arr with a value that is neither constant.
+/// Materialise every chunk of @p arr with a value that is neither constant,
+/// on a team of the build's backend (parallel_phase: OpenMP, or the std backend,
+/// where an `omp parallel for` would run on one thread and take the parked
+/// buffers of one rank only), static blocks as `omp for` gives.
 static void materialise_all(Array<double>& arr, long n)
 {
-#pragma omp parallel
-    {
-        begin_phase();
-#pragma omp for
-        for (long i = 0; i < n; ++i)
-        {
-            arr[i] = 1.0 + static_cast<double>(i);
-        }
-    }
-    end_phase();
+    parallel_phase([&]
+                   { pmp::current_team().for_static(0L, n, [&](long i) { arr[i] = 1.0 + static_cast<double>(i); }); });
 }
 
 int run(int argc, char** argv)

@@ -118,9 +118,9 @@ template <typename Derived, typename T, bool Enabled>
 class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 {
   public:
-    using ChunkType     = Chunk<T>;
-    using Manager       = ManagerChunk<Chunk, T>;
-    using Base          = ProxyBase<Derived, T, ChunkType>;
+    using ChunkType = Chunk<T>;
+    using Manager   = ManagerChunk<Chunk, T>;
+    using Base      = ProxyBase<Derived, T, ChunkType>;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
@@ -422,7 +422,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::set_num_tab;
 
     using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
-    using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
+    using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
     struct modulo
@@ -826,7 +826,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
             increm_chunk_read<ChunkType>();
         }
 
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             // chunk_size_frozen_ != 0: a replay proxy whose ptr_on_array may
             // dangle (see ProxyBase::chunk_size_frozen_) -- never dereference it;

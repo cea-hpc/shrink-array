@@ -196,8 +196,8 @@ void ranges(std::mt19937_64& rng)
 
 void concurrent(std::size_t n, int rounds)
 {
-    constexpr int             n_thr = 8;
-    std::vector<bits::WordT>  w(bits::words_for(n));
+    constexpr int            n_thr = 8;
+    std::vector<bits::WordT> w(bits::words_for(n));
     bits::fill_bits(w.data(), n, false);
 
     // Each round: every thread sets its bits, then clears the odd ones among

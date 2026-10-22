@@ -418,7 +418,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ========================================================================
     // OpenMP: every read of the chunk's pointer is load(acquire), see
     // internal::AcquireValuesRef.
-    using AtomicPtrRefT = std::conditional_t<build_config::use_openmp, internal::AcquireValuesRef<T>, T*&>;
+    using AtomicPtrRefT = std::conditional_t<build_config::threaded, internal::AcquireValuesRef<T>, T*&>;
 
     /// @brief Check builds: the array's storage generation, and its value when
     ///        operator[] built this proxy (ArrayChunkBase::storage_generation_).

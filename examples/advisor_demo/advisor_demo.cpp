@@ -111,7 +111,7 @@ int main()
         set_thread_chunk_size(cs);
         ArrayChunk2A<double> tab(1); // proven pattern (test_multisize):
         tab.set_chunk_size(cs);      // register per-array size FIRST,
-        tab.resize(n_elems);               // THEN size the geometry
+        tab.resize(n_elems);         // THEN size the geometry
         fill_and_compress(tab);
         if (meta == 0.)
         {

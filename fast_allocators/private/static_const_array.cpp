@@ -36,14 +36,14 @@ InfoFreeElt::InfoFreeElt()
 {
     // Serially there is no batching (try_free_block never enters the batching
     // branch), so the 2 x 10000-entry arrays are not worth allocating.
-    if constexpr (alloc_config::use_openmp)
+    if constexpr (alloc_config::threaded)
     {
         const int max_thr = FAST_ALLOC_PMP_MAX_THREADS;
 
         tab_sz  = svalloc<IntMaxFreeElt>(max_thr);
         tab_ptr = svalloc<VoidMaxFreeElt>(max_thr);
 
-        compt    = svcalloc<int>(max_thr);
+        compt     = svcalloc<int>(max_thr);
         somme_sz_ = svcalloc<int>(max_thr);
 
         nb_thr = max_thr;
@@ -69,11 +69,11 @@ InfoFreeElt::~InfoFreeElt()
     // the OpenMP runtime's shutdown). Leave an empty batch set behind, not
     // dangling pointers: with nb_thr 0, try_free_block() frees at once and
     // clear_info_free_elt() has nothing to walk.
-    tab_ptr  = nullptr;
-    tab_sz   = nullptr;
-    compt    = nullptr;
+    tab_ptr   = nullptr;
+    tab_sz    = nullptr;
+    compt     = nullptr;
     somme_sz_ = nullptr;
-    nb_thr   = 0;
+    nb_thr    = 0;
 }
 
 /// @copydoc StaticConstArray::clear_info_free_elt(int)
@@ -130,7 +130,7 @@ class ManageTCTypeAllocator
     /// @brief Enrol an allocator. No-op in an OpenMP build.
     void add_tc_type_allocator_inst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
-        if constexpr (!alloc_config::use_openmp)
+        if constexpr (!alloc_config::threaded)
         {
             set_allocator_.insert(ptr_tcallocator); // serial builds only: no concurrent insert
         }
@@ -139,7 +139,7 @@ class ManageTCTypeAllocator
     /// @brief Withdraw one. No-op in an OpenMP build.
     void remove_tc_type_allocator_inst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
-        if constexpr (!alloc_config::use_openmp)
+        if constexpr (!alloc_config::threaded)
         {
             set_allocator_.erase(ptr_tcallocator); // serial builds only: no concurrent erase
         }
@@ -178,8 +178,8 @@ void remove_tc_type_allocator_inst(VTCTypeAllocator* inst)
 void compute_sum_allocated_size_tc_alloc(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz)
 {
     sum_used_size = 0;
-    sum_nn_ref   = 0;
-    alloc_sz     = 0;
+    sum_nn_ref    = 0;
+    alloc_sz      = 0;
 
     // The ladder exists as a set of objects whatever the build, but under
     // FAST_ALLOC_STD_ALLOC nothing was ever allocated from it, so there is nothing to add.

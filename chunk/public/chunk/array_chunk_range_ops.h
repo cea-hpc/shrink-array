@@ -63,7 +63,7 @@
 #include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"          // set_thread_chunk_size
 #include "chunk/internal/conditional_counter.h"        // CounterValueT
-#include "chunk/config.h"                              // build_config::use_openmp, chunk_config
+#include "chunk/config.h"                              // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_* (used directly, not via compression_manager.h)
 #include "chunk/chunk_traits.h"                        // Chunk / Chunk2 / Chunk2A: the type traits below
 #include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
@@ -583,7 +583,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
                     {
                         increm_chunk_compress_attempt<ChunkType>();
                     }
-                    if constexpr (build_config::use_openmp)
+                    if constexpr (build_config::threaded)
                     {
                         ch.clear_st(get_thr_rank_fast(), s); // frees the buffer, marks cst1
                     }
@@ -891,7 +891,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
     }
     last = std::min(last, size);
 
-    constexpr bool session = (is_v2a_v<Arr> || is_v2_v<Arr> || is_v1_v<Arr>) && build_config::use_openmp &&
+    constexpr bool session = (is_v2a_v<Arr> || is_v2_v<Arr> || is_v1_v<Arr>) && build_config::threaded &&
                              chunk_config::use_fast_block_compression && (raw_fillable_v<T> || is_packed_bit_v<T>);
     if constexpr (!session)
     {

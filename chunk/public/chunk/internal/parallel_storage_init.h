@@ -30,7 +30,7 @@
  *          So the per-chunk vectors are NoInitVector: NoInitAllocator leaves
  *          a default-inserted element unconstructed, and make_filled() /
  *          resize_filled() construct the new elements from a team, static
- *          schedule, where the per-chunk loops will use them. The atomic rows
+ *          schedule (pmp::parallel_for), where the per-chunk loops will use them. The atomic rows
  *          are built the same way (an atomic is not movable). No extra byte per
  *          chunk nor in the vector.
  *
@@ -51,8 +51,8 @@
 #include <utility>     // std::forward
 #include <vector>      // std::vector
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/config.h"    // build_config::use_openmp
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION, pmp loops
+#include "chunk/config.h"    // build_config::threaded
 
 namespace shrink_array
 {
@@ -115,7 +115,7 @@ inline constexpr int parallel_init_min_chunks = 500;
 ///        with at least two threads available.
 inline bool can_open_team() noexcept
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         return CHUNK_PMP_MAX_THREADS >= 2 && !CHUNK_PMP_IN_PARALLEL_REGION;
     }
@@ -138,15 +138,11 @@ inline bool use_own_team(long n) noexcept
 template <typename Init>
 void for_each_chunk(int n, Init&& init)
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if (use_own_team(n))
         {
-#pragma omp parallel for schedule(static)
-            for (int i = 0; i < n; ++i)
-            {
-                init(i);
-            }
+            pmp::parallel_for(0, n, pmp::Options{}, init);
             return;
         }
     }
@@ -175,19 +171,11 @@ void for_each_chunk_in(int first, int last, MakeCtx&& make_ctx, Body&& body)
     {
         return;
     }
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if (use_own_team(static_cast<long>(last) - first))
         {
-#pragma omp parallel
-            {
-                decltype(auto) ctx = make_ctx();
-#pragma omp for schedule(static)
-                for (int j = first; j < last; ++j)
-                {
-                    body(j, ctx);
-                }
-            }
+            pmp::parallel_for_local(first, last, pmp::Options{}, make_ctx, body);
             return;
         }
     }
@@ -208,17 +196,12 @@ void for_each_chunk_in(int first, int last, MakeCtx&& make_ctx, Body&& body)
 template <typename T, typename Make>
 void construct_range(T* base, std::size_t first, std::size_t last, Make&& make)
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if ((last - first) * sizeof(T) >= first_touch_min_bytes && can_open_team())
         {
-            const long lo = static_cast<long>(first);
-            const long hi = static_cast<long>(last);
-#pragma omp parallel for schedule(static)
-            for (long i = lo; i < hi; ++i)
-            {
-                make(base + i);
-            }
+            pmp::parallel_for(static_cast<long>(first), static_cast<long>(last), pmp::Options{},
+                              [base, &make](long i) { make(base + i); });
             return;
         }
     }

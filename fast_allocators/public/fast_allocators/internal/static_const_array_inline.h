@@ -20,13 +20,14 @@
 // this file at its end.
 
 #include <cstddef>     // std::size_t
+#include <mutex>       // std::scoped_lock (ladder_mutex)
 #include <tuple>       // std::get (dependent calls, in with_bucket)
 #include <type_traits> // std::is_void_v
 #include <utility>     // std::index_sequence
 
 #include "fast_allocators/internal/static_const_array.h" // the declarations these bodies belong to
 #include "fast_allocators/internal/int_alloc.h"          // int_alloc, int_free
-#include "fast_allocators/internal/alloc_config.h"       // alloc_config::use_std_alloc / use_openmp
+#include "fast_allocators/internal/alloc_config.h"       // alloc_config::use_std_alloc / threaded
 #include "fast_allocators/internal/pmp_alloc.h" // FAST_ALLOC_PMP_IN_PARALLEL_REGION / FAST_ALLOC_PMP_THREAD_RANK
 
 namespace fast_alloc
@@ -80,10 +81,8 @@ inline void* StaticConstArray::get_block_alloc(unsigned int sz)
         void* vv = nullptr;
         if (FAST_ALLOC_PMP_IN_PARALLEL_REGION)
         {
-#pragma omp critical(fast_alloc_ladder)
-            {
-                vv = get_block_alloc_int(sz);
-            }
+            const std::scoped_lock lock(ladder_mutex());
+            vv = get_block_alloc_int(sz);
         }
         else
         {
@@ -116,7 +115,7 @@ inline void StaticConstArray::free_block_with_int(int sz, void* ptr)
 /**
  * @details Outside a parallel region the block goes straight back to its
  *          bucket. Inside one it is batched instead, and the batch is flushed
- *          under a single critical section when it fills -- which is also the
+ *          under a single hold of ladder_mutex() when it fills -- which is also the
  *          only moment @p ptr itself is released, since a full batch refuses it.
  */
 inline bool StaticConstArray::try_free_block(int sz, void* ptr)
@@ -133,16 +132,17 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
         // Batch per thread inside a region. Serially FAST_ALLOC_PMP_IN_PARALLEL_REGION is a
         // constant false and the batch was never allocated: the branch is dead but still
         // type-checks, so it can be plain code rather than a directive.
-        if (alloc_config::use_openmp && FAST_ALLOC_PMP_IN_PARALLEL_REGION)
+        if (alloc_config::threaded && FAST_ALLOC_PMP_IN_PARALLEL_REGION)
         {
             const int thr_rank = FAST_ALLOC_PMP_THREAD_RANK;
 
             // A rank the batches were not sized for (the team grew after
-            // they were built, before main): there is no batch to index, so
-            // free at once, under the critical section the full path takes.
-            if (thr_rank >= tab_info_free_elt().nb_thr) [[unlikely]]
+            // they were built, before main; std backend: a registered rank
+            // past them, or none, -1, the registry full): there is no batch to
+            // index, so free at once, under the lock the full path takes.
+            if (thr_rank < 0 || thr_rank >= tab_info_free_elt().nb_thr) [[unlikely]]
             {
-#pragma omp critical(fast_alloc_ladder)
+                const std::scoped_lock lock(ladder_mutex());
                 free_block_with_int(sz, ptr);
                 return true;
             }
@@ -151,8 +151,8 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
 
             if (is_full)
             {
-#pragma omp critical(fast_alloc_ladder)
                 {
+                    const std::scoped_lock lock(ladder_mutex());
                     free_block_with_int(sz, ptr);
 
                     clear_info_free_elt(thr_rank);

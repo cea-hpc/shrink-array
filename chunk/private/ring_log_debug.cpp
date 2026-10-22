@@ -31,7 +31,7 @@
 #include <stdio.h>  // fileno (POSIX)
 #include <unistd.h> // isatty
 
-#include "chunk/config.h"         // build_config::use_openmp (get_tid)
+#include "chunk/config.h"         // build_config::threaded (get_tid)
 #include "chunk/PMP_CHUNK.h"      // chunk_pmp_team_rank (get_tid)
 #include "chunk/ring_log_debug.h" // the declarations defined here
 #include "chunk/log.h"            // CHUNK_LOG
@@ -296,7 +296,7 @@ void dump_ring_for_addr(const void* target)
 
 uint32_t get_tid()
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         return static_cast<uint32_t>(chunk_pmp_team_rank());
     }

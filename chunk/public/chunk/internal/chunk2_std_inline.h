@@ -21,7 +21,7 @@
 #include <optional> // std::nullopt (the clears)
 
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::OMPTcc
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // ChunkElems, set_thread_chunk_size
 #include "chunk/internal/in_t.h"                // InT<T>
@@ -62,7 +62,7 @@
  *    different path: no CAS, no rank, and the element counters
  *    (`use_compression_with_counter`) to reset, which the parallel path does not
  *    maintain. The two live on the two specialisations of Chunk2OmpPolicy
- *    (build_config::use_openmp); the queue-driven compression is on
+ *    (build_config::threaded); the queue-driven compression is on
  *    Chunk2FastCompPolicy<..., true>.
  *  - **Geometry comes from the queued entry, never from the ambient size.**
  *    Every candidate tuple carries the chunk count of its owning array

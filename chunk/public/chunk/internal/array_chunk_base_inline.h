@@ -27,7 +27,7 @@
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h"   // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
 #include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools -- shrink_to_fit()
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
 #include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
@@ -119,11 +119,8 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written() const
     }
     else
     {
-#pragma omp parallel for reduction(+ : nb_written)
-        for (int j = 0; j < nb_chunk_; ++j)
-        {
-            nb_written += lbd(j);
-        }
+        nb_written =
+            pmp::parallel_sum<int, 1>(0, nb_chunk_, pmp::Options{}, [&](int j, auto& acc) { acc[0] += lbd(j); })[0];
     }
     return nb_written;
 }
@@ -174,19 +171,12 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(IndType first, IndType last,
         }
     };
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if (parallel_storage_init::use_own_team(static_cast<long>(c_last) - c_first))
         {
-            parallel_phase(
-                [&]
-                {
-#pragma omp for schedule(static)
-                    for (int c = c_first; c < c_last; ++c)
-                    {
-                        span(c);
-                    }
-                });
+            // The team parallel_phase opens is the calling thread's current one.
+            parallel_phase([&] { pmp::current_team().for_static<int>(c_first, c_last, [&](int c) { span(c); }); });
             return;
         }
     }

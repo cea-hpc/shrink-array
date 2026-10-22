@@ -169,7 +169,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::set_ptr_is_inside_chu
 template <typename Derived, typename T, typename ChunkT>
 void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] auto& vec_tuple) const
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if constexpr (build_config::any_check)
         {
@@ -298,7 +298,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
     }
     else
     {
-        if constexpr (build_config::not_use_openmp)
+        if constexpr (build_config::not_threaded)
         {
             if (!(*ptr_is_inside_chunk_list_to_compress_))
             {
@@ -550,7 +550,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
         [[maybe_unused]] int own_replay_excl_rank = -1;
         // Read once here, reused by the WAW guard below: see there.
         [[maybe_unused]] bool entry_pending = false;
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             entry_pending = chunk_.pending_any();
             if (entry_pending) [[unlikely]]
@@ -666,12 +666,12 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
                 // ─── WAW guard ───────────────────────────────────────────────
                 // Writes do not flush, so an OLDER deferred op for THIS offset
                 // may sit on our own rank: discard it before the direct store,
-                // else a later replay clobbers the fresh value. use_openmp keeps
+                // else a later replay clobbers the fresh value. threaded keeps
                 // the branch un-instantiated in serial builds (OpenMP-only
                 // machinery). entry_pending is enough as a first test: only this
                 // rank's own thread enqueues on it, so no own op can have
                 // appeared since the entry read found the chunk clear.
-                if constexpr (build_config::use_openmp)
+                if constexpr (build_config::threaded)
                 {
                     if (entry_pending && chunk_.pending_any()) [[unlikely]]
                     {
@@ -714,7 +714,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
                     // no compressor in the way, rather than from the deferred
                     // path (see to_be_queued_for_deferred_processing). One TLS
                     // load when the rank holds nothing.
-                    if constexpr (build_config::use_openmp)
+                    if constexpr (build_config::threaded)
                     {
                         if (CompressionManagerType::thread_may_have_ops_own()) [[unlikely]]
                         {
@@ -776,7 +776,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
         // Chunk2A only: its compression algorithm is identical in OMP and
         // non-OMP. Chunk/Chunk2 have distinct non-OMP paths and must NOT be
         // triggered here.
-        if constexpr (build_config::not_use_openmp && std::is_same_v<ChunkT, Chunk2A<T>>)
+        if constexpr (build_config::not_threaded && std::is_same_v<ChunkT, Chunk2A<T>>)
         {
             // Skip during rechunk_refill / flush replay (in_flush_replay): the refill
             // materialises a chunk here and RAW-fills it right after; compressing it in

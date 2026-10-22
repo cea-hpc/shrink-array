@@ -207,6 +207,36 @@ foreach(_vi RANGE ${_sa2_nvar_last})
   endif()
 endforeach()
 
+# The TBB bench: the same sources, its regions run as TBB tasks (bench_par.h,
+# BENCH_PAR_TBB) -- the arrays written from TBB's threads, as a TBB program
+# would, the library's own passes on the std backend's std::jthreads at the serial
+# points. Std builds with CHUNK_WITH_TBB (the TBB threads take ranks of the
+# registry): shrink_bench_tbb_<variant>_<declination>, same --mode, same
+# OMP_NUM_THREADS (CHUNK_NUM_THREADS) for the thread count.
+if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
+  foreach(_vi RANGE ${_sa2_nvar_last})
+    list(GET _sa2_variant_names   ${_vi} _vname)
+    list(GET _sa2_variant_libbase ${_vi} _libbase)
+    if (NOT _vname IN_LIST CHUNK_VARIANTS)
+      continue()
+    endif()
+    set(_decls ${CHUNK_STATIC_SIZES})
+    if (CHUNK_BUILD_DYN)
+      list(APPEND _decls dyn)
+    endif()
+    foreach(_sz IN LISTS _decls)
+      set(_tgt shrink_bench_tbb_${_vname}_${_sz})
+      add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
+      target_link_libraries(${_tgt} PRIVATE ${_libbase}_${_sz} TBB::tbb)
+      target_compile_definitions(${_tgt} PRIVATE BENCH_PAR_TBB=1)
+      if (_sz STREQUAL "dyn")
+        target_compile_definitions(${_tgt} PRIVATE DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
+      endif()
+      sa2_setup_target(${_tgt})
+    endforeach()
+  endforeach()
+endif()
+
 # No chunk2bits targets: every shrink_bench_chunk2_* run carries tab_bool
 # (ArrayChunk2<bool>, one byte per bool) AND its twin tab_bool_bits
 # (ArrayChunkBits, 8 per byte) on the same workload -- see BenchBoolBitsArray
@@ -310,6 +340,17 @@ if (CHUNK_BUILD_DYN)
                            ENVIRONMENT OMP_NUM_THREADS=8
                            FIXTURES_REQUIRED shrink_bench_oracle
                            RESOURCE_LOCK shrink_bench_oracle_files)
+      # The TBB bench against the same reference (std builds with
+      # CHUNK_WITH_TBB): the arrays written from TBB's threads must hold what
+      # the std::vector run wrote.
+      if (TARGET shrink_bench_tbb_${_vname}_${_sz})
+        add_test(NAME shrink_bench_tbb_${_vname}_check_${_sz}
+                 COMMAND shrink_bench_tbb_${_vname}_${_sz} --mode check)
+        set_tests_properties(shrink_bench_tbb_${_vname}_check_${_sz} PROPERTIES
+                             ENVIRONMENT OMP_NUM_THREADS=8
+                             FIXTURES_REQUIRED shrink_bench_oracle
+                             RESOURCE_LOCK shrink_bench_oracle_files)
+      endif()
     endforeach()
   endforeach()
 endif()

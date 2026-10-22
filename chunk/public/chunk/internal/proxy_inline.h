@@ -22,7 +22,7 @@
 #include <memory>      // std::addressof (operator=: operator& is deleted)
 #include <utility>     // std::move
 
-#include "chunk/internal/in_t.h" // InT<T>
+#include "chunk/internal/in_t.h"  // InT<T>
 #include "chunk/internal/proxy.h" // the declarations these bodies belong to
 #include "chunk/config.h"    // chunk_config::use_compression_with_counter, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h" // get_thr_rank_fast

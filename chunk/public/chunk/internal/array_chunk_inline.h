@@ -24,7 +24,7 @@
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"               // per-size free lists, candidate filter
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, pmp::parallel_sum
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_PARK / DISCARD
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
@@ -101,34 +101,34 @@ void ArrayChunk<T, IndT>::print_compression_stats(std::ostream& os) const
     // over a team (never nested in a caller's region, not for a few chunks).
     const auto csz = static_cast<unsigned int>(this->size_policy_.size());
 
-    int n_compressed  = 0;
-    int n_would_be_t2 = 0;
-
-#pragma omp parallel for reduction(+ : n_compressed, \
-                                       n_would_be_t2) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500)
-    for (int j = 0; j < nb_chunk_; ++j)
-    {
-        const auto& ck = chunk_list_[j];
-        if (!ck.written())
+    // acc[0]: compressed (or compressible to first_value), acc[1]: would be type-2.
+    const auto counts = pmp::parallel_sum<int, 2>(
+        0, nb_chunk_, pmp::Options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
+        [&](int j, auto& acc)
         {
-            ++n_compressed; // collapsed to first_value
-            continue;
-        }
-        // Materialised: is it constant to a single value?
-        const auto v0 = ck.constant_value(csz);
-        if (!v0)
-        {
-            continue;
-        }
-        if (*v0 == Chunk<T>::first_value)
-        {
-            ++n_compressed; // compressible now; the drain just had not caught it yet
-        }
-        else
-        {
-            ++n_would_be_t2; // a second constant: Chunk2/Chunk2A material
-        }
-    }
+            const auto& ck = chunk_list_[j];
+            if (!ck.written())
+            {
+                ++acc[0]; // collapsed to first_value
+                return;
+            }
+            // Materialised: is it constant to a single value?
+            const auto v0 = ck.constant_value(csz);
+            if (!v0)
+            {
+                return;
+            }
+            if (*v0 == Chunk<T>::first_value)
+            {
+                ++acc[0]; // compressible now; the drain just had not caught it yet
+            }
+            else
+            {
+                ++acc[1]; // a second constant: Chunk2/Chunk2A material
+            }
+        });
+    const int n_compressed  = counts[0];
+    const int n_would_be_t2 = counts[1];
 
     // Plain Chunk has no type-2 (n_t1 = 0).
     if constexpr (chunk_config::stats)
@@ -202,67 +202,69 @@ void ArrayChunk<T, IndT>::clear_core()
     Manager::compute_size_buffer_reuse();
     Manager::compute_size_max_number_of_chunk_to_check_compress();
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
-#pragma omp parallel
-        {
-            const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_);
+        pmp::team(pmp::Options{},
+                  [&](pmp::Team& team)
+                  {
+                      const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_);
 
-            std::vector<Chunk<T>*> ll_chunk_loc;
-            ll_chunk_loc.reserve(nb_chunk0);
+                      std::vector<Chunk<T>*> ll_chunk_loc;
+                      ll_chunk_loc.reserve(nb_chunk0);
 
-#pragma omp for schedule(static) nowait
-            for (int j = 0; j < nb_chunk_; ++j)
-            {
-                if (chunk_list_[j].written())
-                {
-                    if constexpr (chunk_config::stats)
-                    {
-                        increm_chunk_teardown_clear<Chunk<T>>();
-                        // Released below without a compression: out of the live figures.
-                        add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                            static_cast<long>(this->size_policy_.size()));
-                    }
-                    ll_chunk_loc.push_back(&chunk_list_[j]);
-                }
-            }
+                      team.for_static<int>(
+                          0, nb_chunk_,
+                          [&](int j)
+                          {
+                              if (chunk_list_[j].written())
+                              {
+                                  if constexpr (chunk_config::stats)
+                                  {
+                                      increm_chunk_teardown_clear<Chunk<T>>();
+                                      // Released below without a compression: out of the live figures.
+                                      add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
+                                                                          static_cast<long>(this->size_policy_.size()));
+                                  }
+                                  ll_chunk_loc.push_back(&chunk_list_[j]);
+                              }
+                          },
+                          pmp::nowait);
 
-            const int nb = ll_chunk_loc.size();
+                      const int nb = ll_chunk_loc.size();
 
-            if (nb > 0)
-            {
-                const int thr_rank = CHUNK_PMP_THREAD_RANK;
+                      if (nb > 0)
+                      {
+                          const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-                // Park into the reuse list of THIS array's geometry, not the
-                // ambient one. If my_sz has no per-size list this falls back to
-                // the LEGACY list, which drain_reuse_list_for_size() never
-                // drains: those blocks then stay until teardown.
-                const unsigned int my_sz = this->size_policy_.size();
-                auto&              lbf   = Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                          // Park into the reuse list of THIS array's geometry, not the
+                          // ambient one. If my_sz has no per-size list this falls back to
+                          // the LEGACY list, which drain_reuse_list_for_size() never
+                          // drains: those blocks then stay until teardown.
+                          const unsigned int my_sz = this->size_policy_.size();
+                          auto&              lbf = Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
-                for (int k = 0; k < nb; ++k)
-                {
-                    T*          values_loc = ll_chunk_loc[k]->values_;
-                    constexpr T zero{};
-                    std::uninitialized_fill_n(values_loc, my_sz, zero);
+                          for (int k = 0; k < nb; ++k)
+                          {
+                              T*          values_loc = ll_chunk_loc[k]->values_;
+                              constexpr T zero{};
+                              std::uninitialized_fill_n(values_loc, my_sz, zero);
 
-                    // Ledger LIVE -> parked (no-op when the ledger is off).
-                    CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
-                    lbf.push_back(values_loc);
+                              // Ledger LIVE -> parked (no-op when the ledger is off).
+                              CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
+                              lbf.push_back(values_loc);
 
-                    // Neutralise the chunk NOW that its buffer is parked: still
-                    // materialised, a residual candidate would free the SAME
-                    // buffer a second time (a double free under std-alloc).
-                    // init_values_cst_val() frees nothing; written() then
-                    // reports false, so every compress path short-circuits.
-                    ll_chunk_loc[k]->init_values_cst_val();
-                }
-            }
-        }
+                              // Neutralise the chunk NOW that its buffer is parked: still
+                              // materialised, a residual candidate would free the SAME
+                              // buffer a second time (a double free under std-alloc).
+                              // init_values_cst_val() frees nothing; written() then
+                              // reports false, so every compress path short-circuits.
+                              ll_chunk_loc[k]->init_values_cst_val();
+                          }
+                      }
+                  });
     }
     else
     {
-#pragma omp for schedule(static) nowait
         for (int j = 0; j < nb_chunk_; ++j)
         {
             if (chunk_list_[j].written())
@@ -299,7 +301,7 @@ void ArrayChunk<T, IndT>::clear_core()
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk<T, IndT>::compress_int(bool verbose)
+void ArrayChunk<T, IndT>::compress_int(pmp::Team& team, bool verbose)
 {
     // Pin the ambient size to THIS array's geometry (see clear_core()).
     if constexpr (build_config::chunk_dynamic)
@@ -313,26 +315,28 @@ void ArrayChunk<T, IndT>::compress_int(bool verbose)
     std::vector<int> ll;
     ll.reserve(nb_chunk0);
 
-#pragma omp for schedule(static) nowait
-    for (int j = 0; j < nb_chunk_; ++j)
-    {
-        const auto& chunk = chunk_list_[j];
-
-        if (chunk.written())
+    team.for_static<int>(
+        0, nb_chunk_,
+        [&](int j)
         {
-            // One compression attempt per materialised chunk: this sweep
-            // bypasses compress(), which would otherwise count it.
-            if constexpr (chunk_config::stats)
-            {
-                increm_chunk_compress_attempt<Chunk<T>>();
-            }
+            const auto& chunk = chunk_list_[j];
 
-            if (chunk.is_constant_to(T{}, static_cast<unsigned int>(this->size_policy_.size())))
+            if (chunk.written())
             {
-                ll.push_back(j);
+                // One compression attempt per materialised chunk: this sweep
+                // bypasses compress(), which would otherwise count it.
+                if constexpr (chunk_config::stats)
+                {
+                    increm_chunk_compress_attempt<Chunk<T>>();
+                }
+
+                if (chunk.is_constant_to(T{}, static_cast<unsigned int>(this->size_policy_.size())))
+                {
+                    ll.push_back(j);
+                }
             }
-        }
-    }
+        },
+        pmp::nowait);
 
     const auto nb = static_cast<int>(ll.size());
 
@@ -371,7 +375,7 @@ void ArrayChunk<T, IndT>::release_chunk_range(int first, int last)
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
     }
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         // A large shrink takes a team of its own, as clear_core()'s release
         // does: each thread zeroes and parks into ITS rank's reuse list of this

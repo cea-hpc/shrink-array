@@ -191,3 +191,13 @@ transmettant les options communes. `--help` donne la liste complète.
 `compile_all_gnu.sh` accepte en plus `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). La mémoire de
 compilation par job se règle par `CHUNK_MEM_PER_JOB_MB` (3 072 Mo par défaut, le double pour
 les builds sous sanitizer).
+
+Le backend de threads std (`CHUNK_THREADS=std`) a ses propres builds : `std-gnu`,
+`std-gnu-check` et un build ThreadSanitizer pour `compile_all_gnu.sh`, `std-llvm`,
+`std-llvm-check` et un build ThreadSanitizer pour `compile_all.sh`. Ils allongent la
+compilation (`--target='omp-*'` les écarte, `--target='std-*'` les construit seuls). Le banc
+TBB (`shrink_bench_tbb_*`) et `tbb_validation` demandent oneTBB dans ces builds : les scripts
+ajoutent `CHUNK_WITH_TBB=ON` quand `TBBROOT` est défini (par le script d'environnement de oneAPI
+ou `spack load intel-oneapi-tbb`) ou quand `CHUNK_WITH_TBB=1`, et le disent au début ;
+`CHUNK_WITH_TBB=0` écarte TBB. Les builds std sous ThreadSanitizer ne prennent TBB que de
+`CHUNK_TBB_TSAN_DIR`, le répertoire du paquet CMake d'un oneTBB compilé avec TSan.

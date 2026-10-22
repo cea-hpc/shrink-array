@@ -46,7 +46,7 @@
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK, and <omp.h> with it
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK
 
 namespace shrink_array::pool_ledger
 {
@@ -116,7 +116,7 @@ inline constexpr bool pool_ledger_enabled = false;
 #elif CHUNK_OPT_FORCE_LEDGER
 inline constexpr bool pool_ledger_enabled = build_config::any_check;
 #else
-inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::use_openmp;
+inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::threaded;
 #endif
 
 /// @brief Record a ctx block allocation; fails an invariant if @p ptr is already live as ctx or as op.

@@ -61,59 +61,63 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         constexpr bool is_complex  = std::is_same_v<value_type, ComplexDouble>;
         constexpr bool is_char     = std::is_same_v<value_type, unsigned char>;
 
-        Int nbz = 0;
-        Int nbv = 0;
-        Int nb  = 0;
-
         const Int ssz = tab.size();
 
-#pragma omp parallel for reduction(+ : nbz, nbv, nb)
-        for (Int k = 0; k < ssz; ++k)
-        {
-            if constexpr (is_complex)
-            {
-                if (tab[k] == zero_complex)
-                {
-                    nbz++;
-                }
-                else if (tab[k] == sec_val)
-                {
-                    nbv++;
-                }
-                else
-                {
-                    nb++;
-                }
-            }
-            else if constexpr (is_not_bool)
-            {
-                // T{}, not 0: the struct element types compare with their own
-                // null element and have no conversion from Int.
-                if (tab[k] == value_type{})
-                {
-                    nbz++;
-                }
-                else if (tab[k] == sec_val)
-                {
-                    nbv++;
-                }
-                else
-                {
-                    nb++;
-                }
-            }
-            else
-            {
-                if (tab[k] == 0)
-                {
-                    nbz++;
-                }
-                else
-                {
-                    nbv++;
-                }
-            }
-        }
+        // `omp parallel for schedule(static) reduction(+ : ...)` with OpenMP.
+        const auto census = shrink_array::pmp::parallel_sum<Int, 3>(Int{0}, ssz, shrink_array::pmp::Options{},
+                                                                    [&](Int k, auto& acc)
+                                                                    {
+                                                                        auto& nbz = acc[0];
+                                                                        auto& nbv = acc[1];
+                                                                        auto& nb  = acc[2];
+                                                                        if constexpr (is_complex)
+                                                                        {
+                                                                            if (tab[k] == zero_complex)
+                                                                            {
+                                                                                nbz++;
+                                                                            }
+                                                                            else if (tab[k] == sec_val)
+                                                                            {
+                                                                                nbv++;
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                nb++;
+                                                                            }
+                                                                        }
+                                                                        else if constexpr (is_not_bool)
+                                                                        {
+                                                                            // T{}, not 0: the struct element types
+                                                                            // compare with their own null element and
+                                                                            // have no conversion from Int.
+                                                                            if (tab[k] == value_type{})
+                                                                            {
+                                                                                nbz++;
+                                                                            }
+                                                                            else if (tab[k] == sec_val)
+                                                                            {
+                                                                                nbv++;
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                nb++;
+                                                                            }
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            if (tab[k] == 0)
+                                                                            {
+                                                                                nbz++;
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                nbv++;
+                                                                            }
+                                                                        }
+                                                                    });
+        const Int  nbz    = census[0];
+        const Int  nbv    = census[1];
+        const Int  nb     = census[2];
 
         // Over the array's own size: tab_float and tab_char hold 2 * sz
         // elements, tab_short sz / 2, tab_mask mask_scale * sz.
@@ -153,9 +157,13 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         oss << "Numbers of ";
 
         if constexpr (is_char)
+        {
             oss << static_cast<int>(sec_val);
+        }
         else
+        {
             oss << sec_val;
+        }
 
         const std::string label = oss.str();
         std::cout << std::setw(label_width) << std::left << label << ":" // Ensures consistent colon alignment
@@ -172,18 +180,18 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     // bench_double_bands), not one: its census is zeros and the rest.
     auto lbd_fill_quant = [](const std::string& name, const auto& tab)
     {
-        Int       nbz = 0;
         const Int ssz = tab.size();
 
-#pragma omp parallel for reduction(+ : nbz)
-        for (Int k = 0; k < ssz; ++k)
-        {
-            if (tab[k] == 0.0)
-            {
-                nbz++;
-            }
-        }
-        const Int nb = ssz - nbz;
+        // `omp parallel for schedule(static) reduction(+ : nbz)` with OpenMP.
+        const Int nbz = shrink_array::pmp::parallel_sum<Int, 1>(Int{0}, ssz, shrink_array::pmp::Options{},
+                                                                [&](Int k, auto& acc)
+                                                                {
+                                                                    if (tab[k] == 0.0)
+                                                                    {
+                                                                        acc[0]++;
+                                                                    }
+                                                                })[0];
+        const Int nb  = ssz - nbz;
 
         constexpr int name_width   = 20;
         const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);

@@ -109,9 +109,9 @@ struct FlushReplayState
  *
  * @tparam T         Element type
  * @tparam ChunkT Chunk variant the manager coordinates
- * @tparam Enabled   build_config::use_openmp; false leaves the policy empty
+ * @tparam Enabled   build_config::threaded; false leaves the policy empty
  */
-template <typename T, typename ChunkT, bool Enabled = build_config::use_openmp>
+template <typename T, typename ChunkT, bool Enabled = build_config::threaded>
 class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkT>
 {
   public:
@@ -599,7 +599,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkT>
         }
         else
         {
-            // Serial build only (no marks without OpenMP): no concurrent
+            // Serial build only (every threaded build has marks): no concurrent
             // compressor. Acquire, paired with finish()'s seq_cst decrement,
             // as when the SHRINK_SMALL_CHUNK build ran this gate under threads
             // (docs/formal_models.md, F1): a writer that sees a pass OVER also
@@ -1008,7 +1008,7 @@ class CompressionManagerOmpPolicy<T, ChunkT, false> : public FlushReplayState<T,
  * @note Thread safety: All methods are thread-safe
  */
 template <typename T, typename ChunkT>
-struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkT, build_config::use_openmp>
+struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkT, build_config::threaded>
 {
     CompressionManager()  = default;
     ~CompressionManager() = default;

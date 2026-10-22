@@ -99,10 +99,63 @@ set_property(CACHE SANITIZER PROPERTY STRINGS none thread address token)
 
 message(STATUS "Sanitizer: ${SANITIZER}")
 
+# ── Threading backend ─────────────────────────────────────────────────────────
+# CHUNK_THREADS picks the backend the library runs its threads on
+# (docs/threading_backends.md): openmp, std (std::jthread workers of the
+# library's own, no OpenMP: OMP is set OFF) or serial. Empty (the default):
+# from OMP, as before -- the scripts pass -DOMP=ON. Set, it wins and sets OMP
+# to match.
+set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, std, serial (empty: openmp when OMP=ON, serial otherwise)")
+set_property(CACHE CHUNK_THREADS PROPERTY STRINGS "" openmp std serial)
+if(NOT CHUNK_THREADS STREQUAL "")
+    if(CHUNK_THREADS STREQUAL "std")
+        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    elseif(CHUNK_THREADS STREQUAL "openmp")
+        set(OMP ON CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    elseif(CHUNK_THREADS STREQUAL "serial")
+        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    else()
+        message(FATAL_ERROR "CHUNK_THREADS='${CHUNK_THREADS}': expected openmp, std or serial")
+    endif()
+endif()
+
 # ── OpenMP ────────────────────────────────────────────────────────────────────
 # Read by every target of the tree; the scripts pass -DOMP=ON. OFF (as an
 # undeclared variable read) builds the serial library.
 option(OMP "Build with OpenMP (the parallel library and examples)" OFF)
+if(OMP)
+    set(CHUNK_THREADS_BACKEND openmp)
+elseif(CHUNK_THREADS STREQUAL "std")
+    set(CHUNK_THREADS_BACKEND std)
+else()
+    set(CHUNK_THREADS_BACKEND serial)
+endif()
+# The library runs threads (build_config::threaded, alloc_config::threaded):
+# every backend but serial.
+if(CHUNK_THREADS_BACKEND STREQUAL "serial")
+    set(CHUNK_THREADED OFF)
+else()
+    set(CHUNK_THREADED ON)
+endif()
+message(STATUS "Threading backend: ${CHUNK_THREADS_BACKEND}")
+
+# ── oneTBB (optional) ─────────────────────────────────────────────────────────
+# CHUNK_WITH_TBB: build what needs oneTBB, i.e. the validation of the TBB
+# adaptor (chunk/tbb_adaptor.h, shrink_array::tbb::parallel_for). The adaptor
+# is header-only and installed with the other headers: the library never
+# links TBB, the program that includes the adaptor does. The adaptor serves
+# the std and serial backends (an OpenMP build refuses it), so the harness is
+# registered there only. Off by default: no new dependency for the default
+# build.
+option(CHUNK_WITH_TBB "Build the TBB adaptor's validation (needs oneTBB; the library does not link it)" OFF)
+if(CHUNK_WITH_TBB)
+    find_package(TBB REQUIRED)
+    if(CHUNK_THREADS_BACKEND STREQUAL "openmp")
+        message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is not built (OpenMP backend)")
+    else()
+        message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is built")
+    endif()
+endif()
 if(OMP)
     find_package(OpenMP 4.5 REQUIRED)
     set(CMAKE_LIBRARY_PATH /usr/local/lib/x86_64-unknown-linux-gnu ${CMAKE_LIBRARY_PATH})
@@ -826,6 +879,8 @@ add_subdirectory(chunk)
 
 if(NOT CHUNK_STD_ALLOC)
     set(ALLOCATORS_OMP ${OMP})
+    set(ALLOCATORS_THREADED ${CHUNK_THREADED})
+    set(ALLOCATORS_THREADS_BACKEND ${CHUNK_THREADS_BACKEND})
     add_subdirectory(fast_allocators)
 endif()
 

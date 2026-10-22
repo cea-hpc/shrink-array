@@ -54,6 +54,7 @@ The options that matter to a user:
 | option | default | effect |
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
 | `CHUNK_STATIC_SIZES` | `auto` | the compile-time chunk sizes built, one library per size and variant; `auto`: `256;1024`, but `256` alone in a Debug or sanitizer build of this project (not of a project that includes it) |
 | `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen at run time, and can change (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
@@ -192,7 +193,7 @@ int main()
 Expected output: about 12 % of the chunks hold a buffer. A `std::vector` would hold all of
 them.
 
-## 5. OpenMP: the rules
+## 5. Threads: the rules
 
 **What you can do without synchronisation.** As with a `std::vector`, different threads can
 read and write **different elements** at the same time, even elements of the same chunk:
@@ -294,7 +295,9 @@ parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `cl
 Chunk2, `set_second_value()`.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
-of cores, 256)` threads (about 1 KiB per element type and per thread). A program that runs
+of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else
+`OMP_NUM_THREADS` -- stands for `omp_get_max_threads()`; about 1 KiB per element type and per
+thread). A program that runs
 more threads than that sets `CHUNK_THREAD_CAPACITY=<n>`; a thread beyond the capacity stops the
 program with a message.
 
@@ -325,6 +328,42 @@ all of it. What that asks of them:
   lists (an array still alive keeps what it needs): once, at the end of the program, or not at
   all. `reclaim_second_values()` covers every array of a type; `CHUNK_LOG` and
   `logging::set_sink()` are one setting for all.
+
+**Without OpenMP: your own threads, TBB.** A library built with `CHUNK_THREADS=std` runs its own
+work on a pool of `std::jthread`s and takes writes from any thread of the program: `std::thread`,
+TBB, a thread pool of your own. The phases are then always explicit: every thread that writes
+calls `begin_parallel_phase()` before its first write, and **one** thread calls
+`finalize_parallel_phase()` once every writer has stopped (after the `join()`):
+
+```cpp
+std::vector<std::thread> workers;
+for (int t = 0; t < nt; ++t)
+    workers.emplace_back([&, t] {
+        sa::begin_parallel_phase();               // every thread that writes
+        for (long i = t; i < n; i += nt)
+            a[i] = f(i);
+    });
+for (auto& w : workers)
+    w.join();
+sa::finalize_parallel_phase();                    // once, after the join
+```
+
+A TBB program uses `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`): the arguments of
+`oneapi::tbb::parallel_for`, both calls made for you. The header comes with the library; the
+program links TBB itself (`TBB::tbb`), the library does not:
+
+```cpp
+#include "chunk/tbb_adaptor.h"
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r) {
+    for (long i = r.begin(); i != r.end(); ++i)
+        a[i] = f(i);
+});
+```
+
+Between `begin` and `finalize` the library counts the program's threads as a parallel region
+(the sequential points above must not be called there, as inside an OpenMP region), and each of them
+holds one of the per-thread slots while it is alive. An OpenMP build numbers only OpenMP's
+threads: for the others, use the std backend.
 
 ## 6. Pitfalls
 

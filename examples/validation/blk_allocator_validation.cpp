@@ -50,8 +50,9 @@ using shrink_array::println;
 namespace
 {
 
-constexpr std::size_t test_sizes[] = {1,   3,   4,    5,    8,    16,    24,    63,    64,    65,     100,
-                                  512, 513, 1000, 4096, 4097, 32768, 65535, 65536, 65537, 100000, std::size_t{1} << 20};
+constexpr std::size_t test_sizes[] = {
+    1,   3,   4,    5,    8,    16,    24,    63,    64,    65,     100,
+    512, 513, 1000, 4096, 4097, 32768, 65535, 65536, 65537, 100000, std::size_t{1} << 20};
 
 unsigned char pattern(std::size_t id, std::size_t k)
 {

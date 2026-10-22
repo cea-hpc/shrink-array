@@ -228,7 +228,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     void assign_alloc_key()
     {
         if constexpr (build_config::alloc_affinity_min_bytes == 0 || !build_config::chunk_dynamic ||
-                      !build_config::use_fast_alloc || !build_config::use_openmp)
+                      !build_config::use_fast_alloc || !build_config::threaded)
         {
             return;
         }
