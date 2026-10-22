@@ -75,6 +75,7 @@
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
 #include "chunk/internal/in_t.h"              // InT<T>: the value parameters
+#include "chunk/internal/value_hash.h"        // value_hash (index_hash)
 #include "chunk/config.h"                     // build_config::use_mm_protect
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
@@ -796,10 +797,17 @@ class GlobalVecHolder
                 return;
             }
             // Budget exhausted at <= 50% load: pathological clustering. One
-            // more doubling before giving up.
-            if (attempt == 0)
+            // more doubling before giving up -- unless the index is already
+            // degraded: then every new value would double it again, and with
+            // the superseded generations kept until index_clear(), a run of
+            // colliding values exhausted the memory (6 GB for 300 values).
+            if (attempt == 0 && !index_degraded.load(std::memory_order_relaxed))
             {
                 table = index_grow();
+            }
+            else
+            {
+                break;
             }
         }
         // Still exhausted: a registered value may now be unfindable by
@@ -1088,19 +1096,17 @@ class GlobalVecHolder
         }
     }
 
-    /// @brief Value hash (a 64-bit finaliser over the object's bytes).
-    /// @note Hashes the REPRESENTATION, so two values that compare equal but
-    ///       differ bitwise would land in different slots.
+    /// @brief Value hash: value_hash() (internal/value_hash.h), over the whole
+    ///        value and consistent with operator==.
+    /// @details A scalar of at most 8 bytes keeps the former formula (a 64-bit
+    ///          finaliser over its bits, a floating zero normalised). A wider
+    ///          type was hashed on its first 8 bytes only: values that differ
+    ///          past them -- a Point {x, y, z} with one x, a {int mat; double
+    ///          rho} -- all landed on one slot and degraded the index. Member
+    ///          by member with C++26 reflection, so padding is not read.
     static size_t index_hash(InT<T> v) noexcept
     {
-        uint64_t bits = 0;
-        std::memcpy(&bits, &v, sizeof(T) < sizeof(uint64_t) ? sizeof(T) : sizeof(uint64_t));
-        bits ^= bits >> 33U;
-        bits *= 0xff51afd7ed558ccdULL;
-        bits ^= bits >> 33U;
-        bits *= 0xc4ceb9fe1a85ec53ULL;
-        bits ^= bits >> 33U;
-        return static_cast<size_t>(bits);
+        return value_hash<T>(v);
     }
 
     /**

@@ -72,6 +72,24 @@ the tag's checksum to the recipe.
   `a.column<^^T::m>()`, `for_each_column()`, `shrink_to_fit()`. Checked by
   `examples/soa_array/soa_array_validation` (ctest, reflection builds only).
 
+### Fixed (cpp26)
+
+- Chunk2A's second-value index could exhaust the memory: once its probe budget
+  ran out, every new distinct value doubled the index again, and the superseded
+  tables are kept until the last array of the type goes (6 GB and an OOM kill
+  for 300 values of a `struct {int mat; double rho;}`). The index now doubles
+  once, then degrades as it always did (`index_publish()`).
+- The index hashed only the first 8 bytes of a value: for a wider type -- a
+  `Point {x, y, z}` with one `x`, a `{int mat; double rho}` whose first 8
+  bytes are `mat` and padding -- every value landed on one slot and the index
+  degraded (O(N) lookups, reclaims refused). `value_hash()`
+  (`chunk/internal/value_hash.h`) now hashes the whole value; a scalar of at
+  most 8 bytes keeps the former formula, a floating zero normalised. With C++26
+  reflection, a class whose `operator==` is the defaulted member one is hashed
+  member by member, so equal values with different padding, or `-0.0` against
+  `+0.0`, share one identifier (without reflection they may take two: memory,
+  not a wrong value). Checked by `examples/cst2_hash/cst2_hash_validation`.
+
 ### Added (cpp23)
 
 - `std::expected` forms that say why they refuse, beside the existing calls
