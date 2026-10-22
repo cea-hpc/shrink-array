@@ -116,6 +116,12 @@ the tag's checksum to the recipe.
   `-fimf-use-svml=true`, nvc++'s `-tp=host`, `-xHost`, `-no-intel-lib`, the
   mold link options) apply to C++ only. With `CXX=icpx` alone the C targets of
   `formal/` build with the system cc, and GCC stopped on them.
+- Std backend: `finalize_parallel_phase()` closes the application phase
+  again. Its early return for a nested region tested `in_parallel()`, which
+  the application phase makes true: the phase never ended, and the check
+  builds stopped at `release_chunk_pools()`. It now tests an active team.
+  A `parallel_phase()` opened during an application phase is nested in it:
+  it no longer ends that phase, and its begin is not a second begin.
 
 ## 0.1.3 -- 2026-10-22
 

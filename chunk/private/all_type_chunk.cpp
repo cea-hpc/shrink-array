@@ -220,8 +220,10 @@ void finalize_parallel_phase()
     // a component that knows nothing of it -- the enclosing phase is not over:
     // its other threads may still be writing, and the flush below drains every
     // rank's queue without a lock. The enclosing phase's own end finalizes
-    // (manage_ompt.h; nested_region_validation D).
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    // (manage_ompt.h; nested_region_validation D). A team, not
+    // CHUNK_PMP_IN_PARALLEL_REGION: the std backend's application phase is
+    // in_parallel() too, and this is where it closes.
+    if (pmp::active_level() > 0)
     {
         return;
     }

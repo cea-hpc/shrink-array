@@ -199,11 +199,18 @@ void parallel_phase(int num_threads, Body&& body)
         }
         body();
     };
+    // Opened inside a phase -- an enclosing active region, or the std
+    // backend's application phase: that phase is not over, its own end
+    // finalizes (nested_region_validation D).
+    const bool nested = CHUNK_PMP_IN_PARALLEL_REGION;
     // num_threads 0 (or less): the backend's default team (OpenMP: omp_get_max_threads()).
     pmp::team(pmp::Options{.num_threads = num_threads}, [&team_body](pmp::Team& /*team*/) { team_body(); });
     if constexpr (build_config::has_not_ompt)
     {
-        finalize_parallel_phase();
+        if (!nested)
+        {
+            finalize_parallel_phase();
+        }
     }
 }
 
