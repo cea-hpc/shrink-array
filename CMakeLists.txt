@@ -1,6 +1,12 @@
 # Copyright 2024-2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 cmake_minimum_required(VERSION 3.20)
+# set(CACHE) keeps a normal variable of the same name (CMake 3.21+): a
+# subdirectory that declares a cache entry, such as an older chunk/ declaring
+# CHUNK_STATIC_SIZES, then still sees the list resolved here, not the raw "auto".
+if(POLICY CMP0126)
+    cmake_policy(SET CMP0126 NEW)
+endif()
 project(shrink_array VERSION 0.1.2 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
