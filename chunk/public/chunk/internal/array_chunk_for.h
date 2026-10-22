@@ -33,8 +33,8 @@ class ArrayChunkCore;
 /**
  * @brief What a proxy of @p ChunkT may cast its type-erased ptr_on_array to.
  * @details The index-independent core of the array, never the array itself: a
- *          chunk type has one array type per index type (`ArrayChunk2A<T, int>`,
- *          `ArrayChunk2A<T, long>`), and ptr_on_array is the address of the core
+ *          chunk type has one array type per index type (`zero_any::Array<T, int>`,
+ *          `zero_any::Array<T, long>`), and ptr_on_array is the address of the core
  *          (ArrayChunkCore::registry_key()) for all of them.
  */
 template <typename ChunkT>

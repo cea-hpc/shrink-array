@@ -375,7 +375,7 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
     ///        first constant (init_chunks_cst_val).
     /// @warning `new Chunk2A<T>[n]` runs the DEFAULT CONSTRUCTORS after this, overwriting
     ///          that initialisation; it pays off only for a placement-new array. Nothing in
-    ///          the library array-news a chunk (ArrayChunk* hold a std::vector).
+    ///          the library array-news a chunk (zero::Array* hold a std::vector).
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);

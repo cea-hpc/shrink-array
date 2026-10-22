@@ -18,7 +18,7 @@
 
 #include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
 #include "chunk/config.h"                    // build_config::not_threaded, chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h"              // ArrayChunk2A forward declaration
+#include "chunk/chunk_traits.h"              // zero_any::Array forward declaration
 #include "chunk/internal/in_t.h"             // InT<T>
 #include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
 #include "chunk/internal/read_reclaim.h"     // read_reclaim::PassScope (perform_compression / compress in a region)
@@ -26,7 +26,7 @@
 namespace shrink_array
 {
 /**
- * @brief The part of ArrayChunk2 and ArrayChunk2A that the two share, on top of
+ * @brief The part of zero_one_value::Array and zero_any::Array that the two share, on top of
  *        ArrayChunkBase: chunk allocation, compress(), and the common part of
  *        resize().
  */
@@ -121,7 +121,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // nothing, so afterwards every list is empty and every dedup flag 0 -- the
         // precondition of Proxy2A::resize_tab_is_int(num_tab, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
-                      (build_config::not_threaded && std::is_same_v<Derived, ArrayChunk2A<T, IndType>>))
+                      (build_config::not_threaded && std::is_same_v<Derived, zero_any::Array<T, IndType>>))
         {
             derived().make_block_compression();
         }

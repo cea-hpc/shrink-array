@@ -225,7 +225,7 @@ se limite aux reconstructions.
   pourrait faire regretter un grossissement : c'est le rôle de l'apprentissage
   (`coarsen_trust_ratio`) et de l'anti-retour.
 - **Le rechunk des tableaux de booléens** n'est validé que pour `ArrayChunkBits`
-  (`bits_container_validation`, Chunk2 en dyn) ; `ArrayChunk2<bool>` et `ArrayChunk2A<bool>`
+  (`bits_container_validation`, Chunk2 en dyn) ; `zero_one_value::Array<bool>` et `zero_any::Array<bool>`
   n'ont pas de harnais, et le banc ne confie pas `tab_bool` au décideur.
 - **Le pic reste celui du départ** : un run dynamique qui part de 64 atteint d'abord la
   mémoire du statique 64, puis descend.

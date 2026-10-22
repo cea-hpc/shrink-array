@@ -16,7 +16,7 @@
 
 #pragma once
 
-// Out-of-line bodies of the re-chunk hooks of ArrayChunk and ArrayChunk2A
+// Out-of-line bodies of the re-chunk hooks of zero::Array and zero_any::Array
 // (RechunkHooks<Derived, true>). Included at the end of array_chunk.h and of
 // array_chunk2A.h, after the class, so the CRTP self() down-cast sees a complete
 // Derived and so the manager include stays out of the container declaration itself.

@@ -20,7 +20,7 @@
 #include <vector> // std::vector
 
 #include "chunk/all_type_chunk.h"                       // ensure_manager, from create
-#include "chunk/array_chunk.h"                          // ArrayChunk, the class these bodies belong to
+#include "chunk/array_chunk.h"                          // zero::Array, the class these bodies belong to
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"               // per-size free lists, candidate filter
@@ -40,7 +40,7 @@ namespace shrink_array
 {
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk<T, IndT>::rebuild_storage(IndT sz)
+void zero::Array<T, IndT>::rebuild_storage(IndT sz)
 {
     if (sz)
     {
@@ -79,7 +79,7 @@ void ArrayChunk<T, IndT>::rebuild_storage(IndT sz)
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk<T, IndT>::print_compression_stats(std::ostream& os) const
+void zero::Array<T, IndT>::print_compression_stats(std::ostream& os) const
 {
     if (nb_chunk_ == 0)
     {
@@ -143,7 +143,7 @@ void ArrayChunk<T, IndT>::print_compression_stats(std::ostream& os) const
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk<T, IndT>::clear()
+void zero::Array<T, IndT>::clear()
 {
     this->invalidate_proxies();
     // Per-array compression stats, read BEFORE the drain below mutates state.
@@ -156,12 +156,12 @@ void ArrayChunk<T, IndT>::clear()
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk<T, IndT>::clear_core()
+void zero::Array<T, IndT>::clear_core()
 {
     // Pin the ambient size to THIS array's geometry before the sweep:
     // get_chunk_allocator() routes on thread_chunk_size(), not on the buffer, so
     // a size left by another array would send these buffers to the wrong
-    // allocator. See ArrayChunk2::clear_core().
+    // allocator. See zero_one_value::Array::clear_core().
     if constexpr (build_config::chunk_dynamic)
     {
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
@@ -189,7 +189,7 @@ void ArrayChunk<T, IndT>::clear_core()
         return;
     }
 
-    // Give this array's chunks back to the manager's count (as ArrayChunk2 /
+    // Give this array's chunks back to the manager's count (as zero_one_value::Array /
     // 2A do): the compression threshold (somme_chunk_create / (factor_div *
     // threads)) must track the chunks alive, not the program's history --
     // otherwise it climbs by orders of magnitude, compressions become rare and
@@ -301,7 +301,7 @@ void ArrayChunk<T, IndT>::clear_core()
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk<T, IndT>::compress_int(pmp::Team& team, bool verbose)
+void zero::Array<T, IndT>::compress_int(pmp::Team& team, bool verbose)
 {
     // Pin the ambient size to THIS array's geometry (see clear_core()).
     if constexpr (build_config::chunk_dynamic)
@@ -353,17 +353,17 @@ void ArrayChunk<T, IndT>::compress_int(pmp::Team& team, bool verbose)
         std::array<char, 256> sample{};
         CHUNK_LOG_ALWAYS(
             compress,
-            "residual ArrayChunk<{}, {}>: {} chunk(s) constant at zero, still materialised (awaiting the next "
+            "residual zero::Array<{}, {}>: {} chunk(s) constant at zero, still materialised (awaiting the next "
             "compression pass): {}",
             type_name<T>(), type_name<IndT>(), nb,
             internal::chunk_index_sample(sample, ll, static_cast<IndT>(this->size_policy_.size())));
     }
 }
 
-// make_block_compression() is FastBlockSupport<ArrayChunk, true>'s
+// make_block_compression() is FastBlockSupport<zero::Array, true>'s
 // (array_chunk_parallel_inline.h); the false specialisation is a no-op.
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk<T, IndT>::release_chunk_range(int first, int last)
+void zero::Array<T, IndT>::release_chunk_range(int first, int last)
 {
     if (first >= last)
     {
@@ -421,7 +421,7 @@ void ArrayChunk<T, IndT>::release_chunk_range(int first, int last)
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk<T, IndT>::resize(IndT newsz)
+void zero::Array<T, IndT>::resize(IndT newsz)
 {
     this->invalidate_proxies();
 

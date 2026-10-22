@@ -229,7 +229,7 @@ inline constexpr bool use_chunk2or2a    = use_chunk2 || use_chunk2a;            
 /**
  * @brief Chunk2's second-value index for an array that has declared none.
  *
- * @details An ArrayChunk2 registers (T{}, this index) at construction and
+ * @details An zero_one_value::Array registers (T{}, this index) at construction and
  *          keeps it until set_second_value(). Every consumer of the index
  *          answers "no second constant" for it: get_cst_val2() is nullptr,
  *          is_cst_val2() false, written() reduces to "not cst_val1", and the

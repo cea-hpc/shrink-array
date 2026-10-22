@@ -24,9 +24,9 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 
 | classe | en-tête | compresse les chunks uniformes à… |
 |---|---|---|
-| `ArrayChunk<T, IndT = int>` | `chunk/array_chunk.h` | `T{}` |
-| `ArrayChunk2<T, IndT = int>` | `chunk/array_chunk2.h` | `T{}` ou la seconde valeur du tableau |
-| `ArrayChunk2A<T, IndT = int>` | `chunk/array_chunk2A.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
+| `zero::Array<T, IndT = int>` | `chunk/array_chunk.h` | `T{}` |
+| `zero_one_value::Array<T, IndT = int>` | `chunk/array_chunk2.h` | `T{}` ou la seconde valeur du tableau |
+| `zero_any::Array<T, IndT = int>` | `chunk/array_chunk2A.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
 | `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds Chunk2) |
 
 `IndT` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
@@ -49,8 +49,8 @@ hors de toute région parallèle, et il invalide les proxys du tableau.
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
-| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `ArrayChunk2A<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`ArrayChunk2A`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas |
+| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_one_value::Array`, `zero_any::Array`) |
+| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `zero_any::Array<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`zero_any::Array`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas |
 | statistiques | `stats()`, `get_nb_chunk_written()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) |
 
@@ -58,10 +58,10 @@ Chunk2 seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_
 
 **`reclaim_second_values()` : une précondition sur tout le type.** Les autres opérations **(S)**
 concernent un tableau ; celle-ci est statique et libère les secondes valeurs de tous les
-`ArrayChunk2A<T>` du programme, quel que soit leur type d'index. Pendant qu'elle s'exécute,
-**aucun thread ne doit écrire dans un `ArrayChunk2A<T>` ni le compresser**, pas seulement dans
+`zero_any::Array<T>` du programme, quel que soit leur type d'index. Pendant qu'elle s'exécute,
+**aucun thread ne doit écrire dans un `zero_any::Array<T>` ni le compresser**, pas seulement dans
 les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propres
-`ArrayChunk2A<double>`, le point séquentiel doit valoir pour tous.
+`zero_any::Array<double>`, le point séquentiel doit valoir pour tous.
 
 - *Hors contrat, l'erreur est silencieuse* : un chunk compressé pendant la libération peut
   garder un identifiant qu'elle libère puis attribue à une autre valeur ; ce chunk lit alors
@@ -76,7 +76,7 @@ les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propre
   recherche ou tout enregistrement de seconde valeur qui chevauche une libération. Faites
   tourner l'application une fois dans un build de contrôle avec ses appels de libération ; les
   builds release ne paient rien et ne vérifient rien.
-- *Surveiller les identifiants* : `ArrayChunk2A<T>::second_value_stats()` (statique, à tout
+- *Surveiller les identifiants* : `zero_any::Array<T>::second_value_stats()` (statique, à tout
   moment, depuis tout thread) renvoie les identifiants en usage face à la capacité -- les épuiser
   arrête le run --, les libres, les libérations faites et ce qu'elles ont libéré, les libérations
   refusées par cause (un appel refusé renvoie 0 comme un appel qui n'a rien à libérer) et si

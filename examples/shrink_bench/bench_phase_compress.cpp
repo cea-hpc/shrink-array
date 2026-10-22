@@ -25,7 +25,7 @@ namespace
 {
 /// @brief tab.compress() in a shrink build, nothing in the std::vector baseline.
 ///
-/// compress() exists on the ArrayChunk* alone, and `if constexpr` in a plain
+/// compress() exists on the zero::Array* alone, and `if constexpr` in a plain
 /// function still type-checks its discarded branch -- but the body of a
 /// TEMPLATE is genuinely not instantiated, so routing the thirteen calls through
 /// one abbreviated function template lets the guard below be `if constexpr`.

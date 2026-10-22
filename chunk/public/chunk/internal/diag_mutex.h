@@ -17,7 +17,7 @@
 #pragma once
 
 // The lock of the library's diagnostic reports: the residual and self-heal
-// dumps of compress_int() (ArrayChunk, ArrayChunk2, ArrayChunk2A), several
+// dumps of compress_int() (zero::Array, zero_one_value::Array, zero_any::Array), several
 // lines each, that must not interleave when several threads print at once.
 //
 // It replaces the unnamed `#pragma omp critical` those reports used (threads

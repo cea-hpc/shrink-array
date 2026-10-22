@@ -32,11 +32,11 @@
  *          Arm the chunk once with real proxy writes, write straight into its
  *          buffer, then restore the invariants the bulk write bypassed.
  *
- *          NOT MEMBER FUNCTIONS, on purpose: ArrayChunk does not promise
+ *          NOT MEMBER FUNCTIONS, on purpose: zero::Array does not promise
  *          std::vector's interface (no data(), no stable element address), but
  *          a caller should not care which container it holds. Free functions
  *          with a generic fallback send a std::vector to std::fill and an
- *          ArrayChunk to the fast path.
+ *          zero::Array to the fast path.
  *
  *          Filling a range with the compressible constant (first_value) through
  *          operator[] materialises every chunk and waits for a pass to reclaim
@@ -109,8 +109,8 @@ inline constexpr bool raw_fillable_v = !is_bool_like_v<T>;
  * @details Dispatch on the TYPE, never on chunk_config::use_chunk /
  *          use_chunk2 / use_chunk2a: those say which variants the BUILD
  *          contains, and a build may contain several (CHUNK_VARIANT_V1=1 with
- *          CHUNK_VARIANT_V2=1): testing the flags sends an ArrayChunk2 down
- *          v1's paths and an ArrayChunk down Chunk2's.
+ *          CHUNK_VARIANT_V2=1): testing the flags sends an zero_one_value::Array down
+ *          v1's paths and an zero::Array down Chunk2's.
  */
 template <typename Arr>
 inline constexpr bool is_v1_v = std::is_same_v<typename Arr::ChunkType, Chunk<typename Arr::value_type>>;
@@ -481,7 +481,7 @@ void packed_chunk_store(Arr&         arr,
 } // namespace internal
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ArrayChunk overloads
+// zero::Array overloads
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

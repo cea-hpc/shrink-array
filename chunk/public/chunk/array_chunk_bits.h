@@ -22,9 +22,9 @@
  *        each, 8 per byte.
  *
  * @details A container of its own, not a specialisation of a bool array:
- *          ArrayChunk2<bool> stays what it is (one byte per bool), and the
+ *          zero_one_value::Array<bool> stays what it is (one byte per bool), and the
  *          choice is made by type, array by array --
- *            - ArrayChunk2<bool>: a plain byte store per write;
+ *            - zero_one_value::Array<bool>: a plain byte store per write;
  *            - ArrayChunkBits:    8x less memory per materialised chunk, an
  *                                 atomic read-modify-write of a 64-bit word
  *                                 per write (OpenMP builds).
@@ -48,13 +48,13 @@
  */
 
 #include "chunk/bit.h"          // Bit
-#include "chunk/array_chunk2.h" // ArrayChunk2
+#include "chunk/array_chunk2.h" // zero_one_value::Array
 
 namespace shrink_array
 {
 
 /// @brief The bit-packed bool container (see the file comment).
 template <typename IndT = int>
-using ArrayChunkBits = ArrayChunk2<Bit, IndT>;
+using ArrayChunkBits = zero_one_value::Array<Bit, IndT>;
 
 } // namespace shrink_array

@@ -144,7 +144,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     }
 
     /// @brief Arm this proxy with the owning array's registry mirror
-    ///        (ArrayChunk2::registry_mirror()).
+    ///        (zero_one_value::Array::registry_mirror()).
     /// @details Called by ArrayChunkBase::operator[]. An unarmed proxy (deferred-replay
     ///          reconstruction, *_from_key path) resolves the tuple through share_info_array.
     /// @note Without it every write scans the registry, a large share of the write cost.
@@ -573,7 +573,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      */
     static void clear_is_int([[maybe_unused]] int num_tab)
     {
-        // Intentionally empty, but must exist: ArrayChunk2::clear_core() calls it in its
+        // Intentionally empty, but must exist: zero_one_value::Array::clear_core() calls it in its
         // `if constexpr (use_fast_block_compression)` branch.
         //  tab_is_inside_chunk_list_to_compress[num_tab].clear();
     }
@@ -827,7 +827,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *        has a candidate list for its second value.
      * @details Shadows Proxy2Base::pre_check_mark_for_compression(), as Proxy2A does.
      *          Candidate lists are keyed by second value and created only by
-     *          ArrayChunk2::set_second_value(); an array without one is not walked by the
+     *          zero_one_value::Array::set_second_value(); an array without one is not walked by the
      *          compression pass either. Reject such writes HERE, before
      *          add_to_compression_list() CASes the chunk's "queued" flag: giving up after the
      *          CAS would leave the chunk flagged for good.

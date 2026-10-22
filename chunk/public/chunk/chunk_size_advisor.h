@@ -149,8 +149,8 @@ struct ChunkSizeAdvisor
 
     /// @brief Estimate, from @p tab's constant runs, the memory each
     ///        candidate chunk size would give it. Read-only; call at a
-    ///        quiescent point. Variant-generic via @p Arr (ArrayChunk /
-    ///        ArrayChunk2 / ArrayChunk2A): the only per-variant part is the
+    ///        quiescent point. Variant-generic via @p Arr (zero::Array /
+    ///        zero_one_value::Array / zero_any::Array): the only per-variant part is the
     ///        cst2 classification, selected with if constexpr on chunk_config.
     template <typename Arr>
     static ChunkSizeReport analyze(const Arr& tab, const Options& opt = {})

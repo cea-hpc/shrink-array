@@ -16,7 +16,7 @@
 
 /**
  * @file cst2_reclaim_validation.cpp
- * @brief ArrayChunk2A::reclaim_second_values() frees exactly the second values
+ * @brief zero_any::Array::reclaim_second_values() frees exactly the second values
  *        nothing refers to any more, and the registry reuses their identifiers.
  *
  * @details Chunk2A's registry of second values (GlobalVecHolder) keeps every
@@ -28,7 +28,7 @@
  *          chunk still holds it goes to another value, and the chunk reads
  *          that one. So every phase reads every element back.
  *
- *          On ArrayChunk2A<double>, every chunk written whole at its own
+ *          On zero_any::Array<double>, every chunk written whole at its own
  *          constant (base + chunk index), so that each compresses to a
  *          registered second value:
  *
@@ -63,7 +63,7 @@
 #include <unistd.h>   // getpid
 
 #include "chunk/chunk_traits.h"               // forward decls (Chunk2A) + default IndT = int
-#include "chunk/array_chunk2A.h"              // ArrayChunk2A, Chunk2A complete (its registry types)
+#include "chunk/array_chunk2A.h"              // zero_any::Array, Chunk2A complete (its registry types)
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
 #include "chunk/config.h"                     // chunk_config::use_chunk2a, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
@@ -81,7 +81,7 @@ using namespace shrink_array;
 
 static_assert(chunk_config::use_chunk2a, "cst2_reclaim_validation is Chunk2A's registry: link chunk_v2a_<size>");
 
-using Arr      = ArrayChunk2A<double>;
+using Arr      = zero_any::Array<double>;
 using Registry = Chunk2A<double>::Holder::VecHolder;
 
 static void begin_phase()

@@ -83,7 +83,7 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   | fonctions, méthodes, variables, paramètres, namespaces | snake_case | `get_chunk_list`, `num_tab` |
   | données membres privées et protégées | snake_case terminé par `_` | `chunk_list_`, `num_` |
   | constantes (`constexpr`) et énumérateurs | snake_case | `cst_buffer_size`, `ev_flush_begin` |
-  | classes, structs, concepts, alias de type, paramètres de template | PascalCase | `ArrayChunk2A`, `AllocT`, `ChunkT` |
+  | classes, structs, concepts, alias de type, paramètres de template | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |
   | macros | MAJUSCULES | `CHUNK_SIZE` |
 
   Les MAJUSCULES sont réservées aux macros : une constante ou un énumérateur écrit comme une macro

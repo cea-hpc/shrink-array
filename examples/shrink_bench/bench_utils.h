@@ -273,7 +273,7 @@ struct VectorChecksum
 
 // -----------------------------------------------------------------------------
 // Detect at compile time whether the array type has a set_second_value(v)
-// member (only ArrayChunk2 / ArrayChunk2A do; plain std::vector doesn't).
+// member (only zero_one_value::Array / zero_any::Array do; plain std::vector doesn't).
 // -----------------------------------------------------------------------------
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)

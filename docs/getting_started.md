@@ -25,9 +25,9 @@ Three variants, chosen when you link:
 
 | variant | class | a chunk is compressed when it is uniform at… |
 |---|---|---|
-| Chunk (v1) | `ArrayChunk<T>` | `T{}` (zero) only |
-| Chunk2 | `ArrayChunk2<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
-| Chunk2A | `ArrayChunk2A<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
+| Chunk (v1) | `zero::Array<T>` | `T{}` (zero) only |
+| Chunk2 | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| Chunk2A | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
 
 Chunk2A compresses the most and is the one to try first. Chunk2 has lighter metadata when
 the data has a single dominant non-zero value, and Chunk (v1) is the simplest when only zeros
@@ -94,8 +94,8 @@ as the library did.
 | `chunk::chunk_vector` | none: the arrays are `std::vector` | — |
 
 Link **one** variant library per program, and write **that variant's class**:
-`ArrayChunk2A<T>` with `chunk::chunk_v2a`. The class you write is what you get -- a program
-naming `ArrayChunk2A` keeps it whatever it links -- and an array of another variant than the
+`zero_any::Array<T>` with `chunk::chunk_v2a`. The class you write is what you get -- a program
+naming `zero_any::Array` keeps it whatever it links -- and an array of another variant than the
 library's is not supported: depending on the calls, it does not compile or it crashes.
 To let the link choose, write the arrays through an alias on the variant the library
 defines (`examples/shrink_bench` and `examples/simple_array` do so):
@@ -110,9 +110,9 @@ defines (`examples/shrink_bench` and `examples/simple_array` do so):
 
 namespace sa = shrink_array;
 template <typename T>
-using Array = std::conditional_t<sa::chunk_config::use_chunk2a, sa::ArrayChunk2A<T>,
-              std::conditional_t<sa::chunk_config::use_chunk2, sa::ArrayChunk2<T>,
-              std::conditional_t<sa::chunk_config::use_chunk, sa::ArrayChunk<T>, std::vector<T>>>>;
+using Array = std::conditional_t<sa::chunk_config::use_chunk2a, sa::zero_any::Array<T>,
+              std::conditional_t<sa::chunk_config::use_chunk2, sa::zero_one_value::Array<T>,
+              std::conditional_t<sa::chunk_config::use_chunk, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
 With it, `chunk::chunk_vector` builds the same program on plain `std::vector`s, which is the
@@ -132,7 +132,7 @@ well as inside the tree.
 #include <cstdio>
 #include <utility>                 // std::as_const
 
-#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
@@ -145,7 +145,7 @@ int main()
 
     {
         const int n = 1 << 24;                   // 16 M doubles: 128 MiB as a std::vector
-        sa::ArrayChunk2A<double> a(n);           // (2) all 0.0, nothing allocated yet
+        sa::zero_any::Array<double> a(n);           // (2) all 0.0, nothing allocated yet
 
         sa::parallel_phase([&] {                 // (3) a parallel region, phases marked
 #pragma omp for
@@ -210,7 +210,7 @@ phase call. Linked as in §3, with `OpenMP::OpenMP_CXX` too:
 #include <utility>                 // std::as_const
 #include <vector>
 
-#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
 
 namespace sa = shrink_array;
 
@@ -227,7 +227,7 @@ int main()
     const int n = 1 << 24;
 
     std::vector<double>      v(n);
-    sa::ArrayChunk2A<double> a(n);
+    sa::zero_any::Array<double> a(n);
     fill(v, n);                          // the reference
     fill(a, n);                          // the same loop: no parallel_phase(), no phase calls
 
@@ -286,7 +286,7 @@ With OMPT you may also write no phase at all: plain `#pragma omp parallel for` l
 code as on a `std::vector`.
 [`examples/getting_started/getting_started_ompt.cpp`](../examples/getting_started/getting_started_ompt.cpp)
 is the program of §4 written that way: one function fills a `std::vector<double>` and an
-`ArrayChunk2A<double>`, and the program checks that they read back the same. It refuses to
+`zero_any::Array<double>`, and the program checks that they read back the same. It refuses to
 compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1`.
 
 **Sequential points.** Everything that rebuilds an array's storage must be called outside any
@@ -384,7 +384,7 @@ threads: for the others, use the std backend.
   library's own state is built at its first use and never destroyed, so the order of the
   static initialisations does not matter.
 - **Indices are `int` by default.** For more than 2³¹ elements, use the second template
-  parameter: `ArrayChunk2A<double, long>`.
+  parameter: `zero_any::Array<double, long>`.
 - **Element types**: anything trivially copyable, `==`-comparable and default-constructible
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
   type that owns a resource (`std::string`) is refused at compile time. Chunk2 also needs an

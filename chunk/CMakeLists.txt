@@ -42,8 +42,8 @@ if(NOT DEFINED CHUNK_STATIC_SIZES OR CHUNK_STATIC_SIZES STREQUAL "auto")
 endif()
 option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per variant." ON)
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
-# The variants built: chunk (ArrayChunk, chunk_v1_*), chunk2 (ArrayChunk2,
-# chunk_v2_*), chunk2a (ArrayChunk2A, chunk_v2a_*). The examples, benchmarks
+# The variants built: chunk (zero::Array, chunk_v1_*), chunk2 (zero_one_value::Array,
+# chunk_v2_*), chunk2a (zero_any::Array, chunk_v2a_*). The examples, benchmarks
 # and harnesses of a variant left out are not built nor registered as tests. A
 # build that checks one variant's option (CHUNK_SECOND_VALUE_INDEXED is
 # Chunk2A's) needs only that one; trim it during development too.
@@ -618,8 +618,8 @@ foreach(_vname IN LISTS _chunk_variant_names)
 endforeach()
 
 # --- Two families in one program ------------------------------------------
-# examples/multi-mat keeps its field arrays in ArrayChunk<T> (v1) and its
-# presence fraction in ArrayChunk2<T>: one library with both defines, at the
+# examples/multi-mat keeps its field arrays in zero::Array<T> (v1) and its
+# presence fraction in zero_one_value::Array<T>: one library with both defines, at the
 # default static size only. The registry allows it (all_type_chunk_inline.h:
 # "nothing forbids a build from selecting more than one"); what the second
 # define costs v1 is the raw fill of its range ops (raw_fillable_v). Without

@@ -63,9 +63,9 @@
 #include <type_traits> // std::conditional_t
 
 #include "chunk/chunk_traits.h"               // forward decls + default IndT = int
-#include "chunk/array_chunk.h"                // ArrayChunk
-#include "chunk/array_chunk2.h"               // ArrayChunk2
-#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/array_chunk.h"                // zero::Array
+#include "chunk/array_chunk2.h"               // zero_one_value::Array
+#include "chunk/array_chunk2A.h"              // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_chunk*
@@ -182,9 +182,10 @@ static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_confi
               "(re-chunk is chunk-only; no std::vector fallback here)");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_chunk2a,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {

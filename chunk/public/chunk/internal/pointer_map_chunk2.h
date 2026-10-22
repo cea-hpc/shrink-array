@@ -120,7 +120,7 @@ class PointerMapChunk2InfArrayPolicy
     /**
      * @brief Drop every entry still pointing at @p self_ptr.
      *
-     * @details Called from ArrayChunk2::clear_core so a destroyed array's
+     * @details Called from zero_one_value::Array::clear_core so a destroyed array's
      *          inf_array MEMBER cannot dangle here, where
      *          compress_chunk_to_compress_potentially() would dereference it via
      *          get_all_inf_array(). Only entries this array currently OWNS are
@@ -265,7 +265,7 @@ class PointerMapChunk2
 
   public:
     /// @brief The policy's insert(second value, inf_array pointer), protected
-    ///        there, is part of this registry's public surface (ArrayChunk2
+    ///        there, is part of this registry's public surface (zero_one_value::Array
     ///        registers its inf_array through it).
     using InfArrayPolicy::insert;
 

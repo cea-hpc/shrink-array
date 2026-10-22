@@ -38,7 +38,7 @@ change :
 +#include "chunk/array_chunk2A.h"
 
 -std::vector<double> a(n);
-+shrink_array::ArrayChunk2A<double> a(n);
++shrink_array::zero_any::Array<double> a(n);
 
  #pragma omp parallel for
  for (int i = 0; i < n; ++i)
@@ -58,7 +58,7 @@ temps d'accès, voir [En chiffres](#en-chiffres).*
 
 ```cpp
 #include <cstdio>
-#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
@@ -70,7 +70,7 @@ int main()
     sa::ParamChunk::init_indexes(true);       // facultatif : le premier tableau le fait sinon
     {
         const int                n = 1 << 24;
-        sa::ArrayChunk2A<double> a(n);        // tous les éléments à 0.0, aucun tampon encore
+        sa::zero_any::Array<double> a(n);        // tous les éléments à 0.0, aucun tampon encore
 
         // parallel_phase ouvre la région `omp parallel` et y exécute la lambda, sur chaque
         // thread ; le `omp for` partage la boucle entre cette équipe (voir plus bas)
@@ -125,7 +125,7 @@ void fill(Array& t, int n)
 }
 
 std::vector<double>      v(n);
-sa::ArrayChunk2A<double> a(n);
+sa::zero_any::Array<double> a(n);
 fill(v, n);                          // la référence
 fill(a, n);                          // la même boucle : ni parallel_phase(), ni appels de phase
 ```
@@ -144,7 +144,7 @@ ci-dessous.
 
 ```mermaid
 flowchart LR
-    subgraph arr["un ArrayChunk2A, découpé en chunks"]
+    subgraph arr["un zero_any::Array, découpé en chunks"]
         c0["chunk 0<br/>valeurs variées<br/>tampon propre"]
         c1["chunk 1<br/>tout à 3.5"]
         c2["chunk 2<br/>tout à 3.5"]
@@ -165,9 +165,9 @@ métadonnées. Trois variantes décident quelles constantes comptent :
 
 | variante | classe | un chunk est compressé quand il est uniforme à… |
 |---|---|---|
-| Chunk (v1) | `ArrayChunk<T>` | `T{}` (zéro) seulement |
-| Chunk2 | `ArrayChunk2<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
-| Chunk2A | `ArrayChunk2A<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
+| Chunk (v1) | `zero::Array<T>` | `T{}` (zéro) seulement |
+| Chunk2 | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
+| Chunk2A | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
 
 La variante et la taille de chunk (256, 1024, ou dynamique et adaptative : `_dyn`) sont choisies
 par la bibliothèque liée : `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...

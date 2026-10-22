@@ -100,10 +100,10 @@
 #                           ACTIVE levels stop with an invariant failure
 #                           (re-run with --nested-active).
 #   fill_range_mt_v1v2_validation  the range ops in a TWO-variant build
-#                           (chunk_v1v2): an ArrayChunk and an ArrayChunk2 side
+#                           (chunk_v1v2): an zero::Array and an zero_one_value::Array side
 #                           by side, fill_range_mt of each compressible value.
 #                           The ops must dispatch on the array's type, not on
-#                           the build flags -- otherwise an ArrayChunk2
+#                           the build flags -- otherwise an zero_one_value::Array
 #                           filled with its second value stays materialised.
 #                           The one harness that is not variant-agnostic.
 #   cst2_registry_validation  Chunk2A's second-value registry is freed by the
@@ -111,7 +111,7 @@
 #                           first (its reinstall took a phantom reference),
 #                           and overlapping arrays free nothing early.
 #                           Chunk2A only, default static size.
-#   cst2_reclaim_validation  ArrayChunk2A::reclaim_second_values() frees
+#   cst2_reclaim_validation  zero_any::Array::reclaim_second_values() frees
 #                           exactly the second values nothing refers to,
 #                           every element still reads back, and the
 #                           identifiers are reused (a run past the
@@ -327,7 +327,7 @@ foreach(_geom IN LISTS _rt_geometries)
     if (OMP)
       list(APPEND _group chunk_array_new_validation)
     endif()
-    # bits_container_validation: ArrayChunkBits (ArrayChunk2<Bit>) against
+    # bits_container_validation: ArrayChunkBits (zero_one_value::Array<Bit>) against
     # std::vector<bool>. Chunk2 libraries only, every geometry.
     if (_vname STREQUAL "chunk2")
       list(APPEND _group bits_container_validation)
@@ -515,7 +515,7 @@ endif()
 
 # --- fill_range_mt_v1v2_validation: the two-variant library (CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes
-# the phase calls, as multi-mat does), ArrayChunk and ArrayChunk2 in one
+# the phase calls, as multi-mat does), zero::Array and zero_one_value::Array in one
 # program. At 1 and 8 threads like the others.
 if (TARGET chunk_v1v2_${CHUNK_DEFAULT_SIZE})
   set(_tgt fill_range_mt_v1v2_validation)

@@ -27,7 +27,7 @@
 #include <utility>     // std::pair (the clear() summary)
 #include <vector>      // std::vector
 
-#include "chunk/array_chunk2A.h"                        // ArrayChunk2A, the class these bodies belong to
+#include "chunk/array_chunk2A.h"                        // zero_any::Array, the class these bodies belong to
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled (the size prediction's gate)
@@ -49,7 +49,7 @@ namespace shrink_array
 {
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk2A<T, IndT>::rebuild_storage(IndT sz)
+void zero_any::Array<T, IndT>::rebuild_storage(IndT sz)
 {
     if (sz)
     {
@@ -82,7 +82,7 @@ void ArrayChunk2A<T, IndT>::rebuild_storage(IndT sz)
             // Per-chunk init: every iteration writes slot i of tables sized just
             // above and nothing else, so it parallelises as is (a serial loop is
             // a visible master-only cost on large arrays). Same pattern as
-            // ArrayChunk2::rebuild_storage; serial inside a region (the caller
+            // zero_one_value::Array::rebuild_storage; serial inside a region (the caller
             // need not be the whole team) and below the one threshold,
             // parallel_storage_init::parallel_init_min_chunks.
             const auto init_chunk = [&](int i)
@@ -109,7 +109,7 @@ void print_type_name(int nb_val2)
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk2A<T, IndT>::print_compression_stats(std::ostream& os) const
+void zero_any::Array<T, IndT>::print_compression_stats(std::ostream& os) const
 {
     if (nb_chunk_ == 0)
     {
@@ -167,7 +167,7 @@ void ArrayChunk2A<T, IndT>::print_compression_stats(std::ostream& os) const
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk2A<T, IndT>::clear()
+void zero_any::Array<T, IndT>::clear()
 {
     this->invalidate_proxies();
     // Chunk-size predictor (log only, no re-chunk; any_check only): scans the
@@ -207,10 +207,10 @@ void ArrayChunk2A<T, IndT>::clear()
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk2A<T, IndT>::clear_core()
+void zero_any::Array<T, IndT>::clear_core()
 {
     // Pin the ambient size to THIS array's own geometry before the sweep
-    // below. Same rule as ArrayChunk2::clear_core() -- see that
+    // below. Same rule as zero_one_value::Array::clear_core() -- see that
     // function's comment.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -263,7 +263,7 @@ void ArrayChunk2A<T, IndT>::clear_core()
     }
 
     ManagerChunk<Chunk2A, T>::decrem_somme_chunk_create(nb_chunk_);
-    // Recompute what derives from the total -- see ArrayChunk::clear_core():
+    // Recompute what derives from the total -- see zero::Array::clear_core():
     // otherwise a re-chunk leaves the threshold sized for the geometry it just left.
     ManagerChunk<Chunk2A, T>::compute_size_buffer_reuse();
     ManagerChunk<Chunk2A, T>::compute_size_max_number_of_chunk_to_check_compress();
@@ -503,7 +503,7 @@ void ArrayChunk2A<T, IndT>::clear_core()
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk2A<T, IndT>::compress_int(pmp::Team& team)
+void zero_any::Array<T, IndT>::compress_int(pmp::Team& team)
 {
     // Pin the ambient size to THIS array's geometry: the frees below route on
     // thread_chunk_size(), not on the buffer (see clear_core()); left to the
@@ -550,7 +550,7 @@ void ArrayChunk2A<T, IndT>::compress_int(pmp::Team& team)
         pmp::nowait);
 
     // ── What this reports, and what it does NOT assert ───────────────────────
-    // compress_int() only SCANS; it never compresses (unlike ArrayChunk's, whose
+    // compress_int() only SCANS; it never compresses (unlike zero::Array's, whose
     // non-embedded branch does the clear itself). It reports the residual:
     // blocks constant right now and still materialised.
     //
@@ -573,7 +573,7 @@ void ArrayChunk2A<T, IndT>::compress_int(pmp::Team& team)
         }
         std::array<char, 256> sample{};
         CHUNK_LOG(info, compress,
-                  "residual ArrayChunk2A<{}, {}>: {} block(s) constant at {}, still materialised (awaiting the next "
+                  "residual zero_any::Array<{}, {}>: {} block(s) constant at {}, still materialised (awaiting the next "
                   "compression pass): {}",
                   type_name<T>(), type_name<IndT>(), tab.size(), at,
                   internal::chunk_index_sample(sample, tab, static_cast<IndT>(this->size_policy_.size())));
@@ -583,7 +583,7 @@ void ArrayChunk2A<T, IndT>::compress_int(pmp::Team& team)
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk2A<T, IndT>::make_block_compression()
+void zero_any::Array<T, IndT>::make_block_compression()
 {
     // Every rank's list, drained serially by the caller (no region opened
     // here, no writer handshake: nullptr proxy).
@@ -594,7 +594,7 @@ void ArrayChunk2A<T, IndT>::make_block_compression()
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk2A<T, IndT>::release_chunk_range(int first, int last)
+void zero_any::Array<T, IndT>::release_chunk_range(int first, int last)
 {
     if (first >= last)
     {
@@ -656,7 +656,7 @@ void ArrayChunk2A<T, IndT>::release_chunk_range(int first, int last)
 }
 
 template <ArrayChunkElement T, typename IndT>
-void ArrayChunk2A<T, IndT>::resize(IndT newsz)
+void zero_any::Array<T, IndT>::resize(IndT newsz)
 {
     this->invalidate_proxies();
     const auto& sh_inf = *Proxy2A<T>::share_info_array;

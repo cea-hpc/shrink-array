@@ -20,12 +20,12 @@
  * @file array_chunk_core.h
  * @brief The part of a chunked array that does not depend on its index type.
  *
- * @details ArrayChunk*<T, IndT> are distinct types for every IndT, but
+ * @details zero::Array*<T, IndT> are distinct types for every IndT, but
  *          the machinery around them -- proxies, chunks, managers, the per-T
  *          registries (<tt>Proxy*\<T\>\::share_info_array</tt>) -- is templated on T alone
  *          and reaches the array through a type-erased pointer (the proxy's
  *          ptr_on_array, the registries' keys). Do not cast that pointer back to
- *          `ArrayChunk*<T, int>`: on a `<T, long>` array the fields sit elsewhere.
+ *          `zero::Array*<T, int>`: on a `<T, long>` array the fields sit elsewhere.
  *
  *          ArrayChunkCore<ChunkType> is what that code may see: everything it
  *          reads, laid out identically whatever the index type. The pointer
@@ -124,7 +124,7 @@ inline bool g_releasing_rechunk_storage = false;
 // reserves, and the init loops construct each chunk (ArrayChunkCore::construct_chunk) on
 // the thread that initialises it -- first touch and NUMA placement there, not a serial
 // value-init sweep on the calling thread. The resize sites and their init loops:
-// ArrayChunk*::create (through acquire_chunk_list) and ArrayChunk*::resize.
+// zero::Array*::create (through acquire_chunk_list) and zero::Array*::resize.
 
 /// @brief The index-type-independent part of a chunked array of ChunkT (see the description at the top of
 ///        this file).
@@ -315,7 +315,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      * @brief Chunk-size policy — the single home for chunk geometry.
      *
      * @details Shared by all containers that derive from ArrayChunkBase
-     *          (ArrayChunk, ArrayChunk2, ArrayChunk2A). Geometry use-sites go
+     *          (zero::Array, zero_one_value::Array, zero_any::Array). Geometry use-sites go
      *          through size_policy_.decalage()/modulo()/size().
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};

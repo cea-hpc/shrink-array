@@ -61,7 +61,7 @@ still work: each sets the level it stands for, with a deprecation warning.
 | `CHUNK_ADVISOR_TABLE` | `1` or `=name`: the full advisor table at each pass (all arrays or a single one) |
 | `CHUNK_RECHUNK_CHURN` | `1` or `=name`: materialisations per pass and an estimate of the transient cost they imply (level info of channel rechunk, which it switches on) |
 | `CHUNK_LOG=affinity=debug` (formerly `CHUNK_AFFINITY_TRACE`) | each per-array set of allocators created (key, size, budget) |
-| `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and Chunk2A's constant blocks never queued; the compression residual of an audit (`compress()` on ArrayChunk2 / ArrayChunk2A); `compress=debug` adds ArrayChunk2's per-chunk detail |
+| `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and Chunk2A's constant blocks never queued; the compression residual of an audit (`compress()` on zero_one_value::Array / zero_any::Array); `compress=debug` adds zero_one_value::Array's per-chunk detail |
 | `CHUNK_ARENA_REPORT` | the summary of the buffer arena (slabs handed out, given back to the system); a report: written whatever `CHUNK_LOG` says (channel `arena`) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (formerly `CHUNK_RECYCLE_TRACE`) | check builds: the foreign blocks the deferred-write pool drops, on a doubling schedule / one line per block |
 | `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry), at exit; a report: written whatever `CHUNK_LOG` says (channel `ledger`) |

@@ -19,7 +19,7 @@
  * @brief Chunk2A's second-value registry (GlobalVecHolder) is freed by the
  *        last array of EVERY generation, not only the first.
  *
- * @details The registry of a type is shared by every ArrayChunk2A<T> and
+ * @details The registry of a type is shared by every zero_any::Array<T> and
  *          counted: each array takes a reference, and the last one out frees
  *          the second-value arrays, the segments and the region's pages
  *          (clear_if_last). It then reinstalls an empty segment -- through
@@ -27,7 +27,7 @@
  *          went 0 -> 1, the next generation's last one out found 1 left, and
  *          nothing was ever freed again before exit.
  *
- *          Three scenarios, on ArrayChunk2A<double>, each value written over
+ *          Three scenarios, on zero_any::Array<double>, each value written over
  *          whole chunks so that it compresses to a registered second value:
  *
  *            A  three generations one after the other, a different value
@@ -57,7 +57,7 @@
 #include <unistd.h>   // getpid
 
 #include "chunk/chunk_traits.h"       // forward decls (Chunk2A) + default IndT = int
-#include "chunk/array_chunk2A.h"      // ArrayChunk2A, Chunk2A complete (its registry types)
+#include "chunk/array_chunk2A.h"      // zero_any::Array, Chunk2A complete (its registry types)
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/config.h"             // chunk_config::use_chunk2a, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
@@ -74,7 +74,7 @@ using namespace shrink_array;
 
 static_assert(chunk_config::use_chunk2a, "cst2_registry_validation is Chunk2A's registry: link chunk_v2a_<size>");
 
-using Arr      = ArrayChunk2A<double>;
+using Arr      = zero_any::Array<double>;
 using Registry = Chunk2A<double>::Holder::VecHolder;
 
 static void begin_phase()

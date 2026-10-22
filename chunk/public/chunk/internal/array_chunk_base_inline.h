@@ -67,12 +67,12 @@ bool ArrayChunkBase<Derived>::is_written_at(int j) const noexcept
 {
     if constexpr (has_chunk_written_v<Derived>)
     {
-        // ArrayChunk2: Chunk2::written() needs the second-value index.
+        // zero_one_value::Array: Chunk2::written() needs the second-value index.
         return derived().chunk_written(j);
     }
     else
     {
-        // ArrayChunk and ArrayChunk2A: the chunk knows by itself.
+        // zero::Array and zero_any::Array: the chunk knows by itself.
         return chunk_list_[j].written();
     }
 }
@@ -248,7 +248,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndType i) 
 {
     if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::at: index out of range");
+        throw std::out_of_range("zero::Array::at: index out of range");
     }
     return (*this)[i]; // const operator[] -> T (value)
 }
@@ -258,7 +258,7 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(IndType i)
 {
     if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::at: index out of range");
+        throw std::out_of_range("zero::Array::at: index out of range");
     }
     return (*this)[i]; // non-const operator[] -> ProxyType (write entry)
 }
@@ -268,7 +268,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::front() const
 {
     if (empty()) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::front: container is empty");
+        throw std::out_of_range("zero::Array::front: container is empty");
     }
     return (*this)[0];
 }
@@ -278,7 +278,7 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::front()
 {
     if (empty()) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::front: container is empty");
+        throw std::out_of_range("zero::Array::front: container is empty");
     }
     return (*this)[0];
 }
@@ -288,7 +288,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::back() const
 {
     if (empty()) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::back: container is empty");
+        throw std::out_of_range("zero::Array::back: container is empty");
     }
     return (*this)[m_size_ - 1];
 }
@@ -298,7 +298,7 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back()
 {
     if (empty()) [[unlikely]]
     {
-        throw std::out_of_range("ArrayChunk::back: container is empty");
+        throw std::out_of_range("zero::Array::back: container is empty");
     }
     return (*this)[m_size_ - 1];
 }

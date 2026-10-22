@@ -83,7 +83,7 @@ The source checks run with the others (`ctest -R check_`):
   | functions, methods, variables, parameters, namespaces | snake_case | `get_chunk_list`, `num_tab` |
   | private and protected data members | snake_case ending in `_` | `chunk_list_`, `num_` |
   | constants (`constexpr`) and enumerators | snake_case | `cst_buffer_size`, `ev_flush_begin` |
-  | classes, structs, concepts, type aliases, template parameters | PascalCase | `ArrayChunk2A`, `AllocT`, `ChunkT` |
+  | classes, structs, concepts, type aliases, template parameters | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |
   | macros | UPPER_CASE | `CHUNK_SIZE` |
 
   UPPER_CASE is for macros only: a constant or an enumerator spelled like one reads as one, and

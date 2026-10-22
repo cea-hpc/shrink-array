@@ -378,7 +378,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
  * its final state.
  *
  * Today the drain has no concurrent writers (on_parallel_end() puts an
- * `omp barrier` in front of it; the ArrayChunk2 call sites are gated on
+ * `omp barrier` in front of it; the zero_one_value::Array call sites are gated on
  * !CHUNK_PMP_IN_PARALLEL_REGION), so either order works; this one stays
  * correct if that precondition slips, as on Chunk2A.
  *
@@ -395,7 +395,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
 {
     // The store is a per-rank VECTOR of maps, sized by resize_all_list_block_free_thr();
     // until that has run, [thr_rank] is out of bounds (UB). Probing rank 0 is
-    // enough: ArrayChunk2::add_second_value registers a key for every rank in
+    // enough: zero_one_value::Array::add_second_value registers a key for every rank in
     // one loop, so an empty map at rank 0 means no key at any rank.
     if (is_vec_tuple_to_compress_potentially_empty_thr())
     {
@@ -601,7 +601,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     // shared_ptr that the next dereference crashes on.
     //
     // A missing key is normal (no one declared this second value on this
-    // rank: nothing to compress, same exit as `sz == 0`); an ArrayChunk2 built
+    // rank: nothing to compress, same exit as `sz == 0`); an zero_one_value::Array built
     // without add_second_value reaches it via resize_common ->
     // make_block_compression. is_vec_tuple_to_compress_potentially_empty_thr()
     // is not enough: it only tests "no key anywhere".

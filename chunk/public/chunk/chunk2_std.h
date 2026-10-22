@@ -394,7 +394,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     ///        first constant (init_chunks_cst_val).
     /// @warning `new Chunk2<T>[n]` runs the default constructors after this, which
     ///          overwrite that initialisation; it only matters for placement-new
-    ///          arrays. The library never array-news a chunk (ArrayChunk* use a
+    ///          arrays. The library never array-news a chunk (zero::Array* use a
     ///          std::vector<ChunkType>).
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.

@@ -18,8 +18,8 @@
 
 /**
  * @file array_chunk_base.h
- * @brief CRTP base shared by every chunked array variant (ArrayChunk,
- *        ArrayChunk2, ArrayChunk2A).
+ * @brief CRTP base shared by every chunked array variant (zero::Array,
+ *        zero_one_value::Array, zero_any::Array).
  *
  * @details It gathers everything the three variants have in common: the
  *          index-independent core (ArrayChunkCore: geometry policy, chunk list,
@@ -61,8 +61,8 @@ namespace shrink_array
 /**
  * @brief Trait: does @p D provide a CHUNK-indexed `chunk_written(int)`?
  *
- * @details ArrayChunk2 does (Chunk2::written() needs the array's second-value
- *          index); for ArrayChunk and ArrayChunk2A is_written_at() asks the chunk.
+ * @details zero_one_value::Array does (Chunk2::written() needs the array's second-value
+ *          index); for zero::Array and zero_any::Array is_written_at() asks the chunk.
  *          Do not test `written(int)` instead: every variant has it, but it takes
  *          an ELEMENT index.
  *
@@ -93,8 +93,8 @@ inline constexpr bool has_chunk_written_v = requires(const D& obj, int j) { obj.
  *          dirty bitset, registry identity) is ArrayChunkCore, the only part the
  *          proxies and registries see; this class adds m_size and the element API.
  *
- * @tparam Derived the concrete array type (ArrayChunk, ArrayChunk2,
- *         ArrayChunk2A), which must specialise ArrayChunkTraits.
+ * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array,
+ *         zero_any::Array), which must specialise ArrayChunkTraits.
  * @see ArrayChunkTraits
  */
 template <typename Derived>
@@ -928,7 +928,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         {
             if (size_policy_.size() != other.size_policy_.size())
             {
-                CHUNK_INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})", size_policy_.size(),
+                CHUNK_INVARIANT_FAILED("zero::Array::swap: mismatched chunk geometry ({} vs {})", size_policy_.size(),
                                        other.size_policy_.size());
             }
         }
@@ -1122,8 +1122,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /**
      * @brief Claim this array's identity and build its storage for @p sz
-     *        elements: the constructors' body of ArrayChunk and ArrayChunk2A
-     *        (ArrayChunk2 has its own). Registers the element type's manager on
+     *        elements: the constructors' body of zero::Array and zero_any::Array
+     *        (zero_one_value::Array has its own). Registers the element type's manager on
      *        the way (AllTypeChunk::ensure_manager), runs create_common(), then
      *        the variant's rebuild_storage() -- the geometry-dependent
      *        allocation alone, which rechunk_to also calls on an already
@@ -1222,7 +1222,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @brief Read the element at @p i.
      * @param i global element index (unchecked)
      * @return the element value
-     * @note Protected, not private: ArrayChunk2A::operator== reads both of its
+     * @note Protected, not private: zero_any::Array::operator== reads both of its
      *       operands through it.
      */
     T read_value(IndType i) const noexcept
@@ -1289,7 +1289,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /**
      * @brief Is chunk @p j materialised?
-     * @details Routes to Derived::chunk_written(j) when it exists (ArrayChunk2,
+     * @details Routes to Derived::chunk_written(j) when it exists (zero_one_value::Array,
      *          whose chunks need the second-value index), else asks
      *          chunk_list[j].written() directly.
      * @param j CHUNK index

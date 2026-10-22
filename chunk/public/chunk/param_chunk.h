@@ -316,8 +316,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @tparam T the element type concerned
      * @param second_value the additional value to store as a constant
      * @warning Not implemented: deleted, so a use fails at compile time. A
-     *          placeholder for the second-constant support that ArrayChunk2
-     *          offers per array (ArrayChunk2::set_second_value) and chunk2A per
+     *          placeholder for the second-constant support that zero_one_value::Array
+     *          offers per array (zero_one_value::Array::set_second_value) and chunk2A per
      *          chunk.
      */
     template <typename T>

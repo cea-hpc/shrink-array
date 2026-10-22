@@ -1599,7 +1599,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     /**
      * @brief Drop every queued Chunk2A candidate of array @p num_tab, in every
-     *        rank's list (ArrayChunk2A::clear_core and rechunk_to).
+     *        rank's list (zero_any::Array::clear_core and rechunk_to).
      * @param num_tab tab index whose candidates are removed
      * @note Keeps other arrays' candidates. At teardown prefer
      *       remove_from_compress_list_chunk2a_by_ptr_range() (see why there).
@@ -1624,7 +1624,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @brief Chunk2 analogue: drop every queued Chunk2 candidate for @p num_tab.
      *
      * @details Removes the matching tuples from every rank and second-value
-     *          bucket, WITHOUT compressing. Called from ArrayChunk2::clear_core()
+     *          bucket, WITHOUT compressing. Called from zero_one_value::Array::clear_core()
      *          so no Chunk2* of a torn-down or re-chunked array dangles there.
      *
      * @param num_tab tab index whose candidates are removed
@@ -1652,7 +1652,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /// @brief Drop every queued Chunk (v1) candidate of array @p num_tab
-    ///        (ArrayChunk::clear_core and rechunk_to).
+    ///        (zero::Array::clear_core and rechunk_to).
     /// @details Removes this array's candidates without compressing, and keeps
     ///          other arrays' intact.
     static void remove_from_compress_list_chunk_by_num_tab(int num_tab) noexcept
@@ -1692,7 +1692,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return it != by_value.end() ? it->second.get() : nullptr;
     }
     /// @brief Chunk2: per rank, one list per second-value index, copied by
-    ///        ArrayChunk2 into map_chunk2_to_compress_potentially_thr when it
+    ///        zero_one_value::Array into map_chunk2_to_compress_potentially_thr when it
     ///        registers a second value.
     static inline constinit internal::Immortal<TChunk2CompThr<ChunkT, T>> chunk2_to_compress_potentially_thr_storage_{};
     static inline TChunk2CompThr<ChunkT, T>&                              chunk2_to_compress_potentially_thr =

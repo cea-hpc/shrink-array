@@ -626,11 +626,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // re-chunk. `ind_old2` selects the SOURCE array's second value (the scan
         // reads *this), `inf_new2` the fresh array's (the fold writes tmp;
         // rechunk_seed_fresh() has already declared it on tmp).
-        // Deduced, not named: only ArrayChunk2 has InfArrayT, and the
+        // Deduced, not named: only zero_one_value::Array has InfArrayT, and the
         // discarded branch of an `if constexpr` inside the immediately-invoked
         // lambda is never instantiated.
         // NESTED, not `use_chunk2 && Derived::is_not_bool`: `&&` short-circuits
-        // EVALUATION, never NAME LOOKUP, so a v1 build (ArrayChunk has no
+        // EVALUATION, never NAME LOOKUP, so a v1 build (zero::Array has no
         // is_not_bool) would fail to compile the condition itself.
         [[maybe_unused]] const int ind_old2 = [&]
         {

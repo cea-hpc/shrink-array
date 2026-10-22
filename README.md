@@ -36,7 +36,7 @@ The loops of a code written for `std::vector` stay as they are; only the array t
 +#include "chunk/array_chunk2A.h"
 
 -std::vector<double> a(n);
-+shrink_array::ArrayChunk2A<double> a(n);
++shrink_array::zero_any::Array<double> a(n);
 
  #pragma omp parallel for
  for (int i = 0; i < n; ++i)
@@ -56,7 +56,7 @@ types, static chunks of 256, whole-process memory at the end. The price is acces
 
 ```cpp
 #include <cstdio>
-#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
@@ -68,7 +68,7 @@ int main()
     sa::ParamChunk::init_indexes(true);       // optional: the first array runs it otherwise
     {
         const int                n = 1 << 24;
-        sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer yet
+        sa::zero_any::Array<double> a(n);        // every element 0.0, no buffer yet
 
         // parallel_phase opens the `omp parallel` region and runs the lambda in it, on every
         // thread; the `omp for` shares the loop over that team (see below)
@@ -123,7 +123,7 @@ void fill(Array& t, int n)
 }
 
 std::vector<double>      v(n);
-sa::ArrayChunk2A<double> a(n);
+sa::zero_any::Array<double> a(n);
 fill(v, n);                          // the reference
 fill(a, n);                          // the same loop: no parallel_phase(), no phase calls
 ```
@@ -142,7 +142,7 @@ below.
 
 ```mermaid
 flowchart LR
-    subgraph arr["one ArrayChunk2A, cut into chunks"]
+    subgraph arr["one zero_any::Array, cut into chunks"]
         c0["chunk 0<br/>varied values<br/>own buffer"]
         c1["chunk 1<br/>all 3.5"]
         c2["chunk 2<br/>all 3.5"]
@@ -163,9 +163,9 @@ constants count:
 
 | variant | class | a chunk is compressed when it is uniform at… |
 |---|---|---|
-| Chunk (v1) | `ArrayChunk<T>` | `T{}` (zero) only |
-| Chunk2 | `ArrayChunk2<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
-| Chunk2A | `ArrayChunk2A<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
+| Chunk (v1) | `zero::Array<T>` | `T{}` (zero) only |
+| Chunk2 | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| Chunk2A | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
 
 The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are chosen by the
 library you link: `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...

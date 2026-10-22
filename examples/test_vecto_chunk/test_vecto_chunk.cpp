@@ -35,7 +35,7 @@
 
 
 #include "chunk/param_chunk.h"                // ParamChunk
-#include "chunk/array_chunk.h"                // ArrayChunk
+#include "chunk/array_chunk.h"                // zero::Array
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/chunk_def.h"                  // ChunkDef
 #include "chunk/chunk_std.h"                  // destroy_block_chunk
@@ -236,9 +236,9 @@ int main()
     std::cout << "Initialisation ..." << '\n';
     std::cout << "Creation of arrays ..." << '\n';
 
-    ArrayChunk<double> tab_chunk1(sz);
-    ArrayChunk<double> tab_chunk2(sz);
-    ArrayChunk<double> tab_chunk3(sz);
+    zero::Array<double> tab_chunk1(sz);
+    zero::Array<double> tab_chunk2(sz);
+    zero::Array<double> tab_chunk3(sz);
 
     std::vector<double> tab1(sz);
     std::vector<double> tab2(sz);
@@ -423,7 +423,7 @@ int main()
 
     std::cout << tab2[2] << '\n';
 
-    const auto lbd = [](const ArrayChunk<double>& tab)
+    const auto lbd = [](const zero::Array<double>& tab)
     {
         const double sz0 = tab.stats();
         std::cout << "Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0 << "%" << '\n';

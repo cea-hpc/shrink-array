@@ -16,7 +16,7 @@
 
 #pragma once
 
-// Out-of-line bodies of ArrayChunk2's mode-gated surfaces (ParallelSupport2,
+// Out-of-line bodies of zero_one_value::Array's mode-gated surfaces (ParallelSupport2,
 // FastBlockSupport2). Included at the end of array_chunk2.h, so self() sees a complete
 // Derived.
 

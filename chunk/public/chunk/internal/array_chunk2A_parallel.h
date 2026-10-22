@@ -18,7 +18,7 @@
 
 /**
  * @file array_chunk2A_parallel.h
- * @brief The OpenMP-only surface of ArrayChunk2A -- the deferred-op flush --
+ * @brief The OpenMP-only surface of zero_any::Array -- the deferred-op flush --
  *        isolated in its own mixin so it disappears entirely from a serial
  *        build.
  *
@@ -37,9 +37,9 @@ namespace shrink_array
 {
 
 /**
- * @brief The OpenMP-only members of ArrayChunk2A, present only when the build has OpenMP.
+ * @brief The OpenMP-only members of zero_any::Array, present only when the build has OpenMP.
  *
- * @tparam Derived the concrete array type (only ArrayChunk2A today).
+ * @tparam Derived the concrete array type (only zero_any::Array today).
  * @tparam Enabled defaulted to build_config::threaded; never pass it
  *         explicitly outside of tests.
  */

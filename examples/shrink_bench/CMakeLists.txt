@@ -238,7 +238,7 @@ if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
 endif()
 
 # No chunk2bits targets: every shrink_bench_chunk2_* run carries tab_bool
-# (ArrayChunk2<bool>, one byte per bool) AND its twin tab_bool_bits
+# (zero_one_value::Array<bool>, one byte per bool) AND its twin tab_bool_bits
 # (ArrayChunkBits, 8 per byte) on the same workload -- see BenchBoolBitsArray
 # (bench_array.h). The chunk / chunk2a builds give the twin their own
 # Array<bool>.

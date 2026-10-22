@@ -265,7 +265,7 @@ template <typename T, typename Derived, bool Enabled>
 void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, const Proxy<T>* proxy)
 {
     // Before the first parallel region the per-rank lists do not exist (sized at region
-    // begin), yet ArrayChunk::resize() calls this from create(): do not index them.
+    // begin), yet zero::Array::resize() calls this from create(): do not index them.
     if (thr < 0 || static_cast<size_t>(thr) >= Manager::chunk_to_compress_potentially_thr.size())
     {
         return;

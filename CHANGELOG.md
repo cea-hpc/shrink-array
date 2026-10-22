@@ -89,6 +89,10 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The three array classes live in a namespace each, named after what they compress:
+  `zero::Array` (was `ArrayChunk`), `zero_one_value::Array` (was `ArrayChunk2`),
+  `zero_any::Array` (was `ArrayChunk2A`). The chunk and proxy classes, the headers' names, the
+  CMake targets and the package keep their names for now.
 - Types are PascalCase, with no `xxx_type` exception: the member aliases of the arrays
   (`chunk_type`, `manager_type`, `proxy_type`, `ind_type`, `chunk_list_type`) and the
   internal ones (`index_type`, `cst_val1_type`) become `ChunkType`, `ManagerType`, `ProxyType`,
@@ -105,6 +109,11 @@ the tag's checksum to the recipe.
   build runs the same regions, with the same clauses.
 - Spack: the variant `openmp` is replaced by `threads` (`+openmp` is now
   `threads=openmp`, `~openmp` `threads=serial`).
+
+### Deprecated
+
+- `ArrayChunk`, `ArrayChunk2` and `ArrayChunk2A`: alias templates of the classes above, with a
+  `[[deprecated]]` attribute, until 1.0.
 
 ### Fixed
 

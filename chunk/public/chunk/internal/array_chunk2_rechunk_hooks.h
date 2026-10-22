@@ -18,14 +18,14 @@
 
 /**
  * @file array_chunk2_rechunk_hooks.h
- * @brief ArrayChunk2's re-chunk hooks — a CHUNK_DYNAMIC-only concern, isolated
+ * @brief zero_one_value::Array's re-chunk hooks — a CHUNK_DYNAMIC-only concern, isolated
  *        in its own mixin so they vanish from a static-geometry build.
  *
  * @details Like RechunkHooks for v1, but Chunk2 overrides all SIX hooks: it
  *          resolves num_tab from the registry, carries the array-level second
  *          value across the swap, and re-owns its map_inf_array entry. They run
  *          only under RechunkSupport<Derived, true>::rechunk_to(); the static
- *          specialisation keeps the signatures as no-ops so ArrayChunk2's
+ *          specialisation keeps the signatures as no-ops so zero_one_value::Array's
  *          using-declarations stay valid in both modes.
  *
  * @see array_chunk_rechunk.h for the algorithm that calls these
@@ -41,9 +41,9 @@ namespace shrink_array
 {
 
 /**
- * @brief ArrayChunk2's re-chunk hooks, present only when the geometry is a runtime value.
+ * @brief zero_one_value::Array's re-chunk hooks, present only when the geometry is a runtime value.
  *
- * @tparam Derived the concrete array type (only ArrayChunk2 today).
+ * @tparam Derived the concrete array type (only zero_one_value::Array today).
  * @tparam Dynamic defaulted to build_config::chunk_dynamic; never pass it
  *         explicitly outside of tests.
  */
@@ -97,7 +97,7 @@ class RechunkHooks2<Derived, true>
      * @param state value returned by rechunk_capture_state()
      * @details Re-points the shared entry at the SURVIVOR's inf_array member, so
      *          that tmp's destructor does not erase an entry the survivor still
-     *          needs -- see ArrayChunk2's destructor, second warning.
+     *          needs -- see zero_one_value::Array's destructor, second warning.
      */
     void rechunk_reown_after_swap(Derived& tmp, InT<value_type> state);
 
@@ -118,7 +118,7 @@ class RechunkHooks2<Derived, true>
 /**
  * @brief Static specialisation: the same six signatures, inert.
  *
- * @details Never called; kept for ArrayChunk2's using-declarations.
+ * @details Never called; kept for zero_one_value::Array's using-declarations.
  */
 template <typename Derived>
 class RechunkHooks2<Derived, false>

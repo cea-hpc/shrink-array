@@ -136,7 +136,7 @@ class PointerMapChunk2A
         }
         else
         {
-            // ankerl's erase throws on a key it finds changed; ~ArrayChunk2A
+            // ankerl's erase throws on a key it finds changed; ~zero_any::Array
             // calls this and is noexcept: fail with the key instead.
             try
             {

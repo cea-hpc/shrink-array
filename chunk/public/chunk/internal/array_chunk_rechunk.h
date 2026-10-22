@@ -48,7 +48,7 @@ namespace shrink_array
 /**
  * @brief Re-chunking support, present only when the geometry is a runtime value.
  *
- * @tparam Derived the concrete array type (ArrayChunk, ArrayChunk2, ArrayChunk2A).
+ * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array, zero_any::Array).
  * @tparam Dynamic defaulted to build_config::chunk_dynamic; never pass it
  *         explicitly outside of tests.
  */
@@ -74,7 +74,7 @@ class RechunkSupport<Derived, true>
     /**
      * @brief Re-chunk this array to a new geometry S' (sequential, quiescent point).
      *
-     * @details Shared by ArrayChunk / ArrayChunk2 / ArrayChunk2A via CRTP; the
+     * @details Shared by zero::Array / zero_one_value::Array / zero_any::Array via CRTP; the
      *          per-variant differences live in the rechunk_* hooks. The delicate
      *          invariants are documented once, in the body.
      *
@@ -85,7 +85,7 @@ class RechunkSupport<Derived, true>
      *          swap *this carries the S' storage under tmp's num_tab, and tmp
      *          destroys the old identity+geometry on scope exit.
      *
-     *          Hooks (see each ArrayChunk*):
+     *          Hooks (see each zero::Array*):
      *          - rechunk_drop_candidates() — remove this array's queued
      *            compression candidates by num_tab
      *          - rechunk_drain_reuse_list(new_size) — drain the S' reuse free-list
@@ -144,7 +144,7 @@ class RechunkSupport<Derived, true>
      * @name Re-chunk hooks (base defaults)
      *
      * Base defaults for the rechunk_* hooks: no-ops that suit a variant with no
-     * deferred candidates / no second_value / no registry. Each ArrayChunk*
+     * deferred candidates / no second_value / no registry. Each zero::Array*
      * overrides the ones it needs (they are hidden, not virtual — resolved via
      * CRTP self()/derived()). Kept here so a variant only defines what differs.
      * @{

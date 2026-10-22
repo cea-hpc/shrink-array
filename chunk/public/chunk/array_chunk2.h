@@ -44,10 +44,13 @@ namespace shrink_array
 template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
 
+namespace zero_one_value
+{
+
 /**
  * @brief Chunked array compressing on TWO constants: first_value and one second value.
  *
- * @details Unlike ArrayChunk2A, the second value is array-wide, not per chunk:
+ * @details Unlike zero_any::Array, the second value is array-wide, not per chunk:
  *          cheaper metadata, useful when one non-zero constant dominates.
  *
  *          The second value lives in the shared registry
@@ -59,27 +62,27 @@ class ManagerChunk;
  * @tparam IndT index type used for sizes and element positions
  */
 template <ArrayChunkElement T, typename IndT>
-class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
-                    public ParallelSupport2<ArrayChunk2<T, IndT>>,
-                    public FastBlockSupport2<ArrayChunk2<T, IndT>>,
-                    public RechunkHooks2<ArrayChunk2<T, IndT>>
+class Array : public ArrayChunk2Base<Array<T, IndT>>,
+              public ParallelSupport2<Array<T, IndT>>,
+              public FastBlockSupport2<Array<T, IndT>>,
+              public RechunkHooks2<Array<T, IndT>>
 {
   public:
-    using Base2      = ArrayChunk2Base<ArrayChunk2>;   ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
-    using Base       = ArrayChunkBase<ArrayChunk2>;    ///< Base shared by every variant.
-    using FastBlock2 = FastBlockSupport2<ArrayChunk2>; ///< Fast-block compression pass.
-    using Hooks2     = RechunkHooks2<ArrayChunk2>;     ///< Re-chunk hooks (dynamic geometry).
+    using Base2      = ArrayChunk2Base<Array>;   ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
+    using Base       = ArrayChunkBase<Array>;    ///< Base shared by every variant.
+    using FastBlock2 = FastBlockSupport2<Array>; ///< Fast-block compression pass.
+    using Hooks2     = RechunkHooks2<Array>;     ///< Re-chunk hooks (dynamic geometry).
 
     friend Base2;                       ///< The CRTP base reaches this class's private members.
-    friend ArrayChunkBase<ArrayChunk2>; ///< For swap_identity().
+    friend ArrayChunkBase<Array>;       ///< For swap_identity().
 
     // RechunkHooks2::rechunk_reown_after_swap copies the private ind_cst_val2.
     template <typename, bool>
-    friend class RechunkHooks2;
+    friend class shrink_array::RechunkHooks2;
 
     // Re-declared, not only inherited: the mixins declare them too, and an
     // outside `Arr::ChunkType` would be ambiguous between base subobjects.
-    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<ArrayChunk2>.
+    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<zero_one_value::Array>.
     using ChunkType   = Base2::ChunkType;   ///< Chunk2<T>, the chunk type held in chunk_list.
     using ManagerType = Base2::ManagerType; ///< ManagerChunk<Chunk2, T>, the per-type manager.
     using ProxyType   = Base2::ProxyType;   ///< Proxy2<T>, the write proxy of the non-const accessors.
@@ -124,7 +127,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit ArrayChunk2(IndT sz = 0)
+    explicit Array(IndT sz = 0)
     {
         if constexpr (build_config::threaded)
         {
@@ -141,7 +144,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
     // Sequential, like resize().
     /// @brief Deep copy: @p from's second value, then from.size() elements read from @p from. Sequential context.
     /// @param from Source array.
-    ArrayChunk2(const ArrayChunk2& from) : ArrayChunk2(from.size())
+    Array(const Array& from) : Array(from.size())
     {
         copy_second_value_from(from);
         this->copy_from(from);
@@ -157,7 +160,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
      * @note noexcept, so std::vector moves arrays on reallocation. Only memory
      *       exhaustion or a corrupt registry can fail here: std::terminate.
      */
-    ArrayChunk2(ArrayChunk2&& other) noexcept : ArrayChunk2(0)
+    Array(Array&& other) noexcept : Array(0)
     {
         this->swap_storage_and_identity(other);
     }
@@ -166,14 +169,14 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    ArrayChunk2(It first, It last) : ArrayChunk2(static_cast<IndT>(std::distance(first, last)))
+    Array(It first, It last) : Array(static_cast<IndT>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
 
     /// @brief Build an array holding the elements of @p il.
     /// @param il Source values.
-    ArrayChunk2(std::initializer_list<T> il) : ArrayChunk2(il.begin(), il.end()) {}
+    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /**
      * @brief Release the array's storage, then drop both registry entries.
@@ -192,7 +195,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
      *            non-bool only; rechunk_to() re-points its value onto the
      *            survivor first, so only entries we still own go.
      */
-    ~ArrayChunk2()
+    ~Array()
     {
         clear();
         Proxy2<T>::share_info_array->erase(this->registry_key());
@@ -211,7 +214,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
      *          chunks keep their metadata rows (num_tab). Sequential context.
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    ArrayChunk2& operator=(ArrayChunk2&& other) noexcept
+    Array& operator=(Array&& other) noexcept
     {
         if (this != &other)
         {
@@ -223,7 +226,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op.
-    ArrayChunk2& operator=(const ArrayChunk2& from)
+    Array& operator=(const Array& from)
     {
         if (this != &from)
         {
@@ -278,7 +281,8 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
         }
         else
         {
-            CHUNK_INVARIANT_FAILED("ArrayChunk2<bool>::get_ind_second_value(): bool registers no second value");
+            CHUNK_INVARIANT_FAILED(
+                "zero_one_value::Array<bool>::get_ind_second_value(): bool registers no second value");
         }
     }
 
@@ -397,7 +401,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
 
     /// @brief CRTP hook: the metadata the base needs for any element.
     /// @return this array's shared second-value tuple (element index unused,
-    ///         since the value is array-wide -- unlike ArrayChunk2A)
+    ///         since the value is array-wide -- unlike zero_any::Array)
     auto get_metadata(IndT /*ind*/) const noexcept
     {
         return this->get_info_second_value();
@@ -425,7 +429,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
     /// @brief Declare @p from's second value on this array, when it has one
     ///        (T{} means none: rechunk_seed_fresh's rule) and this array has
     ///        not declared it yet.
-    void copy_second_value_from(const ArrayChunk2& from)
+    void copy_second_value_from(const Array& from)
     {
         if constexpr (!is_bool_like_v<T>)
         {
@@ -490,7 +494,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
      *          points each second value at an array's inf_array MEMBER, which
      *          now holds the other tuple: both values are re-pointed.
      */
-    void swap_identity(ArrayChunk2& other)
+    void swap_identity(Array& other)
     {
         auto& sh_inf = *Proxy2<T>::share_info_array;
         sh_inf.swap_entries(this->registry_key(), other.registry_key());
@@ -499,7 +503,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
         other.sync_registry_mirror();
         if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
         {
-            for (ArrayChunk2* arr : {this, &other})
+            for (Array* arr : {this, &other})
             {
                 const T value = arr->inf_array_.second_value;
                 if (value != T{})
@@ -535,11 +539,13 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, IndT>>,
     int ind_cst_val2_ = chunk_config::no_second_value_index;
 };
 
+} // namespace zero_one_value
+
 } // namespace shrink_array
 
 // Template bodies, after the class, so every TU instantiates the T it needs.
 #include "chunk/internal/array_chunk2_inline.h" // the template bodies
 
-// The mixins' bodies, after array_chunk2_inline.h: self() needs a complete ArrayChunk2.
+// The mixins' bodies, after array_chunk2_inline.h: self() needs a complete zero_one_value::Array.
 #include "chunk/internal/array_chunk2_parallel_inline.h"      // ParallelSupport2's bodies
 #include "chunk/internal/array_chunk2_rechunk_hooks_inline.h" // RechunkHooks2's bodies

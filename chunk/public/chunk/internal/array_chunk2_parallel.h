@@ -18,12 +18,12 @@
 
 /**
  * @file array_chunk2_parallel.h
- * @brief ArrayChunk2's two mode-gated surfaces -- the OpenMP-only one (the
+ * @brief zero_one_value::Array's two mode-gated surfaces -- the OpenMP-only one (the
  *        deferred-op flush) and the fast-block-only one
  *        (make_block_compression) -- isolated in their own mixins so they
  *        disappear entirely from a build that has neither.
  *
- * @details Same split as ParallelSupport does for ArrayChunk (v1):
+ * @details Same split as ParallelSupport does for zero::Array (v1):
  *          ParallelSupport2<Derived, threaded> carries
  *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
  *          three variants), a no-op in the serial specialisation.
@@ -45,9 +45,9 @@ namespace shrink_array
 {
 
 /**
- * @brief The OpenMP-only members of ArrayChunk2, present only when the build has OpenMP.
+ * @brief The OpenMP-only members of zero_one_value::Array, present only when the build has OpenMP.
  *
- * @tparam Derived the concrete array type (only ArrayChunk2 today).
+ * @tparam Derived the concrete array type (only zero_one_value::Array today).
  * @tparam Enabled defaulted to build_config::threaded; never pass it
  *         explicitly outside of tests.
  */
@@ -75,9 +75,9 @@ struct ParallelSupport2<Derived, false> : public ParallelSupportCommonSerial<Der
 };
 
 /**
- * @brief ArrayChunk2's fast-block compression pass, present only in that mode.
+ * @brief zero_one_value::Array's fast-block compression pass, present only in that mode.
  *
- * @tparam Derived the concrete array type (only ArrayChunk2 today).
+ * @tparam Derived the concrete array type (only zero_one_value::Array today).
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *

@@ -16,7 +16,7 @@
 
 #pragma once
 
-// Out-of-line bodies of ArrayChunk's mode-gated surfaces (ParallelSupport,
+// Out-of-line bodies of zero::Array's mode-gated surfaces (ParallelSupport,
 // FastBlockSupport). Included at the end of array_chunk.h, after the class and
 // its own inline file, so the CRTP self() down-cast sees a complete Derived and
 // so the compression manager stays out of the container declaration itself.

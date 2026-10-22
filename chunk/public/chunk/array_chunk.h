@@ -41,6 +41,9 @@ namespace shrink_array
 template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
 
+namespace zero
+{
+
 /**
  * @brief Compressed array: chunks of @p T that each compress to the first
  *        value (Chunk, variant v1).
@@ -49,17 +52,17 @@ class ManagerChunk;
  * @tparam IndT index type used for sizes and element positions
  */
 template <ArrayChunkElement T, typename IndT>
-class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
-                   public ParallelSupport<ArrayChunk<T, IndT>>,
-                   public FastBlockSupport<ArrayChunk<T, IndT>>,
-                   public RechunkHooks<ArrayChunk<T, IndT>>
+class Array : public ArrayChunkBase<Array<T, IndT>>,
+              public ParallelSupport<Array<T, IndT>>,
+              public FastBlockSupport<Array<T, IndT>>,
+              public RechunkHooks<Array<T, IndT>>
 {
   private:
-    friend ArrayChunkBase<ArrayChunk>; // swap_identity()
+    friend ArrayChunkBase<Array>; // swap_identity()
 
-    using Base     = ArrayChunkBase<ArrayChunk>;
-    using Parallel = ParallelSupport<ArrayChunk>;
-    using Hooks    = RechunkHooks<ArrayChunk>;
+    using Base     = ArrayChunkBase<Array>;
+    using Parallel = ParallelSupport<Array>;
+    using Hooks    = RechunkHooks<Array>;
 
     /// @brief Claim this array's identity before its storage is built:
     ///        register its address and take the next free num_tab, which
@@ -98,7 +101,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
 
     /// @brief The identity step of swap(): num_tab and the registry entry, so
     ///        the per-num_tab tables follow the chunks.
-    void swap_identity(ArrayChunk& other)
+    void swap_identity(Array& other)
     {
         using std::swap;
         swap(this->num_tab_, other.num_tab_);
@@ -106,7 +109,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
     }
 
   public:
-    using Traits      = Base::Traits;      ///< ArrayChunkTraits<ArrayChunk>.
+    using Traits      = Base::Traits;      ///< ArrayChunkTraits<zero::Array>.
     using ChunkType   = Base::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list.
     using ManagerType = Base::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
     using ProxyType   = Base::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
@@ -138,14 +141,14 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
 
     // make_block_compression() comes from FastBlockSupport (a no-op outside
     // fast-block compression). Re-exported so resize() can call it unqualified.
-    using FastBlockSupport<ArrayChunk>::make_block_compression;
+    using FastBlockSupport<Array>::make_block_compression;
 
     /**
      * @brief Build an array of @p sz elements.
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit ArrayChunk(IndT sz = 0)
+    explicit Array(IndT sz = 0)
     {
         if constexpr (build_config::threaded)
         {
@@ -164,7 +167,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
     // over an iterator. All sequential, like resize().
     /// @brief Deep copy: an array of from.size() elements, each read from @p from. Sequential context.
     /// @param from Source array.
-    ArrayChunk(const ArrayChunk& from) : ArrayChunk(from.size())
+    Array(const Array& from) : Array(from.size())
     {
         this->copy_from(from);
     }
@@ -182,7 +185,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
      *       fails only on memory exhaustion or a corrupt registry, already
      *       fatal in the library: std::terminate.
      */
-    ArrayChunk(ArrayChunk&& other) noexcept : ArrayChunk(0)
+    Array(Array&& other) noexcept : Array(0)
     {
         this->swap_storage_and_identity(other);
     }
@@ -191,17 +194,17 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    ArrayChunk(It first, It last) : ArrayChunk(static_cast<IndT>(std::distance(first, last)))
+    Array(It first, It last) : Array(static_cast<IndT>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
 
     /// @brief Build an array holding the elements of @p il.
     /// @param il Source values.
-    ArrayChunk(std::initializer_list<T> il) : ArrayChunk(il.begin(), il.end()) {}
+    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /// @brief clear() the array, then erase its entry from Proxy<T>::share_info_array.
-    ~ArrayChunk()
+    ~Array()
     {
         clear();
         // Drop our (this -> num_tab) registry entry so a later array at this
@@ -221,7 +224,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
      *          @p other is left with nb_chunk 0. Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    ArrayChunk& operator=(ArrayChunk&& other) noexcept
+    Array& operator=(Array&& other) noexcept
     {
         if (this != &other)
         {
@@ -233,7 +236,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op.
-    ArrayChunk& operator=(const ArrayChunk<T, IndT>& from)
+    Array& operator=(const Array<T, IndT>& from)
     {
         if (this != &from)
         {
@@ -327,14 +330,16 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, IndT>>,
     }
 };
 
+} // namespace zero
+
 } // namespace shrink_array
 
 // Template method bodies. Included here (after the class definition) so that
-// every translation unit using ArrayChunk<T> sees the definitions and can
+// every translation unit using zero::Array<T> sees the definitions and can
 // auto-instantiate the exact T it needs.
 #include "chunk/internal/array_chunk_inline.h" // the template bodies
 
 // Bodies of the two mode-specific mixins. After array_chunk_inline.h, so their
-// CRTP self() sees a complete ArrayChunk.
+// CRTP self() sees a complete zero::Array.
 #include "chunk/internal/array_chunk_parallel_inline.h"      // ParallelSupport's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

@@ -16,7 +16,7 @@
 
 // Parallel multi-threaded writes to a compressed array, written as for a
 // std::vector: plain `#pragma omp parallel for` loops, no parallel_phase().
-// The same function fills a std::vector<double> and an ArrayChunk2A<double>
+// The same function fills a std::vector<double> and an zero_any::Array<double>
 // from many threads at once; exit status 0 when the two read back the same,
 // element by element.
 //
@@ -29,7 +29,7 @@
 #include <utility> // std::as_const
 #include <vector>  // std::vector, the reference
 
-#include "chunk/array_chunk2A.h"  // shrink_array::ArrayChunk2A
+#include "chunk/array_chunk2A.h" // shrink_array::zero_any::Array
 #include "chunk/config.h"         // build_config::has_ompt
 #include "chunk/internal/print.h" // shrink_array::println
 
@@ -58,7 +58,7 @@ int main()
 {
     const int                n = 1 << 24; // 16 M doubles: 128 MiB as a std::vector
     std::vector<double>      v(n);        // the reference: every element 0.0
-    sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer allocated yet
+    sa::zero_any::Array<double> a(n);        // every element 0.0, no buffer allocated yet
 
     fill(v, n);
     fill(a, n); // the same parallel loop: no parallel_phase(), no begin/finalize calls

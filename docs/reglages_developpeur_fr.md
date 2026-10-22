@@ -64,7 +64,7 @@ de dépréciation.
 | `CHUNK_ADVISOR_TABLE` | `1` ou `=nom` : la table complète de l'advisor à chaque passage (tous les tableaux ou un seul) |
 | `CHUNK_RECHUNK_CHURN` | `1` ou `=nom` : matérialisations par passage et estimation du coût passager qu'elles impliquent (niveau info du canal rechunk, qu'elle active) |
 | `CHUNK_LOG=affinity=debug` (autrefois `CHUNK_AFFINITY_TRACE`) | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
-| `CHUNK_LOG=compress=info` | builds de vérification : les blocs restant à compresser après le dernier vidage, et les blocs constants de Chunk2A jamais mis en file ; le résidu de compression d'un audit (`compress()` sur ArrayChunk2 / ArrayChunk2A) ; `compress=debug` ajoute le détail par chunk d'ArrayChunk2 |
+| `CHUNK_LOG=compress=info` | builds de vérification : les blocs restant à compresser après le dernier vidage, et les blocs constants de Chunk2A jamais mis en file ; le résidu de compression d'un audit (`compress()` sur zero_one_value::Array / zero_any::Array) ; `compress=debug` ajoute le détail par chunk d'zero_one_value::Array |
 | `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `arena`) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (autrefois `CHUNK_RECYCLE_TRACE`) | builds de vérification : les blocs étrangers que le pool des écritures différées abandonne, à intervalles doublants / une ligne par bloc |
 | `CHUNK_LEDGER_REPORT` (*définie*) | le rapport du registre des blocs (builds avec registre), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ledger`) |
