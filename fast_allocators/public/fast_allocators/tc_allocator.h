@@ -692,6 +692,14 @@ struct VTCTypeAllocator
      * @param alloc_sz Bytes held, summed over slabs.
      */
     virtual void add_allocated_size(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const = 0;
+
+    /// @brief Former name of add_allocated_size(), kept for the programs that call it (an
+    ///        override must use the new name).
+    [[deprecated("methods are snake_case: use add_allocated_size")]] void
+    addAllocatedSize(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const
+    {
+        add_allocated_size(sum_used_size, sum_nn_ref, alloc_sz);
+    }
 };
 
 /// @brief Enrol an allocator in the registry the memory report walks.
@@ -699,6 +707,20 @@ void add_tc_type_allocator_inst(VTCTypeAllocator* /*inst*/);
 
 /// @brief Withdraw it. Called from the destructor.
 void remove_tc_type_allocator_inst(VTCTypeAllocator* /*inst*/);
+
+/// @brief Former name of add_tc_type_allocator_inst(), kept for the programs that call it.
+[[deprecated("functions are snake_case: use add_tc_type_allocator_inst")]] inline void
+add_TCTypeAllocator_inst(VTCTypeAllocator* inst)
+{
+    add_tc_type_allocator_inst(inst);
+}
+
+/// @brief Former name of remove_tc_type_allocator_inst(), kept for the programs that call it.
+[[deprecated("functions are snake_case: use remove_tc_type_allocator_inst")]] inline void
+remove_TCTypeAllocator_inst(VTCTypeAllocator* inst)
+{
+    remove_tc_type_allocator_inst(inst);
+}
 
 /**
  * @brief Owns every slab serving one element size: the machinery common to
@@ -1799,6 +1821,13 @@ class TCTypeAllocatorEBC
         sum_used_size += s_used_size * size_t(ElementSize);
         sum_nn_ref += s_nn_ref * size_t(ElementSize);
         alloc_sz += nb_blocks * size_t(BlockSize);
+    }
+
+    /// @brief Former name of add_allocated_size(), kept for the programs that call it.
+    [[deprecated("methods are snake_case: use add_allocated_size")]] void
+    addAllocatedSize(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const noexcept
+    {
+        add_allocated_size(sum_used_size, sum_nn_ref, alloc_sz);
     }
 
   private:

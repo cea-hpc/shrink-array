@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 if(POLICY CMP0126)
     cmake_policy(SET CMP0126 NEW)
 endif()
-project(shrink_array VERSION 0.1.2 LANGUAGES CXX)
+project(shrink_array VERSION 0.1.3 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
 # FetchContent)? PROJECT_IS_TOP_LEVEL says it from CMake 3.21; this is the same

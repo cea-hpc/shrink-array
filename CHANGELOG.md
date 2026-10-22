@@ -50,6 +50,8 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.1.3 -- 2026-10-22
+
 ### Added
 
 - `examples/getting_started/getting_started_ompt.cpp`: the first program with
@@ -109,7 +111,7 @@ the tag's checksum to the recipe.
   section 3): snake_case functions, variables, constants and enumerators, a `_` at the end of
   private and protected data members, PascalCase types, aliases, concepts and template
   parameters, `chunk2a` inside a snake_case name, no reserved `__` name. About 400 names
-  change, all internal but the two listed under Deprecated. `check_naming` now checks the
+  change, all internal but those listed under Deprecated. `check_naming` now checks the
   enumerators, the camelCase names, the types and template parameters and the reserved names;
   `scripts/clang_tidy_naming.yaml` gives clang-tidy the rest.
 - An invariant failure is reported by one thread only (when a race is seen by
@@ -180,6 +182,8 @@ the tag's checksum to the recipe.
 - The warnings on an environment variable or an argument that is not a valid
   number go through the log: `[shrink_array][env][W][tid] NAME="value" is not a
   valid value: ...` instead of `[env] NAME=...`.
+- fast_allocators 2.2.0 (the log, the snake_case names with their deprecated aliases);
+  `CHUNK_FAST_ALLOCATORS_VERSION` follows.
 
 ### Deprecated
 
@@ -193,6 +197,11 @@ the tag's checksum to the recipe.
 - `getChunkList()` (ArrayChunk, ArrayChunk2, ArrayChunk2A) and `ParamChunk::ChunkStats()`,
   renamed `get_chunk_list()` and `ParamChunk::chunk_stats()`: functions and methods are
   snake_case. The former names stay, `[[deprecated]]`, until 1.0.
+- fast_allocators (`fast_allocators/tc_allocator.h`): `VTCTypeAllocator::addAllocatedSize()`,
+  `TCTypeAllocatorEBC::addAllocatedSize()`, `add_TCTypeAllocator_inst()` and
+  `remove_TCTypeAllocator_inst()`, renamed `add_allocated_size()`, `add_tc_type_allocator_inst()`
+  and `remove_tc_type_allocator_inst()`. The former names stay, `[[deprecated]]`, until
+  fast_allocators 3.0; a class derived from `VTCTypeAllocator` overrides the new name.
 
 ### Removed
 
@@ -253,6 +262,13 @@ the tag's checksum to the recipe.
   had no back-off.
 - An invariant failure inside a program's log sink, while the log was reading
   its configuration, blocked instead of stopping the program.
+- The Spack recipe pinned, for 0.1.0, 0.1.1 and 0.1.2, commits of before a history rewrite that
+  are not on GitHub: an install of one of those versions could not fetch. It now pins what each
+  tag points to.
+- A cache entry declared by a subdirectory no longer hides the list the top level resolved
+  (policy CMP0126 NEW, CMake 3.21+): an older `chunk/CMakeLists.txt`, which declared
+  `CHUNK_STATIC_SIZES` in the cache, configured over a cached `auto` saw `auto` and stopped on
+  `CHUNK_DEFAULT_SIZE=256 is not in CHUNK_STATIC_SIZES`.
 
 ## 0.1.2 -- 2026-10-16
 
