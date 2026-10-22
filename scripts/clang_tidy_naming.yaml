@@ -1,0 +1,40 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# The naming convention of docs/contributing.md section 3, for clang-tidy's
+# readability-identifier-naming: what scripts/check_naming.py cannot see from
+# a line (the `_` that ends a private or protected member, a parameter's case).
+#
+#   clang-tidy -p <build> --config-file=scripts/clang_tidy_naming.yaml \
+#              --header-filter='/(chunk|fast_allocators|examples)/' <file.cpp>
+#
+# The regular expressions are POSIX (llvm::Regex): no \w.
+Checks: '-*,readability-identifier-naming'
+CheckOptions:
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.ClassIgnoredRegexp: '^(const_iterator|iterator|reverse_iterator)$'
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.StructIgnoredRegexp: '^((is|has)_[a-z0-9_]+|[a-z0-9_]+_t|get_base|modulo|rebind|hash|formatter)$'
+  readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TypeAliasIgnoredRegexp: '^([a-z0-9_]+_type|[a-z0-9_]+_tag|value_type|reference|const_reference|pointer|const_pointer|iterator|const_iterator|reverse_iterator|const_reverse_iterator|iterator_category|iterator_concept|other|type|is_always_equal|is_transparent|propagate_on_[a-z_]+)$'
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: CamelCase
+  readability-identifier-naming.ValueTemplateParameterCase: CamelCase
+  readability-identifier-naming.ConceptCase: CamelCase
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.MethodCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.VariableIgnoredRegexp: '^[a-z][a-z0-9_]*_$'
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.MemberCase: lower_case
+  readability-identifier-naming.PrivateMemberCase: lower_case
+  readability-identifier-naming.PrivateMemberSuffix: '_'
+  readability-identifier-naming.ProtectedMemberCase: lower_case
+  readability-identifier-naming.ProtectedMemberSuffix: '_'
+  readability-identifier-naming.ConstexprVariableCase: lower_case
+  readability-identifier-naming.EnumConstantCase: lower_case
+  readability-identifier-naming.EnumConstantIgnoredRegexp: '^[a-z][a-z0-9_]*_$'
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE

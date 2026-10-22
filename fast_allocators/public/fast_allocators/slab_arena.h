@@ -267,7 +267,7 @@ std::size_t reclaimable_bytes(const Slab* slab) noexcept
         return 0;
     }
     const void* base = slab->data;
-    const auto  len  = static_cast<std::size_t>(slab->BlockAllocator);
+    const auto  len  = static_cast<std::size_t>(slab->block_allocator);
     if (base == nullptr || len == 0)
     {
         return 0;
@@ -322,7 +322,7 @@ bool advise_one_slab(Slab* slab) noexcept
  * @brief Give emptied slabs' resident pages back, the last page included, with
  *        ONE madvise() per run of adjacent slabs.
  *
- * @tparam Slab Duck-typed on `nn_ref`, `data`, `BlockAllocator` and
+ * @tparam Slab Duck-typed on `nn_ref`, `data`, `block_allocator` and
  *         `backptr_dropped`. A template so those members need only be complete
  *         at instantiation.
  *
@@ -1138,9 +1138,9 @@ inline SlabArena& value_arena()
  */
 enum class ArenaKind : std::uint8_t
 {
-    Op,   ///< Deferred operations.
-    Ctx,  ///< Their contexts.
-    Value ///< Chunk value buffers.
+    op,   ///< Deferred operations.
+    ctx,  ///< Their contexts.
+    value ///< Chunk value buffers.
 };
 
 /// @brief The arena for @p k.
@@ -1148,11 +1148,11 @@ inline SlabArena& arena_for(ArenaKind k)
 {
     switch (k)
     {
-        case ArenaKind::Ctx:
+        case ArenaKind::ctx:
             return ctx_arena();
-        case ArenaKind::Value:
+        case ArenaKind::value:
             return value_arena();
-        case ArenaKind::Op:
+        case ArenaKind::op:
         default:
             return op_arena();
     }

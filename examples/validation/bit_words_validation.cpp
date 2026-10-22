@@ -38,7 +38,7 @@
 #include <utility>   // std::pair
 #include <vector>    // std::vector
 
-#include "chunk/internal/bit_words.h" // bits::word_t, bits::fill_bits, bits::get_bit, bits::scan_words
+#include "chunk/internal/bit_words.h" // bits::WordT, bits::fill_bits, bits::get_bit, bits::scan_words
 #include "chunk/internal/print.h"     // shrink_array::println
 
 using shrink_array::println;
@@ -66,15 +66,15 @@ void geometry()
     {
         check(bits::words_for(n) == (n + 63) / 64, "words_for", n);
         check(bits::bytes_for(n) == bits::words_for(n) * 8, "bytes_for", n);
-        const bits::word_t tm = bits::tail_mask(n);
-        check(n % 64 == 0 ? tm == bits::word_ones : tm == (bits::word_t{1} << (n % 64)) - 1, "tail_mask", n);
+        const bits::WordT tm = bits::tail_mask(n);
+        check(n % 64 == 0 ? tm == bits::word_ones : tm == (bits::WordT{1} << (n % 64)) - 1, "tail_mask", n);
     }
 }
 
 void against_vector(std::size_t n, std::mt19937_64& rng)
 {
-    std::vector<bits::word_t> w(bits::words_for(n) + 1, 0xDEADBEEFDEADBEEFull); // +1: a guard word
-    const bits::word_t        guard = w.back();
+    std::vector<bits::WordT> w(bits::words_for(n) + 1, 0xDEADBEEFDEADBEEFull); // +1: a guard word
+    const bits::WordT        guard = w.back();
     bits::fill_bits(w.data(), n, false);
     std::vector<bool> ref(n, false);
 
@@ -110,7 +110,7 @@ void against_vector(std::size_t n, std::mt19937_64& rng)
 
 void scans(std::size_t n)
 {
-    std::vector<bits::word_t> w(bits::words_for(n));
+    std::vector<bits::WordT> w(bits::words_for(n));
 
     bits::fill_bits(w.data(), n, false);
     check(bits::scan_words(w.data(), n) == bits::Uniform::all_false, "scan all_false", n);
@@ -150,7 +150,7 @@ void scans(std::size_t n)
 void ranges(std::mt19937_64& rng)
 {
     // scan_range over every (first, n) of a 3-word buffer, against a bit loop.
-    std::vector<bits::word_t> w(3);
+    std::vector<bits::WordT> w(3);
     for (int trial = 0; trial < 40; ++trial)
     {
         for (auto& x : w)
@@ -197,7 +197,7 @@ void ranges(std::mt19937_64& rng)
 void concurrent(std::size_t n, int rounds)
 {
     constexpr int             n_thr = 8;
-    std::vector<bits::word_t> w(bits::words_for(n));
+    std::vector<bits::WordT>  w(bits::words_for(n));
     bits::fill_bits(w.data(), n, false);
 
     // Each round: every thread sets its bits, then clears the odd ones among
@@ -250,7 +250,7 @@ void concurrent_ranges(std::size_t n, int rounds)
     {
         spans.emplace_back(lo, std::min(n, lo + len));
     }
-    std::vector<bits::word_t> w(bits::words_for(n));
+    std::vector<bits::WordT> w(bits::words_for(n));
     bits::fill_bits(w.data(), n, false);
 
     std::vector<std::thread> pool;

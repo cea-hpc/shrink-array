@@ -45,15 +45,15 @@ class Bit
   public:
     constexpr Bit() noexcept = default;
     /// @brief Implicit conversion from bool.
-    constexpr Bit(bool b) noexcept : v(b) {} // NOLINT(google-explicit-constructor): a Bit IS a bool
+    constexpr Bit(bool b) noexcept : v_(b) {} // NOLINT(google-explicit-constructor): a Bit IS a bool
     /// @brief Implicit conversion to bool: the stored value.
     constexpr operator bool() const noexcept // NOLINT(google-explicit-constructor)
     {
-        return v;
+        return v_;
     }
 
   private:
-    bool v = false;
+    bool v_ = false;
 };
 
 static_assert(sizeof(Bit) == 1 && std::is_trivially_copyable_v<Bit>);

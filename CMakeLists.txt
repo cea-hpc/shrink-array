@@ -84,8 +84,8 @@ option(CHUNK_SECOND_VALUE_INDEXED "Chunk2A: store second values as 4-byte identi
 # builds it so they keep compiling.
 option(CHUNK_MM_PROTECT "Read-only (mprotect) constant buffers: a stray write to a compressed chunk faults" OFF)
 
-# CHUNK_STATS: compression statistics (chunk_stats.h), printed by ParamChunk::ChunkStats().
-option(CHUNK_STATS "Collect compression statistics (ParamChunk::ChunkStats())" OFF)
+# CHUNK_STATS: compression statistics (chunk_stats.h), printed by ParamChunk::chunk_stats().
+option(CHUNK_STATS "Collect compression statistics (ParamChunk::chunk_stats())" OFF)
 
 # ── Sanitizer option ──────────────────────────────────────────────────────────
 set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, token")

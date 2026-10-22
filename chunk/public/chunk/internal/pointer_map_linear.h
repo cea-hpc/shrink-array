@@ -62,11 +62,11 @@ class PointerMapLinear
      */
     void erase(const void* key)
     {
-        for (auto it = vec.begin(); it != vec.end(); ++it)
+        for (auto it = vec_.begin(); it != vec_.end(); ++it)
         {
             if (it->first == key)
             {
-                vec.erase(it);
+                vec_.erase(it);
                 return;
             }
         }
@@ -88,7 +88,7 @@ class PointerMapLinear
     {
         Payload* pa = nullptr;
         Payload* pb = nullptr;
-        for (auto& item : vec)
+        for (auto& item : vec_)
         {
             if (item.first == key_a)
             {
@@ -119,7 +119,7 @@ class PointerMapLinear
     /// @brief Number of registered keys.
     [[nodiscard]] int size() const noexcept
     {
-        return static_cast<int>(vec.size());
+        return static_cast<int>(vec_.size());
     }
 
     /**
@@ -129,7 +129,7 @@ class PointerMapLinear
     template <typename F>
     void for_each_key(F&& func) const
     {
-        for (const auto& item : vec)
+        for (const auto& item : vec_)
         {
             func(item.first);
         }
@@ -143,7 +143,7 @@ class PointerMapLinear
      */
     [[nodiscard]] const Payload* find_payload(const void* key) const noexcept
     {
-        for (const auto& item : vec)
+        for (const auto& item : vec_)
         {
             if (item.first == key)
             {
@@ -155,7 +155,7 @@ class PointerMapLinear
 
     /// The (key, payload) pairs, in insertion order. Derived registries read it
     /// directly for the lookups that are specific to them.
-    Storage vec;
+    Storage vec_;
 };
 
 } // namespace shrink_array

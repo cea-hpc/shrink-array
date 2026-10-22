@@ -25,13 +25,13 @@
  *          first from one repetition to the next, so both see the same
  *          machine state (performance_measurement.md: compare times within
  *          one binary and one time window, alternated). The cases, each its
- *          own parallel region with a static `omp for` over the N elements:
+ *          own parallel region with a static `omp for` over the n_elems elements:
  *
  *            read-varied     sum of every element, every chunk materialised
  *                            with varied values (nothing to compress)
  *            read-constant   sum of every element of an array all at 0 (every
  *                            chunk compressed; the vector: all zeros)
- *            read-random     sum of N elements at random indices (a fixed
+ *            read-random     sum of n_elems elements at random indices (a fixed
  *                            permutation-like sequence) of the varied array
  *            write-varied    every element overwritten with another varied
  *                            value (chunks stay materialised)
@@ -45,7 +45,7 @@
  *          writes flushed, the between-region compression pass): what a
  *          program pays for the region. The array's end-of-run statistics
  *          are not timed. Printed per case: the median and minimum time per
- *          element (wall clock / N, in ns) of the vector and of the array,
+ *          element (wall clock / n_elems, in ns) of the vector and of the array,
  *          and the ratio of the medians. --csv prints one line per case and
  *          repetition instead (python/access_cost.py aggregates them).
  *
@@ -55,11 +55,11 @@
  *          otherwise). The elements are checked against the vector after the
  *          writes when --verify is given.
  *
- *          Memory: the vector (8 N bytes), the array (about the same at its
- *          largest), the random indices (4 N bytes). The default N = 2^27
+ *          Memory: the vector (8 n_elems bytes), the array (about the same at its
+ *          largest), the random indices (4 n_elems bytes). The default n_elems = 2^27
  *          takes about 3 GB.
  *
- *          Usage: access_cost [--n N] [--reps R] [--csv] [--verify]
+ *          Usage: access_cost [--n n_elems] [--reps R] [--csv] [--verify]
  */
 
 #include <algorithm>   // std::sort, std::min_element
@@ -167,11 +167,11 @@ std::vector<int> random_indices(long n)
     return idx;
 }
 
-using clk = std::chrono::steady_clock;
+using Clk = std::chrono::steady_clock;
 
-double secs_since(clk::time_point t0)
+double secs_since(Clk::time_point t0)
 {
-    return std::chrono::duration<double>(clk::now() - t0).count();
+    return std::chrono::duration<double>(Clk::now() - t0).count();
 }
 
 struct Sample
@@ -192,7 +192,7 @@ struct SamplePair
 // ── The cases, on a std::vector ──────────────────────────────────────────────
 Sample vec_read(const std::vector<double>& v)
 {
-    const auto t0  = clk::now();
+    const auto t0  = Clk::now();
     const int  n   = static_cast<int>(v.size());
     double     sum = 0.;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
@@ -205,7 +205,7 @@ Sample vec_read(const std::vector<double>& v)
 
 Sample vec_read_random(const std::vector<double>& v, const std::vector<int>& idx)
 {
-    const auto t0  = clk::now();
+    const auto t0  = Clk::now();
     const int  n   = static_cast<int>(idx.size());
     double     sum = 0.;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
@@ -219,7 +219,7 @@ Sample vec_read_random(const std::vector<double>& v, const std::vector<int>& idx
 template <typename F>
 Sample vec_write(std::vector<double>& v, F value)
 {
-    const auto t0 = clk::now();
+    const auto t0 = Clk::now();
     const int  n  = static_cast<int>(v.size());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i)
@@ -231,7 +231,7 @@ Sample vec_write(std::vector<double>& v, F value)
 
 Sample vec_rmw(std::vector<double>& v)
 {
-    const auto t0 = clk::now();
+    const auto t0 = Clk::now();
     const int  n  = static_cast<int>(v.size());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i)
@@ -244,7 +244,7 @@ Sample vec_rmw(std::vector<double>& v)
 // ── The same cases, on the array ─────────────────────────────────────────────
 Sample arr_read(Array<double>& a, int n)
 {
-    const auto  t0  = clk::now();
+    const auto  t0  = Clk::now();
     double      sum = 0.;
     const auto& ca  = std::as_const(a);
 #pragma omp parallel
@@ -262,7 +262,7 @@ Sample arr_read(Array<double>& a, int n)
 
 Sample arr_read_random(Array<double>& a, const std::vector<int>& idx)
 {
-    const auto  t0  = clk::now();
+    const auto  t0  = Clk::now();
     const int   n   = static_cast<int>(idx.size());
     double      sum = 0.;
     const auto& ca  = std::as_const(a);
@@ -282,7 +282,7 @@ Sample arr_read_random(Array<double>& a, const std::vector<int>& idx)
 template <typename F>
 Sample arr_write(Array<double>& a, int n, F value)
 {
-    const auto t0 = clk::now();
+    const auto t0 = Clk::now();
 #pragma omp parallel
     {
         begin_phase();
@@ -298,7 +298,7 @@ Sample arr_write(Array<double>& a, int n, F value)
 
 Sample arr_rmw(Array<double>& a, int n)
 {
-    const auto t0 = clk::now();
+    const auto t0 = Clk::now();
 #pragma omp parallel
     {
         begin_phase();
@@ -371,7 +371,7 @@ int main(int argc, char** argv)
 {
     ParamChunk::init_indexes(true);
 
-    long N      = 1L << 27;
+    long n_elems = 1L << 27;
     int  reps   = 5;
     bool csv    = false;
     bool verify = false;
@@ -380,7 +380,7 @@ int main(int argc, char** argv)
         const std::string o = argv[a];
         if (o == "--n" && a + 1 < argc)
         {
-            N = shrink_array::arg_number<long>(argv[++a], N, "--n");
+            n_elems = shrink_array::arg_number<long>(argv[++a], n_elems, "--n");
         }
         else if (o == "--reps" && a + 1 < argc)
         {
@@ -400,12 +400,12 @@ int main(int argc, char** argv)
             return 2;
         }
     }
-    if (reps < 1 || N < 1 || N > 0x7fffffffL)
+    if (reps < 1 || n_elems < 1 || n_elems > 0x7fffffffL)
     {
         std::fprintf(stderr, "access_cost: need reps >= 1, 1 <= n < 2^31\n");
         return 2;
     }
-    const int n = static_cast<int>(N);
+    const int n = static_cast<int>(n_elems);
 
     // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
     const long S = static_cast<long>(Array<double>(0).chunk_size());
@@ -415,13 +415,13 @@ int main(int argc, char** argv)
     }
     else
     {
-        println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={} ===", variant_name(), N, S,
+        println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={} ===", variant_name(), n_elems, S,
                 CHUNK_PMP_MAX_THREADS, reps);
     }
 
-    const std::vector<int> idx = random_indices(N);
-    std::vector<double>    v(static_cast<std::size_t>(N));
-    std::vector<double>    zeros(static_cast<std::size_t>(N), 0.);
+    const std::vector<int> idx = random_indices(n_elems);
+    std::vector<double>    v(static_cast<std::size_t>(n_elems));
+    std::vector<double>    zeros(static_cast<std::size_t>(n_elems), 0.);
 
     // [case][container 0 = vector, 1 = array] -> seconds per repetition
     std::vector<double> t[n_cases][2];
@@ -441,8 +441,8 @@ int main(int argc, char** argv)
         t[c][container].push_back(s);
         if (csv)
         {
-            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), S, CHUNK_PMP_MAX_THREADS, N, rep, case_names[c],
-                    container ? "array" : "vector", s, s * 1e9 / static_cast<double>(N));
+            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), S, CHUNK_PMP_MAX_THREADS, n_elems, rep,
+                    case_names[c], container ? "array" : "vector", s, s * 1e9 / static_cast<double>(n_elems));
         }
     };
 
@@ -505,7 +505,7 @@ int main(int argc, char** argv)
         // materialised by its first write) and into a zeroed vector.
         {
             Array<double>       f(n);
-            std::vector<double> fv(static_cast<std::size_t>(N), 0.);
+            std::vector<double> fv(static_cast<std::size_t>(n_elems), 0.);
             pair(4, [&] { return vec_write(fv, varied); }, [&] { return arr_write(f, n, varied); });
             check_sum(4, vec_sum(fv), arr_sum(f, n));
             if (verify)
@@ -530,7 +530,7 @@ int main(int argc, char** argv)
                 "array min ns", "ratio");
         for (int c = 0; c < n_cases; ++c)
         {
-            const double per = 1e9 / static_cast<double>(N);
+            const double per = 1e9 / static_cast<double>(n_elems);
             const double vm  = median(t[c][0]) * per;
             const double am  = median(t[c][1]) * per;
             println("{:<14} {:>14.3f} {:>14.3f} {:>14.3f} {:>14.3f} {:>8.2f}", case_names[c], vm, minimum(t[c][0]) * per,

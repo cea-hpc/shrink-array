@@ -20,7 +20,7 @@
 // Re-chunk cost model (adaptive chunk sizing)
 // ============================================================================
 //
-// Estimates the time cost of re-chunking one array from geometry S_old to a
+// Estimates the time cost of re-chunking one array from geometry s_old to a
 // coarser or finer one, so the re-chunk decision can weigh it against the
 // memory gain the ChunkSizeAdvisor predicts.
 //
@@ -30,8 +30,8 @@
 //                                          temporary, teardown, pool drain]
 //        + data_bytes   * cost_byte_ns    [materialised data re-written]
 //
-//   n_chunks_old : chunks at the current size; n_elems = n_chunks_old * S_old.
-//   data_bytes   : mat_old * S_old * elem_bytes, the materialised chunks'
+//   n_chunks_old : chunks at the current size; n_elems = n_chunks_old * s_old.
+//   data_bytes   : mat_old * s_old * elem_bytes, the materialised chunks'
 //                  bytes (elem_bytes is 1/8 for packed bits).
 //
 // Compressed chunks carry no buffer, but they are not free: counting the
@@ -82,19 +82,19 @@ inline double g_rechunk_cost_min_threads  = 8.;   // below the measured range: t
            ((1. - g_rechunk_cost_serial_share) * std::pow(g_rechunk_cost_fit_threads / t, g_rechunk_cost_thread_exp));
 }
 
-// Estimated re-chunk time in milliseconds for one array leaving S_old, given
+// Estimated re-chunk time in milliseconds for one array leaving s_old, given
 // its chunk count and materialised-chunk count there, the bytes one element
 // takes in a materialised chunk, and the threads the rebuild will run on
 // (CHUNK_PMP_MAX_THREADS at the decision: the refill's region takes the
 // default team).
 [[nodiscard]] inline double rechunk_cost_ms(std::int64_t n_chunks_old,
-                                            unsigned     S_old,
+                                            unsigned     s_old,
                                             std::int64_t mat_old,
                                             double       elem_bytes,
                                             int          threads) noexcept
 {
-    const double n_elems    = static_cast<double>(n_chunks_old) * static_cast<double>(S_old);
-    const double data_bytes = static_cast<double>(mat_old) * static_cast<double>(S_old) * elem_bytes;
+    const double n_elems    = static_cast<double>(n_chunks_old) * static_cast<double>(s_old);
+    const double data_bytes = static_cast<double>(mat_old) * static_cast<double>(s_old) * elem_bytes;
     const double ns         = (n_elems * g_rechunk_cost_elem_ns) +
                               (static_cast<double>(n_chunks_old) * g_rechunk_cost_chunk_ns) +
                               (data_bytes * g_rechunk_cost_byte_ns);

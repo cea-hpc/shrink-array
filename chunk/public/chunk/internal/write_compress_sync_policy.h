@@ -183,11 +183,11 @@ inline void heavy_barrier() noexcept
  *          The whole policy is OpenMP-only; the serial build gets the empty
  *          specialisation below, since a single thread cannot race with itself.
  *
- * @tparam PROX    proxy type the policy is instantiated for -- it keys the static
+ * @tparam ProxyT    proxy type the policy is instantiated for -- it keys the static
  *                 state, giving one independent handshake per (variant, T)
  * @tparam Enabled build_config::use_openmp; never pass it explicitly
  */
-template <typename PROX, bool Enabled = build_config::use_openmp>
+template <typename ProxyT, bool Enabled = build_config::use_openmp>
 class WriteCompressSyncPolicy
 {
   public:
@@ -295,7 +295,7 @@ class WriteCompressSyncPolicy
         {
             if constexpr (chunk_config::ring_log_debug)
             {
-                ring_log(get_tid(), EV_POLICY_BEGIN_WRITE, static_cast<uint32_t>(thr));
+                ring_log(get_tid(), ev_policy_begin_write, static_cast<uint32_t>(thr));
             }
             per_thread_writing[thr].v.store(chunk, std::memory_order_relaxed);
             std::atomic_signal_fence(std::memory_order_seq_cst); // compiler: keep the store before the loads
@@ -313,7 +313,7 @@ class WriteCompressSyncPolicy
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), EV_POLICY_END_WRITE, static_cast<uint32_t>(thr));
+            ring_log(get_tid(), ev_policy_end_write, static_cast<uint32_t>(thr));
         }
 
         per_thread_writing[thr].v.store(nullptr, std::memory_order_release);
@@ -456,7 +456,7 @@ class WriteCompressSyncPolicy
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), EV_POLICY_BEGIN_WRITE, static_cast<uint32_t>(thr));
+            ring_log(get_tid(), ev_policy_begin_write, static_cast<uint32_t>(thr));
         }
 
         per_thread_writing[thr].v.store(chunk, std::memory_order_seq_cst);
@@ -497,10 +497,10 @@ class WriteCompressSyncPolicy
 
 /**
  * @brief Serial specialisation: empty, since a single thread cannot race itself.
- * @tparam PROX proxy type the policy would be instantiated for
+ * @tparam ProxyT proxy type the policy would be instantiated for
  */
-template <typename PROX>
-class WriteCompressSyncPolicy<PROX, false>
+template <typename ProxyT>
+class WriteCompressSyncPolicy<ProxyT, false>
 {
 };
 

@@ -30,11 +30,11 @@ namespace fast_alloc
 
 /// @copydoc InfoFreeElt::InfoFreeElt
 /// @note Sized by FAST_ALLOC_PMP_MAX_THREADS at construction (before main). A rank past
-///       it -- a team raised later -- is not batched: freeBlock() frees its
+///       it -- a team raised later -- is not batched: try_free_block() frees its
 ///       blocks at once rather than index past these arrays.
 InfoFreeElt::InfoFreeElt()
 {
-    // Serially there is no batching (freeBlock never enters the batching
+    // Serially there is no batching (try_free_block never enters the batching
     // branch), so the 2 x 10000-entry arrays are not worth allocating.
     if constexpr (alloc_config::use_openmp)
     {
@@ -44,7 +44,7 @@ InfoFreeElt::InfoFreeElt()
         tab_ptr = svalloc<VoidMaxFreeElt>(max_thr);
 
         compt    = svcalloc<int>(max_thr);
-        somme_sz = svcalloc<int>(max_thr);
+        somme_sz_ = svcalloc<int>(max_thr);
 
         nb_thr = max_thr;
     }
@@ -61,34 +61,34 @@ InfoFreeElt::~InfoFreeElt()
     svfree(tab_sz);
 
     svfree(compt);
-    svfree(somme_sz);
+    svfree(somme_sz_);
 
     // An ordinary global, unlike the ladder and the arenas, which are never
     // destroyed: a ladder free in a region, or a parallel_end flush, may still
     // come after this destructor (another library's static or TLS destructor,
     // the OpenMP runtime's shutdown). Leave an empty batch set behind, not
-    // dangling pointers: with nb_thr 0, freeBlock() frees at once and
-    // clearInfoFreeElt() has nothing to walk.
+    // dangling pointers: with nb_thr 0, try_free_block() frees at once and
+    // clear_info_free_elt() has nothing to walk.
     tab_ptr  = nullptr;
     tab_sz   = nullptr;
     compt    = nullptr;
-    somme_sz = nullptr;
+    somme_sz_ = nullptr;
     nb_thr   = 0;
 }
 
-/// @copydoc StaticConstArray::clearInfoFreeElt(int)
-void StaticConstArray::clearInfoFreeElt(int thr_rank)
+/// @copydoc StaticConstArray::clear_info_free_elt(int)
+void StaticConstArray::clear_info_free_elt(int thr_rank)
 {
     for (int k = 0; k < tab_info_free_elt().compt[thr_rank]; ++k)
     {
         const int szl  = tab_info_free_elt().tab_sz[thr_rank][k];
         void*     ptrl = tab_info_free_elt().tab_ptr[thr_rank][k];
-        freeBlockWithInt(szl, ptrl);
+        free_block_with_int(szl, ptrl);
     }
 }
 
-/// @copydoc StaticConstArray::clearInfoFreeElt()
-void StaticConstArray::clearInfoFreeElt()
+/// @copydoc StaticConstArray::clear_info_free_elt()
+void StaticConstArray::clear_info_free_elt()
 {
     // Over the ranks the batches were SIZED for, not FAST_ALLOC_PMP_MAX_THREADS: that may
     // have grown since (omp_set_num_threads) and would index past the arrays;
@@ -96,7 +96,7 @@ void StaticConstArray::clearInfoFreeElt()
     // somme_sz must come down too, or the emptied batch still counts as full.
     for (int thr_rank = 0; thr_rank < tab_info_free_elt().nb_thr; ++thr_rank)
     {
-        clearInfoFreeElt(thr_rank);
+        clear_info_free_elt(thr_rank);
         tab_info_free_elt().reset(thr_rank);
     }
 }
@@ -111,7 +111,7 @@ void StaticConstArray::clearInfoFreeElt()
  * @warning Serial builds only. An OpenMP build declares no set and every
  *          method below is a no-op, because a std::set with no lock would be
  *          written concurrently by every rank that creates an allocator -- so
- *          compute_sum_allocated_size_TCAlloc() reports the ladder alone there.
+ *          compute_sum_allocated_size_tc_alloc() reports the ladder alone there.
  */
 class ManageTCTypeAllocator
 {
@@ -128,56 +128,56 @@ class ManageTCTypeAllocator
     ManageTCTypeAllocator& operator=(ManageTCTypeAllocator&&)      = delete;
 
     /// @brief Enrol an allocator. No-op in an OpenMP build.
-    void addTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
+    void add_tc_type_allocator_inst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
         if constexpr (!alloc_config::use_openmp)
         {
-            set_allocator.insert(ptr_tcallocator); // serial builds only: no concurrent insert
+            set_allocator_.insert(ptr_tcallocator); // serial builds only: no concurrent insert
         }
     }
 
     /// @brief Withdraw one. No-op in an OpenMP build.
-    void removeTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
+    void remove_tc_type_allocator_inst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
         if constexpr (!alloc_config::use_openmp)
         {
-            set_allocator.erase(ptr_tcallocator); // serial builds only: no concurrent erase
+            set_allocator_.erase(ptr_tcallocator); // serial builds only: no concurrent erase
         }
     }
 
     /// @brief Add every enrolled allocator's footprint to the totals.
     /// @details Adds nothing in an OpenMP build; the set is empty by design.
-    void addAllocatedSize(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz) const
+    void add_allocated_size(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const
     {
-        for (const VTCTypeAllocator* inst : set_allocator)
+        for (const VTCTypeAllocator* inst : set_allocator_)
         {
-            inst->addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+            inst->add_allocated_size(sum_used_size, sum_nn_ref, alloc_sz);
         }
     }
 
   protected:
     // Filled in a serial build only (no concurrent insert); left empty under
     // OpenMP, where the allocators are not enrolled.
-    using set_allocator_t = std::set<VTCTypeAllocator*>;
+    using SetAllocatorT = std::set<VTCTypeAllocator*>;
 
-    set_allocator_t set_allocator;
+    SetAllocatorT set_allocator_;
 };
 
 
-void add_TCTypeAllocator_inst(VTCTypeAllocator* inst)
+void add_tc_type_allocator_inst(VTCTypeAllocator* inst)
 {
-    Singleton<ManageTCTypeAllocator>::getRef().addTCTypeAllocatorInst(inst);
+    Singleton<ManageTCTypeAllocator>::get_ref().add_tc_type_allocator_inst(inst);
 }
 
-void remove_TCTypeAllocator_inst(VTCTypeAllocator* inst)
+void remove_tc_type_allocator_inst(VTCTypeAllocator* inst)
 {
-    Singleton<ManageTCTypeAllocator>::getRef().removeTCTypeAllocatorInst(inst);
+    Singleton<ManageTCTypeAllocator>::get_ref().remove_tc_type_allocator_inst(inst);
 }
 
-/// @copydoc ::compute_sum_allocated_size_TCAlloc
-void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz)
+/// @copydoc ::compute_sum_allocated_size_tc_alloc
+void compute_sum_allocated_size_tc_alloc(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz)
 {
-    sum_UsedSize = 0;
+    sum_used_size = 0;
     sum_nn_ref   = 0;
     alloc_sz     = 0;
 
@@ -185,12 +185,13 @@ void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref
     // FAST_ALLOC_STD_ALLOC nothing was ever allocated from it, so there is nothing to add.
     if constexpr (alloc_config::use_slabs)
     {
-        std::apply([&](const auto&... bucket) { (bucket.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz), ...); },
+        std::apply([&](const auto&... bucket)
+                   { (bucket.add_allocated_size(sum_used_size, sum_nn_ref, alloc_sz), ...); },
                    StaticConstArray::buckets());
     }
 
     // Not part of StaticConstArray, but counted in the same total.
-    Singleton<ManageTCTypeAllocator>::getRef().addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+    Singleton<ManageTCTypeAllocator>::get_ref().add_allocated_size(sum_used_size, sum_nn_ref, alloc_sz);
 }
 
 } // namespace fast_alloc

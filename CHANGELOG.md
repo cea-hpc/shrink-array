@@ -105,6 +105,13 @@ the tag's checksum to the recipe.
   macros. 84 names change, all internal but one: `fast_alloc::SIZE_BLOCK` is now
   `fast_alloc::size_block`, the former name kept as a deprecated alias. `check_naming` (a
   source check, in ctest and the CI) keeps it so.
+- One naming convention over the whole tree ([docs/contributing.md](docs/contributing.md)
+  section 3): snake_case functions, variables, constants and enumerators, a `_` at the end of
+  private and protected data members, PascalCase types, aliases, concepts and template
+  parameters, `chunk2a` inside a snake_case name, no reserved `__` name. About 400 names
+  change, all internal but the two listed under Deprecated. `check_naming` now checks the
+  enumerators, the camelCase names, the types and template parameters and the reserved names;
+  `scripts/clang_tidy_naming.yaml` gives clang-tidy the rest.
 - An invariant failure is reported by one thread only (when a race is seen by
   several threads at once, their reports no longer interleave), as one block
   on stderr followed by the backtrace, and its message is formatted without
@@ -183,6 +190,9 @@ the tag's checksum to the recipe.
   (`alloc=trace`). Still accepted -- each sets its level, with a warning -- and to be removed in
   0.3.0. They are developer settings ([docs/developer_settings.md](docs/developer_settings.md)),
   outside the versioning policy; the deprecation period is a courtesy to the scripts that set them.
+- `getChunkList()` (ArrayChunk, ArrayChunk2, ArrayChunk2A) and `ParamChunk::ChunkStats()`,
+  renamed `get_chunk_list()` and `ParamChunk::chunk_stats()`: functions and methods are
+  snake_case. The former names stay, `[[deprecated]]`, until 1.0.
 
 ### Removed
 

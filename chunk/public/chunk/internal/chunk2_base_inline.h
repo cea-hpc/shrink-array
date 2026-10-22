@@ -123,7 +123,7 @@ void Chunk2Base<T, Derived>::clear_impl(IndexType         index_opt,
     }
 
     auto& ll_block_free_thr = derived().get_manager().get_list_block_free_thr(thr_rank);
-    ll_block_free_thr.push_back(values.load());
+    ll_block_free_thr.push_back(values_.load());
 
     // Chunk2A specific cleanup
     if constexpr (std::is_same_v<IndexType, std::nullopt_t>)

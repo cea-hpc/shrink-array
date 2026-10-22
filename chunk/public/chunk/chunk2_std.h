@@ -29,9 +29,9 @@
 #include "chunk/internal/chunk_size_config.h"           // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"           // ChunkElems, DynamicChunkSize
 #include "chunk/internal/dependent_false.h"             // dependent_false_v (wrong-type branches)
-#include "chunk/internal/in_t.h"                        // in_t
+#include "chunk/internal/in_t.h"                        // InT
 #include "chunk/internal/element_access.h"              // Bit buffers: words of bits
-#include "chunk/internal/bit_words.h"                   // bits::fill_bits, bits::word_t
+#include "chunk/internal/bit_words.h"                   // bits::fill_bits, bits::WordT
 #include "chunk/config.h"                               // build_config::use_openmp, chunk_config
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
@@ -39,10 +39,10 @@
 #include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
 #include "chunk/internal/proxy2.h"                      // Proxy2
 #include "chunk/internal/chunk2_base.h"                 // Chunk2Base
-#include "chunk/internal/conditional_counter.h"         // ConditionalCounter, counter_value_t
+#include "chunk/internal/conditional_counter.h"         // ConditionalCounter, CounterValueT
 #include "chunk/internal/TChunk.h"                      // VectorTuple4ChunkInt2 (the candidate lists)
 #include "chunk/internal/immortal.h"                    // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/second_value_info.h"           // SecondValueInfo (inf_array_t)
+#include "chunk/internal/second_value_info.h"           // SecondValueInfo (InfArrayT)
 
 namespace shrink_array
 {
@@ -51,7 +51,7 @@ namespace shrink_array
 template <typename T, typename ChunkType>
 struct CompressionManager;
 
-template <template <typename> class CHUNK_T, typename T>
+template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
 template <typename T>
@@ -68,7 +68,7 @@ class ChunkSpec2
     // std::vector (a reallocation would leave every such chunk pointing at freed memory).
     // chunk2_registry_growth_validation guards it. MM_PROTECT holds pointers to its own
     // mappings, which never move.
-    using vec_array_chunk_size_max =
+    using VecArrayChunkSizeMax =
         std::conditional_t<build_config::use_mm_protect, std::vector<T*>, std::deque<std::array<T, cst_buffer_size>>>;
 
     /*!
@@ -127,12 +127,12 @@ class ChunkSpec2
      */
     static void init_block_2nd_value(T* values_loc, const SecondValueInfo<T>& inf_array)
     {
-        // in_t: fill_n takes a const T& anyway; no copy of a struct on the way.
-        const in_t<T> value = inf_array.second_value;
+        // InT: fill_n takes a const T& anyway; no copy of a struct on the way.
+        const InT<T> value = inf_array.second_value;
         std::fill_n(values_loc, alloc_chunk_count(), value);
     }
 
-    static inline constinit internal::LazyImmortal<vec_array_chunk_size_max> tab_m_ptr_cst_val2;
+    static inline constinit internal::LazyImmortal<VecArrayChunkSizeMax> tab_m_ptr_cst_val2;
 
     // mm_protect mode only: element count allocated at (*tab_m_ptr_cst_val2)[ind] (a raw
     // mmap'd T*; the plain mode uses fixed cst_buffer_size arrays). Lets set_second_value's
@@ -225,7 +225,7 @@ class ChunkSpec2<T>
   protected:
     // Bit: every BIT set -- the buffer is read as 64-bit words, hence the
     // bytes 0xFF (a Bit{true} object is the byte 0x01) and the alignment.
-    alignas(bits::word_t) static inline std::array<T, cst_buffer_size> m_ptr_cst_val2 = []
+    alignas(bits::WordT) static inline std::array<T, cst_buffer_size> m_ptr_cst_val2 = []
     {
         std::array<T, cst_buffer_size> arr{};
         if constexpr (is_packed_bit_v<T>)
@@ -264,14 +264,14 @@ class Chunk2CounterPolicy
     /// @brief Reset the second-value counter to 0.
     void reset_nb_val_eq_second_value() noexcept
     {
-        nb_val_eq_second_value = 0;
+        nb_val_eq_second_value_ = 0;
     }
 
     /// @brief Set the second-value counter to an explicit value.
     /// @param v New counter value.
-    void set_nb_val_eq_second_value(counter_value_t v) noexcept
+    void set_nb_val_eq_second_value(CounterValueT v) noexcept
     {
-        nb_val_eq_second_value = v;
+        nb_val_eq_second_value_ = v;
     }
 
     /// @brief Whether every element in the chunk currently equals the second
@@ -281,48 +281,48 @@ class Chunk2CounterPolicy
     /// @return true if nb_val_eq_second_value == size.
     [[nodiscard]] bool is_full_second_value(unsigned int size = static_chunk_size) const noexcept
     {
-        return nb_val_eq_second_value == size;
+        return nb_val_eq_second_value_ == size;
     }
 
     /// @brief Increment the second-value counter (one more element now
     ///        equals the second constant).
     void inc_nb_val_eq_second_value() noexcept
     {
-        ++nb_val_eq_second_value;
+        ++nb_val_eq_second_value_;
     }
 
     /// @brief Decrement the second-value counter (one fewer element now
     ///        equals the second constant).
     void dec_nb_val_eq_second_value() noexcept
     {
-        --nb_val_eq_second_value;
+        --nb_val_eq_second_value_;
     }
 
     /// @brief Increment the first-value counter (one more element now
     ///        equals the first constant).
     void inc_nb_val_eq_first_value() noexcept
     {
-        ++nb_val_eq_first_value;
+        ++nb_val_eq_first_value_;
     }
 
     /// @brief Decrement the first-value counter (one fewer element now
     ///        equals the first constant).
     void dec_nb_val_eq_first_value() noexcept
     {
-        --nb_val_eq_first_value;
+        --nb_val_eq_first_value_;
     }
 
     /// @brief Reset the first-value counter to 0.
     void reset_nb_val_eq_first_value() noexcept
     {
-        nb_val_eq_first_value = 0;
+        nb_val_eq_first_value_ = 0;
     }
 
     /// @brief Set the first-value counter to an explicit value.
     /// @param v New counter value.
-    void set_nb_val_eq_first_value(counter_value_t v) noexcept
+    void set_nb_val_eq_first_value(CounterValueT v) noexcept
     {
-        nb_val_eq_first_value = v;
+        nb_val_eq_first_value_ = v;
     }
 
     /// @brief Whether every element in the chunk currently equals the first
@@ -331,21 +331,21 @@ class Chunk2CounterPolicy
     /// @return true if nb_val_eq_first_value == size.
     [[nodiscard]] bool is_full_first_value(unsigned int size = static_chunk_size) const noexcept
     {
-        return nb_val_eq_first_value == size;
+        return nb_val_eq_first_value_ == size;
     }
 
     /// @brief Current first-value counter.
     /// @return Number of elements currently equal to the first constant.
-    [[nodiscard]] counter_value_t get_nb_first_value() const noexcept
+    [[nodiscard]] CounterValueT get_nb_first_value() const noexcept
     {
-        return nb_val_eq_first_value;
+        return nb_val_eq_first_value_;
     }
 
     /// @brief Current second-value counter.
     /// @return Number of elements currently equal to the second constant.
-    [[nodiscard]] counter_value_t get_nb_second_value() const noexcept
+    [[nodiscard]] CounterValueT get_nb_second_value() const noexcept
     {
-        return nb_val_eq_second_value;
+        return nb_val_eq_second_value_;
     }
 
   private:
@@ -359,8 +359,8 @@ class Chunk2CounterPolicy
     // [[no_unique_address]] and two distinct tags: when disabled both counters are empty and
     // share offset 0, so the policy is empty and `values` stays at offset 0 (see
     // ChunkCounterPolicy for the padding this saves).
-    [[no_unique_address]] ConditionalCounter<EnableCounters, 0> nb_val_eq_first_value;
-    [[no_unique_address]] ConditionalCounter<EnableCounters, 1> nb_val_eq_second_value;
+    [[no_unique_address]] ConditionalCounter<EnableCounters, 0> nb_val_eq_first_value_;
+    [[no_unique_address]] ConditionalCounter<EnableCounters, 1> nb_val_eq_second_value_;
 };
 /**
  * @brief Chunk2's OpenMP-only surface: per-thread materialisation and clearing.
@@ -381,14 +381,14 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
   public:
     using Base           = Chunk2Base<T, Derived>;
     using BaseSpec       = ChunkSpec2<T>;
-    using manager_chunk2 = ManagerChunk<Chunk2, T>;
-    using inf_array_t    = SecondValueInfo<T>;
+    using ManagerChunk2  = ManagerChunk<Chunk2, T>;
+    using InfArrayT      = SecondValueInfo<T>;
 
     using Base::derived;
     using Base::first_value;
     using Base::is_bool;
     using Base::is_not_bool;
-    using Base::values;
+    using Base::values_;
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
     ///        first constant (init_chunks_cst_val).
@@ -407,7 +407,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param inf_array (second_value, index, ...) tuple of the owning array.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    void create_value(bool need_set_second_value, const inf_array_t& inf_array, int thr_rank) noexcept;
+    void create_value(bool need_set_second_value, const InfArrayT& inf_array, int thr_rank) noexcept;
 
     /*!
      * \brief Bool specialization of create_value().
@@ -422,7 +422,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param need_set_second_value True to pre-fill with the second value, false for first_value.
      * \param inf_array (second_value, index, ...) tuple of the owning array.
      */
-    void create_value(bool need_set_second_value, const inf_array_t& inf_array) noexcept
+    void create_value(bool need_set_second_value, const InfArrayT& inf_array) noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -524,13 +524,13 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
   public:
     using Base        = Chunk2Base<T, Derived>;
     using BaseSpec    = ChunkSpec2<T>;
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT   = SecondValueInfo<T>;
 
     using Base::derived;
     using Base::first_value;
     using Base::is_bool;
     using Base::is_not_bool;
-    using Base::values;
+    using Base::values_;
 
     /*!
      * \brief Materialise this chunk's buffer (allocate + init). Serial: no thr_rank.
@@ -538,7 +538,7 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param need_set_second_value True to pre-fill with the second value, false for first_value.
      * \param inf_array (second_value, index, ...) tuple of the owning array.
      */
-    void create_value(bool need_set_second_value, const inf_array_t& inf_array) noexcept;
+    void create_value(bool need_set_second_value, const InfArrayT& inf_array) noexcept;
 
     /*!
      * \brief Bool specialization of create_value() (serial builds).
@@ -594,19 +594,19 @@ template <typename T, typename Derived, bool Enabled>
 class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Derived>
 {
   public:
-    using manager_chunk2 = ManagerChunk<Chunk2, T>;
+    using ManagerChunk2  = ManagerChunk<Chunk2, T>;
     using Base           = Chunk2Base<T, Derived>;
     using BaseSpec       = ChunkSpec2<T>;
 
     using Base::derived;
     using Base::first_value;
-    using Base::values;
+    using Base::values_;
 
     // Local aliases, as ChunkFastCompPolicy carries its own rather than reaching into Derived.
     // (chunk, num_chunk, num_tab, n_elems) -- n_elems is the chunk's OWN geometry, carried
     // from the candidate queue so the clear loop can pin the thread to it before freeing.
-    using vec_tuple_chunk2p_int2 = std::vector<std::tuple<Chunk2<T>*, int, int, unsigned int>>;
-    using inf_array_t            = SecondValueInfo<T>;
+    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk2<T>*, int, int, unsigned int>>;
+    using InfArrayT           = SecondValueInfo<T>;
 
     /**
      * @brief Scans all threads to see if any chunk is marked for compression with a specific value.
@@ -620,7 +620,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
 
         for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
         {
-            auto&      map_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
+            auto&      map_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
             const auto it      = map_thr.find(second_value);
             if (it != map_thr.end() && !it->second->empty())
             {
@@ -691,7 +691,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * @param inf_array (second_value, ...) identifying the candidate list.
      * @param proxy2 Owning proxy, or nullptr for the thread-only sweep.
      */
-    static void make_block_compression(int thr_rank, const inf_array_t& inf_array, Proxy2<T>* proxy2);
+    static void make_block_compression(int thr_rank, const InfArrayT& inf_array, Proxy2<T>* proxy2);
 
     /**
      * @brief Bool specialization of make_block_compression().
@@ -715,7 +715,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param inf_array (second_value, index, ...) identifying the candidate list.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress(const inf_array_t& inf_array, bool apply);
+    static void compress_chunk_to_compress(const InfArrayT& inf_array, bool apply);
 
     /*!
      * \brief Bool specialization of compress_chunk_to_compress().
@@ -726,7 +726,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     /// @brief One rank's share of compress_chunk_to_compress() for one second
     ///        value: the body its region runs on each thread. Public for
     ///        AllTypeChunk's single sweep region (ManagerChunk::sweep_rank).
-    static void compress_sweep_rank(int thr_rank, const inf_array_t& inf_array, bool apply)
+    static void compress_sweep_rank(int thr_rank, const InfArrayT& inf_array, bool apply)
     {
         compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);
     }
@@ -745,7 +745,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param apply The scan always runs; compression only when true.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void compress(int thr_rank, const inf_array_t& inf_array, bool apply, unsigned int n_elems);
+    void compress(int thr_rank, const InfArrayT& inf_array, bool apply, unsigned int n_elems);
 
   private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
@@ -756,8 +756,8 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      */
     [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
     {
-        return manager_chunk2::map_chunk2_to_compress_potentially_thr.empty() ||
-               manager_chunk2::map_chunk2_to_compress_potentially_thr[0].empty();
+        return ManagerChunk2::map_chunk2_to_compress_potentially_thr.empty() ||
+               ManagerChunk2::map_chunk2_to_compress_potentially_thr[0].empty();
     }
 
     /**
@@ -767,11 +767,11 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * @param second_value The type-2 constant these chunks are candidates for.
      * @return Reference to the (thr, second_value) candidate list.
      */
-    static VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_thr(int     thr,
-                                                                                       in_t<T> second_value) noexcept
+    static VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
+                                                                                       InT<T> second_value) noexcept
     {
         // find(), not operator[]: see Proxy2::get_vec_tuple_to_compress_potentially_thr.
-        auto&      lists_by_value = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        auto&      lists_by_value = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
         const auto it             = lists_by_value.find(second_value);
         if (it == lists_by_value.end() || it->second == nullptr) [[unlikely]]
         {
@@ -807,7 +807,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param inf_array (second_value, ...) identifying the candidate list.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_in_par(int thr_rank, const inf_array_t& inf_array, bool apply);
+    static void compress_chunk_to_compress_in_par(int thr_rank, const InfArrayT& inf_array, bool apply);
 
     /*!
      * \brief Bool specialization of compress_chunk_to_compress_in_par().
@@ -826,7 +826,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \tparam CompressFn callable (chunk_type*, ChunkElems count).
      */
     template <typename CompressFn>
-    static void compress_chunk_to_compress_in_par_impl(int thr_rank, in_t<T> key, CompressFn&& compress_one);
+    static void compress_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, CompressFn&& compress_one);
 
     /*!
      * \brief Bool specialization of compress().
@@ -852,7 +852,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \tparam ScanFn callable (chunk_type*, num_chunk, num_tab, ChunkElems count).
      */
     template <typename ScanFn>
-    static void fill_list_chunk_to_compress_in_par_impl(int thr_rank, in_t<T> key, ScanFn&& scan_one);
+    static void fill_list_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, ScanFn&& scan_one);
 
     /*!
      * \brief Sort thread `thr_rank`'s queued candidates into the two
@@ -863,10 +863,10 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      * \param inf_array (second_value, ...) identifying the candidate list.
      */
-    static void fill_list_chunk_to_compress_in_par(int                     thr_rank,
-                                                   vec_tuple_chunk2p_int2& ll_compt1,
-                                                   vec_tuple_chunk2p_int2& ll_compt2,
-                                                   const inf_array_t&      inf_array);
+    static void fill_list_chunk_to_compress_in_par(int                  thr_rank,
+                                                   VecTupleChunk2pInt2& ll_compt1,
+                                                   VecTupleChunk2pInt2& ll_compt2,
+                                                   const InfArrayT&     inf_array);
 
     /*!
      * \brief Bool specialization of fill_list_chunk_to_compress_in_par().
@@ -874,9 +874,9 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param ll_compt1 Output: candidates confirmed uniform on the first constant.
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      */
-    static void fill_list_chunk_to_compress_bool_in_par(int                     thr_rank,
-                                                        vec_tuple_chunk2p_int2& ll_compt1,
-                                                        vec_tuple_chunk2p_int2& ll_compt2);
+    static void fill_list_chunk_to_compress_bool_in_par(int                  thr_rank,
+                                                        VecTupleChunk2pInt2& ll_compt1,
+                                                        VecTupleChunk2pInt2& ll_compt2);
 
     /*!
      * \brief Re-scan THIS chunk's live content and, if now uniform on the first and/or
@@ -893,13 +893,13 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     template <typename SecondValueFunc>
-    void fill_list_to_compress_impl(vec_tuple_chunk2p_int2& ll_compt1,
-                                    vec_tuple_chunk2p_int2& ll_compt2,
-                                    int                     num_chunk,
-                                    int                     num_tab,
-                                    SecondValueFunc&&       get_second_value,
-                                    bool                    check_cst_val2,
-                                    unsigned int            n_elems);
+    void fill_list_to_compress_impl(VecTupleChunk2pInt2& ll_compt1,
+                                    VecTupleChunk2pInt2& ll_compt2,
+                                    int                  num_chunk,
+                                    int                  num_tab,
+                                    SecondValueFunc&&    get_second_value,
+                                    bool                 check_cst_val2,
+                                    unsigned int         n_elems);
 
     /*!
      * \brief Non-bool wrapper around fill_list_to_compress_impl() that
@@ -911,12 +911,12 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param num_tab Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void fill_list_to_compress(vec_tuple_chunk2p_int2& ll_compt1,
-                               vec_tuple_chunk2p_int2& ll_compt2,
-                               const inf_array_t&      inf_array,
-                               int                     num_chunk,
-                               int                     num_tab,
-                               unsigned int            n_elems);
+    void fill_list_to_compress(VecTupleChunk2pInt2& ll_compt1,
+                               VecTupleChunk2pInt2& ll_compt2,
+                               const InfArrayT&     inf_array,
+                               int                  num_chunk,
+                               int                  num_tab,
+                               unsigned int         n_elems);
 
     /*!
      * \brief Bool wrapper around fill_list_to_compress_impl() (the second
@@ -927,11 +927,11 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param num_tab Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void fill_list_to_compress_bool(vec_tuple_chunk2p_int2& ll_compt1,
-                                    vec_tuple_chunk2p_int2& ll_compt2,
-                                    int                     num_chunk,
-                                    int                     num_tab,
-                                    unsigned int            n_elems);
+    void fill_list_to_compress_bool(VecTupleChunk2pInt2& ll_compt1,
+                                    VecTupleChunk2pInt2& ll_compt2,
+                                    int                  num_chunk,
+                                    int                  num_tab,
+                                    unsigned int         n_elems);
 };
 
 /// @brief Chunk2FastCompPolicy with fast block compression compiled out:
@@ -942,9 +942,9 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
 {
   public:
     /// (chunk, num_chunk, num_tab, n_elems); see the true specialisation.
-    using vec_tuple_chunk2p_int2 = std::vector<std::tuple<Chunk2<T>*, int, int, unsigned int>>;
+    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk2<T>*, int, int, unsigned int>>;
     /// (second value, its index in the shared value table, num_tab).
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     /// @name No-op counterparts of the true specialization's queries and passes
     ///       (same pattern as ChunkFastCompPolicy<T, Derived, false>)
@@ -958,7 +958,7 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
         return false;
     }
 
-    static void make_block_compression(int /*thr_rank*/, const inf_array_t& /*inf_array*/, Proxy2<T>* /*proxy2*/) {}
+    static void make_block_compression(int /*thr_rank*/, const InfArrayT& /*inf_array*/, Proxy2<T>* /*proxy2*/) {}
 
     static void make_block_compression_bool(int /*thr_rank*/, Proxy2<T>* /*proxy2*/) {}
 
@@ -1010,7 +1010,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
     using Base::allocator_data;
     using Base::first_value;
-    using Base::values;
+    using Base::values_;
 
     using CounterPolicy = Chunk2CounterPolicy; ///< The counter base, Chunk2CounterPolicy<use_compression_with_counter>.
 
@@ -1025,13 +1025,13 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     using OmpPolicy::create_value;
     using OmpPolicy::create_value_bool;
 
-    using vec_tuple_chunk2p_int2 = std::vector<std::tuple<Chunk2*, int, int>>;
+    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk2*, int, int>>;
 
-    using manager_chunk2 = ManagerChunk<Chunk2, T>;
+    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
     // (second value, index, num_tab). Redeclared here on purpose: the policy
     // bases declare the same name, and this one hides theirs so Chunk2's own
     // members see one type. It must stay THEIR type -- checked below.
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     // Statistics variant tag (CHUNK_STATS): 1 = chunk2.
     static constexpr int stat_variant = 1;
@@ -1046,7 +1046,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     ~Chunk2() = default;
 
     /// @brief Get reference to the chunk manager (static access)
-    /// @return Reference to the manager_chunk2 static instance
+    /// @return Reference to the ManagerChunk2 static instance
     /// @details On the class, not on the OpenMP policy: ChunkBase::release_to_owner()
     ///          names derived().get_manager() in every build (unreachable serially but
     ///          must compile).
@@ -1074,11 +1074,11 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (build_config::use_openmp)
         {
-            values.store(other.values.load());
+            values_.store(other.values_.load());
         }
         else
         {
-            values = other.values;
+            values_ = other.values_;
         }
     }
 
@@ -1101,11 +1101,11 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         if constexpr (build_config::use_openmp)
         {
             T* loaded_value = other.values.load();
-            values.store(loaded_value);
+            values_.store(loaded_value);
         }
         else
         {
-            values = other.values;
+            values_ = other.values;
         }
 
         return *this;
@@ -1117,7 +1117,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      */
     void init_values_cst_val1() noexcept
     {
-        values = Base::get_cst_val1();
+        values_ = Base::get_cst_val1();
     }
 
     /*!
@@ -1144,13 +1144,13 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if (num_compress_value == 0)
         {
-            values = Base::get_cst_val1();
+            values_ = Base::get_cst_val1();
         }
         else
         {
             if constexpr (is_not_bool)
             {
-                values = BaseSpec::get_cst_val2(ind);
+                values_ = BaseSpec::get_cst_val2(ind);
             }
             else
             {
@@ -1170,7 +1170,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_bool)
         {
-            values = num_compress_value == 0 ? Base::get_cst_val1() : BaseSpec::m_ptr_cst_val2.data();
+            values_ = num_compress_value == 0 ? Base::get_cst_val1() : BaseSpec::m_ptr_cst_val2.data();
         }
         else
         {
@@ -1188,7 +1188,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_bool)
         {
-            return values != Base::get_cst_val1() && is_not_cst_val2();
+            return values_ != Base::get_cst_val1() && is_not_cst_val2();
         }
         else
         {
@@ -1233,7 +1233,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_not_bool)
         {
-            return values != Base::get_cst_val1() && is_not_cst_val2(ind);
+            return values_ != Base::get_cst_val1() && is_not_cst_val2(ind);
         }
         else
         {
@@ -1252,7 +1252,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_not_bool)
         {
-            return values == BaseSpec::get_cst_val2(ind);
+            return values_ == BaseSpec::get_cst_val2(ind);
         }
         else
         {
@@ -1270,7 +1270,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_bool)
         {
-            return values == BaseSpec::get_cst_val2();
+            return values_ == BaseSpec::get_cst_val2();
         }
         else
         {
@@ -1319,7 +1319,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      *        constant; a no-op otherwise (already materialised).
      * \param inf_array (second_value, ...) tuple describing the target state.
      */
-    void alloc_chunk(const inf_array_t& inf_array)
+    void alloc_chunk(const InfArrayT& inf_array)
     {
         if (is_cst_val(inf_array.ind))
         {
@@ -1340,7 +1340,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      * \param inf_array (second_value, ...) tuple describing the target state.
      * \param thr_rank Calling thread's rank (ignored in serial builds).
      */
-    void alloc_chunk(const inf_array_t& inf_array, [[maybe_unused]] int thr_rank)
+    void alloc_chunk(const InfArrayT& inf_array, [[maybe_unused]] int thr_rank)
     {
         if (is_cst_val(inf_array.ind))
         {
@@ -1374,11 +1374,10 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
     }
 
-    static_assert(
-        std::is_same_v<
-            inf_array_t,
-            typename Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>::inf_array_t>,
-        "Chunk2::inf_array_t must be the policies' inf_array_t");
+    static_assert(std::is_same_v<
+                      InfArrayT,
+                      typename Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>::InfArrayT>,
+                  "Chunk2::inf_array_t must be the policies' inf_array_t");
 
     // --- where the rest of Chunk2 lives ----------------------------------
     // Materialisation and clearing (create_value*, clear*, block_clear) are on
@@ -1398,11 +1397,11 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (build_config::use_openmp)
         {
-            values.store(ptr, std::memory_order_release);
+            values_.store(ptr, std::memory_order_release);
         }
         else
         {
-            values = ptr;
+            values_ = ptr;
         }
     }
 
@@ -1464,7 +1463,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
         // Only the thread whose CAS replaces 'old' by 'new_ptr' may free/recycle the old block.
         CHUNK_CHECK_VALUES_PTR_C(new_ptr, "try_mark.new_ptr", this);
-        if (!values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
+        if (!values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
             [[unlikely]]
         {
             // Another thread changed 'values': free nothing.
@@ -1503,15 +1502,15 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if constexpr (is_not_bool)
         {
-            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values, ind);
+            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values_, ind);
         }
         else
         {
-            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values);
+            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values_);
         }
     }
 
-    static inline constinit internal::LazyImmortal<manager_chunk2> s_manager_;
+    static inline constinit internal::LazyImmortal<ManagerChunk2> s_manager_;
 };
 
 } // end namespace shrink_array

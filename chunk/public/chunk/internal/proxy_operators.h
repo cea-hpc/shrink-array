@@ -18,7 +18,7 @@
 
 #include <type_traits> // std::common_type_t
 
-#include "chunk/internal/concept_composite_arithmetic.h" // composite_arithmetic, scalar_arithmetic
+#include "chunk/internal/concept_composite_arithmetic.h" // CompositeArithmetic, ScalarArithmetic
 
 namespace shrink_array
 {
@@ -54,7 +54,7 @@ class ProxyOperators
      * @return Result of multiplication in type U
      */
     template <typename U>
-        requires composite_arithmetic<U, T>
+        requires CompositeArithmetic<U, T>
     [[nodiscard]] friend constexpr U operator*(U lhs, const Derived& rhs) noexcept(noexcept(lhs * static_cast<T>(rhs)))
     {
         return lhs * static_cast<T>(rhs);
@@ -68,7 +68,7 @@ class ProxyOperators
      * @return Result of multiplication in type U
      */
     template <typename U>
-        requires composite_arithmetic<U, T>
+        requires CompositeArithmetic<U, T>
     [[nodiscard]] friend constexpr U operator*(const Derived& lhs, U rhs) noexcept(noexcept(static_cast<T>(lhs) * rhs))
     {
         return static_cast<T>(lhs) * rhs;
@@ -81,7 +81,7 @@ class ProxyOperators
      * @param rhs Right operand (proxy)
      * @return Result in common type to preserve precision
      */
-    template <scalar_arithmetic U>
+    template <ScalarArithmetic U>
     [[nodiscard]] friend constexpr std::common_type_t<T, U> operator*(U lhs, const Derived& rhs) noexcept
     {
         return lhs * static_cast<T>(rhs);
@@ -94,7 +94,7 @@ class ProxyOperators
      * @param rhs Right operand (scalar)
      * @return Result in common type to preserve precision
      */
-    template <scalar_arithmetic U>
+    template <ScalarArithmetic U>
     [[nodiscard]] friend constexpr std::common_type_t<T, U> operator*(const Derived& lhs, U rhs) noexcept
     {
         return static_cast<T>(lhs) * rhs;
@@ -112,7 +112,7 @@ class ProxyOperators
      * @return Result of division in type U
      */
     template <typename U>
-        requires composite_arithmetic<U, T>
+        requires CompositeArithmetic<U, T>
     [[nodiscard]] friend constexpr U operator/(U lhs, const Derived& rhs) noexcept(noexcept(lhs / static_cast<T>(rhs)))
     {
         return lhs / static_cast<T>(rhs);
@@ -126,7 +126,7 @@ class ProxyOperators
      * @return Result of division in type U
      */
     template <typename U>
-        requires composite_arithmetic<U, T>
+        requires CompositeArithmetic<U, T>
     [[nodiscard]] friend constexpr U operator/(const Derived& lhs, U rhs) noexcept(noexcept(static_cast<T>(lhs) / rhs))
     {
         return static_cast<T>(lhs) / rhs;
@@ -139,7 +139,7 @@ class ProxyOperators
      * @param rhs Right operand (proxy, divisor)
      * @return Result in common type to preserve precision
      */
-    template <scalar_arithmetic U>
+    template <ScalarArithmetic U>
     [[nodiscard]] friend constexpr std::common_type_t<T, U> operator/(U lhs, const Derived& rhs) noexcept
     {
         return lhs / static_cast<T>(rhs);
@@ -152,7 +152,7 @@ class ProxyOperators
      * @param rhs Right operand (scalar, divisor)
      * @return Result in common type to preserve precision
      */
-    template <scalar_arithmetic U>
+    template <ScalarArithmetic U>
     [[nodiscard]] friend constexpr std::common_type_t<T, U> operator/(const Derived& lhs, U rhs) noexcept
     {
         return static_cast<T>(lhs) / rhs;
@@ -170,7 +170,7 @@ class ProxyOperators
      * @return Result of addition in type U
      */
     template <typename U>
-        requires composite_arithmetic<U, T>
+        requires CompositeArithmetic<U, T>
     [[nodiscard]] friend constexpr U operator+(U lhs, const Derived& rhs) noexcept(noexcept(lhs + static_cast<T>(rhs)))
     {
         return lhs + static_cast<T>(rhs);
@@ -184,7 +184,7 @@ class ProxyOperators
      * @return Result of addition in type U
      */
     template <typename U>
-        requires composite_arithmetic<U, T>
+        requires CompositeArithmetic<U, T>
     [[nodiscard]] friend constexpr U operator+(const Derived& lhs, U rhs) noexcept(noexcept(static_cast<T>(lhs) + rhs))
     {
         return static_cast<T>(lhs) + rhs;
@@ -197,7 +197,7 @@ class ProxyOperators
      * @param rhs Right operand (proxy)
      * @return Result in common type to preserve precision
      */
-    template <scalar_arithmetic U>
+    template <ScalarArithmetic U>
     [[nodiscard]] friend constexpr std::common_type_t<T, U> operator+(U lhs, const Derived& rhs) noexcept
     {
         return lhs + static_cast<T>(rhs);
@@ -210,7 +210,7 @@ class ProxyOperators
      * @param rhs Right operand (scalar)
      * @return Result in common type to preserve precision
      */
-    template <scalar_arithmetic U>
+    template <ScalarArithmetic U>
     [[nodiscard]] friend constexpr std::common_type_t<T, U> operator+(const Derived& lhs, U rhs) noexcept
     {
         return static_cast<T>(lhs) + rhs;
@@ -228,7 +228,7 @@ class ProxyOperators
      * @return Result of subtraction in type U
      */
     template <typename U>
-        requires composite_arithmetic<U, T>
+        requires CompositeArithmetic<U, T>
     [[nodiscard]] friend constexpr U operator-(U lhs, const Derived& rhs) noexcept(noexcept(lhs - static_cast<T>(rhs)))
     {
         return lhs - static_cast<T>(rhs);
@@ -242,7 +242,7 @@ class ProxyOperators
      * @return Result of subtraction in type U
      */
     template <typename U>
-        requires composite_arithmetic<U, T>
+        requires CompositeArithmetic<U, T>
     [[nodiscard]] friend constexpr U operator-(const Derived& lhs, U rhs) noexcept(noexcept(static_cast<T>(lhs) - rhs))
     {
         return static_cast<T>(lhs) - rhs;
@@ -255,7 +255,7 @@ class ProxyOperators
      * @param rhs Right operand (proxy, subtrahend)
      * @return Result in common type to preserve precision
      */
-    template <scalar_arithmetic U>
+    template <ScalarArithmetic U>
     [[nodiscard]] friend constexpr std::common_type_t<T, U> operator-(U lhs, const Derived& rhs) noexcept
     {
         return lhs - static_cast<T>(rhs);
@@ -268,7 +268,7 @@ class ProxyOperators
      * @param rhs Right operand (scalar, subtrahend)
      * @return Result in common type to preserve precision
      */
-    template <scalar_arithmetic U>
+    template <ScalarArithmetic U>
     [[nodiscard]] friend constexpr std::common_type_t<T, U> operator-(const Derived& lhs, U rhs) noexcept
     {
         return static_cast<T>(lhs) - rhs;

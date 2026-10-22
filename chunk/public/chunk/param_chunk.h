@@ -41,7 +41,7 @@ namespace shrink_array
  *          the end of the run. A typical program calls at most two of these:
  *          ParamChunk::init_indexes() at startup -- optional, the first array
  *          runs init_indexes(true) when it was not called -- and
- *          ParamChunk::ChunkStats() at exit.
+ *          ParamChunk::chunk_stats() at exit.
  *
  *          The geometry accessors are compatibility shims: the chunk size is a
  *          compile-time constant (see chunk_size_config.h) so that `i >>
@@ -292,7 +292,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void init_indexes(bool big_chunk_block)
     {
         init_indexes(big_chunk_block); // the process-wide setup first: the managers need its block size
-        SingletonChk<AllTypeChunk>::getRef().template initialize<Types>();
+        SingletonChk<AllTypeChunk>::get_ref().template initialize<Types>();
     }
 
     /**
@@ -337,7 +337,13 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @note An empty no-op unless the build defines CHUNK_STATS; the counters
      *       themselves are only maintained in that build.
      */
-    static void ChunkStats();
+    static void chunk_stats();
+
+    /// @brief Former name of chunk_stats(), kept for the programs that still spell it.
+    [[deprecated("functions are snake_case: use ParamChunk::chunk_stats")]] static void ChunkStats()
+    {
+        chunk_stats();
+    }
 
   private:
     /**

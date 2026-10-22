@@ -52,7 +52,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
     // interaction; assign/swap are serial and localised to this section.
     if (test_stl)
     {
-        std::cout << tc.BOLD << tc.CYAN << "\n=== STL interface self-checks ===\n" << tc.RESET;
+        std::cout << tc.bold << tc.cyan << "\n=== STL interface self-checks ===\n" << tc.reset;
         Int  failures = 0;
         auto expect   = [&](bool ok, const char* what)
         {
@@ -347,11 +347,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
         if (failures == 0)
         {
-            std::cout << tc.BOLD << tc.GREEN << "STL self-checks: ALL PASSED\n" << tc.RESET;
+            std::cout << tc.bold << tc.green << "STL self-checks: ALL PASSED\n" << tc.reset;
         }
         else
         {
-            std::cout << tc.BOLD << "STL self-checks: " << failures << " FAILURE(S)\n" << tc.RESET;
+            std::cout << tc.bold << "STL self-checks: " << failures << " FAILURE(S)\n" << tc.reset;
         }
     }
 
@@ -366,7 +366,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
     // trivially holds.
     if (test_stl)
     {
-        std::cout << tc.BOLD << tc.CYAN << "\n=== read-idempotence self-checks ===\n" << tc.RESET;
+        std::cout << tc.bold << tc.cyan << "\n=== read-idempotence self-checks ===\n" << tc.reset;
 
         // Size spans many chunks (≈195 at chunk_size 512) so reads cross chunk
         // boundaries. Mixed data (mostly second_value, some distinct) exercises
@@ -377,10 +377,10 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // It is declared here, before the writes, so that the runs of 2.0
         // actually reach the cst2 read path this check is about (no-op on
         // chunk v1 / vector mode, per-chunk on chunk2A).
-        const long    NR = 100000;
-        Array<double> r(NR);
+        const long    nr = 100000;
+        Array<double> r(nr);
         maybe_set_second_value(r, second_value_d1); // second_value = 2.0
-        for (long i = 0; i < NR; ++i)
+        for (long i = 0; i < nr; ++i)
         {
             r[i] = (i % 7 == 0) ? second_value_d1 : static_cast<double>(i);
         }
@@ -388,7 +388,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         long idem_bad = 0; // two consecutive reads disagree (read has a side effect)
         long ne_bad   = 0; // operator!= disagrees with operator T() (stale compare op)
         long first_i  = -1;
-        for (long i = 0; i < NR; ++i)
+        for (long i = 0; i < nr; ++i)
         {
             const double a = r[i]; // operator T() -> read_pure (live)
             const double b = r[i]; // re-read: must equal a
@@ -403,8 +403,8 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
             const double exp   = (i % 7 == 0) ? second_value_d1 : static_cast<double>(i);
             const bool   ne_op = (r[i] != exp); // operator!= path (was stale)
-            const bool   ne_T  = (a != exp);    // T-based comparison (correct)
-            if (ne_op != ne_T)
+            const bool   ne_t  = (a != exp);    // T-based comparison (correct)
+            if (ne_op != ne_t)
             {
                 if (first_i < 0)
                 {
@@ -416,14 +416,14 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
         if (idem_bad == 0 && ne_bad == 0)
         {
-            std::cout << tc.BOLD << tc.GREEN << "read-idempotence: ALL PASSED\n" << tc.RESET;
+            std::cout << tc.bold << tc.green << "read-idempotence: ALL PASSED\n" << tc.reset;
         }
         else
         {
-            std::cout << tc.BOLD << "read-idempotence: FAILURE(S) — " << idem_bad << " non-idempotent reads, " << ne_bad
+            std::cout << tc.bold << "read-idempotence: FAILURE(S) — " << idem_bad << " non-idempotent reads, " << ne_bad
                       << " operator!=/operatorT disagreements"
                       << " (first at i=" << first_i << ")\n"
-                      << tc.RESET;
+                      << tc.reset;
         }
 
         r.clear();

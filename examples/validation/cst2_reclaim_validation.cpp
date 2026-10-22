@@ -82,7 +82,7 @@ using namespace shrink_array;
 static_assert(chunk_config::use_chunk2a, "cst2_reclaim_validation is Chunk2A's registry: link chunk_v2a_<size>");
 
 using Arr      = ArrayChunk2A<double>;
-using Registry = Chunk2A<double>::tab_cst_val2_holder::global_vec_holder;
+using Registry = Chunk2A<double>::Holder::VecHolder;
 
 static void begin_phase()
 {
@@ -112,16 +112,16 @@ static double cst(double base, long j)
 
 /// @brief Write chunk j of @p a whole at cst(base, j) -- the chunks for which
 ///        @p only_even is false or j is even -- then the between-region pass.
-static void fill(Arr& a, long nch, long S, double base, bool only_even = false)
+static void fill(Arr& a, long nch, long s, double base, bool only_even = false)
 {
-    const int ni = static_cast<int>(nch * S);
+    const int ni = static_cast<int>(nch * s);
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static)
         for (int i = 0; i < ni; ++i)
         {
-            const long j = i / S;
+            const long j = i / s;
             if (!only_even || j % 2 == 0)
             {
                 a[i] = cst(base, j);
@@ -135,12 +135,12 @@ static int fails = 0;
 
 /// @brief Every element of @p a against the constant of its chunk:
 ///        cst(even_base, j) for an even chunk, cst(odd_base, j) for an odd one.
-static void expect_values(const char* where, const Arr& a, long nch, long S, double even_base, double odd_base)
+static void expect_values(const char* where, const Arr& a, long nch, long s, double even_base, double odd_base)
 {
     long bad = 0;
-    for (long i = 0; i < nch * S; ++i)
+    for (long i = 0; i < nch * s; ++i)
     {
-        const long j = i / S;
+        const long j = i / s;
         bad += (a[static_cast<int>(i)] != cst(j % 2 == 0 ? even_base : odd_base, j)) ? 1 : 0;
     }
     if (bad != 0)
@@ -194,18 +194,18 @@ static long in_use()
 ///        Returning means it ran to the end.
 static int run_rounds_child(long nch, long rounds)
 {
-    const long S = static_cast<long>(Arr(0).chunk_size());
-    Arr        a(static_cast<int>(nch * S));
+    const long s = static_cast<long>(Arr(0).chunk_size());
+    Arr        a(static_cast<int>(nch * s));
     for (long r = 0; r < rounds; ++r)
     {
-        fill(a, nch, S, 1.0e6 + 1000. * static_cast<double>(r));
+        fill(a, nch, s, 1.0e6 + 1000. * static_cast<double>(r));
         (void)reclaim();
     }
     // second_value_stats() reports the lowered bound (read when the registry
     // was first used).
     expect_eq("child: capacity (CHUNK_CST_VAL2_ID_LIMIT)", static_cast<long>(Arr::second_value_stats().capacity),
               3 * nch);
-    expect_values("child: last round", a, nch, S, 1.0e6 + 1000. * static_cast<double>(rounds - 1),
+    expect_values("child: last round", a, nch, s, 1.0e6 + 1000. * static_cast<double>(rounds - 1),
                   1.0e6 + 1000. * static_cast<double>(rounds - 1));
     println("[rounds] {} distinct second values, reclaimed each round: RAN TO THE END", nch * rounds);
     return fails ? 1 : 0;
@@ -252,11 +252,11 @@ int run(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     const long nch = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
-    const long S   = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
+    const long s   = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
 
-    println("=== cst2_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, S, CHUNK_PMP_MAX_THREADS);
+    println("=== cst2_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, s, CHUNK_PMP_MAX_THREADS);
     {
-        Arr a(static_cast<int>(nch * S));
+        Arr a(static_cast<int>(nch * s));
 
         // A: rounds at new constants.
         println("A  rounds at new constants");
@@ -265,7 +265,7 @@ int run(int argc, char** argv)
         for (int r = 0; r < 4; ++r)
         {
             const double base = 1000. * (r + 1);
-            fill(a, nch, S, base);
+            fill(a, nch, s, base);
             char where[64];
             std::snprintf(where, sizeof where, "round %d: entries before the reclaim", r);
             expect_eq(where, entries(), r == 0 ? nch : 2 * nch);
@@ -280,7 +280,7 @@ int run(int argc, char** argv)
             std::snprintf(where, sizeof where, "round %d: identifiers handed out", r);
             expect_le(where, handed_out(), 2 * nch);
             std::snprintf(where, sizeof where, "round %d: values", r);
-            expect_values(where, a, nch, S, base, base);
+            expect_values(where, a, nch, s, base, base);
         }
         const SecondValueStats after_a = Arr::second_value_stats();
         expect_eq("stats: reclaims counted", static_cast<long>(after_a.reclaims - before_a.reclaims), 4);
@@ -291,16 +291,16 @@ int run(int argc, char** argv)
 
         // B: half the chunks rewritten.
         println("B  even chunks rewritten");
-        fill(a, nch, S, 5000.);
+        fill(a, nch, s, 5000.);
         (void)reclaim();
-        fill(a, nch, S, 6000., true);
+        fill(a, nch, s, 6000., true);
         expect_eq("freed", reclaim(), (nch + 1) / 2);
         expect_eq("entries after", entries(), nch);
-        expect_values("values", a, nch, S, 6000., 5000.);
+        expect_values("values", a, nch, s, 6000., 5000.);
 
         // C: a chunk materialised again keeps its second value.
         println("C  materialised chunk");
-        fill(a, nch, S, 7000.);
+        fill(a, nch, s, 7000.);
         (void)reclaim();
 #pragma omp parallel
         {
@@ -323,27 +323,27 @@ int run(int argc, char** argv)
         }
         end_phase();
         (void)reclaim();
-        expect_values("values", a, nch, S, 7000., 7000.);
+        expect_values("values", a, nch, s, 7000., 7000.);
 
         // D: a copy outlives the original.
         println("D  copy");
-        fill(a, nch, S, 8000.);
+        fill(a, nch, s, 8000.);
         (void)reclaim();
         {
             Arr b(a);
-            fill(a, nch, S, 9000.);
+            fill(a, nch, s, 9000.);
             expect_eq("freed (the copy still refers to them)", reclaim(), 0);
-            expect_values("copy: values", b, nch, S, 8000., 8000.);
-            expect_values("original: values", a, nch, S, 9000., 9000.);
+            expect_values("copy: values", b, nch, s, 8000., 8000.);
+            expect_values("original: values", a, nch, s, 9000., 9000.);
         }
         expect_eq("freed (copy destroyed)", reclaim(), nch);
-        expect_values("original after the copy: values", a, nch, S, 9000., 9000.);
+        expect_values("original after the copy: values", a, nch, s, 9000., 9000.);
 
         // E: refused inside a parallel region.
         if constexpr (build_config::use_openmp)
         {
             println("E  inside a parallel region");
-            fill(a, nch, S, 10000.);
+            fill(a, nch, s, 10000.);
             const std::size_t refused_before = Arr::second_value_stats().refused_parallel;
             long              in_region      = -1;
             int               team           = 0;
@@ -364,7 +364,7 @@ int run(int argc, char** argv)
             expect_eq("stats: refused in a parallel region",
                       static_cast<long>(Arr::second_value_stats().refused_parallel - refused_before), active ? 1 : 0);
             expect_eq("freed after it", reclaim(), active ? nch : 0);
-            expect_values("values", a, nch, S, 10000., 10000.);
+            expect_values("values", a, nch, s, 10000., 10000.);
         }
 
         // G: reclaim across a re-chunk (CHUNK_DYNAMIC). The re-chunk rebuilds
@@ -374,29 +374,29 @@ int run(int argc, char** argv)
         {
             println("G  re-chunk");
             const unsigned ambient = active_chunk_size();
-            const long     S2      = 2 * S;
+            const long     s2      = 2 * s;
             const long     nch2    = nch / 2; // the same elements, half as many chunks
-            fill(a, nch, S, 11000.);
+            fill(a, nch, s, 11000.);
             (void)reclaim();
-            a.rechunk_to(static_cast<unsigned int>(S2));
-            expect_eq("chunk size after rechunk_to(2S)", static_cast<long>(a.chunk_size()), S2);
+            a.rechunk_to(static_cast<unsigned int>(s2));
+            expect_eq("chunk size after rechunk_to(2S)", static_cast<long>(a.chunk_size()), s2);
             // Each new chunk spans two old constants: materialised, so the
             // reclaim may free them all; the values must not change.
             (void)reclaim();
-            expect_values("values after the re-chunk and a reclaim", a, nch, S, 11000., 11000.);
+            expect_values("values after the re-chunk and a reclaim", a, nch, s, 11000., 11000.);
             expect_eq("identifiers in use = entries", in_use(), entries());
             // Constants at the new geometry: one per new chunk survives.
-            fill(a, nch2, S2, 12000.);
+            fill(a, nch2, s2, 12000.);
             (void)reclaim();
             expect_eq("entries after a refill at 2S and a reclaim", entries(), nch2);
             expect_eq("identifiers in use = entries", in_use(), entries());
-            expect_values("values at 2S", a, nch2, S2, 12000., 12000.);
+            expect_values("values at 2S", a, nch2, s2, 12000., 12000.);
             // Back to S, then constants again.
-            a.rechunk_to(static_cast<unsigned int>(S));
-            fill(a, nch, S, 13000.);
+            a.rechunk_to(static_cast<unsigned int>(s));
+            fill(a, nch, s, 13000.);
             (void)reclaim();
             expect_eq("entries back at S", entries(), nch);
-            expect_values("values back at S", a, nch, S, 13000., 13000.);
+            expect_values("values back at S", a, nch, s, 13000., 13000.);
             // A reclaim while a re-chunk rebuild runs is refused, and counted.
             const std::size_t refused_before = Arr::second_value_stats().refused_rechunk;
             g_in_rechunk_rebuild.store(true, std::memory_order_release);

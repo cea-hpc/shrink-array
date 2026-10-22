@@ -24,12 +24,12 @@
 
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk2
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
-#include "chunk/internal/array_chunk_for.h"    // ArrayChunkFor_t
+#include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
 #include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, ElementAddable, ElementModulable
-#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/conditional_counter.h"          // counter_value_t — resync_nb_val_eq_zero
+#include "chunk/internal/conditional_counter.h"          // CounterValueT — resync_nb_val_eq_zero
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/read_reclaim.h"                 // read_reclaim::ReadSection
@@ -42,7 +42,7 @@
 namespace shrink_array
 {
 
-template <template <typename> class CHUNK_T, typename T>
+template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
 /**
@@ -62,7 +62,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
      */
     void insert(void* key, int num_tab)
     {
-        vec.emplace_back(key, num_tab);
+        vec_.emplace_back(key, num_tab);
     }
 
     /**
@@ -73,7 +73,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
      */
     [[nodiscard]] int get_num_tab(const void* key) const noexcept
     {
-        for (const auto& [k, v] : vec)
+        for (const auto& [k, v] : vec_)
         {
             if (k == key)
             {
@@ -82,7 +82,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
         }
 
         CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
     }
 
     /**
@@ -103,12 +103,12 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
 
   private:
     /// What a key maps to: its table number.
-    using inf_array_t = int;
+    using InfArrayT = int;
 
     // Storage: a std::vector (PointerMapChunk2 uses a std::deque, see there).
-    using Linear = PointerMapLinear<inf_array_t, std::vector<std::pair<const void*, inf_array_t>>>;
+    using Linear = PointerMapLinear<InfArrayT, std::vector<std::pair<const void*, InfArrayT>>>;
     /// Brings the base's storage back into this class's scope (dependent base).
-    using Linear::vec;
+    using Linear::vec_;
 };
 
 /**
@@ -119,19 +119,19 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 {
   public:
     using ChunkType     = Chunk<T>;
-    using manager_chunk = ManagerChunk<Chunk, T>;
+    using Manager       = ManagerChunk<Chunk, T>;
     using Base          = ProxyBase<Derived, T, ChunkType>;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
     using Base::derived;
 
-    using values_type_ref = Base::atomic_ptr_ref_t;
+    using ValuesTypeRef = Base::AtomicPtrRefT;
 
     // --- fast-block-compression surface: this policy's Enabled is that axis
     // (chunk_config::use_fast_block_compression).
-    using Base::num_tab;
-    using Base::ptr_on_array;
+    using Base::num_tab_;
+    using Base::ptr_on_array_;
     using Base::read_values;
     using Base::read_values_async;
     using Base::read_values_at;
@@ -146,7 +146,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     auto& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
-        return manager_chunk::chunk_to_compress_potentially_thr[thr];
+        return Manager::chunk_to_compress_potentially_thr[thr];
     }
 
     /**
@@ -171,16 +171,16 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief Async-context counterpart of execute_arithmetic_compound_operation().
-     * @tparam OP Binary operator (e.g. std::plus<>, std::minus<>).
-     * @tparam LBD Callable used only on the "chunk was not written" fast path.
+     * @tparam Op Binary operator (e.g. std::plus<>, std::minus<>).
+     * @tparam Body Callable used only on the "chunk was not written" fast path.
      * @tparam U Type of the operand.
      * @param ctx Async write context.
      * @param op The operator to apply.
      * @param v Operand to combine with the current value.
      * @param lbd Called (with `op`) when the chunk was not yet written.
      */
-    template <typename OP, typename LBD, typename U>
-    void execute_arithmetic_compound_operation_async(auto* ctx, OP op, [[maybe_unused]] const U& v, LBD lbd) const;
+    template <typename Op, typename Body, typename U>
+    void execute_arithmetic_compound_operation_async(auto* ctx, Op op, [[maybe_unused]] const U& v, Body lbd) const;
 
     /**
      * @brief Resolve and cache this proxy's table number from ptr_on_array.
@@ -189,11 +189,11 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     {
         // Armed by the array's operator[] (see Proxy2A::set_num_tab): the
         // registry lookup only for a proxy armed otherwise.
-        if (num_tab >= 0) [[likely]]
+        if (num_tab_ >= 0) [[likely]]
         {
             return;
         }
-        num_tab = Derived::get_num_tab(ptr_on_array);
+        num_tab_ = Derived::get_num_tab(ptr_on_array_);
     }
 
     /**
@@ -202,7 +202,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param old_value Value before the write.
      * @param new_value Value after the write.
      */
-    void mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value) const
+    void mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const
     {
         // Unconditional: mark_for_compression_impl carries the race check, which
         // must run on every write.
@@ -220,7 +220,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param old_value Value before the write.
      * @param new_value Value after the write.
      */
-    void mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value, const T* vals) const
+    void mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value, const T* vals) const
     {
         mark_for_compression_core(old_value, new_value, new_value, vals);
     }
@@ -251,23 +251,23 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief Async-context counterpart of execute_inplace_operation().
-     * @tparam LAMBDA Callable performing the actual in-place modification.
+     * @tparam Lambda Callable performing the actual in-place modification.
      * @param ctx Async write context.
      * @param operation The operation to run.
      */
-    template <typename LAMBDA>
-    static void execute_inplace_operation_async(auto* ctx, LAMBDA operation);
+    template <typename Lambda>
+    static void execute_inplace_operation_async(auto* ctx, Lambda operation);
 
     /**
      * @brief Async-context counterpart of execute_simple_operation():
      *        materialise the chunk referenced by `ctx` if it is currently
      *        compressed, then run `operation` on the reloaded values pointer.
-     * @tparam LAMBDA Callable performing the actual write.
+     * @tparam Lambda Callable performing the actual write.
      * @param ctx Async write context.
      * @param operation The write to perform.
      */
-    template <typename LAMBDA>
-    static void execute_simple_operation_async(auto* ctx, LAMBDA operation);
+    template <typename Lambda>
+    static void execute_simple_operation_async(auto* ctx, Lambda operation);
 
     /**
      * @brief Clear one chunk's "queued for compression" flag, so a later
@@ -311,12 +311,11 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *                           memory (mismatch means a concurrent writer
      *                           raced this one).
      */
-    void mark_for_compression_core(in_t<T> old_value, in_t<T> new_value, in_t<T> expected_in_memory) const;
+    void mark_for_compression_core(InT<T> old_value, InT<T> new_value, InT<T> expected_in_memory) const;
 
     /// @brief mark_for_compression_core() reading memory through @p vals, a
     ///        values pointer the caller loaded inside the write session.
-    void
-    mark_for_compression_core(in_t<T> old_value, in_t<T> new_value, in_t<T> expected_in_memory, const T* vals) const;
+    void mark_for_compression_core(InT<T> old_value, InT<T> new_value, InT<T> expected_in_memory, const T* vals) const;
 
     /**
      * @brief Post-write wrapper around mark_for_compression_core(), passing
@@ -325,7 +324,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param old_value Value before the write.
      * @param new_value Value after the write.
      */
-    void mark_for_compression_impl(in_t<T> old_value, in_t<T> new_value) const
+    void mark_for_compression_impl(InT<T> old_value, InT<T> new_value) const
     {
         // Unconditional, every build, EVERY write: see mark_for_compression_core.
         mark_for_compression_core(old_value, new_value, new_value);
@@ -337,8 +336,8 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param old_value Value before the write.
      * @param new_value Value after the write.
      */
-    static void mark_for_compression_if_needed_with_value_async(const Derived& proxy, in_t<T> old_value,
-                                                                in_t<T> new_value)
+    static void
+    mark_for_compression_if_needed_with_value_async(const Derived& proxy, InT<T> old_value, InT<T> new_value)
     {
         proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
     }
@@ -350,7 +349,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param new_value Value after the write.
      * @return true if old_value != zero and new_value == zero.
      */
-    [[nodiscard]] static bool should_mark_for_compression(in_t<T> old_value, in_t<T> new_value) noexcept
+    [[nodiscard]] static bool should_mark_for_compression(InT<T> old_value, InT<T> new_value) noexcept
     {
         return old_value != zero && new_value == zero;
     }
@@ -364,7 +363,7 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
 {
   public:
     using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
-    using ProxyBase<Derived, T, Chunk<T>>::chunk;
+    using ProxyBase<Derived, T, Chunk<T>>::chunk_;
 
   protected:
     /// @brief Nothing to record on the chunk without fast block compression.
@@ -379,7 +378,7 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
      */
     void manage_full_zero() const
     {
-        chunk.clear_st();
+        chunk_.clear_st();
     }
 };
 
@@ -422,7 +421,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::add_to_compression_list;
     using Base::set_num_tab;
 
-    using Base::ptr_is_inside_chunk_list_to_compress; ///< Per-chunk compression flag pointer
+    using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
     using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
@@ -430,32 +429,32 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     {
         /// @brief Apply operator% to the two operands.
         /// @return lhs % rhs.
-        constexpr T operator()(in_t<T> lhs, in_t<T> rhs) const noexcept
+        constexpr T operator()(InT<T> lhs, InT<T> rhs) const noexcept
         {
             return lhs % rhs;
         }
     };
 
   private:
-    using manager_chunk = ManagerChunk<Chunk, T>;
+    using Manager = ManagerChunk<Chunk, T>;
 
     using Base::read_values;
-    using Base::values;
+    using Base::values_;
 
-    using Base::num;
+    using Base::num_;
     /// Reference to the associated chunk.
     ///
-    using Base::chunk; ///< owning chunk
+    using Base::chunk_; ///< owning chunk
 
-    using Base::num_tab; ///< tab index for this array
+    using Base::num_tab_; ///< tab index for this array
 
     using Base::chunk_size_frozen_; ///< non-zero on a proxy rebuilt from a replay context
-    using Base::num_chunk;          ///< chunk index
-    using Base::ptr_on_array;       ///< pointer to array (for tab lookup)
+    using Base::num_chunk_;         ///< chunk index
+    using Base::ptr_on_array_;      ///< pointer to array (for tab lookup)
 
     using Base::arithmetic_assign;
 
-    using values_type_ref = Base::atomic_ptr_ref_t;
+    using ValuesTypeRef = Base::AtomicPtrRefT;
 
     constexpr static T zero{};
 
@@ -473,7 +472,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] bool is_cst_val() const noexcept
     {
-        return chunk.is_cst_val1();
+        return chunk_.is_cst_val1();
     }
 
     /**
@@ -489,7 +488,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
             shrink_array::set_thread_chunk_size(this->chunk_size());
             shrink_array::set_thread_alloc_key(this->alloc_key());
         }
-        chunk.create_value();
+        chunk_.create_value();
     }
 
     /**
@@ -535,33 +534,33 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @return The pointer the store went through: @p vals, or the one loaded
      *         again after the materialisation.
      */
-    T* perform_core_assignment(T* vals, in_t<T> v) const noexcept;
+    T* perform_core_assignment(T* vals, InT<T> v) const noexcept;
 
     /**
      * @brief Shared implementation behind operator+=/operator-=: materialise
      *        the chunk if needed, then apply `op` in a common high-precision
      *        type before truncating back to T.
-     * @tparam OP Binary operator (e.g. std::plus<>, std::minus<>).
-     * @tparam LBD Callable used only on the "chunk was not written" fast path.
+     * @tparam Op Binary operator (e.g. std::plus<>, std::minus<>).
+     * @tparam Body Callable used only on the "chunk was not written" fast path.
      * @tparam U Type of the operand being combined with the current value.
      * @param op The operator to apply.
      * @param v Operand to combine with the current value.
      * @param lbd Called (with `op`) when the chunk was not yet written, right
      *            after materialising it.
      */
-    template <typename OP, typename LBD, typename U>
-    void execute_arithmetic_compound_operation(OP op, [[maybe_unused]] const U& v, LBD lbd);
+    template <typename Op, typename Body, typename U>
+    void execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& v, Body lbd);
 
     /**
      * @brief Run an arbitrary in-place operation on this element,
      *        materialising the chunk first if it is currently compressed,
      *        and maintaining the counter-mode zero-tracking bookkeeping
      *        around it.
-     * @tparam LAMBDA Callable performing the actual in-place modification.
+     * @tparam Lambda Callable performing the actual in-place modification.
      * @param operation The operation to run.
      */
-    template <typename LAMBDA>
-    void execute_inplace_operation(LAMBDA operation);
+    template <typename Lambda>
+    void execute_inplace_operation(Lambda operation);
 
     /**
      * @brief Early-out check for operator=(): is the chunk already
@@ -578,7 +577,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename U>
     [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& v) const noexcept
     {
-        return v == zero && is_cst_val() && !chunk.pending_any();
+        return v == zero && is_cst_val() && !chunk_.pending_any();
     }
 
     /**
@@ -590,19 +589,19 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @return The value that was written.
      */
     template <typename U>
-    // in_t<U>, not const U&: this is the one frame not inlined into the caller,
+    // InT<U>, not const U&: this is the one frame not inlined into the caller,
     // so small types cross the call by value. Non-deducible: call assign_impl<U>(v).
-    T assign_impl(in_t<U> v) noexcept;
+    T assign_impl(InT<U> v) noexcept;
 
     /**
      * @brief Run a write on this element, materialising the chunk if needed and
      *        maintaining the counter-mode bookkeeping (non-OMP path; async
      *        counterpart: ProxyFastCompPolicy::execute_simple_operation_async).
-     * @tparam LAMBDA Callable performing the actual write.
+     * @tparam Lambda Callable performing the actual write.
      * @param operation The write to perform.
      */
-    template <typename LAMBDA>
-    void execute_simple_operation(LAMBDA operation);
+    template <typename Lambda>
+    void execute_simple_operation(Lambda operation);
 
     /**
      * @brief Shared implementation behind operator/=, operator*=, and
@@ -619,20 +618,18 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @param op The operator to apply.
      */
     template <typename U, typename BinaryOp>
-    void apply_compound_operation(in_t<U> v, BinaryOp op); // in_t: see assign_impl
+    void apply_compound_operation(InT<U> v, BinaryOp op); // InT: see assign_impl
 
   public:
     using CHUNK_INHERIT_CTOR_TYPENAME FastCompPolicy::ProxyFastCompPolicy;
 
     /**
      * @brief Construct a proxy for element `num_` of `chunk_`.
-     * @param values_ Reference to the chunk's values pointer.
-     * @param num_ Element offset within the chunk.
-     * @param chunk_ Owning chunk.
+     * @param values Reference to the chunk's values pointer.
+     * @param num Element offset within the chunk.
+     * @param chunk Owning chunk.
      */
-    explicit Proxy(values_type_ref values_, int num_, Chunk<T>& chunk_) noexcept : FastCompPolicy(values_, num_, chunk_)
-    {
-    }
+    explicit Proxy(ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept : FastCompPolicy(values, num, chunk) {}
 
     Proxy(const Proxy& other)     = default;
     Proxy(Proxy&& other) noexcept = default;
@@ -669,7 +666,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] bool is_not_cst_val() const noexcept
     {
-        return chunk.is_not_cst_val1();
+        return chunk_.is_not_cst_val1();
     }
 
     /**
@@ -688,9 +685,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        window -- the same window is_full_zero() is asked about, so the
      *        untouched tail of a partially-filled last chunk counts too.
      */
-    void resync_nb_val_eq_zero(counter_value_t n_zeros) const noexcept
+    void resync_nb_val_eq_zero(CounterValueT n_zeros) const noexcept
     {
-        chunk.set_nb_val_eq_zero(n_zeros);
+        chunk_.set_nb_val_eq_zero(n_zeros);
     }
 
     /**
@@ -708,7 +705,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     {
         if constexpr (chunk_config::use_compression_with_counter)
         {
-            if (chunk.is_not_cst_val1() && chunk.is_full_zero(this->chunk_size()))
+            if (chunk_.is_not_cst_val1() && chunk_.is_full_zero(this->chunk_size()))
             {
                 if constexpr (build_config::chunk_dynamic)
                 {
@@ -834,24 +831,24 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
             // chunk_size_frozen_ != 0: a replay proxy whose ptr_on_array may
             // dangle (see ProxyBase::chunk_size_frozen_) -- never dereference it;
             // it runs inside a flush, so go straight to the gated read.
-            if (chunk_size_frozen_ == 0U && ptr_on_array != nullptr) [[likely]]
+            if (chunk_size_frozen_ == 0U && ptr_on_array_ != nullptr) [[likely]]
             {
-                using ArrayType = ArrayChunkFor_t<ChunkType>;
-                if (!static_cast<const ArrayType*>(ptr_on_array)->is_chunk_dirty(num_chunk)) [[likely]]
+                using ArrayType = ArrayChunkForT<ChunkType>;
+                if (!static_cast<const ArrayType*>(ptr_on_array_)->is_chunk_dirty(num_chunk_)) [[likely]]
                 {
                     // A pure read, like element_at: inside a ReadSection, or a
                     // pass in the region may release the buffer between the
                     // pointer load and the element load (read_reclaim.h).
                     const read_reclaim::ReadSection section;
                     // raw-read: inside a read_reclaim::ReadSection
-                    return values[num];
+                    return values_[num_];
                 }
             }
             return Base::read_pure();
         }
 
         // raw-read: serial build (no OpenMP, no concurrent pass)
-        return values[num];
+        return values_[num_];
     }
 
     // No address, and do not add operator T&(): `tab[nc] = val` would route
@@ -877,7 +874,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] int get_num_tab_cached(const void* array_ptr) const noexcept
     {
-        return this->num_tab >= 0 ? this->num_tab : get_num_tab(array_ptr);
+        return this->num_tab_ >= 0 ? this->num_tab_ : get_num_tab(array_ptr);
     }
 
     /// Registry of every v1 array: array address -> table number.

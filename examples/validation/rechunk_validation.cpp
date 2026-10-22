@@ -113,11 +113,11 @@ bool g_parallel = false; ///< --mode: the pass being run
 /// @brief f(i) for i in [0, N): a plain loop, or a work-shared parallel
 ///        region (static schedule) followed by the phase-end drain.
 template <typename F>
-void for_each_index(long N, F&& f)
+void for_each_index(long n, F&& f)
 {
     if (!g_parallel)
     {
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             f(i);
         }
@@ -130,7 +130,7 @@ void for_each_index(long N, F&& f)
             shrink_array::begin_parallel_phase();
         }
 #pragma omp for schedule(static)
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
             f(i);
         }
@@ -141,31 +141,31 @@ void for_each_index(long N, F&& f)
 /// @brief How many i in [0, N) satisfy bad(i) -- the checks, in the same
 ///        serial or parallel pass. Details are then printed by a serial scan.
 template <typename F>
-long count_if_index(long N, F&& bad)
+long count_if_index(long n, F&& bad)
 {
-    long n = 0;
+    long count = 0;
     if (!g_parallel)
     {
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
-            n += bad(i) ? 1 : 0;
+            count += bad(i) ? 1 : 0;
         }
-        return n;
+        return count;
     }
-#pragma omp parallel reduction(+ : n)
+#pragma omp parallel reduction(+ : count)
     {
         if constexpr (build_config::has_not_ompt)
         {
             shrink_array::begin_parallel_phase();
         }
 #pragma omp for schedule(static)
-        for (long i = 0; i < N; ++i)
+        for (long i = 0; i < n; ++i)
         {
-            n += bad(i) ? 1 : 0;
+            count += bad(i) ? 1 : 0;
         }
     }
     drain_compression_backlog();
-    return n;
+    return count;
 }
 
 /// @brief The case label with the pass it runs in.
@@ -220,7 +220,7 @@ void maybe_set_second_value(Arr& a, const Val& v)
 // value is enough to satisfy the Chunk2 contract (populate the map).
 template <typename T>
 int check_invariance(const char* label,
-                     long        N,
+                     long        n,
                      unsigned    new_size,
                      T (*gen)(long),
                      T   sv_value    = T(1),
@@ -229,14 +229,14 @@ int check_invariance(const char* label,
     const std::string lab_s = pass_label(label);
     label                   = lab_s.c_str();
 
-    Array<T> arr(N);
+    Array<T> arr(n);
     maybe_set_second_value(arr, sv_value); // no-op on chunk v1; required on chunk2
 
     fprintf(stderr, "[%s/%s] arr built: chunk_size=%u (g_active should be 512)\n", variant_name(), label,
             arr.chunk_size());
 
-    std::vector<T> ref(N);
-    for_each_index(N,
+    std::vector<T> ref(n);
+    for_each_index(n,
                    [&](long i)
                    {
                        const T v = gen(i);
@@ -247,9 +247,9 @@ int check_invariance(const char* label,
     const unsigned old_size = arr.chunk_size();
 
     // (a) pre-rechunk DIAGNOSTIC: is the content read at the old geometry correct?
-    const long pre_bad   = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    const long pre_bad   = count_if_index(n, [&](long i) { return arr[i] != ref[i]; });
     long       pre_first = -1;
-    for (long i = 0; pre_bad && pre_first < 0 && i < N; ++i)
+    for (long i = 0; pre_bad && pre_first < 0 && i < n; ++i)
     {
         if (arr[i] != ref[i])
         {
@@ -273,14 +273,14 @@ int check_invariance(const char* label,
         println("[{}/{}] FAIL: geometry {} -> {} (expected {})", variant_name(), label, old_size, got_size, new_size);
         return 1;
     }
-    if ((long)arr.size() != N)
+    if ((long)arr.size() != n)
     {
-        println("[{}/{}] FAIL: size {} -> {}", variant_name(), label, N, (long)arr.size());
+        println("[{}/{}] FAIL: size {} -> {}", variant_name(), label, n, (long)arr.size());
         return 1;
     }
-    const long mismatches = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    const long mismatches = count_if_index(n, [&](long i) { return arr[i] != ref[i]; });
     long       first      = -1;
-    for (long i = 0, shown = 0; mismatches && shown < 5 && i < N; ++i)
+    for (long i = 0, shown = 0; mismatches && shown < 5 && i < n; ++i)
     {
         if (arr[i] != ref[i])
         {
@@ -296,7 +296,7 @@ int check_invariance(const char* label,
     if (mismatches)
     {
         println("[{}/{}] FAIL: {}/{} mismatches after rechunk {}->{} (first at i={})", variant_name(), label,
-                mismatches, N, old_size, new_size, first);
+                mismatches, n, old_size, new_size, first);
         return 1;
     }
     // ── POST-RECHUNK PHASE: rewrite + compress in rounds, mimicking the bench.
@@ -306,7 +306,7 @@ int check_invariance(const char* label,
     //    invariance against the ground-truth ref.
     for (int round = 0; round < post_rounds; ++round)
     {
-        for_each_index(N,
+        for_each_index(n,
                        [&](long i)
                        {
                            const T v = gen(i + ((long)round * 7919));
@@ -326,9 +326,9 @@ int check_invariance(const char* label,
         {
             arr.compress_int();
         }
-        const long bad    = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+        const long bad    = count_if_index(n, [&](long i) { return arr[i] != ref[i]; });
         long       firstb = -1;
-        for (long i = 0; bad && firstb < 0 && i < N; ++i)
+        for (long i = 0; bad && firstb < 0 && i < n; ++i)
         {
             if (arr[i] != ref[i])
             {
@@ -338,11 +338,11 @@ int check_invariance(const char* label,
         if (bad)
         {
             println("[{}/{}] POST-FAIL round {}: {}/{} mismatches after compress (first i={}, new-chunk #{} off {})",
-                    variant_name(), label, round, bad, N, firstb, firstb / (long)new_size, firstb % (long)new_size);
+                    variant_name(), label, round, bad, n, firstb, firstb / (long)new_size, firstb % (long)new_size);
             return 1;
         }
     }
-    println("[{}/{}] OK: {} elements invariant, geometry {}->{} (second_value={:.17g}){}", variant_name(), label, N,
+    println("[{}/{}] OK: {} elements invariant, geometry {}->{} (second_value={:.17g}){}", variant_name(), label, n,
             old_size, new_size, (double)sv_value, post_rounds ? " [+post-rechunk compress rounds]" : "");
     return 0;
 }
@@ -359,7 +359,7 @@ int check_invariance(const char* label,
 // left alone, written alternately. Passing means geometry coexistence is safe;
 // failing pins the defect down to ~30 lines instead of a 1200-iteration bench.
 template <typename T>
-int check_coexistence(const char* label, long N, unsigned moved_size, int rounds)
+int check_coexistence(const char* label, long n, unsigned moved_size, int rounds)
 {
     using Arr = Array<T>;
 
@@ -369,10 +369,10 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
     // `fixed` first: it takes the lower registry index (num_tab), so a re-chunk
     // of `moved` whose teardown released the wrong row of the per-type flag
     // table would pull it from under `fixed` -- the writes below then fault.
-    Arr fixed(static_cast<int>(N)); // stays at the ambient geometry
-    Arr moved(static_cast<int>(N)); // will be re-chunked
+    Arr fixed(static_cast<int>(n)); // stays at the ambient geometry
+    Arr moved(static_cast<int>(n)); // will be re-chunked
 
-    for_each_index(N,
+    for_each_index(n,
                    [&](long i)
                    {
                        moved[i] = static_cast<T>((i % 7) ? 0 : i);
@@ -384,7 +384,7 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
     // Alternate writes between the two geometries, the way the bench's loop does.
     for (int r = 0; r < rounds; ++r)
     {
-        for_each_index(N,
+        for_each_index(n,
                        [&](long i)
                        {
                            moved[i] = static_cast<T>((i + r) % 11 ? 0 : (i + r));
@@ -395,14 +395,14 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
     // Verify both arrays still read back what was last written.
     const int  r = rounds - 1;
     const long nbad =
-        count_if_index(N,
+        count_if_index(n,
                        [&](long i)
                        {
                            return !(static_cast<T>(moved[i]) == static_cast<T>((i + r) % 11 ? 0 : (i + r))) ||
                                   !(static_cast<T>(fixed[i]) == static_cast<T>((i + r) % 13 ? 0 : (i + r)));
                        });
     int bad = 0;
-    for (long i = 0; nbad && i < N && bad < 5; ++i)
+    for (long i = 0; nbad && i < n && bad < 5; ++i)
     {
         const T em = static_cast<T>((i + r) % 11 ? 0 : (i + r));
         const T ef = static_cast<T>((i + r) % 13 ? 0 : (i + r));
@@ -415,7 +415,7 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
     }
     if (!bad)
     {
-        println("[{}/{}] OK: {} elements, geometries {} and ambient coexisting", variant_name(), label, N, moved_size);
+        println("[{}/{}] OK: {} elements, geometries {} and ambient coexisting", variant_name(), label, n, moved_size);
     }
     return bad ? 1 : 0;
 }
@@ -427,15 +427,15 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
 // constant, a boundary off by one -- shows up as a mismatch rather than as a
 // slow drift noticed three compression passes later.
 template <typename T>
-int check_range_ops(const char* label, long N)
+int check_range_ops(const char* label, long n)
 {
     using Arr = Array<T>;
 
     const std::string lab_s = pass_label(label);
     label                   = lab_s.c_str();
 
-    Arr viaRange(static_cast<int>(N));
-    Arr viaElem(static_cast<int>(N));
+    Arr via_range(static_cast<int>(n));
+    Arr via_elem(static_cast<int>(n));
 
     const auto expected = [](long i) -> T
     {
@@ -455,61 +455,61 @@ int check_range_ops(const char* label, long N)
 
     // 1) whole-array zero fill: the case where a correct implementation must
     //    allocate NOTHING (every chunk set constant outright).
-    shrink_array::fill_range(viaRange, 0, static_cast<std::size_t>(N), static_cast<T>(0));
-    for (long i = 0; i < N; ++i)
+    shrink_array::fill_range(via_range, 0, static_cast<std::size_t>(n), static_cast<T>(0));
+    for (long i = 0; i < n; ++i)
     {
-        viaElem[i] = static_cast<T>(0);
+        via_elem[i] = static_cast<T>(0);
     }
 
     // 2) scattered writes, both paths identical
-    for (long i = 0; i < N; ++i)
+    for (long i = 0; i < n; ++i)
     {
         const T e = expected(i);
         if (!(e == static_cast<T>(0)))
         {
-            viaRange[i] = e;
-            viaElem[i]  = e;
+            via_range[i] = e;
+            via_elem[i]  = e;
         }
     }
 
     // 3) partial fills straddling chunk boundaries, deliberately unaligned
-    const unsigned S = viaRange.chunk_size();
-    for (const long off : {1L, (long)S - 1, (long)S + 1, (long)(2 * S) + 3})
+    const unsigned s = via_range.chunk_size();
+    for (const long off : {1L, (long)s - 1, (long)s + 1, (long)(2 * s) + 3})
     {
         const auto a0 = static_cast<std::size_t>(off);
-        const auto b0 = static_cast<std::size_t>(off) + (5 * static_cast<std::size_t>(S)) + 7;
-        if (b0 >= static_cast<std::size_t>(N))
+        const auto b0 = static_cast<std::size_t>(off) + (5 * static_cast<std::size_t>(s)) + 7;
+        if (b0 >= static_cast<std::size_t>(n))
         {
             continue;
         }
-        shrink_array::fill_range(viaRange, a0, b0, static_cast<T>(7));
+        shrink_array::fill_range(via_range, a0, b0, static_cast<T>(7));
         for (std::size_t i = a0; i < b0; ++i)
         {
-            viaElem[static_cast<long>(i)] = static_cast<T>(7);
+            via_elem[static_cast<long>(i)] = static_cast<T>(7);
         }
     }
 
     // 4) copy_range from a plain vector -- the generic/overloaded pair in use
-    std::vector<T> src(static_cast<std::size_t>(N));
-    for (long i = 0; i < N; ++i)
+    std::vector<T> src(static_cast<std::size_t>(n));
+    for (long i = 0; i < n; ++i)
     {
         src[static_cast<std::size_t>(i)] = static_cast<T>((i % 11) ? 0 : i);
     }
     const std::size_t ca = 3;
-    const std::size_t cb = static_cast<std::size_t>(N) - 3;
-    shrink_array::copy_range(viaRange, ca, cb, src.begin() + 0);
+    const std::size_t cb = static_cast<std::size_t>(n) - 3;
+    shrink_array::copy_range(via_range, ca, cb, src.begin() + 0);
     for (std::size_t i = ca; i < cb; ++i)
     {
-        viaElem[static_cast<long>(i)] = src[i - ca];
+        via_elem[static_cast<long>(i)] = src[i - ca];
     }
 
     const long nbad =
-        count_if_index(N, [&](long i) { return !(static_cast<T>(viaRange[i]) == static_cast<T>(viaElem[i])); });
+        count_if_index(n, [&](long i) { return !(static_cast<T>(via_range[i]) == static_cast<T>(via_elem[i])); });
     int bad = 0;
-    for (long i = 0; nbad && i < N && bad < 5; ++i)
+    for (long i = 0; nbad && i < n && bad < 5; ++i)
     {
-        const T r = static_cast<T>(viaRange[i]);
-        const T e = static_cast<T>(viaElem[i]);
+        const T r = static_cast<T>(via_range[i]);
+        const T e = static_cast<T>(via_elem[i]);
         if (!(r == e))
         {
             println("[{}/{}] MISMATCH at {}: range={:g} element={:g}", variant_name(), label, i, (double)r, (double)e);
@@ -518,7 +518,7 @@ int check_range_ops(const char* label, long N)
     }
     if (!bad)
     {
-        println("[{}/{}] OK: {} elements, range ops match the element path", variant_name(), label, N);
+        println("[{}/{}] OK: {} elements, range ops match the element path", variant_name(), label, n);
     }
     return bad ? 1 : 0;
 }
@@ -534,11 +534,11 @@ int check_non_pow2_refused(const char* label)
     const std::string lab_s = pass_label(label);
     label                   = lab_s.c_str();
 
-    const long          N = 100000;
-    Array<double>       arr(N);
-    std::vector<double> ref(N);
+    const long          n = 100000;
+    Array<double>       arr(n);
+    std::vector<double> ref(n);
     maybe_set_second_value(arr, 1.0);
-    for_each_index(N,
+    for_each_index(n,
                    [&](long i)
                    {
                        const double v = double((i / 700) % 3);
@@ -559,7 +559,7 @@ int check_non_pow2_refused(const char* label)
             ++bad;
         }
     }
-    const long mism = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    const long mism = count_if_index(n, [&](long i) { return arr[i] != ref[i]; });
     if (mism)
     {
         println("[{}/{}] FAIL: {} element(s) changed by the refused re-chunks", variant_name(), label, mism);
@@ -585,7 +585,7 @@ int check_non_pow2_refused(const char* label)
 
     // The refusals left the array usable: a legal re-chunk, content intact.
     arr.rechunk_to(old_size * 2u);
-    const long after = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    const long after = count_if_index(n, [&](long i) { return arr[i] != ref[i]; });
     if (arr.chunk_size() != old_size * 2u || after)
     {
         println("[{}/{}] FAIL: legal rechunk_to({}) afterwards: geometry {}, {} mismatch(es)", variant_name(), label,
@@ -655,7 +655,7 @@ int check_index_split(const char* label)
     const unsigned ambient  = active_chunk_size();
 
     long bad = 0;
-    long n   = 0;
+    long count = 0;
     for (unsigned d = 32; d <= 4096; d += (d < 64 ? 32 : 64))
     {
         if (!is_valid_chunk_size(d))
@@ -667,7 +667,7 @@ int check_index_split(const char* label)
         const auto one = [&](auto i)
         {
             using I = decltype(i);
-            ++n;
+            ++count;
             if (p.chunk_of(i) != static_cast<I>(i / static_cast<I>(d)) ||
                 p.offset_of(i) != static_cast<I>(i % static_cast<I>(d)))
             {
@@ -696,7 +696,7 @@ int check_index_split(const char* label)
     if (!bad)
     {
         println("[{}/{}] OK: chunk_of / offset_of == / and % for every valid size up to 4096 ({} indexes)",
-                variant_name(), label, n);
+                variant_name(), label, count);
     }
     return bad ? 1 : 0;
 }
@@ -710,13 +710,13 @@ int check_multiple_of_64_chain(const char* label)
     const std::string lab_s = pass_label(label);
     label                   = lab_s.c_str();
 
-    const long          N = 200000;
-    Array<double>       arr(N);
-    std::vector<double> ref(N);
+    const long          n = 200000;
+    Array<double>       arr(n);
+    std::vector<double> ref(n);
     maybe_set_second_value(arr, 1.0);
     // Runs of 1000 (not a multiple of any size here): constant chunks and
     // chunks straddling two values at every geometry.
-    for_each_index(N,
+    for_each_index(n,
                    [&](long i)
                    {
                        const double v = (i / 1000) % 4 == 3 ? double(i % 7) : double((i / 1000) % 3);
@@ -729,7 +729,7 @@ int check_multiple_of_64_chain(const char* label)
     for (const unsigned s : {384u, 192u, 576u, 320u, 1024u, 448u, 512u, 256u})
     {
         arr.rechunk_to(s);
-        const long mism = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+        const long mism = count_if_index(n, [&](long i) { return arr[i] != ref[i]; });
         if (arr.chunk_size() != s || mism)
         {
             println("[{}/{}] FAIL: rechunk_to({}): geometry {}, {} mismatch(es)", variant_name(), label, s,
@@ -738,11 +738,11 @@ int check_multiple_of_64_chain(const char* label)
         }
     }
     // Writes and reads at the last geometry, across chunk boundaries.
-    for (long i = 255; i < N; i += 4093)
+    for (long i = 255; i < n; i += 4093)
     {
         arr[i] = ref[static_cast<std::size_t>(i)] = double(i % 11);
     }
-    const long after = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    const long after = count_if_index(n, [&](long i) { return arr[i] != ref[i]; });
     if (after)
     {
         println("[{}/{}] FAIL: {} mismatch(es) after writes at {}", variant_name(), label, after, arr.chunk_size());
@@ -811,7 +811,7 @@ static int run_body(int argc, char** argv)
             pos.push_back(argv[a]);
         }
     }
-    const long     N_scale = !pos.empty() ? shrink_array::arg_number<long>(pos[0], 1000000L, "N") : 1000000L;
+    const long     n_scale = !pos.empty() ? shrink_array::arg_number<long>(pos[0], 1000000L, "N") : 1000000L;
     const unsigned tgt     = pos.size() > 1 ? shrink_array::arg_number<unsigned>(pos[1], 1024u, "target size") : 1024u;
     const int      rounds  = pos.size() > 2 ? shrink_array::arg_number<int>(pos[2], 200, "rounds") : 200;
     const bool     run_ser = std::strcmp(mode, "parallel") != 0;
@@ -822,7 +822,7 @@ static int run_body(int argc, char** argv)
         return 2;
     }
 
-    const long N = 1000000;
+    const long n = 1000000;
     // Each case declares a second_value present in its data (value -> val2
     // compression actually kicks in). On chunk2 this is REQUIRED; on 2A / v1
     // it is a no-op. The first three start at 64 (the scale case grows it to
@@ -835,28 +835,28 @@ static int run_body(int argc, char** argv)
          [&]
          {
              return check_invariance<double>(
-                 "scale-64-to-tgt", N_scale, tgt, [](long i) -> double { return double((i / 5000) % 3); },
+                 "scale-64-to-tgt", n_scale, tgt, [](long i) -> double { return double((i / 5000) % 3); },
                  /*sv_value=*/2.0, /*post_rounds=*/rounds);
          }},
         {"mostly-constant", 512,
          [&]
          {
              return check_invariance<double>(
-                 "mostly-constant", N, 2048, [](long i) -> double { return double((i / 5000) % 3); },
+                 "mostly-constant", n, 2048, [](long i) -> double { return double((i / 5000) % 3); },
                  /*sv_value=*/2.0);
          }},
         {"sin-quantized", 512,
          [&]
          {
              return check_invariance<double>(
-                 "sin-quantized", N, 4096,
+                 "sin-quantized", n, 4096,
                  [](long i) -> double { return std::floor(std::sin(double(i) * 0.001) * 4.0); }, /*sv_value=*/1.0);
          }},
         {"shrink-to-smaller", 512,
          [&]
          {
              return check_invariance<double>(
-                 "shrink-to-smaller", N, 256, [](long i) -> double { return double((i / 1000) % 2); },
+                 "shrink-to-smaller", n, 256, [](long i) -> double { return double((i / 1000) % 2); },
                  /*sv_value=*/1.0);
          }},
         // 4096, not 8192: rechunk_to() refuses anything above cst_buffer_size
@@ -869,7 +869,7 @@ static int run_body(int argc, char** argv)
          [&]
          {
              return check_invariance<double>(
-                 "all-same", N, 4096, [](long) -> double { return 42.0; },
+                 "all-same", n, 4096, [](long) -> double { return 42.0; },
                  /*sv_value=*/42.0);
          }},
         {"all-different", 512,
@@ -884,7 +884,7 @@ static int run_body(int argc, char** argv)
          [&]
          {
              return check_invariance<double>(
-                 "val2-grow", N, 2048, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0);
+                 "val2-grow", n, 2048, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0);
          }},
         // A size that is neither a power of two nor a multiple of 64: refused, nothing changed.
         {"invalid-size-refused", 512, [] { return check_non_pow2_refused("invalid-size-refused"); }},
@@ -897,7 +897,7 @@ static int run_body(int argc, char** argv)
          [&]
          {
              return check_invariance<double>(
-                 "val2-shrink", N, 256, [](long i) -> double { return double((i / 1000) % 2); },
+                 "val2-shrink", n, 256, [](long i) -> double { return double((i / 1000) % 2); },
                  /*sv_value=*/1.0);
          }},
         // The v1 refill's SLICED path (fast-alloc OpenMP builds): it slices
@@ -950,7 +950,7 @@ static int run_body(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    println("=== rechunk_validation [variant = {}]  N_scale={}  64->{}  case={}  mode={} ===", variant_name(), N_scale,
+    println("=== rechunk_validation [variant = {}]  N_scale={}  64->{}  case={}  mode={} ===", variant_name(), n_scale,
             tgt, only ? only : "all", mode);
 
     int      fails    = 0;

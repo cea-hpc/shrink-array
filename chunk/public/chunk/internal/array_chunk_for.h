@@ -44,6 +44,6 @@ struct ArrayChunkFor
 };
 
 template <typename ChunkType>
-using ArrayChunkFor_t = ArrayChunkFor<ChunkType>::type;
+using ArrayChunkForT = ArrayChunkFor<ChunkType>::type;
 
 } // namespace shrink_array

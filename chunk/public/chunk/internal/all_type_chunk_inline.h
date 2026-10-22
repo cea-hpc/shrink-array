@@ -27,7 +27,7 @@
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::use_chunk*
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/for_each_type.h"       // for_each_type
-#include "chunk/internal/manager_chunk.h"       // ManagerChunk<CHUNK_T, T>
+#include "chunk/internal/manager_chunk.h"       // ManagerChunk<ChunkT, T>
 #include "chunk/singleton.h"                    // SingletonChk<AllTypeChunk>, for ensure_manager
 #include "chunk/chunk_traits.h"                 // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
 #include "chunk/internal/link_check.h"          // CHUNK_LINK_CHECK: the program's settings, the library's
@@ -82,16 +82,16 @@ void AllTypeChunk::ensure_manager()
     {
         link_check::CHUNK_LINK_CHECK(); // links only against a library built with this TU's settings
         ensure_ready();                 // init_indexes(true) if the program has not run it
-        SingletonChk<AllTypeChunk>::getRef().register_manager<ManagerT>();
+        SingletonChk<AllTypeChunk>::get_ref().register_manager<ManagerT>();
         return true;
     }();
 }
 
-template <template <typename> class CHUNK_T, typename Types>
-void AllTypeChunk::fillManagerChunk()
+template <template <typename> class ChunkT, typename Types>
+void AllTypeChunk::fill_manager_chunk()
 {
     // One ManagerChunk per T of Types (a std::tuple).
-    for_each_type<Types>([this]<typename T> { this->template register_manager<ManagerChunk<CHUNK_T, T>>(); });
+    for_each_type<Types>([this]<typename T> { this->template register_manager<ManagerChunk<ChunkT, T>>(); });
 }
 
 template <typename Types>
@@ -104,15 +104,15 @@ void AllTypeChunk::initialize()
     // a build may select more than one (chunk_config::use_chunk*).
     if constexpr (chunk_config::use_chunk)
     {
-        fillManagerChunk<Chunk, Types>();
+        fill_manager_chunk<Chunk, Types>();
     }
     if constexpr (chunk_config::use_chunk2)
     {
-        fillManagerChunk<Chunk2, Types>();
+        fill_manager_chunk<Chunk2, Types>();
     }
     if constexpr (chunk_config::use_chunk2a)
     {
-        fillManagerChunk<Chunk2A, Types>();
+        fill_manager_chunk<Chunk2A, Types>();
     }
 }
 

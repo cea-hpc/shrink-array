@@ -48,10 +48,10 @@
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"         // ValueLess
 #include "chunk/internal/map_helper.h"         // ValueToIntMapHelper
-#include "chunk/internal/in_t.h"               // in_t<T>
+#include "chunk/internal/in_t.h"               // InT<T>
 #include "chunk/config.h"                      // build_config::any_check
 #include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/second_value_info.h"  // SecondValueInfo (inf_array_t)
+#include "chunk/internal/second_value_info.h"  // SecondValueInfo (InfArrayT)
 #include "chunk/log.h"                         // CHUNK_LOG (report_key_not_found)
 
 namespace shrink_array
@@ -61,10 +61,10 @@ namespace shrink_array
 template <typename T>
 struct ValueToInfTupleMapHelper
 {
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     // Keyed by the second value, ordered by ValueLess (value_less.h).
-    using type = std::map<T, inf_array_t*, ValueLess<T>>;
+    using type = std::map<T, InfArrayT*, ValueLess<T>>;
 };
 
 /**
@@ -84,17 +84,17 @@ template <typename T, bool Enabled>
 class PointerMapChunk2InfArrayPolicy
 {
   public:
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     /**
      * @brief All registered inf_array pointers, in map order.
      * @return Vector of every second value's currently-registered pointer.
      */
-    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
+    [[nodiscard]] std::vector<InfArrayT*> get_all_inf_array() const
     {
-        std::vector<inf_array_t*> values;
+        std::vector<InfArrayT*> values;
 
-        for (const auto& [key, v] : map_inf_array)
+        for (const auto& [key, v] : map_inf_array_)
         {
             values.push_back(v);
         }
@@ -107,10 +107,10 @@ class PointerMapChunk2InfArrayPolicy
      * @param key Second value to look up.
      * @return The registered pointer, or nullptr if @p key is not registered.
      */
-    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> key) const
+    [[nodiscard]] InfArrayT* find_inf_array(InT<T> key) const
     {
-        const auto it = map_inf_array.find(key);
-        if (it != map_inf_array.end())
+        const auto it = map_inf_array_.find(key);
+        if (it != map_inf_array_.end())
         {
             return it->second;
         }
@@ -129,13 +129,13 @@ class PointerMapChunk2InfArrayPolicy
      *
      * @param self_ptr Address of the departing array's inf_array member.
      */
-    void erase_inf_array_by_ptr(const inf_array_t* self_ptr)
+    void erase_inf_array_by_ptr(const InfArrayT* self_ptr)
     {
-        for (auto it = map_inf_array.begin(); it != map_inf_array.end();)
+        for (auto it = map_inf_array_.begin(); it != map_inf_array_.end();)
         {
             if (it->second == self_ptr)
             {
-                it = map_inf_array.erase(it);
+                it = map_inf_array_.erase(it);
             }
             else
             {
@@ -152,13 +152,13 @@ class PointerMapChunk2InfArrayPolicy
      * @param key Second value to register.
      * @param ind inf_array record pointer to associate with @p key.
      */
-    void insert(in_t<T> key, inf_array_t* ind)
+    void insert(InT<T> key, InfArrayT* ind)
     {
-        map_inf_array[key] = ind;
+        map_inf_array_[key] = ind;
     }
 
     /// Map from a second value to its registered inf_array record pointer.
-    MapType0 map_inf_array;
+    MapType0 map_inf_array_;
 };
 
 /**
@@ -171,24 +171,24 @@ template <typename T>
 class PointerMapChunk2InfArrayPolicy<T, false>
 {
   public:
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     /// @brief No registry: always empty.
-    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
+    [[nodiscard]] std::vector<InfArrayT*> get_all_inf_array() const
     {
         return {};
     }
     /// @brief No registry: never found.
-    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> /*key*/) const
+    [[nodiscard]] InfArrayT* find_inf_array(InT<T> /*key*/) const
     {
         return nullptr;
     }
     /// @brief No registry: nothing to erase.
-    static void erase_inf_array_by_ptr(const inf_array_t* /*self_ptr*/) {}
+    static void erase_inf_array_by_ptr(const InfArrayT* /*self_ptr*/) {}
 
   protected:
     /// @brief No registry: nothing recorded.
-    static void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
+    static void insert(InT<T> /*key*/, InfArrayT* /*ind*/) {}
 };
 
 /**
@@ -204,12 +204,12 @@ class PointerMapChunk2
 {
   private:
     /// Internal alias for tuple representing a value with index and table number.
-    using inf_array_t = SecondValueInfo<T>;
+    using InfArrayT = SecondValueInfo<T>;
 
-    using Linear = PointerMapLinear<inf_array_t, std::deque<std::pair<const void*, inf_array_t>>>;
+    using Linear = PointerMapLinear<InfArrayT, std::deque<std::pair<const void*, InfArrayT>>>;
     /// @brief Bring the base's storage into this class's scope.
     /// @details Avoids `this->vec` everywhere (dependent base).
-    using Linear::vec;
+    using Linear::vec_;
 
     /// @brief Policy carrying the fast-block-compression-only inf_array map.
     using InfArrayPolicy = PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>;
@@ -238,7 +238,7 @@ class PointerMapChunk2
             // -1 means "outside any parallel region"; CHUNK_PMP_* already
             // folds to that in a serial build.
             const int    rank  = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
-            const size_t count = vec.size();
+            const size_t count = vec_.size();
 
             // The valid keys, bounded so a corrupt size can't run away (and
             // cut at the log's line length anyway).
@@ -248,8 +248,8 @@ class PointerMapChunk2
             for (size_t i = 0; i < lim && n < keys.size(); ++i)
             {
                 n += static_cast<std::size_t>(std::format_to_n(keys.data() + n, keys.size() - n, " [{} num_tab={}]",
-                                                               static_cast<const void*>(vec[i].first),
-                                                               vec[i].second.num_tab)
+                                                               static_cast<const void*>(vec_[i].first),
+                                                               vec_[i].second.num_tab)
                                                   .size);
             }
             CHUNK_LOG(error, general,
@@ -261,7 +261,7 @@ class PointerMapChunk2
     }
 
     /// Map from values to constant index values.
-    MapType map_ind_cst_val2;
+    MapType map_ind_cst_val2_;
 
   public:
     /// @brief The policy's insert(second value, inf_array pointer), protected
@@ -281,7 +281,7 @@ class PointerMapChunk2
         // of whichever second value was registered first, by any array).
         const T   val{};
         const int ind = chunk_config::no_second_value_index;
-        vec.emplace_back(key, inf_array_t{val, ind, num_tab});
+        vec_.emplace_back(key, InfArrayT{val, ind, num_tab});
     }
 
     /**
@@ -294,7 +294,7 @@ class PointerMapChunk2
      */
     [[nodiscard]] std::size_t share_info_entries() const noexcept
     {
-        return vec.size();
+        return vec_.size();
     }
 
     /**
@@ -305,9 +305,9 @@ class PointerMapChunk2
      * @param ind New index to assign.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    void replace_all_other_elm(void* key, in_t<T> val, int ind) noexcept
+    void replace_all_other_elm(void* key, InT<T> val, int ind) noexcept
     {
-        for (auto& item : vec)
+        for (auto& item : vec_)
         {
             if (item.first == key)
             {
@@ -319,14 +319,14 @@ class PointerMapChunk2
         }
         report_key_not_found(key, "replace_all_other_elm");
         CHUNK_INVARIANT_FAILED("[share_info replace_all_other_elm] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
     }
 
     /// @brief Record that second value @p key sits at index @p ind of the
     ///        shared value table.
-    void insert_map_ind_cst_val2(in_t<T> key, int ind)
+    void insert_map_ind_cst_val2(InT<T> key, int ind)
     {
-        map_ind_cst_val2[key] = ind;
+        map_ind_cst_val2_[key] = ind;
     }
 
     /// @brief Every registered second value, in map order.
@@ -334,7 +334,7 @@ class PointerMapChunk2
     {
         std::vector<T> keys;
 
-        for (const auto& [key, v] : map_ind_cst_val2)
+        for (const auto& [key, v] : map_ind_cst_val2_)
         {
             keys.push_back(key);
         }
@@ -344,12 +344,12 @@ class PointerMapChunk2
 
     /// @brief Index of second value @p key in the shared value table, or -1
     ///        when it is not registered (0 for bool, which has no table).
-    [[nodiscard]] int find_ind_tab_cst2(in_t<T> key) const
+    [[nodiscard]] int find_ind_tab_cst2(InT<T> key) const
     {
         if constexpr (is_not_bool)
         {
-            const auto it = map_ind_cst_val2.find(key);
-            if (it != map_ind_cst_val2.end())
+            const auto it = map_ind_cst_val2_.find(key);
+            if (it != map_ind_cst_val2_.end())
             {
                 return it->second;
             }
@@ -364,9 +364,9 @@ class PointerMapChunk2
     /// @brief Change the second value and its table index recorded for
     ///        array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    void replace(void* key, in_t<T> val, int ind) noexcept
+    void replace(void* key, InT<T> val, int ind) noexcept
     {
-        for (auto& item : vec)
+        for (auto& item : vec_)
         {
             if (item.first == key)
             {
@@ -378,7 +378,7 @@ class PointerMapChunk2
 
         report_key_not_found(key, "replace");
         CHUNK_INVARIANT_FAILED("[share_info replace] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
     }
 
     /// @brief The second value recorded for array @p key (true for bool).
@@ -387,7 +387,7 @@ class PointerMapChunk2
     {
         if constexpr (is_not_bool)
         {
-            for (const auto& item : vec)
+            for (const auto& item : vec_)
             {
                 if (item.first == key)
                 {
@@ -401,13 +401,13 @@ class PointerMapChunk2
         }
         report_key_not_found(key, "get_second_value");
         CHUNK_INVARIANT_FAILED("[share_info get_second_value] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
     }
     /// @brief The num_tab recorded for array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
     [[nodiscard]] int get_num_tab(const void* key) const noexcept
     {
-        for (const auto& item : vec)
+        for (const auto& item : vec_)
         {
             if (item.first == key)
             {
@@ -416,12 +416,12 @@ class PointerMapChunk2
         }
         report_key_not_found(key, "get_num_tab");
         CHUNK_INVARIANT_FAILED("[share_info get_num_tab] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
     }
 
     /// @brief The whole (second value, index, num_tab) tuple recorded for
     ///        array @p key.
-    [[nodiscard]] inf_array_t get_info_second_value(const void* key) const noexcept
+    [[nodiscard]] InfArrayT get_info_second_value(const void* key) const noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -429,7 +429,7 @@ class PointerMapChunk2
             {
                 // Snapshot size() ONCE and index stable deque slots (see the storage
                 // note above): a concurrent append cannot move the loop bound.
-                const size_t count = vec.size();
+                const size_t count = vec_.size();
 
                 if (count > (1U << 30U))
                 {
@@ -439,9 +439,9 @@ class PointerMapChunk2
 
                 for (size_t i = 0; i < count; ++i)
                 {
-                    if (vec[i].first == key)
+                    if (vec_[i].first == key)
                     {
-                        return vec[i].second;
+                        return vec_[i].second;
                     }
                 }
                 CHUNK_INVARIANT_FAILED("[share_info get] key NOT FOUND: this={} size={} key={} "
@@ -452,17 +452,17 @@ class PointerMapChunk2
             else
             {
                 // deque: snapshot size() and index stable slots (see above).
-                const size_t count = vec.size();
+                const size_t count = vec_.size();
                 for (size_t i = 0; i < count; ++i)
                 {
-                    if (vec[i].first == key)
+                    if (vec_[i].first == key)
                     {
-                        return vec[i].second;
+                        return vec_[i].second;
                     }
                 }
                 report_key_not_found(key, "get_info_second_value");
                 CHUNK_INVARIANT_FAILED("[share_info get_info_second_value] key NOT FOUND: this={} size={} key={}",
-                                       static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                                       static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
             }
         }
         else
@@ -472,15 +472,15 @@ class PointerMapChunk2
             // included) would get the first one's num_tab and its compression-flag
             // write would index the wrong array's tab_is_inside_chunk_list_to_compress
             // (heap overflow). Same hazard as PointerMapLinear::erase().
-            const size_t count = vec.size();
+            const size_t count = vec_.size();
             for (size_t i = 0; i < count; ++i)
             {
-                if (vec[i].first == key)
+                if (vec_[i].first == key)
                 {
-                    return vec[i].second;
+                    return vec_[i].second;
                 }
             }
-            return vec[0].second; // fallback: not registered (should not happen)
+            return vec_[0].second; // fallback: not registered (should not happen)
         }
     }
 

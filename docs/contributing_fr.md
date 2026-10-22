@@ -61,7 +61,7 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 | test | règle |
 |---|---|
 | `check_includes` | chaque `#include` dit pourquoi il est là ; les en-têtes système et ceux du projet ne sont pas mélangés dans un même bloc |
-| `check_naming` | chaque variable `constexpr`, et chaque constante à préfixe `k`, a un nom en snake_case |
+| `check_naming` | la convention de nommage de la section 3, pour ce qu'une ligne en montre : constantes, énumérateurs, fonctions et variables en snake_case, types, alias et paramètres de template en PascalCase, aucun nom réservé en `__` |
 | `check_headers` | chaque fichier C++ commence par l'en-tête de licence Apache (années à jour) et ne porte pas de tampon `Created by` de l'IDE ; les scripts et fichiers de build (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) portent `# Copyright ... CEA` et `# SPDX-License-Identifier: Apache-2.0` ; les en-têtes vendorés, la ligne SPDX de leur licence d'origine ; `scripts/check_headers.py --fix` corrige |
 | `check_raw_reads` | chaque lecture brute d'un tampon de chunk dans la bibliothèque dit pourquoi elle est sûre |
 | `check_tracked` | chaque fichier cité par les sources (un `#include` entre guillemets, un import Python relatif, une source ou un harnais CMake, un lien Markdown) est suivi par git, pas seulement présent sur le disque |
@@ -75,10 +75,26 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   dans sa cible avant le push (`git rebase -i --autosquash origin/<branche>`) : une fois publié,
   il ne peut plus que rester. La CI refuse un push qui en apporte un.
 - **clang-format** avec le `.clang-format` du dépôt, sur les lignes que vous touchez.
-- **Les constantes sont en snake_case**, comme celles de la bibliothèque standard
-  (`std::dynamic_extent`) : `cst_buffer_size`, pas `kCstBufferSize` ni `CST_BUFFER_SIZE`. Les
-  MAJUSCULES sont réservées aux macros (`CHUNK_SIZE`) : une constante écrite comme une macro se
-  lit comme une macro, et peut en rencontrer une. `check_naming` le vérifie.
+- **Les noms.** Une convention : celle de la bibliothèque standard pour ce qu'elle nomme, et le
+  PascalCase pour les types :
+
+  | quoi | casse | exemple |
+  |---|---|---|
+  | fonctions, méthodes, variables, paramètres, namespaces | snake_case | `get_chunk_list`, `num_tab` |
+  | données membres privées et protégées | snake_case terminé par `_` | `chunk_list_`, `num_` |
+  | constantes (`constexpr`) et énumérateurs | snake_case | `cst_buffer_size`, `ev_flush_begin` |
+  | classes, structs, concepts, alias de type, paramètres de template | PascalCase | `ArrayChunk2A`, `AllocT`, `ChunkT` |
+  | macros | MAJUSCULES | `CHUNK_SIZE` |
+
+  Les MAJUSCULES sont réservées aux macros : une constante ou un énumérateur écrit comme une macro
+  se lit comme une macro, et peut en rencontrer une. Les formes de la bibliothèque standard
+  gardent leur graphie : les types membres de ses protocoles et ceux en `xxx_type` (`value_type`,
+  `chunk_type`), les traits et les tags (`is_cplx`, `rebind`). Dans un nom en snake_case, la
+  variante s'écrit `chunk2a` ; les noms de fichiers (`array_chunk2A.h`) restent tels quels. Les
+  globales prennent le préfixe `g_` ; aucun nom ne commence par `__` (réservé). Un nom public qui
+  change garde son ancienne graphie en alias `[[deprecated]]` jusqu'à la 1.0. `check_naming`
+  vérifie ce qu'une ligne montre ; le `readability-identifier-naming` de clang-tidy vérifie le
+  reste (le suffixe des membres, les paramètres) avec `scripts/clang_tidy_naming.yaml`.
 - **Pas de préprocesseur là où `if constexpr` suffit.** Les règles qui décident quels `#ifdef` peuvent disparaître,
   et ceux qui doivent rester, sont écrites en tête de `examples/shrink_bench/bench_config.h`.
 - **Les commentaires énoncent la règle, pas l'histoire.** Écrire pourquoi le code est tel qu'il est, et ce qui

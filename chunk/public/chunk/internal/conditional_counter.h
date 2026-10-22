@@ -32,14 +32,14 @@ namespace shrink_array
 ///          tested by is_full_zero()). Do not narrow it to `unsigned char`: past 255 the
 ///          count wraps, is_full_zero() never holds and cells read back as garbage, even
 ///          single-threaded. `unsigned short` covers every realistic chunk size in 2 bytes.
-using counter_value_t = unsigned short;
+using CounterValueT = unsigned short;
 
 static_assert(static_chunk_size <= USHRT_MAX,
               "CHUNK_SIZE exceeds the per-chunk counter capacity (unsigned short). "
               "Widen counter_value_t in conditional_counter.h if you really need "
               "chunks larger than 65535 elements.");
 
-/// @brief A per-chunk cell counter that is a real counter_value_t when
+/// @brief A per-chunk cell counter that is a real CounterValueT when
 ///        @p Enabled and an empty type otherwise, so the disabled variants
 ///        cost no storage. @p Tag lets two disabled counters of one class be
 ///        distinct empty TYPES, so both can sit at offset 0 under
@@ -55,29 +55,29 @@ class ConditionalCounter
     {
         if constexpr (Enabled)
         {
-            ++value;
+            ++value_;
         }
     }
     void operator--() noexcept
     {
         if constexpr (Enabled)
         {
-            --value;
+            --value_;
         }
     }
-    void operator=(counter_value_t v) noexcept
+    void operator=(CounterValueT v) noexcept
     {
         if constexpr (Enabled)
         {
-            value = v;
+            value_ = v;
         }
     }
 
-    operator counter_value_t() const noexcept
+    operator CounterValueT() const noexcept
     {
         if constexpr (Enabled)
         {
-            return value;
+            return value_;
         }
         else
         {
@@ -87,7 +87,7 @@ class ConditionalCounter
     /// @}
 
   private:
-    [[no_unique_address]] std::conditional_t<Enabled, counter_value_t, std::monostate> value{};
+    [[no_unique_address]] std::conditional_t<Enabled, CounterValueT, std::monostate> value_{};
 };
 
 } // namespace shrink_array

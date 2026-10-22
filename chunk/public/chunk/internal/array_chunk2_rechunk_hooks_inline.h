@@ -25,7 +25,7 @@
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
-#include "chunk/internal/in_t.h"              // in_t<value_type>: the captured state
+#include "chunk/internal/in_t.h"              // InT<value_type>: the captured state
 
 namespace shrink_array
 {
@@ -88,7 +88,7 @@ RechunkHooks2<Derived, true>::value_type RechunkHooks2<Derived, true>::rechunk_c
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_seed_fresh(in_t<value_type> state)
+void RechunkHooks2<Derived, true>::rechunk_seed_fresh(InT<value_type> state)
 {
     // On the FRESH array before refill. Not value_type{}: that is already its
     // state, and re-declaring it would make a degenerate cst_val2 == cst_val1 buffer.
@@ -116,7 +116,7 @@ bool RechunkHooks2<Derived, true>::rechunk_swap_identity(Derived& tmp)
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, in_t<value_type> state)
+void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<value_type> state)
 {
     // Re-own the registration of `state`: map_inf_array[state] points at
     // &tmp.inf_array, which dangles once the stack tmp dies, and the next
@@ -131,9 +131,9 @@ void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, in_t<v
             {
                 Derived& arr = self();
 
-                arr.inf_array    = tmp.inf_array; // tmp's is valid (set_second_value ran)
-                arr.ind_cst_val2 = tmp.ind_cst_val2;
-                proxy_type::share_info_array->insert(state, &arr.inf_array);
+                arr.inf_array_    = tmp.inf_array_; // tmp's is valid (set_second_value ran)
+                arr.ind_cst_val2_ = tmp.ind_cst_val2_;
+                proxy_type::share_info_array->insert(state, &arr.inf_array_);
             }
         }
     }
