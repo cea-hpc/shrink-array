@@ -214,8 +214,11 @@ if(OMP)
 endif()
 
 # ── Compiler-specific flags ───────────────────────────────────────────────────
+# The flags of one C++ compiler are for C++ only: the C targets (formal/) build
+# with the system cc when only CXX is set (compile_all.sh: CXX=icpx, nvc++...),
+# and GCC rejects -fp-model=precise, -tp=host, -xHost...
 if(CMAKE_CXX_COMPILER_ID MATCHES "PGI")
-    add_compile_options(-Kieee)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Kieee>)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -448,24 +451,24 @@ option(ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no 
 # campaigns measured before -- the check is then expected to fail.
 option(ONEAPI_FAST_FP "icpx: keep the default -fp-model=fast (the vector oracle check then fails)" OFF)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT ONEAPI_FAST_FP)
-    add_compile_options(-fp-model=precise)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fp-model=precise>)
     if(NOT ONEAPI_NO_INTEL_LIBS)
-        add_compile_options(-fimf-use-svml=true)
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fimf-use-svml=true>)
     endif()
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-        add_compile_options(-tp=host)
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-tp=host>)
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
         if(ONEAPI_XHOST)
-            add_compile_options(-xHost)
+            add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-xHost>)
         else()
             add_compile_options(-march=native)
         endif()
         if(ONEAPI_NO_INTEL_LIBS)
-            add_compile_options(-no-intel-lib -fveclib=none)
-            add_link_options(-no-intel-lib)
+            add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-no-intel-lib;-fveclib=none>")
+            add_link_options($<$<LINK_LANGUAGE:CXX>:-no-intel-lib>)
         endif()
     else()
         # GCC et Clang
@@ -605,7 +608,9 @@ if(NOT USE_MOLD STREQUAL "OFF")
             string(JOIN " " _mold_opts_text ${_mold_link_opts})
             message(STATUS "Linker: mold (${_mold_ver}) — ${MOLD_EXECUTABLE} "
                            "via ${_mold_opts_text}${_mold_note}")
-            add_link_options(${_mold_link_opts})
+            # C++ links only: -fno-link-libatomic is a Clang option, and the C
+            # targets may link with the system cc (see the compiler flags above).
+            add_link_options("$<$<LINK_LANGUAGE:CXX>:${_mold_link_opts}>")
             if(_mold_atomic_libs)
                 string(APPEND CMAKE_CXX_STANDARD_LIBRARIES " ${_mold_atomic_libs}")
             endif()

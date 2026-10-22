@@ -112,6 +112,10 @@ the tag's checksum to the recipe.
   while another writer's uniform-chunk scan read it as a relaxed atomic -- a
   data race (found by TSan on the std backend, present under OpenMP too).
   Same machine code on x86 and AArch64, so no value was wrong.
+- Build: the flags of one C++ compiler (icpx's `-fp-model=precise` and
+  `-fimf-use-svml=true`, nvc++'s `-tp=host`, `-xHost`, `-no-intel-lib`, the
+  mold link options) apply to C++ only. With `CXX=icpx` alone the C targets of
+  `formal/` build with the system cc, and GCC stopped on them.
 
 ## 0.1.3 -- 2026-10-22
 
