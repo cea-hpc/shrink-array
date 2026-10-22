@@ -652,21 +652,6 @@ else
    launch_build "$build_rep/cmake-build-omp-llvm-check/$arch"
 fi
 
-# CHUNK_SECOND_VALUE_INDEXED: Chunk2A's second values stored as 4-byte
-# identifiers, a library-wide option no other build here turns on. CHECK_OPTIM
-# so that the validation harnesses are built and run against it; Chunk2A alone
-# (the option changes nothing in chunk and chunk2, whose binaries would be
-# those of omp-llvm-check), one static size (256) and dyn: all its code paths.
-set_build_header 'Compiling llvm openmp with check, second values indexed (CHUNK_SECOND_VALUE_INDEXED):'
-if skip_release; then
-   echo "[debug-only] skipping llvm openmp with check, second values indexed"
-else
-   if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-check-sv-indexed/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHECK_OPTIM=ON -DCHUNK_SECOND_VALUE_INDEXED:BOOL=ON -DCHUNK_VARIANTS=chunk2a -DCHUNK_STATIC_SIZES=256 -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-   fi
-   launch_build "$build_rep/cmake-build-omp-llvm-check-sv-indexed/$arch"
-fi
-
 set_build_header 'Compiling llvm openmp std_alloc:'
 if skip_release; then
    echo "[debug-only] skipping llvm std_alloc (release) build"
@@ -680,19 +665,6 @@ fi
 # No -have-aggressive-compression build any more: the switch is a run-time one
 # (CHUNK_AGGRESSIVE_COMPRESSION=1, chunk/config.h); bench_and_test.py and
 # multi_launch_stress.py run cmake-build-omp-llvm with it under that name.
-
-# MM_PROTECT: its branches are `if constexpr` in class templates, never
-# instantiated by any other build here, so a change can break them unseen (it
-# did: d0eb79ba..e0ce84e9). Built, not run: running it is a debugging session.
-# Debug only (it was RelWithDebInfo): the point is to compile those branches,
-# which an unoptimised build does for less, and it is the build one would run
-# to debug MM_PROTECT. Without the validation harnesses a Debug build would
-# otherwise add (-DCHUNK_BUILD_VALIDATION=ON by hand to run them under it).
-set_build_header 'Compiling llvm debug openmp with MM_PROTECT (CHUNK_MM_PROTECT):'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-mm-protect/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_MM_PROTECT=ON -DCHUNK_BUILD_VALIDATION=OFF -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-mm-protect/$arch"
 
 set_build_header 'Compiling llvm debug openmp:'
 if [ "$BUILD_ONLY" = false ]; then

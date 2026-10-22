@@ -131,7 +131,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `SHRINK_INTEL_LIBM` | `ON` | x86-64: link Intel's libm if it is found |
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64: link ArmPL's `libamath` (no gain measured on Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | workaround for an icpx internal error on three files |
-| `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (debugging build; `compile_all.sh` builds it so that its branches keep compiling) |
+| `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (debugging build) |
 | `CHUNK_LIB_UNITY` | `ON` | each variant archive (`chunk_v2a_256`, ...) compiled as a single unit (unity build, 4 to 6 times less compilation); a file that has its own compile options stays separate |
 | `SHRINK_BENCH_UNITY` | `ON` | each `shrink_bench` executable compiled as a single unit (unity build, 3.5 to 4 times less compilation); `OFF` to compare timings with earlier campaigns, since inlining across benchmark files can change them; `SHRINK_BENCH_UNITY_BATCH` files per unit (0 = all) |
 | `CHUNK_DEBUG_INFO` | `auto` | debug information of the optimised builds: `full` (`-g`), `lines` (`-g1`: function names and line tables, enough for perf and gdb backtraces, not the locals), `none`; `auto`: `full` with `CHECK_OPTIM` or a sanitizer, `lines` otherwise. The machine code is the same; `lines` compiles 20 to 27 % faster with 40 % less peak memory. Debug builds always get `-g` |
