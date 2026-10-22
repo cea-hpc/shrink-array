@@ -9,6 +9,8 @@ import base64
 import html
 import json
 
+from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
+
 from shrink_gui import i18n, qos
 from shrink_gui.config import BATCH, DETACHED, LOCAL, LOCAL_DEFAULTS, PRESETS, SITE
 from shrink_gui.i18n import T
@@ -200,6 +202,7 @@ class MachinePanel:
         self.conn.setText("vérification…")
 
         def master(ok):
+            self.conn_ok = ok
             if not ok:
                 self.conn.setText(f"<span style='color:#c0392b'>pas de connexion maître : "
                                   f"lancez <b>ssh -fNM {host}</b> dans un terminal</span>")
@@ -244,3 +247,48 @@ class MachinePanel:
                 self.scan()
 
         self.remote.check_master(master)
+
+    def watch_connection(self):
+        """Every WATCH_MS (app.Main): is the cluster still answering? Losing
+        it pops a window (once, until it comes back) and a tray message;
+        when it comes back, the full check runs again. Before the first
+        successful check there is nothing to lose: no popup."""
+        if self.watch_busy or self.is_local():
+            return
+        self.watch_busy = True
+        host = self.host.text().strip()
+
+        def done(ok):
+            self.watch_busy = False
+            if host != self.host.text().strip() or self.is_local():
+                return                    # the machine changed meanwhile
+            if ok and not self.conn_ok:
+                self.info(f"connexion à {host} rétablie")
+                if self.tray:
+                    self.tray.showMessage("shrink-array", T(f"connexion à {host} rétablie"),
+                                          QSystemTrayIcon.Information, 10000)
+                if self.conn_box:
+                    self.conn_box.close()
+                self.check()
+            elif not ok and self.conn_ok:
+                self.conn_ok = False
+                self.connection_lost(host)
+
+        self.remote.ping(done)
+
+    def connection_lost(self, host):
+        msg = T(f"La connexion à {host} ne répond plus.\n\n"
+                f"Relancez ssh -fNM {host} dans un terminal : l'interface s'en apercevra "
+                f"d'elle-même. Les runs déjà soumis continuent sur {host}.")
+        self.conn.setText(f"<span style='color:#c0392b'>connexion perdue : "
+                          f"lancez <b>ssh -fNM {html.escape(host)}</b> dans un terminal</span>")
+        if self.tray:
+            self.tray.showMessage("shrink-array", T(f"connexion à {host} perdue"),
+                                  QSystemTrayIcon.Critical, 15000)
+        QApplication.alert(self)
+        if not self.conn_box:             # non-modal: the timers keep running behind it
+            self.conn_box = QMessageBox(QMessageBox.Warning, T("Connexion perdue"), msg,
+                                        QMessageBox.Ok, self)
+            self.conn_box.setModal(False)
+            self.conn_box.finished.connect(lambda _r: setattr(self, "conn_box", None))
+            self.conn_box.show()

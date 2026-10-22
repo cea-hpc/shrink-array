@@ -722,3 +722,40 @@ def test_several_runs_selected_deleted_and_stopped_at_once(gui, site, monkeypatc
     assert set(w.selected_ids()) == {c, d}
     w.stop()
     assert _wait_status(w, pump, c, "arrêté") and _wait_status(w, pump, d, "arrêté")
+
+
+def test_connection_watch_popup_and_recovery(gui, site, monkeypatch):
+    w, pump = gui
+    from shrink_gui import remote
+    assert w.conn_ok and w.conn_box is None
+    # the network goes: ssh fails (a dead master, or no answer)
+    dead = site.bin / "ssh_dead"
+    dead.write_text("#!/bin/bash\nexit 255\n")
+    dead.chmod(0o755)
+    monkeypatch.setattr(remote, "SSH", str(dead))
+    w.watch_connection()
+    assert pump(lambda: w.conn_box is not None, 10)
+    assert not w.conn_ok and "connexion perdue" in w.conn.text()
+    box = w.conn_box
+    w.watch_connection()                # still lost: no second window
+    assert pump(lambda: not w.watch_busy, 10)
+    assert w.conn_box is box
+    # it comes back: the window closes, the full check runs again
+    monkeypatch.setattr(remote, "SSH", str(site.bin / "ssh"))
+    w.watch_connection()
+    assert pump(lambda: w.conn_box is None and "connecté" in w.conn.text(), 20), w.conn.text()
+    assert w.conn_ok
+
+
+def test_connection_watch_times_out(gui, site, monkeypatch):
+    """A master that answers -O check but whose link hangs: the ping is
+    killed after its timeout and counts as lost."""
+    w, pump = gui
+    from shrink_gui import remote
+    hang = site.bin / "ssh_hang"
+    hang.write_text('#!/bin/bash\n[ "$1" = "-O" ] && exit 0\nexec sleep 60\n')
+    hang.chmod(0o755)
+    monkeypatch.setattr(remote, "SSH", str(hang))
+    got = []
+    w.remote.ping(got.append, timeout_ms=500)
+    assert pump(lambda: got, 10) and got == [False]
