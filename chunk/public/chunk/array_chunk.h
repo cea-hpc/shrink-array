@@ -49,13 +49,13 @@ namespace zero
  *        value (Chunk, variant v1).
  *
  * @tparam T        stored element type
- * @tparam IndT index type used for sizes and element positions
+ * @tparam IntType index type used for sizes and element positions
  */
-template <ArrayChunkElement T, typename IndT>
-class Array : public ArrayChunkBase<Array<T, IndT>>,
-              public ParallelSupport<Array<T, IndT>>,
-              public FastBlockSupport<Array<T, IndT>>,
-              public RechunkHooks<Array<T, IndT>>
+template <ArrayChunkElement T, typename IntType>
+class Array : public ArrayChunkBase<Array<T, IntType>>,
+              public ParallelSupport<Array<T, IntType>>,
+              public FastBlockSupport<Array<T, IntType>>,
+              public RechunkHooks<Array<T, IntType>>
 {
   private:
     friend ArrayChunkBase<Array>; // swap_identity()
@@ -83,7 +83,7 @@ class Array : public ArrayChunkBase<Array<T, IndT>>,
     ///        the identity work create_common() does. Used by create() and by
     ///        rechunk_to().
     /// @param sz element count to allocate for
-    void rebuild_storage(IndT sz);
+    void rebuild_storage(IntType sz);
 
     /// @brief Storage teardown shared by clear() and rechunk_to(): everything
     ///        clear() does except the pre-drain stats. Parks buffers by THIS
@@ -119,7 +119,7 @@ class Array : public ArrayChunkBase<Array<T, IndT>>,
     using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
     using manager_type [[deprecated("types are PascalCase: use ManagerType")]]      = ManagerType;
     using proxy_type [[deprecated("types are PascalCase: use ProxyType")]]          = ProxyType;
-    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IndT;
+    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
     using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
     using Base::chunk_list_;
@@ -148,7 +148,7 @@ class Array : public ArrayChunkBase<Array<T, IndT>>,
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit Array(IndT sz = 0)
+    explicit Array(IntType sz = 0)
     {
         if constexpr (build_config::threaded)
         {
@@ -194,7 +194,7 @@ class Array : public ArrayChunkBase<Array<T, IndT>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    Array(It first, It last) : Array(static_cast<IndT>(std::distance(first, last)))
+    Array(It first, It last) : Array(static_cast<IntType>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
@@ -236,7 +236,7 @@ class Array : public ArrayChunkBase<Array<T, IndT>>,
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op.
-    Array& operator=(const Array<T, IndT>& from)
+    Array& operator=(const Array<T, IntType>& from)
     {
         if (this != &from)
         {
@@ -246,20 +246,20 @@ class Array : public ArrayChunkBase<Array<T, IndT>>,
     }
 
     /// @brief Has the chunk holding element @p i been materialised?
-    [[nodiscard]] bool written(IndT i) const noexcept
+    [[nodiscard]] bool written(IntType i) const noexcept
     {
         return chunk_list_[this->chunk_index_of(i)].written();
     }
 
     /// @brief Materialise the chunk holding element @p i if it is still
     ///        compressed; a no-op otherwise.
-    void alloc_chunk(IndT i) noexcept
+    void alloc_chunk(IntType i) noexcept
     {
         chunk_list_[this->chunk_index_of(i)].alloc_chunk();
     }
 
     /// @brief alloc_chunk(), taking the buffer from rank @p thr_rank's pool.
-    void alloc_chunk(IndT i, int thr_rank) noexcept
+    void alloc_chunk(IntType i, int thr_rank) noexcept
     {
         chunk_list_[this->chunk_index_of(i)].alloc_chunk(thr_rank);
     }
@@ -270,7 +270,7 @@ class Array : public ArrayChunkBase<Array<T, IndT>>,
     /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
     ///       freed serially, parked in the geometry's reuse list under OpenMP);
     ///       chunk_list keeps its capacity.
-    void resize(IndT newsz);
+    void resize(IntType newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks

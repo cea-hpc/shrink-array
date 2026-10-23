@@ -90,8 +90,8 @@ namespace shrink_array
 // per-tab tables to match, then hand the geometry-dependent work to
 // rebuild_storage(). Everything here happens exactly once per array:
 // rechunk_to() must NOT redo it.
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::create(IndT sz)
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::create(IntType sz)
 {
     // The first array of this element type registers its manager; every
     // later one pays a guard load. See AllTypeChunk.
@@ -145,8 +145,8 @@ void zero_one_value::Array<T, IndT>::create(IndT sz)
 // hard error rather than a degenerate case. The chunks are initialised by
 // parallel_storage_init::for_each_chunk(): a team of its own outside a region
 // for a large enough array, the calling thread otherwise.
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::rebuild_storage(IndT sz)
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::rebuild_storage(IntType sz)
 {
     // Already registered: num_tab is the registry value, not nb_tab-1 (only
     // valid right after create()'s ++nb_tab).
@@ -209,8 +209,8 @@ void zero_one_value::Array<T, IndT>::rebuild_storage(IndT sz)
 //    geometry first (see the inline note).
 // bool takes the `else` branch entirely: its second value is `true`, index 0,
 // with nothing to look up.
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::set_second_value(T sec_value, bool message)
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool message)
 {
     if (message)
     {
@@ -417,8 +417,8 @@ void zero_one_value::Array<T, IndT>::set_second_value(T sec_value, bool message)
 // Two independent scans: the classification into n_t0 / n_t1 (compressible to
 // the first / second constant), then the "would Chunk2A have helped?" probe.
 // Both re-read chunk content instead of trusting the written() flag (see below).
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::print_compression_stats(std::ostream& os) const
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os) const
 {
     if (nb_chunk_ == 0)
     {
@@ -548,8 +548,8 @@ void zero_one_value::Array<T, IndT>::print_compression_stats(std::ostream& os) c
 // clear() and clear_core() are currently the same teardown; the split exists so
 // rechunk_to() can release its temporary array through clear_core() without
 // going through the public entry point.
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::clear()
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::clear()
 {
     this->invalidate_proxies();
     clear_core();
@@ -561,8 +561,8 @@ void zero_one_value::Array<T, IndT>::clear()
 // The release itself differs by build -- serial frees in place, OpenMP parks
 // each buffer in the per-geometry reuse list and neutralises the chunk to
 // cst_val1 so no residual candidate can free it a second time.
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::clear_core()
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::clear_core()
 {
     // Pin the ambient size to THIS array's geometry before the clear_st() /
     // free_values() sweep below (and before flush_pending_deferred_ops(), which
@@ -788,8 +788,8 @@ void zero_one_value::Array<T, IndT>::clear_core()
     }
 }
 
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::compress_int(pmp::Team& team)
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
 {
     // Diagnostic pass: scans for constant-but-materialised chunks the
     // incremental compression missed, reports them and self-heals them (below).
@@ -1051,7 +1051,7 @@ void zero_one_value::Array<T, IndT>::compress_int(pmp::Team& team)
                 info, compress,
                 "self-heal zero_one_value::Array<{}, {}>: {} chunk(s) at first_value [{} ], {} at second_value [{} ], "
                 "materialised and not compressed: compressed now{}",
-                type_name<T>(), type_name<IndT>(), healed1, healed_indices(keep1_scanned, tab_nb1), healed2,
+                type_name<T>(), type_name<IntType>(), healed1, healed_indices(keep1_scanned, tab_nb1), healed2,
                 healed_indices(keep2_scanned, tab_nb2),
                 drained ? " (pending list drained first: never marked)"
                         : " (in a parallel region, pending list NOT drained: maybe only queued)");
@@ -1072,8 +1072,8 @@ void zero_one_value::Array<T, IndT>::compress_int(pmp::Team& team)
                   "residual zero_one_value::Array<{}, {}>: {} chunk(s) constant at {}, still materialised: {} (the "
                   "algorithm can "
                   "miss a few blocks to compress: an issue only if there are many)",
-                  type_name<T>(), type_name<IndT>(), tab.size(), at,
-                  internal::chunk_index_sample(sample, tab, static_cast<IndT>(this->size_policy_.size())));
+                  type_name<T>(), type_name<IntType>(), tab.size(), at,
+                  internal::chunk_index_sample(sample, tab, static_cast<IntType>(this->size_policy_.size())));
         if (!logging::enabled(logging::Channel::compress, logging::Level::debug))
         {
             return;
@@ -1097,7 +1097,7 @@ void zero_one_value::Array<T, IndT>::compress_int(pmp::Team& team)
                 count             = static_cast<int>(second ? chunk.get_nb_second_value() : chunk.get_nb_first_value());
             }
             CHUNK_LOG(debug, compress, "residual zero_one_value::Array: chunk {} (element {}): is_inside={} count={}",
-                      ind, static_cast<IndT>(ind) * static_cast<IndT>(this->size_policy_.size()), is_inside, count);
+                      ind, static_cast<IntType>(ind) * static_cast<IntType>(this->size_policy_.size()), is_inside, count);
         }
     };
     report(tab_nb1, "first_value", false);
@@ -1117,8 +1117,8 @@ void zero_one_value::Array<T, IndT>::compress_int(pmp::Team& team)
 
 // Plain forwarder. Do not add an in-parallel-region test here: it hit an LLVM
 // OpenMP runtime bug.
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::compress()
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::compress()
 {
     compress_int();
 }
@@ -1127,8 +1127,8 @@ void zero_one_value::Array<T, IndT>::compress()
 // below initialises only the chunks that were just added. On a shrink
 // resize_common() returns early and nb_chunk <= old_nb_chunk, which leaves that
 // loop empty -- the array reports the smaller size but keeps its storage.
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::release_chunk_range(int first, int last)
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
 {
     if (first >= last)
     {
@@ -1199,12 +1199,12 @@ void zero_one_value::Array<T, IndT>::release_chunk_range(int first, int last)
     }
 }
 
-template <ArrayChunkElement T, typename IndT>
-void zero_one_value::Array<T, IndT>::resize(IndT newsz)
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::resize(IntType newsz)
 {
     this->invalidate_proxies();
     const int  old_nb_chunk = nb_chunk_;
-    const IndT old_size     = this->m_size_; // the stale-tail reset at the end
+    const IntType old_size     = this->m_size_; // the stale-tail reset at the end
 
     Base2::resize_common(newsz);
 
@@ -1230,15 +1230,15 @@ void zero_one_value::Array<T, IndT>::resize(IndT newsz)
     // `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
-        const auto csz = static_cast<IndT>(this->chunk_size());
+        const auto csz = static_cast<IntType>(this->chunk_size());
         // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
         // the last element, so when old_size falls on a chunk boundary that
         // spare chunk keeps stale values too.
         // In long long: old_nb_chunk * csz may pass IndType's range near its top.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const IndT      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IndT>(cover_ll) : newsz;
-        const IndT      stale_end = newsz < old_cover ? newsz : old_cover;
-        for (IndT i = old_size; i < stale_end; ++i)
+        const IntType      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
+        const IntType      stale_end = newsz < old_cover ? newsz : old_cover;
+        for (IntType i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};
         }

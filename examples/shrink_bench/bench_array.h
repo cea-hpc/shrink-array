@@ -44,7 +44,7 @@ namespace shrink_array
 {
 
 // `Int` is the bench's index type (bench_int.h): `int` by default, `long`
-// under -DBENCH_INT64. It is handed to the library as `IndT`, so the array
+// under -DBENCH_INT64. It is handed to the library as `IntType`, so the array
 // indexes exactly as wide as the bench computes -- a 64-bit bench on a 32-bit
 // array would overflow inside the library instead of inside main().
 template <typename T>

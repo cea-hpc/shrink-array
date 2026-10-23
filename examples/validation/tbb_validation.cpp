@@ -71,7 +71,7 @@
 #include <oneapi/tbb/parallel_for.h>   // oneapi::tbb::parallel_for (nested), the partitioners
 #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena
 
-#include "chunk/chunk_traits.h"        // forward decls + default IndT = int
+#include "chunk/chunk_traits.h"        // forward decls + default IntType = int
 #include "chunk/array_chunk.h"         // zero::Array
 #include "chunk/array_chunk2.h"        // zero_one_value::Array
 #include "chunk/array_chunk2A.h"       // zero_any::Array

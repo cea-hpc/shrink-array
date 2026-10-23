@@ -89,12 +89,12 @@ namespace zero_any
  *          released in the destructor.
  *
  * @tparam T        stored element type
- * @tparam IndT index type used for sizes and element positions
+ * @tparam IntType index type used for sizes and element positions
  */
-template <ArrayChunkElement T, typename IndT>
-class Array : public ArrayChunk2Base<Array<T, IndT>>,
-              public ParallelSupport2A<Array<T, IndT>>,
-              public RechunkHooks<Array<T, IndT>>
+template <ArrayChunkElement T, typename IntType>
+class Array : public ArrayChunk2Base<Array<T, IntType>>,
+              public ParallelSupport2A<Array<T, IntType>>,
+              public RechunkHooks<Array<T, IntType>>
 {
   public:
     using ManagerChunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as ManagerType.
@@ -118,7 +118,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
     using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
     using manager_type [[deprecated("types are PascalCase: use ManagerType")]]      = ManagerType;
     using proxy_type [[deprecated("types are PascalCase: use ProxyType")]]          = ProxyType;
-    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IndT;
+    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
     using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
     using Base2::chunk_list_;
@@ -143,7 +143,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit Array(IndT sz = 0)
+    explicit Array(IntType sz = 0)
     {
         if constexpr (build_config::threaded)
         {
@@ -185,7 +185,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    Array(It first, It last) : Array(static_cast<IndT>(std::distance(first, last)))
+    Array(It first, It last) : Array(static_cast<IntType>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
@@ -240,7 +240,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      * @param i element index
      * @return false while that chunk is still compressed to a constant
      */
-    [[nodiscard]] bool written(IndT i) const noexcept
+    [[nodiscard]] bool written(IntType i) const noexcept
     {
         return chunk_list_[this->chunk_index_of(i)].written();
     }
@@ -252,7 +252,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list keeps its capacity.
      */
-    void resize(IndT newsz);
+    void resize(IntType newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) (a shrinking resize()). Same
@@ -269,7 +269,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      * @note Fills [0, count), not only the new elements: Base2::resize(count, val) has
      *       std::vector::resize semantics, so this goes through ArrayChunkBase::assign.
      */
-    void assign(IndT count, T val) // T, not InT<T>: see ArrayChunkBase::assign
+    void assign(IntType count, T val) // T, not InT<T>: see ArrayChunkBase::assign
     {
         Base::assign(count, val);
     }
@@ -308,7 +308,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
                 const long long hi = std::min(lo + csz, static_cast<long long>(m_size_));
                 for (long long i = lo; i < hi; ++i)
                 {
-                    if (Base2::read_value(static_cast<IndT>(i)) != other.read_value(static_cast<IndT>(i)))
+                    if (Base2::read_value(static_cast<IntType>(i)) != other.read_value(static_cast<IntType>(i)))
                     {
                         differ.store(true, std::memory_order_relaxed);
                         return;
@@ -584,14 +584,14 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      *
      * @param sz element count to allocate for
      */
-    void rebuild_storage(IndT sz);
+    void rebuild_storage(IntType sz);
 
     /**
      * @brief Second value registered for the chunk holding element @p i.
      * @param i element index
      * @return this chunk's own second value (2A registers one per chunk)
      */
-    auto get_metadata(IndT i) const noexcept
+    auto get_metadata(IntType i) const noexcept
     {
         return Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(i));
     }
