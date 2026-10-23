@@ -17,10 +17,10 @@
 #pragma once
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PointerMapChunk2 — per-array registry of Chunk2's SECOND constant
+// PointerMapChunk2 — per-array registry of zero_one_value's SECOND constant
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Chunk2 compresses a chunk to one of TWO constants: first_value is fixed for the
+// zero_one_value compresses a chunk to one of TWO constants: first_value is fixed for the
 // type, the second is chosen per array at run time and a chunk folded to it stores
 // only an index. This header holds that lookup, keyed by the array's identity
 // (a void* handle) and by the value:
@@ -72,9 +72,9 @@ struct ValueToInfTupleMapHelper
  * @brief Policy holding the fast-block-compression-only value -> inf_array
  *        lookup for PointerMapChunk2.
  *
- * @details An inf_array is Chunk2's `(second_value, index, num_tab)` tuple;
+ * @details An inf_array is zero_one_value's `(second_value, index, num_tab)` tuple;
  *          the map, keyed by second value, is ValueToInfTupleMapHelper's.
- *          v1 (PointerMapChunk, zero_proxy.h) has no such lookup.
+ *          zero (PointerMapChunk, zero_proxy.h) has no such lookup.
  *
  * @tparam T       Element type PointerMapChunk2 is keyed on.
  * @tparam Enabled Whether the map actually exists (fast-block-compression
@@ -189,7 +189,7 @@ namespace zero_one_value
 {
 
 /**
- * @brief Per-array registry of Chunk2's second value: array address ->
+ * @brief Per-array registry of zero_one_value's second value: array address ->
  *        (second value, its index in the shared table, num_tab).
  *
  * @tparam T Element type.

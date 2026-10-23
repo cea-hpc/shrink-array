@@ -215,7 +215,7 @@ void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused
     }
 }
 
-// ─── The v1 replay bodies (`*_async`) and the hypothesis they rest on ──────
+// ─── The zero::Proxy replay bodies (`*_async`) and the hypothesis they rest on ──
 //
 // The `_async` bodies below (execute_arithmetic_compound_operation_async,
 // the deferred body of assign_impl, execute_simple_operation_async,
@@ -233,9 +233,9 @@ void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused
 //     they run where no drain can. check_no_flush_outside_start()
 //     (block_pass_precheck.h) trips in check builds otherwise.
 //
-// (The re-chunk's fold has no v1 branch: array_chunk_rechunk_inline.h.)
+// (The re-chunk's fold has no zero branch: array_chunk_rechunk_inline.h.)
 //
-// Proxy2A's twins (zero_any_proxy_inline.h) carry a retry loop instead. Do not add a
+// zero_any::Proxy's twins (zero_any_proxy_inline.h) carry a retry loop instead. Do not add a
 // compressor bypassing start() where a drain can run, nor call an `_async`
 // body outside a drain: the store would land in a released buffer and be lost
 // silently. check_replay_store() below catches it in check builds.
@@ -268,8 +268,8 @@ inline void check_replay_store([[maybe_unused]] ChunkT&     chunk,
 }
 } // namespace internal
 
-/// @brief Replay of a compound arithmetic operation (v1).
-/// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
+/// @brief Replay of a compound arithmetic operation (zero).
+/// @pre Called from a flush drain only -- see "The zero::Proxy replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename Op, typename Lambda, typename U>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(auto* ctx,
@@ -356,7 +356,7 @@ T zero::Proxy<T>::assign_impl(InT<U> v) noexcept
     // pending deferred op (the `= 0` would be skipped, then the replay lands).
 
     // By reference: v is this call's parameter, alive for the synchronous
-    // call (see Proxy2A::assign_impl); the deferred path copies it.
+    // call (see zero_any::Proxy::assign_impl); the deferred path copies it.
     [[maybe_unused]] const auto lbd_equal_core = [this, &v]
     {
         // ONE load of the values pointer for the whole body, inside the session
@@ -410,7 +410,7 @@ T zero::Proxy<T>::assign_impl(InT<U> v) noexcept
 
                 const auto proxy = Base::template make_proxy_with_info<Proxy>(ctx);
 
-                // See "The v1 replay bodies" above. One load of the pointer,
+                // See "The zero::Proxy replay bodies" above. One load of the pointer,
                 // reloaded once after a materialisation, as in lbd_equal_core.
                 T* values = chunk.values_load();
 
@@ -534,8 +534,8 @@ void zero::Proxy<T>::execute_simple_operation(Lambda operation)
     }
 }
 
-/// @brief Replay of a plain store (v1).
-/// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
+/// @brief Replay of a plain store (zero).
+/// @pre Called from a flush drain only -- see "The zero::Proxy replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename Lambda>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
@@ -635,8 +635,8 @@ void zero::Proxy<T>::execute_inplace_operation(Lambda operation)
     }
 }
 
-/// @brief Replay of an in-place operation (++, --; v1).
-/// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
+/// @brief Replay of an in-place operation (++, --; zero).
+/// @pre Called from a flush drain only -- see "The zero::Proxy replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename Lambda>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(auto* ctx, Lambda operation)

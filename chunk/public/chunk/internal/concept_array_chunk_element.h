@@ -38,7 +38,7 @@ namespace shrink_array
  *
  * That admits arithmetic types, bool, std::complex, enums, std::array of those,
  * and aggregates of them with a defaulted operator==. The proxies' arithmetic
- * and bitwise operators are constrained separately, per operator. chunk2 also
+ * and bitwise operators are constrained separately, per operator. zero_one_value also
  * needs an ordering (operator< for a floating-point aggregate): see ValueLess
  * in value_less.h.
  *

@@ -20,23 +20,24 @@
 #include <cstddef>  // std::size_t
 #include <optional> // std::nullopt (the clears)
 
-#include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::OMPTcc
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team
-#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
-#include "chunk/internal/chunk_size_policy.h"   // ChunkElems, set_thread_chunk_size
-#include "chunk/internal/in_t.h"                // InT<T>
-#include "chunk/zero_one_value_chunk.h"                   // Chunk2, the class these bodies belong to
-#include "chunk/internal/zero_one_value_proxy.h"              // Proxy2<T>
-#include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
-#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
+#include "chunk/config.h"                        // build_config::chunk_dynamic, chunk_config::OMPTcc
+#include "chunk/PMP_CHUNK.h"                     // CHUNK_PMP_*, pmp::team
+#include "chunk/internal/chunk_array_new.h"      // chunk_array_new::init_chunks (operator new[])
+#include "chunk/internal/chunk_size_policy.h"    // ChunkElems, set_thread_chunk_size
+#include "chunk/internal/in_t.h"                 // InT<T>
+#include "chunk/zero_one_value_chunk.h"          // zero_one_value::Chunk, the class these bodies belong to
+#include "chunk/internal/zero_one_value_proxy.h" // zero_one_value::Proxy<T>
+#include "chunk/internal/block_pass_precheck.h"  // block_pass_yields_to_flush
+#include "chunk/internal/dependent_false.h"      // dependent_false_v (wrong-type branches)
+#include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/test_hooks.h"           // TEST KNOB: test_hooks::maybe_pass_delay
 
 /**
  * @file zero_one_value_chunk_inline.h
- * @brief Out-of-line definitions of Chunk2's policies: materialisation and compression.
+ * @brief Out-of-line definitions of zero_one_value's policies: materialisation and compression.
  *
- * Chunk2 is the two-constant chunk whose second value is shared by the WHOLE
- * array — that is what separates it from Chunk2A, where each chunk carries its
+ * zero_one_value is the two-constant chunk whose second value is shared by the WHOLE
+ * array — that is what separates it from zero_any, where each chunk carries its
  * own. The consequence runs through this entire file: the candidate lists are
  * keyed BY second value (`map_chunk2_to_compress_potentially_thr[thr][value]`),
  * so a compression pass is always "drain the list of one (rank, second value)
@@ -199,10 +200,10 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_comp
     // Skip a chunk already compressed to either constant.
     if (self.Base::is_not_cst_val1() && check_cst_val2)
     {
-        // CHUNK_STATS: one compression candidate scanned (see chunk2a).
+        // CHUNK_STATS: one compression candidate scanned (see zero_any).
         increm_chunk_compress_attempt<Derived>();
 
-        // n_elems: see Chunk2<T>::compress() -- the chunk's own geometry,
+        // n_elems: see zero_one_value::Chunk<T>::compress() -- the chunk's own geometry,
         // captured at enqueue, never the ambient alloc_chunk_count().
         const auto scan = self.Base::scan_constants(first_value, get_second_value(), n_elems);
 
@@ -254,7 +255,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_impl(thi
         // n_elems is THIS chunk's own geometry, captured at enqueue (tuple
         // field <3>), never alloc_chunk_count() -- the consuming thread's
         // ambient size overflows a buffer allocated at another geometry after
-        // a rechunk. Same rule as Chunk v1 and Chunk2A.
+        // a rechunk. Same rule as zero and zero_any.
         //
         // Always scan, even when the second value equals first_value: skipping
         // would leave BOTH verdicts `true` and clear the chunk twice.
@@ -333,7 +334,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_bool(thi
  * Entry point used between parallel phases. The OMPT callbacks are disarmed for
  * the duration, so nothing re-enters the compression machinery underneath.
  *
- * @note Like the Chunk2A equivalent: outside a parallel region it opens one and
+ * @note Like the zero_any equivalent: outside a parallel region it opens one and
  *       lets each rank sweep its own list (serial mop-up for ranks beyond the
  *       team size); inside a region it sweeps the calling rank only.
  */
@@ -379,7 +380,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
  * flip admits a chunk to the writer's candidate list and is the only thing
  * keeping a chunk out of two lists at once. Cleared before compress(), it lets
  * a concurrent write re-queue the SAME chunk mid-compression, and a later drain
- * of that entry double-clears an already-constant chunk (the Chunk2A @warning;
+ * of that entry double-clears an already-constant chunk (the zero_any @warning;
  * check_not_constant_before_clear fires). Compressing first keeps the flag at 1
  * throughout, so every concurrent write loses the CAS until the chunk reaches
  * its final state.
@@ -387,7 +388,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
  * Today the drain has no concurrent writers (on_parallel_end() puts an
  * `omp barrier` in front of it; the zero_one_value::Array call sites are gated on
  * !CHUNK_PMP_IN_PARALLEL_REGION), so either order works; this one stays
- * correct if that precondition slips, as on Chunk2A.
+ * correct if that precondition slips, as on zero_any.
  *
  * @tparam CompressFn callable `(ChunkType*, unsigned int n_elems)`.
  * @param thr_rank     Rank whose list is drained.
@@ -423,7 +424,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
     // (reuse list AND allocator), so pin each chunk to its own size -- else
     // wide blocks are parked in a narrower list -- and restore afterwards so
     // the OMPT drain leaves the thread as it found it. Same pin as
-    // make_block_compression_impl() and Chunk2A<T>::make_block_compression().
+    // make_block_compression_impl() and zero_any::Chunk<T>::make_block_compression().
     [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
 
     for (auto& tup : vec_tuple)
@@ -586,7 +587,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
 }
 
 // --- The sweep. Precedent: ChunkFastCompPolicy<T,Derived,Enabled>::
-// make_block_compression for plain Chunk<T>.
+// make_block_compression for zero::Chunk<T>.
 
 // make_block_compression_impl (declared in zero_one_value_chunk.h). Shape: pin geometry ->
 // take the compression handshake -> scan into the two buckets -> clear each ->
@@ -594,7 +595,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
 // The two callables are the only bool/non-bool difference.
 // Geometry: as in compress_chunk_to_compress_in_par_impl(), the list mixes
 // arrays of different chunk sizes, so each chunk is pinned to its own n_elems
-// right before its clear (as Chunk2A<T>::make_block_compression() does). Do not
+// right before its clear (as zero_any::Chunk<T>::make_block_compression() does). Do not
 // rely on the single pin on the triggering proxy's size (kept, for the
 // handshake): it would park the other array's buffers under the wrong size.
 template <typename T, typename Derived, bool Enabled>
@@ -609,7 +610,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
     // shared_ptr that the next dereference crashes on.
     //
     // A missing key is normal (no one declared this second value on this
-    // rank: nothing to compress, same exit as `sz == 0`); an zero_one_value::Array built
+    // rank: nothing to compress, same exit as `sz == 0`); a zero_one_value::Array built
     // without add_second_value reaches it via resize_common ->
     // make_block_compression. is_vec_tuple_to_compress_potentially_empty_thr()
     // is not enough: it only tests "no key anywhere".
@@ -760,7 +761,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
     if (proxy2)
     {
         // Re-queue the writer's chunk only into the list of ITS array's second
-        // value. Proxy2::perform_compression runs the pass of every key of the
+        // value. zero_one_value::Proxy::perform_compression runs the pass of every key of the
         // rank with the same writer: queued under another array's key, the
         // chunk could be compressed to the OTHER array's constant, and its own
         // array, which only recognises its own constant, would then write into
@@ -912,7 +913,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
  *          no compare_and_swap at all. So the lambda naming it must stay INSIDE
  *          the `if constexpr (use_fast_block_compression)` branch below -- a
  *          discarded branch is not instantiated. Passing that lambda in from
- *          the call site does NOT work, generic or not: once Chunk2<T> is
+ *          the call site does NOT work, generic or not: once zero_one_value::Chunk<T> is
  *          instantiated FastCompPolicy is a concrete type, so the qualified
  *          name is looked up eagerly and the serial build fails to compile.
  */

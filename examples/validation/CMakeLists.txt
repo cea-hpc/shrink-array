@@ -86,7 +86,7 @@
 #   bulk_write_team_validation the whole-array writes that take a team of
 #                           their own outside a region (copy construction and
 #                           assignment, assign, resize(n, val), a shrinking
-#                           resize's release) and Chunk2A's operator== equal a
+#                           resize's release) and zero_any's operator== equal a
 #                           std::vector's, with the phase bracketed; inside a
 #                           region they stay on the calling thread.
 #   compound_ops_validation `*=`, `/=`, `%=` read back what std::vector would
@@ -121,23 +121,23 @@
 #                           allocates a buffer and reclaim_second_values()
 #                           frees the constants no chunk holds any more.
 #   fill_range_mt_zero_and_zero_one_value_validation  the range ops in a TWO-variant build
-#                           (chunk_zero_and_zero_one_value): an zero::Array and an zero_one_value::Array side
+#                           (chunk_zero_and_zero_one_value): a zero::Array and a zero_one_value::Array side
 #                           by side, fill_range_mt of each compressible value.
 #                           The ops must dispatch on the array's type, not on
-#                           the build flags -- otherwise an zero_one_value::Array
+#                           the build flags -- otherwise a zero_one_value::Array
 #                           filled with its second value stays materialised.
 #                           The one harness that is not variant-agnostic.
-#   cst2_registry_validation  Chunk2A's second-value registry is freed by the
+#   cst2_registry_validation  zero_any's second-value registry is freed by the
 #                           last array of every generation, not only the
 #                           first (its reinstall took a phantom reference),
 #                           and overlapping arrays free nothing early.
-#                           Chunk2A only, default static size.
+#                           zero_any only, default static size.
 #   cst2_reclaim_validation  zero_any::Array::reclaim_second_values() frees
 #                           exactly the second values nothing refers to,
 #                           every element still reads back, and the
 #                           identifiers are reused (a run past the
 #                           identifier limit reaches its end), and across a
-#                           re-chunk (dyn). Chunk2A only, default static
+#                           re-chunk (dyn). zero_any only, default static
 #                           size and dyn.
 #   std_thread_validation   std builds: arrays written from the application's
 #                           own std::threads -- new ones every phase, then
@@ -170,8 +170,8 @@
 #                           on), and std::sortable is false (no in-place
 #                           sort, by construction).
 #
-# All sources are variant-agnostic (the array type follows the CHUNK_VARIANT_ZERO /
-# _V2 / _V2A macro) and depend on the library alone -- none of the shrink_bench
+# All sources are variant-agnostic (the array type follows the CHUNK_VARIANT_ZERO*
+# macro) and depend on the library alone -- none of the shrink_bench
 # bench files -- which is why they live here rather than next to the bench.
 # Every test carries the `validation` label: `ctest -L validation` runs the
 # lot, and that is what python/bench_and_test.py's ctest phase invokes.
@@ -351,30 +351,30 @@ foreach(_geom IN LISTS _rt_geometries)
       list(APPEND _group chunk_array_new_validation)
     endif()
     # bits_container_validation: ArrayChunkBits (zero_one_value::Array<Bit>) against
-    # std::vector<bool>. Chunk2 libraries only, every geometry.
+    # std::vector<bool>. zero_one_value libraries only, every geometry.
     if (_vname STREQUAL "zero_one_value")
       list(APPEND _group bits_container_validation)
     endif()
-    # cst2_registry_validation: Chunk2A's second-value registry lifecycle.
-    # Chunk2A only, at the default static size.
+    # cst2_registry_validation: zero_any's second-value registry lifecycle.
+    # zero_any only, at the default static size.
     if (_vname STREQUAL "zero_any" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group cst2_registry_validation)
     endif()
     # cst2_reclaim_validation: reclaim_second_values() frees what nothing
-    # refers to and the identifiers are reused. Chunk2A only, at the default
+    # refers to and the identifiers are reused. zero_any only, at the default
     # static size and at dyn (where it reclaims across a re-chunk too).
     if (_vname STREQUAL "zero_any")
       list(APPEND _group cst2_reclaim_validation)
     endif()
-    # zero_one_value_registry_growth_validation: Chunk2's second-value registry must
+    # zero_one_value_registry_growth_validation: zero_one_value's second-value registry must
     # not move the constant arrays chunks point at when a new value is
-    # declared (the harness says why). Chunk2 only, default static size, at 1
+    # declared (the harness says why). zero_one_value only, default static size, at 1
     # and 4 threads.
     if (_vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group zero_one_value_registry_growth_validation)
     endif()
     # zero_one_value_foreign_key_validation: a chunk is only ever compressed to its own
-    # array's second value (the harness says why). Chunk2 only, default static
+    # array's second value (the harness says why). zero_one_value only, default static
     # size, at 8 threads; OpenMP builds only (the passes run in a region).
     if (OMP AND _vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group zero_one_value_foreign_key_validation)
@@ -543,7 +543,7 @@ endif()
 if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
   set(_tgt fill_range_mt_zero_and_zero_one_value_validation)
   add_executable(${_tgt} fill_range_mt_zero_and_zero_one_value_validation.cpp)
-  target_link_libraries(${_tgt} PRIVATE chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO, _V2, CHUNK_SIZE: PUBLIC
+  target_link_libraries(${_tgt} PRIVATE chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE, CHUNK_SIZE: PUBLIC
   validation_setup_target(${_tgt})
   foreach(_nthr 1 8)
     add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})

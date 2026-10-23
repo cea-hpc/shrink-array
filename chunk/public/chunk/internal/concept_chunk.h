@@ -49,15 +49,15 @@ class Chunk;
 template <template <typename> typename ChunkT, typename T>
 concept IsChunk = std::is_same_v<ChunkT<T>, zero::Chunk<T>>;
 
-/// @brief ChunkT<T> is Chunk2A<T>.
+/// @brief ChunkT<T> is zero_any::Chunk<T>.
 template <template <typename> typename ChunkT, typename T>
 concept IsChunk2A = std::is_same_v<ChunkT<T>, zero_any::Chunk<T>>;
 
-/// @brief ChunkT<T> is Chunk2<T>.
+/// @brief ChunkT<T> is zero_one_value::Chunk<T>.
 template <template <typename> typename ChunkT, typename T>
 concept IsChunk2 = std::is_same_v<ChunkT<T>, zero_one_value::Chunk<T>>;
 
-/// @brief ChunkT<T> is Chunk2<T> or Chunk2A<T>.
+/// @brief ChunkT<T> is zero_one_value::Chunk<T> or zero_any::Chunk<T>.
 template <template <typename> typename ChunkT, typename T>
 concept IsChunk2Or2A = IsChunk2<ChunkT, T> || IsChunk2A<ChunkT, T>;
 

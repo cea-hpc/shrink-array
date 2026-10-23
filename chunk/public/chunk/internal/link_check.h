@@ -16,8 +16,8 @@
 
 #pragma once
 
-// The settings a program must share with its variant library (CHUNK_VARIANT_ZERO /
-// _V2 / _V2A, CHUNK_SIZE, CHUNK_DYNAMIC), spelled into one function name. The
+// The settings a program must share with its variant library (CHUNK_VARIANT_ZERO*,
+// CHUNK_SIZE, CHUNK_DYNAMIC), spelled into one function name. The
 // library defines its own (chunk/private/link_check.cpp); the first array of
 // each element type calls the program's (AllTypeChunk::ensure_manager). A
 // mismatch, which would otherwise compile the templates differently in silence,

@@ -33,7 +33,7 @@
 #include <print>       // std::println
 #include <sys/mman.h>  // mmap, mprotect, PROT_READ
 
-#include "chunk/chunk_traits.h"                         // Chunk2A fwd decl (element_at variant gate)
+#include "chunk/chunk_traits.h"                         // zero_any::Chunk fwd decl (element_at variant gate)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"           // cst_buffer_size, thread_chunk_size, alloc_chunk_count
@@ -402,10 +402,10 @@ struct ChunkAllocPolicy<T, Derived, true>
     ///        the allocator hands out -- zeroed by svcalloc_align, raw from the
     ///        pooled allocator
     /// @return Pointer to the allocated and initialized chunk
-    /// @note The two-functor form is what lets v1 share this path. A v1 chunk is
+    /// @note The two-functor form is what lets zero share this path. A zero::Chunk is
     ///       compressed only when it is all-zero, so a buffer coming back from
     ///       the reuse pool is already zero and re-filling it would memset the
-    ///       hot path (most materialisations) for nothing. v2/v2A compress to
+    ///       hot path (most materialisations) for nothing. zero_one_value/zero_any compress to
     ///       an arbitrary constant and must initialise both branches alike: they
     ///       call the single-functor overload below.
     template <typename InitReused, typename InitFresh>
@@ -486,7 +486,7 @@ struct ChunkAllocPolicy<T, Derived, true>
         return values_loc;
     }
 
-    /// @brief Same initialiser on both branches -- the v2/v2A form.
+    /// @brief Same initialiser on both branches -- the zero_one_value/zero_any form.
     /// @tparam InitFunc Initialization function type
     /// @param thr_rank Thread rank/ID
     /// @param init_func Function to initialize the allocated block
@@ -547,7 +547,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         return values_loc;
     }
 
-    /// @brief Same initialiser on both branches -- the v2/v2A form.
+    /// @brief Same initialiser on both branches -- the zero_one_value/zero_any form.
     /// @tparam InitFunc Initialization function type
     /// @param thr_rank Thread rank (unused in single-threaded mode)
     /// @param init_func Function to initialize the allocated block
@@ -868,7 +868,7 @@ class ChunkDynamicAllocPolicy<T, Derived, false>
 // ChunkBase
 // ============================================================================
 
-/// @brief CRTP base common to all chunk types (Chunk, Chunk2, Chunk2A).
+/// @brief CRTP base common to all chunk types (zero, zero_one_value, zero_any).
 /// @tparam T       Element type.
 /// @tparam Derived The chunk type.
 template <typename T, typename Derived>
@@ -1063,7 +1063,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
             }
             return packed;
         }
-        // Coinciding constants (frequent in 2A: second_v is values[0], and a
+        // Coinciding constants (frequent in zero_any: second_v is values[0], and a
         // sparse chunk often starts at first_value): one compare per element,
         // not two identical ones. Same verdict -- `first` only -- as below.
         if (first_v == second_v)
@@ -1166,7 +1166,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
             // Split the read by what served it: a materialised chunk vs a
             // compressed one (values points at the constant marker). read_cst /
             // (read + read_cst) is the compression hit rate on reads.
-            // is_cst_val1(), not written(): Chunk2::written() (no arg) aborts on
+            // is_cst_val1(), not written(): zero_one_value::Chunk::written() (no arg) aborts on
             // non-bool types -- it needs the second-value index a read lacks.
             if (self.is_cst_val1())
             {
@@ -1264,10 +1264,10 @@ class ChunkBase : public DeferredReadGate<Derived>,
      * @brief read_block(), unless the chunk is compressed: then its constant.
      *
      * @details The same single load of `values` under one read section. A
-     *          chunk compressed to the first constant -- or, Chunk2A, to its
+     *          chunk compressed to the first constant -- or, zero_any, to its
      *          second -- sets @p cst and leaves @p out untouched, so the caller
      *          takes the rest of the chunk at once
-     *          (ArrayChunkBase::for_each_span). A Chunk2 on its second constant
+     *          (ArrayChunkBase::for_each_span). A zero_one_value chunk on its second constant
      *          points at a filled buffer and is read as a block.
      * @return true when @p cst was set, false when @p out was filled
      */
@@ -1321,7 +1321,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         }
         // Contract: a mutable reference that bypasses the write proxy, valid only
         // on a materialised chunk. On a compressed one it points into a shared
-        // constant (Chunk/Chunk2) or an unbacked identifier slot (Chunk2A): a
+        // constant (zero/zero_one_value) or an unbacked identifier slot (zero_any): a
         // write through it corrupts the constant for every chunk, or faults.
         // Checked builds stop on it.
         if constexpr (build_config::any_check && requires { self.written(); })
@@ -1586,7 +1586,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     }
 
     // Type traits
-    // bool and Bit (bit.h) share chunk2's bool path: one second value, true.
+    // bool and Bit (bit.h) share zero_one_value's bool path: one second value, true.
     static constexpr bool is_bool     = is_bool_like_v<T>;
     static constexpr bool is_not_bool = !is_bool;
 
@@ -1765,8 +1765,8 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /// @brief Whether this chunk is currently materialised (not compressed
     ///        to a constant), at the granularity Derived supports.
     /// @param j Element offset; used only when Derived distinguishes
-    ///          writtenness per-offset (e.g. Chunk2/Chunk2A's second-value
-    ///          slot); ignored otherwise (falls back to self.written()).
+    ///          writtenness per-offset (e.g. zero_one_value/zero_any's second-value
+    ///          slot); ignored otherwise (falls back to derived().written()).
     /// @return true if the chunk (or offset j) holds real, materialised data.
     [[nodiscard]] bool is_written_at(this const Derived& self, int j) noexcept
     {
@@ -1783,7 +1783,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /**
      * @brief The element at @p i, whatever the chunk's state.
      *
-     * @details The single point every element READ goes through. A Chunk2A
+     * @details The single point every element READ goes through. A zero_any
      *          chunk compressed to a second constant points at an identifier
      *          slot that holds nothing (tab_cst_val2_holder.h), so its value
      *          comes from the registry: one pointer range test on the read
@@ -1833,14 +1833,14 @@ class ChunkBase : public DeferredReadGate<Derived>,
         // probe fails OPEN (where false, the read returns 0 from the unwritten
         // region -- a wrong number, not a build error), and nvhpc evaluates it
         // differently on the still-incomplete CRTP Derived. A type comparison
-        // against the forward-declared Chunk2A (chunk_traits.h) cannot differ.
+        // against the forward-declared zero_any::Chunk (chunk_traits.h) cannot differ.
         if constexpr (std::is_same_v<Derived, zero_any::Chunk<T>>)
         {
             static_assert(
                 requires(const Derived& obj, const T* ptr) {
                     obj.is_cst_val2_ptr_of(ptr);
                     obj.second_value_from_ptr(ptr);
-                }, "Chunk2A must provide is_cst_val2_ptr_of() and second_value_from_ptr(): "
+                }, "zero_any::Chunk must provide is_cst_val2_ptr_of() and second_value_from_ptr(): "
                    "its second values are identifiers, not filled arrays");
             const T* const vals = self.values_load();
             if constexpr (!Relaxed)

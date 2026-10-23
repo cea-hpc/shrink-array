@@ -21,8 +21,8 @@
  * @brief Element i of a chunk buffer, whatever its layout: `values[i]` for
  *        every element type, a bit of a 64-bit word for Bit (bit.h).
  *
- * @details The chunk2 code reads and writes elements through these rather
- *          than indexing the buffer, so that Chunk2<Bit> -- whose buffer is
+ * @details The zero_one_value code reads and writes elements through these rather
+ *          than indexing the buffer, so that zero_one_value::Chunk<Bit> -- whose buffer is
  *          words of bits -- runs the same code. For every other T they are
  *          `values[i]`, inlined: no cost, no change.
  *

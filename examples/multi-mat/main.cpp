@@ -22,7 +22,7 @@
  * mesh, but occupies only a random interval of it at each iteration: the
  * fields are written there, the gadget computation reads them back, the
  * rest of the mesh stays zero. Half the materials (by default) keep their
- * arrays in chunk arrays -- v1 for the fields, Chunk2 for the fraction --
+ * arrays in chunk arrays -- zero for the fields, zero_one_value for the fraction --
  * where the untouched chunks cost nothing; the other half in std::vectors,
  * for the comparison. The run prints the chunk filling rates, the result of
  * the computation, the elapsed time and the peak memory.
@@ -217,7 +217,7 @@ int main()
 
                                  std::println("  Chunk filling rate : {:.2f}%", sz0);
 
-                                 // The presence fraction, a Chunk2 array: only its
+                                 // The presence fraction, a zero_one_value array: only its
                                  // interface chunks should be materialised, the
                                  // interior ones are compressed to 1 and the empty
                                  // ones to 0.

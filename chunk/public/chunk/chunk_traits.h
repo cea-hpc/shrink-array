@@ -119,7 +119,7 @@ struct ChunkTraits<zero::Chunk<T>>
     using ManagerType = ManagerChunk<zero::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
-/// @brief Chunk2<T> maps to Proxy2<T> and ManagerChunk<Chunk2, T>.
+/// @brief zero_one_value::Chunk<T> maps to zero_one_value::Proxy<T> and ManagerChunk<zero_one_value::Chunk, T>.
 template <typename T>
 struct ChunkTraits<zero_one_value::Chunk<T>>
 {
@@ -127,7 +127,7 @@ struct ChunkTraits<zero_one_value::Chunk<T>>
     using ManagerType = ManagerChunk<zero_one_value::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
-/// @brief Chunk2A<T> maps to Proxy2A<T> and ManagerChunk<Chunk2A, T>.
+/// @brief zero_any::Chunk<T> maps to zero_any::Proxy<T> and ManagerChunk<zero_any::Chunk, T>.
 template <typename T>
 struct ChunkTraits<zero_any::Chunk<T>>
 {
@@ -153,8 +153,8 @@ struct ArrayChunkTraits<zero::Array<T, IntType>>
     using IndexType   = IntType;                   ///< Signed global index type.
 };
 
-/// @brief zero_any::Array<T, IntType> maps to Chunk2A<T>, Proxy2A<T>, ManagerChunk<Chunk2A, T>, value T and index
-/// IntType.
+/// @brief zero_any::Array<T, IntType> maps to zero_any::Chunk<T>, zero_any::Proxy<T>, ManagerChunk<zero_any::Chunk, T>,
+///        value T and index IntType.
 template <ArrayChunkElement T, typename IntType>
 struct ArrayChunkTraits<zero_any::Array<T, IntType>>
 {
@@ -165,7 +165,8 @@ struct ArrayChunkTraits<zero_any::Array<T, IntType>>
     using IndexType   = IntType;                     ///< Signed global index type.
 };
 
-/// @brief zero_one_value::Array<T, IntType> maps to Chunk2<T>, Proxy2<T>, ManagerChunk<Chunk2, T>, value T and index IntType.
+/// @brief zero_one_value::Array<T, IntType> maps to zero_one_value::Chunk<T>, zero_one_value::Proxy<T>,
+///        ManagerChunk<zero_one_value::Chunk, T>, value T and index IntType.
 template <ArrayChunkElement T, typename IntType>
 struct ArrayChunkTraits<zero_one_value::Array<T, IntType>>
 {

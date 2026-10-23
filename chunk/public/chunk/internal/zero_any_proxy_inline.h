@@ -43,9 +43,9 @@
 
 /**
  * @file zero_any_proxy_inline.h
- * @brief Out-of-line definitions of Proxy2A and Proxy2AFastCompPolicy.
+ * @brief Out-of-line definitions of zero_any::Proxy and Proxy2AFastCompPolicy.
  *
- * Chunk2A stores TWO constants: a global `first_value` and a per-chunk
+ * zero_any stores TWO constants: a global `first_value` and a per-chunk
  * `second_value`. A chunk is cst_val1, cst_val2, or materialised on the heap;
  * this file moves between those states without losing a concurrent write:
  * metadata arming (set_info_on_chunk() and siblings), compression driving
@@ -184,7 +184,7 @@ void zero_any::Proxy<T>::mark_for_compression_if_needed(InT<T> new_value, [[mayb
 }
 
 // Explicit-old-value variant: preferred, as it does not re-read the slot (which
-// could race with another writer). bool routes to Proxy2Base's (old, new) form;
+// could race with another writer). bool routes to SecondValueProxyBase's (old, new) form;
 // this arm is not instantiated today, so a wrong qualifier would not be caught.
 template <typename T>
 void zero_any::Proxy<T>::mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const
@@ -215,7 +215,7 @@ void zero_any::Proxy<T>::resize_tab_is_int(int nb_tab)
 // every "queued for compression" flag goes back to 0. Safe only if no chunk of
 // this tab is queued -- a queued chunk with a cleared flag could be queued twice
 // (pointing into the chunk_list just reallocated).
-// ArrayChunk2Base::resize_common() guarantees it by flushing the deferred ops
+// SecondValueArrayBase::resize_common() guarantees it by flushing the deferred ops
 // (whose replay can queue chunks) BEFORE the compression pass that empties every
 // list. Do not swap those two steps. Asserted below (flag 1 <=> entry in a list).
 template <typename T>
@@ -369,7 +369,7 @@ void zero_any::Proxy<T>::ensure_writable_storage()
     // Allocate from THIS array's chunk-size pool: the per-thread size may be
     // stale (left by an op on another array), and a smaller buffer written at
     // this array's offsets overflows. The in-place path reaches create_value
-    // only through here; Proxy2A::create_value (zero_any_proxy.h) does the same on
+    // only through here; zero_any::Proxy::create_value (zero_any_proxy.h) does the same on
     // the direct-assignment path.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -404,7 +404,7 @@ void zero_any::Proxy<T>::ensure_writable_storage()
 /**
  * @brief Materialises a constant chunk from a replay context.
  *
- * Async twin of Proxy2A::ensure_writable_storage(): the state is read from a
+ * Async twin of zero_any::Proxy::ensure_writable_storage(): the state is read from a
  * proxy rebuilt by the caller rather than from `*this`, and no metadata arming
  * happens here — make_proxy_with_info() already did it.
  *
@@ -730,7 +730,7 @@ T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
                     }
 
                     // raw-read: deferred replay, after materialisation -- flushes exclude the stealers.
-                    // A relaxed atomic store where Chunk2A's element stores must be one
+                    // A relaxed atomic store where zero_any's element stores must be one
                     // (relaxed_element.h): other writers' scans (may_become_uniform)
                     // read this element meanwhile -- as the compound ops' replay does.
                     if constexpr (internal::relaxed_element_stores_v<zero_any::Chunk<T>, T>)

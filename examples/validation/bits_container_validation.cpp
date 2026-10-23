@@ -50,7 +50,7 @@
 //      active size (capped at cst_buffer_size), which it leaves unchanged --
 //      an array of another type created next is born at it.
 //
-// Chunk2 builds only (ArrayChunkBits is zero_one_value::Array<Bit>). Exit 0 = pass.
+// zero_one_value builds only (ArrayChunkBits is zero_one_value::Array<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
 #include <cstdint>   // std::uint64_t, std::uint32_t, std::uint8_t (the copy source)

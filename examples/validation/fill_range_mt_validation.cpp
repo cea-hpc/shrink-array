@@ -91,15 +91,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -279,7 +279,7 @@ static int run_validation(long n, int rounds)
 
 // Perf blocks: half the smallest chunk this bench builds (64), with values
 // alternating between neighbours, so no chunk is ever uniform -- a uniform
-// Chunk2A chunk compresses to its second value, and the timings would then
+// zero_any chunk compresses to its second value, and the timings would then
 // measure compression churn instead of writes.
 constexpr long perf_blk = 32;
 

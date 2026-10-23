@@ -1,7 +1,7 @@
 # Copyright 2024-2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # ---------------------------------------------------------------------------
-# A variant library is compiled with one of CHUNK_VARIANT_ZERO / _V2 / _V2A
+# A variant library is compiled with one of CHUNK_VARIANT_ZERO*
 # defined (or none, for the vector-mode build), PUBLIC: the macros drive
 # `chunk_config::is_shrink_enabled` and friends in public/chunk/config.h, and
 # they are read *inside* library-side .cpp files (AllTypeChunk.cpp,
@@ -697,11 +697,11 @@ foreach(_vname IN LISTS _chunk_variant_names)
 endforeach()
 
 # --- Two families in one program ------------------------------------------
-# examples/multi-mat keeps its field arrays in zero::Array<T> (v1) and its
+# examples/multi-mat keeps its field arrays in zero::Array<T> and its
 # presence fraction in zero_one_value::Array<T>: one library with both defines, at the
 # default static size only. The registry allows it (all_type_chunk_inline.h:
 # "nothing forbids a build from selecting more than one"); what the second
-# define costs v1 is the raw fill of its range ops (raw_fillable_v). Without
+# define costs zero is the raw fill of its range ops (raw_fillable_v). Without
 # the OMPT tool: the example carries its own (examples/multi-mat/manage_ompt.cpp).
 if ("zero" IN_LIST CHUNK_VARIANTS AND "zero_one_value" IN_LIST CHUNK_VARIANTS)
   chunk_add_variant(chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1" ${CHUNK_DEFAULT_SIZE} FALSE

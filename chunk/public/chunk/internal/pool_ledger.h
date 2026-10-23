@@ -222,7 +222,7 @@ inline void on_op_free(void* ptr) noexcept
 }
 
 // ============================================================================
-// BLOCK LEDGER — value-block lifecycle (check builds, Chunk2 / Chunk2A)
+// BLOCK LEDGER — value-block lifecycle (check builds, zero_one_value / zero_any)
 // ----------------------------------------------------------------------------
 // Distinct from the ctx/op ledger above: this one tracks the heap chunk-blocks
 // that flow through allocate_chunk_internal / recup_value / free_block_to_pool.

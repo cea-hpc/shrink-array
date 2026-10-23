@@ -50,9 +50,9 @@ namespace shrink_array
 // (illustrative; grep `template <typename U>` in the Proxy hierarchy):
 //
 //     Proxy::operator=/+=/-=/*=//=/%=                 (zero_proxy.h)
-//     Proxy2::operator=                               (zero_one_value_proxy.h)
-//     Proxy2A::operator=                              (zero_any_proxy.h)
-//     Proxy2Base::operator*=///=/%=                   (second_value_proxy_base.h)
+//     zero_one_value::Proxy::operator=                (zero_one_value_proxy.h)
+//     zero_any::Proxy::operator=                      (zero_any_proxy.h)
+//     SecondValueProxyBase::operator*=///=/%=         (second_value_proxy_base.h)
 //     ProxyBase::operator+=/-=/&=/|=/^=/<<=/>>=       (proxy_base.h)
 //     ProxyBase::enqueue_async_arithmetic             (proxy_base.h)
 //     ProxyBase::apply_atomic_op (U parameter)        (proxy_base.h)

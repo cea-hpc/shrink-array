@@ -52,7 +52,7 @@
  *    Clang and IntelLLVM (OMP=ON, not under TSan); gcc's libgomp has no
  *    OMPT.
  *
- * The presence fraction (a Chunk2 array) is compressed by that engine in
+ * The presence fraction (a zero_one_value array) is compressed by that engine in
  * both modes: its compress() is an audit pass, not the compressor.
  */
 

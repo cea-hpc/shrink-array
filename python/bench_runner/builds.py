@@ -304,7 +304,7 @@ def _run_dir(output_dir, *parts):
     The binaries read and write data_<tab>_<k>.bin relative to their cwd, and
     that name carries no variant, no geometry and no compiler -- so two
     binaries sharing a directory silently share reference files. A static
-    chunk_256 writing data_tab_bool_1.bin and a chunk2a_dyn reading it back is
+    zero_256 writing data_tab_bool_1.bin and a zero_any_dyn reading it back is
     a mismatch at element 450159 on iteration 1, which looks like a library bug
     and is not one. One directory per run, and the question cannot arise.
 

@@ -26,7 +26,7 @@
 #include <print>       // std::println, std::print
 
 #include "bench_config.h"  // the CONSTEXPR macro
-#include "bench_prelude.h" // Proxy2<T>::share_info_array (share_info line)
+#include "bench_prelude.h" // zero_one_value::Proxy<T>::share_info_array (share_info line)
 #include "bench_phases.h"  // bench_stats, bench_print_checksums (defined here)
 #include "bench_utils.h"   // calculate_checksum, bench_text
 

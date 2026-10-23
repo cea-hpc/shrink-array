@@ -16,7 +16,7 @@
 
 /**
  * @file cst2_registry_validation.cpp
- * @brief Chunk2A's second-value registry (GlobalVecHolder) is freed by the
+ * @brief zero_any's second-value registry (GlobalVecHolder) is freed by the
  *        last array of EVERY generation, not only the first.
  *
  * @details The registry of a type is shared by every zero_any::Array<T> and
@@ -56,8 +56,8 @@
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>   // getpid
 
-#include "chunk/chunk_traits.h"       // forward decls (Chunk2A) + default IntType = int
-#include "chunk/zero_any_array.h"     // zero_any::Array, Chunk2A complete (its registry types)
+#include "chunk/chunk_traits.h"       // forward decls (zero_any::Chunk) + default IntType = int
+#include "chunk/zero_any_array.h"     // zero_any::Array, zero_any::Chunk complete (its registry types)
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/config.h"             // chunk_config::use_zero_any, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
@@ -72,7 +72,8 @@ namespace validation::cst2_registry_validation
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_zero_any, "cst2_registry_validation is Chunk2A's registry: link chunk_zero_any_<size>");
+static_assert(chunk_config::use_zero_any,
+              "cst2_registry_validation is zero_any's registry: link chunk_zero_any_<size>");
 
 using Arr      = zero_any::Array<double>;
 using Registry = zero_any::Chunk<double>::Holder::VecHolder;
@@ -90,7 +91,7 @@ static void end_phase()
     {
         shrink_array::finalize_parallel_phase();
     }
-    // Serial chunk2a has no between-region pass: run the writers' pass.
+    // Serial zero_any has no between-region pass: run the writers' pass.
     if constexpr (!build_config::use_openmp)
     {
         Arr::make_block_compression();

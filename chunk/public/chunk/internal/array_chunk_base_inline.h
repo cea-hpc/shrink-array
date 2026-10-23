@@ -56,7 +56,7 @@ void ArrayChunkBase<Derived>::create_common(this Derived& self)
 
     self.pre_create_hook();
 
-    // In ALL modes, do not gate on use_fast_block_compression: Proxy2A needs
+    // In ALL modes, do not gate on use_fast_block_compression: zero_any::Proxy needs
     // its tab_* containers (tab_second_value, ...) even without OpenMP; for
     // Proxy / Proxy2 it is a no-op stub outside OpenMP.
     ProxyType::resize_tab_is_int(self.nb_tab);

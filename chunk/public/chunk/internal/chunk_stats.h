@@ -23,7 +23,7 @@
  *        there is no cost in a normal build.
  *
  * Design:
- *   - PER VARIANT: counters are kept separately for chunk / chunk2 / chunk2a
+ *   - PER VARIANT: counters are kept separately for zero / zero_one_value / zero_any
  *     (indexed by \<ChunkType\>\::stat_variant == 0 / 1 / 2), so the
  *     end-of-run report shows one block per variant.
  *   - PER THREAD: each thread bumps its OWN slot (indexed by the current

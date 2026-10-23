@@ -38,7 +38,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
 {
     // COMPRESS them first: a candidate dropped here would stay materialised
     // through the rebuild and never be re-queued. compress() is guarded against
-    // an already-compressed chunk (v1: the zero sentinel); each entry carries its
+    // an already-compressed chunk (zero: the zero sentinel); each entry carries its
     // own element count. See RechunkSupport::rechunk_to for why the drop happens
     // at the owning geometry.
     if constexpr (chunk_config::use_fast_block_compression)
@@ -50,7 +50,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
         }
         else
         {
-            // v1 only: this pass bypasses CompressionManager::start(), and v1's
+            // zero only: this pass bypasses CompressionManager::start(), and zero's
             // replay bodies rely on no compressor changing `values` during a flush
             // drain (see check_no_flush_outside_start, zero_proxy_inline.h).
             check_no_flush_outside_start<ProxyType>("RechunkHooks::rechunk_drop_candidates");

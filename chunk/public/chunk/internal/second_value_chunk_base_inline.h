@@ -127,7 +127,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(this Derived&     self,
     auto& ll_block_free_thr = self.get_manager().get_list_block_free_thr(thr_rank);
     ll_block_free_thr.push_back(self.values_.load());
 
-    // Chunk2A specific cleanup
+    // zero_any specific cleanup
     if constexpr (std::is_same_v<IndexT, std::nullopt_t>)
     {
         ptr_second_value.reset();

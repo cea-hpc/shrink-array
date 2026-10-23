@@ -51,7 +51,7 @@ namespace zero
 /**
  * @brief Registry mapping array-element keys (pointers) to their table
  *        number. Unlike PointerMapChunk2, it has no value -> inf_array
- *        lookup: v1 compression does not group chunks by value.
+ *        lookup: zero's compression does not group chunks by value.
  * @tparam T Element type this registry is keyed on.
  */
 template <typename T>
@@ -90,7 +90,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void
 
     /**
      * @brief Swap the table numbers registered for two existing keys.
-     * @details The name the v1 / v2A re-chunk hooks call; v2 calls
+     * @details The name the zero / zero_any re-chunk hooks call; zero_one_value calls
      *          swap_entries(). Same operation.
      * @param key_a First key (an array address).
      * @param key_b Second key.
@@ -188,7 +188,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     void set_num_tab() noexcept
     {
-        // Armed by the array's operator[] (see Proxy2A::set_num_tab): the
+        // Armed by the array's operator[] (see zero_any::Proxy::set_num_tab): the
         // registry lookup only for a proxy armed otherwise.
         if (num_tab_ >= 0) [[likely]]
         {
@@ -281,7 +281,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *
      * @warning Do not remove in favour of the ProxyBase one it hides: the base
      *          stores with memory_order_release, this one seq_cst (plain
-     *          assignment). Dropping it would weaken v1's ordering of the flag.
+     *          assignment). Dropping it would weaken zero's ordering of the flag.
      */
     static void reset_tab_inside_list_to_compress(int num_tab, int num_chunk) noexcept
     {
@@ -821,7 +821,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *
      * @details The write entry does not flush, so a read must pull any deferred
      *          write queued for this offset: a plain values[num] could return a
-     *          superseded value. Proxy2 / Proxy2A inherit ProxyBase::operator T()
+     *          superseded value. zero_one_value::Proxy / zero_any::Proxy inherit ProxyBase::operator T()
      *          (read_pure()).
      *
      *          Same pre-filter as ArrayChunkBase::sync_chunk(): the dirty bit is
@@ -887,7 +887,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return this->num_tab_ >= 0 ? this->num_tab_ : get_num_tab(array_ptr);
     }
 
-    /// Registry of every v1 array: array address -> table number.
+    /// Registry of every zero::Array: array address -> table number.
     static inline constinit internal::LazyImmortal<PointerMap<T>> share_info_array;
 };
 

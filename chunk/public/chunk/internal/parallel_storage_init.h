@@ -22,7 +22,7 @@
  *        initialisation loop.
  *
  * @details rebuild_storage() of the three variants sizes per-chunk vectors
- *          (chunk_list; for Chunk2A also the second-value and type-of-constant
+ *          (chunk_list; for zero_any also the second-value and type-of-constant
  *          rows), then runs one init per chunk. Sizing a fresh vector serially
  *          costs as much as the init loop itself, mostly page faults, and puts
  *          every page on one NUMA node.

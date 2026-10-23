@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Dynamic-geometry validation harness. Variant-agnostic: tests chunk / chunk2 /
-// chunk2a depending on the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like
+// Dynamic-geometry validation harness. Variant-agnostic: tests zero / zero_one_value /
+// zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like
 // rechunk_validation.cpp and shrink_bench.cpp.
 // ============================================================================
 //
@@ -73,7 +73,7 @@ namespace validation::dyn_geometry_validation
 
 // --- Active variant selection (same shape as rechunk_validation.cpp) ---------
 static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "dyn_geometry_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
+              "dyn_geometry_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
 
 static_assert(build_config::chunk_dynamic,
               "dyn_geometry_validation is meaningless without CHUNK_DYNAMIC: with the "
@@ -89,20 +89,20 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
-// set_second_value only exists on chunk2 / chunk2a; no-op elsewhere. Required on
-// chunk2 before any write (its candidate list is keyed by second_value), so it
+// set_second_value only exists on zero_one_value / zero_any; no-op elsewhere. Required on
+// zero_one_value before any write (its candidate list is keyed by second_value), so it
 // is done here for the same reason rechunk_validation does it.
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)

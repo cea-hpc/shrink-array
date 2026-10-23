@@ -183,7 +183,7 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
                     # A dyn run's geometry is the re-chunk decider's to choose, and
                     # its marginal calls (a gain a hair above or below the
                     # deadband) read the live compression state -- which differs
-                    # by construction between the builds: Chunk2/Chunk2A compress
+                    # by construction between the builds: zero_one_value/zero_any compress
                     # by deferred block passes in OpenMP only. Two runs that
                     # re-chunked differently end with different chunk counts on
                     # the same data; their still@exit says nothing about either.

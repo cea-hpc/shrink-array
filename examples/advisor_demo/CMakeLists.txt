@@ -5,7 +5,7 @@
 # advisor's per-size predictions (made from S=256, then S=1024) against that
 # ground truth. Returns the number of sizes
 # whose prediction is off, so it doubles as a test. Needs the runtime
-# geometry (one array per size), hence the dyn chunk2A library only.
+# geometry (one array per size), hence the dyn zero_any library only.
 if (CHUNK_BUILD_DYN)
     add_executable(advisor_demo advisor_demo.cpp)
     target_link_libraries(advisor_demo PRIVATE chunk_zero_any_dyn)

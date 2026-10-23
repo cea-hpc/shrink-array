@@ -301,7 +301,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             c.clear();
             d.clear();
 
-            // chunk2: the array-level second value travels with the copy. A
+            // zero_one_value: the array-level second value travels with the copy. A
             // generic lambda, so that the `if constexpr` really discards the
             // body on the arrays that have no get_second_value().
             [&]<typename A>(A*)
@@ -320,7 +320,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                     {
                         ok = std::as_const(t2)[i] == std::as_const(s2)[i];
                     }
-                    expect(ok, "copy constructor carries chunk2's second value and its runs");
+                    expect(ok, "copy constructor carries zero_one_value's second value and its runs");
                     s2.clear();
                     t2.clear();
                 }
@@ -372,11 +372,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // boundaries. Mixed data (mostly second_value, some distinct) exercises
         // both the cst2 read path and materialised reads — the two that can go
         // stale. maybe_set_second_value is not required for correctness: a
-        // chunk2 array without it has T{} as second value (see
+        // zero_one_value array without it has T{} as second value (see
         // insert_only_num_tab), so it writes fine but only its zeros compress.
         // It is declared here, before the writes, so that the runs of 2.0
         // actually reach the cst2 read path this check is about (no-op on
-        // chunk v1 / vector mode, per-chunk on chunk2A).
+        // zero / vector mode, per-chunk on zero_any).
         const long    nr = 100000;
         Array<double> r(nr);
         maybe_set_second_value(r, second_value_d1); // second_value = 2.0

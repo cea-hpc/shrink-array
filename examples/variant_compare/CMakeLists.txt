@@ -1,7 +1,7 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # ============================================================================
-# variant_compare: Chunk2 against Chunk2A on one workload (variant_compare.cpp).
+# variant_compare: zero_one_value against zero_any on one workload (variant_compare.cpp).
 #
 # One source, one executable per variant at the default static size (no dyn:
 # a re-chunk would sit in the timings): variant_compare_zero_one_value_<size>,
@@ -31,7 +31,7 @@ foreach(_vi RANGE ${_vc_nvar_last})
 
   set(_tgt variant_compare_${_vname}_${CHUNK_DEFAULT_SIZE})
   add_executable(${_tgt} variant_compare.cpp)
-  target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO_ONE_VALUE / _V2A, CHUNK_SIZE: PUBLIC
+  target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO_ONE_VALUE / _ZERO_ANY, CHUNK_SIZE: PUBLIC
   if (OMP)
     target_link_libraries(${_tgt} PUBLIC OpenMP::OpenMP_CXX)
   endif ()

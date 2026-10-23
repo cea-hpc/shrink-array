@@ -27,8 +27,8 @@
 namespace shrink_array
 {
 
-/// @brief Formatted per-array compression stats, shared by Chunk / Chunk2 /
-///        Chunk2A.
+/// @brief Formatted per-array compression stats, shared by zero / zero_one_value /
+///        zero_any.
 ///
 /// @param os            stream the report is written to.
 /// @param num_tab       table number of the array (its registry index).
@@ -38,19 +38,19 @@ namespace shrink_array
 /// @param n_compressed  chunks stored in a compressed (constant) form.
 /// @param nb_chunk      total chunks in the array.
 /// @param n_t1          type-2 chunks (a distinct second constant). 0 for
-///                      plain Chunk (no second value), which suppresses the
+///                      zero (no second value), which suppresses the
 ///                      type-2 column.
-/// @param chunk_name    "Chunk", "Chunk2" or "Chunk2A" — used in the verdict.
+/// @param chunk_name    "zero", "zero_one_value" or "zero_any" — used in the verdict.
 /// @param n_cross       cross-variant probe: how many *materialised* (un-
 ///                      compressed) blocks were in fact constant to a value the
 ///                      current variant cannot capture but a richer one would
-///                      (e.g. for Chunk: blocks a Chunk2 would have compressed).
+///                      (e.g. for zero: blocks zero_one_value would have compressed).
 ///                      -1 means "not measured" and hides the line.
-/// @param cross_name    the richer variant the probe refers to ("Chunk2" /
-///                      "Chunk2A"). Only used when n_cross >= 0.
+/// @param cross_name    the richer variant the probe refers to ("zero_one_value"
+///                      / "zero_any"). Only used when n_cross >= 0.
 /// @param bool_elements the elements are bool: their second constant can only
-///                      be `true`, one for the type, so Chunk2 stores every
-///                      type-2 chunk Chunk2A does -- a Chunk2A is never the
+///                      be `true`, one for the type, so zero_one_value stores
+///                      every type-2 chunk zero_any does -- zero_any is never the
 ///                      verdict for them.
 inline void print_formatted_chunk_stats(std::ostream&      os,
                                         int                num_tab,
@@ -59,7 +59,7 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
                                         int                n_compressed,
                                         int                nb_chunk,
                                         int                n_t1,
-                                        const std::string& chunk_name,         // e.g. "Chunk", "Chunk2" or "Chunk2A"
+                                        const std::string& chunk_name,         // "zero", "zero_one_value", "zero_any"
                                         int                n_cross       = -1, // cross-variant probe count (-1 = none)
                                         const std::string& cross_name    = "", // richer variant the probe refers to
                                         bool               bool_elements = false) // bool: one second value, true
@@ -97,32 +97,33 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     {
         verdict = yellow + "compression marginal vs std::vector — plain storage may be lighter" + reset;
     }
-    else if (chunk_name != "Chunk" && (n_t1 == 0 || pct_t1 < 10.0))
+    else if (chunk_name != "zero" && (n_t1 == 0 || pct_t1 < 10.0))
     {
-        // Chunk2/Chunk2A carrying no, or almost no, type-2: the second value
+        // zero_one_value/zero_any carrying no, or almost no, type-2: the second value
         // never paid.
-        verdict = grey + chunk_name + " overkill — plain Chunk would suffice" + reset;
+        verdict = grey + chunk_name + " overkill — plain zero would suffice" + reset;
     }
-    else if (chunk_name == "Chunk2A" && bool_elements)
+    else if (chunk_name == "zero_any" && bool_elements)
     {
-        // Type-2 chunks of bools are all-true chunks: Chunk2's single second
-        // value (true) stores every one of them. The per-chunk second value of
-        // Chunk2A has nothing to add.
-        verdict = grey + std::string("Chunk2A no better than Chunk2 for bool (one second value: true)") + reset;
+        // Type-2 chunks of bools are all-true chunks: zero_one_value's single
+        // second value (true) stores every one of them. The per-chunk second
+        // value of zero_any has nothing to add.
+        verdict =
+            grey + std::string("zero_any no better than zero_one_value for bool (one second value: true)") + reset;
     }
-    else if (chunk_name != "Chunk" && pct_t1 < 40.0)
+    else if (chunk_name != "zero" && pct_t1 < 40.0)
     {
         verdict = cyan + chunk_name + " useful" + reset;
     }
-    else if (chunk_name != "Chunk")
+    else if (chunk_name != "zero")
     {
         verdict = green + bold + chunk_name + " highly effective" + reset;
     }
     else
     {
-        // Plain Chunk: no type-2 notion; verdict is purely vs std::vector.
-        verdict = (pct_total >= 60.0) ? green + bold + "Chunk highly effective vs std::vector" + reset
-                                      : cyan + "Chunk useful vs std::vector" + reset;
+        // zero: no type-2 notion; verdict is purely vs std::vector.
+        verdict = (pct_total >= 60.0) ? green + bold + "zero highly effective vs std::vector" + reset
+                                      : cyan + "zero useful vs std::vector" + reset;
     }
 
     // The whole line is built first and written at once, so that lines from

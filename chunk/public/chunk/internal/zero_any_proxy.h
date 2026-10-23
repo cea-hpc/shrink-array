@@ -39,7 +39,8 @@
 #include "chunk/internal/tab_cst_val2_holder.h"          // SecondValueRef
 #include "chunk/internal/TChunk.h"                       // TChunk2AComp
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
-#include "chunk/internal/second_value_proxy_base.h"                  // Proxy2Base
+#include "chunk/internal/second_value_proxy_base.h"      // SecondValueProxyBase
+#include "chunk/internal/dependent_false.h"              // dependent_false_v (wrong-type branches)
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/parallel_storage_init.h"        // NoInitVector, resize_filled, for_each_chunk
 
@@ -57,7 +58,7 @@ class ManagerChunk;
 /*---------------------------------------------------------------------------*/
 
 /**
- * @brief Forward declaration of Chunk2A used by Proxy2A/PointerMapChunk2A.
+ * @brief Forward declaration of zero_any::Chunk used by zero_any::Proxy/PointerMapChunk2A.
  * @tparam T element type
  */
 
@@ -69,7 +70,7 @@ class Chunk;
 
 /**
  * @brief Registry mapping array keys (pointers) to their table number, for
- *        Chunk2A: a linear-scan vector while small, switching once and for all
+ *        zero_any: a linear-scan vector while small, switching once and for all
  *        to a hash map past SmallN entries.
  * @tparam T Element type (unused; symmetry with PointerMapChunk).
  * @tparam SmallN Entry count past which the hash map is used.
@@ -301,7 +302,7 @@ class PointerMap
 } // namespace zero_any
 
 /*!
- * \brief ProxySpec2A: static per-tab, per-chunk second-value storage for Proxy2A
+ * \brief ProxySpec2A: static per-tab, per-chunk second-value storage for zero_any::Proxy
  *        (indexed tab_second_value[num_tab][num_chunk]), so the proxy never manages
  *        the container itself.
  *
@@ -330,7 +331,7 @@ void realloc_unique(std::unique_ptr<T[]>& ptr, std::size_t old_size, std::size_t
 namespace zero_any
 {
 
-/// @brief Per-table, per-chunk second-value storage used by Proxy2A (see the description above realloc_unique).
+/// @brief Per-table, per-chunk second-value storage used by zero_any::Proxy (see the description above realloc_unique).
 template <typename T, typename Derived>
 class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 {
@@ -463,7 +464,7 @@ class ProxySpec<bool, Derived> : public SecondValueProxyBase<Derived, bool, Chun
 
     using ValuesTypeRef = SecondValueProxyBase<Derived, bool, ChunkType>::ValuesTypeRef;
 
-    /// @brief Forward the element reference, index and chunk to Proxy2Base.
+    /// @brief Forward the element reference, index and chunk to SecondValueProxyBase.
     /// @param v Reference to the chunk's values.
     /// @param num Index of the element in the chunk.
     /// @param chunk Owning chunk.
@@ -554,7 +555,7 @@ class ProxySpec<bool, Derived> : public SecondValueProxyBase<Derived, bool, Chun
 } // namespace zero_any
 
 /**
- * @brief Policy to handle Fast Block Compression specific logic for Proxy2A.
+ * @brief Policy to handle Fast Block Compression specific logic for zero_any::Proxy.
  * Encapsulates per-thread list management and trigger logic.
  */
 
@@ -588,7 +589,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     template <typename Op, typename Body, typename U>
     void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& v, Body lbd) const;
 
-    /// @brief Rank @p thr's Chunk2A candidate list.
+    /// @brief Rank @p thr's zero_any candidate list.
     TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially_thr(thr);
@@ -633,9 +634,9 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
 
 } // namespace zero_any
 /**
- * @brief Proxy2A class providing element access to a chunked sparse array representation.
+ * @brief zero_any::Proxy class providing element access to a chunked sparse array representation.
  *
- * Reads/writes one slot of a Chunk2A<T>, with fast-path/slow-path locking around
+ * Reads/writes one slot of a zero_any::Chunk<T>, with fast-path/slow-path locking around
  * compression, and manages the per-chunk metadata (second values, type-of-constant
  * flags, compression bookkeeping).
  *
@@ -645,7 +646,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
 namespace zero_any
 {
 
-/// @brief Proxy to one element of a Chunk2A<T> chunk (see the class description above).
+/// @brief Proxy to one element of a zero_any::Chunk<T> chunk (see the class description above).
 /// @tparam T Element type.
 template <typename T>
 // no move assignment on purpose -- assigning a proxy
@@ -672,7 +673,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     friend class ProxyBaseFastCompPolicy;
 
     /**
-     * @brief Construct a Proxy2A for OpenMP build (atomic reference to values).
+     * @brief Construct a zero_any::Proxy for OpenMP build (atomic reference to values).
      * @param values reference to array pointer (atomic)
      * @param num index within array
      * @param chunk owning chunk
@@ -737,8 +738,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
                 if (num_tab_ != share_info_array->get_num_tab(ptr_on_array_))
                 {
                     CHUNK_INVARIANT_FAILED(
-                        "Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}", num_tab_,
-                        ptr_on_array_);
+                        "zero_any::Proxy::set_num_tab: armed num_tab {} differs from the registry's for array {}",
+                        num_tab_, ptr_on_array_);
                 }
             }
             return;
@@ -912,7 +913,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @return true if the chunk should be marked for compression
      *
      * @details Beyond the shared predicate (a write of one of the two constants
-     *          over something else), chunk2a queues two writes of its own:
+     *          over something else), zero_any queues two writes of its own:
      *          - discover: any non-first value on a chunk with no second value yet;
      *          - change: the chunk has a second value, new is neither constant and
      *            differs from old. The chunk may be turning uniform at a third
@@ -990,15 +991,15 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     }
 
     /**
-     * @brief Chunk2A-specific fast pre-check guarding the marking path.
+     * @brief zero_any-specific fast pre-check guarding the marking path.
      *
-     * @details Shadows Proxy2Base::pre_check_mark_for_compression(), whose strict
+     * @details Shadows SecondValueProxyBase::pre_check_mark_for_compression(), whose strict
      *          constant-to-constant test would reject the extra clauses of
      *          should_mark_for_compression() above (discovering the second
      *          constant is not a constant-to-constant transition): those chunks
      *          would never be queued and their buffers never reused.
      *
-     *          Invariant (Proxy2Base::is_cst_val_new_value_is_other_cst_val()): the
+     *          Invariant (SecondValueProxyBase::is_cst_val_new_value_is_other_cst_val()): the
      *          pre-check must never reject what the predicate would accept.
      *
      * @param new_value The new value to check.

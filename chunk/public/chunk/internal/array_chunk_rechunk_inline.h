@@ -33,7 +33,7 @@
 #include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstdlib>     // std::getenv (CHUNK_RECHUNK_RECYCLE, CHUNK_RECHUNK_SCHEDULE)
 #include <optional>    // the affinity scope around tmp
-#include <type_traits> // std::is_same_v, the v1 bool guard
+#include <type_traits> // std::is_same_v, the zero bool guard
 #include <string_view> // CHUNK_RECHUNK_SCHEDULE parsing
 #include <utility>     // std::swap (the array swap)
 #include <vector>      // the refill buffers
@@ -51,7 +51,7 @@
 #include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
 #include "chunk/vector_range_ops.h"             // assume_drained
 #include "chunk/config.h"                       // build_config::threaded, chunk_config::use_zero_any
-#include "chunk/chunk_traits.h"                 // Proxy2A<T>
+#include "chunk/chunk_traits.h"                 // zero_any::Proxy<T>
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 #include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED (refill bulk read check)
@@ -76,7 +76,7 @@ namespace shrink_array::internal
     return logging::enabled(logging::Channel::memory, logging::Level::debug);
 }
 
-/// CHUNK_RECHUNK_RECYCLE (default on; 0 = off): at the v1 refill's slice
+/// CHUNK_RECHUNK_RECYCLE (default on; 0 = off): at the zero refill's slice
 /// boundaries, hand the slabs the old geometry has just emptied to the value
 /// arena for the next slice (TCSlabPool::recycle_empty_slabs), instead of
 /// madvise'ing them. Off = plain madvise sweep, for comparison.
@@ -86,7 +86,7 @@ inline const bool g_rechunk_recycle = []() noexcept
     return env == nullptr || env[0] == '\0' || env[0] != '0';
 }();
 
-/// CHUNK_RECHUNK_KEEP_RECYCLED (default off; 1 = on): at the end of the v1
+/// CHUNK_RECHUNK_KEEP_RECYCLED (default off; 1 = on): at the end of the zero
 /// refill, KEEP the recycled slabs no slice took on the arena's recycled lists,
 /// resident, instead of advising them away (SlabArena::advise_recycled: one
 /// MADV_DONTNEED per run, in practice per 1 MiB slab). SlabArena::allocate()
@@ -105,7 +105,7 @@ inline const bool g_rechunk_keep_recycled = []() noexcept
 }();
 
 /// CHUNK_RECHUNK_KEEP_RECYCLED_MB (default 0; MiB): the bounded form of
-/// CHUNK_RECHUNK_KEEP_RECYCLED -- at the end of the v1 refill, leave up to this
+/// CHUNK_RECHUNK_KEEP_RECYCLED -- at the end of the zero refill, leave up to this
 /// much of the leftover recycled slabs resident per arena, split evenly over the
 /// ranks, and advise the rest away as before (SlabArena::advise_recycled).
 /// 0 = advise them all. Ignored when CHUNK_RECHUNK_KEEP_RECYCLED=1 (keep all).
@@ -122,14 +122,14 @@ inline const std::size_t g_rechunk_keep_recycled_bytes = []() noexcept
     return mb << 20U;
 }();
 
-/// rechunk_trace_on(): the v1 refill's inter-slice costs for the re-chunk in
+/// rechunk_trace_on(): the zero refill's inter-slice costs for the re-chunk in
 /// progress (ms), reset by rechunk_to() and printed in its phases line.
 /// Written by the master between the slice regions only.
 inline double g_slice_drain_ms   = 0.0;
 inline double g_slice_collect_ms = 0.0;
 inline double g_slice_madvise_ms = 0.0;
 
-/// rechunk_trace_on(): where the v1 refill's slice regions spend their wall
+/// rechunk_trace_on(): where the zero refill's slice regions spend their wall
 /// time, summed over the slices of the re-chunk in progress (ms), reset by
 /// rechunk_to() and printed on its "slices" line. Instants on steady_clock
 /// (one system-wide counter), relative to the master just before the region:
@@ -368,7 +368,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         t_birth_at_active_size = false;
         affinity_scope.reset();
 
-        // Seed variant state into tmp BEFORE refill (Chunk2 second_value,
+        // Seed variant state into tmp BEFORE refill (zero_one_value second_value,
         // so its compression decisions use the same value).
         tmp.rechunk_seed_fresh(state);
 
@@ -387,7 +387,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
 
         // tmp's refill CANDIDATES are deliberately KEPT. Dropped, every rebuilt
         // chunk holding a constant stays materialised until teardown (a
-        // Chunk2/2A chunk only re-enters the list on a write that transitions
+        // zero_one_value/zero_any chunk only re-enters the list on a write that transitions
         // it to a constant) -- a large memory cost per re-chunk.
         //
         // No geometry-mismatch hazard: every candidate tuple carries the
@@ -398,12 +398,12 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         //  - the tuples point into tmp.chunk_list's storage, which the
         //    std::swap hands to *this unchanged (buffer swap, no move);
         //  - they carry tmp's num_tab, and rechunk_swap_identity() makes that
-        //    *this's identity (member swap for Chunk/Chunk2A, registry swap for
-        //    Chunk2), so the sweep's reset_tab_inside_list_to_compress(num_tab,
+        //    *this's identity (member swap for zero/zero_any, registry swap for
+        //    zero_one_value), so the sweep's reset_tab_inside_list_to_compress(num_tab,
         //    num_chunk) lands on the row allocated for tmp at new_size;
         //  - tmp's own destruction removes candidates by ITS post-swap num_tab
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()
-        //    above) and, for 2A, by the OLD chunk_list's pointer range --
+        //    above) and, for zero_any, by the OLD chunk_list's pointer range --
         //    neither touches these.
         // The next end-of-phase sweep folds the constant ones back.
 
@@ -416,7 +416,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
 
         // 4) SWAP the common storage. nb_tab is static and NOT swapped.
         //    num_tab + registry (+ any variant members) go through the
-        //    identity hook: Chunk / Chunk2A swap the num_tab member, Chunk2
+        //    identity hook: zero / zero_any swap the num_tab member, zero_one_value
         //    resolves num_tab from the registry and must NOT swap it.
         using std::swap;
         swap(self.chunk_list_, tmp.chunk_list_);
@@ -444,7 +444,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         }
         (void)ok;
 
-        // Variant finalisation after the swap (Chunk2 re-owns its
+        // Variant finalisation after the swap (zero_one_value re-owns its
         // map_inf_array entry so it does not dangle when tmp dies).
         self.rechunk_reown_after_swap(tmp, state);
 
@@ -453,7 +453,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         //
         // t_active is restored to old_size, NOT to a value saved at entry:
         // every write path re-sets t_active to ITS OWN array's chunk_size()
-        // right before materialising (see Proxy2::ensure_writable_storage()),
+        // right before materialising (see zero_one_value::Proxy::ensure_writable_storage()),
         // so a value saved at entry may belong to an unrelated array and would
         // route free_elt_pow2() (via get_chunk_allocator(), keyed on the
         // ambient) to the WRONG size pool. old_size comes from this array's
@@ -610,7 +610,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
     // chunk variant.
     // Materialisation is tracked with is_cst_val1() (values == the cst1
     // sentinel), universal and index-free -- unlike written()/is_cst_val() on
-    // chunk2, which need the second_value index. While filled, a chunk only
+    // zero_one_value, which need the second_value index. While filled, a chunk only
     // goes cst1 -> real buffer (never cst2, a compression result), so "still
     // cst1" == "not yet materialised" for every variant.
     if constexpr (chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any)
@@ -636,11 +636,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // path partitions allocator/compression state by thread rank — so this
         // is safe to run concurrently over disjoint c.
         std::atomic<long> n_folded{0};    // spans the rebuild tried to fold back
-        std::atomic<long> n_installed{0}; // ... of which 2A installed directly (no buffer)
+        std::atomic<long> n_installed{0}; // ... of which zero_any installed directly (no buffer)
         std::atomic<long> n_refused{0};   // ... of which compress() declined: the span
                                           // merged constants that DIFFER, so no
                                           // single-constant form can hold it
-        // Chunk2's cst2 predicate and its compress() both need the array's
+        // zero_one_value's cst2 predicate and its compress() both need the array's
         // second-value registry entry; the lookup is hoisted here, once per
         // re-chunk. `ind_old2` selects the SOURCE array's second value (the scan
         // reads *this), `inf_new2` the fresh array's (the fold writes tmp;
@@ -649,7 +649,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // discarded branch of an `if constexpr` inside the immediately-invoked
         // lambda is never instantiated.
         // NESTED, not `use_zero_one_value && Derived::is_not_bool`: `&&` short-circuits
-        // EVALUATION, never NAME LOOKUP, so a v1 build (zero::Array has no
+        // EVALUATION, never NAME LOOKUP, so a zero build (zero::Array has no
         // is_not_bool) would fail to compile the condition itself.
         [[maybe_unused]] const int ind_old2 = [&]
         {
@@ -687,7 +687,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 return 0;
             }
         }();
-        // v1, OpenMP: how many new chunks have finished with each old chunk --
+        // zero, OpenMP: how many new chunks have finished with each old chunk --
         // see the release below. Not needed when the new size is a multiple
         // of the old one: every old chunk then lies inside one new chunk.
         [[maybe_unused]] const bool                    aligned_coarsening = new_size % old_size == 0;
@@ -706,7 +706,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         {
             long folded    = 0;
             long refused   = 0;
-            long installed = 0; // 2A: constant installed without a buffer
+            long installed = 0; // zero_any: constant installed without a buffer
         };
         const auto rebuild_one = [&](int new_chunk, std::vector<T>& buf, RebuildTally& tally)
         {
@@ -721,13 +721,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             const int old_first = static_cast<int>(base / old_size);
             const int old_last  = static_cast<int>((end - 1) / old_size);
             bool      all_cst1  = true;
-            // 2A: every source chunk is a compressed constant (cst1 or cst2), so
+            // zero_any: every source chunk is a compressed constant (cst1 or cst2), so
             // the new chunk, once filled, holds only constants and can be folded
             // back immediately (see below). Not tracked for the other variants:
-            // Chunk2's is_cst_val2() needs the second-value index, v1 has cst1
+            // zero_one_value's is_cst_val2() needs the second-value index, zero has cst1
             // only (covered by all_cst1).
             bool all_folded = true;
-            // 2A: every source is cst2 at the SAME shared array (same value):
+            // zero_any: every source is cst2 at the SAME shared array (same value):
             // the new chunk is that constant, known without filling it.
             [[maybe_unused]] bool     any_cst1_src = false;
             [[maybe_unused]] bool     same_cst2    = true;
@@ -765,8 +765,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                         // Nested for the same reason as ind_old2 above.
                         if constexpr (Derived::is_not_bool)
                         {
-                            // Same test as 2A, with the second-value index
-                            // Chunk2 needs and 2A carries implicitly.
+                            // Same test as zero_any, with the second-value index
+                            // zero_one_value needs and zero_any carries implicitly.
                             if (!och.is_cst_val2(ind_old2))
                             {
                                 all_folded = false;
@@ -792,7 +792,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             }
             increm_chunk_rechunk_rebuilt<ChunkType>();
 
-            // 2A: all sources are the same second constant -> install it.
+            // zero_any: all sources are the same second constant -> install it.
             // Filling a buffer and folding it back (below) gives the same state,
             // but the pages those allocations touch stay with the process. This
             // is what a type-2 compression commits (find_or_set on the chunk's
@@ -825,7 +825,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // Bulk read, one values_load() per SOURCE chunk instead of the full
             // read protocol per element (const operator[]: index split,
             // sync_chunk, a ReadSection with its light_fence -- a full seq_cst
-            // fence without asymmetric Dekker --, acquire load, 2A range test;
+            // fence without asymmetric Dekker --, acquire load, zero_any range test;
             // none of it vectorises).
             //
             // Sound because the source is QUIESCENT for the whole refill:
@@ -833,15 +833,15 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // pull) and dropped its compression candidates
             // (rechunk_drop_candidates), and nobody writes *this meanwhile, so
             // no pass can claim, compress or release one of its chunks -- what
-            // the ReadSection guards against. The only release is v1's
+            // the ReadSection guards against. The only release is zero's
             // release_st below, coordinated by old_done: a source chunk is
             // freed once every span reading it is done.
             //
             // Per source chunk, the same decision element_at_unguarded() makes
-            // per element, on the same single load: a 2A cst2 pointer names an
+            // per element, on the same single load: a zero_any cst2 pointer names an
             // identifier region that was never written -> fill with the
             // constant; anything else (materialised buffer, cst1 sentinel,
-            // Chunk2's filled cst2 array) is readable as is -> memcpy.
+            // zero_one_value's filled cst2 array) is readable as is -> memcpy.
             // bool / Bit keep the per-element path (bit-packed storage).
             if constexpr (std::is_trivially_copyable_v<T> && !is_bool_like_v<T>)
             {
@@ -929,7 +929,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // Released while the TLS is still old_size, deliberately:
             // free_block_to_pool() routes by the AMBIENT geometry, so freeing a
             // S-sized buffer under S' would park it in the wrong pool.
-            // v1 only: Chunk2/Chunk2A's clear_st() take the variant's compression
+            // zero only: zero_one_value/zero_any's clear_st() take the variant's compression
             // state (num_compress_value, ptr_type_cst, ptr_second_value), which
             // this loop has no business synthesising -- releasing their buffers
             // early would need the matching teardown of that state. Chunk<T>'s
@@ -1004,7 +1004,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // is_not_cst_val1(); the scan on a cst2 chunk re-derives the same
             // state).
             //
-            // Wired for 2A (compress() by num_chunk, num_tab) and Chunk2 (by the
+            // Wired for zero_any (compress() by num_chunk, num_tab) and zero_one_value (by the
             // array's inf_array record). bool registers no second value
             // (get_ind_second_value aborts) and is bit-packed: never this path.
             if constexpr (chunk_config::use_zero_any)
@@ -1024,7 +1024,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     }
                 }
             }
-            // No v1 branch: v1's one constant (zero) spans already took the
+            // No zero branch: zero's one constant (zero) spans already took the
             // early return above, and scanning every other rebuilt chunk for
             // zeros folds almost none for a full buffer scan each; the
             // end-of-phase sweep handles chunks that actually became zero.
@@ -1038,7 +1038,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 //
                 // AND gated on use_fast_block_compression: this four-argument
                 // compress() lives in Chunk2FastCompPolicy<..., Enabled>, which
-                // Chunk2 inherits with Enabled = use_fast_block_compression
+                // zero_one_value inherits with Enabled = use_fast_block_compression
                 // (= threaded): a SERIAL build has no such overload. There,
                 // copy_range() above already folded every chunk it left uniform,
                 // through the counters (internal::fold_if_full).
@@ -1070,7 +1070,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // array (it corrupts grow regions that span several old chunks).
         // rechunk_to flushes at a quiescent point after the refill.
         //
-        // SLICED rebuild. Inside one region v1 releases each source chunk as
+        // SLICED rebuild. Inside one region zero releases each source chunk as
         // soon as it is transcribed (release_st in rebuild_one), but a block
         // freed by a rank that does not own its slab is only parked in that
         // rank's reuse list (walking the owner's slab chains from inside a
@@ -1082,8 +1082,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // their pages back BEFORE the next slice materialises: peak ~ old +
         // new/slices.
         //
-        // CHUNK_RECHUNK_SLICES sets the count (default 16; 1 = one pass). v1 +
-        // fast alloc + OpenMP only: Chunk2/Chunk2A do not release their source
+        // CHUNK_RECHUNK_SLICES sets the count (default 16; 1 = one pass). zero +
+        // fast alloc + OpenMP only: zero_one_value/zero_any do not release their source
         // chunks during the copy (their clear_st carries compression state this
         // loop has no business synthesising), so they have nothing to give back
         // between slices and the extra regions would be pure cost.
@@ -1477,7 +1477,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 {
                     // Nested, like the four sites above: `&&` short-circuits
                     // evaluation, never name lookup, so Derived::is_not_bool is
-                    // still looked up for a v1 Derived that has no such member.
+                    // still looked up for a zero Derived that has no such member.
                     if constexpr (Derived::is_not_bool)
                     {
                         compressed = compressed || ch.is_cst_val2(inf_new2.ind);

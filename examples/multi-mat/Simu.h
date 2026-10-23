@@ -165,7 +165,7 @@ struct Simu
 
     /// @brief The presence fraction of each material, in [0, 1]: 1 inside
     ///        the material's interval, a ramp of `interface_width` cells at
-    ///        each end, 0 elsewhere. A Chunk2 array for the chunk materials,
+    ///        each end, 0 elsewhere. A zero_one_value array for the chunk materials,
     ///        second value 1.
     MultiArray<double, VectChunk2<double>> frac;
 

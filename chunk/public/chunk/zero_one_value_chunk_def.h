@@ -24,14 +24,14 @@ namespace zero_one_value
 {
 
 /**
- * @brief Compile-time settings of Chunk2: the compression-list thresholds,
+ * @brief Compile-time settings of zero_one_value: the compression-list thresholds,
  *        adjusted by chunk_config::tuning_level.
  */
 struct ChunkDef
 {
     // --- Compression List Settings ---
     // Level 1: Trigger compression every 2 modified chunks (Extreme stress)
-    // Level 3: Chunk2A's floor. At high thread counts the floor IS the threshold: a higher
+    // Level 3: zero_any's floor. At high thread counts the floor IS the threshold: a higher
     // one keeps threads x floor materialised candidates alive until a rank compresses, and
     // their slabs stay resident (a few hundred MiB more RSS).
     /// Floor of the per-thread "to compress" list threshold (entries), by chunk_config::tuning_level.
@@ -57,7 +57,7 @@ struct ChunkDef
             case 1:
                 return 2000;
             case 3:
-                return 50; // Chunk2A's
+                return 50; // zero_any's
             default:
                 return 100;
         }

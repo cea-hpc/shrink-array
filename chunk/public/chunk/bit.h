@@ -21,7 +21,7 @@
  * @brief The element type of the bit-packed container: a bool stored as one
  *        bit, 8 per byte.
  *
- * @details ArrayChunkBits is zero_one_value::Array<Bit>: the whole chunk2 machinery with its own
+ * @details ArrayChunkBits is zero_one_value::Array<Bit>: the whole zero_one_value machinery with its own
  *          managers, pools and registries. zero_one_value::Array<bool> keeps one byte per bool and a
  *          plain store per write; the packed one holds 8x less per materialised chunk and
  *          pays an atomic read-modify-write of a 64-bit word per write.
@@ -71,7 +71,7 @@ inline constexpr bool is_packed_bit_v = std::is_same_v<T, Bit>;
 ///          size for every array.
 inline constexpr unsigned int packed_bit_birth_factor = 8;
 
-/// @brief T takes chunk2's bool path: a single second value, `true`.
+/// @brief T takes zero_one_value's bool path: a single second value, `true`.
 template <typename T>
 inline constexpr bool is_bool_like_v = std::is_same_v<T, bool> || is_packed_bit_v<T>;
 

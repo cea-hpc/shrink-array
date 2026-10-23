@@ -40,7 +40,7 @@
 //
 // How U_mat(C) is obtained without re-chunking: the array is cut into
 // windows of C elements, each classified from the CURRENT chunks it overlaps
-// (details at "The window model" in analyze()). For Chunk2A the identity of a
+// (details at "The window model" in analyze()). For zero_any the identity of a
 // cst_val2 constant IS the values_load() pointer (a TabCstVal2Holder slot), so
 // a constant run is a pointer comparison:
 //         cst1 + cst1           -> cst1
@@ -48,7 +48,7 @@
 //         anything else         -> materialized
 // When S divides C the row is EXACT; otherwise partly-overlapped materialised
 // chunks are sampled (capped) and extrapolated. Deliberately CONSERVATIVE for
-// Chunk2A's mixed dual-value patterns. Constant-at-C windows count as
+// zero_any's mixed dual-value patterns. Constant-at-C windows count as
 // compressed whichever constant (cst2 registry growth is ignored).
 //
 // CONCURRENCY CONTRACT: call at a QUIESCENT phase boundary only (same contract
@@ -168,8 +168,8 @@ struct ChunkSizeAdvisor
             return rep;
         }
 
-        // Chunk2 keys cst2 by the array-level second-value index; fetch it once.
-        // v1 has no cst2; 2A keys cst2 per chunk by the values_load() pointer.
+        // zero_one_value keys cst2 by the array-level second-value index; fetch it once.
+        // zero has no cst2; zero_any keys cst2 per chunk by the values_load() pointer.
         [[maybe_unused]] const int chunk2_ind = [&]
         {
             // bool / Bit: one second value, `true`, no index --
@@ -191,7 +191,7 @@ struct ChunkSizeAdvisor
 
         // compressible_value: would a uniform run of THIS value be storable as
         // a constant? (classify() below asks whether a chunk already is one.)
-        // v1: first_value only. Chunk2: also the array's second value, when
+        // zero: first_value only. zero_one_value: also the array's second value, when
         // designated (otherwise only first_value: the conservative answer).
         const InT<T> cst1_value = Arr::ChunkType::first_value;
         bool         has_cst2   = false;
@@ -204,7 +204,7 @@ struct ChunkSizeAdvisor
         }
         const auto compressible_value = [&]([[maybe_unused]] const T& elem) -> bool
         {
-            // Chunk2A: any uniform value is compressible (compress() registers
+            // zero_any: any uniform value is compressible (compress() registers
             // it per chunk, find_or_set). Do not apply the first_value gate
             // below to it: the finer rows would miss every other uniform
             // sub-block, and a costly coarsening could never look worse than
@@ -224,7 +224,7 @@ struct ChunkSizeAdvisor
         };
 
         // classify: kind 0 = cst1, 1 = cst2, 2 = mat; two cst2 chunks merge iff
-        // same `key` (2A: buffer ptr; Chunk2: one shared sentinel).
+        // same `key` (zero_any: buffer ptr; zero_one_value: one shared sentinel).
         const auto classify = [&](const auto& chunk, const void*& key) -> int
         {
             key = nullptr;
@@ -258,7 +258,7 @@ struct ChunkSizeAdvisor
                     return 1;
                 }
             }
-            // v1: cst1 or mat only.
+            // zero: cst1 or mat only.
             return 2;
         };
 

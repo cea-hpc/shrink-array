@@ -64,11 +64,11 @@ namespace alloc_affinity_detail
 {
 /// Eager (an allocator set per large array at creation) or lazy (only the
 /// storage a re-chunk builds gets one, see assign_alloc_key()) -- eager by
-/// default for Chunk (v1), lazy for Chunk2 / Chunk2A. CHUNK_ALLOC_AFFINITY_EAGER
+/// default for zero, lazy for zero_one_value / zero_any. CHUNK_ALLOC_AFFINITY_EAGER
 /// (read once), when set, decides: =0 lazy, anything else eager.
-/// v1's memory is mostly data and its rebuild is sliced: from the shared pool,
+/// zero's memory is mostly data and its rebuild is sliced: from the shared pool,
 /// whose slabs mix several arrays' blocks, no slab empties during the first
-/// re-chunk, so eager lowers its peak by about a tenth. Chunk2 / Chunk2A are not
+/// re-chunk, so eager lowers its peak by about a tenth. zero_one_value / zero_any are not
 /// sliced and are metadata-heavy: lazy saves them the per-array slabs.
 inline const bool g_eager = []() noexcept
 {

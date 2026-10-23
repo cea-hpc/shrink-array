@@ -49,7 +49,8 @@
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
 #include "chunk/internal/in_t.h"                // InT<T>
-#include "chunk/chunk_traits.h"                 // ArrayChunkTraits, Proxy2
+#include "chunk/chunk_traits.h"                 // ArrayChunkTraits, zero_one_value::Proxy
+#include "chunk/internal/crp_helper.h"          // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/chunk_size_policy.h"   // ChunkSizeError (try_set_chunk_size)
@@ -63,7 +64,7 @@ namespace shrink_array
 /**
  * @brief Trait: does @p D provide a CHUNK-indexed `chunk_written(int)`?
  *
- * @details zero_one_value::Array does (Chunk2::written() needs the array's second-value
+ * @details zero_one_value::Array does (zero_one_value::Chunk::written() needs the array's second-value
  *          index); for zero::Array and zero_any::Array is_written_at() asks the chunk.
  *          Do not test `written(int)` instead: every variant has it, but it takes
  *          an ELEMENT index.
@@ -1076,7 +1077,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab_);
         val.arm_storage_generation(&self.storage_generation_); // check builds only
 
-        // Chunk2 only: arm the proxy with this array's registry mirror, so the
+        // zero_one_value only: arm the proxy with this array's registry mirror, so the
         // write path copies (second_value, ind, num_tab) instead of scanning
         // share_info_array. Tested on the DECLARED proxy type, not a `requires`:
         // a renamed member must fail to compile, not fall back silently.
@@ -1107,8 +1108,8 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     using Core::size_policy_;
 
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
-    /// @note Protected, not private with `friend Derived`: Chunk2 and Chunk2A
-    ///       reach this base through ArrayChunk2Base<Derived>, which has to
+    /// @note Protected, not private with `friend Derived`: zero_one_value and zero_any
+    ///       reach this base through SecondValueArrayBase<Derived>, which has to
     ///       construct it too.
     ArrayChunkBase() noexcept
     {
@@ -1173,7 +1174,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          Repeated values are written materialised and folded back by the
      *          next compression pass. Called at a sequential point (resize() is
      *          one); the writes go chunk by chunk on a team of its own for a
-     *          large array (write_range_by_chunks). chunk2's second value is
+     *          large array (write_range_by_chunks). zero_one_value's second value is
      *          re-declared first by the derived copy hooks.
      */
     void copy_from(this Derived& self, const Derived& from);

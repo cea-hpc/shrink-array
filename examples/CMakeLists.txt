@@ -133,13 +133,13 @@ else()
     message(STATUS "Validation harnesses: not built (Debug, CHECK_OPTIM or a sanitizer only; -DCHUNK_BUILD_VALIDATION=ON forces them)")
 endif()
 
-# Chunk2 against Chunk2A on one workload (per-operation cost, compression)
+# zero_one_value against zero_any on one workload (per-operation cost, compression)
 add_subdirectory(variant_compare)
 
 # The cost of an element access against a std::vector, in the same binary
 add_subdirectory(access_cost)
 
-# Multi-dimensional array example (chunk and chunk2 in one program)
+# Multi-dimensional array example (zero and zero_one_value in one program)
 if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
     add_subdirectory(multi-mat)
 endif()
@@ -149,7 +149,7 @@ if ("zero" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(test_vecto_chunk)
 endif()
 
-# The chunk-size advisor's step-0 check (dyn chunk2A only).
+# The chunk-size advisor's step-0 check (dyn zero_any only).
 if ("zero_any" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(advisor_demo)
 endif()

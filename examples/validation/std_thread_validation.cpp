@@ -62,7 +62,7 @@
 //     between a direct free into the owner's lists and a park for it (TSan
 //     reports the race when the application phase does not count as
 //     parallel);
-//   - maintenance refused in the phase (Chunk2A): reclaim_second_values()
+//   - maintenance refused in the phase (zero_any): reclaim_second_values()
 //     called by one application thread while the others write must be
 //     refused as "in a parallel region" (second_value_stats().
 //     refused_parallel), and run once finalize_parallel_phase() closed the
@@ -114,15 +114,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -623,7 +623,7 @@ int maintenance_refused(const char* label, long N, int nt, const Scenario<T>& sc
         (void)N;
         (void)nt;
         (void)sc;
-        return 0; // Chunk2A only, and bool has no registry
+        return 0; // zero_any only, and bool has no registry
     }
     else
     {

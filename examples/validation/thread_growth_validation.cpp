@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Thread-growth harness. Variant-agnostic: chunk / chunk2 / chunk2a by the
-// compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the other harnesses.
+// Thread-growth harness. Variant-agnostic: zero / zero_one_value / zero_any by the
+// compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
 // Guards ONE property: the OpenMP team may grow after the arrays are created.
@@ -93,15 +93,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 

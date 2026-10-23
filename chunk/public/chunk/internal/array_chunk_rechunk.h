@@ -94,11 +94,11 @@ class RechunkSupport<Derived, true>
      *          - rechunk_drain_reuse_list(new_size) — drain the S' reuse free-list
      *            (its buffers were sized for an older geometry)
      *          - rechunk_capture_state() -> T — variant state to carry across
-     *            (e.g. Chunk2's array-level second_value)
+     *            (e.g. zero_one_value's array-level second_value)
      *          - rechunk_seed_fresh(state) — apply that state to the fresh array
      *          - rechunk_swap_identity(tmp) -> bool — swap num_tab member (if any)
      *            + registry entry (swap_keys/entries)
-     *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (Chunk2
+     *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_one_value
      *            re-owns its map_inf_array entry so it doesn't dangle when tmp dies)
      *
      * @param new_size the new chunk size (a power of two or a multiple of 64)
@@ -130,14 +130,14 @@ class RechunkSupport<Derived, true>
      *
      * @details Chunk-level rebuild: each new chunk is rebuilt from the old
      *          chunks its span covers, in parallel over the new chunks (schedule
-     *          from CHUNK_RECHUNK_SCHEDULE) and, for v1 with the fast allocator
+     *          from CHUNK_RECHUNK_SCHEDULE) and, for zero with the fast allocator
      *          under OpenMP, in slices with a drain between them
      *          (CHUNK_RECHUNK_SLICES). A span whose sources are all cst1 stays
-     *          compressed; a Chunk2A span whose sources are all the same second
+     *          compressed; a zero_any span whose sources are all the same second
      *          constant gets that constant installed without a buffer; the others
      *          are read from *this at OLD and filled through copy_range() at NEW,
-     *          then folded back at once when every source was a constant (Chunk2,
-     *          Chunk2A). v1 releases each source chunk as soon as it has been
+     *          then folded back at once when every source was a constant (zero_one_value,
+     *          zero_any). zero releases each source chunk as soon as it has been
      *          transcribed. A build that selects no chunk variant falls back to a
      *          tiled element transcription (~1M-element tiles through the proxy).
      *          Runs at a quiescent serial point: rechunk_to() has flushed the
@@ -152,7 +152,7 @@ class RechunkSupport<Derived, true>
      *       bookkeeping), which copy_range() does; an unarmed chunk is double-freed
      *       by the later compression/clear (only at scale: rechunk_validation is
      *       too small to show it). The skipped cst1 spans need no arming, and the
-     *       2A install commits what a type-2 compression does, with no buffer.
+     *       zero_any install commits what a type-2 compression does, with no buffer.
      */
     void rechunk_refill(this Derived& self, Derived& tmp, int old_size, int new_size);
 
