@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// The second-value registry of ArrayChunk2A (tab_cst_val2_holder.h) on struct
+// The second-value registry of zero_any::Array (tab_cst_val2_holder.h) on struct
 // element types. Every chunk j of an array is filled with one value f(j), then
 // the array is folded (shrink_to_fit): each chunk compresses to f(j), and the
 // registry should hand out exactly one identifier per DISTINCT value, with its
@@ -42,7 +42,7 @@
 #include <cstring> // std::memset
 #include <utility> // std::as_const
 
-#include "chunk/array_chunk2A.h" // shrink_array::ArrayChunk2A, SecondValueStats
+#include "chunk/array_chunk2A.h" // shrink_array::zero_any::Array, SecondValueStats
 #include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"        // build_config::has_reflection
 #include "chunk/manage_ompt.h"   // parallel_phase
@@ -92,9 +92,9 @@ static int run_case(const char* name, int n_chunks, F f, std::size_t expected, b
 {
     int bad = 0;
     {
-        sa::ArrayChunk2A<T> a(0);
-        const int           cs = static_cast<int>(a.chunk_size());
-        const int           n  = n_chunks * cs;
+        sa::zero_any::Array<T> a(0);
+        const int              cs = static_cast<int>(a.chunk_size());
+        const int              n  = n_chunks * cs;
         a.resize(n);
 
         sa::parallel_phase(
@@ -121,8 +121,8 @@ static int run_case(const char* name, int n_chunks, F f, std::size_t expected, b
             }
         }
 
-        const sa::SecondValueStats s = sa::ArrayChunk2A<T>::second_value_stats();
-        const bool ids_ok = exact ? s.in_use() == expected : s.in_use() <= expected;
+        const sa::SecondValueStats s      = sa::zero_any::Array<T>::second_value_stats();
+        const bool                 ids_ok = exact ? s.in_use() == expected : s.in_use() <= expected;
         std::printf("%-10s %5d chunks: %5zu identifier(s) (expected %s%zu), index %s, %d wrong value(s)  %s\n", name,
                     n_chunks, s.in_use(), exact ? "" : "<= ", expected, s.degraded ? "DEGRADED" : "ok", bad,
                     (ids_ok && !s.degraded && bad == 0) ? "OK" : "FAIL");
@@ -142,25 +142,17 @@ int main()
     int       bad = 0;
     const int k   = 2000; // distinct values: far past the index's probe budget (64)
 
-    bad += run_case<Point3>(
-        "point3", k, [](int j) { return Point3{1.0, static_cast<double>(j + 1), 2.0}; }, k, true);
+    bad += run_case<Point3>("point3", k, [](int j) { return Point3{1.0, static_cast<double>(j + 1), 2.0}; }, k, true);
 
     bad += run_case<MatRho>(
-        "mat_rho", k,
-        [](int j)
-        {
-            return with_padding<MatRho>(0, [j](MatRho& v)
-                                        { v.mat = 1, v.rho = 1.0 + static_cast<double>(j); });
-        },
-        k, true);
+        "mat_rho", k, [](int j)
+        { return with_padding<MatRho>(0, [j](MatRho& v) { v.mat = 1, v.rho = 1.0 + static_cast<double>(j); }); }, k,
+        true);
 
     // One value, two padding contents: chunks 0, 2, 4... and 1, 3, 5...
     bad += run_case<Padded>(
         "padded", 2,
-        [](int j)
-        {
-            return with_padding<Padded>(j % 2 == 0 ? 0xAA : 0x55, [](Padded& v) { v.c = 1, v.i = 7; });
-        },
+        [](int j) { return with_padding<Padded>(j % 2 == 0 ? 0xAA : 0x55, [](Padded& v) { v.c = 1, v.i = 7; }); },
         refl ? 1 : 2, refl);
 
     // One value, the signed zero of y alternating.

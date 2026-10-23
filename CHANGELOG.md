@@ -71,6 +71,20 @@ the tag's checksum to the recipe.
   on its own runs. `a[i].m = x`, `a[i].m += x`, `a.get(i)`, `a.set(i, v)`,
   `a.column<^^T::m>()`, `for_each_column()`, `shrink_to_fit()`. Checked by
   `examples/soa_array/soa_array_validation` (ctest, reflection builds only).
+- `SoaArray<T>`: a member picks its own storage with a C++26 annotation
+  (P3394, in GCC 16): `[[=shrink_array::soa::plain]]` stores it in a
+  `std::vector` (a member that never repeats, where chunks only cost),
+  `[[=shrink_array::soa::column<C>]]` in a `C<M>` (`zero::Array`,
+  `zero_one_value::Array`, `zero_any::Array`, an alias), the other members
+  keeping the array's `Column`; `a[i].m`, `get`, `set`, `column<^^T::m>()`
+  follow. Other libraries' annotations are left alone; two storage
+  annotations on one member stop the build. `soa_array.h` and
+  `cst2_hash_validation` now name the arrays `zero_any::Array` and so on
+  (they used the deprecated `ArrayChunk2A`: a warning in every reflection
+  build).
+  `soa_array_validation` checks the column types, the values after parallel
+  writes, compound ops and `set()`, and that the annotated compressed columns
+  compress.
 
 ### Fixed (cpp26)
 
