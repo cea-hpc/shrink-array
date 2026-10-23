@@ -175,15 +175,30 @@ par la bibliothèque liée : `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
 [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) comment lectures, écritures et compression
 tournent ensemble.
 
-**Vérifié, pas seulement testé.** Les trois protocoles sans verrou -- écrivains d'éléments
+**Sans verrou, et vérifié plutôt que seulement testé.** Aucun thread ne prend de verrou pour
+lire ou écrire un élément. Les écrivains, la passe de compression qui reprend le tampon d'un
+chunk, le flush des écritures différées et les lecteurs se coordonnent uniquement par des
+atomiques et des barrières : des poignées de main à la Dekker
+([docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md)). C'est de là que
+vient la montée en threads, et c'est aussi là qu'est l'essentiel de la complexité de la
+bibliothèque. Chaque protocole n'est correct qu'avec l'ordre mémoire exact d'une poignée de
+lectures et d'écritures. Sur un processeur à ordre faible comme Grace, une erreur se manifeste
+par une écriture perdue ou un accès à un tampon rendu une fois sur des milliers d'exécutions,
+et l'histoire de la bibliothèque en compte plusieurs. Les tests seuls ne peuvent pas trancher.
+
+Les trois protocoles -- écrivains d'éléments
 contre passe de compression, passe contre flush des écritures différées, lecteurs purs contre
-réemploi des tampons -- sont vérifiées par model checking : des modèles réduits ([formal/](formal/))
+réemploi des tampons -- sont vérifiés par model checking : des modèles réduits ([formal/](formal/))
 en sont explorés exhaustivement par [GenMC](https://github.com/MPI-SWS/genmc) sous le modèle
 mémoire C11 (RC11 et IMM), sans écriture perdue, sans accès à un tampon rendu, sans course de
 données et sans attente non bornée, et les modèles refusent douze mutations, dont six états
 passés de la bibliothèque. La forme à `membarrier()` repose sur l'argument de la section 4.2 de
 [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) ; tout le reste est au
-vérificateur ([docs/formal_models_fr.md](docs/formal_models_fr.md)).
+vérificateur ([docs/formal_models_fr.md](docs/formal_models_fr.md)). Ce que cela couvre,
+précisément : toutes les exécutions que le modèle mémoire autorise, pour de petites
+configurations (jusqu'à 5 écrivains ou 3 lecteurs, un chunk, une passe). Ce n'est pas une
+preuve pour un nombre quelconque de threads, et un modèle est une réduction du source écrite à
+la main, que les mutations qu'il doit refuser gardent honnête.
 
 ## En chiffres
 
@@ -218,6 +233,20 @@ threads et atteignent 43 à 80 à 128, là où `std::vector` plafonne vers 28 à
 retombe vers 18 à 128.
 
 ![Speedup OpenMP sur AMD EPYC 7763 (Milan, 2 × 64 cœurs), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
+
+**Une référence équitable.** Le `std::vector` de ces mesures (`shrink_bench_vector_*`) est un
+vrai `std::vector`, dont la mise à zéro est parallèle
+([examples/shrink_bench/baseline_vector.h](examples/shrink_bench/baseline_vector.h)). Un
+`std::vector<T> v(n)` ordinaire initialise ses `n` éléments sur le seul thread qui le
+construit : la création est séquentielle, et sur un nœud à plusieurs sockets toutes les pages
+atterrissent sur le nœud NUMA de ce thread (premier contact), si bien que chaque boucle
+parallèle qui suit lit de la mémoire distante. Les tableaux par chunks n'allouent rien à la
+création et ne paient aucun de ces deux coûts. Face à un `std::vector` non modifié, les runs
+OpenMP de `shrink_bench` seraient plus rapides que le vector sur quelques milliers
+d'itérations, pour une raison qui n'a rien à voir avec la compression. La référence alloue donc
+sans écrire, puis met ses éléments à zéro dans une boucle parallèle à l'ordonnancement statique
+des boucles du banc, chaque page touchée en premier par le thread qui y travaille ; ses
+éléments valent `T{}` exactement comme ceux d'un `std::vector`. Seul change qui écrit les zéros.
 
 **À utiliser** sur des données surtout nulles ou faites de plages de quelques valeurs : champs
 creux, masques de matériaux, grandeurs multi-matériaux, drapeaux. **À éviter** sur des données

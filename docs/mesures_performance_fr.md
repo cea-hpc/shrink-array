@@ -176,5 +176,12 @@ python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
   OpenMP tourne sur un seul cœur. Vérifier `ldd $BIN | grep gomp`.
 - **L'assembleur trop ancien** pour `-mcpu=native` avec GCC 16 (« unknown architecture ») :
   charger des `binutils` récents.
+- **Une référence `std::vector` initialisée sur un seul thread** : `std::vector<T> v(n)` écrit
+  ses zéros depuis le thread qui le construit, donc la création est séquentielle et toutes les
+  pages sont sur le nœud NUMA de ce thread ; les boucles parallèles qui suivent lisent de la
+  mémoire distante, et les tableaux par chunks, qui n'allouent rien à la création, paraissent
+  plus rapides qu'ils ne sont. La référence de `shrink_bench` met à zéro en parallèle
+  (`examples/shrink_bench/baseline_vector.h`) : la garder en ajoutant une phase ou un type, et
+  ne pas comparer ses temps de création avec des runs antérieurs à ce changement.
 - **La taille d'un tableau calculée en `int`** : 8 × 10⁹ déborde et devient négatif. Les
   cibles à indice 64 bits (`_int64`) n'ont pas ce problème.

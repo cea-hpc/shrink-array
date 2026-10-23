@@ -78,7 +78,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
 
     // RechunkHooks2::rechunk_reown_after_swap copies the private ind_cst_val2.
     template <typename, bool>
-    friend class RechunkHooks2;
+    friend class shrink_array::RechunkHooks2;
 
     // Re-declared, not only inherited: the mixins declare them too, and an
     // outside `Arr::ChunkType` would be ambiguous between base subobjects.
