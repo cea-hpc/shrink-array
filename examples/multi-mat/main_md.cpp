@@ -298,9 +298,9 @@ void print_stats(const SimuMd& s, const MultiMatAlgoT& mm_algo)
     if (n != 0)
     {
         std::println("\nChunk materials ({}), averages:", n);
-        std::println("  fields (v1), chunks written     : {:.2f}%", fields / n);
-        std::println("  fraction (Chunk2), chunks written : {:.2f}%", frac / n);
-        std::println("  real filling (non-zero cells)   : {:.2f}%", real / n);
+        std::println("  fields (zero), chunks written           : {:.2f}%", fields / n);
+        std::println("  fraction (zero_one_value), chunks written : {:.2f}%", frac / n);
+        std::println("  real filling (non-zero cells)           : {:.2f}%", real / n);
     }
 }
 

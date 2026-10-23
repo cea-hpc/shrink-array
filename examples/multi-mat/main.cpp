@@ -224,7 +224,7 @@ int main()
                                  const auto&  frac_ind = get_mat_vec(simu.get_frac());
                                  const double szf      = only_first_chunk ? frac_ind.stats_seq() : frac_ind.stats();
 
-                                 std::println("  Fraction chunk filling rate (Chunk2) : {:.2f}%", szf);
+                                 std::println("  Fraction chunk filling rate (zero_one_value) : {:.2f}%", szf);
                              }
 
                              if (only_first_chunk)

@@ -95,10 +95,10 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
 
 template <typename T, typename Derived, bool Enabled>
 void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&       self,
-                                                                     VecTupleChunkpInt2& ll_compt,
-                                                                     int                 num_chunk,
-                                                                     int                 num_tab,
-                                                                     unsigned int        n_elems)
+                                                                           VecTupleChunkpInt2& ll_compt,
+                                                                           int                 num_chunk,
+                                                                           int                 num_tab,
+                                                                           unsigned int        n_elems)
 {
     if (self.written())
     {
@@ -226,8 +226,8 @@ template <typename T, typename Derived, bool Enabled>
 void zero::ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived& self, int thr_rank) noexcept
 {
     // Reuse pool first, then a fresh allocation (ChunkAllocPolicy::allocate_chunk_internal,
-    // shared with v2/v2A). Initialisers differ from v2/v2A: a v1 chunk is compressed only when
-    // all-zero, so a recycled buffer is already zero and needs no fill.
+    // shared with zero_one_value/zero_any). Initialisers differ from zero_one_value/zero_any: a zero::Chunk is
+    // compressed only when all-zero, so a recycled buffer is already zero and needs no fill.
     T* values_loc = self.Base::allocate_chunk_internal(
         thr_rank, [](T*) noexcept { /* recycled: already zero, see above */ },
         [](T* vals) noexcept { zero_fill_fresh(vals); });
@@ -469,9 +469,9 @@ void zero::ChunkOmpPolicy<T, Derived, Enabled>::clear_st(this Derived& self, int
 
 template <typename T, typename Derived, bool Enabled>
 void zero::ChunkOmpPolicy<T, Derived, Enabled>::release_st(this Derived& self,
-                                                     int           thr_rank,
-                                                     unsigned int  n_elems,
-                                                     bool          count_release)
+                                                           int           thr_rank,
+                                                           unsigned int  n_elems,
+                                                           bool          count_release)
 {
     // CHUNK_STATS: a release that is not a compression (re-chunk rebuild): bytes still
     // leave the live figure.

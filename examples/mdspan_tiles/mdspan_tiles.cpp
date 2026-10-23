@@ -16,7 +16,7 @@
 
 /**
  * @file mdspan_tiles.cpp
- * @brief One 2D field, two mdspan layouts over a chunk2A array of chunk size
+ * @brief One 2D field, two mdspan layouts over a zero_any array of chunk size
  *        256: row-major (layout_right) and tiles of 16 x 16 (layout_tiled).
  *        Prints the chunks left materialised after the compression pass in
  *        each, and checks both read back the field.
@@ -62,8 +62,8 @@
 #include <utility>   // std::as_const
 #include <vector>    // std::vector (the box buffers)
 
-#include "chunk/zero_any_array.h"  // zero_any::Array
-#include "chunk/zero_chunk.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_any_array.h" // zero_any::Array
+#include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/print.h" // shrink_array::println
 #include "chunk/manage_ompt.h"    // parallel_phase
 #include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN

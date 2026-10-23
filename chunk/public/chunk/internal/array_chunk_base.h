@@ -50,7 +50,6 @@
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
 #include "chunk/internal/in_t.h"                // InT<T>
 #include "chunk/chunk_traits.h"                 // ArrayChunkTraits, zero_one_value::Proxy
-#include "chunk/internal/crp_helper.h"          // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/chunk_size_policy.h"   // ChunkSizeError (try_set_chunk_size)

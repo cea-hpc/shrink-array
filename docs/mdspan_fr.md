@@ -112,8 +112,8 @@ Le bloc couvre toute la tuile, bourrage compris : boucler jusqu'à `t.extent` l�
 doit pas compter. Une tuile uniforme que `update_tiles` laisse inchangée n'est pas écrite : un noyau
 qui ne touche pas au fond ne le matérialise pas. Une tuile modifiée est écrite par `fill_range()`
 si elle est uniforme, sinon par `copy_range()` (les range ops séquentielles hors région
-parallèle, les `_mt` dedans). Sur Chunk2A, un chunk compressé dont la part de la tuile en sort
-uniforme change de constante sur place, sans tampon, y compris dans une région parallèle
+parallèle, les `_mt` dedans). Sur la variante zero_any, un chunk compressé dont la part de la tuile
+en sort uniforme change de constante sur place, sans tampon, y compris dans une région parallèle
 (`fill_range_mt`, `copy_range_mt`, dans la session d'écriture). Hors région, un chunk matérialisé
 qui en sort uniforme est lui aussi compressé aussitôt ; dans une région, il est écrit et mis en
 file -- son tampon est libéré par la fin de la phase ou la passe suivante, qui attendent les
@@ -328,8 +328,8 @@ auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // ou toute
 trois champs et une fraction de présence sur tout le maillage, en occupe une partie tirée au
 hasard à chaque itération, y est écrit puis relu par le même calcul gadget), sur un maillage
 `nx x ny` où un matériau occupe un rectangle. Chaque tableau est vu par un `mdspan` 2D :
-`md::view` ou `md::tiled_view` pour les tableaux chunk (v1 pour les champs, Chunk2 pour la
-fraction), un `mdspan` standard sur `data()` pour les `std::vector`. Le corps de boucle est écrit
+`md::view` ou `md::tiled_view` pour les tableaux chunk (zero pour les champs, zero_one_value pour
+la fraction), un `mdspan` standard sur `data()` pour les `std::vector`. Le corps de boucle est écrit
 une fois contre les vues ; la politique du stockage du matériau (`LoopsMd.h`) dit comment un
 rectangle est écrit, remis à zéro et lu, comme `Loops.h` en 1D -- et la liste d'indirection de
 la version 1D disparaît : le rectangle est la boucle.

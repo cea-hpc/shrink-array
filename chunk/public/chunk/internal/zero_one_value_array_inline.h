@@ -711,9 +711,9 @@ void zero_one_value::Array<T, IntType>::clear_core()
                                   {
                                       increm_chunk_teardown_clear<zero_one_value::Chunk<T>>();
                                       // Released below without a compression: out of the live figures.
-                                      add_chunk_released<zero_one_value::Chunk<T>>(1,
-                                                                    static_cast<long>(sizeof(T)) *
-                                                                        static_cast<long>(this->size_policy_.size()));
+                                      add_chunk_released<zero_one_value::Chunk<T>>(
+                                          1,
+                                          static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
                                   }
 
                                   ll_chunk_loc.push_back(&chunk_list_[j]);
@@ -786,7 +786,8 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // row 0, another live array's.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        zero_one_value::Proxy<T>::release_tab_is_int(zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()));
+        zero_one_value::Proxy<T>::release_tab_is_int(
+            zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()));
     }
 }
 
@@ -1087,10 +1088,10 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             int       is_inside = -1; // the candidate-list flag exists in fast-block builds only
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                is_inside = static_cast<int>(
-                    shrink_array::zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(
-                        shrink_array::zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()))[ind]
-                        .load(std::memory_order_acquire));
+                is_inside = static_cast<int>(shrink_array::zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(
+                                                 shrink_array::zero_one_value::Proxy<T>::share_info_array->get_num_tab(
+                                                     this->registry_key()))[ind]
+                                                 .load(std::memory_order_acquire));
             }
             int count = -1; // the counters exist in counter builds only
             if constexpr (chunk_config::use_compression_with_counter)
@@ -1181,8 +1182,8 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
                     {
                         increm_chunk_teardown_clear<zero_one_value::Chunk<T>>();
                         // The size read here, not captured: stats builds only use it.
-                        add_chunk_released<zero_one_value::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                             static_cast<long>(this->size_policy_.size()));
+                        add_chunk_released<zero_one_value::Chunk<T>>(
+                            1, static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
                     }
                     T* values_loc = chunk_list_[j].values_;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");

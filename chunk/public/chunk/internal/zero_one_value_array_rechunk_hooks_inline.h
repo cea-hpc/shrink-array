@@ -68,13 +68,15 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates(this D
 }
 
 template <typename Derived>
-void zero_one_value::RechunkHooks<Derived, true>::rechunk_drain_reuse_list(this const Derived& /*self*/, unsigned int new_size)
+void zero_one_value::RechunkHooks<Derived, true>::rechunk_drain_reuse_list(this const Derived& /*self*/,
+                                                                           unsigned int new_size)
 {
     ManagerType::drain_reuse_list_for_size(new_size);
 }
 
 template <typename Derived>
-zero_one_value::RechunkHooks<Derived, true>::value_type zero_one_value::RechunkHooks<Derived, true>::rechunk_capture_state(this const Derived& self)
+zero_one_value::RechunkHooks<Derived, true>::value_type
+zero_one_value::RechunkHooks<Derived, true>::rechunk_capture_state(this const Derived& self)
 {
     // The array-level second value; bool's is re-established by create().
     if constexpr (Derived::is_not_bool)
@@ -116,7 +118,9 @@ bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(this Der
 }
 
 template <typename Derived>
-void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this Derived& self, Derived& tmp, InT<value_type> state)
+void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this Derived&   self,
+                                                                           Derived&        tmp,
+                                                                           InT<value_type> state)
 {
     // Re-own the registration of `state`: map_inf_array[state] points at
     // &tmp.inf_array, which dangles once the stack tmp dies, and the next

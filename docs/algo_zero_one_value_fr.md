@@ -480,14 +480,14 @@ valeur que `zero_one_value` sait compresser** (la première valeur ou la seconde
 Elles sont **séquentielles** : pas d'écrivain ni de compression concurrents sur le tableau.
 Le rechunk passe par `copy_range` pour reconstruire le nouveau tableau.
 
-Sur Chunk2A, un chunk que `fill_range` couvre entièrement prend la valeur pour constante **par
-son seul état** (`Chunk2A::fill_constant_st`), quels que soient la valeur et l'état du chunk : un
-chunk matérialisé passe par l'effacement de la compression elle-même (`clear_int_st` : tampon
-rendu, constante installée, sans balayage) ; un chunk compressé change de constante sur place --
-case de seconde valeur (enregistrée par `find_or_set_ind_cst_val2`), type, puis pointeur de
-valeurs, l'ordre que garde l'effacement. Aucun tampon n'est alloué, rempli, balayé ni rendu, et
-rien n'est mis en file. La constante que le chunk tenait reste enregistrée : aucun chunk n'y
-garde de référence, et `reclaim_second_values()` la libère dès qu'aucun chunk n'y pointe.
+Sur la variante zero_any, un chunk que `fill_range` couvre entièrement prend la valeur pour
+constante **par son seul état** (`zero_any::Chunk::fill_constant_st`), quels que soient la valeur et
+l'état du chunk : un chunk matérialisé passe par l'effacement de la compression elle-même
+(`clear_int_st` : tampon rendu, constante installée, sans balayage) ; un chunk compressé change de
+constante sur place -- case de seconde valeur (enregistrée par `find_or_set_ind_cst_val2`), type,
+puis pointeur de valeurs, l'ordre que garde l'effacement. Aucun tampon n'est alloué, rempli, balayé
+ni rendu, et rien n'est mis en file. La constante que le chunk tenait reste enregistrée : aucun
+chunk n'y garde de référence, et `reclaim_second_values()` la libère dès qu'aucun chunk n'y pointe.
 
 `copy_range` lit d'abord la plage source d'un chunk qu'elle couvre entièrement (premier, milieu
 et dernier éléments, puis toute la plage s'ils concordent) : uniforme, le chunk prend cette

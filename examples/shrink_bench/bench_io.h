@@ -633,7 +633,7 @@ void read_check_binary_file(Int                ind,
                             " != " + std::to_string(data_check[k]) + "\n");
 
                 std::println(stderr, "iteration: {}", ind);
-                // One `if constexpr` over both former blocks: the CHUNK2 one below
+                // One `if constexpr` over both former blocks: the zero_one_value one below
                 // reads chunk_t, declared here, so they cannot be split.
                 if constexpr (chunk_config::is_shrink_enabled)
                 {

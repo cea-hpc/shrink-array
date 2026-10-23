@@ -40,7 +40,6 @@
 #include "chunk/internal/TChunk.h"                       // TChunk2AComp
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"      // SecondValueProxyBase
-#include "chunk/internal/dependent_false.h"              // dependent_false_v (wrong-type branches)
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/parallel_storage_init.h"        // NoInitVector, resize_filled, for_each_chunk
 

@@ -107,7 +107,7 @@ run error "MUT_OVERFLOW_NO_FENCE (F4, before)"               -- -DOVERFLOW_READE
 
 M4=switch_mt.c
 echo "== the in-place constant switch: writer <-> compression pass ($M4) =="
-# The switch of Chunk2A::fill_constant_st against the pass, properties P1-P3 (docs/formal_models.md 6.1).
+# The switch of zero_any::Chunk::fill_constant_st against the pass, properties P1-P3 (docs/formal_models.md 6.1).
 run ok    "source, switch to a second value"                 -- $M4
 run ok    "source, switch to the first value"                -- -DTO_FIRST $M4
 run ok    "source, chunk materialised: left alone"           -- -DINIT_BUF $M4

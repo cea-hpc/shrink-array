@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// copy_range over whole chunks. Variant-agnostic: chunk / chunk2 / chunk2a
-// follow the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the
+// copy_range over whole chunks. Variant-agnostic: zero / zero_one_value /
+// zero_any follow the compile-time macro (CHUNK_VARIANT_ZERO*), like the
 // other harnesses here.
 // ============================================================================
 //
@@ -35,7 +35,7 @@
 // The other variants queue the chunks for the pass: only property 1 is
 // checked there, and
 //
-//   3. on v1 and zero_one_value::Chunk, a source equal to the constant a chunk is
+//   3. on zero and zero_one_value, a source equal to the constant a chunk is
 //      compressed at writes nothing: the chunk stays compressed (whole or in
 //      part, at the first constant or zero_one_value::Chunk's second); a source equal to it
 //      on a prefix only materialises the chunk from the first other value.
@@ -71,12 +71,12 @@
 #include <vector>      // std::vector (the sources)
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h"          // zero_one_value::Array
-#include "chunk/zero_any_array.h"         // zero_any::Array
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // copy_range
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println
@@ -98,15 +98,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -149,7 +149,7 @@ static void phase(Array<double>& arr, long n, Fn&& body)
     }
     if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
-        arr.make_block_compression(); // a serial chunk2a has no between-region pass
+        arr.make_block_compression(); // a serial zero_any has no between-region pass
     }
 }
 
@@ -247,7 +247,7 @@ int run(int /*argc*/, char** /*argv*/)
         long                hi;
         int                 mat_expected;
         int                 count_to;    // chunks counted: [0, count_to)
-        int                 mat_v1 = -1; // v1: chunks expected materialised, -1 unchecked
+        int                 mat_v1 = -1; // zero: chunks expected materialised, -1 unchecked
         int                 mat_v2 = -1; // zero_one_value::Chunk: likewise
     };
 

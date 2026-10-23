@@ -413,7 +413,8 @@ void zero_any::Proxy<T>::ensure_writable_storage()
  *       replay, so `proxy.chunk_size()` is the live geometry here.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage_async(const Derived& proxy) const
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage_async(
+    const Derived& proxy) const
 {
     const bool is_val2 = proxy.is_cst_val2();
 
@@ -838,8 +839,8 @@ void zero_any::Proxy<T>::execute_simple_operation(ModifyFn modify_fn)
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
 void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(this Derived& self,
-                                                                                        auto*         ctx,
-                                                                                        Lambda        operation)
+                                                                                                auto*         ctx,
+                                                                                                Lambda        operation)
 {
     int retry_count = 0;
 
@@ -962,10 +963,11 @@ void zero_any::Proxy<T>::execute_arithmetic_compound_operation(Op op, const U& v
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Op, typename Body, typename U>
-void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(auto*    ctx,
-                                                                                                     Op       op,
-                                                                                                     const U& v,
-                                                                                                     Body     lbd) const
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(
+    auto*    ctx,
+    Op       op,
+    const U& v,
+    Body     lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -1150,9 +1152,10 @@ void zero_any::Proxy<T>::execute_inplace_operation(ModifyFn modify_fn)
 // builds assert the chunk did not go back to a constant during the store.
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(this const Derived& self,
-                                                                                         auto*               ctx,
-                                                                                         Lambda              operation)
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(
+    this const Derived& self,
+    auto*               ctx,
+    Lambda              operation)
 {
     int retry_count = 0;
 

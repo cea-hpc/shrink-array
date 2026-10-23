@@ -102,8 +102,8 @@
 #   fill_range_constant_validation  fill_range over whole chunks reads back
 #                           from every starting state (first value, second
 #                           value, materialised, partial range, one value per
-#                           chunk), and on Chunk2A leaves no covered chunk
-#                           materialised: it compresses each at once (v1
+#                           chunk), and on zero_any leaves no covered chunk
+#                           materialised: it compresses each at once (zero
 #                           too, for a fill of first_value). A fill of the
 #                           constant the chunks hold, serial or from every
 #                           thread, materialises nothing.
@@ -111,13 +111,13 @@
 #                           its source from every starting state (uniform per
 #                           chunk, mixed, uniform but for one element the
 #                           three-element guess skips, partial range), and on
-#                           Chunk2A leaves no covered chunk with a uniform
+#                           zero_any leaves no covered chunk with a uniform
 #                           source materialised: it compresses each at once.
 #   constant_switch_validation  a compressed chunk switched to another
 #                           constant by fill_range / copy_range reads back
 #                           after every switch (first -> second -> another
 #                           second -> first), a write into it materialises it
-#                           from its own constant, and on Chunk2A no switch
+#                           from its own constant, and on zero_any no switch
 #                           allocates a buffer and reclaim_second_values()
 #                           frees the constants no chunk holds any more.
 #   fill_range_mt_zero_and_zero_one_value_validation  the range ops in a TWO-variant build

@@ -42,15 +42,15 @@
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector (the references)
 
-#include "chunk/zero_array.h"     // zero::Array
-#include "chunk/zero_one_value_array.h"    // zero_one_value::Array
-#include "chunk/zero_any_array.h"   // zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // chunk_config::use_zero_one_value*
-#include "chunk/internal/print.h"  // shrink_array::println
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/mdspan_tile_ops.h" // md::stencil_tiles(_mt), SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*
+#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/manage_ompt.h"          // parallel_phase
+#include "chunk/mdspan_tile_ops.h"      // md::stencil_tiles(_mt), SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 
 using namespace shrink_array;
 

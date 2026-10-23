@@ -151,9 +151,9 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
  */
 template <typename Derived, typename T, bool Enabled>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(this const Derived& self,
-                                                                         InT<T>              old_value,
-                                                                         InT<T>              new_value,
-                                                                         InT<T>              expected_in_memory)
+                                                                               InT<T>              old_value,
+                                                                               InT<T>              new_value,
+                                                                               InT<T>              expected_in_memory)
 {
     if (should_mark_for_compression(old_value, new_value) || (self.read_values() != expected_in_memory)) [[unlikely]]
     {
@@ -163,10 +163,10 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(t
 
 template <typename Derived, typename T, bool Enabled>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(this const Derived& self,
-                                                                         InT<T>              old_value,
-                                                                         InT<T>              new_value,
-                                                                         InT<T>              expected_in_memory,
-                                                                         const T*            vals)
+                                                                               InT<T>              old_value,
+                                                                               InT<T>              new_value,
+                                                                               InT<T>              expected_in_memory,
+                                                                               const T*            vals)
 {
     // Same test; the race check reads the element again, not the pointer.
     if (should_mark_for_compression(old_value, new_value) || (self.read_values_at(vals) != expected_in_memory))
@@ -272,10 +272,11 @@ inline void check_replay_store([[maybe_unused]] ChunkT&     chunk,
 /// @pre Called from a flush drain only -- see "The zero::Proxy replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename Op, typename Lambda, typename U>
-void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(auto* ctx,
-                                                                                           Op    op,
-                                                                                           [[maybe_unused]] const U& v,
-                                                                                           Lambda lbd) const
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(
+    auto*                     ctx,
+    Op                        op,
+    [[maybe_unused]] const U& v,
+    Lambda                    lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 

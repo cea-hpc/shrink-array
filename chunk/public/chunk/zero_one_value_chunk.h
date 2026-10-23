@@ -26,15 +26,15 @@
 #include <vector>      // std::vector
 #include <cstring>     // std::memset (the Bit second constant)
 
-#include "chunk/internal/chunk_size_config.h"           // static_chunk_size
-#include "chunk/internal/chunk_size_policy.h"           // ChunkElems, DynamicChunkSize
-#include "chunk/internal/in_t.h"                        // InT
-#include "chunk/internal/element_access.h"              // Bit buffers: words of bits
-#include "chunk/internal/bit_words.h"                   // bits::fill_bits, bits::WordT
-#include "chunk/config.h"                               // build_config::threaded, chunk_config
-#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/PMP_CHUNK.h"                            // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/chunk_size_config.h"                   // static_chunk_size
+#include "chunk/internal/chunk_size_policy.h"                   // ChunkElems, DynamicChunkSize
+#include "chunk/internal/in_t.h"                                // InT
+#include "chunk/internal/element_access.h"                      // Bit buffers: words of bits
+#include "chunk/internal/bit_words.h"                           // bits::fill_bits, bits::WordT
+#include "chunk/config.h"                                       // build_config::threaded, chunk_config
+#include "chunk/internal/invariant_check.h"                     // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/bad_ptr_check.h"                       // CHUNK_CHECK_VALUES_PTR (check builds)
+#include "chunk/PMP_CHUNK.h"                                    // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // chunk2_missing_candidate_list
 #include "chunk/internal/zero_one_value_proxy.h"                // zero_one_value::Proxy
 #include "chunk/internal/second_value_chunk_base.h"             // SecondValueChunkBase
@@ -371,7 +371,8 @@ class ChunkCounterPolicy
  *          free-lists, and maintains per-chunk element counters that the parallel
  *          path does not; each specialisation declares exactly the verbs its mode
  *          has (as ChunkOmpPolicy does for zero). Sits between
- *          zero_one_value::ChunkFastCompPolicy and SecondValueChunkBase, so zero_one_value inherits both through one path.
+ *          zero_one_value::ChunkFastCompPolicy and SecondValueChunkBase, so zero_one_value inherits both through one
+ * path.
  *
  * @tparam T       stored element type
  * @tparam Derived CRTP derived chunk type (zero_one_value::Chunk<T>)

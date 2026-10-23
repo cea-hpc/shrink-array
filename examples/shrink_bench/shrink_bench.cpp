@@ -396,15 +396,15 @@ int main(int argc, char* argv[])
 
     if constexpr (chunk_config::use_zero)
     {
-        std::println("{}{}MODE: {}CHUNK (Single Value)", tc.bold, tc.magenta, tc.reset);
+        std::println("{}{}MODE: {}zero (Single Value)", tc.bold, tc.magenta, tc.reset);
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        std::println("{}{}MODE: {}CHUNK2 (Dual Value)", tc.bold, tc.magenta, tc.reset);
+        std::println("{}{}MODE: {}zero_one_value (Dual Value)", tc.bold, tc.magenta, tc.reset);
     }
     else if constexpr (chunk_config::use_zero_any)
     {
-        std::println("{}{}MODE: {}CHUNK2A (Advanced Dual Value)", tc.bold, tc.magenta, tc.reset);
+        std::println("{}{}MODE: {}zero_any (Advanced Dual Value)", tc.bold, tc.magenta, tc.reset);
     }
     else
     {

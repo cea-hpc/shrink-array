@@ -480,8 +480,8 @@ value that `zero_one_value` can compress** (the first value or the array's secon
 They are **sequential**: no concurrent writer or compression on the array.
 The rechunk uses `copy_range` to rebuild the new array.
 
-On Chunk2A, a chunk that `fill_range` covers whole takes the value as its constant **by its
-state alone** (`Chunk2A::fill_constant_st`), whatever the value and the chunk's state: a
+On zero_any, a chunk that `fill_range` covers whole takes the value as its constant **by its
+state alone** (`zero_any::Chunk::fill_constant_st`), whatever the value and the chunk's state: a
 materialised chunk goes through the compression's own clear (`clear_int_st`: buffer released,
 constant installed, no scan); a compressed one switches its constant in place -- second-value
 slot (registered by `find_or_set_ind_cst_val2`), type, then values pointer, the order the

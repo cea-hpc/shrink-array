@@ -223,8 +223,9 @@ void zero::Array<T, IntType>::clear_core()
                                   {
                                       increm_chunk_teardown_clear<zero::Chunk<T>>();
                                       // Released below without a compression: out of the live figures.
-                                      add_chunk_released<zero::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                          static_cast<long>(this->size_policy_.size()));
+                                      add_chunk_released<zero::Chunk<T>>(
+                                          1,
+                                          static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
                                   }
                                   ll_chunk_loc.push_back(&chunk_list_[j]);
                               }

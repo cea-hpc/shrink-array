@@ -278,12 +278,13 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
             if (target_ptr == c1 || (c2 != nullptr && target_ptr == c2)) [[unlikely]]
             {
-                invariant_failed(loc,
-                                 "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
-                                 "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
-                                 type_name<T>(),
-                                 static_cast<const void*>(static_cast<const SecondValueChunkBase*>(std::addressof(self))),
-                                 static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
+                invariant_failed(
+                    loc,
+                    "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
+                    "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
+                    type_name<T>(),
+                    static_cast<const void*>(static_cast<const SecondValueChunkBase*>(std::addressof(self))),
+                    static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
             }
         }
     }

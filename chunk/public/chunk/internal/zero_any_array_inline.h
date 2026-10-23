@@ -352,7 +352,7 @@ void zero_any::Array<T, IntType>::clear_core()
                 {
                     CHUNK_LOG(
                         info, compress,
-                        "audit: chunk2a tab={}: {} constant block(s) never queued for compression ({} at "
+                        "audit: zero_any tab={}: {} constant block(s) never queued for compression ({} at "
                         "first_value, {} at their second value, {} at another value: missed by the marking path). "
                         "A few is benign; a recurring/large count is not.",
                         num_tab_, missed_first + missed_second + missed_other, missed_first, missed_second,
@@ -413,8 +413,8 @@ void zero_any::Array<T, IntType>::clear_core()
                             {
                                 increm_chunk_teardown_clear<zero_any::Chunk<T>>();
                                 // Released below without a compression: out of the live figures.
-                                add_chunk_released<zero_any::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                      static_cast<long>(this->size_policy_.size()));
+                                add_chunk_released<zero_any::Chunk<T>>(
+                                    1, static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
                             }
                             ll_chunk_loc.push_back(&chunk_list_[j]);
                         }
@@ -675,7 +675,8 @@ void zero_any::Array<T, IntType>::resize(IntType newsz)
                                           {
                                               const int i = old_nb_chunk + k;
                                               this->construct_chunk(i).init_after_constructor();
-                                              zero_any::Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
+                                              zero_any::Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(
+                                                  num_tab, i, 0);
                                               zero_any::Proxy<T>::tab_type_cst_val[num_tab][i] = is_val1;
                                               // T{}: the struct elements have no conversion from 0
                                               zero_any::Proxy<T>::BaseSpec::set(num_tab, i, T{});

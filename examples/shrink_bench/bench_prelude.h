@@ -261,12 +261,12 @@ namespace build_config = shrink_array::build_config;
 namespace chunk_config = shrink_array::chunk_config;
 
 #ifdef CHUNK_VARIANT_ZERO
-    #include "chunk/zero_array.h" // zero::Array (the CHUNK variant)
+    #include "chunk/zero_array.h" // zero::Array (the zero variant)
 #elifdef CHUNK_VARIANT_ZERO_ONE_VALUE
-    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (the CHUNK2 variant)
+    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (the zero_one_value variant)
 #elifdef CHUNK_VARIANT_ZERO_ANY
-    #include "chunk/zero_one_value_array.h"  // zero_one_value::Array (tab_bool, see bench_array.h)
-    #include "chunk/zero_any_array.h" // zero_any::Array (the CHUNK2A variant)
+    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (tab_bool, see bench_array.h)
+    #include "chunk/zero_any_array.h"       // zero_any::Array (the zero_any variant)
 #else
     #include <vector> // std::vector (the baseline build)
 #endif

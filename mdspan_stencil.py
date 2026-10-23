@@ -966,7 +966,7 @@ foreach(_vi RANGE ${_rt_nvar_last})
     foreach(_nthr 1 8)
       set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
     endforeach()
-    if (_vname STREQUAL "chunk2a")
+    if (_vname STREQUAL "zero_any")
       add_test(NAME mdspan_stencil_alias
                COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=alias
                        "-DEXPECT=the source and the destination are one array" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)
@@ -1008,7 +1008,7 @@ NEW_FILES = {
 //     (layout_tiled_dyn), the extents not multiples of the tile (padded
 //     edges), a halo as wide as a tile; rank 3;
 //   - on_uniform: the same result with and without it, and the uniform tiles
-//     of the result left compressed (every variant at first_value, Chunk2A at
+//     of the result left compressed (every variant at first_value, zero_any::Chunk at
 //     any value); the source left untouched;
 //   - serial, per tile in an omp for (the range overload) and
 //     stencil_tiles_mt from every thread of a phase; and called outside any
@@ -1259,7 +1259,7 @@ void case_2d(const char* name, long size, Make&& make, long h, border b, how w, 
     expect(bad == 0, name, bad, static_cast<long>(w) * 100 + static_cast<long>(b) * 10 + h);
     expect(src_bad == 0, "the source changed", src_bad);
     // The tiles of the result whose cells are one value hold no buffer: at 0
-    // on every variant, at any value on Chunk2A (checked when a tile is one
+    // on every variant, at any value on zero_any::Chunk (checked when a tile is one
     // chunk).
     using Index   = typename decltype(g)::index_type;
     const long S  = static_cast<long>(d.chunk_size());

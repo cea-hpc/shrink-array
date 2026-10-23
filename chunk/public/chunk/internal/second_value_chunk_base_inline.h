@@ -29,12 +29,12 @@ namespace shrink_array
 template <typename T, typename Derived>
 template <typename IndexT>
 void SecondValueChunkBase<T, Derived>::block_clear_common(this Derived&        self,
-                                                int                  num_compress_value,
-                                                IndexT               index_opt,
-                                                [[maybe_unused]] int thr_rank,
-                                                char*                ptr_type_cst,
-                                                SecondValueRef<T>    ptr_second_value,
-                                                [[maybe_unused]] T*  cst2_ptr)
+                                                          int                  num_compress_value,
+                                                          IndexT               index_opt,
+                                                          [[maybe_unused]] int thr_rank,
+                                                          char*                ptr_type_cst,
+                                                          SecondValueRef<T>    ptr_second_value,
+                                                          [[maybe_unused]] T*  cst2_ptr)
 {
     if constexpr (is_chunk2a_derived)
     {
@@ -86,10 +86,10 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(this Derived&        s
 template <typename T, typename Derived>
 template <typename IndexT>
 void SecondValueChunkBase<T, Derived>::clear_impl(this Derived&     self,
-                                        IndexT            index_opt,
-                                        int               thr_rank,
-                                        char*             ptr_type_cst,
-                                        SecondValueRef<T> ptr_second_value)
+                                                  IndexT            index_opt,
+                                                  int               thr_rank,
+                                                  char*             ptr_type_cst,
+                                                  SecondValueRef<T> ptr_second_value)
 {
     bool is_written = false;
     if constexpr (std::is_same_v<IndexT, std::nullopt_t>)

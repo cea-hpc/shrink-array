@@ -221,9 +221,9 @@ static void check_rounds_under_limit(const char* self, long nch)
     const std::string log   = "/tmp/cst2_reclaim_" + std::to_string(getpid()) + ".log";
     const std::string cmd = "CHUNK_CST_VAL2_ID_LIMIT=" + std::to_string(limit) + " " + validation::self_command(self) +
                             " --rounds " + std::to_string(nch) + " 12 > \"" + log + "\" 2>&1";
-    const int         status = std::system(cmd.c_str());
-    const bool        ok     = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    bool              said   = false;
+    const int  status = std::system(cmd.c_str());
+    const bool ok     = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    bool       said   = false;
     {
         std::ifstream in(log);
         std::string   line;

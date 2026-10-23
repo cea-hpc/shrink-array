@@ -29,12 +29,12 @@
  * (write_box, zero_box, reduce_box, view), and MultiMatAlgo hands it the
  * policy of the material's storage:
  *
- * | policy                | storage                       | layout                 | box loops                 |
- * |-----------------------|-------------------------------|------------------------|---------------------------|
- * | LoopsMdVector         | std::vector                   | row-major (std mdspan) | cells, `omp simd`         |
- * | LoopsMdTiles          | chunk arrays (v1, zero_one_value::Chunk)     | md::layout_tiled       | tiles (mdspan_tile_ops.h) |
- * | LoopsMdTilesElements  | chunk arrays                  | md::layout_tiled       | cells, `f[i, j]`          |
- * | LoopsMdRows           | chunk arrays                  | row-major (md::view)   | cells, `f[i, j]`          |
+ * | policy                | storage                             | layout                 | box loops                 |
+ * |-----------------------|-------------------------------------|------------------------|---------------------------|
+ * | LoopsMdVector         | std::vector                         | row-major (std mdspan) | cells, `omp simd`         |
+ * | LoopsMdTiles          | chunk arrays (zero, zero_one_value) | md::layout_tiled       | tiles (mdspan_tile_ops.h) |
+ * | LoopsMdTilesElements  | chunk arrays                        | md::layout_tiled       | cells, `f[i, j]`          |
+ * | LoopsMdRows           | chunk arrays                        | row-major (md::view)   | cells, `f[i, j]`          |
  *
  * A tile has the chunk's element count (md::tile_shape: 16 x 16 for 256),
  * so tile k is chunk k: the interior of a box is whole uniform chunks
@@ -158,13 +158,13 @@ struct Part
 // The array of the library behind a material's container: the views and the
 // range operations take the library's own types, not the example's wrappers.
 
-/// @brief The v1 array of a field.
+/// @brief The zero array of a field.
 template <typename T>
 shrink_array::zero::Array<T>& array_of(VectChunk<T>& v) noexcept
 {
     return v;
 }
-/// @brief The v1 array of a field, read-only.
+/// @brief The zero array of a field, read-only.
 template <typename T>
 const shrink_array::zero::Array<T>& array_of(const VectChunk<T>& v) noexcept
 {

@@ -44,7 +44,8 @@ namespace shrink_array
 // the proxy is not armed. Callers read the fields THROUGH this pointer: see the
 // note on set_info_on_chunk() below for why not through a returned copy.
 template <typename T, typename Derived>
-const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
+const zero_one_value::ProxySpec<T, Derived>::InfArrayT*
+zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
 {
     if (self.inf_array_src_ != nullptr) [[likely]]
     {
@@ -67,7 +68,8 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
 }
 
 template <typename T, typename Derived>
-zero_one_value::ProxySpec<T, Derived>::InfArrayT zero_one_value::ProxySpec<T, Derived>::load_inf_array(this const Derived& self)
+zero_one_value::ProxySpec<T, Derived>::InfArrayT
+zero_one_value::ProxySpec<T, Derived>::load_inf_array(this const Derived& self)
 {
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {
@@ -78,7 +80,8 @@ zero_one_value::ProxySpec<T, Derived>::InfArrayT zero_one_value::ProxySpec<T, De
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
+const zero_one_value::ProxySpec<T, Derived>::InfArrayT*
+zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
 {
     if (self.inf_array_src_ != nullptr) [[likely]]
     {
@@ -102,7 +105,8 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-zero_one_value::ProxySpec<T, Derived>::InfArrayT zero_one_value::ProxySpec<T, Derived>::load_inf_array(this const Derived& self)
+zero_one_value::ProxySpec<T, Derived>::InfArrayT
+zero_one_value::ProxySpec<T, Derived>::load_inf_array(this const Derived& self)
 {
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {
@@ -126,15 +130,15 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk(this Derived& self
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {
         static_cast<ProxySpec&>(self).inf_array_ = *src;
-        self.second_value_                        = src->second_value;
-        self.ind_                                 = src->ind;
+        self.second_value_                       = src->second_value;
+        self.ind_                                = src->ind;
         self.set_num_tab(src->num_tab); // what set_num_tab() would read back from inf_array_
     }
     else
     {
         static_cast<ProxySpec&>(self).inf_array_ = Derived::get_info_second_value(self.get_ptr_on_array());
-        self.second_value_                        = static_cast<ProxySpec&>(self).inf_array_.second_value;
-        self.ind_                                 = static_cast<ProxySpec&>(self).inf_array_.ind;
+        self.second_value_                       = static_cast<ProxySpec&>(self).inf_array_.second_value;
+        self.ind_                                = static_cast<ProxySpec&>(self).inf_array_.ind;
         self.set_num_tab();
     }
 
@@ -150,13 +154,13 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind(this Deriv
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {
         static_cast<ProxySpec&>(self).inf_array_ = *src;
-        self.second_value_                        = src->second_value;
-        self.ind_                                 = src->ind;
+        self.second_value_                       = src->second_value;
+        self.ind_                                = src->ind;
         return;
     }
     static_cast<ProxySpec&>(self).inf_array_ = Derived::get_info_second_value(self.get_ptr_on_array());
-    self.second_value_                        = static_cast<ProxySpec&>(self).inf_array_.second_value;
-    self.ind_                                 = static_cast<ProxySpec&>(self).inf_array_.ind;
+    self.second_value_                       = static_cast<ProxySpec&>(self).inf_array_.second_value;
+    self.ind_                                = static_cast<ProxySpec&>(self).inf_array_.ind;
 }
 
 template <typename T, typename Derived>
@@ -195,8 +199,9 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk(this Derived& self
 // looked at by a serial build. No preprocessor guard needed.
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::trigger_compression_if_needed(this Derived& self,
-                                                                                      int           thr_rank) noexcept
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::trigger_compression_if_needed(
+    this Derived& self,
+    int           thr_rank) noexcept
 {
     if constexpr (is_not_bool)
     {
@@ -732,10 +737,11 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_s
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Op, typename Lambda, typename U>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation(this Derived& self,
-                                                                                              Op            op,
-                                                                                              const U&      operand,
-                                                                                              Lambda        operation)
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation(
+    this Derived& self,
+    Op            op,
+    const U&      operand,
+    Lambda        operation)
 {
     // Same rule as ensure_writable_storage(): this function may call
     // chunk.create_value() below (via the will_be_not_second_value branch)
@@ -812,10 +818,11 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
  */
 template <typename Derived, typename T, typename ChunkT>
 template <typename Op, typename Lambda, typename U>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_arithmetic_compound_operation(this Derived& self,
-                                                                                            Op            op,
-                                                                                            const U&      operand,
-                                                                                            Lambda        operation)
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_arithmetic_compound_operation(
+    this Derived& self,
+    Op            op,
+    const U&      operand,
+    Lambda        operation)
 {
     // Same rule as ensure_writable_storage(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
@@ -967,8 +974,9 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(auto*  ctx,
-                                                                                        Lambda operation) const
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(
+    auto*  ctx,
+    Lambda operation) const
 {
     auto&     chunk = ctx->chunk;
     const int num   = ctx->num;
