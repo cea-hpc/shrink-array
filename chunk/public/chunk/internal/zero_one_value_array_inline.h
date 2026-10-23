@@ -32,7 +32,7 @@
 #include "chunk/zero_one_value_array.h"                 // zero_one_value::Array, the class these bodies belong to
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
-#include "chunk/internal/zero_one_value_proxy.h"                      // Proxy2<T>
+#include "chunk/internal/zero_one_value_proxy.h"        // Proxy2<T>
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats

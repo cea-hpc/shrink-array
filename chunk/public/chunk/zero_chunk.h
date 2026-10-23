@@ -30,7 +30,7 @@
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
-#include "chunk/internal/zero_proxy.h"               // Proxy<T>
+#include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array

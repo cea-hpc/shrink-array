@@ -34,8 +34,8 @@
 #include "chunk/internal/TChunk.h"                       // VectorTuple4ChunkInt2
 
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // chunk2_missing_candidate_list
-#include "chunk/internal/proxy_base.h"                  // ProxyBase
-#include "chunk/internal/second_value_proxy_base.h"                 // Proxy2Base
+#include "chunk/internal/proxy_base.h"                          // ProxyBase
+#include "chunk/internal/second_value_proxy_base.h"             // Proxy2Base
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)

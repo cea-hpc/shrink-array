@@ -60,7 +60,7 @@
 #include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h" // shrink_array::println
 
-#include "chunk/zero_chunk.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::thread_growth_validation

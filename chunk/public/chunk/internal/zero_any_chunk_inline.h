@@ -29,7 +29,7 @@
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_chunk_steal_mark
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/zero_any_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/internal/zero_any_proxy.h"             // Proxy2A<T>
+#include "chunk/internal/zero_any_proxy.h"      // Proxy2A<T>
 #include "chunk/internal/manager_chunk.h"       // ManagerChunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
@@ -464,10 +464,10 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
             // value: a chunk uniform at another value is compressed to THAT value.
             const SecondValueRef<T> ptr_second_value =
                 zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            const InT<T>            second_v         = Base::read_value_scan(0);
-            const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
-            compact1                                 = scan.first;
-            compact2                                 = scan.second;
+            const InT<T> second_v = Base::read_value_scan(0);
+            const auto   scan     = Base::scan_constants(first_value, second_v, size.count());
+            compact1              = scan.first;
+            compact2              = scan.second;
             if (compact2)
             {
                 new_cst_val2_ptr = Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);

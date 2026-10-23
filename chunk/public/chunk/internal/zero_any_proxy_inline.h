@@ -23,7 +23,7 @@
 #include <utility>         // std::move, std::cmp_greater_equal
 #include <vector>          // the per-chunk "queued" flags
 
-#include "chunk/internal/zero_any_proxy.h"            // the declarations these bodies belong to
+#include "chunk/internal/zero_any_proxy.h"     // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"               // InT<T>
 #include "chunk/zero_any_array.h"              // zero_any::Array (dependent calls the include tools cannot attribute)
 #include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic

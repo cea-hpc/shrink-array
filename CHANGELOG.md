@@ -260,8 +260,8 @@ the tag's checksum to the recipe.
   `chunk/zero_any_array.h` (were `chunk/array_chunk.h`, `array_chunk2.h`, `array_chunk2A.h`),
   and so do the files of `chunk/internal/` and `chunk/private/` that belong to one of the three
   classes (`zero_any_array_inline.h`, `zero_one_value_array_parallel.h`, `zero_array.cpp`, ...).
-  The files shared by several of them (`array_chunk_base.h`, `array_chunk_core.h`,
-  `array_chunk2_base.h`, ...) keep their names.
+  The files shared by several of them (`array_chunk_base.h`, `array_chunk_core.h`, ...) keep
+  their names.
 - The chunk and proxy classes of each variant move into its namespace: `zero::Chunk`,
   `zero_one_value::Chunk`, `zero_any::Chunk` (were `Chunk`, `Chunk2`, `Chunk2A`), `zero::Proxy`,
   `zero_one_value::Proxy`, `zero_any::Proxy` (were `Proxy`, `Proxy2`, `Proxy2A`), and so do their
@@ -269,6 +269,11 @@ the tag's checksum to the recipe.
   `Chunk2AOmpPolicy`, `zero_one_value::RechunkHooks` was `RechunkHooks2`, ...). The bases shared by
   `zero_one_value` and `zero_any` become `SecondValueChunkBase`, `SecondValueProxyBase` and
   `SecondValueArrayBase` (were `Chunk2Base`, `Proxy2Base`, `ArrayChunk2Base`).
+- Their files follow: `chunk/zero_chunk.h`, `zero_one_value_chunk.h`, `zero_any_chunk.h` (were
+  `chunk_std.h`, `chunk2_std.h`, `chunk2A_std.h`), `zero_chunk_def.h`, ... (were `chunk_def.h`, ...),
+  `chunk/internal/zero_any_proxy.h`, ... (were proxy.h, proxy2.h, proxy2A.h), and
+  `second_value_chunk_base.h`, `second_value_proxy_base.h`, `second_value_array_base.h` (were
+  chunk2_base.h, proxy2_base.h, array_chunk2_base.h).
 - Types are PascalCase, with no `xxx_type` exception: the member aliases of the arrays
   (`chunk_type`, `manager_type`, `proxy_type`, `ind_type`, `chunk_list_type`) and the
   internal ones (`index_type`, `cst_val1_type`) become `ChunkType`, `ManagerType`, `ProxyType`,

@@ -24,14 +24,14 @@
 #include <type_traits>     // std::is_same_v (concurrent-ops base)
 #include <vector>          // std::vector
 
-#include "chunk/config.h"                       // build_config::threaded, chunk_config
-#include "chunk/internal/invariant_check.h"     // invariant_failed
-#include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder, SecondValueRef
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_THREAD_RANK
-#include "chunk/ring_log_debug.h"               // ScopedRingLog, ring_log_* (RING_LOG builds)
-#include "chunk/internal/chunk_size_policy.h"   // ChunkElems
-#include "chunk/internal/second_value_chunk_base.h"         // Chunk2Base
-#include "chunk/internal/chunk_stats.h"         // increm_chunk_write
+#include "chunk/config.h"                           // build_config::threaded, chunk_config
+#include "chunk/internal/invariant_check.h"         // invariant_failed
+#include "chunk/internal/tab_cst_val2_holder.h"     // TabCstVal2Holder, SecondValueRef
+#include "chunk/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_RANK
+#include "chunk/ring_log_debug.h"                   // ScopedRingLog, ring_log_* (RING_LOG builds)
+#include "chunk/internal/chunk_size_policy.h"       // ChunkElems
+#include "chunk/internal/second_value_chunk_base.h" // Chunk2Base
+#include "chunk/internal/chunk_stats.h"             // increm_chunk_write
 
 #include "chunk/internal/TChunk.h"   // TChunk2AComp, VectorTuple4ChunkInt2
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays

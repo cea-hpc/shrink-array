@@ -58,7 +58,7 @@
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 #include "chunk/internal/print.h"        // shrink_array::println
 
-#include "chunk/zero_chunk.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::fill_range_mt_validation

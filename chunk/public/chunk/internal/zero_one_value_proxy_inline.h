@@ -19,11 +19,11 @@
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::remove_cvref_t
 
-#include "chunk/internal/in_t.h"          // InT<T>
-#include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/internal/zero_one_value_proxy.h"        // the declarations these bodies belong to
-#include "chunk/config.h"                 // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
-#include "chunk/PMP_CHUNK.h"              // get_thr_rank_fast
+#include "chunk/internal/in_t.h"                 // InT<T>
+#include "chunk/internal/bad_ptr_check.h"        // CHUNK_CHECK_VALUES_PTR (check builds)
+#include "chunk/internal/zero_one_value_proxy.h" // the declarations these bodies belong to
+#include "chunk/config.h"    // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
+#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationContext
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/concept_is_clean_assignement.h" // BaseT
@@ -783,9 +783,9 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
     const U& operand,
     Lambda   operation) const
 {
-    using CalcType     = std::common_type_t<T, U>;
+    using CalcType                    = std::common_type_t<T, U>;
     const zero_one_value::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
-    const InT<T> v_old = read_values_async(ctx);
+    const InT<T>                v_old = read_values_async(ctx);
 
     const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
 
@@ -973,7 +973,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_i
     auto&     chunk = ctx->chunk;
     const int num   = ctx->num;
 
-    const InT<T> v_old = read_values_async(ctx);
+    const InT<T>                v_old = read_values_async(ctx);
     const zero_one_value::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
     const bool is_val1 = chunk.is_cst_val1();

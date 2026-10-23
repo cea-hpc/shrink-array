@@ -18,7 +18,7 @@
 #include <cstddef> // std::size_t
 
 #include "chunk/all_type_chunk.h"           // AllTypeChunk
-#include "chunk/zero_chunk.h"                // the declarations defined here (ChunkPoolParallelInterface)
+#include "chunk/zero_chunk.h"               // the declarations defined here (ChunkPoolParallelInterface)
 #include "chunk/config.h"                   // build_config::threaded, use_fast_alloc
 #include "chunk/internal/chunk_stats.h"     // ChunkStatsThr (CHUNK_STATS only)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (teardown_outside_region)

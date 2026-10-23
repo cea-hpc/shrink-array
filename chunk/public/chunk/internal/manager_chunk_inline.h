@@ -39,12 +39,12 @@
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_DISCARD
-#include "chunk/zero_chunk.h"                     // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/zero_one_value_chunk.h"                    // Chunk2<T>: the ChunkT<T>:: calls
-#include "chunk/zero_any_chunk.h"                   // Chunk2A<T>: the ChunkT<T>:: calls
-#include "chunk/zero_chunk_def.h"                     // ChunkDef
-#include "chunk/zero_one_value_chunk_def.h"                    // Chunk2Def
-#include "chunk/zero_any_chunk_def.h"                   // Chunk2ADef
+#include "chunk/zero_chunk.h"                    // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/zero_one_value_chunk.h"          // Chunk2<T>: the ChunkT<T>:: calls
+#include "chunk/zero_any_chunk.h"                // Chunk2A<T>: the ChunkT<T>:: calls
+#include "chunk/zero_chunk_def.h"                // ChunkDef
+#include "chunk/zero_one_value_chunk_def.h"      // Chunk2Def
+#include "chunk/zero_any_chunk_def.h"            // Chunk2ADef
 #include "chunk/zero_array.h"                    // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
 #include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"        // IsChunk, IsChunk2, IsChunk2A, IsChunk2Or2A
