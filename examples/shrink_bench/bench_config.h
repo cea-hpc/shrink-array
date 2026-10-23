@@ -351,7 +351,7 @@ inline Int get_iter_stop(Int iter_max)
     {
         return 33;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         return iter_max;
     }
@@ -367,7 +367,7 @@ inline Int get_freq_raz(Int iter_max)
     {
         return 4;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         Int ret = iter_max / 10;
         if (ret == 0)
@@ -396,7 +396,7 @@ inline Int get_freq_conso_mem()
     {
         return 1;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         return 10;
     }
@@ -410,7 +410,7 @@ inline bool have_stats()
     {
         return true;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         return false;
     }
