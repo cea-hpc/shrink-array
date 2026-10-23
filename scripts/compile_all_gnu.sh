@@ -145,6 +145,13 @@ else
     ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-march=native"
 fi
 
+# The standard of the tree, when one is set (CHUNK_CXX_STANDARD, functions_for_compile.sh),
+# replaces the per-architecture one.
+if [ -n "$CHUNK_CXX_STANDARD" ]; then
+    ARCH_FLAGS="${ARCH_FLAGS% -DCMAKE_CXX_STANDARD=*} -DCMAKE_CXX_STANDARD=$CHUNK_CXX_STANDARD"
+    echo "[std] C++$CHUNK_CXX_STANDARD for every gnu configuration (CHUNK_CXX_STANDARD)"
+fi
+
 # Fetch the g++ path from the loaded module (without modules: CHUNK_GXX,
 # the newest g++-N on PATH, see site_env.sh)
 if [ "$CHUNK_HAVE_MODULES" = true ]; then
