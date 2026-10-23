@@ -672,8 +672,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     friend Base2;
     friend BaseFastCompPolicy;
 
+    // Qualified: an unqualified friend template would declare a new
+    // zero_any::ProxyBaseFastCompPolicy, and make_proxy_with_info's requires
+    // checks on the private setters would then fail silently.
     template <typename, typename, typename, bool>
-    friend class ProxyBaseFastCompPolicy;
+    friend class shrink_array::ProxyBaseFastCompPolicy;
 
     /**
      * @brief Construct a zero_any::Proxy for OpenMP build (atomic reference to values).
