@@ -284,4 +284,4 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
 } // namespace shrink_array
 
-#include "chunk/internal/chunk2_base_inline.h" // the template bodies
+#include "chunk/internal/second_value_chunk_base_inline.h" // the template bodies

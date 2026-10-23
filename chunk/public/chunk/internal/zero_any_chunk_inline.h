@@ -29,8 +29,8 @@
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*, get_thr_rank_fast, pmp::team
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_chunk_steal_mark
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
-#include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/internal/proxy2A.h"             // Proxy2A<T>
+#include "chunk/zero_any_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
+#include "chunk/internal/zero_any_proxy.h"      // Proxy2A<T>
 #include "chunk/internal/manager_chunk.h"       // ManagerChunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
@@ -39,7 +39,7 @@
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
 /**
- * @file chunk2A_std_inline.h
+ * @file zero_any_chunk_inline.h
  * @brief Out-of-line definitions of Chunk2A: materialisation and compression.
  *
  * A Chunk2A block is in one of three states; every function here moves it between them
@@ -70,8 +70,8 @@
  *    its array's ChunkElems, set as ambient size right before the clear. Otherwise a buffer
  *    is freed through the wrong size pool.
  *
- * @see chunk2A_std.h for the declarations, chunk_base.h for the shared
- *      allocate/free machinery, proxy2A_inline.h for the write paths that feed
+ * @see zero_any_chunk.h for the declarations, chunk_base.h for the shared
+ *      allocate/free machinery, zero_any_proxy_inline.h for the write paths that feed
  *      the candidate lists.
  */
 
@@ -217,7 +217,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
     // Geometry is pinned PER CHUNK, never once here (see the @file comment): each entry
     // carries its array's ChunkElems (from push_to_compress_list()), pinned right before
     // clear_int_st() reaches ChunkBase::free_values(), which routes by the ambient
-    // thread_chunk_size() (see Proxy2::manage_full_first_value() in proxy2.h).
+    // thread_chunk_size() (see Proxy2::manage_full_first_value() in zero_one_value_proxy.h).
     auto& vec_tuple_to_compress = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
 
     const auto sz = static_cast<int>(vec_tuple_to_compress.size());
@@ -465,10 +465,10 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
             // value: a chunk uniform at another value is compressed to THAT value.
             const SecondValueRef<T> ptr_second_value =
                 zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            const InT<T>            second_v         = Base::read_value_scan(0);
-            const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
-            compact1                                 = scan.first;
-            compact2                                 = scan.second;
+            const InT<T> second_v = Base::read_value_scan(0);
+            const auto   scan     = Base::scan_constants(first_value, second_v, size.count());
+            compact1              = scan.first;
+            compact2              = scan.second;
             if (compact2)
             {
                 new_cst_val2_ptr = Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);

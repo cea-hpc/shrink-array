@@ -36,10 +36,10 @@
  *   heavy_barrier()               write_compress_sync_policy.h  dekker::heavy_barrier()
  *   mark / steal_mark*()          chunk_base.h                  steal_mark_, steal_mark(), steal_marked(), steal_unmark()
  *   values, values_load()         chunk_base.h                  values, values_load()
- *   materialise()                 chunk2A_std_inline.h          create_value() + wait_before_materialise()
+ *   materialise()                 zero_any_chunk_inline.h          create_value() + wait_before_materialise()
  *   cas_install()                 chunk_base.h                  compare_and_swap_gen()
- *   steal()                       chunk2A_std.h                 try_mark_cst_and_get_old()
- *   scan                          chunk2A_std_inline.h          fill_list_to_compress() / scan_constants
+ *   steal()                       zero_any_chunk.h                 try_mark_cst_and_get_old()
+ *   scan                          zero_any_chunk_inline.h          fill_list_to_compress() / scan_constants
  *   element store / load          relaxed_element.h             store_element_relaxed / load_element_relaxed
  *   writer()                      proxy_base_inline.h           write_with_optional_lock_impl()
  *

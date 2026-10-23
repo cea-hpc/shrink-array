@@ -18,7 +18,7 @@
 #include <cstddef> // std::size_t
 
 #include "chunk/all_type_chunk.h"           // AllTypeChunk
-#include "chunk/chunk_std.h"                // the declarations defined here (ChunkPoolParallelInterface)
+#include "chunk/zero_chunk.h"               // the declarations defined here (ChunkPoolParallelInterface)
 #include "chunk/config.h"                   // build_config::threaded, use_fast_alloc
 #include "chunk/internal/chunk_stats.h"     // ChunkStatsThr (CHUNK_STATS only)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (teardown_outside_region)
@@ -38,7 +38,7 @@ std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant
 #endif
 
 // No #ifdef _OPENMP here. The bodies below are members of
-// ChunkPoolParallelInterface (chunk_std.h), so they are TEMPLATES: a build
+// ChunkPoolParallelInterface (zero_chunk.h), so they are TEMPLATES: a build
 // instantiates only its own specialisation and never compiles the other's. They
 // reach the facade through SingletonChk<AllT>, never SingletonChk<AllTypeChunk>:
 // the calls must stay dependent, or phase-1 lookup resolves them against the

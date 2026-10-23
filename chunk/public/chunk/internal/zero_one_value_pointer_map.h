@@ -73,7 +73,7 @@ struct ValueToInfTupleMapHelper
  *
  * @details An inf_array is Chunk2's `(second_value, index, num_tab)` tuple;
  *          the map, keyed by second value, is ValueToInfTupleMapHelper's.
- *          v1 (PointerMapChunk, proxy.h) has no such lookup.
+ *          v1 (PointerMapChunk, zero_proxy.h) has no such lookup.
  *
  * @tparam T       Element type PointerMapChunk2 is keyed on.
  * @tparam Enabled Whether the map actually exists (fast-block-compression

@@ -120,7 +120,7 @@ dans [variables_environnement_fr.md](variables_environnement_fr.md) §3.
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | crochet de test : délai (200 µs) dans une passe de compression sur N |
 
 Et une macro propre à Chunk2A : `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 par défaut) choisit le
-jeu de seuils de déclenchement des passes de compression (`chunk2A_def.h`). Seul le niveau 0 est
+jeu de seuils de déclenchement des passes de compression (`zero_any_chunk_def.h`). Seul le niveau 0 est
 construit et testé. *Retrait des niveaux 1 à 3 prévu : 31/12/2026.*
 
 ## 6. Options CMake

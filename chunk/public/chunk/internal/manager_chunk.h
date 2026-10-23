@@ -28,8 +28,8 @@
 #include <type_traits>   // remove_reference_t / remove_pointer_t (same)
 
 #include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/chunk_def.h"                  // ChunkDef::size_min_buffer_reuse
-#include "chunk/chunk2A_def.h"                // Chunk2ADef: the reuse budget constants
+#include "chunk/zero_chunk_def.h"             // ChunkDef::size_min_buffer_reuse
+#include "chunk/zero_any_chunk_def.h"         // Chunk2ADef: the reuse budget constants
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // thread_chunk_size, set_thread_chunk_size
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_REUSE_SHARE_DIV, CHUNK_REUSE_FLOOR_KB)

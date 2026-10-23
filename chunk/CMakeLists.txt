@@ -294,7 +294,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/zero_any_array_inline.h
         public/chunk/internal/zero_any_array_parallel.h
         public/chunk/internal/zero_any_array_parallel_inline.h
-        public/chunk/internal/array_chunk2_base.h
+        public/chunk/internal/second_value_array_base.h
         public/chunk/internal/zero_one_value_array_inline.h
         public/chunk/internal/zero_one_value_array_parallel.h
         public/chunk/internal/zero_one_value_array_parallel_inline.h
@@ -314,10 +314,10 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/array_chunk_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk_rechunk_inline.h
         public/chunk/internal/bad_ptr_check.h
-        public/chunk/internal/chunk2A_std_inline.h
-        public/chunk/internal/chunk2_base.h
-        public/chunk/internal/chunk2_base_inline.h
-        public/chunk/internal/chunk2_std_inline.h
+        public/chunk/internal/zero_any_chunk_inline.h
+        public/chunk/internal/second_value_chunk_base.h
+        public/chunk/internal/second_value_chunk_base_inline.h
+        public/chunk/internal/zero_one_value_chunk_inline.h
         public/chunk/internal/chunk_base.h
         public/chunk/internal/chunk_base_inline.h
         public/chunk/internal/chunk_func.h
@@ -326,7 +326,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/chunk_size_predictor.h
         public/chunk/internal/chunk_stats.h
         public/chunk/internal/chunk_stats_printer.h
-        public/chunk/internal/chunk_std_inline.h
+        public/chunk/internal/zero_chunk_inline.h
         public/chunk/internal/complex_less.h
         public/chunk/internal/compression_manager.h
         public/chunk/internal/compression_manager_inline.h
@@ -356,19 +356,19 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/map_helper.h
         public/chunk/internal/nano_sleeper.h
         public/chunk/internal/phase_guard.h
-        public/chunk/internal/pointer_map_chunk2.h
+        public/chunk/internal/zero_one_value_pointer_map.h
         public/chunk/internal/pointer_map_linear.h
         public/chunk/internal/pool_ledger.h
-        public/chunk/internal/proxy.h
-        public/chunk/internal/proxy2.h
-        public/chunk/internal/proxy2A.h
-        public/chunk/internal/proxy2A_inline.h
-        public/chunk/internal/proxy2_base.h
-        public/chunk/internal/proxy2_base_inline.h
-        public/chunk/internal/proxy2_inline.h
+        public/chunk/internal/zero_proxy.h
+        public/chunk/internal/zero_one_value_proxy.h
+        public/chunk/internal/zero_any_proxy.h
+        public/chunk/internal/zero_any_proxy_inline.h
+        public/chunk/internal/second_value_proxy_base.h
+        public/chunk/internal/second_value_proxy_base_inline.h
+        public/chunk/internal/zero_one_value_proxy_inline.h
         public/chunk/internal/proxy_base.h
         public/chunk/internal/proxy_base_inline.h
-        public/chunk/internal/proxy_inline.h
+        public/chunk/internal/zero_proxy_inline.h
         public/chunk/internal/proxy_operators.h
         public/chunk/internal/rechunk_cost_model.h
         public/chunk/internal/rechunk_decider_inline.h
@@ -386,13 +386,13 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/array_chunk2.h  # deprecated: zero_one_value_array.h
         public/chunk/array_chunk2A.h # deprecated: zero_any_array.h
         public/chunk/array_chunk_range_ops.h
-        public/chunk/chunk2A_def.h
-        public/chunk/chunk2A_std.h
-        public/chunk/chunk2_def.h
-        public/chunk/chunk2_std.h
-        public/chunk/chunk_def.h
+        public/chunk/zero_any_chunk_def.h
+        public/chunk/zero_any_chunk.h
+        public/chunk/zero_one_value_chunk_def.h
+        public/chunk/zero_one_value_chunk.h
+        public/chunk/zero_chunk_def.h
         public/chunk/chunk_size_advisor.h
-        public/chunk/chunk_std.h
+        public/chunk/zero_chunk.h
         public/chunk/chunk_traits.h
         public/chunk/config.h
         public/chunk/debug.h

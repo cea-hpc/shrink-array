@@ -478,4 +478,4 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy2_base_inline.h" // the template bodies
+#include "chunk/internal/second_value_proxy_base_inline.h" // the template bodies

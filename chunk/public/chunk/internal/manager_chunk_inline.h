@@ -39,12 +39,12 @@
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_DISCARD
-#include "chunk/chunk_std.h"                     // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/chunk2_std.h"                    // Chunk2<T>: the ChunkT<T>:: calls
-#include "chunk/chunk2A_std.h"                   // Chunk2A<T>: the ChunkT<T>:: calls
-#include "chunk/chunk_def.h"                     // ChunkDef
-#include "chunk/chunk2_def.h"                    // Chunk2Def
-#include "chunk/chunk2A_def.h"                   // Chunk2ADef
+#include "chunk/zero_chunk.h"                    // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/zero_one_value_chunk.h"          // Chunk2<T>: the ChunkT<T>:: calls
+#include "chunk/zero_any_chunk.h"                // Chunk2A<T>: the ChunkT<T>:: calls
+#include "chunk/zero_chunk_def.h"                // ChunkDef
+#include "chunk/zero_one_value_chunk_def.h"      // Chunk2Def
+#include "chunk/zero_any_chunk_def.h"            // Chunk2ADef
 #include "chunk/zero_array.h"                    // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
 #include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"        // IsChunk, IsChunk2, IsChunk2A, IsChunk2Or2A
@@ -55,7 +55,7 @@
 
 namespace shrink_array
 {
-// Forward declarations breaking the include cycle chunk_func.h -> chunk_std.h -> proxy.h ->
+// Forward declarations breaking the include cycle chunk_func.h -> zero_chunk.h -> zero_proxy.h ->
 // manager_chunk.h -> THIS file -> chunk_func.h: when chunk_func.h is the entry point, its
 // templates are not yet declared here (#pragma once skips it), and the explicit
 // load_balance_list_block_free_thr<T>() calls below need a declaration. Defined in chunk_func.h.
@@ -1200,7 +1200,7 @@ bool ManagerChunk<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int k
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunk<ChunkT, T>::compute_size_buffer_reuse()
 {
-    // Chunk2ADef's reuse constants serve every variant (chunk2A_def.h);
+    // Chunk2ADef's reuse constants serve every variant (zero_any_chunk_def.h);
     // CHUNK_REUSE_SHARE_DIV / CHUNK_REUSE_FLOOR_KB override them.
     size_buffer_reuse = static_cast<int>(somme_chunk_create / (reuse_share_div() * CHUNK_PMP_MAX_THREADS));
     size_buffer_reuse = std::max(size_buffer_reuse,

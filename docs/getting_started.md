@@ -133,7 +133,7 @@ well as inside the tree.
 #include <utility>                 // std::as_const
 
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 

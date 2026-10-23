@@ -23,7 +23,7 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/chunk_std.h"                    // Chunk<T>
+#include "chunk/zero_chunk.h"                   // Chunk<T>
 #include "chunk/internal/read_reclaim.h"        // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase
 #include "chunk/internal/zero_array_parallel.h" // ParallelSupport — OpenMP-only mixin
@@ -33,7 +33,7 @@
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
 #include "chunk/internal/in_t.h"                        // InT<T>: resize's fill value
-#include "chunk/internal/proxy.h"                       // Proxy<T>: the element proxy and its registry
+#include "chunk/internal/zero_proxy.h"                  // Proxy<T>: the element proxy and its registry
 
 namespace shrink_array
 {

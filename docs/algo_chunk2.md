@@ -582,10 +582,10 @@ CMake options related to benchmark performance:
 
 | topic | files |
 |---|---|
-| the array | `zero_one_value_array.h`, `internal/zero_one_value_array_inline.h`, `internal/array_chunk2_base.h` |
+| the array | `zero_one_value_array.h`, `internal/zero_one_value_array_inline.h`, `internal/second_value_array_base.h` |
 | common base, read, `operator[]` | `internal/array_chunk_base.h`, `internal/array_chunk_base_inline.h` |
-| the chunk, materialisation, compression | `chunk2_std.h`, `internal/chunk2_std_inline.h`, `internal/chunk_base.h` |
-| the write proxy | `internal/proxy2.h`, `internal/proxy2_inline.h`, `internal/proxy2_base.h` |
+| the chunk, materialisation, compression | `zero_one_value_chunk.h`, `internal/zero_one_value_chunk_inline.h`, `internal/chunk_base.h` |
+| the write proxy | `internal/zero_one_value_proxy.h`, `internal/zero_one_value_proxy_inline.h`, `internal/second_value_proxy_base.h` |
 | the write engine | `internal/proxy_base.h`, `internal/proxy_base_inline.h` |
 | Dekker, writers / compressors | `internal/write_compress_sync_policy.h` (explained in [synchronisation_dekker.md](synchronisation_dekker.md)) |
 | readers and buffer reclamation | `internal/read_reclaim.h` |

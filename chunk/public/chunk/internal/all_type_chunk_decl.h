@@ -34,7 +34,7 @@
  *          class is still being defined: array_chunk_base_inline.h, whose
  *          ArrayChunkBase::create() calls ensure_manager(). The bodies
  *          (all_type_chunk_inline.h) reach the managers, then Chunk2A and
- *          zero_any_array.h -- included from there, inside array_chunk2_base.h,
+ *          zero_any_array.h -- included from there, inside second_value_array_base.h,
  *          they closed a cycle and ArrayChunk2Base was not yet declared. They
  *          come with all_type_chunk.h, which each variant's _inline.h
  *          includes after its class.

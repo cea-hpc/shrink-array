@@ -67,8 +67,8 @@ tout à zéro. Chaque nom du modèle tient lieu d'un endroit du source, avec le 
 | `hard_inflight`, `stealing_inflight`, `must_defer_write()`, `is_stealing()` | `compression_manager.h` : `hard_inflight_`, `stealing_inflight_`, `must_defer_write()`, `is_hard_compression_inflight()` |
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h` : `start()`, `finish()` ; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h` : `steal_mark_` et ses trois verbes |
-| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `chunk2A_std.h` : `try_mark_cst_and_get_old()` |
-| `materialise()`, le parcours, l'écriture d'élément | `chunk2A_std_inline.h` : `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()` ; `relaxed_element.h` |
+| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `zero_any_chunk.h` : `try_mark_cst_and_get_old()` |
+| `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()` ; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h` : `write_with_optional_lock_impl()` |
 
 Trois propriétés sont affirmées : **P1**, un écrivain n'écrit jamais dans un tampon que la passe a

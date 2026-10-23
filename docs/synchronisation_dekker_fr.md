@@ -479,5 +479,5 @@ avec la forme du protocole qui a tourné.
 | le côté écrivain | `internal/proxy_base_inline.h` (`write_with_optional_lock_impl`) |
 | le côté compresseur, les compteurs | `internal/compression_manager.h`, `internal/compression_manager_inline.h` (`start`, `finish`, `wait_out_compressor`) |
 | les marques par chunk | `internal/chunk_base.h` (`steal_mark_`) |
-| la passe de compression | `internal/chunk2_std_inline.h`, `internal/chunk2A_std_inline.h`, `internal/chunk_std_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
+| la passe de compression | `internal/zero_one_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
 | lecteurs et récupération | `internal/read_reclaim.h` |
