@@ -172,7 +172,17 @@ library you link: `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
 [docs/algo_chunk2.md](docs/algo_chunk2.md) how reads, writes and compression run side by side.
 
-**Checked, not only tested.** The three lock-free handshakes -- element writers against the
+**Lock-free, and checked rather than only tested.** No thread ever takes a lock to read or
+write an element. Writers, the compression pass that takes a chunk's buffer back, the flush of
+deferred writes and the readers coordinate through atomics and fences only: Dekker-style
+handshakes ([docs/synchronisation_dekker.md](docs/synchronisation_dekker.md)). That is where
+the scaling comes from, and it is also where most of the library's complexity lies. Each
+handshake is correct only with the exact memory order of a handful of loads and stores. On a
+weakly ordered processor such as Grace, a wrong one shows up as a lost write or a
+use-after-free once in thousands of runs, and the library's history has several of those.
+Tests alone cannot settle that.
+
+The three handshakes -- element writers against the
 compression pass, the pass against the deferred-write flush, pure readers against buffer
 reclamation -- are model-checked: reduced models of them ([formal/](formal/)) are explored
 exhaustively by [GenMC](https://github.com/MPI-SWS/genmc) under the C11 memory model (RC11 and
@@ -180,6 +190,10 @@ IMM), with no lost write, no use-after-free, no data race and no unbounded wait,
 refuse twelve mutations, six of them the library as it once was. The `membarrier()` shape
 rests on the argument of [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md)
 section 4.2; everything else is the checker's ([docs/formal_models.md](docs/formal_models.md)).
+What that covers, precisely: every execution the memory model allows, for small configurations
+(up to 5 writers or 3 readers, one chunk, one pass). It is not a proof for any number of
+threads, and a model is a reduction of the source written by hand, which the mutations it must
+refuse keep honest.
 
 ## In numbers
 
@@ -214,6 +228,19 @@ and reaches 43 to 80 at 128, while `std::vector` peaks near 28 at 64 threads and
 to about 18 at 128.
 
 ![OpenMP speedup on AMD EPYC 7763 (Milan, 2 × 64 cores), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
+
+**A fair baseline.** The `std::vector` of these runs (`shrink_bench_vector_*`) is a real
+`std::vector` whose zeroing is parallel
+([examples/shrink_bench/baseline_vector.h](examples/shrink_bench/baseline_vector.h)). A plain
+`std::vector<T> v(n)` value-initialises its `n` elements on the one thread that constructs it:
+the creation is serial, and on a multi-socket node every page lands on that thread's NUMA node
+(first touch), so every parallel loop afterwards reads remote memory. The chunked arrays
+allocate nothing at creation and pay neither cost. Against an unmodified `std::vector`, the
+OpenMP runs of `shrink_bench` would come out faster than the vector over runs of a few thousand
+iterations, for a reason that has nothing to do with compression. The baseline therefore
+allocates without writing and zeroes its elements in a parallel loop with the bench's static
+schedule, each page first touched by the thread that works on it; its elements read `T{}`
+exactly as a `std::vector`'s do. Only who writes the zeros changes.
 
 **Use it** on data that is mostly zero or made of runs of a few values: sparse fields, material
 masks, multi-material quantities, flags. **Don't** on data where every chunk holds varied

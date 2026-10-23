@@ -175,5 +175,12 @@ python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
   OpenMP runs on a single core. Check `ldd $BIN | grep gomp`.
 - **The assembler is too old** for `-mcpu=native` with GCC 16 ("unknown architecture"):
   load recent `binutils`.
+- **A `std::vector` baseline initialised on one thread**: `std::vector<T> v(n)` writes its
+  zeros from the constructing thread, so the creation is serial and every page sits on that
+  thread's NUMA node; the parallel loops that follow read remote memory, and the chunked
+  arrays, which allocate nothing at creation, look faster than they are. `shrink_bench`'s
+  baseline zeroes in parallel instead (`examples/shrink_bench/baseline_vector.h`): keep it
+  when you add a phase or a type, and do not compare its creation times with runs made before
+  that change.
 - **An array size computed as `int`**: 8 × 10⁹ overflows and becomes negative. The
   targets with 64-bit indices (`_int64`) do not have this problem.
