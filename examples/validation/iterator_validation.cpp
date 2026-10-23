@@ -298,7 +298,7 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
     Report     r{"jumps"};
     const long s  = static_cast<long>(a.chunk_size());
     const long n  = static_cast<long>(ref.size());
-    auto       at = [&](long i) { return ref[static_cast<std::size_t>(i)]; };
+    const auto at = [&](long i) { return ref[static_cast<std::size_t>(i)]; };
 
     const long pos[] = {
         0,     1, s - 1, s, s + 1, (c0 * s) - 1, c0 * s, (c1 * s) - 1, c1 * s, (c2 * s) - 1, c2 * s, n - tail_len,

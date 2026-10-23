@@ -688,7 +688,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 {
                     set_thread_chunk_size(size);
                     // Any instance of this size: slab_of() needs its geometry only.
-                    AllocT&           geometry    = ChunkT<T>::get_chunk_allocator(0, 0u);
+                    const AllocT&     geometry    = ChunkT<T>::get_chunk_allocator(0, 0u);
                     const std::size_t block_bytes = ChunkT<T>::storage_units(size) * sizeof(T);
                     for (auto& ptf : per_thr)
                     {

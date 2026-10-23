@@ -674,8 +674,8 @@ void write(Level                                l,
 ///        One relaxed load and a compare once the configuration is read.
 [[nodiscard]] inline bool enabled(Channel c, Level l) noexcept
 {
-    auto&    t = detail::thresholds[static_cast<std::size_t>(c)];
-    unsigned s = t.load(std::memory_order_relaxed);
+    const auto& t = detail::thresholds[static_cast<std::size_t>(c)];
+    unsigned    s = t.load(std::memory_order_relaxed);
     if (s == 0U) [[unlikely]]
     {
         detail::ensure_configured();

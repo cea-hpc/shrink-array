@@ -113,17 +113,18 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
             [&]([[maybe_unused]] bench_par::Team& t)
             {
                 begin_parallel_phase_g();
-                bench_par::for_static_vec(
-                    t, beg / step, ((end - 1) / step) + 1, [&](const Int c) __attribute__((always_inline)) {
-                        if constexpr (build_config::threaded)
-                        {
-                            a.alloc_chunk(c * step, get_thr_rank_fast());
-                        }
-                        else
-                        {
-                            a.alloc_chunk(c * step);
-                        }
-                    });
+                bench_par::for_static_vec(t, beg / step, ((end - 1) / step) + 1,
+                                          [&](const Int c) __attribute__((always_inline))
+                                          {
+                                              if constexpr (build_config::threaded)
+                                              {
+                                                  a.alloc_chunk(c * step, get_thr_rank_fast());
+                                              }
+                                              else
+                                              {
+                                                  a.alloc_chunk(c * step);
+                                              }
+                                          });
                 finalize_parallel_phase_only_flush_g();
             });
         finalize_parallel_phase_after_flush_g();
@@ -153,8 +154,8 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
         [&]([[maybe_unused]] bench_par::Team& t)
         {
             begin_parallel_phase_g();
-            bench_par::for_static_vec(
-                t, beg, end, [&](const Int i) __attribute__((always_inline)) { a[i] = value_at(i); });
+            bench_par::for_static_vec(t, beg, end,
+                                      [&](const Int i) __attribute__((always_inline)) { a[i] = value_at(i); });
             finalize_parallel_phase_only_flush_g();
         });
     finalize_parallel_phase_after_flush_g();
@@ -323,7 +324,7 @@ int main(int argc, char* argv[])
                 io_res = std::stoi(data); // Convert string to integer
                 std::cout << "You give : " << io_res << "\n";
             }
-            catch (const std::invalid_argument& e)
+            catch (const std::invalid_argument&)
             {
                 std::cerr << "Error: Conversion failed. The string is not a valid number" << '\n';
             }
