@@ -17,7 +17,7 @@ On the reference benchmark, a billion-element workload that needs **125.9 GB** w
   rebuild step, no loss.
 - **Compresses while the program runs**: a chunk that becomes uniform gives its buffer back;
   one that is written again gets a new one.
-- **Any repeated value**, not only zero (Chunk2A), for any trivially copyable type: `double`,
+- **Any repeated value**, not only zero (`zero_any`), for any trivially copyable type: `double`,
   `std::complex`, your own structures.
 - **Built for many threads**: no lock on the write path, arrays of 10⁹ elements, a few hundred
   threads -- OpenMP's, or the program's own `std::thread`s and TBB tasks with the std backend
@@ -46,7 +46,7 @@ The loops of a code written for `std::vector` stay as they are; only the array t
 (The bare `#pragma omp parallel for` needs an OMPT build; with GCC's `libgomp`, open the
 region with `parallel_phase()`, see [A first program, parallel and multi-threaded](#a-first-program-parallel-and-multi-threaded).)
 
-![Process memory of the reference benchmark: std::vector 125.9 GB, Chunk 40.2 GB, Chunk2 17.3 GB, Chunk2A 7.26 GB](docs/images/memory_bench.png)
+![Process memory of the reference benchmark: std::vector 125.9 GB, zero 40.2 GB, zero_one_value 17.3 GB, zero_any 7.26 GB](docs/images/memory_bench.png)
 
 *Reference benchmark ([`shrink_bench`](examples/shrink_bench)): about 10⁹ elements of a dozen
 types, static chunks of 256, whole-process memory at the end. The price is access time, see
@@ -163,14 +163,14 @@ constants count:
 
 | variant | class | a chunk is compressed when it is uniform at… |
 |---|---|---|
-| Chunk (v1) | `zero::Array<T>` | `T{}` (zero) only |
-| Chunk2 | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
-| Chunk2A | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
+| `zero` | `zero::Array<T>` | `T{}` (zero) only |
+| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| `zero_any` | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
 
 The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are chosen by the
 library you link: `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
-[docs/algo_chunk2.md](docs/algo_chunk2.md) how reads, writes and compression run side by side.
+[docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) how reads, writes and compression run side by side.
 
 **Lock-free, and checked rather than only tested.** No thread ever takes a lock to read or
 write an element. Writers, the compression pass that takes a chunk's buffer back, the flush of
@@ -204,9 +204,9 @@ over 2,000 iterations. Whole-process memory at the end, on Grace, 64 threads
 
 | | static chunks of 256 (`_256`) | dynamic chunks (`_dyn`) |
 |---|---|---|
-| Chunk2A | **7.26 GB** | **6.0 GB** |
-| Chunk2 | 17.3 GB | 16.3 GB |
-| Chunk (v1) | 40.2 GB | 40.3 GB |
+| `zero_any` | **7.26 GB** | **6.0 GB** |
+| `zero_one_value` | 17.3 GB | 16.3 GB |
+| `zero` | 40.2 GB | 40.3 GB |
 | `std::vector` | 125.9 GB | — |
 
 The price is access time. In loops that do nothing but access (the worst case,
@@ -335,7 +335,7 @@ One development branch, not in a release yet:
 | find a call | [docs/api.md](docs/api.md) |
 | choose a variant | [docs/variants.md](docs/variants.md) |
 | compare with sparse formats, compressors, sparse grids | [docs/alternatives.md](docs/alternatives.md) |
-| understand reads, writes, in-flight compression, deferred writes | [docs/algo_chunk2.md](docs/algo_chunk2.md) |
+| understand reads, writes, in-flight compression, deferred writes | [docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) |
 | know why the write path needs no lock | [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) |
 | check a handshake with a model checker | [docs/formal_models.md](docs/formal_models.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |

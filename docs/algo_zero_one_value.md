@@ -1,6 +1,6 @@
 # The zero_one_value::Array algorithm
 
-> French version: [algo_chunk2_fr.md](algo_chunk2_fr.md).
+> French version: [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md).
 
 > Code status: early October 2026. Dynamic geometry is detailed in
 > [adaptive_rechunk.md](adaptive_rechunk.md), lock-free synchronisation between
@@ -28,12 +28,12 @@ The three variants of the library differ by what they can compress:
 
 | variant | compressible constants | second value metadata |
 |---|---|---|
-| `zero::Array` (v1) | `first_value` only | none |
+| `zero::Array` | `first_value` only | none |
 | **`zero_one_value::Array`** | `first_value` **and one second value per array** | one entry per array |
 | `zero_any::Array` | `first_value` and **one second value per chunk** | one entry per chunk |
 
 `zero_one_value::Array` is therefore the right choice when the data have **a single dominant
-non-zero value**: its metadata are lighter than those of Chunk2A.
+non-zero value**: its metadata are lighter than those of `zero_any`.
 
 ---
 
@@ -91,7 +91,7 @@ const int num       = i &  size_policy_.modulo();     // position in the chunk
 
 ### 4.1 Three states
 
-Each `Chunk2<T>` essentially holds an atomic pointer `values`. Depending on its target,
+Each `zero_one_value::Chunk<T>` essentially holds an atomic pointer `values`. Depending on its target,
 the chunk is in one of three states:
 
 | state | `values` points to | test |
@@ -105,7 +105,7 @@ concerned. Their size is `cst_buffer_size` (the chunk size in fixed geometry,
 `chunk_dyn_max_size` in dynamic geometry). There is one `cst_val2` buffer per declared second
 value, identified by an **index** `ind`.
 
-> Warning: `Chunk2::written()` **without argument** is reserved for `bool` and returns `false`
+> Warning: `zero_one_value::Chunk::written()` **without argument** is reserved for `bool` and returns `false`
 > for any other type. To know whether a non-boolean chunk is materialised, you need
 > `written(ind)` with the index of the array's second value
 > (`zero_one_value::Array::chunk_written(j)` does it).
@@ -177,7 +177,7 @@ ProxyType operator[](IndType i) noexcept
     const int num       = i & size_policy_.modulo();
     const ProxyType& val = chunk_list[num_chunk][num];
     val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);   // array, chunk, num_tab
-    val.arm_inf_array(derived().registry_mirror());                // Chunk2: the mirror
+    val.arm_inf_array(derived().registry_mirror());                // zero_one_value: the mirror
     return val;
 }
 ```
@@ -423,11 +423,11 @@ compressions. A buffer freed by a rank other than its owner is set aside
 rebuilt or destroyed; empty slabs are then returned to the system (except in a
 `CHUNK_RECLAIM_EMPTY_SLABS=OFF` build).
 
-For Chunk2, this set is only created at the array's **first rechunk** (lazy affinity):
+For `zero_one_value`, this set is only created at the array's **first rechunk** (lazy affinity):
 each set costs one started slab per rank and per size, i.e. ~780 MiB over the 16 arrays of
 `shrink_bench` at 64 threads, and an array that is never rebuilt gets no benefit from it. A
 dynamic run thus consumes, at the start, exactly like the static one at the same size
-(Chunk2: 19,999 vs 20,009 MB after initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
+(`zero_one_value`: 19,999 vs 20,009 MB after initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
 creates the set at creation. Details and measurements: [adaptive_rechunk.md](adaptive_rechunk.md) §5.
 
 ### 9.2 Rechunk (dynamic geometry)
@@ -442,7 +442,7 @@ from the state of the chunks). The steps:
    September 2026 they were only removed: a chunk queued by the write
    that had made it uniform then stayed materialised during the rebuild, was
    copied instead of being folded, and was never queued again. Measured on
-   `rechunk_validation` (1 thread): Chunk2, 0 → 2,408 chunks folded and 7,107 → 4,701 left
+   `rechunk_validation` (1 thread): `zero_one_value`, 0 → 2,408 chunks folded and 7,107 → 4,701 left
    materialised;
 2. drain the reuse lists and prepare the pools for the new size;
 3. build a **temporary array** at the new size (chunk initialisation in
@@ -458,7 +458,7 @@ from the state of the chunks). The steps:
 6. destroy the old storage.
 
 The old storage is destroyed under its own identifier (`num_tab`), which nothing reuses:
-everything indexed by it must be **freed**, not just emptied. For Chunk2, these are
+everything indexed by it must be **freed**, not just emptied. For `zero_one_value`, these are
 the "in compression list" indicators (one byte per chunk), freed at the end of
 `clear_core()`, after the candidates are purged. The threshold that triggers compression
 passes and the pool budget, which depend on the total number of chunks, are
@@ -476,7 +476,7 @@ counters.
 making **one decision per chunk**: they materialise the chunk through the normal path if
 needed, write the rest **directly into the buffer**, then only queue the
 chunks that **may** be uniform (first, middle and last elements equal) **at a
-value that Chunk2 can compress** (the first value or the array's second value).
+value that `zero_one_value` can compress** (the first value or the array's second value).
 They are **sequential**: no concurrent writer or compression on the array.
 The rechunk uses `copy_range` to rebuild the new array.
 
@@ -507,33 +507,33 @@ computation would hold the compressor off and a proxy write would clear the anno
 The queuing decision looks at the piece's own values: all equal, and a value the variant
 can compress (a fill is such a piece, so the rule is `fill_range_mt`'s).
 
-**Three points specific to Chunk2**, fixed in September 2026, which previously justified
+**Three points specific to `zero_one_value`**, fixed in September 2026, which previously justified
 keeping it on the element-by-element path:
 
 - the test "is this chunk materialised?" must call `written(ind)` with the array's second
   value index (`internal::materialised(a, ch, ind2)`): `written()` without argument
   is reserved for `bool` and returns `false` for other types;
 - queuing (`internal::queue_for_compression`) must **load the second value** before
-  adding the chunk (`set_info_on_chunk()`), since Chunk2's lists are indexed by
+  adding the chunk (`set_info_on_chunk()`), since `zero_one_value`'s lists are indexed by
   it. Without that, the chunks landed in the list of `T{}`, which no pass drains;
 - in counter mode (the serial builds), a direct store must **recount** the chunk's two
   counters, `nb_val_eq_first_value` and `nb_val_eq_second_value`, which Proxy2 otherwise
-  keeps up to date one write at a time (`internal::resync_counters`, as for v1's count of
+  keeps up to date one write at a time (`internal::resync_counters`, as for `zero`'s count of
   zeros).
 
 Only `bool` (bit-packed chunks) stays on the element-by-element path.
 
 **The queuing decision in the `_mt` forms** never reads an element another thread may be
-writing, except on Chunk2A. For Chunk and Chunk2 it looks only at the piece's own values: all
-equal, and the first value (Chunk), or the first or second value (Chunk2), as the
-element-by-element path decides. Chunk2A reads three elements (0, S/2, S−1) to know whether the
+writing, except on `zero_any`. For `zero` and `zero_one_value` it looks only at the piece's own values: all
+equal, and the first value (`zero`), or the first or second value (`zero_one_value`), as the
+element-by-element path decides. `zero_any` reads three elements (0, S/2, S−1) to know whether the
 chunk may be uniform: it writes these elements as relaxed atomics (`relaxed_element.h`:
 `fill_span_relaxed_edges`, `may_be_uniform_relaxed`), which makes the read safe; for types
 without lock-free atomics, it queues only a piece covering the whole chunk with one value. The
 single-threaded forms (`fill_range`, `copy_range`) read those three elements plainly
 (`may_be_uniform`): no other thread writes the array during the call.
 
-**The wrong values of September 2026.** With the direct path open to Chunk2,
+**The wrong values of September 2026.** With the direct path open to `zero_one_value`,
 `bench_and_test.py` reported on Grace wrong values **after compression**:
 `rechunk_validation_zero_one_value_dyn` (`scale-64-to-tgt`, POST-FAIL) and the check mode of
 `shrink_bench_zero_one_value_256` ("is_cst_val2 should be not"). Not a race between threads:
@@ -543,7 +543,7 @@ point above: the direct paths (`fill_range`, `copy_range`, used by the re-chunk'
 stored past them, the stale counts reached the chunk size on a mixed chunk, and the pass
 folded it to the first value, losing every element of the second. Since then the direct
 stores recount the counters, and the `_mt` forms write inside a session announced to the
-compressor (steps 3 to 6 above), on Chunk2 as on the other variants. Excluding Chunk2 from
+compressor (steps 3 to 6 above), on `zero_one_value` as on the other variants. Excluding `zero_one_value` from
 `internal::raw_fillable_v`, the fallback considered at the time, is not needed.
 
 ---
@@ -552,7 +552,7 @@ compressor (steps 3 to 6 above), on Chunk2 as on the other variants. Excluding C
 
 The full list, with the macros and the CMake options, is in
 [developer_settings.md](developer_settings.md). Those most relevant to
-Chunk2:
+`zero_one_value`:
 
 | variable | effect |
 |---|---|
@@ -561,7 +561,7 @@ Chunk2:
 | `CHUNK_OMPT_STATS=1` | statistics of synchronisation regions (OMPT build) |
 | `CHUNK_RECHUNK_DRY_RUN=1` | the decider analyses and logs, but applies no rechunk (to measure the cost of the analyses) |
 | `CHUNK_RECHUNK_MAX_COARSEN=<n>` | maximum coarsening factor (4 by default) |
-| `CHUNK_ALLOC_AFFINITY_EAGER=1` | per-array allocator set from its creation (lazy by default for Chunk2) |
+| `CHUNK_ALLOC_AFFINITY_EAGER=1` | per-array allocator set from its creation (lazy by default for `zero_one_value`) |
 
 For validation, the "forced deferred writes" test hook
 (`chunk/internal/test_hooks.h`, compiled with the harnesses) sends one write in N

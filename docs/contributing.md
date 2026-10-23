@@ -3,7 +3,7 @@
 > French version: [contributing_fr.md](contributing_fr.md).
 
 > October 2026. How to build, test, measure and document a change. Read
-> [algo_chunk2.md](algo_chunk2.md) first: most of the library is the machinery it describes.
+> [algo_zero_one_value.md](algo_zero_one_value.md) first: most of the library is the machinery it describes.
 
 ***
 
@@ -17,7 +17,7 @@ cmake --build build
 ```
 
 A Debug build builds one static size, 256, instead of two (`CHUNK_STATIC_SIZES=auto`), which
-saves much of the build time; `-DCHUNK_VARIANTS=chunk2a` builds one variant instead of three, with its examples and
+saves much of the build time; `-DCHUNK_VARIANTS=zero_any` builds one variant instead of three, with its examples and
 harnesses only. A Debug build, `-DCHECK_OPTIM=ON` or a sanitizer also builds the validation harnesses
 (`examples/validation`).
 
@@ -89,8 +89,8 @@ The source checks run with the others (`ctest -R check_`):
   UPPER_CASE is for macros only: a constant or an enumerator spelled like one reads as one, and
   may meet one. The standard library's shapes keep their spelling: the member types of its
   protocols (`value_type`, `size_type`, ...; our own member types are PascalCase, `ChunkType`),
-  the traits and tags (`is_cplx`, `rebind`). Inside a snake_case name the variant is `chunk2a`; file names (`zero_any_array.h`)
-  stay as they are. Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
+  the traits and tags (`is_cplx`, `rebind`). Inside a snake_case name the variant is `zero_any`, as in the file names (`zero_any_array.h`).
+  Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
   that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`
   checks the rest (the member suffix, the parameters) with `scripts/clang_tidy_naming.yaml`.

@@ -5,7 +5,7 @@
 > Status: early October 2026. This document explains how writers, compressors,
 > deferred-write flushes and readers exclude each other **without a lock on the
 > write path**. The overall machinery (proxies, deferred writes, in-flight
-> compression) is described in [algo_chunk2.md](algo_chunk2.md) §7 and §8. The names used
+> compression) is described in [algo_zero_one_value.md](algo_zero_one_value.md) §7 and §8. The names used
 > are those of the current tree; when in doubt, the code is the reference, in particular the
 > comments in `internal/write_compress_sync_policy.h`, which carry the ordering proof.
 
@@ -114,7 +114,7 @@ the compressor's announce: the writer takes the slow path. Never both.
 
 **The cost.** On AArch64, the writer pays `stlr` + `dmb ish` + `ldar` on **every** element
 write (an `mfence` on x86): about 70% of the time of `write_with_optional_lock_impl`
-in the profiles. Measured on `shrink_bench` chunk2a_256 with 6 threads on x86: +7% total time
+in the profiles. Measured on `shrink_bench` zero_any_256 with 6 threads on x86: +7% total time
 compared with an engine without a handshake, against −7% for the asymmetric version.
 
 The symmetric form remains the one used by **ThreadSanitizer** builds (TSan does not model
@@ -371,7 +371,7 @@ It is this **second look** that forms the Dekker pair with the flush. The first 
 while the compressor was only parked, protects against nothing: a flush announced just after
 saw `stealing_inflight_ == 0` and is already replaying. Without the second look, the compressor scanned
 the constant from before the replay, the replay wrote, then the CAS put the chunk back on the
-constant: the replayed write was lost (a wrong second value at one index of Chunk2A,
+constant: the replayed write was lost (a wrong second value at one index of `zero_any`,
 once in ~2,300 runs).
 
 Between flushes, the exclusion is more classical: each rank has a lock (`xflush_lock_rank`),

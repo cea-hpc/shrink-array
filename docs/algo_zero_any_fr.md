@@ -1,18 +1,18 @@
-# L'algorithme de zero_any::Array (Chunk2A)
+# L'algorithme de zero_any::Array
 
-> English version: [algo_chunk2a.md](algo_chunk2a.md).
+> English version: [algo_zero_any.md](algo_zero_any.md).
 
-> État : fin septembre 2026. Ce document décrit ce que Chunk2A fait **autrement** que Chunk2 ;
+> État : fin septembre 2026. Ce document décrit ce que `zero_any` fait **autrement** que `zero_one_value` ;
 > la machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
-> opérations sur plages) est décrite dans [algo_chunk2_fr.md](algo_chunk2_fr.md), et la
+> opérations sur plages) est décrite dans [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), et la
 > géométrie dynamique dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md). En cas de
 > doute, c'est le code qui fait foi.
 
 ***
 
-## 1. Ce que Chunk2A compresse
+## 1. Ce que `zero_any` compresse
 
-Chunk2 compresse à zéro ou à **une** seconde valeur, déclarée pour tout le tableau. Chunk2A
+`zero_one_value` compresse à zéro ou à **une** seconde valeur, déclarée pour tout le tableau. `zero_any`
 compresse à zéro ou à **n'importe quelle valeur**, choisie **chunk par chunk** : un chunk
 uniforme à 3,5 et son voisin uniforme à −1 sont tous les deux compressés, sans rien déclarer.
 
@@ -47,7 +47,7 @@ sur le run de référence de 50 millions de chunks, mais +3 % de temps d'écritu
 dépendante de plus à chaque écriture d'un chunk matérialisé). À réserver aux charges limitées
 par la mémoire plutôt que par le débit d'écriture.
 
-Ces lignes font de Chunk2A la variante la plus chère en métadonnées par chunk (16 octets
+Ces lignes font de `zero_any` la variante la plus chère en métadonnées par chunk (16 octets
 d'objet, plus 2 octets et `sizeof(T)`), et donc celle qui gagne le plus à grossir ses chunks :
 voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
@@ -87,7 +87,7 @@ l'emplacement de seconde valeur du chunk, et rend le tableau partagé à install
 ## 4. Quand un chunk devient candidat à la compression
 
 En plus du critère commun aux variantes à deux constantes (une écriture de l'une des
-constantes du chunk par-dessus autre chose), Chunk2A met un chunk en liste dans deux cas qui
+constantes du chunk par-dessus autre chose), `zero_any` met un chunk en liste dans deux cas qui
 lui sont propres :
 
 - **découverte** : une écriture d'une valeur non nulle dans un chunk qui n'a pas encore de
@@ -101,7 +101,7 @@ Ces deux cas sont filtrés par une **condition nécessaire** (`may_become_unifor
 autres éléments du chunk (le premier et le dernier, ou leurs voisins si l'un d'eux est
 l'élément écrit) contiennent déjà la valeur écrite. Sans ce filtre, un chunk de données variées
 était mis en liste, relu, trouvé non uniforme, retiré, puis remis en liste par l'écriture
-suivante : ~3 µs par écriture sur `chunk2a_256` à 64 threads.
+suivante : ~3 µs par écriture sur `shrink_bench_zero_any_256` à 64 threads.
 
 ## 5. La passe de compression
 
@@ -120,17 +120,17 @@ compression par défaut, `CHUNK2A_COMPRESS_LEVEL=0`, dans `zero_any_chunk_def.h`
 
 ## 6. L'écriture
 
-Le chemin d'écriture est celui de Chunk2 (§6 de [algo_chunk2_fr.md](algo_chunk2_fr.md)), à
+Le chemin d'écriture est celui de `zero_one_value` (§6 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md)), à
 une différence près : la seconde valeur à comparer est celle **du chunk**, lue dans sa ligne
 de métadonnées, et non celle du tableau. Écrire dans un chunk compressé une valeur différente
 de sa constante le matérialise, pré-rempli avec **cette constante**.
 
 Le proxy trouve les lignes de métadonnées du chunk par le numéro du tableau. Une variante
 « armée », où l'`operator[]` d'écriture donnait directement au proxy les adresses des lignes,
-a été retirée : son gain (~0,4 % sur `chunk2a_256` à 64 threads) ne justifiait pas
+a été retirée : son gain (~0,4 % sur `shrink_bench_zero_any_256` à 64 threads) ne justifiait pas
 l'invariant de resynchronisation qu'elle imposait à chaque réallocation des lignes.
 
-## 7. Ce que Chunk2A fait autrement pendant un rechunk
+## 7. Ce que `zero_any` fait autrement pendant un rechunk
 
 Le déroulé général est celui de [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §4, avec
 trois particularités :
@@ -148,7 +148,7 @@ trois particularités :
 
 ## 8. Résultats
 
-Sur `shrink_bench` (64 threads), Chunk2A dynamique, avec tous les tableaux confiés au
+Sur `shrink_bench` (64 threads), `zero_any` dynamique, avec tous les tableaux confiés au
 décideur, finit à **6,0 Go**, contre 7,3 Go pour le statique 256 et 12,7 Go pour le statique
 64, dont il a la mémoire au départ. C'est la variante qui profite le plus de la géométrie
 dynamique : ses métadonnées par chunk sont les plus lourdes, et ses chunks compressés à des

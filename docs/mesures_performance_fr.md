@@ -67,7 +67,7 @@ l'autre, au mégaoctet près. Un seul run suffit.
   6,4-6,8 s et trois à 7,7-8,0 s (+18 %). `perf stat` : même fréquence (3,26 GHz), même nombre
   d'instructions, mêmes défauts du dernier niveau de cache, mais un IPC de 3,45 au lieu de
   3,95 et +10 points de cycles bloqués sur la mémoire. Chaque accès mémoire coûte plus cher,
-  sans doute selon la disposition physique des pages reçues au démarrage. Chunk2 a un mode
+  sans doute selon la disposition physique des pages reçues au démarrage. `zero_one_value` a un mode
   lent encore plus marqué (~+40 %, des runs à 16 s au lieu de 11).
 - **La dérive entre fenêtres de temps.** Un même binaire, sans aucune recompilation : 10,75 à
   11,53 s dans une fenêtre, 9,49 à 10,08 s une heure plus tard.
@@ -143,7 +143,7 @@ perf stat -I 1000 -x, -e task-clock,cycles:u,instructions:u,stall_backend_mem:u 
 ```
 
 Le nombre de cœurs occupés est `task-clock / 1000` pour chaque seconde. C'est ce qui a montré
-que v1, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
+que `zero`, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
 
 **Temps utilisateur, temps système, défauts de page** :
 `/usr/bin/time -f "%e s réel, %U s utilisateur, %S s système, %R défauts mineurs" $BIN …`.

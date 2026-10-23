@@ -2,8 +2,8 @@
 
 > Status: design, October 2026, before any code. English only, like
 > [threading_backends.md](threading_backends.md): it is a plan and it goes away, replaced by an
-> `algo_` document, when the variant exists. When in doubt about Chunk2A, the code and
-> [algo_chunk2a.md](algo_chunk2a.md) are the reference.
+> `algo_` document, when the variant exists. When in doubt about `zero_any`, the code and
+> [algo_zero_any.md](algo_zero_any.md) are the reference.
 
 ***
 
@@ -11,7 +11,7 @@
 
 A container for **integer arrays with long runs of zeros and with series of motifs that repeat
 shifted by a constant**: the typical case is a mesh connectivity, where cell `k` lists nodes
-`n, n+1, n+nx+1, ...` and cell `k+1` lists the same motif plus one. Chunk2A already compresses a
+`n, n+1, n+nx+1, ...` and cell `k+1` lists the same motif plus one. `zero_any` already compresses a
 chunk uniform at *any* value; this variant compresses a chunk that equals a **shared motif plus
 one offset**.
 
@@ -21,11 +21,11 @@ Decisions taken with the author (October 2026):
 |---|---|
 | what is a repeated motif | a **whole chunk**: `chunk[j] = P[j] + off`, with `P` shared |
 | element types | **integers only** (`static_assert` otherwise) |
-| when is a chunk examined | the **write heuristic** only (like Chunk2A), no explicit pass |
-| where | a **new variant** built from Chunk2A, not a mode of Chunk2A |
+| when is a chunk examined | the **write heuristic** only (like `zero_any`), no explicit pass |
+| where | a **new variant** built from `zero_any`, not a mode of `zero_any` |
 | name | class **pattern::Array**: the array classes live in a namespace each, named after what they compress (zero, zero_one_value, zero_any, pattern); the CMake library follows the other variants |
 
-Chunk2A is the special case `P = 0`: a chunk uniform at V is the zero motif plus the offset V.
+`zero_any` is the special case `P = 0`: a chunk uniform at V is the zero motif plus the offset V.
 The new variant therefore needs **no second-value registry**: constants are offsets.
 
 ## 2. What a chunk can be
@@ -44,12 +44,12 @@ chunks are equal up to an offset exactly when they have the same normalised moti
 
 ## 3. Layout
 
-Chunk2A keeps 16 bytes per chunk (the pointer, a pending-operations count and the steal mark)
+`zero_any` keeps 16 bytes per chunk (the pointer, a pending-operations count and the steal mark)
 and a row of `sizeof(T)` bytes per chunk for its second value, plus two bytes of rows.
 Here the offset lives **in the chunk object**, next to the pointer the reader loads anyway:
 24 bytes for 4- and 8-byte integers, a one-byte type row no longer needed (the type is the region
 test of §4), the candidate flag row kept. Per chunk: 25 bytes, against 26 (8-byte
-elements) or 22 (4-byte elements) for Chunk2A. The memory per chunk is the same order; the
+elements) or 22 (4-byte elements) for `zero_any`. The memory per chunk is the same order; the
 read is cheaper because the offset is in the line already loaded.
 
 ## 4. The read
@@ -61,11 +61,11 @@ if p is in the motif region:  v += offset           // wrapping
 ```
 
 - The motif region is **one reserved virtual range** (mmap), so "in the region" is one
-  subtract-compare against two constants, not a table lookup. Chunk2A already does this
+  subtract-compare against two constants, not a table lookup. `zero_any` already does this
   test for its registry (`region_contains`); the cost to measure is that compare plus the add on
   the **materialised** reads, which must not slow down by more than the noise (the access
   cost bench, `access_cost`, decides).
-- A read of a motif chunk costs one more add and no more cache line than a Chunk2A read.
+- A read of a motif chunk costs one more add and no more cache line than a `zero_any` read.
 - Every place that reads a chunk goes through the one element accessor of the chunk base
   (`element_at`, behind `read_value`, `read_value_scan`, the scans, `copy_from`, the comparison,
   the range operations, the advisor); the offset is added there and nowhere else. Direct
@@ -73,12 +73,12 @@ if p is in the motif region:  v += offset           // wrapping
 
 ## 5. The write
 
-A write into a motif chunk **materialises** it first, like Chunk2A materialises a constant chunk
+A write into a motif chunk **materialises** it first, like `zero_any` materialises a constant chunk
 pre-filled with its constant: the buffer receives `P[j] + off` for every `j`, **absolute**
 values, then the write goes in. `offset` is left as it is (it is ignored while the pointer is not
 in the region), so the pointer switch is the single publication point and a reader never combines
 a new pointer with a wrong offset. The fast path (a write into an already materialised chunk)
-is Chunk2A's, unchanged.
+is `zero_any`'s, unchanged.
 
 ## 6. The offset and the readers (the hard point)
 
@@ -102,7 +102,7 @@ A reader loads the pointer and then the offset; they are two words. The sequence
 ## 7. The motif registry
 
 - Entries are chunk-sized arrays of `T` in the motif region, in chained segments of 64 slots like
-  Chunk2A's registry, filled **before** they are published (release). Finding a known motif is a
+  `zero_any`'s registry, filled **before** they are published (release). Finding a known motif is a
   lock-free hash probe; only a new motif takes the insertion lock.
 - A key is a 64-bit hash of the normalised motif, **confirmed by comparing the arrays** (a hash
   alone never decides equality).
@@ -111,7 +111,7 @@ A reader loads the pointer and then the offset; they are two words. The sequence
   sighting only counts the hash in a small probation table (a counting filter, bounded memory);
   the chunk of the first sighting stays materialised. On a mesh, that is one chunk per distinct
   motif.
-- **Reclaim.** As Chunk2A's `reclaim_second_values`: at a sequential point, mark the motifs still
+- **Reclaim.** As `zero_any`'s `reclaim_second_values`: at a sequential point, mark the motifs still
   referenced, free the others.
 - **Geometry.** A motif has the chunk's element count, so there is one registry per chunk size.
   First stage: the static sizes (`CHUNK_STATIC_SIZES`); the dynamic geometry and the rechunk
@@ -132,7 +132,7 @@ before the rest, is examined too early and may stay materialised; the range oper
 (`assign`, `fill`) can examine the chunks they have just filled themselves. A later
 explicit entry point stays possible and costs nothing in the design.
 
-## 9. What is reused from Chunk2A
+## 9. What is reused from `zero_any`
 
 | part | reused | to adapt |
 |---|---|---|

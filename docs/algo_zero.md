@@ -1,20 +1,20 @@
-# The zero::Array algorithm (Chunk, v1)
+# The zero::Array algorithm
 
-> French version: [algo_chunk_fr.md](algo_chunk_fr.md).
+> French version: [algo_zero_fr.md](algo_zero_fr.md).
 
-> Status: end of September 2026. This document describes what v1 does **differently** from Chunk2; the
+> Status: end of September 2026. This document describes what `zero` does **differently** from `zero_one_value`; the
 > common machinery (proxies, deferred writes, read barrier, in-flight compression,
-> range operations) is described in [algo_chunk2.md](algo_chunk2.md), and the
+> range operations) is described in [algo_zero_one_value.md](algo_zero_one_value.md), and the
 > dynamic geometry in [adaptive_rechunk.md](adaptive_rechunk.md). When in
 > doubt, the code is the reference.
 
 ***
 
-## 1. What v1 compresses
+## 1. What `zero` compresses
 
-v1 is the simplest of the three variants: a chunk is either **compressed to zero** (`T{}`) or
-**materialised**. There is no second value, neither per array (Chunk2) nor per chunk
-(Chunk2A).
+`zero` is the simplest of the three variants: a chunk is either **compressed to zero** (`T{}`) or
+**materialised**. There is no second value, neither per array (`zero_one_value`) nor per chunk
+(`zero_any`).
 
 | state | `values` points to | test |
 |---|---|---|
@@ -33,14 +33,14 @@ The library: `chunk::chunk_zero` (it defines `CHUNK_VARIANT_ZERO`). Code: `chunk
 
 The chunk object is 16 bytes (in OpenMP builds, where the zero counter of the sequential
 mode is an empty type, see §4), plus one "already in compression list" byte and two
-bytes of the *dirty bitset* (one bit, in a 64-bit word padded to 128 bytes). With no second value, v1 has **no type or value
+bytes of the *dirty bitset* (one bit, in a 64-bit word padded to 128 bytes). With no second value, `zero` has **no type or value
 metadata** per chunk: it is the variant with the least metadata, and the one whose
 memory is made up the most of **materialised data**. On `shrink_bench` at 64 threads,
 about 38 GB of its 40 GB is data.
 
 ## 3. Read and write
 
-The read is the same as in Chunk2 (§5 of [algo_chunk2.md](algo_chunk2.md)): one value,
+The read is the same as in `zero_one_value` (§5 of [algo_zero_one_value.md](algo_zero_one_value.md)): one value,
 read from the chunk's buffer or from `cst_val1`, after the read barrier.
 
 The write goes through the `Proxy<T>` proxy:
@@ -100,10 +100,10 @@ September 2026 keep it accurate:
 At 64 threads, the computation almost always lands on the floor: the floor is what sets the
 frequency of the passes.
 
-## 7. What v1 does differently during a rechunk
+## 7. What `zero` does differently during a rechunk
 
 The general sequence is the one in [adaptive_rechunk.md](adaptive_rechunk.md) §4. Two
-specifics come from the volume of data in v1:
+specifics come from the volume of data in `zero`:
 
 - **the rebuild in slices** (16 by default, `CHUNK_RECHUNK_SLICES`): each slice
   frees the old chunks it has copied, and between two slices, the reserves of the
@@ -116,15 +116,15 @@ specifics come from the volume of data in v1:
 
 ## 8. Results and limits
 
-On `shrink_bench` (64 threads), dynamic v1 ends at **40.3 GB**, like static 256
+On `shrink_bench` (64 threads), dynamic `zero` ends at **40.3 GB**, like static 256
 (40.2 GB), and 0.6 GB above static 1,024 (39.7 GB), the size it reaches. Two
 reasons for this small gain:
 
 - its metadata is already small, and growing the chunks mostly gains
   on the metadata;
-- after its rechunk, dynamic v1 **slows down** (1.5 to 2 times per iteration compared with
+- after its rechunk, dynamic `zero` **slows down** (1.5 to 2 times per iteration compared with
   static 1,024), for a reason still unknown: a dynamic build started directly at
-  1,024 runs as fast as the static one, and Chunk2 does not slow down after its rechunks.
+  1,024 runs as fast as the static one, and `zero_one_value` does not slow down after its rechunks.
 
-For a workload like the benchmark's, a **static** v1 at the right size is still the
+For a workload like the benchmark's, a **static** `zero` at the right size is still the
 best choice today.

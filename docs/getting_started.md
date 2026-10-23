@@ -25,12 +25,12 @@ Three variants, chosen when you link:
 
 | variant | class | a chunk is compressed when it is uniform at… |
 |---|---|---|
-| Chunk (v1) | `zero::Array<T>` | `T{}` (zero) only |
-| Chunk2 | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
-| Chunk2A | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
+| `zero` | `zero::Array<T>` | `T{}` (zero) only |
+| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| `zero_any` | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
 
-Chunk2A compresses the most and is the one to try first. Chunk2 has lighter metadata when
-the data has a single dominant non-zero value, and Chunk (v1) is the simplest when only zeros
+`zero_any` compresses the most and is the one to try first. `zero_one_value` has lighter metadata when
+the data has a single dominant non-zero value, and `zero` is the simplest when only zeros
 matter. [variants.md](variants.md) compares them on a real workload.
 
 ## 2. Install
@@ -88,7 +88,7 @@ as the library did.
 
 | target | variant | chunk size |
 |---|---|---|
-| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | v1, Chunk2, Chunk2A | the first of `CHUNK_STATIC_SIZES` (256) |
+| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | `zero`, `zero_one_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
 | `chunk::chunk_zero_any_1024`, … | | that compile-time size |
 | `chunk::chunk_zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
 | `chunk::chunk_vector` | none: the arrays are `std::vector` | — |
@@ -292,7 +292,7 @@ compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1
 **Sequential points.** Everything that rebuilds an array's storage must be called outside any
 parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`,
 `assign()`, `swap()`, assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for
-Chunk2, `set_second_value()`.
+`zero_one_value`, `set_second_value()`.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
 of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else
@@ -302,7 +302,7 @@ more threads than that sets `CHUNK_THREAD_CAPACITY=<n>`; a thread beyond the cap
 program with a message.
 
 **Next to other components.** The library keeps its state per process, not per array: the
-element-type registries, the allocators, Chunk2A's second-value registry, the per-thread
+element-type registries, the allocators, `zero_any`'s second-value registry, the per-thread
 structures and their capacity, the log settings, and the phase. Two parts of a program that use
 it without knowing of each other -- your code and a library built on shrink-array, say -- share
 all of it. What that asks of them:
@@ -387,11 +387,11 @@ threads: for the others, use the std backend.
   parameter: `zero_any::Array<double, long>`.
 - **Element types**: anything trivially copyable, `==`-comparable and default-constructible
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
-  type that owns a resource (`std::string`) is refused at compile time. Chunk2 also needs an
+  type that owns a resource (`std::string`) is refused at compile time. `zero_one_value` also needs an
   order on the second value: a struct of doubles declares `auto operator<=>(const T&) const =
   default;`.
-- **Chunk2 compresses only to its declared second value.** Without `set_second_value()`, a
-  Chunk2 array compresses to zero only.
+- **`zero_one_value` compresses only to its declared second value.** Without `set_second_value()`, a
+  `zero_one_value` array compresses to zero only.
 - **Measure memory with the right tool.** `VmRSS` lags behind on many threads; see
   [performance_measurement.md](performance_measurement.md).
 
@@ -403,5 +403,5 @@ threads: for the others, use the std backend.
 | choosing a variant on your data | [variants.md](variants.md), and `examples/variant_compare` |
 | letting the chunk size adapt at run time | [adaptive_rechunk.md](adaptive_rechunk.md) (`_dyn` libraries) |
 | every tuning variable and build option | [environment_variables.md](environment_variables.md) |
-| how it works inside | [algo_chunk2.md](algo_chunk2.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
+| how it works inside | [algo_zero_one_value.md](algo_zero_one_value.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
 | a larger example: multi-material fields, loops written once for both containers | `examples/multi-mat` |

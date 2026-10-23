@@ -18,7 +18,7 @@ moins de mémoire, sans toucher aux boucles.
   nouvelle indexation, pas d'étape de reconstruction, aucune perte.
 - **Compresse pendant que le programme tourne** : un chunk qui devient uniforme rend son
   tampon ; un chunk réécrit en reprend un.
-- **N'importe quelle valeur répétée**, pas seulement zéro (Chunk2A), pour tout type trivialement
+- **N'importe quelle valeur répétée**, pas seulement zéro (`zero_any`), pour tout type trivialement
   copiable : `double`, `std::complex`, vos propres structures.
 - **Fait pour beaucoup de threads** : aucun verrou à l'écriture, des tableaux de 10⁹ éléments,
   quelques centaines de threads -- ceux d'OpenMP, ou les propres `std::thread` et tâches TBB du
@@ -48,7 +48,7 @@ change :
 (La forme nue `#pragma omp parallel for` demande un build OMPT ; avec le `libgomp` de GCC,
 ouvrez la région avec `parallel_phase()`, voir [Un premier programme, parallèle et multi-thread](#un-premier-programme-parallèle-et-multi-thread).)
 
-![Mémoire du process au banc de référence : std::vector 125,9 Go, Chunk 40,2 Go, Chunk2 17,3 Go, Chunk2A 7,26 Go](docs/images/memory_bench_fr.png)
+![Mémoire du process au banc de référence : std::vector 125,9 Go, zero 40,2 Go, zero_one_value 17,3 Go, zero_any 7,26 Go](docs/images/memory_bench_fr.png)
 
 *Banc de référence ([`shrink_bench`](examples/shrink_bench)) : environ 10⁹ éléments d'une
 douzaine de types, chunks statiques de 256, mémoire du process entier à la fin. Le prix est le
@@ -165,14 +165,14 @@ métadonnées. Trois variantes décident quelles constantes comptent :
 
 | variante | classe | un chunk est compressé quand il est uniforme à… |
 |---|---|---|
-| Chunk (v1) | `zero::Array<T>` | `T{}` (zéro) seulement |
-| Chunk2 | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
-| Chunk2A | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
+| `zero` | `zero::Array<T>` | `T{}` (zéro) seulement |
+| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
+| `zero_any` | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
 
 La variante et la taille de chunk (256, 1024, ou dynamique et adaptative : `_dyn`) sont choisies
 par la bibliothèque liée : `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variantes_fr.md](docs/variantes_fr.md) dit ce que coûte chacune ;
-[docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) comment lectures, écritures et compression
+[docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) comment lectures, écritures et compression
 tournent ensemble.
 
 **Sans verrou, et vérifié plutôt que seulement testé.** Aucun thread ne prend de verrou pour
@@ -209,9 +209,9 @@ Grace, 64 threads ([comment c'est mesuré](docs/mesures_performance_fr.md)) :
 
 | | chunks statiques de 256 (`_256`) | chunks dynamiques (`_dyn`) |
 |---|---|---|
-| Chunk2A | **7,26 Go** | **6,0 Go** |
-| Chunk2 | 17,3 Go | 16,3 Go |
-| Chunk (v1) | 40,2 Go | 40,3 Go |
+| `zero_any` | **7,26 Go** | **6,0 Go** |
+| `zero_one_value` | 17,3 Go | 16,3 Go |
+| `zero` | 40,2 Go | 40,3 Go |
 | `std::vector` | 125,9 Go | — |
 
 Le prix est le temps d'accès. Dans des boucles qui ne font qu'accéder (le pire cas,
@@ -345,7 +345,7 @@ Une branche de développement, pas encore dans une version :
 | trouver un appel | [docs/api_fr.md](docs/api_fr.md) |
 | choisir une variante | [docs/variantes_fr.md](docs/variantes_fr.md) |
 | comparer aux formats creux, aux compresseurs, aux grilles creuses | [docs/alternatives_fr.md](docs/alternatives_fr.md) |
-| comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) |
+| comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) |
 | savoir pourquoi l'écriture n'a besoin d'aucun verrou | [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) |
 | vérifier un protocole avec un vérificateur de modèles | [docs/formal_models_fr.md](docs/formal_models_fr.md) |
 | utiliser les tailles de chunk dynamiques | [docs/rechunk_adaptatif_fr.md](docs/rechunk_adaptatif_fr.md) |

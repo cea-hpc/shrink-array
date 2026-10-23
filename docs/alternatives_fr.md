@@ -4,7 +4,7 @@
 
 shrink-array remplace directement un `std::vector` que le programme continue de lire et
 d'écrire en place, depuis des threads OpenMP : même espace d'indices, même `[]`, sans perte, et
-toute valeur répétée est compressée chunk par chunk (Chunk2A), pas seulement zéro. D'autres
+toute valeur répétée est compressée chunk par chunk (`zero_any`), pas seulement zéro. D'autres
 structures économisent la mémoire sur d'autres données, et y sont le meilleur choix :
 
 | alternative | ce qu'elle fait | la préférer quand |

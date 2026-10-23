@@ -1,18 +1,18 @@
-# The zero_any::Array algorithm (Chunk2A)
+# The zero_any::Array algorithm
 
-> French version: [algo_chunk2a_fr.md](algo_chunk2a_fr.md).
+> French version: [algo_zero_any_fr.md](algo_zero_any_fr.md).
 
-> Status: end of September 2026. This document describes what Chunk2A does **differently** from Chunk2;
+> Status: end of September 2026. This document describes what `zero_any` does **differently** from `zero_one_value`;
 > the common machinery (proxies, deferred writes, read barrier, in-flight compression,
-> range operations) is described in [algo_chunk2.md](algo_chunk2.md), and the
+> range operations) is described in [algo_zero_one_value.md](algo_zero_one_value.md), and the
 > dynamic geometry in [adaptive_rechunk.md](adaptive_rechunk.md). When in
 > doubt, the code is the reference.
 
 ***
 
-## 1. What Chunk2A compresses
+## 1. What `zero_any` compresses
 
-Chunk2 compresses to zero or to **one** second value, declared for the whole array. Chunk2A
+`zero_one_value` compresses to zero or to **one** second value, declared for the whole array. `zero_any`
 compresses to zero or to **any value**, chosen **chunk by chunk**: a chunk
 uniform at 3.5 and its neighbour uniform at −1 are both compressed, without declaring anything.
 
@@ -47,7 +47,7 @@ on the reference run of 50 million chunks, but +3% write time (one more dependen
 read on each write to a materialised chunk). Keep it for workloads limited
 by memory rather than by write throughput.
 
-These rows make Chunk2A the variant with the most expensive metadata per chunk (16 bytes
+These rows make `zero_any` the variant with the most expensive metadata per chunk (16 bytes
 of object, plus 2 bytes and `sizeof(T)`), and therefore the one that gains the most from growing its chunks:
 see [adaptive_rechunk.md](adaptive_rechunk.md).
 
@@ -86,7 +86,7 @@ chunk's second-value slot, and returns the shared array to install.
 ## 4. When a chunk becomes a compression candidate
 
 In addition to the criterion common to the two-constant variants (a write of one of the
-chunk's constants over something else), Chunk2A puts a chunk in the list in two cases of
+chunk's constants over something else), `zero_any` puts a chunk in the list in two cases of
 its own:
 
 - **discovery**: a write of a non-zero value into a chunk that does not yet have a
@@ -100,7 +100,7 @@ Both cases are filtered by a **necessary condition** (`may_become_uniform`): two
 other elements of the chunk (the first and the last, or their neighbours if one of them is
 the written element) already hold the written value. Without this filter, a chunk of varied data
 was put in the list, re-read, found non-uniform, removed, then put back in the list by the next
-write: ~3 µs per write on `chunk2a_256` at 64 threads.
+write: ~3 µs per write on `shrink_bench_zero_any_256` at 64 threads.
 
 ## 5. The compression pass
 
@@ -119,17 +119,17 @@ compression level, `CHUNK2A_COMPRESS_LEVEL=0`, in `zero_any_chunk_def.h`).
 
 ## 6. The write
 
-The write path is the one of Chunk2 (§6 of [algo_chunk2.md](algo_chunk2.md)), with
+The write path is the one of `zero_one_value` (§6 of [algo_zero_one_value.md](algo_zero_one_value.md)), with
 one difference: the second value to compare against is **the chunk's**, read from its metadata
 row, and not the array's. Writing into a compressed chunk a value different
 from its constant materialises it, pre-filled with **this constant**.
 
 The proxy finds the chunk's metadata rows through the array number. An
 "armed" variant, where the write `operator[]` gave the proxy the row addresses directly,
-was removed: its gain (~0.4% on `chunk2a_256` at 64 threads) did not justify
+was removed: its gain (~0.4% on `shrink_bench_zero_any_256` at 64 threads) did not justify
 the resynchronisation invariant it imposed on each reallocation of the rows.
 
-## 7. What Chunk2A does differently during a rechunk
+## 7. What `zero_any` does differently during a rechunk
 
 The general sequence is the one in [adaptive_rechunk.md](adaptive_rechunk.md) §4, with
 three specifics:
@@ -147,7 +147,7 @@ three specifics:
 
 ## 8. Results
 
-On `shrink_bench` (64 threads), dynamic Chunk2A, with all arrays handed to the
+On `shrink_bench` (64 threads), dynamic `zero_any`, with all arrays handed to the
 decider, ends at **6.0 GB**, against 7.3 GB for static 256 and 12.7 GB for static
 64, whose memory it has at the start. It is the variant that benefits the most from the dynamic
 geometry: its per-chunk metadata is the heaviest, and its chunks compressed to

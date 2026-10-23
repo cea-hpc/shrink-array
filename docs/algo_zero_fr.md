@@ -1,20 +1,20 @@
-# L'algorithme de zero::Array (Chunk, v1)
+# L'algorithme de zero::Array
 
-> English version: [algo_chunk.md](algo_chunk.md).
+> English version: [algo_zero.md](algo_zero.md).
 
-> État : fin septembre 2026. Ce document décrit ce que v1 fait **autrement** que Chunk2 ; la
+> État : fin septembre 2026. Ce document décrit ce que `zero` fait **autrement** que `zero_one_value` ; la
 > machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
-> opérations sur plages) est décrite dans [algo_chunk2_fr.md](algo_chunk2_fr.md), et la
+> opérations sur plages) est décrite dans [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), et la
 > géométrie dynamique dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md). En cas de
 > doute, c'est le code qui fait foi.
 
 ***
 
-## 1. Ce que v1 compresse
+## 1. Ce que `zero` compresse
 
-v1 est la plus simple des trois variantes : un chunk est **compressé à zéro** (`T{}`) ou
-**matérialisé**. Il n'y a pas de seconde valeur, ni par tableau (Chunk2), ni par chunk
-(Chunk2A).
+`zero` est la plus simple des trois variantes : un chunk est **compressé à zéro** (`T{}`) ou
+**matérialisé**. Il n'y a pas de seconde valeur, ni par tableau (`zero_one_value`), ni par chunk
+(`zero_any`).
 
 | état | `values` pointe vers | test |
 |---|---|---|
@@ -33,14 +33,14 @@ La bibliothèque : `chunk::chunk_zero` (elle définit `CHUNK_VARIANT_ZERO`). Cod
 
 L'objet chunk fait 16 octets (dans les builds OpenMP, où le compteur de zéros du mode
 séquentiel est un type vide, voir §4), plus un octet « déjà en liste de compression » et deux
-octets du *dirty bitset* (un bit, dans un mot de 64 bits complété à 128 octets). Sans seconde valeur, v1 n'a **aucune métadonnée de type ou de
+octets du *dirty bitset* (un bit, dans un mot de 64 bits complété à 128 octets). Sans seconde valeur, `zero` n'a **aucune métadonnée de type ou de
 valeur** par chunk : c'est la variante la plus économe en métadonnées, et celle dont la
 mémoire est le plus faite de **données matérialisées**. Sur `shrink_bench` à 64 threads,
 environ 38 Go de ses 40 Go sont des données.
 
 ## 3. Lecture et écriture
 
-La lecture est celle de Chunk2 (§5 de [algo_chunk2_fr.md](algo_chunk2_fr.md)) : une valeur,
+La lecture est celle de `zero_one_value` (§5 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md)) : une valeur,
 lue dans le tampon du chunk ou dans `cst_val1`, après la barrière de lecture.
 
 L'écriture passe par le proxy `Proxy<T>` :
@@ -100,10 +100,10 @@ septembre 2026 le tiennent juste :
 À 64 threads, le calcul tombe presque toujours sur le plancher : c'est lui qui fixe la
 fréquence des passes.
 
-## 7. Ce que v1 fait autrement pendant un rechunk
+## 7. Ce que `zero` fait autrement pendant un rechunk
 
 Le déroulé général est celui de [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §4. Deux
-particularités viennent du volume de données de v1 :
+particularités viennent du volume de données de `zero` :
 
 - **la reconstruction par tranches** (16 par défaut, `CHUNK_RECHUNK_SLICES`) : chaque tranche
   libère les anciens chunks qu'elle a recopiés, et entre deux tranches, les réserves de
@@ -116,15 +116,15 @@ particularités viennent du volume de données de v1 :
 
 ## 8. Résultats et limites
 
-Sur `shrink_bench` (64 threads), v1 dynamique finit à **40,3 Go**, comme le statique 256
+Sur `shrink_bench` (64 threads), `zero` dynamique finit à **40,3 Go**, comme le statique 256
 (40,2 Go), et 0,6 Go au-dessus du statique 1 024 (39,7 Go), la taille qu'il atteint. Deux
 raisons à ce gain faible :
 
 - ses métadonnées sont déjà faibles, et c'est surtout sur elles que le grossissement fait
   gagner ;
-- après son rechunk, v1 dynamique **ralentit** (1,5 à 2 fois par itération par rapport au
+- après son rechunk, `zero` dynamique **ralentit** (1,5 à 2 fois par itération par rapport au
   statique 1 024), pour une raison encore inconnue : un build dynamique démarré directement à
-  1 024 va aussi vite que le statique, et Chunk2 ne ralentit pas après ses rechunks.
+  1 024 va aussi vite que le statique, et `zero_one_value` ne ralentit pas après ses rechunks.
 
-Pour une charge comme celle du banc, un v1 **statique** à la bonne taille reste aujourd'hui le
+Pour une charge comme celle du banc, un `zero` **statique** à la bonne taille reste aujourd'hui le
 meilleur choix.
