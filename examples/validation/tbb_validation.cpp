@@ -72,11 +72,11 @@
 #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena
 
 #include "chunk/chunk_traits.h"        // forward decls + default IntType = int
-#include "chunk/zero_array.h"         // zero::Array
-#include "chunk/zero_one_value_array.h"        // zero_one_value::Array
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"         // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"              // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"           // pmp::*, CHUNK_PMP_* (THREAD_CAPACITY: the registry), get_thr_rank_fast
 #include "chunk/tbb_adaptor.h"         // shrink_array::tbb::parallel_for, phase_body
@@ -102,15 +102,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 

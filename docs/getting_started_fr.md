@@ -27,12 +27,12 @@ Trois variantes, choisies au moment de l'édition de liens :
 
 | variante | classe | un chunk est compressé quand il est uniforme à… |
 |---|---|---|
-| Chunk (v1) | `zero::Array<T>` | `T{}` (zéro) seulement |
-| Chunk2 | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
-| Chunk2A | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer |
+| `zero` | `zero::Array<T>` | `T{}` (zéro) seulement |
+| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
+| `zero_any` | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer |
 
-Chunk2A compresse le plus et c'est celle à essayer d'abord. Chunk2 a des métadonnées plus
-légères quand les données ont une seule valeur non nulle dominante, et Chunk (v1) est la plus
+`zero_any` compresse le plus et c'est celle à essayer d'abord. `zero_one_value` a des métadonnées plus
+légères quand les données ont une seule valeur non nulle dominante, et `zero` est la plus
 simple quand seuls les zéros comptent. [variantes_fr.md](variantes_fr.md) les compare sur un
 cas réel.
 
@@ -92,7 +92,7 @@ programme les compile comme la bibliothèque.
 
 | cible | variante | taille de chunk |
 |---|---|---|
-| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | v1, Chunk2, Chunk2A | la première de `CHUNK_STATIC_SIZES` (256) |
+| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | `zero`, `zero_one_value`, `zero_any` | la première de `CHUNK_STATIC_SIZES` (256) |
 | `chunk::chunk_zero_any_1024`, … | | cette taille, fixée à la compilation |
 | `chunk::chunk_zero_any_dyn`, … | | choisie à l'exécution, par tableau (modifiable par `rechunk_to()` ou par le décideur adaptatif) |
 | `chunk::chunk_vector` | aucune : les tableaux sont des `std::vector` | — |
@@ -298,7 +298,7 @@ compiler contre une bibliothèque sans OMPT ; son test tourne avec `CHUNK_REQUIR
 **Les points séquentiels.** Tout ce qui reconstruit le stockage d'un tableau s'appelle hors de
 toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la capacité,
 `clear()`, `assign()`, `swap()`, l'affectation, `shrink_to_fit()`, `compress()`,
-`rechunk_to()`, et, pour Chunk2, `set_second_value()`.
+`rechunk_to()`, et, pour `zero_one_value`, `set_second_value()`.
 
 **Les threads.** Les structures par thread sont dimensionnées une fois pour
 `max(omp_get_max_threads(), nombre de cœurs, 256)` threads (dans un build std, la taille
@@ -307,7 +307,7 @@ d'équipe -- `CHUNK_NUM_THREADS`, sinon `OMP_NUM_THREADS` -- tient lieu de
 un thread au-delà de la capacité arrête le programme avec un message.
 
 **À côté d'autres composants.** La bibliothèque garde son état par processus, pas par tableau :
-les registres de types d'éléments, les allocateurs, le registre des secondes valeurs de Chunk2A,
+les registres de types d'éléments, les allocateurs, le registre des secondes valeurs de `zero_any`,
 les structures par thread et leur capacité, les réglages du log, et la phase. Deux parties d'un
 programme qui l'utilisent sans se connaître -- votre code et une bibliothèque construite sur
 shrink-array, par exemple -- partagent tout cela. Ce que cela leur demande :
@@ -396,10 +396,10 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 - **Les types d'éléments** : tout type trivialement copiable, comparable par `==` et
   constructible par défaut (types arithmétiques, `bool`, `std::complex`, énumérations,
   `std::array` et agrégats de ceux-ci). Un type qui possède une ressource (`std::string`) est
-  refusé à la compilation. Chunk2 demande en plus un ordre sur la seconde valeur : une
+  refusé à la compilation. `zero_one_value` demande en plus un ordre sur la seconde valeur : une
   structure de doubles déclare `auto operator<=>(const T&) const = default;`.
-- **Chunk2 ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un
-  tableau Chunk2 ne compresse qu'à zéro.
+- **`zero_one_value` ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un
+  tableau `zero_one_value` ne compresse qu'à zéro.
 - **Mesurer la mémoire avec le bon outil.** `VmRSS` est en retard à plusieurs threads : voir
   [mesures_performance_fr.md](mesures_performance_fr.md).
 
@@ -411,5 +411,5 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 | choisir une variante pour ses données | [variantes_fr.md](variantes_fr.md), et `examples/variant_compare` |
 | laisser la taille des chunks s'adapter à l'exécution | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) (bibliothèques `_dyn`) |
 | toutes les variables de réglage et options de compilation | [variables_environnement_fr.md](variables_environnement_fr.md) |
-| le fonctionnement interne | [algo_chunk2_fr.md](algo_chunk2_fr.md), [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
+| le fonctionnement interne | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
 | un exemple plus complet : champs multi-matériaux, boucles écrites une fois pour les deux conteneurs | `examples/multi-mat` |

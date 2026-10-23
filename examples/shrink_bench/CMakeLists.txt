@@ -4,8 +4,8 @@
 #
 # NOTE: each executable links against its matching chunk variant target
 # (chunk_zero / chunk_zero_one_value / chunk_zero_any / chunk_vector). The variant target sets
-# CHUNK_VARIANT_ZERO / _V2 / _V2A as PUBLIC, so:
-#   - it's baked into libchunk_v<x> itself (fixing is_shrink=0 in
+# CHUNK_VARIANT_ZERO* as PUBLIC, so:
+#   - it's baked into libchunk_<variant> itself (fixing is_shrink=0 in
 #     AllTypeChunk.cpp / manage_ompt.cpp)
 #   - it propagates to the executable's own TUs
 
@@ -62,10 +62,10 @@ set(SHRINK_BENCH_HEADERS
 # ============================================================================
 # Multi-size executable generation.
 #
-# For each shrink variant (chunk/chunk2/chunk2a) and each mode (check/perf) we
+# For each shrink variant (zero/zero_one_value/zero_any) and each mode (check/perf) we
 # build one executable per declination:
-#   _64, _256, _1024  -> static libs chunk_v<x>_<size> (compile-time geometry)
-#   _dyn              -> dynamic lib chunk_v<x>_dyn (runtime geometry), with the
+#   _64, _256, _1024  -> static libs chunk_<variant>_<size> (compile-time geometry)
+#   _dyn              -> dynamic lib chunk_<variant>_dyn (runtime geometry), with the
 #                        runtime size baked via -DDYN_CHUNK_SIZE=<SHRINK_BENCH_DYN_SIZE>.
 # Naming: shrink_bench_<variant>_<mode>_<declination>, e.g.
 #   shrink_bench_zero_one_value_256, shrink_bench_zero_any_dyn. The check / perf mode is
@@ -240,7 +240,7 @@ endif()
 # No chunk2bits targets: every shrink_bench_zero_one_value_* run carries tab_bool
 # (zero_one_value::Array<bool>, one byte per bool) AND its twin tab_bool_bits
 # (ArrayChunkBits, 8 per byte) on the same workload -- see BenchBoolBitsArray
-# (bench_array.h). The chunk / chunk2a builds give the twin their own
+# (bench_array.h). The zero / zero_any builds give the twin their own
 # Array<bool>.
 
 # --- vector: size-agnostic, and the ONE place that keeps two targets ---
@@ -279,7 +279,7 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   target_compile_options(shrink_bench_vector_check PRIVATE -Wno-pass-failed)
 endif()
 
-# --- std_alloc (optional): mirror the declination scheme on the v2a path ---
+# --- std_alloc (optional): mirror the declination scheme on the zero_any path ---
 if (CHUNK_STD_ALLOC AND "zero_any" IN_LIST CHUNK_VARIANTS)
   foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
     set(_tgt shrink_bench_std_alloc_${_sz})

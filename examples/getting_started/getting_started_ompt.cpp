@@ -16,7 +16,7 @@
 
 // Parallel multi-threaded writes to a compressed array, written as for a
 // std::vector: plain `#pragma omp parallel for` loops, no parallel_phase().
-// The same function fills a std::vector<double> and an zero_any::Array<double>
+// The same function fills a std::vector<double> and a zero_any::Array<double>
 // from many threads at once; exit status 0 when the two read back the same,
 // element by element.
 //
@@ -29,7 +29,7 @@
 #include <utility> // std::as_const
 #include <vector>  // std::vector, the reference
 
-#include "chunk/zero_any_array.h"  // shrink_array::zero_any::Array
+#include "chunk/zero_any_array.h" // shrink_array::zero_any::Array
 #include "chunk/config.h"         // build_config::has_ompt
 #include "chunk/internal/print.h" // shrink_array::println
 

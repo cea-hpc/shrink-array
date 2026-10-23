@@ -14,8 +14,8 @@ class ShrinkArray(CMakePackage):
 
     Installs one library per variant and chunk size, found with
     find_package(chunk): chunk::chunk_zero_<S>, chunk::chunk_zero_one_value_<S>,
-    chunk::chunk_zero_any_<S> (static S), chunk::chunk_v<x>_dyn (runtime S),
-    chunk::chunk_v<x> (the first static size)."""
+    chunk::chunk_zero_any_<S> (static S), chunk::chunk_<variant>_dyn (runtime S),
+    chunk::chunk_<variant> (the first static size)."""
 
     homepage = "https://github.com/cea-hpc/shrink-array"
     git = "https://github.com/cea-hpc/shrink-array.git"
@@ -56,12 +56,12 @@ class ShrinkArray(CMakePackage):
         multi=True,
         description="Static chunk sizes, each a power of two or a multiple of 64: one library per variant "
         "and size (chunk::chunk_zero_any_256, ...); "
-        "the smallest is the one of the bare chunk::chunk_v<x> targets",
+        "the smallest is the one of the bare chunk::chunk_<variant> targets",
     )
     variant(
         "dyn",
         default=True,
-        description="Also a runtime-size library per variant (chunk::chunk_v<x>_dyn): adaptive re-chunk",
+        description="Also a runtime-size library per variant (chunk::chunk_<variant>_dyn): adaptive re-chunk",
     )
     variant(
         "fast_alloc",
@@ -72,7 +72,7 @@ class ShrinkArray(CMakePackage):
     variant(
         "second_value_indexed",
         default=False,
-        description="Chunk2A: second values as 4-byte identifiers (less memory, about +3% write time)",
+        description="zero_any: second values as 4-byte identifiers (less memory, about +3% write time)",
     )
     variant(
         "checks",

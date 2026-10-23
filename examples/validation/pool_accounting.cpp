@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Pool-accounting harness. Variant-agnostic: tests chunk / chunk2 / chunk2a
-// depending on the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the
+// Pool-accounting harness. Variant-agnostic: tests zero / zero_one_value / zero_any
+// depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like the
 // other harnesses here.
 // ============================================================================
 //
@@ -29,8 +29,8 @@
 //      count at creation and comes back down by the same amount at clear().
 //      That count feeds the compression threshold
 //      (somme_chunk_create / (factor_div * threads), floored), so a count that
-//      only ever grows -- v1's did, its clear_core() never decremented -- makes
-//      the threshold climb with the program's history (390 -> ~42 000 on a v1
+//      only ever grows -- zero's did, its clear_core() never decremented -- makes
+//      the threshold climb with the program's history (390 -> ~42 000 on a zero
 //      dyn run) until compression all but stops. After every array is gone
 //      the recomputed threshold must be back at the floor.
 //   2. The buffers a cleared array held are parked for reuse, in exact number
@@ -51,18 +51,18 @@
 #include <type_traits> // std::conditional_t
 
 #include "chunk/chunk_traits.h"               // forward decls + default IntType = int
-#include "chunk/zero_array.h"                // zero::Array
-#include "chunk/zero_one_value_array.h"               // zero_one_value::Array
-#include "chunk/zero_any_array.h"              // zero_any::Array
+#include "chunk/zero_array.h"                 // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"                 // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
 #include "chunk/config.h"                     // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS, pmp::current_team
 #include "chunk/manage_ompt.h"                // parallel_phase
-#include "chunk/zero_chunk_def.h"                  // ChunkDef
-#include "chunk/zero_one_value_chunk_def.h"                 // Chunk2Def
-#include "chunk/zero_any_chunk_def.h"                // Chunk2ADef
+#include "chunk/zero_chunk_def.h"             // ChunkDef
+#include "chunk/zero_one_value_chunk_def.h"   // zero_one_value::ChunkDef
+#include "chunk/zero_any_chunk_def.h"         // zero_any::ChunkDef
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 #include "chunk/internal/print.h"             // shrink_array::println
 
@@ -80,23 +80,24 @@ using Array =
                        zero_any::Array<T>,
                        std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
-using VariantDef = std::conditional_t<chunk_config::use_zero_any,
-                                      zero_any::ChunkDef,
-                                      std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::ChunkDef, zero::ChunkDef>>;
+using VariantDef =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::ChunkDef,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 

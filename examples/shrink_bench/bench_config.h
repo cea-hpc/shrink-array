@@ -89,7 +89,7 @@ inline constexpr bool have_bzip2 = false;
 // NOT mirrored here, on purpose -- chunk/config.h already exposes them, and a
 // second spelling would be one more thing to keep in step:
 //   SHRINK_ARRAY    -> chunk_config::is_shrink_enabled
-//   CHUNK_VARIANT_ZERO/_V2/_V2A -> chunk_config::use_zero / use_zero_one_value / use_zero_any
+//   CHUNK_VARIANT_ZERO* -> chunk_config::use_zero / use_zero_one_value / use_zero_any
 //   CHUNK_OPT_RING_LOG_DEBUG  -> chunk_config::ring_log_debug
 //   CHUNK_DYNAMIC             -> build_config::chunk_dynamic
 //   CHUNK_OPT_OPENMP          -> build_config::use_openmp (and CHUNK_PMP_MAX_THREADS)
@@ -351,7 +351,7 @@ inline Int get_iter_stop(Int iter_max)
     {
         return 33;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         return iter_max;
     }
@@ -367,7 +367,7 @@ inline Int get_freq_raz(Int iter_max)
     {
         return 4;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         Int ret = iter_max / 10;
         if (ret == 0)
@@ -396,7 +396,7 @@ inline Int get_freq_conso_mem()
     {
         return 1;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         return 10;
     }
@@ -410,7 +410,7 @@ inline bool have_stats()
     {
         return true;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         return false;
     }

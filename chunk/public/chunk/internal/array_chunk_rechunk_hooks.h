@@ -18,21 +18,21 @@
 
 /**
  * @file array_chunk_rechunk_hooks.h
- * @brief The re-chunk hooks of zero::Array (v1) and zero_any::Array — a
+ * @brief The re-chunk hooks of zero::Array and zero_any::Array — a
  *        CHUNK_DYNAMIC-only concern, isolated in its own mixin so they vanish
  *        from a static-geometry build.
  *
  * @details RechunkSupport (array_chunk_rechunk.h) carries the shared re-chunk
  *          algorithm and calls back into the concrete array through the
- *          rechunk_* hooks; v1 and 2A provide three of them and inherit the
+ *          rechunk_* hooks; zero and zero_any provide three of them and inherit the
  *          base defaults for the other three. Those three only ever run under
  *          RechunkSupport<Derived, true>::rechunk_to(), which does not exist in
  *          a static-geometry build.
  *
- *          v1 and 2A share them: both keep num_tab as a member, in step with
+ *          zero and zero_any share them: both keep num_tab as a member, in step with
  *          the registry, and queue their compression candidates in the
  *          manager's per-rank lists. They differ only in which lists, the
- *          compress() call of a candidate, where num_tab is read, and v1's
+ *          compress() call of a candidate, where num_tab is read, and zero's
  *          flush tripwire (see rechunk_drop_candidates()).
  *
  *          RechunkHooks<Derived, chunk_dynamic> splits them the same way as the
@@ -40,7 +40,7 @@
  *          bodies, the static one keeps the signatures as no-ops so the
  *          arrays' using-declarations stay valid in both modes.
  *
- * @note zero_one_value::Array keeps its own hooks (RechunkHooks2): a per-value candidate
+ * @note zero_one_value::Array keeps its own hooks (zero_one_value::RechunkHooks): a per-value candidate
  *       map, a second value to carry over, and an identity that must NOT be
  *       swapped.
  *
@@ -48,7 +48,7 @@
  * @see array_chunk_rechunk_hooks_inline.h for the bodies
  */
 
-#include <type_traits> // std::is_same_v (v1 or 2A)
+#include <type_traits> // std::is_same_v (zero or zero_any)
 
 #include "chunk/config.h"       // build_config::chunk_dynamic
 #include "chunk/chunk_traits.h" // ArrayChunkTraits
@@ -69,7 +69,7 @@ class RechunkHooks;
 
 // ── CHUNK_DYNAMIC build: the real hooks ──────────────────────────────────────
 /**
- * @brief Dynamic specialisation: the three hooks v1 and 2A actually override.
+ * @brief Dynamic specialisation: the three hooks zero and zero_any actually override.
  * @copydetails RechunkHooks
  */
 template <typename Derived>
@@ -81,7 +81,7 @@ class RechunkHooks<Derived, true>
     using ProxyType   = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
     using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the candidate store.
 
-    /// @brief zero_any::Array (otherwise zero::Array, v1): selects the candidate lists and the compress() call.
+    /// @brief zero_any::Array (otherwise zero::Array): selects the candidate lists and the compress() call.
     static constexpr bool is_chunk2a = std::is_same_v<typename Traits::ChunkType, zero_any::Chunk<value_type>>;
 
     /**

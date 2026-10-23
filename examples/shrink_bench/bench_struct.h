@@ -48,7 +48,7 @@
 #include <ostream> // std::ostream
 
 /// Three doubles. The defaulted <=> gives the == every element type needs and
-/// the < chunk2 asks of a floating-point aggregate (value_less.h).
+/// the < zero_one_value asks of a floating-point aggregate (value_less.h).
 struct Point3
 {
     auto operator<=>(const Point3&) const = default;

@@ -35,7 +35,7 @@ class Proxy;
 } // namespace zero
 
 /// @brief The proxy's num_tab: its armed value where the proxy keeps one
-///        (get_num_tab_cached, v1), get_num_tab(array_ptr) where the proxy
+///        (get_num_tab_cached, zero), get_num_tab(array_ptr) where the proxy
 ///        takes the array, get_num_tab() otherwise.
 template <typename ProxyT>
 constexpr int get_num_tab_helper(const ProxyT& proxy, const void* array_ptr) noexcept
@@ -172,7 +172,7 @@ struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, zero::P
     Op operation; ///< functor implementing the operation
 };
 
-/// @brief Context of a deferred Proxy2 / Proxy2A write without operation.
+/// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy write without operation.
 template <typename T, typename ChunkT, typename ProxyT>
 struct ArithmeticContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {
@@ -184,7 +184,7 @@ struct ArithmeticContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
     ArithmeticContext(const ProxyT& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
 };
 
-/// @brief Context of a deferred Proxy2 / Proxy2A compound operation: the
+/// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy compound operation: the
 ///        operand and the operation.
 template <typename T, typename Op, typename ChunkT, typename ProxyT>
 struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
@@ -205,7 +205,7 @@ struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyT, Chun
     Op operation; ///< functor implementing the operation
 };
 
-/// @brief Context of a deferred Proxy2 / Proxy2A assignment: the assigned value.
+/// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy assignment: the assigned value.
 template <typename T, typename U, typename ChunkT, typename ProxyT>
 struct ArithmeticAffectationContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {

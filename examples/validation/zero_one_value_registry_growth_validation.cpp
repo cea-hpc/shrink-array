@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Chunk2 second-value registry growth harness. Chunk2 only (zero_one_value::Array<T>),
+// zero_one_value second-value registry growth harness. zero_one_value only (zero_one_value::Array<T>),
 // default static size; serial and OpenMP builds.
 // ============================================================================
 //
@@ -25,7 +25,7 @@
 // THE DEFECT
 //
 //   Every distinct value given to zero_one_value::Array::set_second_value() gets a
-//   constant array in Chunk2<T>::tab_m_ptr_cst_val2, and a chunk compressed to
+//   constant array in zero_one_value::Chunk<T>::tab_m_ptr_cst_val2, and a chunk compressed to
 //   it stores that array's address as its `values`. The table was a
 //   std::vector<std::array<T, cst_buffer_size>> grown by resize(): past its
 //   capacity the vector MOVED every array and freed the old storage. Every
@@ -52,14 +52,14 @@
 #include <memory> // std::unique_ptr, std::make_unique
 #include <vector> // std::vector
 
-#include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/zero_one_value_array.h"   // zero_one_value::Array
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"      // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"         // build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -141,7 +141,7 @@ long check_all(const char* what, const Arr& arr, double v)
         {
             if (bad < 4)
             {
-                println("[chunk2/registry] FAIL {}[{}] = {:g}, expected {:g}", what, i, got, v);
+                println("[zero_one_value/registry] FAIL {}[{}] = {:g}, expected {:g}", what, i, got, v);
             }
             ++bad;
         }
@@ -168,8 +168,8 @@ int run(int /*argc*/, char** /*argv*/)
         fill_and_compress(a, 1.0);
         if (const int m = materialised(a); m != 0)
         {
-            println("[chunk2/registry] FAIL premise: {} of {} chunks of `a` still materialised after the pass", m,
-                    n_chunks);
+            println("[zero_one_value/registry] FAIL premise: {} of {} chunks of `a` still materialised after the pass",
+                    m, n_chunks);
             ++fails;
         }
 
@@ -190,14 +190,14 @@ int run(int /*argc*/, char** /*argv*/)
         }
         if (bad)
         {
-            println("[chunk2/registry] FAIL {} wrong read(s) after the registry grew -- chunks pointing at "
+            println("[zero_one_value/registry] FAIL {} wrong read(s) after the registry grew -- chunks pointing at "
                     "a constant array that moved",
                     bad);
             ++fails;
         }
         else
         {
-            println("[chunk2/registry] OK: {} arrays, {} second values, every element reads back", n_others + 1,
+            println("[zero_one_value/registry] OK: {} arrays, {} second values, every element reads back", n_others + 1,
                     n_others + 1);
         }
 
@@ -209,19 +209,20 @@ int run(int /*argc*/, char** /*argv*/)
         const long bad2 = check_all("a (recompressed)", a, 1.0);
         if (m2 != 0 || bad2 != 0)
         {
-            println("[chunk2/registry] FAIL after recompression: {} chunk(s) materialised, {} wrong read(s)", m2, bad2);
+            println("[zero_one_value/registry] FAIL after recompression: {} chunk(s) materialised, {} wrong read(s)",
+                    m2, bad2);
             ++fails;
         }
         else
         {
-            println("[chunk2/registry] OK: `a` recompressed to its second value after the growth");
+            println("[zero_one_value/registry] OK: `a` recompressed to its second value after the growth");
         }
     }
 
     release_chunk_pools();
     destroy_block_chunk();
 
-    println("\n[chunk2] {}", fails ? "=== REGISTRY GROWTH FAILED ===" : "=== REGISTRY GROWTH OK ===");
+    println("\n[zero_one_value] {}", fails ? "=== REGISTRY GROWTH FAILED ===" : "=== REGISTRY GROWTH OK ===");
     return fails ? 1 : 0;
 }
 

@@ -1030,7 +1030,7 @@ void for_each_tile(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {
  *          written in one go: fill_range() when it comes out uniform, else
  *          copy_range() -- the serial range ops outside a parallel region, the
  *          _mt ones inside (one write session per chunk, the element path's
- *          guarantees). Outside a region, on Chunk2A, a whole chunk that comes
+ *          guarantees). Outside a region, on zero_any::Chunk, a whole chunk that comes
  *          out uniform takes its constant with no buffer (fill_range(), or
  *          copy_range() for a uniform chunk of a mixed tile). Otherwise a compressed
  *          chunk that changes is materialised for the write and queued: the end
@@ -1712,7 +1712,7 @@ void fill_tiles(const View&                        f,
  *          whole chunks).
  * @param lo first multi-index of the box, inclusive
  * @param hi last multi-index of the box, exclusive
- * @warning A fill is a write. Outside a parallel region on Chunk2A, a covered
+ * @warning A fill is a write. Outside a parallel region on zero_any::Chunk, a covered
  *          chunk takes the value as its constant, with no buffer (fill_range()).
  *          Inside a region, a compressed chunk that changes is materialised for
  *          the write and compressed again by the end of the phase or the next

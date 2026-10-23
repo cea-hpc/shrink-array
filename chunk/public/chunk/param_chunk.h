@@ -317,7 +317,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @param second_value the additional value to store as a constant
      * @warning Not implemented: deleted, so a use fails at compile time. A
      *          placeholder for the second-constant support that zero_one_value::Array
-     *          offers per array (zero_one_value::Array::set_second_value) and chunk2A per
+     *          offers per array (zero_one_value::Array::set_second_value) and zero_any per
      *          chunk.
      */
     template <typename T>
@@ -326,8 +326,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     /**
      * @brief Print the instrumentation report accumulated during the run.
      *
-     * @details Reduces the per-thread counters of each variant (chunk, chunk2,
-     *          chunk2a) and prints one block per variant, preceded by a legend;
+     * @details Reduces the per-thread counters of each variant (zero, zero_one_value,
+     *          zero_any) and prints one block per variant, preceded by a legend;
      *          variants that saw no activity are skipped. Reports allocations and
      *          reuse, read/write counts with the share of reads served straight
      *          from the constant (what the compression actually saves), compression

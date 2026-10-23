@@ -23,8 +23,8 @@
  *        (make_block_compression) -- isolated in their own mixins so they
  *        disappear entirely from a build that has neither.
  *
- * @details Same split as ParallelSupport does for zero::Array (v1):
- *          ParallelSupport2<Derived, threaded> carries
+ * @details Same split as ParallelSupport does for zero::Array:
+ *          zero_one_value::ParallelSupport<Derived, threaded> carries
  *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
  *          three variants), a no-op in the serial specialisation.
  *
@@ -34,7 +34,7 @@
  *          manual -- compression).
  *
  * @see zero_one_value_array_parallel_inline.h for the body
- * @see zero_array_parallel.h for v1's version of the same split
+ * @see zero_array_parallel.h for zero's version of the same split
  */
 
 #include "chunk/config.h"       // build_config::threaded, chunk_config::use_fast_block_compression
@@ -60,7 +60,7 @@ struct ParallelSupport;
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
 /**
  * @brief OpenMP specialisation: the deferred-op flush.
- * @copydetails ParallelSupport2
+ * @copydetails zero_one_value::ParallelSupport
  */
 template <typename Derived>
 struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
@@ -84,7 +84,7 @@ struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Deri
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *
- * @details Not virtual: the only call site (ArrayChunk2Base::resize_common)
+ * @details Not virtual: the only call site (SecondValueArrayBase::resize_common)
  *          goes through CRTP, and no type-erased pass drives live arrays.
  */
 template <typename Derived, bool Enabled = chunk_config::use_fast_block_compression>
@@ -93,7 +93,7 @@ class FastBlockSupport;
 // ── Fast-block build: the real pass ──────────────────────────────────────────
 /**
  * @brief Fast-block specialisation: the deferred-candidate compression pass.
- * @copydetails FastBlockSupport2
+ * @copydetails zero_one_value::FastBlockSupport
  */
 template <typename Derived>
 class FastBlockSupport<Derived, true>
@@ -114,7 +114,7 @@ class FastBlockSupport<Derived, true>
 /**
  * @brief Inert specialisation: nothing queues block-compression candidates.
  *
- * @details Kept (rather than removed) so that ArrayChunk2Base::resize_common,
+ * @details Kept (rather than removed) so that SecondValueArrayBase::resize_common,
  *          which guards the call with the same condition, still names a
  *          declared member in every mode.
  */

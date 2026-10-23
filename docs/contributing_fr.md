@@ -3,7 +3,7 @@
 > English version: [contributing.md](contributing.md).
 
 > Octobre 2026. Comment construire, tester, mesurer et documenter une modification. Lire d'abord
-> [algo_chunk2_fr.md](algo_chunk2_fr.md) : l'essentiel de la bibliothèque est la mécanique qu'il décrit.
+> [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) : l'essentiel de la bibliothèque est la mécanique qu'il décrit.
 
 ***
 
@@ -17,7 +17,7 @@ cmake --build build
 ```
 
 Un build Debug construit une seule taille statique, 256, au lieu de deux (`CHUNK_STATIC_SIZES=auto`), ce qui
-économise une bonne part du temps de build ; `-DCHUNK_VARIANTS=chunk2a` construit une seule variante au lieu de trois, avec ses seuls exemples et
+économise une bonne part du temps de build ; `-DCHUNK_VARIANTS=zero_any` construit une seule variante au lieu de trois, avec ses seuls exemples et
 harnais. Un build Debug, `-DCHECK_OPTIM=ON` ou un sanitizer construit aussi les harnais de validation
 (`examples/validation`).
 
@@ -95,7 +95,7 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   `accessor`, `constant_boundary`) : une vue écrite pour `std::mdspan` se lit de même avec eux
   (`STD_STYLE_API` dans `scripts/check_naming.py`) ; leurs aides `detail::` sont en PascalCase.
   Dans un nom en snake_case, la
-  variante s'écrit `chunk2a` ; les noms de fichiers (`zero_any_array.h`) restent tels quels. Les
+  variante s'écrit `zero_any`, comme dans les noms de fichiers (`zero_any_array.h`). Les
   globales prennent le préfixe `g_` ; aucun nom ne commence par `__` (réservé). Un nom public qui
   change garde son ancienne graphie en alias `[[deprecated]]` jusqu'à la 1.0. `check_naming`
   vérifie ce qu'une ligne montre ; le `readability-identifier-naming` de clang-tidy vérifie le

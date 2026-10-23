@@ -88,7 +88,7 @@ using Array = ActiveArray<T>;
 // exists on the three variants (zero::Array, zero_one_value::Array, zero_any::Array) and had
 // no caller. The window is PARTIAL (an eighth of the array, from its first
 // quarter): the chunks around it must stay compressed, or preallocating would
-// prove nothing. bool goes through its own materialiser on Chunk2 / Chunk2A.
+// prove nothing. bool goes through its own materialiser on zero_one_value / zero_any.
 
 /// @brief One element type: preallocate the window, check which chunks are
 ///        materialised, run the loop over the window, read everything back
@@ -207,9 +207,9 @@ int main(int argc, char* argv[])
     // the library -- it depends on the variant, the thread count and how much
     // the workload allocates:
     //
-    //   chunk2a, 64 threads, --divisor 5:  5232 MB -> 2765 MB capped at 1 arena,
+    //   zero_any, 64 threads, --divisor 5: 5232 MB -> 2765 MB capped at 1 arena,
     //                                      no measurable time cost.
-    //   chunk v1 dyn, 64 threads:          4.44s / 51501 MB at glibc's default
+    //   zero dyn, 64 threads:              4.44s / 51501 MB at glibc's default
     //                                     19.63s / 51426 MB capped at 4
     //                                     17.87s / 51565 MB capped at 16
     //                                      4.36s / 51539 MB capped at 64
@@ -396,15 +396,15 @@ int main(int argc, char* argv[])
 
     if constexpr (chunk_config::use_zero)
     {
-        std::println("{}{}MODE: {}CHUNK (Single Value)", tc.bold, tc.magenta, tc.reset);
+        std::println("{}{}MODE: {}zero (Single Value)", tc.bold, tc.magenta, tc.reset);
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        std::println("{}{}MODE: {}CHUNK2 (Dual Value)", tc.bold, tc.magenta, tc.reset);
+        std::println("{}{}MODE: {}zero_one_value (Dual Value)", tc.bold, tc.magenta, tc.reset);
     }
     else if constexpr (chunk_config::use_zero_any)
     {
-        std::println("{}{}MODE: {}CHUNK2A (Advanced Dual Value)", tc.bold, tc.magenta, tc.reset);
+        std::println("{}{}MODE: {}zero_any (Advanced Dual Value)", tc.bold, tc.magenta, tc.reset);
     }
     else
     {
@@ -514,30 +514,30 @@ int main(int argc, char* argv[])
 
     if constexpr (chunk_config::use_zero_any)
     {
-        print_chunk_size.operator()<zero_any::Chunk>("CHUNK2A");
+        print_chunk_size.operator()<zero_any::Chunk>("zero_any");
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        print_chunk_size.operator()<zero_one_value::Chunk>("CHUNK2");
+        print_chunk_size.operator()<zero_one_value::Chunk>("zero_one_value");
     }
     else if constexpr (chunk_config::use_zero)
     {
-        print_chunk_size.operator()<zero::Chunk>("CHUNK");
+        print_chunk_size.operator()<zero::Chunk>("zero");
     }
 
     // Array<bool> in a shrink build, std::vector<short> in the baseline
     // (bench_array.h says why): one alias, where four declarations under
-    // #if defined CHUNK_VARIANT_ZERO / _V2 / _V2A stood.
+    // #if defined CHUNK_VARIANT_ZERO* stood.
     BenchBoolArray tab_bool(sz);
     // tab_bool's twin, written with the same values at the same places:
-    // ArrayChunkBits (8 bools per byte) in a chunk2 build, tab_bool's own type
+    // ArrayChunkBits (8 bools per byte) in a zero_one_value build, tab_bool's own type
     // elsewhere (BenchBoolBitsArray). Compare the two in the stats, the
     // chunk filling rates and the pools of a single run.
     BenchBoolBitsArray tab_bool_bits(sz);
 
     // Large and mostly NOT constant: random masks and scattered flags between
     // whole constant segments (bench_phase_mask.cpp). ArrayChunkBits in a
-    // chunk2 build, std::vector<bool> in the baseline (BenchMaskArray).
+    // zero_one_value build, std::vector<bool> in the baseline (BenchMaskArray).
     // Size 1 under --no_mask: its phases are skipped (BenchArrays::with_mask).
     // mask_scale * sz (--mask_scale, default 1/32): computed in 64 bits and
     // capped at the largest whole number of 1024-element blocks the build's Int
@@ -709,7 +709,7 @@ int main(int argc, char* argv[])
         cycle_alea = dist1(rng0);
     }
 
-    // ── Chunk-size advisor (STEP 0: observation only, dyn+2A builds) ────────
+    // ── Chunk-size advisor (STEP 0: observation only, dyn+zero_any builds) ──
     // Every CHUNK_ADVISOR_PERIOD iterations (env, default 500, 0 = disabled),
     // estimate each representative array's memory across candidate chunk
     // sizes and print the table + the analysis cost. Runs at this SERIAL
@@ -761,7 +761,7 @@ int main(int argc, char* argv[])
             }
             // Every other array too, advised by default: a dynamic run then
             // starts like the static S=64 build and ends below the static S=256
-            // one (chunk2a, 64 threads: 6.57 GB against 7.26 GB; with only the
+            // one (zero_any, 64 threads: 6.57 GB against 7.26 GB; with only the
             // five arrays above advised, the other ten stay at S=64, ~12.5 GB).
             // SHRINK_BENCH_ADVISE_ALL=0 advises only the five, for runs that
             // must compare with earlier campaigns. tab_bool and tab_bool_bits
@@ -788,7 +788,7 @@ int main(int argc, char* argv[])
                     rechunk_decider.consider<Cell>(tab_cell, tick, iter, "tab_cell");
                 }
             }
-            // tab_mask: an ArrayChunkBits in a chunk2 build, whose advisor
+            // tab_mask: an ArrayChunkBits in a zero_one_value build, whose advisor
             // knows the packed layout (the other variants' Array<bool> is not
             // what this array is for).
             if constexpr (chunk_config::use_zero_one_value)
@@ -803,15 +803,15 @@ int main(int argc, char* argv[])
                 if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
                 {
                     // STEP B — cst2 GC mark report (read-only) : zero_any::Array-only API
-                    // (per-chunk cst_val2 pointer registry has no equivalent on CHUNK /
-                    // CHUNK2, which have no per-chunk GC-able registry to report on).
+                    // (per-chunk cst_val2 pointer registry has no equivalent on zero /
+                    // zero_one_value, which have no per-chunk GC-able registry to report on).
                     // %ld + a cast: k_iter is Int, which is `long` in the int64
                     // build and `int` otherwise.
                     std::fprintf(stderr, "[cst2-gc @ iter %ld]\n", static_cast<long>(k_iter));
                     // Spelled out rather than Array<T>: the enclosing
                     // `if constexpr` is in a plain lambda, so its discarded
                     // branch is still checked, and Array<T> is zero::Array<T> --
-                    // which has no gc_mark_report -- in a v1/v2 build. `Int`
+                    // which has no gc_mark_report -- in a zero/zero_one_value build. `Int`
                     // is what matters here: zero_any::Array<double> would take the
                     // default IndType (int), a DIFFERENT instantiation from the
                     // one the bench fills in an int64 build, and the report would
@@ -823,7 +823,7 @@ int main(int argc, char* argv[])
             }
         }
     };
-    // CHUNK_CST2_RECLAIM=N: every N iterations, free the Chunk2A second values
+    // CHUNK_CST2_RECLAIM=N: every N iterations, free the zero_any second values
     // no chunk uses any more, for every element type of the bench
     // (reclaim_second_values() covers all the arrays of a type, whatever their
     // index type). Static builds too, unlike the advisor. 0 or unset: never.
@@ -1030,7 +1030,7 @@ int main(int argc, char* argv[])
             // variable). An IDE inspection already erased them once, silently
             // breaking that variant.
             // Constant fills, one per outcome on a chunked array: the second
-            // value (a fully covered chunk goes constant outright on chunk2a),
+            // value (a fully covered chunk goes constant outright on zero_any),
             // the first value (its buffer is released), a plain value
             // (materialised, then raw-stored), an Int and a bool (per-element
             // path: bool keeps its state in the proxy).
@@ -1064,7 +1064,7 @@ int main(int argc, char* argv[])
         //     arrays, every constant outcome plus a plain value alternating
         //     between blocks. Larger than (c) -- interval/2 elements, from
         //     start0/3, unaligned -- since it is parallel and ~8x cheaper per
-        //     element than operator[] on Chunk2A. Same writes in the
+        //     element than operator[] on zero_any. Same writes in the
         //     std::vector build (vector_range_ops.h), so the check builds
         //     compare them like any other.
         if (k % 5 == 1)
@@ -1155,8 +1155,8 @@ int main(int argc, char* argv[])
             }
 
 
-            // Chunk and Chunk2 always; Chunk2A only with fast block
-            // compression (normally useless for 2 and 2A, whose writes
+            // zero and zero_one_value always; zero_any only with fast block
+            // compression (normally useless for zero_one_value and zero_any, whose writes
             // compress as they go).
             // Periodic, plus the last iteration so no end-of-run miss escapes.
             // A persisting miss stays visible at the next audit: a
@@ -1216,7 +1216,7 @@ int main(int argc, char* argv[])
     if constexpr (has_advisor)
     {
         // Full re-chunk report: the advisor/decider runs in every dynamic-chunked
-        // build (CHUNK_VARIANT_ZERO / _V2 / _V2A), so rechunk_decider (and its per-event
+        // build (CHUNK_VARIANT_ZERO*), so rechunk_decider (and its per-event
         // log) exists here for all of them.
         std::print("{}", tc.bold);
         rechunk_decider.print_rechunk_log(stdout);

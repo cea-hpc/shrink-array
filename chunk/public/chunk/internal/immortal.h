@@ -21,7 +21,7 @@
 // run, and never destroyed.
 //
 // Why. A static data member of a class template (ManagerChunk<..., T>::...,
-// Proxy2A<T>::..., ChunkBase<T, ...>::...) has UNORDERED dynamic
+// zero_any::Proxy<T>::..., ChunkBase<T, ...>::...) has UNORDERED dynamic
 // initialisation, and is destroyed at exit in the reverse order of the end of
 // its initialisation. A global array is built during static initialisation and
 // destroyed after main returns: with plain statics it can reach a member not yet

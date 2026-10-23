@@ -27,7 +27,7 @@
 //     uniform at another value, varied -- leaves the view equal to the
 //     reference everywhere (inside the box and out); a box of whole tiles
 //     copied at first_value leaves its tiles compressed (every variant), at
-//     another value too on Chunk2A;
+//     another value too on zero_any::Chunk;
 //   - parallel: both, tile by tile (tiled view) or row slice by row slice
 //     (row-major view), from every thread of a phase;
 //   - team (copy_box_out_mt / copy_box_in_mt, called by every thread): every
@@ -48,16 +48,16 @@
 #include <utility>     // std::pair (submdspan), std::as_const
 #include <vector>      // std::vector (the buffers, the reference, the deals)
 
-#include "chunk/zero_array.h"     // zero::Array
-#include "chunk/zero_one_value_array.h"    // zero_one_value::Array
-#include "chunk/zero_any_array.h"   // zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // chunk_config::use_zero_one_value*
-#include "chunk/internal/print.h"  // shrink_array::println
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/mdspan_tile_ops.h" // md::copy_box_out(_mt), md::copy_box_in(_mt), SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/PMP_CHUNK.h"       // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*
+#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/manage_ompt.h"          // parallel_phase
+#include "chunk/mdspan_tile_ops.h"      // md::copy_box_out(_mt), md::copy_box_in(_mt), SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 
 using namespace shrink_array;
 
@@ -113,7 +113,7 @@ long box_size(const Box& lo, const Box& hi)
 }
 
 // The field of cell() written in a phase -- the end-of-phase pass then
-// compresses its uniform tiles (0 on every variant, 3.0 on Chunk2A) -- and the
+// compresses its uniform tiles (0 on every variant, 3.0 on zero_any::Chunk) -- and the
 // reference.
 template <typename View>
 void fill_from_cells(const View& f, std::vector<double>& ref)
@@ -243,7 +243,7 @@ void row_major_serial()
 }
 
 // A box of whole tiles copied in uniform: its tiles hold no buffer after --
-// at first_value on every variant, at another value on Chunk2A.
+// at first_value on every variant, at another value on zero_any::Chunk.
 void compression()
 {
     const long S    = static_cast<long>(Array<double>(1).chunk_size());

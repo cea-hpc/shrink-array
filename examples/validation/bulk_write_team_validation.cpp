@@ -40,11 +40,11 @@
 #include <vector>       // std::vector
 
 #include "chunk/chunk_traits.h"       // forward decls + default IntType = int
-#include "chunk/zero_array.h"        // zero::Array
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
-#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/zero_array.h"         // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"         // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"             // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // parallel_phase
@@ -62,7 +62,7 @@ namespace
 {
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "bulk_write_team_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
+              "bulk_write_team_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
@@ -74,15 +74,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -224,7 +224,7 @@ int run_type(const char* type, long n)
     // of the build's backend, the std backend's too, where an OpenMP pragma is
     // ignored): creating, resizing or destroying arrays from several threads
     // at once is outside the library's contract -- create_common() takes no
-    // lock and the Chunk2A registry (PointerMapChunk2A) is not thread-safe
+    // lock and the zero_any registry (zero_any::PointerMap) is not thread-safe
     // (see region_storage_validation).
     int        region_fails = 0;
     std::mutex one_at_a_time;

@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// const_iterator harness. Variant-agnostic: chunk / chunk2 / chunk2a follow the
-// compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the other harnesses here.
+// const_iterator harness. Variant-agnostic: zero / zero_one_value / zero_any follow the
+// compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // ============================================================================
 //
 // Guards the random-access contract of the read-only iterator, against a
@@ -68,11 +68,11 @@
 #include <utility>          // std::forward
 
 #include "chunk/chunk_traits.h"          // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h"          // zero_one_value::Array
-#include "chunk/zero_any_array.h"         // zero_any::Array
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_zero*, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
@@ -90,7 +90,7 @@ namespace
 {
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "iterator_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
+              "iterator_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
@@ -116,15 +116,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -192,7 +192,7 @@ double sorted_at(long i, long s)
 
 /// @brief Write @p value(i) at every i in [0, N) from a parallel region, then
 ///        the between-region pass.
-/// @details A serial chunk2a has no between-region pass (there is no region):
+/// @details A serial zero_any has no between-region pass (there is no region):
 ///          its candidates wait for make_block_compression(), which a writer
 ///          runs once its list is long enough -- a few dozen chunks never get
 ///          there, and compress() only audits. The harness runs that pass

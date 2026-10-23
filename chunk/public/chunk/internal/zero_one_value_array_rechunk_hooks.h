@@ -21,7 +21,7 @@
  * @brief zero_one_value::Array's re-chunk hooks — a CHUNK_DYNAMIC-only concern, isolated
  *        in its own mixin so they vanish from a static-geometry build.
  *
- * @details Like RechunkHooks for v1, but Chunk2 overrides all SIX hooks: it
+ * @details Like RechunkHooks for zero, but zero_one_value overrides all SIX hooks: it
  *          resolves num_tab from the registry, carries the array-level second
  *          value across the swap, and re-owns its map_inf_array entry. They run
  *          only under RechunkSupport<Derived, true>::rechunk_to(); the static
@@ -29,7 +29,7 @@
  *          using-declarations stay valid in both modes.
  *
  * @see array_chunk_rechunk.h for the algorithm that calls these
- * @see array_chunk_rechunk_hooks.h for v1's three
+ * @see array_chunk_rechunk_hooks.h for zero's three
  * @see zero_one_value_array_rechunk_hooks_inline.h for the bodies
  */
 
@@ -55,8 +55,8 @@ class RechunkHooks;
 
 // ── CHUNK_DYNAMIC build: the real hooks ──────────────────────────────────────
 /**
- * @brief Dynamic specialisation: the six hooks Chunk2 overrides.
- * @copydetails RechunkHooks2
+ * @brief Dynamic specialisation: the six hooks zero_one_value overrides.
+ * @copydetails zero_one_value::RechunkHooks
  */
 template <typename Derived>
 class RechunkHooks<Derived, true>

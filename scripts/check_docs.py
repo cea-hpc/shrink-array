@@ -66,6 +66,8 @@ ALLOWED = {
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
+    # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkOmpPolicy, ...)
+    "Chunk2Base", "Proxy2Base", "ArrayChunk2Base", "Chunk2AOmpPolicy", "RechunkHooks2", "Chunk2Def",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh",
     # C++ standard library, compiler, language
@@ -102,9 +104,9 @@ ALLOWED = {
 # Names the build GENERATES, so that they appear nowhere whole in the sources:
 # the variant libraries (chunk_zero_any_256, chunk::chunk_zero_any_dyn, ...) and the
 # per-variant executables (shrink_bench_zero_any_256, validation_zero_dyn, ...).
-GENERATED = re.compile(r"^(chunk::)?chunk_v(1|2|2a)(_(\d+|dyn))?$"
+GENERATED = re.compile(r"^(chunk::)?chunk_(zero|zero_one_value|zero_any|v1|v2|v2a)(_(\d+|dyn))?$"
                        r"|^(shrink_bench|validation|variant_compare|rechunk_validation|dyn_geometry_validation)"
-                       r"_(chunk|chunk2|chunk2a|vector)(_\w+)?$")
+                       r"_(zero|zero_one_value|zero_any|chunk|chunk2|chunk2a|vector)(_\w+)?$")
 
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 LINK = re.compile(r"\]\(([^)\s]+)\)")

@@ -16,8 +16,8 @@
 
 // ============================================================================
 // SEQUENTIAL re-chunk validation harness (path C, non-OMP) -- v3.
-// Variant-agnostic: tests chunk / chunk2 / chunk2a depending on the
-// compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like shrink_bench.cpp.
+// Variant-agnostic: tests zero / zero_one_value / zero_any depending on the
+// compile-time macro (CHUNK_VARIANT_ZERO*), like shrink_bench.cpp.
 // ============================================================================
 //
 // Proves CONTENT INVARIANCE and, on failure, LOCATES the cause:
@@ -30,12 +30,12 @@
 // chunk_zero_dyn). No std::vector fallback: re-chunk is specific to the chunked
 // variants, hence the static_assert.
 //
-// Chunk2 CONTRACT: the compression-candidate list is indexed by
+// zero_one_value CONTRACT: the compression-candidate list is indexed by
 // second_value (map_chunk2_to_compress_potentially_thr[thr][second_value]),
 // populated ONLY by set_second_value. A second_value must therefore be
 // declared BEFORE writing, otherwise get_vec_tuple_to_compress_potentially_thr
 // asserts (vec == nullptr). This is what the bench does via
-// maybe_set_second_value; we reproduce it here for every case. 2A / v1
+// maybe_set_second_value; we reproduce it here for every case. zero_any / zero
 // don't need this (no-op).
 //
 // Compile NON-OMP (or OMP), dyn, check. Exit 0 = every invariant holds.
@@ -65,9 +65,9 @@
 #include <utility>     // std::pair (try_set_active_chunk_size's cases)
 
 #include "chunk/chunk_traits.h"               // forward decls + default IntType = int
-#include "chunk/zero_array.h"                // zero::Array
-#include "chunk/zero_one_value_array.h"               // zero_one_value::Array
-#include "chunk/zero_any_array.h"              // zero_any::Array
+#include "chunk/zero_array.h"                 // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_zero*
@@ -78,7 +78,7 @@
 
 using namespace shrink_array;
 
-#include "chunk/zero_chunk.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::rechunk_validation
@@ -180,7 +180,7 @@ std::string pass_label(const char* label)
 
 // --- Active variant selection (same shape as shrink_bench.cpp) -------
 static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "rechunk_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A "
+              "rechunk_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY "
               "(re-chunk is chunk-only; no std::vector fallback here)");
 
 template <typename T>
@@ -193,22 +193,22 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
-// set_second_value only exists on chunk2 / chunk2a: no-op elsewhere. REQUIRED
-// on chunk2 before any write (see the contract at the top of the file); also
+// set_second_value only exists on zero_one_value / zero_any: no-op elsewhere. REQUIRED
+// on zero_one_value before any write (see the contract at the top of the file); also
 // exercises the val2 path (second_value preservation + tab_m_ptr_cst_val2
-// queue on growth, for chunk2).
+// queue on growth, for zero_one_value).
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
@@ -220,7 +220,7 @@ void maybe_set_second_value(Arr& a, const Val& v)
 
 // sv_value: the value declared as second_value. Choosing a value present in
 // the data makes val2 compression actually kick in (a stronger test); any
-// value is enough to satisfy the Chunk2 contract (populate the map).
+// value is enough to satisfy the zero_one_value contract (populate the map).
 template <typename T>
 int check_invariance(const char* label,
                      long        n,
@@ -233,7 +233,7 @@ int check_invariance(const char* label,
     label                   = lab_s.c_str();
 
     Array<T> arr(n);
-    maybe_set_second_value(arr, sv_value); // no-op on chunk v1; required on chunk2
+    maybe_set_second_value(arr, sv_value); // no-op on zero; required on zero_one_value
 
     fprintf(stderr, "[%s/%s] arr built: chunk_size=%u (g_active should be 512)\n", variant_name(), label,
             arr.chunk_size());
@@ -319,8 +319,8 @@ int check_invariance(const char* label,
         // Hand the queued candidates to the compression pass before asking for
         // the result -- see drain_compression_backlog() above.
         drain_compression_backlog();
-        // compress_int signature differs across variants: v1 (CHUNK) takes a
-        // verbose bool; CHUNK2 / CHUNK2A take none.
+        // compress_int signature differs across variants: zero takes a
+        // verbose bool; zero_one_value / zero_any take none.
         if constexpr (requires { arr.compress_int(false); })
         {
             arr.compress_int(false);
@@ -356,7 +356,7 @@ int check_invariance(const char* label,
 // advisor re-chunks the arrays it tracks and leaves the others at the original
 // size, so arrays of DIFFERENT geometries are alive and written to in the same
 // loop. That is what crashes (ASan: heap-buffer-overflow in store_value, a
-// 64-element buffer written at index 76), on chunk AND on chunk2/chunk2a alike.
+// 64-element buffer written at index 76), on zero AND on zero_one_value/zero_any alike.
 //
 // This reproduces that state in the small: two arrays, one re-chunked and one
 // left alone, written alternately. Passing means geometry coexistence is safe;
@@ -751,7 +751,7 @@ int check_index_split(const char* label)
 
 /// @brief Re-chunk through sizes that are multiples of 64 but do not divide
 ///        each other (256 -> 384 -> 192 -> 576 -> ...): the geometry follows
-///        and the content survives every step. On v1 with OpenMP this drives
+///        and the content survives every step. On zero with OpenMP this drives
 ///        the refill's early release with old chunks shared by two new ones.
 int check_multiple_of_64_chain(const char* label)
 {
@@ -872,7 +872,7 @@ static int run_body(int argc, char** argv)
 
     const long n = 1000000;
     // Each case declares a second_value present in its data (value -> val2
-    // compression actually kicks in). On chunk2 this is REQUIRED; on 2A / v1
+    // compression actually kicks in). On zero_one_value this is REQUIRED; on zero_any / zero
     // it is a no-op. The first three start at 64 (the scale case grows it to
     // the target, as the perf bench does), the others at 512.
     const std::vector<Case> cases = {
@@ -927,7 +927,7 @@ static int run_body(int argc, char** argv)
                  "all-different", 100000, 1024, [](long i) -> double { return double(i); }, /*sv_value=*/1.0);
          }},
         // Growth 512 -> 2048 with val2: targets the tab_m_ptr_cst_val2 queue
-        // (chunk2) + the second_value round-trip.
+        // (zero_one_value) + the second_value round-trip.
         {"val2-grow", 512,
          [&]
          {
@@ -948,7 +948,7 @@ static int run_body(int argc, char** argv)
                  "val2-shrink", n, 256, [](long i) -> double { return double((i / 1000) % 2); },
                  /*sv_value=*/1.0);
          }},
-        // The v1 refill's SLICED path (fast-alloc OpenMP builds): it slices
+        // The zero refill's SLICED path (fast-alloc OpenMP builds): it slices
         // only from 8192 new chunks on (n_new / 4096 slices, up to 16), which
         // no case above reaches. Every slice boundary drains the old geometry's
         // parked blocks and recycles the slabs they empty into the next slice's

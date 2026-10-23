@@ -12,7 +12,7 @@ binaries ROUND by round -- every variant once per round, at every thread count
 takes the median of every repetition of every round.
 
   python3 python/access_cost.py --build <build dir> [--threads 1,64]
-          [--variants chunk,chunk2,chunk2a] [--rounds 3] [--n N] [--reps R]
+          [--variants zero,zero_one_value,zero_any] [--rounds 3] [--n N] [--reps R]
           [--csv out.csv]
 
 The build dir is the configured tree (a perf configuration: Release, no CHECK);
@@ -28,13 +28,23 @@ import statistics
 import subprocess
 import sys
 
+try:
+    # --variants chunk2a & co.: the old variant labels, read as their new names until 1.0.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from bench_runner.settings import normalize_variant
+except ImportError:
+    def normalize_variant(label, warn=None):   # copied alone: the new labels only
+        return label
+
 CASES = ["read-varied", "read-constant", "read-random", "write-varied", "write-fresh", "rmw"]
 
 
 def find_binary(build, variant):
     d = pathlib.Path(build) / "examples" / "access_cost"
-    found = sorted(d.glob("access_cost_%s_*" % variant))
-    found = [p for p in found if p.is_file() and os.access(p, os.X_OK) and p.name.split("_")[-1].isdigit()]
+    prefix = "access_cost_%s_" % variant
+    found = sorted(d.glob(prefix + "*"))
+    # The size only after the prefix: access_cost_zero_* also lists zero_any's binaries.
+    found = [p for p in found if p.is_file() and os.access(p, os.X_OK) and p.name[len(prefix):].isdigit()]
     return found[0] if found else None
 
 
@@ -57,7 +67,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--build", required=True, help="the configured build tree")
     ap.add_argument("--threads", default="1,%d" % (os.cpu_count() or 1), help="thread counts, comma-separated")
-    ap.add_argument("--variants", default="chunk,chunk2,chunk2a")
+    ap.add_argument("--variants", default="zero,zero_one_value,zero_any")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--n", type=int, default=0, help="elements (default: the binary's, 2^27)")
     ap.add_argument("--reps", type=int, default=5, help="repetitions per run")
@@ -65,7 +75,7 @@ def main():
     a = ap.parse_args()
 
     threads = [int(t) for t in a.threads.split(",") if t.strip()]
-    variants = [v.strip() for v in a.variants.split(",") if v.strip()]
+    variants = [normalize_variant(v.strip(), "--variants") for v in a.variants.split(",") if v.strip()]
     binaries = {}
     for v in variants:
         b = find_binary(a.build, v)
@@ -83,6 +93,8 @@ def main():
                 print("round %d/%d  %s  threads=%d" % (r + 1, a.rounds, b.name, t), file=sys.stderr, flush=True)
                 for row in run_one(b, t, a.n, a.reps):
                     row["round"] = str(r)
+                    # An older binary prints its old label (chunk2a): read as the new one.
+                    row["variant"] = normalize_variant(row.get("variant"))
                     rows.append(row)
     if not rows:
         return 1

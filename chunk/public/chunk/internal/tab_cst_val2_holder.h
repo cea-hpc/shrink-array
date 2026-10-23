@@ -20,7 +20,7 @@
  * @file tab_cst_val2_holder.h
  * @brief The registry of second-value slots behind "second constant value" compression.
  *
- * A Chunk2A compressed to a constant other than zero does not own a buffer: it
+ * A zero_any chunk compressed to a constant other than zero does not own a buffer: it
  * points at an identifier slot in a per-type region, one slot per DISTINCT
  * second value for the whole process. Nothing is stored at the slot -- the
  * value comes from GlobalVecHolder::value_by_id[] -- so a thousand chunks
@@ -293,7 +293,7 @@ struct SecondValueStats
  *
  * @details Owns the Segment chain, the hash index over it, and the lock that
  *          serialises appends. Lives for the whole run: a slot registered here
- *          is shared by every Chunk2A compressed to that value, so the
+ *          is shared by every zero_any chunk compressed to that value, so the
  *          registry cannot be freed while any array of the type is alive.
  *          #ref_count tracks that. A value nothing refers to any more can
  *          go earlier, at a sequential point: reclaim_unmarked(), driven
@@ -653,7 +653,7 @@ class GlobalVecHolder
     }
 
     /// @brief Is @p ptr a second-value slot of this type?
-    /// @note THE constant-2 test of Chunk2A: `is_cst_val2()` is
+    /// @note THE constant-2 test of zero_any: `is_cst_val2()` is
     ///       `region_contains(values)`. Relaxed load of a pointer that is
     ///       written once, before any chunk exists.
     [[nodiscard]] static bool region_contains(const void* ptr) noexcept
@@ -998,7 +998,7 @@ class GlobalVecHolder
     static inline std::atomic<char*> region_begin{nullptr}; ///< Reservation start; null before init().
     /// @brief Bytes per slot: every slot is carved at a multiple of it.
     /// @note constexpr, not set by region_init(): a pointer <-> identifier
-    ///       conversion (id_of_ptr, slot_id, on Chunk2A's constant-2 reads)
+    ///       conversion (id_of_ptr, slot_id, on zero_any's constant-2 reads)
     ///       is then a shift by 6, not a 64-bit `div` by a global.
     static constexpr std::size_t region_stride = id_stride;
 
@@ -1255,7 +1255,7 @@ class TabCstVal2Holder
     }
 
     /// @brief Is @p ptr one of this type's second-value slots?
-    /// @note `is_cst_val2()` of Chunk2A: one relaxed load of the region base
+    /// @note `is_cst_val2()` of zero_any: one relaxed load of the region base
     ///       and two compares, no per-chunk state.
     [[nodiscard]] static bool is_cst_val2_ptr(const T* ptr) noexcept
     {

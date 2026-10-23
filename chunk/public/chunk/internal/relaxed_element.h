@@ -23,7 +23,7 @@
  * @details Writers of DIFFERENT elements of one chunk run concurrently by
  *          design, with nothing between them. Two readers look at elements
  *          they do not own:
- *            - Proxy2A::may_become_uniform(), the marking filter: element 0 or
+ *            - zero_any::Proxy::may_become_uniform(), the marking filter: element 0 or
  *              1, and S-1 or S-2;
  *            - fill_range_mt's may_be_uniform(): 0, S/2 and S-1.
  *          Both only take a hint from the value, but plain accesses there are
@@ -41,7 +41,7 @@
 #include <atomic>      // std::atomic_ref, std::memory_order_relaxed
 #include <type_traits> // std::is_same_v, std::is_trivially_copyable_v
 
-#include "chunk/chunk_traits.h" // Chunk2A fwd decl
+#include "chunk/chunk_traits.h" // zero_any::Chunk fwd decl
 
 namespace shrink_array::internal
 {
@@ -67,9 +67,10 @@ template <typename T>
 inline constexpr bool relaxed_element_access_v = relaxed_element_access<T>();
 
 /// @brief The element stores of this chunk type must be relaxed atomics: some
-///        reader looks at elements it does not own (Chunk2A only, see above).
+///        reader looks at elements it does not own (zero_any only, see above).
 template <typename ChunkT, typename T>
-inline constexpr bool relaxed_element_stores_v = std::is_same_v<ChunkT, zero_any::Chunk<T>> && relaxed_element_access_v<T>;
+inline constexpr bool relaxed_element_stores_v =
+    std::is_same_v<ChunkT, zero_any::Chunk<T>> && relaxed_element_access_v<T>;
 
 /// @brief Load @p *ptr through a relaxed std::atomic_ref.
 /// @param ptr Element to read.

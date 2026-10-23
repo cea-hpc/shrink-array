@@ -40,15 +40,15 @@
 #include <type_traits> // std::conditional_t, std::is_same_v
 #include <utility>     // std::pair (the slices), std::as_const
 
-#include "chunk/zero_array.h"     // zero::Array
-#include "chunk/zero_one_value_array.h"    // zero_one_value::Array
-#include "chunk/zero_any_array.h"   // zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // chunk_config::use_zero_one_value*
-#include "chunk/internal/print.h"  // shrink_array::println
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/mdspan_tile_ops.h" // md::submdspan, md::for_each_tile, md::update_tiles, md::fill_box
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*
+#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/manage_ompt.h"          // parallel_phase
+#include "chunk/mdspan_tile_ops.h"      // md::submdspan, md::for_each_tile, md::update_tiles, md::fill_box
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 
 using namespace shrink_array;
 
@@ -289,7 +289,7 @@ void tiled()
         a, [&](long i, long j) { return (i >= i0 + 8 && i < i0 + 40 && j >= j0 && j < j0 + 50) ? 5.0 : cell(i, j); },
         "fill_box tiled sub");
 
-    // A whole tile of the sub-view at 5.0 is a compressed chunk (Chunk2A:
+    // A whole tile of the sub-view at 5.0 is a compressed chunk (zero_any::Chunk:
     // fill_range sets it without a buffer).
     if constexpr (chunk_config::use_zero_any)
     {

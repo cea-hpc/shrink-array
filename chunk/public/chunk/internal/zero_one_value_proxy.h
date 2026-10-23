@@ -23,19 +23,19 @@
 #include <ostream>  // std::ostream
 #include <vector>   // std::vector
 
-#include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/in_t.h"               // InT<T>
-#include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
-#include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
-#include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
-#include "chunk/internal/zero_one_value_pointer_map.h" // PointerMapChunk2
+#include "chunk/bit.h"                      // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/in_t.h"            // InT<T>
+#include "chunk/config.h"                   // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/PMP_CHUNK.h"                // get_thr_rank_fast
+#include "chunk/internal/zero_one_value_pointer_map.h"   // zero_one_value::PointerMap
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/chunk_size_policy.h"            // set_thread_chunk_size
 #include "chunk/internal/TChunk.h"                       // VectorTuple4ChunkInt2
 
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // chunk2_missing_candidate_list
-#include "chunk/internal/proxy_base.h"                  // ProxyBase
-#include "chunk/internal/second_value_proxy_base.h"                 // Proxy2Base
+#include "chunk/internal/proxy_base.h"                          // ProxyBase
+#include "chunk/internal/second_value_proxy_base.h"             // SecondValueProxyBase
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
@@ -57,7 +57,7 @@ class Chunk;
 } // namespace zero_one_value
 
 /**
- * @brief Proxy2 class for managing operations on a Chunk2<T>.
+ * @brief zero_one_value::Proxy class for managing operations on a zero_one_value::Chunk<T>.
  *
  * This class encapsulates read/write operations, compression logic,
  * and constant value handling within a chunk. It is optimized for
@@ -152,7 +152,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /**
-     * @brief This array's num_tab, for the per-write refresh (Proxy2::set_num_tab()):
+     * @brief This array's num_tab, for the per-write refresh (zero_one_value::Proxy::set_num_tab()):
      *        from the armed mirror when there is one, from inf_array otherwise.
      * @details Not read back from inf_array when armed: set_info_second_value_ind()
      *          has just copied the 16-byte record there with one q-register store,
@@ -202,7 +202,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
   private:
     /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
-    ///        two are compared (model: Proxy2A::set_num_tab).
+    ///        two are compared (model: zero_any::Proxy::set_num_tab).
     [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
@@ -229,7 +229,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     using Base::Base;
 
     /// @brief Arm this proxy with the owning array's registry mirror (see the non-bool
-    ///        ProxySpec2::arm_inf_array()).
+    ///        zero_one_value::ProxySpec::arm_inf_array()).
     void arm_inf_array(const InfArrayT* src) const noexcept
     {
         inf_array_src_ = src;
@@ -265,7 +265,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
   protected:
-    // Named as the generic ProxySpec2 member, for the using-declarations both share.
+    // Named as the generic zero_one_value::ProxySpec member, for the using-declarations both share.
     static constexpr bool second_value_ = true;
 
     /**
@@ -278,7 +278,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /**
-     * @brief This array's num_tab, for the per-write refresh (Proxy2::set_num_tab()):
+     * @brief This array's num_tab, for the per-write refresh (zero_one_value::Proxy::set_num_tab()):
      *        from the armed mirror when there is one, from inf_array otherwise.
      * @details Not read back from inf_array when armed: set_info_second_value_ind()
      *          has just copied the 16-byte record there with one q-register store,
@@ -312,7 +312,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
     /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
-    ///        two are compared (model: Proxy2A::set_num_tab).
+    ///        two are compared (model: zero_any::Proxy::set_num_tab).
     [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
@@ -324,7 +324,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
 };
 
 /**
- * @brief Policy to handle Fast Block Compression specific logic for Proxy2.
+ * @brief Policy to handle Fast Block Compression specific logic for zero_one_value::Proxy.
  * Encapsulates per-thread list management and trigger logic.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
@@ -416,7 +416,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     void execute_simple_operation_async(auto* ctx, Lambda operation);
 
     /**
-     * @brief Async-context counterpart of Proxy2::execute_arithmetic_compound_operation().
+     * @brief Async-context counterpart of zero_one_value::Proxy::execute_arithmetic_compound_operation().
      * @details Computes the result in high precision first; if the chunk is
      *          currently at the second constant and the result would leave
      *          it (will_be_not_second_value), materialises it and runs
@@ -716,7 +716,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
     static constexpr bool is_not_bool = !is_bool;
 };
 
-/// @brief Proxy to one element of a Chunk2<T> chunk: reads, assignments and compound operators on it.
+/// @brief Proxy to one element of a zero_one_value::Chunk<T> chunk: reads, assignments and compound operators on it.
 /// @tparam T Element type.
 template <typename T>
 // no move assignment on purpose -- assigning a proxy
@@ -763,12 +763,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     // Both members exist in both ProxyBaseFastCompPolicy specialisations: no guard needed.
     // Do not add `using Base::read_values_async;`: it exists only in the Enabled=true
-    // specialisation (imported in Proxy2FastCompPolicy<..., true>), so it breaks builds
+    // specialisation (imported in zero_one_value::ProxyFastCompPolicy<..., true>), so it breaks builds
     // without fast block compression.
     using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
     using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
 
-    // Declared per Proxy2FastCompPolicy specialisation: the deferred and counter forms are
+    // Declared per zero_one_value::ProxyFastCompPolicy specialisation: the deferred and counter forms are
     // different algorithms (and pass `operation` different arguments).
     using FastCompPolicy::execute_arithmetic_compound_operation;
 
@@ -776,9 +776,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     static constexpr bool is_not_bool = !is_bool;
 
     /**
-     * @brief Chunk2's marking pre-check: a write of a constant, on an array that
+     * @brief zero_one_value's marking pre-check: a write of a constant, on an array that
      *        has a candidate list for its second value.
-     * @details Shadows Proxy2Base::pre_check_mark_for_compression(), as Proxy2A does.
+     * @details Shadows SecondValueProxyBase::pre_check_mark_for_compression(), as zero_any::Proxy does.
      *          Candidate lists are keyed by second value and created only by
      *          zero_one_value::Array::set_second_value(); an array without one is not walked by the
      *          compression pass either. Reject such writes HERE, before
@@ -853,7 +853,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /// @brief Materialise the chunk if it is compressed (cst_val1 / cst_val2), so `values`
     ///        points at writable heap storage.
     ///
-    /// Twin of Proxy2A::ensure_writable_storage: decompresses the second-value form, then
+    /// Twin of zero_any::Proxy::ensure_writable_storage: decompresses the second-value form, then
     /// the first-value form, seeding the nb_val_eq_* counters to "full". is_cst_val1() is
     /// re-tested AFTER the cst_val2 step on purpose: the states are mutually exclusive (single
     /// storage pointer), so at most one create_value runs.
@@ -1088,7 +1088,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @post Both num_tab and ptr_is_inside_chunk_list_to_compress are valid
      *
      * @note No build-mode guard: the sole caller
-     *       (Proxy2Base::write_with_optional_lock_with_set_ptr) is under
+     *       (SecondValueProxyBase::write_with_optional_lock_with_set_ptr) is under
      *       `if constexpr (chunk_config::use_fast_block_compression)`, so the empty
      *       tab_is_inside_chunk_list_to_compress of other modes is never indexed.
      */

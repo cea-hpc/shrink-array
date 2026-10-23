@@ -62,7 +62,7 @@
 //     between a direct free into the owner's lists and a park for it (TSan
 //     reports the race when the application phase does not count as
 //     parallel);
-//   - maintenance refused in the phase (Chunk2A): reclaim_second_values()
+//   - maintenance refused in the phase (zero_any): reclaim_second_values()
 //     called by one application thread while the others write must be
 //     refused as "in a parallel region" (second_value_stats().
 //     refused_parallel), and run once finalize_parallel_phase() closed the
@@ -85,11 +85,11 @@
 #include <vector>      // std::vector (the reference)
 
 #include "chunk/chunk_traits.h"        // forward decls + default IntType = int
-#include "chunk/zero_array.h"         // zero::Array
-#include "chunk/zero_one_value_array.h"        // zero_one_value::Array
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"         // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"              // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"           // pmp::*, CHUNK_PMP_*, get_thr_rank_fast, chunk_thread_capacity, the registry
 #include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
@@ -114,15 +114,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -623,7 +623,7 @@ int maintenance_refused(const char* label, long N, int nt, const Scenario<T>& sc
         (void)N;
         (void)nt;
         (void)sc;
-        return 0; // Chunk2A only, and bool has no registry
+        return 0; // zero_any only, and bool has no registry
     }
     else
     {

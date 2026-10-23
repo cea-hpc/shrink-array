@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Chunk2 foreign-key harness. Chunk2 only (zero_one_value::Array<T>), default static
+// zero_one_value foreign-key harness. zero_one_value only (zero_one_value::Array<T>), default static
 // size, OpenMP builds (the passes it is about run inside a region).
 // ============================================================================
 //
@@ -24,7 +24,7 @@
 //
 // THE QUESTION
 //
-//   A rank keeps one candidate list per second value. Proxy2's
+//   A rank keeps one candidate list per second value. zero_one_value::Proxy's
 //   perform_compression() runs the pass of every key of the rank and hands
 //   each one the WRITER's proxy, and the pass ends by queueing that proxy's
 //   chunk -- into the list of the key it just processed. If that key is not
@@ -57,14 +57,14 @@
 #include <cstdint> // std::uint64_t
 #include <cstdlib> // std::getenv, std::atof
 
-#include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/zero_one_value_array.h"   // zero_one_value::Array
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"      // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"         // build_config::has_not_ompt, build_config::use_openmp
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
-#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // build_config::has_not_ompt, build_config::use_openmp
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -143,7 +143,7 @@ int run(int /*argc*/, char** /*argv*/)
 
     if constexpr (!build_config::use_openmp)
     {
-        println("[chunk2/foreign-key] SKIP: the passes this is about run inside a parallel region");
+        println("[zero_one_value/foreign-key] SKIP: the passes this is about run inside a parallel region");
         return 77;
     }
 
@@ -225,17 +225,17 @@ int run(int /*argc*/, char** /*argv*/)
 
         const long a_compressed = pointing_at(ca, chunks_a, b_cst);
         const long b_compressed = compressed(cb, chunks_b, S);
-        println("[chunk2/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; a: {} "
-                "of {} chunks on b's constant before the stress, {} after",
+        println("[zero_one_value/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; "
+                "a: {} of {} chunks on b's constant before the stress, {} after",
                 toggles.load(), seconds, b_compressed0, chunks_b, b_compressed, a_on_b_cst0, chunks_a, a_compressed);
         if (b_compressed0 == 0)
         {
-            println("[chunk2/foreign-key] FAIL premise: `b` was not compressed to its second value");
+            println("[zero_one_value/foreign-key] FAIL premise: `b` was not compressed to its second value");
             ++fails;
         }
         if (a_compressed != 0)
         {
-            println("[chunk2/foreign-key] FAIL {} chunk(s) of `a` point at `b`'s constant array: compressed to "
+            println("[zero_one_value/foreign-key] FAIL {} chunk(s) of `a` point at `b`'s constant array: compressed to "
                     "another array's second value",
                     a_compressed);
             ++fails;
@@ -259,21 +259,21 @@ int run(int /*argc*/, char** /*argv*/)
         }
         if (bad_b != 0 || bad_a != 0)
         {
-            println("[chunk2/foreign-key] FAIL after writing 5.0 into each chunk of `a`: {} element(s) of `b` and "
-                    "{} of `a` read wrong -- the write landed in a shared constant array",
+            println("[zero_one_value/foreign-key] FAIL after writing 5.0 into each chunk of `a`: {} element(s) of `b` "
+                    "and {} of `a` read wrong -- the write landed in a shared constant array",
                     bad_b, bad_a);
             ++fails;
         }
         else
         {
-            println("[chunk2/foreign-key] OK: no chunk of `a` compressed to `b`'s value, writes stay in `a`");
+            println("[zero_one_value/foreign-key] OK: no chunk of `a` compressed to `b`'s value, writes stay in `a`");
         }
     }
 
     release_chunk_pools();
     destroy_block_chunk();
 
-    println("\n[chunk2] {}", fails ? "=== FOREIGN KEY FAILED ===" : "=== FOREIGN KEY OK ===");
+    println("\n[zero_one_value] {}", fails ? "=== FOREIGN KEY FAILED ===" : "=== FOREIGN KEY OK ===");
     return fails ? 1 : 0;
 }
 

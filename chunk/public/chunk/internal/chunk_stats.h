@@ -23,7 +23,7 @@
  *        there is no cost in a normal build.
  *
  * Design:
- *   - PER VARIANT: counters are kept separately for chunk / chunk2 / chunk2a
+ *   - PER VARIANT: counters are kept separately for zero / zero_one_value / zero_any
  *     (indexed by \<ChunkType\>\::stat_variant == 0 / 1 / 2), so the
  *     end-of-run report shows one block per variant.
  *   - PER THREAD: each thread bumps its OWN slot (indexed by the current
@@ -50,7 +50,7 @@
 namespace shrink_array
 {
 
-/// @brief Number of chunk variants tracked: chunk (0), chunk2 (1), chunk2a (2).
+/// @brief Number of chunk variants tracked: zero (0), zero_one_value (1), zero_any (2).
 inline constexpr int chunk_stats_n_variant = 3;
 
 /// @brief Upper bound on threads. Generous fixed size so the counter table
@@ -61,8 +61,8 @@ inline constexpr int chunk_stats_n_variant = 3;
 #endif
 
 /// @brief Display name for each variant, indexed by stat_variant.
-inline constexpr std::array<std::string_view, chunk_stats_n_variant> chunk_variant_name = {"chunk", "chunk2",
-                                                                                           "chunk2a"};
+inline constexpr std::array<std::string_view, chunk_stats_n_variant> chunk_variant_name = {"zero", "zero_one_value",
+                                                                                           "zero_any"};
 
 #if CHUNK_OPT_STATS
 

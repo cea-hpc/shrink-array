@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Read / reclaim harness. Variant-agnostic: chunk / chunk2 / chunk2a follow the
-// compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the other harnesses here.
+// Read / reclaim harness. Variant-agnostic: zero / zero_one_value / zero_any follow the
+// compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // OpenMP builds only: the property is about two threads.
 // ============================================================================
 //
@@ -73,8 +73,8 @@
 //
 // MODE `compound` (argument): the same window, on the WRITE side
 //
-//   `a[i] *= x` (and /=, %=) on Chunk2 / Chunk2A reads the element first
-//   (Proxy2 / Proxy2A apply_compound_operation: v_old = read_values()), outside
+//   `a[i] *= x` (and /=, %=) on zero_one_value / zero_any reads the element first
+//   (zero_one_value::Proxy / zero_any::Proxy apply_compound_operation: v_old = read_values()), outside
 //   the write session, and drops the operation when it reads first_value (0):
 //   "0 * x is 0". If a pass in the region compressed the chunk and released
 //   its buffer between that read's pointer load and its element load, and a
@@ -93,7 +93,7 @@
 //             own. The two are exact on V, so every victim element ends at V;
 //             one lost operation leaves V / 2 or 2 V.
 //
-//   Chunk (v1) has no second value: the mode is skipped there (77).
+//   zero has no second value: the mode is skipped there (77).
 //
 // MODE `remark` (argument): a pass must not erase another pass's claim
 //
@@ -122,11 +122,11 @@
 #include <omp.h>       // omp_get_thread_num, omp_get_max_threads
 
 #include "chunk/chunk_traits.h"        // forward decls + default IntType = int
-#include "chunk/zero_array.h"         // zero::Array
-#include "chunk/zero_one_value_array.h"        // zero_one_value::Array
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"         // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"              // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
 #include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/test_hooks.h" // test_hooks::read_delay_* / pass_delay_*
@@ -157,15 +157,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -185,7 +185,7 @@ void end_phase()
     }
 }
 
-// Victims per writer: twice the largest in-region trigger floor (Chunk2:
+// Victims per writer: twice the largest in-region trigger floor (zero_one_value:
 // 2000), so a single sweep crosses it on every variant.
 constexpr long n_victims   = 4096;
 constexpr long n_polluters = 512;
@@ -212,7 +212,7 @@ struct Xorshift
     }
 };
 
-// set_second_value only exists on chunk2 / chunk2a.
+// set_second_value only exists on zero_one_value / zero_any.
 template <typename A, typename Val>
 void maybe_set_second_value(A& a, const Val& v)
 {

@@ -50,7 +50,7 @@
 //      active size (capped at cst_buffer_size), which it leaves unchanged --
 //      an array of another type created next is born at it.
 //
-// Chunk2 builds only (ArrayChunkBits is zero_one_value::Array<Bit>). Exit 0 = pass.
+// zero_one_value builds only (ArrayChunkBits is zero_one_value::Array<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
 #include <cstdint>   // std::uint64_t, std::uint32_t, std::uint8_t (the copy source)
@@ -64,7 +64,7 @@
 #include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, and their _mt forms
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // build_config::chunk_dynamic, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase

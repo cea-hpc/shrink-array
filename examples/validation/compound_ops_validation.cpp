@@ -24,7 +24,7 @@
  *     zero included (`4 % 2`, `x * 0`): the chunks that become all zero fold
  *     as on any write. Then `shrink_to_fit()`, read again.
  *   - A floating `x /= 0.0` is IEEE (inf), never refused.
- *   - Chunk2: `set_second_value(T{})` on a fresh array declares nothing (T{}
+ *   - zero_one_value: `set_second_value(T{})` on a fresh array declares nothing (T{}
  *     is already its first constant) and the array reads right.
  *   - Check builds only (build_config::any_check): an integer `/= 0` or
  *     `%= 0` -- undefined behaviour in C++ -- stops the program with an
@@ -42,9 +42,9 @@
 #include <vector>      // the reference
 
 #include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/zero_array.h"    // zero::Array
-#include "chunk/zero_one_value_array.h"   // zero_one_value::Array
-#include "chunk/zero_any_array.h"  // zero_any::Array
+#include "chunk/zero_array.h"     // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
 #include "chunk/config.h"         // chunk_config::use_zero*, build_config::any_check
 #include "chunk/internal/print.h" // shrink_array::println
@@ -60,23 +60,24 @@ namespace
 {
 
 template <typename T>
-using Arr = std::conditional_t<chunk_config::use_zero_any,
-                               zero_any::Array<T>,
-                               std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+using Arr =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -152,8 +153,8 @@ int float_div_by_zero()
     return report("double /= 0.0 gives +-inf", ok ? 0 : 1);
 }
 
-/// Chunk2: set_second_value(T{}) on a fresh array declares nothing. A
-/// template, so that the Chunk2-only calls are discarded on the other variants.
+/// zero_one_value: set_second_value(T{}) on a fresh array declares nothing. A
+/// template, so that the zero_one_value-only calls are discarded on the other variants.
 template <typename A = Arr<double>>
 int second_value_zero()
 {

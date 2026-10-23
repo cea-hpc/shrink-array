@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Compression round-trip harness. Variant-agnostic: tests chunk / chunk2 /
-// chunk2a depending on the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like
+// Compression round-trip harness. Variant-agnostic: tests zero / zero_one_value /
+// zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like
 // the other harnesses here.
 // ============================================================================
 //
@@ -36,7 +36,7 @@
 //   rewritten afterwards, which re-materialises blocks the pass had just
 //   compressed. Every element is then compared against the expected value.
 //
-//   A second double array never declares a second value (chunk2's
+//   A second double array never declares a second value (zero_one_value's
 //   set_second_value): its second constant then coincides with the first, the
 //   corner every two-hypothesis scan has to handle (a run of 0 must be filed
 //   as first-constant ONLY, never cleared twice).
@@ -53,7 +53,7 @@
 //   drain those queues between regions -- begin_parallel_phase() by every
 //   thread inside the region, finalize_parallel_phase() outside it. Skip that
 //   and a deferred write from one region lands after a direct write of the
-//   next one: this harness lost `false` writes on chunk2a/bool at the dyn
+//   next one: this harness lost `false` writes on zero_any/bool at the dyn
 //   geometry and 8 threads (the only combination where the lists get flagged),
 //   at exactly the indices the previous region had written `true`. The bench
 //   has the same brackets (its *_g() wrappers). Under OMPT the callbacks do it
@@ -71,11 +71,11 @@
 #include <type_traits> // std::conditional_t
 
 #include "chunk/chunk_traits.h"       // forward decls + default IntType = int
-#include "chunk/zero_array.h"        // zero::Array
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
-#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/zero_array.h"         // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"         // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"             // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
@@ -116,19 +116,19 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
-// set_second_value only exists on chunk2 / chunk2a; no-op elsewhere.
+// set_second_value only exists on zero_one_value / zero_any; no-op elsewhere.
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {

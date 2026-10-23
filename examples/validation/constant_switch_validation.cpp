@@ -16,28 +16,28 @@
 
 // ============================================================================
 // A compressed chunk switched to another constant by a range op. Variant-
-// agnostic: chunk / chunk2 / chunk2a follow the compile-time macro
-// (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the other harnesses here.
+// agnostic: zero / zero_one_value / zero_any follow the compile-time macro
+// (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // ============================================================================
 //
-// On Chunk2A, fill_range over a whole chunk, and copy_range over a whole chunk
+// On zero_any::Chunk, fill_range over a whole chunk, and copy_range over a whole chunk
 // whose source span is uniform, set the chunk's constant by its state alone
-// (Chunk2A::fill_constant_st): a compressed chunk switches its second-value
+// (zero_any::Chunk::fill_constant_st): a compressed chunk switches its second-value
 // slot, type and values pointer in place, with no buffer. Guards:
 //
 //   1. every element reads back after each switch: first constant -> second
 //      constant -> another second constant -> first constant -> second
 //      constant, by fill_range and by copy_range;
-//   2. no chunk holds a buffer after any of those switches (Chunk2A);
+//   2. no chunk holds a buffer after any of those switches (zero_any::Chunk);
 //   3. a write through operator[] into a switched chunk materialises it from
 //      ITS constant: one element changes, the others still read the constant
 //      (the chunk's second-value slot was set, not only its pointer);
 //   4. reclaim_second_values() afterwards frees the values no chunk points at
 //      any more, keeps the others, and every element still reads back
-//      (Chunk2A; the old constants of a switched chunk record no reference).
+//      (zero_any::Chunk; the old constants of a switched chunk record no reference).
 //
 // The same switches from every thread at once, in a phase, by fill_range_mt
-// and copy_range_mt (each thread on its own whole chunks): a compressed Chunk2A
+// and copy_range_mt (each thread on its own whole chunks): a compressed zero_any::Chunk
 // chunk covered whole by a uniform span switches in place there too, within
 // the write session; a span that does not cover the chunk materialises it, and
 // a uniform span over a materialised chunk leaves it to the end-of-phase pass.
@@ -53,12 +53,12 @@
 #include <vector>      // std::vector (the copy sources)
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h"          // zero_one_value::Array
-#include "chunk/zero_any_array.h"         // zero_any::Array
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, fill_range_mt, copy_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println
@@ -80,15 +80,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -118,7 +118,7 @@ static void phase(Array<double>& arr, long n, Fn&& body)
     }
     if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
-        arr.make_block_compression(); // a serial chunk2a has no between-region pass
+        arr.make_block_compression(); // a serial zero_any has no between-region pass
     }
 }
 
@@ -157,7 +157,7 @@ static int phase_count(Array<double>& arr, Fn&& body)
     return in_region;
 }
 
-/// @brief Chunk2A in an OpenMP build: @p got chunks were materialised inside
+/// @brief zero_any::Chunk in an OpenMP build: @p got chunks were materialised inside
 ///        the region, where a switch in place leaves none.
 static void check_in_region(const char* step, int got)
 {
@@ -183,7 +183,7 @@ static int materialised(const Array<double>& arr)
     return n;
 }
 
-/// @brief Every element reads @p expect(i), and (Chunk2A) @p mat_expected
+/// @brief Every element reads @p expect(i), and (zero_any::Chunk) @p mat_expected
 ///        chunks hold a buffer.
 template <typename Expect>
 static void check(const char* step, const Array<double>& arr, Expect&& expect, int mat_expected)
@@ -212,9 +212,9 @@ static void check(const char* step, const Array<double>& arr, Expect&& expect, i
     }
 }
 
-/// @brief Property 4, Chunk2A only: after reclaim_second_values() exactly the
+/// @brief Property 4, zero_any::Chunk only: after reclaim_second_values() exactly the
 ///        n_chunks constants the chunks hold are in use, and every element
-///        still reads @p expect(i). A template, so that the members Chunk2A
+///        still reads @p expect(i). A template, so that the members zero_any::Chunk
 ///        alone declares are named in a discarded branch only.
 template <typename Arr, typename Expect>
 static void check_reclaim(const Arr& a, Expect&& expect)
@@ -236,7 +236,7 @@ static void check_reclaim(const Arr& a, Expect&& expect)
     }
     else
     {
-        static_assert(!chunk_config::use_zero_any, "check_reclaim: a Chunk2A build tests an zero_any::Array");
+        static_assert(!chunk_config::use_zero_any, "check_reclaim: a zero_any build tests a zero_any::Array");
     }
 }
 

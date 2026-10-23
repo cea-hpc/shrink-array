@@ -22,7 +22,7 @@
 #include "bench_config.h"      // check_compression, and chunk_config:: through bench_prelude.h
 #include "bench_phases.h"      // bench_teardown (defined here), BenchArrays
 #include "bench_stl_checks.h"  // run_stl_self_checks
-#include "chunk/zero_chunk.h"   // clear_all_list_block_free_thr, delete_chunk_allocator
+#include "chunk/zero_chunk.h"  // clear_all_list_block_free_thr, delete_chunk_allocator
 #include "chunk/param_chunk.h" // ParamChunk::chunk_stats
 
 // As in shrink_bench.cpp, where this body comes from.
@@ -93,7 +93,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
 
     // Entries get_info_second_value() scans per call, per element type. It is a
     // library counter like the ones above, so it prints in perf runs too -- the
-    // mode whose profile put 34% of a 64-thread chunk2 run in that function,
+    // mode whose profile put 34% of a 64-thread zero_one_value run in that function,
     // against 0.37% under libgomp.
     //
     // Printed AFTER the tab_*.clear() calls on purpose: `vec` holds one entry
@@ -104,7 +104,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     //
     // A handful: the scan is short and the cost is the CALL RATE, which caching
     // the per-array-invariant result would fix. Hundreds: the list grew.
-    // Chunk2 only -- Chunk2A carries its second value in the pointer and has no
+    // zero_one_value only -- zero_any carries its second value in the pointer and has no
     // such map.
     if constexpr (chunk_config::use_zero_one_value)
     {

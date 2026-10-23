@@ -23,12 +23,12 @@
 //   1. defines BZIP2 by default (unless already defined by the build system),
 //   2. pulls the base chunk headers in the correct order,
 //   3. derives SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION from the
-//      variant macros (CHUNK_VARIANT_ZERO / _V2 / _V2A) and the mode macros
+//      variant macros (CHUNK_VARIANT_ZERO*) and the mode macros
 //      (CHUNK_OPT_DEBUG / CHECK),
 //   4. pulls the variant-specific array_chunk* headers,
 //   5. defines the ComplexDouble alias used across TUs.
 //
-// The variant macros (CHUNK_VARIANT_ZERO / _V2 / _V2A) MUST be defined identically
+// The variant macros (CHUNK_VARIANT_ZERO*) MUST be defined identically
 // on every TU of a given executable target. In practice they are defined
 // PUBLIC on the chunk_vN library target so nothing else has to worry.
 
@@ -185,9 +185,9 @@ void for_static_vec(Team& t, Int b, Int e, Body&& body)
 // BENCH_SCHED_BLOCK (environment, read once): unset -> 64; N -> N rounded up
 // to a power of two; 0 -> the previous contiguous slices (no alignment).
 // 64 threads, --mode perf, 5 runs each:
-//                    0 (slices)   64       128      256      512      1024
-//   chunk2_256        18.33 s   9.33 s   9.48 s  10.07 s
-//   chunk2a_dyn                12.02 s  12.10 s  12.56 s  13.69 s  16.12 s
+//                      0 (slices)   64       128      256      512      1024
+//   zero_one_value_256  18.33 s   9.33 s   9.48 s  10.07 s
+//   zero_any_dyn                 12.02 s  12.10 s  12.56 s  13.69 s  16.12 s
 // (the 0 column predates later library fixes; compare within a row.)
 //
 // The macros name a local `sched_blk`; declare it with bench_sched_for().
@@ -261,12 +261,12 @@ namespace build_config = shrink_array::build_config;
 namespace chunk_config = shrink_array::chunk_config;
 
 #ifdef CHUNK_VARIANT_ZERO
-    #include "chunk/zero_array.h" // zero::Array (the CHUNK variant)
+    #include "chunk/zero_array.h" // zero::Array (the zero variant)
 #elifdef CHUNK_VARIANT_ZERO_ONE_VALUE
-    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (the CHUNK2 variant)
+    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (the zero_one_value variant)
 #elifdef CHUNK_VARIANT_ZERO_ANY
-    #include "chunk/zero_one_value_array.h"  // zero_one_value::Array (tab_bool, see bench_array.h)
-    #include "chunk/zero_any_array.h" // zero_any::Array (the CHUNK2A variant)
+    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (tab_bool, see bench_array.h)
+    #include "chunk/zero_any_array.h"       // zero_any::Array (the zero_any variant)
 #else
     #include <vector> // std::vector (the baseline build)
 #endif

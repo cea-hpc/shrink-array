@@ -50,9 +50,9 @@ namespace shrink_array
 // (illustrative; grep `template <typename U>` in the Proxy hierarchy):
 //
 //     Proxy::operator=/+=/-=/*=//=/%=                 (zero_proxy.h)
-//     Proxy2::operator=                               (zero_one_value_proxy.h)
-//     Proxy2A::operator=                              (zero_any_proxy.h)
-//     Proxy2Base::operator*=///=/%=                   (second_value_proxy_base.h)
+//     zero_one_value::Proxy::operator=                (zero_one_value_proxy.h)
+//     zero_any::Proxy::operator=                      (zero_any_proxy.h)
+//     SecondValueProxyBase::operator*=///=/%=         (second_value_proxy_base.h)
 //     ProxyBase::operator+=/-=/&=/|=/^=/<<=/>>=       (proxy_base.h)
 //     ProxyBase::enqueue_async_arithmetic             (proxy_base.h)
 //     ProxyBase::apply_atomic_op (U parameter)        (proxy_base.h)
@@ -88,7 +88,7 @@ namespace shrink_array
 //     TabCstVal2Holder::alloc_chunk(T val)            (tab_cst_val2_holder.h)
 //     zero_one_value::Array::set_second_value(T)                (zero_one_value_array.h and
 //                                                       zero_one_value_array_inline.h)
-//     Chunk2FastCompPolicy::have_chunk_to_compress(T) (zero_one_value_chunk.h)
+//     zero_one_value::ChunkFastCompPolicy::have_chunk_to_compress(T) (zero_one_value_chunk.h)
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //

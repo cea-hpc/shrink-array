@@ -19,7 +19,7 @@
 #include <utility> // std::forward
 
 #include "chunk/internal/second_value_proxy_base.h" // the declarations these bodies belong to
-#include "chunk/internal/in_t.h"        // InT<T>
+#include "chunk/internal/in_t.h"                    // InT<T>
 
 namespace shrink_array
 {
@@ -32,11 +32,11 @@ namespace shrink_array
 template <typename Derived, typename T, typename ChunkT>
 template <typename... Args>
 void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_core(this const Derived& self,
-                                                               InT<T>              old_value,
-                                                               InT<T>              new_value,
-                                                               InT<T>              expected_in_memory,
-                                                               bool                isv,
-                                                               Args&&... compression_args)
+                                                                         InT<T>              old_value,
+                                                                         InT<T>              new_value,
+                                                                         InT<T>              expected_in_memory,
+                                                                         bool                isv,
+                                                                         Args&&... compression_args)
 {
     // Check if transition is valid for compression OR if memory changed unexpectedly (Race)
     // isv (Is Valid) guards the entire check for performance.

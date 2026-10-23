@@ -24,7 +24,7 @@
 
 #include <vector> // std::vector
 
-#include "chunk/zero_array.h"  // shrink_array::zero::Array
+#include "chunk/zero_array.h"           // shrink_array::zero::Array
 #include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array
 #include "Dispatch.h"           // Dispatch (extern dispatch)
 
@@ -67,7 +67,7 @@ struct VectChunk : public VectCom<T>, public shrink_array::zero::Array<T>
  * @brief The presence fraction of a "chunk" material, in [0, 1]: 0 where
  *        the material is absent, 1 where the cell is pure, in between at the
  *        interfaces.
- * @details Chunk2 compresses the chunks that are all 0 (the first constant)
+ * @details zero_one_value compresses the chunks that are all 0 (the first constant)
  *          AND the ones that are all 1 (the array's second value), so only
  *          the interface chunks are ever materialised.
  */

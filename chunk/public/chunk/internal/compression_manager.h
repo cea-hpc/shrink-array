@@ -102,7 +102,7 @@ struct FlushReplayState
  *          pending counters, dangerous-list tracking and the start()/finish()
  *          session verbs exist only when there are threads to coordinate (same
  *          split as ChunkFastCompPolicy, ChunkDeferredOpsPolicy,
- *          Proxy2FastCompPolicy), so the serial build carries no such state.
+ *          zero_one_value::ProxyFastCompPolicy), so the serial build carries no such state.
  *
  *          The serial specialisation is (nearly) empty: every call site of a
  *          member below sits in a branch discarded by `if constexpr` there.

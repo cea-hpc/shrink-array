@@ -15,17 +15,17 @@
  */
 
 // ============================================================================
-// swap() / move-assignment harness. Variant-agnostic: tests chunk / chunk2 /
-// chunk2a depending on the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like
+// swap() / move-assignment harness. Variant-agnostic: tests zero / zero_one_value /
+// zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like
 // the other harnesses here.
 // ============================================================================
 //
 // Both operations exchange chunk lists in O(1), and the chunks are described
 // by per-array state kept elsewhere: the proxies' tables indexed by num_tab
-// (constant types, Chunk2A's per-chunk second value, compression candidates)
-// and the registry mapping the array's address to num_tab (Chunk2: to its
+// (constant types, zero_any's per-chunk second value, compression candidates)
+// and the registry mapping the array's address to num_tab (zero_one_value: to its
 // second-value tuple). Moving the chunks alone would make each array read the
-// other's metadata -- a Chunk2A chunk folded to its second value coming back
+// other's metadata -- a zero_any chunk folded to its second value coming back
 // as the OTHER array's second value -- and leave the source with nb_chunk over
 // an empty list.
 //
@@ -47,11 +47,11 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/zero_array.h"    // zero::Array
-#include "chunk/zero_one_value_array.h"   // zero_one_value::Array
-#include "chunk/zero_any_array.h"  // zero_any::Array
+#include "chunk/zero_array.h"     // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"         // chunk_config::use_zero*, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
@@ -68,7 +68,7 @@ namespace
 {
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "swap_move_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
+              "swap_move_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
@@ -80,15 +80,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 

@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// copy_range over whole chunks. Variant-agnostic: chunk / chunk2 / chunk2a
-// follow the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the
+// copy_range over whole chunks. Variant-agnostic: zero / zero_one_value /
+// zero_any follow the compile-time macro (CHUNK_VARIANT_ZERO*), like the
 // other harnesses here.
 // ============================================================================
 //
@@ -26,8 +26,8 @@
 //      before (first constant, second constant, materialised) and whatever
 //      the source holds (uniform per chunk, mixed, uniform but for one
 //      element that the three-element guess does not look at);
-//   2. on Chunk2A, a chunk the range covers whole and whose source is
-//      uniform is compressed AT ONCE (Chunk2A::compress, apply = true):
+//   2. on zero_any::Chunk, a chunk the range covers whole and whose source is
+//      uniform is compressed AT ONCE (zero_any::Chunk::compress, apply = true):
 //      right after the call, with no pass between, it no longer holds a
 //      buffer. A chunk with a mixed source keeps its buffer (the scan
 //      refuses it), and so does a chunk covered in part.
@@ -35,9 +35,9 @@
 // The other variants queue the chunks for the pass: only property 1 is
 // checked there, and
 //
-//   3. on v1 and Chunk2, a source equal to the constant a chunk is
+//   3. on zero and zero_one_value, a source equal to the constant a chunk is
 //      compressed at writes nothing: the chunk stays compressed (whole or in
-//      part, at the first constant or Chunk2's second); a source equal to it
+//      part, at the first constant or zero_one_value::Chunk's second); a source equal to it
 //      on a prefix only materialises the chunk from the first other value.
 //
 // WHAT IT EXERCISES -- an array of n_chunks chunks plus a partial tail:
@@ -55,7 +55,7 @@
 //   same-first  first constant <- the first constant (0.0) everywhere, partial
 //               last chunk included: nothing materialised on any variant
 //   same-part   first constant <- 0.0 over [S/2, N - S/2): nothing materialised
-//   same-second second value   <- 1.0 everywhere: nothing on Chunk2 and Chunk2A
+//   same-second second value   <- 1.0 everywhere: nothing on zero_one_value::Chunk and zero_any::Chunk
 //   prefix      first constant <- 0.0 on the first half of each chunk, plain
 //               values after: every chunk materialised, every element right
 //
@@ -71,12 +71,12 @@
 #include <vector>      // std::vector (the sources)
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h"          // zero_one_value::Array
-#include "chunk/zero_any_array.h"         // zero_any::Array
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // copy_range
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println
@@ -98,15 +98,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -149,7 +149,7 @@ static void phase(Array<double>& arr, long n, Fn&& body)
     }
     if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
-        arr.make_block_compression(); // a serial chunk2a has no between-region pass
+        arr.make_block_compression(); // a serial zero_any has no between-region pass
     }
 }
 
@@ -178,7 +178,7 @@ static long mismatches(const Array<double>& arr, long lo, long hi, Expect&& expe
 }
 
 /// @brief The checks of a case: the read-back, and the chunks materialised
-///        when @p check_mat (Chunk2A always, the others for property 3).
+///        when @p check_mat (zero_any::Chunk always, the others for property 3).
 static int report(const char* scase, long bad, int mat, int mat_expected, bool check_mat)
 {
     int fails = 0;
@@ -231,7 +231,7 @@ int run(int /*argc*/, char** /*argv*/)
     const auto near      = [S](long i) { return (i % S == S / 2 + 1) ? 9.5 : 4.0; };
 
     // Each case: setup of the destination, the source over [lo, hi), the
-    // chunks expected to keep a buffer on Chunk2A.
+    // chunks expected to keep a buffer on zero_any::Chunk.
     enum class Dst
     {
         fresh,
@@ -247,8 +247,8 @@ int run(int /*argc*/, char** /*argv*/)
         long                hi;
         int                 mat_expected;
         int                 count_to;    // chunks counted: [0, count_to)
-        int                 mat_v1 = -1; // v1: chunks expected materialised, -1 unchecked
-        int                 mat_v2 = -1; // Chunk2: likewise
+        int                 mat_v1 = -1; // zero: chunks expected materialised, -1 unchecked
+        int                 mat_v2 = -1; // zero_one_value::Chunk: likewise
     };
 
     // Half of each chunk at the first constant, then plain values.

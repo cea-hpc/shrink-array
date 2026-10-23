@@ -30,9 +30,9 @@
  *                                 per write (OpenMP builds).
  *          Constant chunks (all false, all true) cost no data in either.
  *
- *          It is the chunk2 machinery over the element type Bit (bit.h):
- *          write protocol, compression, re-chunk and advisor are chunk2's, and
- *          Chunk2<Bit> has its own managers, pools and registries. The
+ *          It is the zero_one_value machinery over the element type Bit (bit.h):
+ *          write protocol, compression, re-chunk and advisor are zero_one_value's, and
+ *          zero_one_value::Chunk<Bit> has its own managers, pools and registries. The
  *          element is read as a Bit, which converts to and from bool:
  *          @code
  *            ArrayChunkBits<> a(n);

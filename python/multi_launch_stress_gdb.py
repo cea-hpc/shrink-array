@@ -80,19 +80,19 @@ exec_timeout = args.exec_timeout
 # ============================================================
 
 # These names were WRONG well before check and perf were merged: the targets
-# have always carried a size, there never was a bare shrink_bench_chunk_check.
+# have always carried a size, there never was a bare shrink_bench_zero_check.
 # Fixed here on the dyn size, multi_launch_stress.py's default -- and without
 # the _check, now a run-time flag (MODE_ARGS below).
 base_exec_list = [
-    "./shrink_bench_chunk_dyn",
-    "./shrink_bench_chunk2_dyn",
-    "./shrink_bench_chunk2a_dyn",
+    "./shrink_bench_zero_dyn",
+    "./shrink_bench_zero_one_value_dyn",
+    "./shrink_bench_zero_any_dyn",
 ]
 
 # check and perf are one binary since they were merged; the mode is chosen here.
 MODE_ARGS = ["--mode", "check"]
 
-executables = base_exec_list[:] if args.all_exec else ["./shrink_bench_chunk2_dyn"]
+executables = base_exec_list[:] if args.all_exec else ["./shrink_bench_zero_one_value_dyn"]
 
 # ============================================================
 #  Ensure .gdbinit contains the GroupBT command

@@ -18,7 +18,7 @@
 #include <cstddef> // std::size_t
 
 #include "chunk/all_type_chunk.h"           // AllTypeChunk
-#include "chunk/zero_chunk.h"                // the declarations defined here (ChunkPoolParallelInterface)
+#include "chunk/zero_chunk.h"               // the declarations defined here (ChunkPoolParallelInterface)
 #include "chunk/config.h"                   // build_config::threaded, use_fast_alloc
 #include "chunk/internal/chunk_stats.h"     // ChunkStatsThr (CHUNK_STATS only)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (teardown_outside_region)
@@ -31,7 +31,7 @@ namespace shrink_array
 {
 
 #if CHUNK_OPT_STATS
-// Per-variant (chunk/chunk2/chunk2a) x per-thread counter table. Each thread
+// Per-variant (zero/zero_one_value/zero_any) x per-thread counter table. Each thread
 // bumps its own cache-line-aligned slot on the hot path (no atomics); the
 // end-of-run report reduces over threads. See chunk_stats.h.
 std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant> g_chunk_stats;

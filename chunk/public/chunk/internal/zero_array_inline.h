@@ -21,7 +21,7 @@
 #include <vector>  // std::vector
 
 #include "chunk/all_type_chunk.h"                       // ensure_manager, from create
-#include "chunk/zero_array.h"                          // zero::Array, the class these bodies belong to
+#include "chunk/zero_array.h"                           // zero::Array, the class these bodies belong to
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"               // per-size free lists, candidate filter
@@ -92,12 +92,12 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
 
     // Read before the clear() drain mutates state. Not written() = compressed
     // to first_value. A written() chunk is also classified by CONTENT (as in
-    // Chunk2/Chunk2A): whether the deferred compression caught it depends on
+    // zero_one_value/zero_any): whether the deferred compression caught it depends on
     // the thread count, so counting by content makes still@exit a function of
     // the data alone.
     //
     // Cross-variant probe: a block constant to another value than first_value
-    // stays materialised here but a Chunk2/Chunk2A would have compressed it;
+    // stays materialised here but a zero_one_value/zero_any would have compressed it;
     // the same scan counts those. O(materialised * chunk_size), once, shared
     // over a team (never nested in a caller's region, not for a few chunks).
     const auto csz = static_cast<unsigned int>(this->size_policy_.size());
@@ -125,7 +125,7 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
             }
             else
             {
-                ++acc[1]; // a second constant: Chunk2/Chunk2A material
+                ++acc[1]; // a second constant: zero_one_value/zero_any material
             }
         });
     const int n_compressed  = counts[0];
@@ -139,8 +139,8 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
         record_chunk_size_at_exit<zero::Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
     print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk_,
-                                /*n_t1=*/0, "Chunk",
-                                /*n_cross=*/n_would_be_t2, /*cross_name=*/"Chunk2");
+                                /*n_t1=*/0, "zero",
+                                /*n_cross=*/n_would_be_t2, /*cross_name=*/"zero_one_value");
 }
 
 template <ArrayChunkElement T, typename IntType>
@@ -191,7 +191,7 @@ void zero::Array<T, IntType>::clear_core()
     }
 
     // Give this array's chunks back to the manager's count (as zero_one_value::Array /
-    // 2A do): the compression threshold (somme_chunk_create / (factor_div *
+    // zero_any do): the compression threshold (somme_chunk_create / (factor_div *
     // threads)) must track the chunks alive, not the program's history --
     // otherwise it climbs by orders of magnitude, compressions become rare and
     // buffers stop returning to the reuse lists. Also balances rechunk_to()
@@ -223,8 +223,9 @@ void zero::Array<T, IntType>::clear_core()
                                   {
                                       increm_chunk_teardown_clear<zero::Chunk<T>>();
                                       // Released below without a compression: out of the live figures.
-                                      add_chunk_released<zero::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                          static_cast<long>(this->size_policy_.size()));
+                                      add_chunk_released<zero::Chunk<T>>(
+                                          1,
+                                          static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
                                   }
                                   ll_chunk_loc.push_back(&chunk_list_[j]);
                               }
@@ -242,7 +243,7 @@ void zero::Array<T, IntType>::clear_core()
                           // the LEGACY list, which drain_reuse_list_for_size() never
                           // drains: those blocks then stay until teardown.
                           const unsigned int my_sz = this->size_policy_.size();
-                          auto&              lbf = zero::Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                          auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                           for (int k = 0; k < nb; ++k)
                           {
@@ -395,7 +396,7 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
                         increm_chunk_teardown_clear<zero::Chunk<T>>();
                         add_chunk_released<zero::Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
                     }
-                    // As clear_core(): v1's reuse lists hold zeroed buffers.
+                    // As clear_core(): zero's reuse lists hold zeroed buffers.
                     T*          values_loc = chunk_list_[j].values_;
                     constexpr T zero{};
                     std::uninitialized_fill_n(values_loc, my_sz, zero);
@@ -428,7 +429,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
 
     // Drain the deferred ops on the CURRENT chunks before chunk_list and the
     // dirty bitset are reallocated: a queued op holds a reference to its chunk.
-    // And BEFORE the compression pass (as ArrayChunk2Base::resize_common()): a
+    // And BEFORE the compression pass (as SecondValueArrayBase::resize_common()): a
     // replayed write can queue its chunk again, and the realloc and
     // resize_tab_is_int() rely on the pass leaving the lists empty.
     // force: see clear_core().
@@ -489,8 +490,8 @@ void zero::Array<T, IntType>::resize(IntType newsz)
         // when old_size falls on a boundary, stale too. In long long:
         // old_nb_chunk * csz may pass IndType's range.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const IntType      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType      stale_end = newsz < old_cover ? newsz : old_cover;
+        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
+        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
         for (IntType i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

@@ -23,9 +23,9 @@
 #include <utility>         // std::move, std::cmp_greater_equal
 #include <vector>          // the per-chunk "queued" flags
 
-#include "chunk/internal/zero_any_proxy.h"            // the declarations these bodies belong to
+#include "chunk/internal/zero_any_proxy.h"     // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"               // InT<T>
-#include "chunk/zero_any_array.h"               // zero_any::Array (dependent calls the include tools cannot attribute)
+#include "chunk/zero_any_array.h"              // zero_any::Array (dependent calls the include tools cannot attribute)
 #include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h" // ArithmeticAffectationContext
@@ -43,9 +43,9 @@
 
 /**
  * @file zero_any_proxy_inline.h
- * @brief Out-of-line definitions of Proxy2A and Proxy2AFastCompPolicy.
+ * @brief Out-of-line definitions of zero_any::Proxy and zero_any::ProxyFastCompPolicy.
  *
- * Chunk2A stores TWO constants: a global `first_value` and a per-chunk
+ * zero_any stores TWO constants: a global `first_value` and a per-chunk
  * `second_value`. A chunk is cst_val1, cst_val2, or materialised on the heap;
  * this file moves between those states without losing a concurrent write:
  * metadata arming (set_info_on_chunk() and siblings), compression driving
@@ -174,8 +174,8 @@ void zero_any::Proxy<T>::mark_for_compression_if_needed(InT<T> new_value, [[mayb
     {
         // Called BEFORE the store (handle_no_bool_assignment): the memory check
         // must expect the old value -- see mark_for_compression_before_store.
-        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value_.get(), new_value, zero_any::Chunk<T>::first_value,
-                                                 vals);
+        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value_.get(), new_value,
+                                                 zero_any::Chunk<T>::first_value, vals);
     }
     else
     {
@@ -184,7 +184,7 @@ void zero_any::Proxy<T>::mark_for_compression_if_needed(InT<T> new_value, [[mayb
 }
 
 // Explicit-old-value variant: preferred, as it does not re-read the slot (which
-// could race with another writer). bool routes to Proxy2Base's (old, new) form;
+// could race with another writer). bool routes to SecondValueProxyBase's (old, new) form;
 // this arm is not instantiated today, so a wrong qualifier would not be caught.
 template <typename T>
 void zero_any::Proxy<T>::mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const
@@ -215,7 +215,7 @@ void zero_any::Proxy<T>::resize_tab_is_int(int nb_tab)
 // every "queued for compression" flag goes back to 0. Safe only if no chunk of
 // this tab is queued -- a queued chunk with a cleared flag could be queued twice
 // (pointing into the chunk_list just reallocated).
-// ArrayChunk2Base::resize_common() guarantees it by flushing the deferred ops
+// SecondValueArrayBase::resize_common() guarantees it by flushing the deferred ops
 // (whose replay can queue chunks) BEFORE the compression pass that empties every
 // list. Do not swap those two steps. Asserted below (flag 1 <=> entry in a list).
 template <typename T>
@@ -369,7 +369,7 @@ void zero_any::Proxy<T>::ensure_writable_storage()
     // Allocate from THIS array's chunk-size pool: the per-thread size may be
     // stale (left by an op on another array), and a smaller buffer written at
     // this array's offsets overflows. The in-place path reaches create_value
-    // only through here; Proxy2A::create_value (zero_any_proxy.h) does the same on
+    // only through here; zero_any::Proxy::create_value (zero_any_proxy.h) does the same on
     // the direct-assignment path.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -404,7 +404,7 @@ void zero_any::Proxy<T>::ensure_writable_storage()
 /**
  * @brief Materialises a constant chunk from a replay context.
  *
- * Async twin of Proxy2A::ensure_writable_storage(): the state is read from a
+ * Async twin of zero_any::Proxy::ensure_writable_storage(): the state is read from a
  * proxy rebuilt by the caller rather than from `*this`, and no metadata arming
  * happens here — make_proxy_with_info() already did it.
  *
@@ -413,7 +413,8 @@ void zero_any::Proxy<T>::ensure_writable_storage()
  *       replay, so `proxy.chunk_size()` is the live geometry here.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage_async(const Derived& proxy) const
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage_async(
+    const Derived& proxy) const
 {
     const bool is_val2 = proxy.is_cst_val2();
 
@@ -730,7 +731,7 @@ T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
                     }
 
                     // raw-read: deferred replay, after materialisation -- flushes exclude the stealers.
-                    // A relaxed atomic store where Chunk2A's element stores must be one
+                    // A relaxed atomic store where zero_any's element stores must be one
                     // (relaxed_element.h): other writers' scans (may_become_uniform)
                     // read this element meanwhile -- as the compound ops' replay does.
                     if constexpr (internal::relaxed_element_stores_v<zero_any::Chunk<T>, T>)
@@ -838,8 +839,8 @@ void zero_any::Proxy<T>::execute_simple_operation(ModifyFn modify_fn)
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
 void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(this Derived& self,
-                                                                                        auto*         ctx,
-                                                                                        Lambda        operation)
+                                                                                                auto*         ctx,
+                                                                                                Lambda        operation)
 {
     int retry_count = 0;
 
@@ -962,10 +963,11 @@ void zero_any::Proxy<T>::execute_arithmetic_compound_operation(Op op, const U& v
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Op, typename Body, typename U>
-void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(auto*    ctx,
-                                                                                                     Op       op,
-                                                                                                     const U& v,
-                                                                                                     Body     lbd) const
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(
+    auto*    ctx,
+    Op       op,
+    const U& v,
+    Body     lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -1150,9 +1152,10 @@ void zero_any::Proxy<T>::execute_inplace_operation(ModifyFn modify_fn)
 // builds assert the chunk did not go back to a constant during the store.
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(this const Derived& self,
-                                                                                         auto*               ctx,
-                                                                                         Lambda              operation)
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(
+    this const Derived& self,
+    auto*               ctx,
+    Lambda              operation)
 {
     int retry_count = 0;
 

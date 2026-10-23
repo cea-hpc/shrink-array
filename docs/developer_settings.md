@@ -24,18 +24,18 @@
 
 | variable | default | effect |
 |---|---|---|
-| `CHUNK_ALLOC_AFFINITY_EAGER` | depends on the variant | `1`: each large array has its own set of allocators from its creation (default for Chunk, v1); `0`: only from its first rechunk (default for Chunk2 and Chunk2A). See [adaptive_rechunk.md](adaptive_rechunk.md) §5 |
+| `CHUNK_ALLOC_AFFINITY_EAGER` | depends on the variant | `1`: each large array has its own set of allocators from its creation (default for `zero`); `0`: only from its first rechunk (default for `zero_one_value` and `zero_any`). See [adaptive_rechunk.md](adaptive_rechunk.md) §5 |
 | `CHUNK_RECHUNK_MAX_COARSEN` | 4 | maximum factor of a coarsening (1 = no limit) |
 | `CHUNK_ADVISOR_MIN_GAIN_MB` | 8 | absolute threshold for the data-side gain, in MB (0 removes it) |
 | `CHUNK_ADVISOR_GRID_BITS` | 2 | the advisor's candidate sizes between the powers of two: the multiples of 64 whose C / 64 has at most this many significant bits (2: 192, 384, 768...; 3: 320, 448, 640 too; 1: powers of two only). See [adaptive_rechunk.md](adaptive_rechunk.md) §2 |
 | `CHUNK_COARSEN_MIN_META_MB` | 1 | minimum metadata gain of a coarsening, in MB |
 | `CHUNK_COARSEN_MIN_META_RATE` | 250 | minimum metadata gain per second of estimated rebuild time, in MB/s |
 | `CHUNK_RECHUNK_SCHEDULE` | `guided,16` | OpenMP schedule of the rebuild (`kind[,chunk]`) |
-| `CHUNK_RECHUNK_SLICES` | 16 | number of slices in the v1 rebuild |
+| `CHUNK_RECHUNK_SLICES` | 16 | number of slices in the `zero` rebuild |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | a sweep gives empty slabs back to the system only if there are at least this many |
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()` |
-| `CHUNK_RECHUNK_RECYCLE` | on | v1 rebuild: the slabs a slice has just emptied go to the next slice instead of back to the system; `0` turns it off. *Removal planned: 2026-12-31.* |
-| `CHUNK_RECHUNK_KEEP_RECYCLED_MB` | 0 | v1 rebuild: at its end, up to this many MiB per arena of the recycled slabs no slice took stay resident (split evenly over the ranks) for the next allocations, instead of going back to the system; `0`: all go back |
+| `CHUNK_RECHUNK_RECYCLE` | on | `zero` rebuild: the slabs a slice has just emptied go to the next slice instead of back to the system; `0` turns it off. *Removal planned: 2026-12-31.* |
+| `CHUNK_RECHUNK_KEEP_RECYCLED_MB` | 0 | `zero` rebuild: at its end, up to this many MiB per arena of the recycled slabs no slice took stay resident (split evenly over the ranks) for the next allocations, instead of going back to the system; `0`: all go back |
 | `CHUNK_RECHUNK_KEEP_RECYCLED` | off | `1`: the same, with no cap (the RSS keeps every leftover until reused) |
 | `CHUNK_RECHUNK_REUSE_LIST` | on | a rechunk reuses the previous rechunk's chunk list buffer (pages already resident); `0`: a new one each time. *Removal planned: 2026-12-31.* |
 | `CHUNK_THP` | 0 | unset: the kernel's THP mode decides. `never`: no transparent huge pages on the slab arenas (`MADV_NOHUGEPAGE`) -- under the mode `always` a slab otherwise becomes resident whole at its first touch; compare the two with the RSS and AnonHugePages of `smaps_rollup`. Experimental: `1` requests them (`MADV_HUGEPAGE`) on the slab arenas and the cst2 region. Ignored, with a message, when the huge page is larger than 2 MiB (kernel with 64 KiB pages: 512 MiB). Cost: a slab that has been started becomes fully resident. *Removal planned: 2026-12-31.* |
@@ -54,20 +54,20 @@ still work: each sets the level it stands for, with a deprecation warning.
 |---|---|
 | `CHUNK_LOG=rechunk=info` | the decider's moves (`decide <array>: re-chunk S=.. -> S'=.. ... [APPLIED]`, or `[dry-run] would re-chunk`) |
 | `CHUNK_LOG=rechunk=debug` (formerly `CHUNK_RECHUNK_TRACE`) | in addition, the verdicts that wait, and for each rechunk the duration of the phases and of the slices |
-| `CHUNK_LOG=rechunk=trace` (formerly `CHUNK_RECHUNK_TRACE_SLICES`) | in addition, memory at each slice of the v1 rebuild |
+| `CHUNK_LOG=rechunk=trace` (formerly `CHUNK_RECHUNK_TRACE_SLICES`) | in addition, memory at each slice of the `zero` rebuild |
 | `CHUNK_LOG=memory=info` (formerly `CHUNK_RECHUNK_MEMTRACE`) | at each advisor pass: exact memory, including the resident part of the buffer arena |
 | `CHUNK_LOG=memory=debug` (formerly `CHUNK_RECHUNK_TRACE_MEM`) | in addition, the memory side of the rechunk trace: exact memory at each step (`rss` line), occupancy of the new geometry, chunks folded, refused and installed directly, allocator census. Costly (seconds per run at tens of GB): a channel apart from the timings |
 | `CHUNK_LOG=advisor=info` | check builds: at an array's destruction, the chunk size that would have used the least memory, when it saves at least 10 % |
 | `CHUNK_ADVISOR_TABLE` | `1` or `=name`: the full advisor table at each pass (all arrays or a single one) |
 | `CHUNK_RECHUNK_CHURN` | `1` or `=name`: materialisations per pass and an estimate of the transient cost they imply (level info of channel rechunk, which it switches on) |
 | `CHUNK_LOG=affinity=debug` (formerly `CHUNK_AFFINITY_TRACE`) | each per-array set of allocators created (key, size, budget) |
-| `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and Chunk2A's constant blocks never queued; the compression residual of an audit (`compress()` on zero_one_value::Array / zero_any::Array); `compress=debug` adds zero_one_value::Array's per-chunk detail |
+| `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and `zero_any`'s constant blocks never queued; the compression residual of an audit (`compress()` on zero_one_value::Array / zero_any::Array); `compress=debug` adds zero_one_value::Array's per-chunk detail |
 | `CHUNK_ARENA_REPORT` | the summary of the buffer arena (slabs handed out, given back to the system); a report: written whatever `CHUNK_LOG` says (channel `arena`) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (formerly `CHUNK_RECYCLE_TRACE`) | check builds: the foreign blocks the deferred-write pool drops, on a doubling schedule / one line per block |
 | `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry), at exit; a report: written whatever `CHUNK_LOG` says (channel `ledger`) |
 | `CHUNK_OMPT_STATS` | statistics of the synchronisation regions (OMPT builds), at exit; a report: written whatever `CHUNK_LOG` says (channel `ompt`) |
-| `CHUNK_CST2_PROBE` (*set*) | Chunk2A: report of the second-value registry at each pass (benchmark) |
-| `CHUNK_CST2_RECLAIM` | Chunk2A, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
+| `CHUNK_CST2_PROBE` (*set*) | `zero_any`: report of the second-value registry at each pass (benchmark) |
+| `CHUNK_CST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
 | `ALLOC_TOKEN_REPORT` | `SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `CHUNK_LOG=alloc=trace` (formerly `FAST_ALLOC_TRACE`) | one `munmap` line per emptied slab that a pool's reserve does not keep and that is freed |
 
@@ -116,7 +116,7 @@ and how the shared options reach the headers, are in
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | test hook: one read in N by a thread that requested it waits (50 µs), to widen the reader / reclamation window (`read_reclaim_validation`) |
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | test hook: a delay (200 µs) in one compression pass in N |
 
-And one macro specific to Chunk2A: `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 by default) selects the
+And one macro specific to `zero_any`: `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 by default) selects the
 set of trigger thresholds for the compression passes (`zero_any_chunk_def.h`). Only level 0 is built and
 tested. *Removal of levels 1 to 3 planned: 2026-12-31.*
 
@@ -131,7 +131,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `SHRINK_INTEL_LIBM` | `ON` | x86-64: link Intel's libm if it is found |
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64: link ArmPL's `libamath` (no gain measured on Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | workaround for an icpx internal error on three files |
-| `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (debugging build) |
+| `CHUNK_MM_PROTECT` | `OFF` | `zero`, `zero_one_value`: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (debugging build) |
 | `CHUNK_LIB_UNITY` | `ON` | each variant archive (`chunk_zero_any_256`, ...) compiled as a single unit (unity build, 4 to 6 times less compilation); a file that has its own compile options stays separate |
 | `SHRINK_BENCH_UNITY` | `ON` | each `shrink_bench` executable compiled as a single unit (unity build, 3.5 to 4 times less compilation); `OFF` to compare timings with earlier campaigns, since inlining across benchmark files can change them; `SHRINK_BENCH_UNITY_BATCH` files per unit (0 = all) |
 | `CHUNK_DEBUG_INFO` | `auto` | debug information of the optimised builds: `full` (`-g`), `lines` (`-g1`: function names and line tables, enough for perf and gdb backtraces, not the locals), `none`; `auto`: `full` with `CHECK_OPTIM` or a sanitizer, `lines` otherwise. The machine code is the same; `lines` compiles 20 to 27 % faster with 40 % less peak memory. Debug builds always get `-g` |

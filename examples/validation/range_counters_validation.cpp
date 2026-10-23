@@ -15,17 +15,17 @@
  */
 
 // ============================================================================
-// Range ops and the per-chunk counters. Variant-agnostic: tests chunk / chunk2
-// / chunk2a depending on the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A),
+// Range ops and the per-chunk counters. Variant-agnostic: tests zero / zero_one_value
+// / zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*),
 // like the other harnesses here.
 // ============================================================================
 //
 // In counter mode (use_compression_with_counter: no fast block compression --
-// the serial builds) v1 and Chunk2 decide a chunk's compression on counters the
+// the serial builds) zero and zero_one_value decide a chunk's compression on counters the
 // write proxy maintains incrementally: how many elements equal the first value
-// (v1, Chunk2) and the array's second value (Chunk2). fill_range / copy_range
+// (zero, zero_one_value) and the array's second value (zero_one_value). fill_range / copy_range
 // store most of a chunk straight into its buffer, past those counters, so they
-// must recount afterwards (internal::resync_counters). Chunk2 was once left out:
+// must recount afterwards (internal::resync_counters). zero_one_value was once left out:
 // its stale counts reached chunk_size on a MIXED chunk and the pass folded it
 // to a constant, losing everything else in it (rechunk_validation_zero_one_value_dyn,
 // 34819 elements of 1e6).
@@ -35,7 +35,7 @@
 // pass. Every element but that one must still read the plain value. With a
 // stale count the chunk comes back all constant.
 //   first  -- fill_range, then one first value;
-//   second -- fill_range, then one second value (Chunk2 / 2A);
+//   second -- fill_range, then one second value (zero_one_value / zero_any);
 //   copy   -- copy_range from a plain source, then one first value.
 // Then the compound operators on a compressed chunk (run_compound_case).
 // In an OpenMP build the counters do not exist and the cases simply pass.
@@ -48,12 +48,12 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"          // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h"          // zero_one_value::Array
-#include "chunk/zero_any_array.h"         // zero_any::Array
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_zero_one_value*, use_compression_with_counter
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println
@@ -69,7 +69,7 @@ namespace
 {
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "range_counters_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
+              "range_counters_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
@@ -81,15 +81,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -209,9 +209,9 @@ int run_case(Case c)
     return bad ? 1 : 0;
 }
 
-/// `second * 0` through the proxy (Chunk2): the element leaves the second value
+/// `second * 0` through the proxy (zero_one_value): the element leaves the second value
 /// AND enters the first. Both counters must move; the second-value count once
-/// did not (Proxy2::apply_compound_operation), so it stayed one too high and the
+/// did not (zero_one_value::Proxy::apply_compound_operation), so it stayed one too high and the
 /// LAST of the following second-value writes reached chunk_size with the zero
 /// still in the chunk: folded to cst2, the zero read back as the second value
 /// (shrink_bench_zero_one_value_dyn, one element of a chunk in a check run).
@@ -257,8 +257,8 @@ int run_mul_zero_case()
     return bad ? 1 : 0;
 }
 
-// ── Compound operators on a compressed chunk (v1, counter mode) ─────────────
-// v1 arms a compressed chunk at nb_val_eq_zero = chunk_size - 1, betting that
+// ── Compound operators on a compressed chunk (zero, counter mode) ───────────
+// zero arms a compressed chunk at nb_val_eq_zero = chunk_size - 1, betting that
 // the element written turns non-zero. An operator that leaves it at 0 (0 &= x,
 // 0 <<= k, 0 >>= k, 0 += 0, 0 -= 0, 0 |= 0, 0 ^= 0) lost the bet with nothing
 // to correct it: one zero short for good, the chunk could never be compressed

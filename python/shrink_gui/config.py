@@ -7,6 +7,7 @@ import os
 import re
 
 from shrink_gui import i18n, sitecfg
+from shrink_gui.remote_helper import normalize_variant
 
 APP = "shrink_gui"
 
@@ -205,17 +206,20 @@ VIZ = {
 
 # Colour follows the entity, never its rank: fixed slots per category.
 COLOR_BY = {
-    "Variante": (lambda exe: exe_parts(exe)[0], ["chunk", "chunk2", "chunk2a"]),
+    "Variante": (lambda exe: exe_parts(exe)[0], ["zero", "zero_one_value", "zero_any"]),
     "Taille": (lambda exe: exe_parts(exe)[1], ["256", "1024", "dyn"]),
     "Aucune": (lambda exe: "runs", ["runs"]),
 }
 
-EXE_RE = re.compile(r"shrink_bench_(chunk2a|chunk2|chunk)(?:_(\w+))?$")
+# The old names too (shrink_bench_chunk2a_dyn: a build made before the rename),
+# read as the new ones. Longest first: zero would also match zero_any.
+EXE_RE = re.compile(r"shrink_bench_(zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)(?:_(\w+))?$")
 
 def exe_parts(exe):
-    """shrink_bench_chunk2a_dyn -> ("chunk2a", "dyn"); no size -> "default"."""
+    """shrink_bench_zero_any_dyn -> ("zero_any", "dyn"), shrink_bench_chunk2a_dyn
+    too; no size -> "default"."""
     m = EXE_RE.search(exe)
-    return (m.group(1), m.group(2) or "default") if m else (exe, "?")
+    return (normalize_variant(m.group(1)), m.group(2) or "default") if m else (exe, "?")
 
 # The batch commands and the detached mode of the site, as the helper takes
 # them (remote_helper.py: act_check, act_launch, act_stop).

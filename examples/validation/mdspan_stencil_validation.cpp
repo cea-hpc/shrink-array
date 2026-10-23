@@ -24,7 +24,7 @@
 //     (layout_tiled_dyn), the extents not multiples of the tile (padded
 //     edges), a halo as wide as a tile; rank 3;
 //   - on_uniform: the same result with and without it, and the uniform tiles
-//     of the result left compressed (every variant at first_value, Chunk2A at
+//     of the result left compressed (every variant at first_value, zero_any::Chunk at
 //     any value); the source left untouched;
 //   - serial, per tile in an omp for (the range overload) and
 //     stencil_tiles_mt from every thread of a phase; and called outside any
@@ -42,15 +42,15 @@
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector (the references)
 
-#include "chunk/zero_array.h"     // zero::Array
-#include "chunk/zero_one_value_array.h"    // zero_one_value::Array
-#include "chunk/zero_any_array.h"   // zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // chunk_config::use_zero_one_value*
-#include "chunk/internal/print.h"  // shrink_array::println
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/mdspan_tile_ops.h" // md::stencil_tiles(_mt), SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*
+#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/manage_ompt.h"          // parallel_phase
+#include "chunk/mdspan_tile_ops.h"      // md::stencil_tiles(_mt), SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 
 using namespace shrink_array;
 
@@ -273,7 +273,7 @@ void case_2d(const char* name, long size, Make&& make, long h, Border b, How w, 
     expect(bad == 0, name, bad, static_cast<long>(w) * 100 + static_cast<long>(b) * 10 + h);
     expect(src_bad == 0, "the source changed", src_bad);
     // The tiles of the result whose cells are one value hold no buffer: at 0
-    // on every variant, at any value on Chunk2A (checked when a tile is one
+    // on every variant, at any value on zero_any::Chunk (checked when a tile is one
     // chunk).
     using Index   = typename decltype(g)::index_type;
     const long S  = static_cast<long>(d.chunk_size());

@@ -29,10 +29,10 @@
 #include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
 
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
-#include "chunk/zero_one_value_array.h"                         // zero_one_value::Array, the class these bodies belong to
+#include "chunk/zero_one_value_array.h"                 // zero_one_value::Array, the class these bodies belong to
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
-#include "chunk/internal/zero_one_value_proxy.h"                      // Proxy2<T>
+#include "chunk/internal/zero_one_value_proxy.h"        // zero_one_value::Proxy<T>
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
@@ -52,9 +52,9 @@
  * @file zero_one_value_array_inline.h
  * @brief Out-of-line definitions of zero_one_value::Array.
  *
- * zero_one_value::Array is the array of Chunk2 blocks: every chunk compresses either to
+ * zero_one_value::Array is the array of zero_one_value blocks: every chunk compresses either to
  * the global `first_value` or to ONE array-wide `second_value` — the difference
- * with Chunk2A, which lets each chunk pick its own. That single shared constant
+ * with zero_any, which lets each chunk pick its own. That single shared constant
  * is what shapes most of this file.
  *
  * What lives here:
@@ -415,7 +415,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 }
 
 // Two independent scans: the classification into n_t0 / n_t1 (compressible to
-// the first / second constant), then the "would Chunk2A have helped?" probe.
+// the first / second constant), then the "would zero_any have helped?" probe.
 // Both re-read chunk content instead of trusting the written() flag (see below).
 template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os) const
@@ -463,7 +463,8 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                                               {
                                                                   return;
                                                               }
-                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0 : 1];
+                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0
+                                                                                                                 : 1];
                                                               return;
                                                           }
                                                           ++acc[ck.is_cst_val1() ? 0 : 1];
@@ -475,8 +476,8 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
     {
         // bool (and Bit, ArrayChunkBits): the second constant is `true`, one
         // for the type -- an all-true chunk is type-2. Do not count it as
-        // type-1: the verdict would say "plain Chunk would suffice" for arrays
-        // whose true chunks a plain Chunk cannot compress.
+        // type-1: the verdict would say "plain zero would suffice" for arrays
+        // whose true chunks zero cannot compress.
         const auto counts = pmp::parallel_sum<int, 2>(0, nb_chunk_, team_opt,
                                                       [&](int j, auto& acc)
                                                       {
@@ -488,7 +489,8 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                                               {
                                                                   return;
                                                               }
-                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0 : 1];
+                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0
+                                                                                                                 : 1];
                                                               return;
                                                           }
                                                           ++acc[ck.is_cst_val1() ? 0 : 1];
@@ -498,12 +500,12 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
     }
     const int n_compressed = n_t0 + n_t1;
 
-    // Cross-variant probe ("would Chunk2A have helped?"): Chunk2 shares ONE
-    // second value across the array, whereas Chunk2A registers a second value
-    // per chunk (find_or_set path). So Chunk2A pays off exactly on the blocks
+    // Cross-variant probe ("would zero_any have helped?"): zero_one_value shares ONE
+    // second value across the array, whereas zero_any registers a second value
+    // per chunk (find_or_set path). So zero_any pays off exactly on the blocks
     // that are constant to a value which is NEITHER first_value NOR the array's
-    // registered second value: Chunk2 cannot compress those in any state (they
-    // are always materialised here), Chunk2A would have. Counted by content
+    // registered second value: zero_one_value cannot compress those in any state (they
+    // are always materialised here), zero_any would have. Counted by content
     // alone, like the classification above, so the answer does not depend on
     // the thread count. O(materialised * chunk_size), once, at teardown.
     int n_would_be_2a = -1;
@@ -524,7 +526,7 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                           const InT<T> v = ck.read_value_scan(0);
                                           if (v == zero_one_value::Chunk<T>::first_value || v == second_value)
                                           {
-                                              return; // Chunk2 material, caught or not
+                                              return; // zero_one_value material, caught or not
                                           }
                                           if (ck.is_constant_to(v, csz))
                                           {
@@ -541,8 +543,8 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
         record_chunk_size_at_exit<zero_one_value::Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
     print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk_, n_t1,
-                                "Chunk2",
-                                /*n_cross=*/n_would_be_2a, /*cross_name=*/"Chunk2A");
+                                "zero_one_value",
+                                /*n_cross=*/n_would_be_2a, /*cross_name=*/"zero_any");
 }
 
 // clear() and clear_core() are currently the same teardown; the split exists so
@@ -570,7 +572,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // thread_chunk_size(), not on the buffer, so an ambient left by ANOTHER
     // array (destructor, or rechunk_to()'s teardown of tmp) would free through
     // the WRONG size pool (fast-alloc only; std-alloc's svfree() does not route).
-    // Same rule as Proxy2::manage_full_first_value() / manage_full_second_value(),
+    // Same rule as zero_one_value::Proxy::manage_full_first_value() / manage_full_second_value(),
     // applied to the array-wide sweep.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -578,7 +580,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     }
 
     // Drain any deferred write still targeting this array's chunks before
-    // chunk_list is freed below. See ArrayChunk2Base::flush_pending_deferred_ops()
+    // chunk_list is freed below. See SecondValueArrayBase::flush_pending_deferred_ops()
     // for the full rationale (dangling chunk refs in the global deferred maps).
     // Safe here: nb_chunk / chunk_list / the dirty bitset are unchanged at this
     // point, so the dirty-bit scan stays in bounds.
@@ -605,10 +607,10 @@ void zero_one_value::Array<T, IntType>::clear_core()
         zero_one_value::Proxy<T>::clear_is_int(num_tab);
 
         // Remove THIS array's queued compression candidates by num_tab, before
-        // its chunks are freed below. Chunk2's candidate store is
+        // its chunks are freed below. zero_one_value's candidate store is
         // map_chunk2_to_compress_potentially_thr[thr][second_value] (keyed by
         // value, shared across arrays); in GNU / non-OMPT fast-block builds
-        // nothing else clears it, so a destroyed array's Chunk2* would dangle
+        // nothing else clears it, so a destroyed array's zero_one_value::Chunk* would dangle
         // there for a later pass to walk. Targeted (no compression, other arrays
         // untouched); it also makes rechunk_to's tmp teardown safe.
         ManagerChunk2::remove_from_compress_list_chunk2_by_num_tab(num_tab);
@@ -709,9 +711,9 @@ void zero_one_value::Array<T, IntType>::clear_core()
                                   {
                                       increm_chunk_teardown_clear<zero_one_value::Chunk<T>>();
                                       // Released below without a compression: out of the live figures.
-                                      add_chunk_released<zero_one_value::Chunk<T>>(1,
-                                                                    static_cast<long>(sizeof(T)) *
-                                                                        static_cast<long>(this->size_policy_.size()));
+                                      add_chunk_released<zero_one_value::Chunk<T>>(
+                                          1,
+                                          static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
                                   }
 
                                   ll_chunk_loc.push_back(&chunk_list_[j]);
@@ -784,7 +786,8 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // row 0, another live array's.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        zero_one_value::Proxy<T>::release_tab_is_int(zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()));
+        zero_one_value::Proxy<T>::release_tab_is_int(
+            zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()));
     }
 }
 
@@ -952,7 +955,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
 
         if constexpr (is_not_bool)
         {
-            // Call clear_st(num, ind), the one name both Chunk2OmpPolicy
+            // Call clear_st(num, ind), the one name both zero_one_value::ChunkOmpPolicy
             // specialisations declare, and let the policy choose: under OpenMP
             // clear_int_st(num, ind, thr_rank); serially the 2-arg
             // clear_int_st(num, ind), a different algorithm (eager, no queue,
@@ -1085,10 +1088,10 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             int       is_inside = -1; // the candidate-list flag exists in fast-block builds only
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                is_inside = static_cast<int>(
-                    shrink_array::zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(
-                        shrink_array::zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()))[ind]
-                        .load(std::memory_order_acquire));
+                is_inside = static_cast<int>(shrink_array::zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(
+                                                 shrink_array::zero_one_value::Proxy<T>::share_info_array->get_num_tab(
+                                                     this->registry_key()))[ind]
+                                                 .load(std::memory_order_acquire));
             }
             int count = -1; // the counters exist in counter builds only
             if constexpr (chunk_config::use_compression_with_counter)
@@ -1097,7 +1100,8 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                 count             = static_cast<int>(second ? chunk.get_nb_second_value() : chunk.get_nb_first_value());
             }
             CHUNK_LOG(debug, compress, "residual zero_one_value::Array: chunk {} (element {}): is_inside={} count={}",
-                      ind, static_cast<IntType>(ind) * static_cast<IntType>(this->size_policy_.size()), is_inside, count);
+                      ind, static_cast<IntType>(ind) * static_cast<IntType>(this->size_policy_.size()), is_inside,
+                      count);
         }
     };
     report(tab_nb1, "first_value", false);
@@ -1178,8 +1182,8 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
                     {
                         increm_chunk_teardown_clear<zero_one_value::Chunk<T>>();
                         // The size read here, not captured: stats builds only use it.
-                        add_chunk_released<zero_one_value::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                             static_cast<long>(this->size_policy_.size()));
+                        add_chunk_released<zero_one_value::Chunk<T>>(
+                            1, static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
                     }
                     T* values_loc = chunk_list_[j].values_;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
@@ -1203,7 +1207,7 @@ template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::resize(IntType newsz)
 {
     this->invalidate_proxies();
-    const int  old_nb_chunk = nb_chunk_;
+    const int     old_nb_chunk = nb_chunk_;
     const IntType old_size     = this->m_size_; // the stale-tail reset at the end
 
     Base2::resize_common(newsz);
@@ -1236,8 +1240,8 @@ void zero_one_value::Array<T, IntType>::resize(IntType newsz)
         // spare chunk keeps stale values too.
         // In long long: old_nb_chunk * csz may pass IndType's range near its top.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const IntType      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType      stale_end = newsz < old_cover ? newsz : old_cover;
+        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
+        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
         for (IntType i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

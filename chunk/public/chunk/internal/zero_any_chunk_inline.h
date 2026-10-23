@@ -29,7 +29,7 @@
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_chunk_steal_mark
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/zero_any_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/internal/zero_any_proxy.h"             // Proxy2A<T>
+#include "chunk/internal/zero_any_proxy.h"      // zero_any::Proxy<T>
 #include "chunk/internal/manager_chunk.h"       // ManagerChunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
@@ -39,14 +39,14 @@
 
 /**
  * @file zero_any_chunk_inline.h
- * @brief Out-of-line definitions of Chunk2A: materialisation and compression.
+ * @brief Out-of-line definitions of zero_any::Chunk: materialisation and compression.
  *
- * A Chunk2A block is in one of three states; every function here moves it between them
+ * A zero_any block is in one of three states; every function here moves it between them
  * or decides that it should move:
  *  - **cst_val1**: `values` points at the shared all-`first_value` block;
  *  - **cst_val2**: `values` points at the identifier slot of THIS chunk's own
- *    second value (tab_cst_val2_holder.h; Chunk2A's distinguishing feature —
- *    Chunk2 has one second value per array, Chunk2A one per chunk);
+ *    second value (tab_cst_val2_holder.h; zero_any's distinguishing feature —
+ *    zero_one_value has one second value per array, zero_any one per chunk);
  *  - **materialised**: `values` points at a private heap buffer.
  *
  * The two directions:
@@ -62,7 +62,7 @@
  * applies the clears and clears the flags.
  *
  *  - **The materialise / clear functions exist twice**, on the two specialisations of
- *    Chunk2AOmpPolicy (build_config::threaded); the passes branch with `if constexpr`.
+ *    zero_any::ChunkOmpPolicy (build_config::threaded); the passes branch with `if constexpr`.
  *    The serial twin often takes a shorter path (no CAS, no rank, no handshake).
  *  - **Geometry is pinned per chunk, never inherited.** A candidate list can hold chunks
  *    of several arrays, so a single pin at the top of a pass is wrong: each entry carries
@@ -97,7 +97,8 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_any::Chunk<T>* v, std::size_t count) noexcept
+void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_any::Chunk<T>* v,
+                                                                        std::size_t         count) noexcept
 {
     chunk_array_new::init_chunks(v, count, [](zero_any::Chunk<T>& chunk) { chunk.init_after_constructor(); });
 }
@@ -144,11 +145,11 @@ void zero_any::Chunk<T>::set_cst_val_to_cst_val(int num_compress_value, char* pt
  */
 template <typename T>
 void zero_any::Chunk<T>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
-                                       VecTupleChunkA2pTint2& ll_compt2,
-                                       int                    num_chunk,
-                                       int                    num_tab,
-                                       ChunkElems             size,
-                                       [[maybe_unused]] bool  claimed)
+                                               VecTupleChunkA2pTint2& ll_compt2,
+                                               int                    num_chunk,
+                                               int                    num_tab,
+                                               ChunkElems             size,
+                                               [[maybe_unused]] bool  claimed)
 {
     if (Base::is_not_cst_val1())
     {
@@ -215,7 +216,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
     // Geometry is pinned PER CHUNK, never once here (see the @file comment): each entry
     // carries its array's ChunkElems (from push_to_compress_list()), pinned right before
     // clear_int_st() reaches ChunkBase::free_values(), which routes by the ambient
-    // thread_chunk_size() (see Proxy2::manage_full_first_value() in zero_one_value_proxy.h).
+    // thread_chunk_size() (see zero_one_value::Proxy::manage_full_first_value() in zero_one_value_proxy.h).
     auto& vec_tuple_to_compress = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
 
     const auto sz = static_cast<int>(vec_tuple_to_compress.size());
@@ -299,7 +300,8 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
         char* ptr_type_cst = &zero_any::Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
 
         // Long form in both modes: thr is 0 with OpenMP off.
-        const SecondValueRef<T> ptr_second_value = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+        const SecondValueRef<T> ptr_second_value =
+            zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
         chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
         chunk_ptr->steal_unmark();
     }
@@ -340,7 +342,8 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
 
             char* ptr_type_cst = &zero_any::Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
 
-            const SecondValueRef<T> ptr_second_value = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            const SecondValueRef<T> ptr_second_value =
+                zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
@@ -356,7 +359,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
         {
             if (num_chunk < 0) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("Chunk2A block pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
+                CHUNK_INVARIANT_FAILED("zero_any block pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
             }
         }
         // Hand the candidate back: its mark FIRST, then the dedup flag. While the flag is up
@@ -425,10 +428,10 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
  */
 template <typename T>
 void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
-                          int                   num_chunk,
-                          int                   num_tab,
-                          [[maybe_unused]] bool apply,
-                          ChunkElems            size)
+                                  int                   num_chunk,
+                                  int                   num_tab,
+                                  [[maybe_unused]] bool apply,
+                                  ChunkElems            size)
 {
     // OpenMP without OMPT, apply = false (the lists' purge walks): the body would only scan
     // and register a cst_val2 that make_block_compression redoes -- a large cost for no
@@ -459,11 +462,12 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
         {
             // Against values[0], as fill_list_to_compress does, not the registered second
             // value: a chunk uniform at another value is compressed to THAT value.
-            const SecondValueRef<T> ptr_second_value = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            const InT<T>            second_v         = Base::read_value_scan(0);
-            const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
-            compact1                                 = scan.first;
-            compact2                                 = scan.second;
+            const SecondValueRef<T> ptr_second_value =
+                zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            const InT<T> second_v = Base::read_value_scan(0);
+            const auto   scan     = Base::scan_constants(first_value, second_v, size.count());
+            compact1              = scan.first;
+            compact2              = scan.second;
             if (compact2)
             {
                 new_cst_val2_ptr = Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
@@ -485,8 +489,9 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
         // installed second-value slot (nullptr).
         if (apply)
         {
-            const SecondValueRef<T> ptr_second_value = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            char*                   ptr_type_cst     = &zero_any::Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
+            const SecondValueRef<T> ptr_second_value =
+                zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            char* ptr_type_cst = &zero_any::Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
             if (compact1)
             {
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
@@ -537,7 +542,7 @@ void zero_any::Chunk<T>::fill_constant_st(int thr_rank, int num_chunk, int num_t
     if (this->written())
     {
         // CHUNK_STATS: a compression reached without a scan, its attempt
-        // counted with it (as fill_range does on v1).
+        // counted with it (as fill_range does on zero).
         increm_chunk_compress_attempt<Chunk>();
         T* cst2_ptr = to_first ? nullptr : Holder::find_or_set_ind_cst_val2(v, ptr_second_value);
         clear_int_st(to_first ? 0 : 1, ptr_type_cst, ptr_second_value, thr_rank, cst2_ptr);
@@ -580,10 +585,10 @@ void zero_any::Chunk<T>::compress_sweep_rank(int thr, bool apply)
 {
     if constexpr (build_config::threaded && chunk_config::not_use_compression_with_ompt)
     {
-        // The only between-region compressor for chunk2a in this mode. No writer is live
+        // The only between-region compressor for zero_any in this mode. No writer is live
         // between regions, so the pass runs without handshake (nullptr proxy), each rank on
         // its own list (the second-value registry takes its mutex); ranks beyond the team
-        // are done serially (compress_sweep_mops_up), as Chunk2 does.
+        // are done serially (compress_sweep_mops_up), as zero_one_value does.
         if (apply)
         {
             make_block_compression(thr, nullptr);
@@ -730,9 +735,9 @@ void zero_any::Chunk<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int 
  */
 template <typename T>
 void zero_any::Chunk<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int   thr,
-                                                    VecTupleChunkA2pInt2&  ll_compt1,
-                                                    VecTupleChunkA2pTint2& ll_compt2,
-                                                    [[maybe_unused]] bool  claimed)
+                                                            VecTupleChunkA2pInt2&  ll_compt1,
+                                                            VecTupleChunkA2pTint2& ll_compt2,
+                                                            [[maybe_unused]] bool  claimed)
 {
     auto& vec_tup = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
 
@@ -763,7 +768,7 @@ void zero_any::Chunk<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int
 }
 
 // ---------------------------------------------------------------------------
-// Chunk2AOmpPolicy<T, Derived, true>: materialise and clear, OpenMP mode.
+// zero_any::ChunkOmpPolicy<T, Derived, true>: materialise and clear, OpenMP mode.
 // ---------------------------------------------------------------------------
 /**
  * @brief Materialise-side exclusion against the compressor's steal.
@@ -831,9 +836,9 @@ void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank)
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived&     self,
-                                                         bool              need_set_second_value,
-                                                         SecondValueRef<T> ptr_second_value,
-                                                         int               thr_rank)
+                                                                 bool              need_set_second_value,
+                                                                 SecondValueRef<T> ptr_second_value,
+                                                                 int               thr_rank)
 {
     if constexpr (is_not_bool)
     {
@@ -853,17 +858,17 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived&  
             }
         };
 
-        // Chunk2Base spelled out, not Base: `self.Base::` looks Base up in Derived first,
-        // where Chunk2A's alias is private (clang rejects it; gcc lets it through).
+        // SecondValueChunkBase spelled out, not Base: `self.Base::` looks Base up in Derived first,
+        // where zero_any::Chunk's alias is private (clang rejects it; gcc lets it through).
         T* values_loc = self.SecondValueChunkBase<T, Derived>::allocate_chunk_internal(thr_rank, init_func);
 
         self.SecondValueChunkBase<T, Derived>::apply_cas_or_recup(values_loc, thr_rank,
-                                                        [&self, need_set_second_value](T* cst_ptr)
-                                                        {
-                                                            // One CAS on the specific constant pointer.
-                                                            return self.compare_and_swap(cst_ptr,
-                                                                                         need_set_second_value);
-                                                        });
+                                                                  [&self, need_set_second_value](T* cst_ptr)
+                                                                  {
+                                                                      // One CAS on the specific constant pointer.
+                                                                      return self.compare_and_swap(
+                                                                          cst_ptr, need_set_second_value);
+                                                                  });
     }
 
     else
@@ -882,8 +887,8 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived&  
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self,
-                                                              bool          need_set_second_value,
-                                                              int           thr_rank)
+                                                                      bool          need_set_second_value,
+                                                                      int           thr_rank)
 {
     if constexpr (is_bool)
     {
@@ -912,8 +917,8 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(this Deriv
 /// @brief create_value() on the calling thread's rank.
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived&     self,
-                                                         bool              need_set_second_value,
-                                                         SecondValueRef<T> ptr_second_value)
+                                                                 bool              need_set_second_value,
+                                                                 SecondValueRef<T> ptr_second_value)
 {
     self.create_value(need_set_second_value, ptr_second_value, get_thr_rank_fast());
 }
@@ -926,7 +931,7 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(this Deriv
 }
 
 // ---------------------------------------------------------------------------
-// Chunk2AOmpPolicy<T, Derived, false>: materialise and clear, serial mode.
+// zero_any::ChunkOmpPolicy<T, Derived, false>: materialise and clear, serial mode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -937,8 +942,8 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(this Deriv
  */
 template <typename T, typename Derived>
 void zero_any::ChunkOmpPolicy<T, Derived, false>::create_value(this Derived&     self,
-                                                       bool              need_set_second_value,
-                                                       SecondValueRef<T> ptr_second_value)
+                                                               bool              need_set_second_value,
+                                                               SecondValueRef<T> ptr_second_value)
 {
     const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
     {
@@ -980,9 +985,9 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::create_value_bool(this Derived
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::clear(this Derived&     self,
-                                                  char*             ptr_type_cst,
-                                                  SecondValueRef<T> ptr_second_value,
-                                                  int               thr_rank)
+                                                          char*             ptr_type_cst,
+                                                          SecondValueRef<T> ptr_second_value,
+                                                          int               thr_rank)
 {
     self.SecondValueChunkBase<T, Derived>::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
 }
@@ -998,8 +1003,8 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::clear(this Derived&     self
  */
 template <typename T, typename Derived>
 void zero_any::ChunkOmpPolicy<T, Derived, false>::clear(this Derived&     self,
-                                                char*             ptr_type_cst,
-                                                SecondValueRef<T> ptr_second_value)
+                                                        char*             ptr_type_cst,
+                                                        SecondValueRef<T> ptr_second_value)
 {
     if (self.written())
     {
@@ -1022,8 +1027,8 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::clear(this Derived&     self,
  */
 template <typename T, typename Derived>
 void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_st(this Derived&     self,
-                                                   char*             ptr_type_cst,
-                                                   SecondValueRef<T> ptr_second_value)
+                                                           char*             ptr_type_cst,
+                                                           SecondValueRef<T> ptr_second_value)
 {
     self.SecondValueChunkBase<T, Derived>::debug_check_written();
 
@@ -1042,18 +1047,18 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_st(this Derived&     sel
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::block_clear(this Derived&        self,
-                                                        int                  num_compress_value,
-                                                        char*                ptr_type_cst,
-                                                        SecondValueRef<T>    ptr_second_value,
-                                                        [[maybe_unused]] int thr_rank,
-                                                        T*                   cst2_ptr)
+                                                                int                  num_compress_value,
+                                                                char*                ptr_type_cst,
+                                                                SecondValueRef<T>    ptr_second_value,
+                                                                [[maybe_unused]] int thr_rank,
+                                                                T*                   cst2_ptr)
 {
     // CHUNK_STATS: one block released (see the function comment).
     increm_chunk_compress<Derived>();
-    // Bytes released, as Chunk2 counts them (with bytes_alloc/bytes_reused: live buffers).
+    // Bytes released, as zero_one_value counts them (with bytes_alloc/bytes_reused: live buffers).
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
-    self.SecondValueChunkBase<T, Derived>::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_cst, ptr_second_value,
-                                                    cst2_ptr);
+    self.SecondValueChunkBase<T, Derived>::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_cst,
+                                                              ptr_second_value, cst2_ptr);
 }
 
 /**
@@ -1064,11 +1069,11 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::block_clear(this Derived&   
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived&     self,
-                                                         int               num_compress_value,
-                                                         char*             ptr_type_cst,
-                                                         SecondValueRef<T> ptr_second_value,
-                                                         int               thr_rank,
-                                                         T*                new_cst_val2_ptr)
+                                                                 int               num_compress_value,
+                                                                 char*             ptr_type_cst,
+                                                                 SecondValueRef<T> ptr_second_value,
+                                                                 int               thr_rank,
+                                                                 T*                new_cst_val2_ptr)
 {
     self.SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(num_compress_value, std::nullopt);
 
@@ -1090,11 +1095,11 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived&  
 /// @note The rank argument is unused: there is no rank pool serially.
 template <typename T, typename Derived>
 void zero_any::ChunkOmpPolicy<T, Derived, false>::block_clear(this Derived&     self,
-                                                      int               num_compress_value,
-                                                      char*             ptr_type_cst,
-                                                      SecondValueRef<T> ptr_second_value,
-                                                      int /*thr_rank*/,
-                                                      T* cst2_ptr)
+                                                              int               num_compress_value,
+                                                              char*             ptr_type_cst,
+                                                              SecondValueRef<T> ptr_second_value,
+                                                              int /*thr_rank*/,
+                                                              T* cst2_ptr)
 {
     // As try_mark_cst_and_get_old() on the OpenMP side: a chunk already at a constant has no
     // buffer; freeing that pointer corrupts the allocator (or faults). The type table already
@@ -1122,15 +1127,15 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::block_clear(this Derived&     
 /**
  * @brief Serial twin of the five-argument clear_int_st(): same commit-then-block_clear
  *        order. thr_rank is 0 here.
- * @copydetails Chunk2AOmpPolicy::clear_int_st
+ * @copydetails zero_any::ChunkOmpPolicy::clear_int_st
  */
 template <typename T, typename Derived>
 void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_int_st(this Derived&     self,
-                                                       int               num_compress_value,
-                                                       char*             ptr_type_cst,
-                                                       SecondValueRef<T> ptr_second_value,
-                                                       int               thr_rank,
-                                                       T*                new_cst_val2_ptr)
+                                                               int               num_compress_value,
+                                                               char*             ptr_type_cst,
+                                                               SecondValueRef<T> ptr_second_value,
+                                                               int               thr_rank,
+                                                               T*                new_cst_val2_ptr)
 {
     self.SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(num_compress_value, std::nullopt);
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
@@ -1141,6 +1146,6 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_int_st(this Derived&    
 }
 
 // clear_st(num_compress_value, ptr_type_cst, ptr_second_value), which supplies the calling
-// rank, is defined in-class on the OpenMP Chunk2AOmpPolicy specialisation.
+// rank, is defined in-class on the OpenMP zero_any::ChunkOmpPolicy specialisation.
 
 } // namespace shrink_array

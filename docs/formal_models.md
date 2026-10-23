@@ -180,8 +180,8 @@ library as it was before this work (section 7): refused as it was, passing as it
 
 `formal/switch_mt.c` is not a handshake of section 5 of the Dekker document: it is the one place
 where a writer changes a chunk's state without materialising it. `internal::store_range_mt`, for
-a uniform span covering the whole of a compressed Chunk2A chunk, opens a write session (announce,
-re-check, retire) and calls `Chunk2A::fill_constant_st`, whose compressed branch stores the
+a uniform span covering the whole of a compressed zero_any chunk, opens a write session (announce,
+re-check, retire) and calls `zero_any::Chunk::fill_constant_st`, whose compressed branch stores the
 second-value slot and the type, then the `values` pointer -- no buffer, no CAS. The model puts
 that against a compression pass that holds the same chunk in its candidate list. The chunk is
 reduced to two words, `values` (the first constant, two second-value slots, or a buffer) and

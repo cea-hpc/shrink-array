@@ -238,8 +238,8 @@ EN = {
     "reste où vous êtes.":
         "Scrolls the log to the end on every new line. Unchecked, the log stays where you are.",
     "Ne montre que les runs de ce build.": "Shows only the runs of this build.",
-    "Ne montre que les runs de cette variante (chunk, chunk2, chunk2a).":
-        "Shows only the runs of this variant (chunk, chunk2, chunk2a).",
+    "Ne montre que les runs de cette variante (zero, zero_one_value, zero_any).":
+        "Shows only the runs of this variant (zero, zero_one_value, zero_any).",
     "Ce que la couleur distingue : la variante, la taille de chunk, ou rien. Trois "
     "couleurs au plus ; le reste est groupé en gris « autres ».":
         "What the colour tells apart: the variant, the chunk size, or nothing. Three colours "

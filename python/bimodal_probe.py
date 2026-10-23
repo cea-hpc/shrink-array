@@ -4,7 +4,7 @@
 """bimodal_probe.py -- what tells a slow run from a fast one, run after run.
 
 The same binary, run N times, sometimes falls in a slow mode set at start-up
-(docs/performance_measurement.md, 2.1: +18%, ~+40% on Chunk2; same frequency,
+(docs/performance_measurement.md, 2.1: +18%, ~+40% on zero_one_value; same frequency,
 same instructions, same LLC misses, lower IPC, more cycles stalled on memory).
 Each candidate cause leaves its own trace, which this script records per run:
 

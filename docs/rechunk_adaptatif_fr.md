@@ -2,7 +2,7 @@
 
 > English version: [adaptive_rechunk.md](adaptive_rechunk.md).
 
-> État : fin septembre 2026, pour les trois variantes (Chunk, Chunk2, Chunk2A). Les chiffres
+> État : fin septembre 2026, pour les trois variantes (`zero`, `zero_one_value`, `zero_any`). Les chiffres
 > viennent de `shrink_bench` sur Grace (64 threads, `OMP_PROC_BIND=close`,
 > `OMP_PLACES=cores`), avec la mémoire mesurée exactement et les temps comparés sur un même
 > binaire : voir [mesures_performance_fr.md](mesures_performance_fr.md). En cas de doute,
@@ -20,7 +20,7 @@ taille.
 
 L'intérêt : partir de **petits chunks** (64 éléments dans le banc, `SHRINK_BENCH_DYN_SIZE`),
 qui compressent finement, puis **grossir** quand les métadonnées l'emportent sur ce que la
-finesse fait gagner. Les objectifs, atteints pour Chunk2 et Chunk2A :
+finesse fait gagner. Les objectifs, atteints pour `zero_one_value` et `zero_any` :
 
 - **au départ**, consommer comme le statique à la même taille ;
 - **à la fin**, consommer moins que le meilleur statique.
@@ -45,14 +45,14 @@ bornes tout multiple de 64 dont C / 64 a au plus `Options::grid_bits` bits signi
 - une fenêtre qui **chevauche en partie un chunk matérialisé** (taille plus fine ou mal
   alignée) est tranchée en lisant les données, sur un **échantillon** des chunks matérialisés
   (65 536 au plus) : elle est compressée si elle ne contient qu'une valeur, et une valeur
-  représentable. Pour Chunk et Chunk2, c'est la première ou la seconde valeur ; pour
-  **Chunk2A**, toute valeur, puisque chaque chunk enregistre sa propre seconde valeur.
+  représentable. Pour `zero` et `zero_one_value`, c'est la première ou la seconde valeur ; pour
+  **`zero_any`**, toute valeur, puisque chaque chunk enregistre sa propre seconde valeur.
 
 Quand S divise C (S×2, S×3, S×4...), le dernier cas ne se présente jamais : la ligne est un
 **repliement exact** de l'état réel des chunks. `advisor_demo` vérifie chaque ligne contre des
 tableaux construits à ces tailles, depuis S = 256 et S = 1024.
 
-Pourquoi 2 et pas 3 (shrink_bench chunk2a_dyn, `--divisor 4`, 16 threads, mémoire en fin de
+Pourquoi 2 et pas 3 (shrink_bench zero_any_dyn, `--divisor 4`, 16 threads, mémoire en fin de
 run) : 1 bit (puissances de deux seules) 2320 Mo, 2 bits 2317 Mo, 3 bits 2396 Mo. Les
 prédictions sont aussi justes à 3 bits, mais la taille la moins chère est alors souvent un
 petit pas (256 -> 384) dont le gain en métadonnées est refusé par le seuil de débit du
@@ -62,7 +62,7 @@ tableaux sont restés à 256.
 La classification des chunks se fait à la volée, sans tableau de travail : jusqu'en
 septembre 2026, chaque analyse allouait un octet et un pointeur par chunk (140 Mo pour un
 tableau de 15,6 millions de chunks), et les analyses coûtaient 1 à 2 s sur un run de 6,5 s.
-Elles coûtent maintenant ~0,7 s sur un run de Chunk2 de 8,4 s.
+Elles coûtent maintenant ~0,7 s sur un run de `zero_one_value` de 8,4 s.
 
 `CHUNK_ADVISOR_TABLE=1` (ou `=nom_du_tableau`) affiche la table complète à chaque passage.
 
@@ -99,7 +99,7 @@ suivant, la ligne de l'ancienne taille dans la table (lignes plus fines) donne l
 qu'aurait eue le tableau sans le rechunk, sur ses données actuelles. Comparer simplement
 avant et après mélangeait le rechunk avec l'évolution des données pendant une période.
 
-**Pourquoi un facteur 4.** Mesuré sur Chunk2A avec tous les tableaux confiés au décideur :
+**Pourquoi un facteur 4.** Mesuré sur `zero_any` avec tous les tableaux confiés au décideur :
 
 | facteur | rechunks | mémoire de fin | gain à données constantes / prévu |
 |---|---|---|---|
@@ -108,7 +108,7 @@ avant et après mélangeait le rechunk avec l'évolution des données pendant un
 | 8 | 20 | 6 721-6 724 Mo | (non mesurable : l'ancienne taille sort de la table) |
 
 La limite à 2 datait de deux mauvais grands sauts mesurés avant les corrections de
-septembre 2026 (mesure `VmRSS` faussée, fuite des lignes de Chunk2A, repliements par copie).
+septembre 2026 (mesure `VmRSS` faussée, fuite des lignes de `zero_any`, repliements par copie).
 À 4, l'ancienne taille reste dans les deux niveaux plus fins de la table, ce qui garde la
 mesure à données constantes et la possibilité de revenir en arrière.
 
@@ -123,7 +123,7 @@ mesure à données constantes et la possibilité de revenir en arrière.
 3. **refill** : le remplir en parallèle (`CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut).
    Un nouveau chunk dont toutes les sources sont à la première valeur est sauté. Un nouveau
    chunk dont toutes les sources étaient compressées est **replié** tout de suite. Pour
-   **Chunk2A**, si toutes ses sources sont à la **même** seconde constante, elle est
+   **`zero_any`**, si toutes ses sources sont à la **même** seconde constante, elle est
    **installée directement**, sans tampon ni copie (la copie suivie d'un repliement laissait
    jusqu'à 640 Mo de pages touchées par tableau) ;
 4. **flush+swap** : échanger les identités entre l'ancien et le nouveau stockage ;
@@ -131,12 +131,12 @@ mesure à données constantes et la possibilité de revenir en arrière.
 6. **old-pool drain** : vider les réserves de l'ancienne taille et rendre au système les
    slabs devenus vides.
 
-**Chunk (v1)** reconstruit **par tranches** (16 par défaut, `CHUNK_RECHUNK_SLICES`) et libère
+**`zero`** reconstruit **par tranches** (16 par défaut, `CHUNK_RECHUNK_SLICES`) et libère
 chaque ancien chunk dès qu'il est recopié. Entre deux tranches, les réserves de l'ancienne
 taille sont vidées et les slabs vidés rendus au système, y compris dans la **réserve
 partagée** quand l'ancien stockage s'y trouve : sans ça, la mémoire de l'ancien stockage
 restait acquise jusqu'à la fin de la reconstruction (sur `rechunk_validation`, pic de la
-reconstruction 78 → 22 Mo). Mesuré sur v1 à 64 threads : pic de +6,9 Go en une passe,
+reconstruction 78 → 22 Mo). Mesuré sur `zero` à 64 threads : pic de +6,9 Go en une passe,
 +1,7 Go avec 16 tranches.
 
 ## 5. Les allocateurs par tableau (affinité)
@@ -154,8 +154,8 @@ D'où deux modes, dont le choix par défaut dépend de la variante :
 
 | mode | quand un tableau reçoit sa clé | défaut pour | pourquoi |
 |---|---|---|---|
-| **paresseux** | à son premier rechunk | Chunk2, Chunk2A | ils sont surtout faits de métadonnées : un départ sans jeux par tableau consomme exactement comme le statique (Chunk2A : 11 590 Mo après l'initialisation, contre 12 435 Mo en mode immédiat) |
-| **immédiat** | à sa création | Chunk (v1) | v1 est surtout fait de données, et sa reconstruction par tranches ne rend la mémoire au fil de l'eau que si l'ancien stockage a ses propres slabs. En mode paresseux, le premier rechunk part de slabs partagés, qui mêlent les blocs de plusieurs tableaux et ne se vident pas : +6,0 Go sur 39,3 Go. Pic de v1 : 41,2 Go en immédiat, 45,6 Go en paresseux, pour la même mémoire de fin |
+| **paresseux** | à son premier rechunk | `zero_one_value`, `zero_any` | ils sont surtout faits de métadonnées : un départ sans jeux par tableau consomme exactement comme le statique (`zero_any` : 11 590 Mo après l'initialisation, contre 12 435 Mo en mode immédiat) |
+| **immédiat** | à sa création | `zero` | `zero` est surtout fait de données, et sa reconstruction par tranches ne rend la mémoire au fil de l'eau que si l'ancien stockage a ses propres slabs. En mode paresseux, le premier rechunk part de slabs partagés, qui mêlent les blocs de plusieurs tableaux et ne se vident pas : +6,0 Go sur 39,3 Go. Pic de `zero` : 41,2 Go en immédiat, 45,6 Go en paresseux, pour la même mémoire de fin |
 
 `CHUNK_ALLOC_AFFINITY_EAGER=0` ou `=1` impose l'un des modes.
 
@@ -165,11 +165,11 @@ Un rechunk construit le nouveau stockage sous un **nouvel identifiant de tableau
 (`num_tab`) et détruit l'ancien. Tout ce qui était indexé par l'ancien identifiant doit être
 **libéré**, pas seulement vidé. Deux fuites de ce type ont été corrigées en septembre 2026 :
 
-- **Chunk2A** : les lignes de métadonnées par chunk (type de constante, 1 octet ; seconde
+- **`zero_any`** : les lignes de métadonnées par chunk (type de constante, 1 octet ; seconde
   valeur, `sizeof(T)` octets par défaut) étaient vidées par `clear()`, qui garde la capacité. Sur le
   banc avec les 15 tableaux rechunkés : 10 276 → 6 730 Mo en fin de run ;
 - **les trois variantes** : l'indicateur « en liste de compression » (1 octet par chunk)
-  n'était jamais libéré. Chunk2A −0,52 Go, v1 −0,75 Go.
+  n'était jamais libéré. `zero_any` −0,52 Go, `zero` −0,75 Go.
 
 Par ailleurs, le **seuil de déclenchement des passes de compression** et le **budget des
 réserves**, calculés à partir du nombre total de chunks, sont maintenant recalculés aussi à la
@@ -183,32 +183,32 @@ défaut du banc ; `SHRINK_BENCH_ADVISE_ALL=0` revient aux cinq tableaux historiq
 
 | variante | statique 64 (fin) | dynamique sans advisor (fin) | **dynamique avec advisor (fin)** | statique 256 (fin) |
 |---|---|---|---|---|
-| Chunk2A | 12,7 | 12,7 | **6,0** | 7,3 |
-| Chunk2 | 21,4 | 21,4 | **16,3** | 17,3 |
-| Chunk (v1) | 43,6 | 44,6 | **40,3** | 40,2 |
+| `zero_any` | 12,7 | 12,7 | **6,0** | 7,3 |
+| `zero_one_value` | 21,4 | 21,4 | **16,3** | 17,3 |
+| `zero` | 43,6 | 44,6 | **40,3** | 40,2 |
 
 Coût en temps de l'advisor, mesuré sur **un même binaire** (moyennes sur 3 tours) :
 
-| Chunk2 dynamique | temps | coût |
+| `zero_one_value` dynamique | temps | coût |
 |---|---|---|
 | sans advisor (`CHUNK_ADVISOR_PERIOD=0`) | 8,38 s | — |
 | analyses seules (`CHUNK_RECHUNK_DRY_RUN=1`) | 9,07 s | +0,69 s |
 | analyses et rechunks (30) | 11,43 s | +2,36 s |
 
-Pour Chunk2A, le coût des rechunks (33) va de 1 à 3,5 s selon les séries de mesures. Pour
-Chunk2, les intervalles qui suivent les rechunks sont aussi rapides que ceux d'avant : le coût
+Pour `zero_any`, le coût des rechunks (33) va de 1 à 3,5 s selon les séries de mesures. Pour
+`zero_one_value`, les intervalles qui suivent les rechunks sont aussi rapides que ceux d'avant : le coût
 se limite aux reconstructions.
 
 ## 8. Limites connues
 
-- **v1 ralentit après son rechunk.** Après le passage à 1 024, v1 dynamique tourne 1,5 à
+- **`zero` ralentit après son rechunk.** Après le passage à 1 024, `zero` dynamique tourne 1,5 à
   2 fois moins vite par itération que le statique 1 024 (environ 40 cœurs occupés à un IPC de
   3,65, contre 52 cœurs à 4,24). Un build dynamique **démarré** à 1 024 va aussi vite que le
-  statique, et Chunk2 ne ralentit pas après ses rechunks : c'est l'état laissé par la
-  reconstruction de v1 qui est en cause. Ni l'ordonnancement de la reconstruction, ni les
+  statique, et `zero_one_value` ne ralentit pas après ses rechunks : c'est l'état laissé par la
+  reconstruction de `zero` qui est en cause. Ni l'ordonnancement de la reconstruction, ni les
   seuils de compression n'expliquent l'écart. Cause encore inconnue.
   Remesuré en octobre 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
-  2 000 itérations, `diag_v1_rechunk_slowdown.py`) : +17 % par itération après le
+  2 000 itérations, `diag_zero_rechunk_slowdown.py`) : +17 % par itération après le
   passage à 1 024. Inchangé avec une seule tranche, une reconstruction en
   ordonnancement statique, sans recyclage des slabs, sans réutilisation de
   `chunk_list`, en affinité lazy ; le placement NUMA est équilibré comme celui du
@@ -225,7 +225,7 @@ se limite aux reconstructions.
   pourrait faire regretter un grossissement : c'est le rôle de l'apprentissage
   (`coarsen_trust_ratio`) et de l'anti-retour.
 - **Le rechunk des tableaux de booléens** n'est validé que pour `ArrayChunkBits`
-  (`bits_container_validation`, Chunk2 en dyn) ; `zero_one_value::Array<bool>` et `zero_any::Array<bool>`
+  (`bits_container_validation`, `zero_one_value` en dyn) ; `zero_one_value::Array<bool>` et `zero_any::Array<bool>`
   n'ont pas de harnais, et le banc ne confie pas `tab_bool` au décideur.
 - **Le pic reste celui du départ** : un run dynamique qui part de 64 atteint d'abord la
   mémoire du statique 64, puis descend.

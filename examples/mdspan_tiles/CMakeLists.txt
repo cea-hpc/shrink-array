@@ -1,7 +1,7 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # mdspan_tiles: one 2D field written through the mdspan view of
-# chunk/mdspan.h, row-major and in tiles of 16 x 16, over a chunk2A array of
+# chunk/mdspan.h, row-major and in tiles of 16 x 16, over a zero_any array of
 # chunk size 256; prints the chunks left materialised in each layout. Needs
 # <mdspan> (libstdc++ 16, libc++ 17) or kokkos/mdspan on the include path;
 # without either it exits 77, which ctest reports as skipped.

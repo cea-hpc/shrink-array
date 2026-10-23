@@ -19,8 +19,8 @@
 #include <optional> // std::nullopt_t (the index-less overloads)
 
 #include "chunk/internal/second_value_chunk_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/config.h"               // build_config::any_check, chunk_config::use_compression_with_counter
-#include "chunk/PMP_CHUNK.h"            // get_thr_rank_fast
+#include "chunk/config.h"                       // build_config::any_check, chunk_config::use_compression_with_counter
+#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 
 namespace shrink_array
@@ -29,12 +29,12 @@ namespace shrink_array
 template <typename T, typename Derived>
 template <typename IndexT>
 void SecondValueChunkBase<T, Derived>::block_clear_common(this Derived&        self,
-                                                int                  num_compress_value,
-                                                IndexT               index_opt,
-                                                [[maybe_unused]] int thr_rank,
-                                                char*                ptr_type_cst,
-                                                SecondValueRef<T>    ptr_second_value,
-                                                [[maybe_unused]] T*  cst2_ptr)
+                                                          int                  num_compress_value,
+                                                          IndexT               index_opt,
+                                                          [[maybe_unused]] int thr_rank,
+                                                          char*                ptr_type_cst,
+                                                          SecondValueRef<T>    ptr_second_value,
+                                                          [[maybe_unused]] T*  cst2_ptr)
 {
     if constexpr (is_chunk2a_derived)
     {
@@ -86,10 +86,10 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(this Derived&        s
 template <typename T, typename Derived>
 template <typename IndexT>
 void SecondValueChunkBase<T, Derived>::clear_impl(this Derived&     self,
-                                        IndexT            index_opt,
-                                        int               thr_rank,
-                                        char*             ptr_type_cst,
-                                        SecondValueRef<T> ptr_second_value)
+                                                  IndexT            index_opt,
+                                                  int               thr_rank,
+                                                  char*             ptr_type_cst,
+                                                  SecondValueRef<T> ptr_second_value)
 {
     bool is_written = false;
     if constexpr (std::is_same_v<IndexT, std::nullopt_t>)
@@ -127,7 +127,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(this Derived&     self,
     auto& ll_block_free_thr = self.get_manager().get_list_block_free_thr(thr_rank);
     ll_block_free_thr.push_back(self.values_.load());
 
-    // Chunk2A specific cleanup
+    // zero_any specific cleanup
     if constexpr (std::is_same_v<IndexT, std::nullopt_t>)
     {
         ptr_second_value.reset();
@@ -136,7 +136,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(this Derived&     self,
     }
     else
     {
-        // Chunk2 specific cleanup
+        // zero_one_value::Chunk specific cleanup
         self.set_cst_val_to_cst_val1();
         self.init_values_cst_val();
 

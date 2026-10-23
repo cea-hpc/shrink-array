@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Open element types harness. Variant-agnostic: chunk / chunk2 / chunk2a by
-// the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the other harnesses.
+// Open element types harness. Variant-agnostic: zero / zero_one_value / zero_any by
+// the compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
 // Guards ONE property: an array of a type the library never heard of -- a
@@ -67,13 +67,13 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"               // forward decls + default IntType = int
-#include "chunk/zero_array.h"                // zero::Array
-#include "chunk/zero_one_value_array.h"               // zero_one_value::Array
-#include "chunk/zero_any_array.h"              // zero_any::Array
+#include "chunk/zero_array.h"                 // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes, register_chunk_size
-#include "chunk/zero_chunk.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"                 // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h"                     // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / has_not_ompt
+#include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / has_not_ompt
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"             // shrink_array::println
@@ -88,8 +88,8 @@ using namespace shrink_array;
 // ── The types ───────────────────────────────────────────────────────────────
 
 /// Three doubles, no padding: the mesh-point case. The defaulted <=> is what
-/// chunk2 asks of a floating-point struct (it orders second values, see
-/// value_less.h); chunk and chunk2a need == alone.
+/// zero_one_value asks of a floating-point struct (it orders second values, see
+/// value_less.h); zero and zero_any need == alone.
 struct Point3
 {
     auto operator<=>(const Point3&) const = default;
@@ -120,7 +120,7 @@ enum class Color : int
 using Quad = std::array<float, 4>;
 
 /// Two shorts: a 4-byte element, smaller than a double. No operator<: every
-/// bit is value (no padding, no floating point), chunk2 orders it by bytes.
+/// bit is value (no padding, no floating point), zero_one_value orders it by bytes.
 struct Pair16
 {
     bool operator==(const Pair16&) const = default;
@@ -153,15 +153,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 

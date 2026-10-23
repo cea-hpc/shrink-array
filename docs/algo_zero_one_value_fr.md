@@ -1,6 +1,6 @@
-# L'algorithme d'zero_one_value::Array
+# L'algorithme de zero_one_value::Array
 
-> English version: [algo_chunk2.md](algo_chunk2.md).
+> English version: [algo_zero_one_value.md](algo_zero_one_value.md).
 
 > État du code : début octobre 2026. La géométrie dynamique est détaillée dans
 > [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md), la synchronisation sans verrou entre
@@ -28,12 +28,12 @@ Les trois variantes de la bibliothèque se distinguent par ce qu'elles savent co
 
 | variante | constantes compressibles | métadonnée de seconde valeur |
 |---|---|---|
-| `zero::Array` (v1) | `first_value` seulement | aucune |
+| `zero::Array` | `first_value` seulement | aucune |
 | **`zero_one_value::Array`** | `first_value` **et une seconde valeur par tableau** | une entrée par tableau |
 | `zero_any::Array` | `first_value` et **une seconde valeur par chunk** | une entrée par chunk |
 
 `zero_one_value::Array` est donc le bon choix quand les données ont **une seule valeur dominante
-non nulle** : ses métadonnées sont plus légères que celles de Chunk2A.
+non nulle** : ses métadonnées sont plus légères que celles de `zero_any`.
 
 ---
 
@@ -91,7 +91,7 @@ const int num       = i &  size_policy_.modulo();     // position dans le chunk
 
 ### 4.1 Trois états
 
-Chaque `Chunk2<T>` contient essentiellement un pointeur atomique `values`. Selon sa cible,
+Chaque `zero_one_value::Chunk<T>` contient essentiellement un pointeur atomique `values`. Selon sa cible,
 le chunk est dans l'un de trois états :
 
 | état | `values` pointe vers | test |
@@ -105,7 +105,7 @@ concernés. Leur taille est `cst_buffer_size` (la taille de chunk en géométrie
 `chunk_dyn_max_size` en géométrie dynamique). Il existe un tampon `cst_val2` par seconde
 valeur déclarée, repéré par un **indice** `ind`.
 
-> Attention : `Chunk2::written()` **sans argument** est réservé à `bool` et renvoie `false`
+> Attention : `zero_one_value::Chunk::written()` **sans argument** est réservé à `bool` et renvoie `false`
 > pour tout autre type. Pour savoir si un chunk non booléen est matérialisé, il faut
 > `written(ind)` avec l'indice de la seconde valeur du tableau
 > (`zero_one_value::Array::chunk_written(j)` le fait).
@@ -177,7 +177,7 @@ ProxyType operator[](this Derived& self, IndType i) noexcept
     const int num       = self.offset_in_chunk(i);
     const ProxyType& val = self.chunk_list[num_chunk][num];
     val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab); // tableau, chunk, num_tab
-    val.arm_inf_array(self.registry_mirror());                                 // Chunk2 : le miroir
+    val.arm_inf_array(self.registry_mirror());                                 // zero_one_value : le miroir
     return val;
 }
 ```
@@ -423,11 +423,11 @@ compressions. Un tampon libéré par un autre rang que son propriétaire est mis
 reconstruits ou détruits ; les slabs vides sont alors rendus au système (sauf build
 `CHUNK_RECLAIM_EMPTY_SLABS=OFF`).
 
-Pour Chunk2, ce jeu n'est créé qu'au **premier rechunk** du tableau (affinité paresseuse) :
+Pour `zero_one_value`, ce jeu n'est créé qu'au **premier rechunk** du tableau (affinité paresseuse) :
 chaque jeu coûte un slab entamé par rang et par taille, soit ~780 Mio sur les 16 tableaux de
 `shrink_bench` à 64 threads, et un tableau jamais reconstruit n'en tire aucun bénéfice. Un
 run dynamique consomme ainsi, au départ, exactement comme le statique à la même taille
-(Chunk2 : 19 999 contre 20 009 Mo après l'initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
+(`zero_one_value` : 19 999 contre 20 009 Mo après l'initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
 crée le jeu dès la création. Détails et mesures : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5.
 
 ### 9.2 Le rechunk (géométrie dynamique)
@@ -442,7 +442,7 @@ décision du **décideur** (`ChunkSizeAdvisor::analyze`, qui estime la mémoire 
    étaient seulement retirés jusqu'en septembre 2026 : un chunk mis en file par l'écriture
    qui l'avait rendu uniforme restait alors matérialisé pendant la reconstruction, était
    recopié au lieu d'être replié, et n'était jamais remis en file. Mesuré sur
-   `rechunk_validation` (1 thread) : Chunk2, 0 → 2 408 chunks repliés et 7 107 → 4 701 restés
+   `rechunk_validation` (1 thread) : `zero_one_value`, 0 → 2 408 chunks repliés et 7 107 → 4 701 restés
    matérialisés ;
 2. vider les listes de réutilisation et préparer les réserves à la nouvelle taille ;
 3. construire un **tableau temporaire** à la nouvelle taille (initialisation des chunks en
@@ -458,7 +458,7 @@ décision du **décideur** (`ChunkSizeAdvisor::analyze`, qui estime la mémoire 
 6. détruire l'ancien stockage.
 
 L'ancien stockage est détruit sous son propre identifiant (`num_tab`), que rien ne réutilise :
-tout ce qui lui était indexé doit être **libéré**, pas seulement vidé. Pour Chunk2, ce sont
+tout ce qui lui était indexé doit être **libéré**, pas seulement vidé. Pour `zero_one_value`, ce sont
 les indicateurs « en liste de compression » (un octet par chunk), libérés à la fin de
 `clear_core()`, après la purge des candidats. Le seuil de déclenchement des passes de
 compression et le budget des réserves, qui dépendent du nombre total de chunks, sont
@@ -476,18 +476,18 @@ compteurs de repliement.
 prenant **une décision par chunk** : elles matérialisent le chunk par le chemin normal si
 besoin, écrivent le reste **directement dans le tampon**, puis ne mettent en file que les
 chunks qui **peuvent** être uniformes (premier, milieu et dernier éléments égaux) **à une
-valeur que Chunk2 sait compresser** (la première valeur ou la seconde valeur du tableau).
+valeur que `zero_one_value` sait compresser** (la première valeur ou la seconde valeur du tableau).
 Elles sont **séquentielles** : pas d'écrivain ni de compression concurrents sur le tableau.
 Le rechunk passe par `copy_range` pour reconstruire le nouveau tableau.
 
-Sur Chunk2A, un chunk que `fill_range` couvre entièrement prend la valeur pour constante **par
-son seul état** (`Chunk2A::fill_constant_st`), quels que soient la valeur et l'état du chunk : un
-chunk matérialisé passe par l'effacement de la compression elle-même (`clear_int_st` : tampon
-rendu, constante installée, sans balayage) ; un chunk compressé change de constante sur place --
-case de seconde valeur (enregistrée par `find_or_set_ind_cst_val2`), type, puis pointeur de
-valeurs, l'ordre que garde l'effacement. Aucun tampon n'est alloué, rempli, balayé ni rendu, et
-rien n'est mis en file. La constante que le chunk tenait reste enregistrée : aucun chunk n'y
-garde de référence, et `reclaim_second_values()` la libère dès qu'aucun chunk n'y pointe.
+Sur la variante zero_any, un chunk que `fill_range` couvre entièrement prend la valeur pour
+constante **par son seul état** (`zero_any::Chunk::fill_constant_st`), quels que soient la valeur et
+l'état du chunk : un chunk matérialisé passe par l'effacement de la compression elle-même
+(`clear_int_st` : tampon rendu, constante installée, sans balayage) ; un chunk compressé change de
+constante sur place -- case de seconde valeur (enregistrée par `find_or_set_ind_cst_val2`), type,
+puis pointeur de valeurs, l'ordre que garde l'effacement. Aucun tampon n'est alloué, rempli, balayé
+ni rendu, et rien n'est mis en file. La constante que le chunk tenait reste enregistrée : aucun
+chunk n'y garde de référence, et `reclaim_second_values()` la libère dès qu'aucun chunk n'y pointe.
 
 `copy_range` lit d'abord la plage source d'un chunk qu'elle couvre entièrement (premier, milieu
 et dernier éléments, puis toute la plage s'ils concordent) : uniforme, le chunk prend cette
@@ -524,26 +524,26 @@ effacerait l'annonce. La décision de mise en file regarde les valeurs du morcea
 toutes égales, et d'une valeur que la variante sait comprimer (un remplissage est un tel
 morceau, la règle est donc celle de `fill_range_mt`).
 
-**Trois points propres à Chunk2**, corrigés en septembre 2026, qui justifiaient auparavant de
+**Trois points propres à `zero_one_value`**, corrigés en septembre 2026, qui justifiaient auparavant de
 le laisser sur le chemin élément par élément :
 
 - le test « ce chunk est-il matérialisé ? » doit appeler `written(ind)` avec l'indice de
   seconde valeur du tableau (`internal::materialised(a, ch, ind2)`) : `written()` sans argument
   est réservé à `bool` et renvoie `false` pour les autres types ;
 - la mise en file (`internal::queue_for_compression`) doit **charger la seconde valeur** avant
-  d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de Chunk2 sont indexées par
+  d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de `zero_one_value` sont indexées par
   elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
 - en mode compteur (les builds serial), une écriture directe doit **recompter** les deux
   compteurs du chunk, `nb_val_eq_first_value` et `nb_val_eq_second_value`, que Proxy2 tient
   sinon à jour écriture par écriture (`internal::resync_counters`, comme le compte des zéros de
-  v1).
+  `zero`).
 
 Seul `bool` (chunks compactés bit à bit) reste sur le chemin élément par élément.
 
 **La décision de mise en file dans les formes `_mt`** ne lit jamais un élément qu'un autre
-thread peut être en train d'écrire, sauf sur Chunk2A. Pour Chunk et Chunk2, elle ne regarde que
-les valeurs du morceau lui-même : toutes égales, et égales à la première valeur (Chunk), ou à la
-première ou à la seconde (Chunk2), comme décide le chemin élément par élément. Chunk2A lit trois
+thread peut être en train d'écrire, sauf sur `zero_any`. Pour `zero` et `zero_one_value`, elle ne regarde que
+les valeurs du morceau lui-même : toutes égales, et égales à la première valeur (`zero`), ou à la
+première ou à la seconde (`zero_one_value`), comme décide le chemin élément par élément. `zero_any` lit trois
 éléments (0, S/2, S−1) pour savoir si le chunk peut être uniforme : il écrit ces éléments en
 atomiques relâchés (`relaxed_element.h` : `fill_span_relaxed_edges`, `may_be_uniform_relaxed`),
 ce qui rend la lecture sûre ; pour les types sans atomique sans verrou, il ne met en file qu'un
@@ -551,7 +551,7 @@ morceau qui couvre tout le chunk avec une seule valeur. Les formes à un seul th
 (`fill_range`, `copy_range`) lisent ces trois éléments en lectures ordinaires (`may_be_uniform`)
 : aucun autre thread n'écrit le tableau pendant l'appel.
 
-**Les valeurs fausses de septembre 2026.** Avec le chemin direct ouvert à Chunk2,
+**Les valeurs fausses de septembre 2026.** Avec le chemin direct ouvert à `zero_one_value`,
 `bench_and_test.py` a signalé sur Grace des valeurs fausses **après compression** :
 `rechunk_validation_zero_one_value_dyn` (`scale-64-to-tgt`, POST-FAIL) et le mode check de
 `shrink_bench_zero_one_value_256` (« is_cst_val2 should be not »). Ce n'était pas une course entre
@@ -562,7 +562,7 @@ reconstruction du re-chunk) écrivaient sans les mettre à jour, les comptes pé
 la taille du chunk sur un chunk mixte, et la passe le repliait sur la première valeur, perdant
 tous les éléments de la seconde. Depuis, les écritures directes recomptent les compteurs, et
 les formes `_mt` écrivent dans une session annoncée au compresseur (étapes 3 à 6 ci-dessus),
-sur Chunk2 comme sur les autres variantes. Exclure Chunk2 de `internal::raw_fillable_v`, le
+sur `zero_one_value` comme sur les autres variantes. Exclure `zero_one_value` de `internal::raw_fillable_v`, le
 repli envisagé à l'époque, n'est pas nécessaire.
 
 ---
@@ -571,7 +571,7 @@ repli envisagé à l'époque, n'est pas nécessaire.
 
 La liste complète, avec les macros et les options CMake, est dans
 [reglages_developpeur_fr.md](reglages_developpeur_fr.md). Celles qui concernent le plus
-Chunk2 :
+`zero_one_value` :
 
 | variable | effet |
 |---|---|
@@ -580,7 +580,7 @@ Chunk2 :
 | `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
 | `CHUNK_RECHUNK_DRY_RUN=1` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses) |
 | `CHUNK_RECHUNK_MAX_COARSEN=<n>` | facteur maximal d'un grossissement (4 par défaut) |
-| `CHUNK_ALLOC_AFFINITY_EAGER=1` | jeu d'allocateurs par tableau dès sa création (paresseux par défaut pour Chunk2) |
+| `CHUNK_ALLOC_AFFINITY_EAGER=1` | jeu d'allocateurs par tableau dès sa création (paresseux par défaut pour `zero_one_value`) |
 
 Pour la validation, le crochet de test « écritures différées forcées »
 (`chunk/internal/test_hooks.h`, compilé avec les harnesses) envoie une écriture sur N

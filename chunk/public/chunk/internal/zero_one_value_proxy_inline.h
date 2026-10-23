@@ -19,11 +19,11 @@
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::remove_cvref_t
 
-#include "chunk/internal/in_t.h"          // InT<T>
-#include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/internal/zero_one_value_proxy.h"        // the declarations these bodies belong to
-#include "chunk/config.h"                 // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
-#include "chunk/PMP_CHUNK.h"              // get_thr_rank_fast
+#include "chunk/internal/in_t.h"                 // InT<T>
+#include "chunk/internal/bad_ptr_check.h"        // CHUNK_CHECK_VALUES_PTR (check builds)
+#include "chunk/internal/zero_one_value_proxy.h" // the declarations these bodies belong to
+#include "chunk/config.h"    // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
+#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationContext
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/concept_is_clean_assignement.h" // BaseT
@@ -44,7 +44,8 @@ namespace shrink_array
 // the proxy is not armed. Callers read the fields THROUGH this pointer: see the
 // note on set_info_on_chunk() below for why not through a returned copy.
 template <typename T, typename Derived>
-const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
+const zero_one_value::ProxySpec<T, Derived>::InfArrayT*
+zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
 {
     if (self.inf_array_src_ != nullptr) [[likely]]
     {
@@ -56,7 +57,7 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
             if (reg.ind != self.inf_array_src_->ind || reg.num_tab != self.inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
-                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                    "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
                     static_cast<const void*>(self.get_ptr_on_array()));
@@ -67,7 +68,8 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
 }
 
 template <typename T, typename Derived>
-zero_one_value::ProxySpec<T, Derived>::InfArrayT zero_one_value::ProxySpec<T, Derived>::load_inf_array(this const Derived& self)
+zero_one_value::ProxySpec<T, Derived>::InfArrayT
+zero_one_value::ProxySpec<T, Derived>::load_inf_array(this const Derived& self)
 {
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {
@@ -78,7 +80,8 @@ zero_one_value::ProxySpec<T, Derived>::InfArrayT zero_one_value::ProxySpec<T, De
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
+const zero_one_value::ProxySpec<T, Derived>::InfArrayT*
+zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
 {
     if (self.inf_array_src_ != nullptr) [[likely]]
     {
@@ -90,7 +93,7 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
             if (reg.ind != self.inf_array_src_->ind || reg.num_tab != self.inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
-                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                    "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
                     static_cast<const void*>(self.get_ptr_on_array()));
@@ -102,7 +105,8 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-zero_one_value::ProxySpec<T, Derived>::InfArrayT zero_one_value::ProxySpec<T, Derived>::load_inf_array(this const Derived& self)
+zero_one_value::ProxySpec<T, Derived>::InfArrayT
+zero_one_value::ProxySpec<T, Derived>::load_inf_array(this const Derived& self)
 {
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {
@@ -126,15 +130,15 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk(this Derived& self
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {
         static_cast<ProxySpec&>(self).inf_array_ = *src;
-        self.second_value_                        = src->second_value;
-        self.ind_                                 = src->ind;
+        self.second_value_                       = src->second_value;
+        self.ind_                                = src->ind;
         self.set_num_tab(src->num_tab); // what set_num_tab() would read back from inf_array_
     }
     else
     {
         static_cast<ProxySpec&>(self).inf_array_ = Derived::get_info_second_value(self.get_ptr_on_array());
-        self.second_value_                        = static_cast<ProxySpec&>(self).inf_array_.second_value;
-        self.ind_                                 = static_cast<ProxySpec&>(self).inf_array_.ind;
+        self.second_value_                       = static_cast<ProxySpec&>(self).inf_array_.second_value;
+        self.ind_                                = static_cast<ProxySpec&>(self).inf_array_.ind;
         self.set_num_tab();
     }
 
@@ -150,13 +154,13 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind(this Deriv
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {
         static_cast<ProxySpec&>(self).inf_array_ = *src;
-        self.second_value_                        = src->second_value;
-        self.ind_                                 = src->ind;
+        self.second_value_                       = src->second_value;
+        self.ind_                                = src->ind;
         return;
     }
     static_cast<ProxySpec&>(self).inf_array_ = Derived::get_info_second_value(self.get_ptr_on_array());
-    self.second_value_                        = static_cast<ProxySpec&>(self).inf_array_.second_value;
-    self.ind_                                 = static_cast<ProxySpec&>(self).inf_array_.ind;
+    self.second_value_                       = static_cast<ProxySpec&>(self).inf_array_.second_value;
+    self.ind_                                = static_cast<ProxySpec&>(self).inf_array_.ind;
 }
 
 template <typename T, typename Derived>
@@ -189,14 +193,15 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk(this Derived& self
 }
 
 // ── Methods only present when fast block compression is active ────────────
-// Members of the Enabled=true policy only: Proxy2 instantiates
-// Proxy2FastCompPolicy<..., chunk_config::use_fast_block_compression>, and the
+// Members of the Enabled=true policy only: zero_one_value::Proxy instantiates
+// zero_one_value::ProxyFastCompPolicy<..., chunk_config::use_fast_block_compression>, and the
 // <..., false> specialisation declares none of them, so nothing here is ever
 // looked at by a serial build. No preprocessor guard needed.
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::trigger_compression_if_needed(this Derived& self,
-                                                                                      int           thr_rank) noexcept
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::trigger_compression_if_needed(
+    this Derived& self,
+    int           thr_rank) noexcept
 {
     if constexpr (is_not_bool)
     {
@@ -275,7 +280,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_c
             }
         }
     }
-    // Looked at, whether or not any bucket had work: see the 2A counterpart
+    // Looked at, whether or not any bucket had work: see the zero_any counterpart
     // and mark_list_dangerous_for_thread.
     CompressionManagerType::mark_list_safe_for_thread(thr_rank);
 }
@@ -308,7 +313,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> v) const noexcept
     }
 
     // ONE load of `values` for the state tests and the store, as in
-    // Proxy2A::perform_core_assignment(): is_cst_val1(), is_cst_val2() (a
+    // zero_any::Proxy::perform_core_assignment(): is_cst_val1(), is_cst_val2() (a
     // seq_cst load, ldar) and store_value() each reloaded it. Under the write
     // session the chunk cannot be compressed, only materialised by a
     // concurrent writer -- create_value() then loses its CAS, and the reload
@@ -487,7 +492,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
 
     // Synchronous core path (fast path)
     // By reference: v is this call's parameter, alive for the synchronous
-    // call (see Proxy2A::assign_impl); the deferred path copies it.
+    // call (see zero_any::Proxy::assign_impl); the deferred path copies it.
     const auto lbd_equal_core = [this, &v]
     {
         if constexpr (chunk_config::use_compression_without_counter)
@@ -504,7 +509,8 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
         // Asynchronous slow path: simple but safe
         if (need_async)
         {
-            using CtxType = ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, zero_one_value::Proxy<T>>;
+            using CtxType =
+                ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, zero_one_value::Proxy<T>>;
 
             // Capture only location + operand
             auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array_);
@@ -576,8 +582,8 @@ template <typename T>
 void zero_one_value::Proxy<T>::ensure_writable_storage()
 {
     // Route this materialisation to THIS array's chunk-size pool -- the sync
-    // twin of Proxy2AFastCompPolicy::ensure_writable_storage_async. Required:
-    // chunk.create_value() (called directly, bypassing Proxy2<T>::create_value()'s
+    // twin of zero_any::ProxyFastCompPolicy::ensure_writable_storage_async. Required:
+    // chunk.create_value() (called directly, bypassing zero_one_value::Proxy<T>::create_value()'s
     // self-correction) allocates at the per-thread thread_chunk_size, which an
     // unrelated array may have left STALE, while num/store_value use this
     // array's own size_policy_: a heap overflow once num exceeds a smaller
@@ -686,11 +692,12 @@ void zero_one_value::Proxy<T>::execute_simple_operation(Lambda operation)
 
 // ── execute_arithmetic_compound_operation ─────────────────────────────────
 // Two entirely different implementations depending on compression mode, one
-// per Proxy2FastCompPolicy specialisation.
+// per zero_one_value::ProxyFastCompPolicy specialisation.
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(auto*  ctx,
+                                                                                                      Lambda operation)
 {
     auto& chunk = ctx->chunk;
 
@@ -730,14 +737,15 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_s
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Op, typename Lambda, typename U>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation(this Derived& self,
-                                                                                              Op            op,
-                                                                                              const U&      operand,
-                                                                                              Lambda        operation)
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation(
+    this Derived& self,
+    Op            op,
+    const U&      operand,
+    Lambda        operation)
 {
     // Same rule as ensure_writable_storage(): this function may call
     // chunk.create_value() below (via the will_be_not_second_value branch)
-    // without going through Proxy2<T>::create_value()'s self-correcting
+    // without going through zero_one_value::Proxy<T>::create_value()'s self-correcting
     // wrapper -- pin the ambient size to THIS array's own geometry first.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -781,9 +789,9 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
     const U& operand,
     Lambda   operation) const
 {
-    using CalcType     = std::common_type_t<T, U>;
+    using CalcType                    = std::common_type_t<T, U>;
     const zero_one_value::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
-    const InT<T> v_old = read_values_async(ctx);
+    const InT<T>                v_old = read_values_async(ctx);
 
     const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
 
@@ -810,10 +818,11 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
  */
 template <typename Derived, typename T, typename ChunkT>
 template <typename Op, typename Lambda, typename U>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_arithmetic_compound_operation(this Derived& self,
-                                                                                            Op            op,
-                                                                                            const U&      operand,
-                                                                                            Lambda        operation)
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_arithmetic_compound_operation(
+    this Derived& self,
+    Op            op,
+    const U&      operand,
+    Lambda        operation)
 {
     // Same rule as ensure_writable_storage(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
@@ -965,13 +974,14 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(auto*  ctx,
-                                                                                        Lambda operation) const
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(
+    auto*  ctx,
+    Lambda operation) const
 {
     auto&     chunk = ctx->chunk;
     const int num   = ctx->num;
 
-    const InT<T> v_old = read_values_async(ctx);
+    const InT<T>                v_old = read_values_async(ctx);
     const zero_one_value::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
     const bool is_val1 = chunk.is_cst_val1();

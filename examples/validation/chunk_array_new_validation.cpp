@@ -16,7 +16,7 @@
 
 // ============================================================================
 // operator new[] / init_chunks_cst_val harness. Variant-agnostic: chunk /
-// chunk2 / chunk2a follow the compile-time macro, like the other harnesses
+// zero_one_value / zero_any follow the compile-time macro, like the other harnesses
 // here -- the three carry the same pair of operators, built on the one
 // chunk_array_new::init_chunks (chunk_array_new.h).
 // ============================================================================
@@ -53,9 +53,9 @@
 #include <type_traits> // std::conditional_t
 
 #include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/zero_array.h"    // Chunk<T> complete (zero_chunk.h): its operator new[]
-#include "chunk/zero_one_value_array.h"   // Chunk2<T> complete (zero_one_value_chunk.h): its operator new[]
-#include "chunk/zero_any_array.h"  // Chunk2A<T> complete (zero_any_chunk.h): its operator new[]
+#include "chunk/zero_array.h"     // zero::Chunk<T> complete (zero_chunk.h): its operator new[]
+#include "chunk/zero_one_value_array.h" // zero_one_value::Chunk<T> complete: its operator new[]
+#include "chunk/zero_any_array.h"       // zero_any::Chunk<T> complete (zero_any_chunk.h): its operator new[]
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
 #include "chunk/config.h"         // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
@@ -77,30 +77,31 @@ namespace
 {
 
 /// The chunk type of this build, as the arrays pick theirs.
-using Ch = std::conditional_t<chunk_config::use_zero_any,
-                              zero_any::Chunk<double>,
-                              std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Chunk<double>, zero::Chunk<double>>>;
+using Ch = std::conditional_t<
+    chunk_config::use_zero_any,
+    zero_any::Chunk<double>,
+    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Chunk<double>, zero::Chunk<double>>>;
 
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
 /// @brief How many of the @p n chunks hold a buffer (none should).
 /// @note A TEMPLATE, so that the branch `if constexpr` discards is not
-///       type-checked: chunk2's written() takes the second-value index (0 --
-///       nothing else is registered here), v1's and chunk2a's take none, and
+///       type-checked: zero_one_value's written() takes the second-value index (0 --
+///       nothing else is registered here), zero's and zero_any's take none, and
 ///       in a plain function both spellings would have to compile.
 template <typename C>
 int materialised(const C* v, std::size_t n)

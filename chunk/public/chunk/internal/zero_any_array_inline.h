@@ -27,7 +27,7 @@
 #include <utility>     // std::pair (the clear() summary)
 #include <vector>      // std::vector
 
-#include "chunk/zero_any_array.h"                        // zero_any::Array, the class these bodies belong to
+#include "chunk/zero_any_array.h"                       // zero_any::Array, the class these bodies belong to
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled (the size prediction's gate)
@@ -161,7 +161,7 @@ void zero_any::Array<T, IntType>::print_compression_stats(std::ostream& os) cons
 
     // Shared layout/colours/verdict: see chunk_stats_printer.h.
     print_formatted_chunk_stats(os, num_tab_, this->debug_name(), type_name<T>(), n_compressed, nb_chunk_, n_t1,
-                                "Chunk2A",
+                                "zero_any",
                                 /*n_cross=*/-1, /*cross_name=*/"", /*bool_elements=*/std::is_same_v<T, bool>);
 }
 
@@ -195,7 +195,7 @@ void zero_any::Array<T, IntType>::clear()
                               });
             const auto& sh_inf    = *zero_any::Proxy<T>::share_info_array;
             const int   tab_index = sh_inf.get_num_tab(this->registry_key());
-            report_size_prediction<T>(summary, csz, tab_index, "chunk2a",
+            report_size_prediction<T>(summary, csz, tab_index, "zero_any",
                                       sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
         }
     }
@@ -223,7 +223,7 @@ void zero_any::Array<T, IntType>::clear_core()
     // either misreads NOTHING is flushed -- the audit below then scans a chunk
     // whose writes are still queued, constant_value() (raw values_load()) sees a
     // non-constant buffer, and the chunk is under-counted as still-compressed.
-    // 2A carries far more deferred traffic than v1/v2, so it exposes this first.
+    // zero_any carries far more deferred traffic than zero/zero_one_value, so it exposes this first.
     this->flush_pending_deferred_ops(/*force=*/true);
 
     // Per-array compression stats: read after the flush (before it, in-flight
@@ -236,7 +236,7 @@ void zero_any::Array<T, IntType>::clear_core()
 
     // Remove this array's chunks from the shared compression candidate list
     // before they are freed: in non-OMPT builds nothing else clears it, and a
-    // later compression pass would walk the dangling Chunk2A* (use-after-free).
+    // later compression pass would walk the dangling zero_any::Chunk* (use-after-free).
     // By num_tab, so other live arrays' candidates are untouched.
     ManagerChunk2A::remove_from_compress_list_chunk2a_by_num_tab(num_tab_);
 
@@ -289,15 +289,20 @@ void zero_any::Array<T, IntType>::clear_core()
         // chunks (not the candidate list, so never-enqueued blocks are seen) for
         // every block (a) still materialised (written()), (b) never registered as
         // a candidate (tab_is_inside_chunk_list_to_compress == 0), yet (c)
-        // constant. The pass would have compressed every one of them -- it
-        // compresses a uniform chunk at whatever value it holds (values[0],
-        // fill_list_to_compress), its former second value or not -- so each is
-        // a block the write path let become constant without queueing it. The
-        // count is split by the value: first_value, the chunk's own second
-        // value (get_tab_second_value), another value (the marking predicate's
-        // "change" clause, Proxy2A::should_mark_for_compression). A few is
-        // benign (a straggler); a recurring/large count means the marking path
-        // has a hole.
+        // constant. Two different things, told apart by the value:
+        //
+        //   MISSED  constant at first_value, or at the chunk's own second value
+        //           (get_tab_second_value): the pass would have compressed it,
+        //           the write path let it become constant without queueing it.
+        //           A few is benign (a straggler), a recurring/large count means
+        //           the marking path has a hole.
+        //   STUCK   constant at ANOTHER value: zero_any keeps a chunk's second
+        //           value until the chunk passes through first_value (the clear
+        //           to cst1 resets it), so a chunk compressed to V once and
+        //           uniformly W later is not compressible as it stands -- not by
+        //           the write path, not by compress(). This count is the
+        //           memory that design choice costs on this array -- not a
+        //           marking miss.
         //
         // Non-fatal; O(nb_chunk * chunk_size) once at teardown, check builds only.
         if constexpr (build_config::any_check)
@@ -347,7 +352,7 @@ void zero_any::Array<T, IntType>::clear_core()
                 {
                     CHUNK_LOG(
                         info, compress,
-                        "audit: chunk2a tab={}: {} constant block(s) never queued for compression ({} at "
+                        "audit: zero_any tab={}: {} constant block(s) never queued for compression ({} at "
                         "first_value, {} at their second value, {} at another value: missed by the marking path). "
                         "A few is benign; a recurring/large count is not.",
                         num_tab_, missed_first + missed_second + missed_other, missed_first, missed_second,
@@ -408,8 +413,8 @@ void zero_any::Array<T, IntType>::clear_core()
                             {
                                 increm_chunk_teardown_clear<zero_any::Chunk<T>>();
                                 // Released below without a compression: out of the live figures.
-                                add_chunk_released<zero_any::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                      static_cast<long>(this->size_policy_.size()));
+                                add_chunk_released<zero_any::Chunk<T>>(
+                                    1, static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
                             }
                             ll_chunk_loc.push_back(&chunk_list_[j]);
                         }
@@ -549,7 +554,7 @@ void zero_any::Array<T, IntType>::compress_int(pmp::Team& team)
     //
     // What matters is its SIZE and TREND: a handful is the normal in-flight
     // residual; a large or growing count means the incremental path is not
-    // keeping up (or, in a threaded && !OMPT build, that Chunk2A::compress()
+    // keeping up (or, in a threaded && !OMPT build, that zero_any::Chunk::compress()
     // returns early by design and make_block_compression is the only
     // compressor left -- see its guard in zero_any_chunk_inline.h).
     // compress=info, one line per kind and thread (its share of the chunks).
@@ -596,7 +601,7 @@ void zero_any::Array<T, IntType>::release_chunk_range(int first, int last)
 
     if constexpr (build_config::not_threaded)
     {
-        // Before Proxy2A::resize_tab_is_int() truncates the per-chunk type
+        // Before zero_any::Proxy::resize_tab_is_int() truncates the per-chunk type
         // table: clear_st() reads tab_type_cst_val[num_tab][j].
         const int num_tab = zero_any::Proxy<T>::share_info_array->get_num_tab(this->registry_key());
         for (int j = first; j < last; ++j)
@@ -630,7 +635,7 @@ void zero_any::Array<T, IntType>::release_chunk_range(int first, int last)
                         increm_chunk_teardown_clear<zero_any::Chunk<T>>();
                         // The size read here, not captured: stats builds only use it.
                         add_chunk_released<zero_any::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                              static_cast<long>(this->size_policy_.size()));
+                                                                      static_cast<long>(this->size_policy_.size()));
                     }
                     T* values_loc = chunk_list_[j].values_;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
@@ -649,8 +654,8 @@ void zero_any::Array<T, IntType>::resize(IntType newsz)
     this->invalidate_proxies();
     const auto& sh_inf = *zero_any::Proxy<T>::share_info_array;
 
-    const int  num_tab      = sh_inf.get_num_tab(this->registry_key());
-    const int  old_nb_chunk = nb_chunk_;
+    const int     num_tab      = sh_inf.get_num_tab(this->registry_key());
+    const int     old_nb_chunk = nb_chunk_;
     const IntType old_size     = this->m_size_; // the stale-tail reset at the end
 
     Base2::resize_common(newsz);
@@ -670,7 +675,8 @@ void zero_any::Array<T, IntType>::resize(IntType newsz)
                                           {
                                               const int i = old_nb_chunk + k;
                                               this->construct_chunk(i).init_after_constructor();
-                                              zero_any::Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
+                                              zero_any::Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(
+                                                  num_tab, i, 0);
                                               zero_any::Proxy<T>::tab_type_cst_val[num_tab][i] = is_val1;
                                               // T{}: the struct elements have no conversion from 0
                                               zero_any::Proxy<T>::BaseSpec::set(num_tab, i, T{});
@@ -690,8 +696,8 @@ void zero_any::Array<T, IntType>::resize(IntType newsz)
         // spare chunk holds stale values too.
         // In long long: old_nb_chunk * csz may pass IndType's range near its top.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const IntType      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType      stale_end = newsz < old_cover ? newsz : old_cover;
+        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
+        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
         for (IntType i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

@@ -19,7 +19,7 @@
  * @brief zero_any::Array::reclaim_second_values() frees exactly the second values
  *        nothing refers to any more, and the registry reuses their identifiers.
  *
- * @details Chunk2A's registry of second values (GlobalVecHolder) keeps every
+ * @details zero_any's registry of second values (GlobalVecHolder) keeps every
  *          value it has seen until the last array of the type is destroyed. A
  *          workload whose constants drift registers a new one at each
  *          compression, and the identifiers run out -- which stops the run.
@@ -63,8 +63,8 @@
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>   // getpid
 
-#include "chunk/chunk_traits.h"               // forward decls (Chunk2A) + default IntType = int
-#include "chunk/zero_any_array.h"              // zero_any::Array, Chunk2A complete (its registry types)
+#include "chunk/chunk_traits.h"               // forward decls (zero_any::Chunk) + default IntType = int
+#include "chunk/zero_any_array.h"             // zero_any::Array, zero_any::Chunk complete (its registry types)
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
 #include "chunk/config.h"                     // chunk_config::use_zero_any, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
@@ -80,7 +80,7 @@ namespace validation::cst2_reclaim_validation
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_zero_any, "cst2_reclaim_validation is Chunk2A's registry: link chunk_zero_any_<size>");
+static_assert(chunk_config::use_zero_any, "cst2_reclaim_validation is zero_any's registry: link chunk_zero_any_<size>");
 
 using Arr      = zero_any::Array<double>;
 using Registry = zero_any::Chunk<double>::Holder::VecHolder;
@@ -98,7 +98,7 @@ static void end_phase()
     {
         shrink_array::finalize_parallel_phase();
     }
-    // Serial chunk2a has no between-region pass: run the writers' pass.
+    // Serial zero_any has no between-region pass: run the writers' pass.
     if constexpr (!build_config::use_openmp)
     {
         Arr::make_block_compression();
@@ -221,9 +221,9 @@ static void check_rounds_under_limit(const char* self, long nch)
     const std::string log   = "/tmp/cst2_reclaim_" + std::to_string(getpid()) + ".log";
     const std::string cmd = "CHUNK_CST_VAL2_ID_LIMIT=" + std::to_string(limit) + " " + validation::self_command(self) +
                             " --rounds " + std::to_string(nch) + " 12 > \"" + log + "\" 2>&1";
-    const int         status = std::system(cmd.c_str());
-    const bool        ok     = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    bool              said   = false;
+    const int  status = std::system(cmd.c_str());
+    const bool ok     = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    bool       said   = false;
     {
         std::ifstream in(log);
         std::string   line;

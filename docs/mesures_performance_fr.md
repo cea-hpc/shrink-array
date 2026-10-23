@@ -67,7 +67,7 @@ l'autre, au mégaoctet près. Un seul run suffit.
   6,4-6,8 s et trois à 7,7-8,0 s (+18 %). `perf stat` : même fréquence (3,26 GHz), même nombre
   d'instructions, mêmes défauts du dernier niveau de cache, mais un IPC de 3,45 au lieu de
   3,95 et +10 points de cycles bloqués sur la mémoire. Chaque accès mémoire coûte plus cher,
-  sans doute selon la disposition physique des pages reçues au démarrage. Chunk2 a un mode
+  sans doute selon la disposition physique des pages reçues au démarrage. `zero_one_value` a un mode
   lent encore plus marqué (~+40 %, des runs à 16 s au lieu de 11).
 - **La dérive entre fenêtres de temps.** Un même binaire, sans aucune recompilation : 10,75 à
   11,53 s dans une fenêtre, 9,49 à 10,08 s une heure plus tard.
@@ -143,7 +143,7 @@ perf stat -I 1000 -x, -e task-clock,cycles:u,instructions:u,stall_backend_mem:u 
 ```
 
 Le nombre de cœurs occupés est `task-clock / 1000` pour chaque seconde. C'est ce qui a montré
-que v1, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
+que `zero`, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
 
 **Temps utilisateur, temps système, défauts de page** :
 `/usr/bin/time -f "%e s réel, %U s utilisateur, %S s système, %R défauts mineurs" $BIN …`.
@@ -176,5 +176,12 @@ python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
   OpenMP tourne sur un seul cœur. Vérifier `ldd $BIN | grep gomp`.
 - **L'assembleur trop ancien** pour `-mcpu=native` avec GCC 16 (« unknown architecture ») :
   charger des `binutils` récents.
+- **Une référence `std::vector` initialisée sur un seul thread** : `std::vector<T> v(n)` écrit
+  ses zéros depuis le thread qui le construit, donc la création est séquentielle et toutes les
+  pages sont sur le nœud NUMA de ce thread ; les boucles parallèles qui suivent lisent de la
+  mémoire distante, et les tableaux par chunks, qui n'allouent rien à la création, paraissent
+  plus rapides qu'ils ne sont. La référence de `shrink_bench` met à zéro en parallèle
+  (`examples/shrink_bench/baseline_vector.h`) : la garder en ajoutant une phase ou un type, et
+  ne pas comparer ses temps de création avec des runs antérieurs à ce changement.
 - **La taille d'un tableau calculée en `int`** : 8 × 10⁹ déborde et devient négatif. Les
   cibles à indice 64 bits (`_int64`) n'ont pas ce problème.

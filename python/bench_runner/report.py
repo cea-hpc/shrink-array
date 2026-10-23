@@ -6,12 +6,12 @@ import os
 import shutil
 
 from .builds import _variant_base, short_config_label
-from .settings import DEFAULT_BASELINE
+from .settings import DEFAULT_BASELINE, SHRINK_VARIANTS
 from .term import blue, bold, green, red, yellow
 
 
 def _memory_guard_errors(norm, baseline_variant,
-                         chunk2a_vs_chunk2_max, vs_baseline_max):
+                         zero_any_vs_zero_one_value_max, vs_baseline_max):
     """Turn the memory figures flush_summary already computes into verdicts.
 
     norm maps (cfg, var, tc) -> (avg_time_s, peak_mem_mo_or_None).
@@ -19,9 +19,9 @@ def _memory_guard_errors(norm, baseline_variant,
     Two guards, both on the same (cfg, tc) and same size declination so the
     runs processed identical data:
 
-    1. chunk2a vs chunk2: by design Chunk2A must never cost MORE memory than
-       Chunk2 (it is Chunk2 plus a second constant). A ratio above
-       `chunk2a_vs_chunk2_max` is the exact signature of the Sept-2026
+    1. zero_any vs zero_one_value: by design zero_any must never cost MORE memory than
+       zero_one_value (it is zero_one_value plus a second constant). A ratio above
+       `zero_any_vs_zero_one_value_max` is the exact signature of the Sept-2026
        regression (x2.7 at 64 threads), reported as an error.
     2. any chunk variant vs the baseline (default `vector`): a chunk build
        that uses more than `vs_baseline_max` x the plain-vector memory has lost
@@ -42,25 +42,25 @@ def _memory_guard_errors(norm, baseline_variant,
             continue
         by_key[(cfg, tc, _size_of(var), _variant_base(var))] = mem
 
-    if chunk2a_vs_chunk2_max is not None:
+    if zero_any_vs_zero_one_value_max is not None:
         for (cfg, tc, sz, base), mem in by_key.items():
-            if base != "chunk2a":
+            if base != "zero_any":
                 continue
-            ref = by_key.get((cfg, tc, sz, "chunk2"))
+            ref = by_key.get((cfg, tc, sz, "zero_one_value"))
             if ref is None:
                 continue
             ratio = mem / ref
-            if ratio > chunk2a_vs_chunk2_max:
+            if ratio > zero_any_vs_zero_one_value_max:
                 errs.append(
-                    f"MEMORY REGRESSION [chunk2a vs chunk2] "
+                    f"MEMORY REGRESSION [zero_any vs zero_one_value] "
                     f"cfg={short_config_label(cfg)} threads={tc} size={sz or '-'}: "
-                    f"chunk2a={mem:.0f} Mo, chunk2={ref:.0f} Mo, "
-                    f"ratio={ratio:.2f} > {chunk2a_vs_chunk2_max}"
+                    f"zero_any={mem:.0f} Mo, zero_one_value={ref:.0f} Mo, "
+                    f"ratio={ratio:.2f} > {zero_any_vs_zero_one_value_max}"
                 )
 
     if vs_baseline_max is not None:
         for (cfg, tc, sz, base), mem in by_key.items():
-            if base == baseline_variant or not base.startswith("chunk"):
+            if base == baseline_variant or base not in SHRINK_VARIANTS:
                 continue
             # The baseline (vector) has no size declination: match on (cfg, tc)
             # with any size.
@@ -82,7 +82,7 @@ def _memory_guard_errors(norm, baseline_variant,
 
 def flush_summary(results, errors, summary_csv, errors_log, elapsed_min,
                   interrupted, baseline_variant=DEFAULT_BASELINE,
-                  mem_chunk2a_vs_chunk2_max=None, mem_vs_baseline_max=None):
+                  mem_zero_any_vs_zero_one_value_max=None, mem_vs_baseline_max=None):
     """Write CSV + log — called even when interrupted.
 
     results maps (cfg, var, tc) -> (avg_time_s, peak_mem_mo_or_None).
@@ -111,7 +111,7 @@ def flush_summary(results, errors, summary_csv, errors_log, elapsed_min,
     # Memory verdicts: computed from the same figures the CSV reports, but a
     # bad ratio is a FAIL, not a column in a spreadsheet.
     mem_errs = _memory_guard_errors(norm, baseline_variant,
-                                    mem_chunk2a_vs_chunk2_max, mem_vs_baseline_max)
+                                    mem_zero_any_vs_zero_one_value_max, mem_vs_baseline_max)
     if mem_errs:
         for e in mem_errs:
             print(red("⚠️  " + e))

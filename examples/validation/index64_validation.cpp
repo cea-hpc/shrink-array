@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// 64-bit index harness. Variant-agnostic: tests chunk / chunk2 / chunk2a
-// depending on the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the
+// 64-bit index harness. Variant-agnostic: tests zero / zero_one_value / zero_any
+// depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like the
 // other harnesses here.
 // ============================================================================
 //
@@ -55,11 +55,11 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"               // forward decls + default IntType = int
-#include "chunk/zero_array.h"                // zero::Array
-#include "chunk/zero_one_value_array.h"               // zero_one_value::Array
-#include "chunk/zero_any_array.h"              // zero_any::Array
+#include "chunk/zero_array.h"                 // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
-#include "chunk/zero_chunk.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"                 // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                     // chunk_config::use_zero*, build_config::chunk_dynamic / has_not_ompt
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
@@ -78,27 +78,27 @@ namespace
 {
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "index64_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
+              "index64_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
 
 template <typename T, typename I>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T, I>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T, I>, zero::Array<T, I>>>;
+using Array = std::conditional_t<
+    chunk_config::use_zero_any,
+    zero_any::Array<T, I>,
+    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T, I>, zero::Array<T, I>>>;
 
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -118,7 +118,7 @@ void end_phase()
     }
 }
 
-/// Chunk2 compresses to the second value only once the array declared one.
+/// zero_one_value compresses to the second value only once the array declared one.
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {

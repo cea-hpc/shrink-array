@@ -16,13 +16,13 @@
 
 /**
  * @file variant_compare.cpp
- * @brief Chunk2 against Chunk2A on the SAME workload, where both can compress
- *        the same chunks (--constants 1) or where Chunk2A can compress more
+ * @brief zero_one_value against zero_any on the SAME workload, where both can compress
+ *        the same chunks (--constants 1) or where zero_any can compress more
  *        (--constants K > 1).
  *
  * @details shrink_bench writes several distinct constants per array (d0, d1,
- *          d2...): Chunk2A, which takes a second value per chunk, compresses
- *          ~8.5 % more chunks there than Chunk2, which has one per array, and
+ *          d2...): zero_any, which takes a second value per chunk, compresses
+ *          ~8.5 % more chunks there than zero_one_value, which has one per array, and
  *          then carries 2-2.5x less resident memory. That hides the question
  *          of the per-operation cost of each variant. This program asks it on
  *          its own:
@@ -33,7 +33,7 @@
  *                            write / read / RMW paths alone;
  *            --constants K   constant chunks take 0 or one of K values
  *                            (9, 11, 13, ...), only the first declared:
- *                            shrink_bench's situation, Chunk2A's advantage.
+ *                            shrink_bench's situation, zero_any's advantage.
  *
  *          One Array<double> of n_elems elements (n_elems rounded up to whole chunks),
  *          all at 0 at the start. Every iteration gives each chunk a role
@@ -79,8 +79,8 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"       // the IntType = int default of zero_one_value::Array<T> / zero_any::Array<T>
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
-#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/config.h"             // chunk_config::use_zero_any, build_config::use_openmp
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
@@ -93,14 +93,14 @@
 using namespace shrink_array;
 
 static_assert(chunk_config::use_second_value,
-              "variant_compare compares chunk2 and chunk2a: link chunk_zero_one_value_* or chunk_zero_any_*");
+              "variant_compare compares zero_one_value and zero_any: link chunk_zero_one_value_* or chunk_zero_any_*");
 
 template <typename T>
 using Array = std::conditional_t<chunk_config::use_zero_any, zero_any::Array<T>, zero_one_value::Array<T>>;
 
 constexpr const char* variant_name()
 {
-    return chunk_config::use_zero_any ? "chunk2a" : "chunk2";
+    return chunk_config::use_zero_any ? "zero_any" : "zero_one_value";
 }
 
 /// The first value is 0; the second values, the first of them declared.
@@ -121,7 +121,7 @@ static void end_phase(Array<double>& arr)
     {
         shrink_array::finalize_parallel_phase();
     }
-    // Serial chunk2a has no between-region pass: run it (mark_path_validation).
+    // Serial zero_any has no between-region pass: run it (mark_path_validation).
     if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
         arr.make_block_compression();
@@ -132,7 +132,7 @@ static void end_phase(Array<double>& arr)
     }
 }
 
-/// Chunk2 declares its one second value; Chunk2A finds one per chunk (no
+/// zero_one_value declares its one second value; zero_any finds one per chunk (no
 /// such member). A template, so the discarded call is not checked.
 template <typename Arr>
 static void maybe_declare_second_value(Arr& a, double v)

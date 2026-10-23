@@ -67,7 +67,7 @@ the next, to within a megabyte. A single run is enough.
   6.4-6.8 s and three at 7.7-8.0 s (+18%). `perf stat`: same frequency (3.26 GHz), same number
   of instructions, same last-level cache misses, but an IPC of 3.45 instead of
   3.95 and +10 points of cycles stalled on memory. Each memory access costs more,
-  probably depending on the physical layout of the pages received at start-up. Chunk2 has an even
+  probably depending on the physical layout of the pages received at start-up. `zero_one_value` has an even
   more pronounced slow mode (~+40%, runs at 16 s instead of 11).
 - **Drift between time windows.** The same binary, with no recompilation at all: 10.75 to
   11.53 s in one window, 9.49 to 10.08 s an hour later.
@@ -143,7 +143,7 @@ perf stat -I 1000 -x, -e task-clock,cycles:u,instructions:u,stall_backend_mem:u 
 ```
 
 The number of busy cores is `task-clock / 1000` for each second. This is what showed
-that v1, after its rechunk, only kept ~40 cores busy instead of ~52.
+that `zero`, after its rechunk, only kept ~40 cores busy instead of ~52.
 
 **User time, system time, page faults**:
 `/usr/bin/time -f "%e s real, %U s user, %S s system, %R minor faults" $BIN …`.
@@ -175,5 +175,12 @@ python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
   OpenMP runs on a single core. Check `ldd $BIN | grep gomp`.
 - **The assembler is too old** for `-mcpu=native` with GCC 16 ("unknown architecture"):
   load recent `binutils`.
+- **A `std::vector` baseline initialised on one thread**: `std::vector<T> v(n)` writes its
+  zeros from the constructing thread, so the creation is serial and every page sits on that
+  thread's NUMA node; the parallel loops that follow read remote memory, and the chunked
+  arrays, which allocate nothing at creation, look faster than they are. `shrink_bench`'s
+  baseline zeroes in parallel instead (`examples/shrink_bench/baseline_vector.h`): keep it
+  when you add a phase or a type, and do not compare its creation times with runs made before
+  that change.
 - **An array size computed as `int`**: 8 × 10⁹ overflows and becomes negative. The
   targets with 64-bit indices (`_int64`) do not have this problem.

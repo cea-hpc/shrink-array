@@ -4,7 +4,7 @@
 """Every raw read of a chunk's buffer must say why it is safe.
 
 A chunk's `values` pointer names a buffer that a compression pass may release
-(and the allocator hand out again) at any time, or a Chunk2A identifier slot
+(and the allocator hand out again) at any time, or a zero_any identifier slot
 that holds nothing. Reading an element straight through it is only safe in a
 few situations: inside the write session (the write/compress handshake keeps
 compressors off), on the deferred-replay path after materialisation, inside a

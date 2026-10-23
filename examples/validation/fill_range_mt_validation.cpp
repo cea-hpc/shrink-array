@@ -47,9 +47,9 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"          // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h"          // zero_one_value::Array
-#include "chunk/zero_any_array.h"         // zero_any::Array
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::has_not_ompt
@@ -58,7 +58,7 @@
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 #include "chunk/internal/print.h"        // shrink_array::println
 
-#include "chunk/zero_chunk.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::fill_range_mt_validation
@@ -91,15 +91,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -279,7 +279,7 @@ static int run_validation(long n, int rounds)
 
 // Perf blocks: half the smallest chunk this bench builds (64), with values
 // alternating between neighbours, so no chunk is ever uniform -- a uniform
-// Chunk2A chunk compresses to its second value, and the timings would then
+// zero_any chunk compresses to its second value, and the timings would then
 // measure compression churn instead of writes.
 constexpr long perf_blk = 32;
 

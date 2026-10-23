@@ -350,8 +350,48 @@ the tag's checksum to the recipe.
 
 - The three array classes live in a namespace each, named after what they compress:
   `zero::Array` (was `ArrayChunk`), `zero_one_value::Array` (was `ArrayChunk2`),
-  `zero_any::Array` (was `ArrayChunk2A`). The chunk and proxy classes, the headers' names, the
-  CMake targets and the package keep their names for now.
+  `zero_any::Array` (was `ArrayChunk2A`). The chunk and proxy classes, the CMake targets and
+  the package keep their names for now.
+- The headers follow: `chunk/zero_array.h`, `chunk/zero_one_value_array.h` and
+  `chunk/zero_any_array.h` (were `chunk/array_chunk.h`, `array_chunk2.h`, `array_chunk2A.h`),
+  and so do the files of `chunk/internal/` and `chunk/private/` that belong to one of the three
+  classes (`zero_any_array_inline.h`, `zero_one_value_array_parallel.h`, `zero_array.cpp`, ...).
+  The files shared by several of them (`array_chunk_base.h`, `array_chunk_core.h`, ...) keep
+  their names.
+- The chunk and proxy classes of each variant move into its namespace: `zero::Chunk`,
+  `zero_one_value::Chunk`, `zero_any::Chunk` (were `Chunk`, `Chunk2`, `Chunk2A`), `zero::Proxy`,
+  `zero_one_value::Proxy`, `zero_any::Proxy` (were `Proxy`, `Proxy2`, `Proxy2A`), and so do their
+  definitions, specs, policies, pointer maps and array mixins (`zero_any::ChunkOmpPolicy` was
+  `Chunk2AOmpPolicy`, `zero_one_value::RechunkHooks` was `RechunkHooks2`, ...). The bases shared by
+  `zero_one_value` and `zero_any` become `SecondValueChunkBase`, `SecondValueProxyBase` and
+  `SecondValueArrayBase` (were `Chunk2Base`, `Proxy2Base`, `ArrayChunk2Base`).
+- Their files follow: `chunk/zero_chunk.h`, `zero_one_value_chunk.h`, `zero_any_chunk.h` (were
+  `chunk_std.h`, `chunk2_std.h`, `chunk2A_std.h`), `zero_chunk_def.h`, ... (were `chunk_def.h`, ...),
+  `chunk/internal/zero_any_proxy.h`, ... (were proxy.h, proxy2.h, proxy2A.h), and
+  `second_value_chunk_base.h`, `second_value_proxy_base.h`, `second_value_array_base.h` (were
+  chunk2_base.h, proxy2_base.h, array_chunk2_base.h).
+- The build names the variants after their namespace too: `CHUNK_VARIANTS` takes `zero`,
+  `zero_one_value`, `zero_any` (was `chunk`, `chunk2`, `chunk2a`); the libraries are
+  `chunk_zero_<size>`, `chunk_zero_one_value_<size>`, `chunk_zero_any_<size>`, `..._dyn` and the bare
+  `chunk::chunk_zero_any`, ... (were `chunk_v1_*`, `chunk_v2_*`, `chunk_v2a_*`); the macros
+  `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_ONE_VALUE`, `CHUNK_VARIANT_ZERO_ANY` (were
+  `CHUNK_VARIANT_V1`, `_V2`, `_V2A`); `chunk_config::use_zero`, `use_zero_one_value`, `use_zero_any`,
+  `use_second_value` (were `use_chunk`, `use_chunk2`, `use_chunk2a`, `use_chunk2or2a`); and the
+  executables and tests, `shrink_bench_zero_any_256`, `validation_zero_dyn`, ... (were
+  `shrink_bench_chunk2a_256`, ...).
+- The python scripts use the new labels too: `bench_and_test.py` (`bench_runner`),
+  `multi_launch_stress.py`, `omp_speedup.py`, `access_cost.py`, `perf_db.py` and `shrink_gui` take
+  and show `zero`, `zero_one_value`, `zero_any`, `tbb_zero`, ... (`--variants`, `--exec`,
+  `--stats-mark-ratio-min zero_any=0.4`, ...), and so does the CHUNK_STATS tag the library prints.
+  The old labels (chunk, chunk2a@256, tbb_chunk2, ...) are still read as their new names until
+  1.0: on the command line, with a note on stderr, and in the perf databases, bench_summary.csv
+  files, logs, CHUNK_STATS tags and executable names (shrink_bench_chunk2a_dyn) written before.
+  `--mem-zero-any-vs-zero-one-value-max` was --mem-chunk2a-vs-chunk2-max (still accepted, hidden),
+  and `diag_zero_rechunk_slowdown.py` was diag_v1_rechunk_slowdown.py.
+- The documentation and the README name the variants by their namespace, `zero`,
+  `zero_one_value`, `zero_any` (were Chunk or v1, Chunk2, Chunk2A); `docs/algo_zero.md`,
+  `docs/algo_zero_one_value.md`, `docs/algo_zero_any.md` and their French versions (`_fr.md`)
+  were algo_chunk.md, algo_chunk2.md, algo_chunk2a.md.
 - Types are PascalCase, with no `xxx_type` exception: the member aliases of the arrays
   (`chunk_type`, `manager_type`, `proxy_type`, `ind_type`, `chunk_list_type`) and the
   internal ones (`index_type`, `cst_val1_type`) become `ChunkType`, `ManagerType`, `ProxyType`,
@@ -373,6 +413,15 @@ the tag's checksum to the recipe.
 
 - `ArrayChunk`, `ArrayChunk2` and `ArrayChunk2A`: alias templates of the classes above, with a
   `[[deprecated]]` attribute, until 1.0.
+- `chunk/array_chunk.h`, `chunk/array_chunk2.h` and `chunk/array_chunk2A.h`: they include the
+  new header and emit a `#warning`, until 1.0.
+- `Chunk`, `Chunk2`, `Chunk2A`, `Proxy`, `Proxy2` and `Proxy2A`: `[[deprecated]]` alias templates of
+  the classes above, until 1.0.
+- `chunk/chunk_std.h`, `chunk2_std.h`, `chunk2A_std.h`, `chunk_def.h`, `chunk2_def.h` and
+  `chunk2A_def.h`: they include the new header and emit a `#warning`, until 1.0.
+- The former `CHUNK_VARIANTS` values (a CMake deprecation message), library names (INTERFACE
+  targets with a `DEPRECATION` property, installed), `CHUNK_VARIANT_V*` macros (defined from the new
+  ones, and the other way round) and `chunk_config::use_chunk*` constants (`[[deprecated]]`), until 1.0.
 
 ### Fixed
 

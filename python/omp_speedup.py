@@ -35,14 +35,14 @@ speedup_<target>_<host>_<date>/ when that work area exists, else
 
 Examples (from python/, on a compute node):
   python3 omp_speedup.py --target omp-llvm --min-threads 1 --max-threads 72 \\
-      --exec shrink_bench_vector_perf shrink_bench_chunk2a_dyn --multiply 2
+      --exec shrink_bench_vector_perf shrink_bench_zero_any_dyn --multiply 2
   python3 omp_speedup.py --target omp-gnu --min-threads 4 --max-threads 128 \\
-      --exec chunk@dyn chunk2a@1024 --threads 4 8 16 32 64 96 128 --reps 5
+      --exec zero@dyn zero_any@1024 --threads 4 8 16 32 64 96 128 --reps 5
 
---exec takes a full name (shrink_bench_chunk2a_dyn), or base@size
-(chunk2a@dyn -> shrink_bench_chunk2a_dyn), or "vector" (shrink_bench_vector_perf),
+--exec takes a full name (shrink_bench_zero_any_dyn), or base@size
+(zero_any@dyn -> shrink_bench_zero_any_dyn), or "vector" (shrink_bench_vector_perf),
 as bench_and_test.py names them. --all-exec takes every one the target has
-for this machine: vector, then chunk / chunk2 / chunk2a in each size
+for this machine: vector, then zero / zero_one_value / zero_any in each size
 (--size narrows it); with --int64 their 64-bit declinations
 (shrink_bench_*_int64_*, the only ones past INT_MAX elements: --multiply 2
 and up).
@@ -77,7 +77,13 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VARIANTS = ["chunk", "chunk2", "chunk2a"]          # as multi_launch_stress.py --all_exec
+VARIANTS = ["zero", "zero_one_value", "zero_any"]          # as multi_launch_stress.py --all_exec
+try:
+    # --exec chunk2a@dyn & co.: the old variant labels, read as their new names until 1.0.
+    from bench_runner.settings import normalize_variant
+except ImportError:
+    def normalize_variant(label, warn=None):   # copied alone: the new labels only
+        return label
 SIZES = ["dyn", "1024", "256", "64"]
 ORACLE_MARKER = "data_tab_ORACLE_COMPLETE.marker"  # bench_runner/builds.py
 REPO = os.path.dirname(HERE)
@@ -89,7 +95,7 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 # ------------------------------------------------------------------ helpers
 def exe_name(spec, mode="perf"):
-    """chunk2a@dyn -> shrink_bench_chunk2a_dyn, vector -> shrink_bench_vector_perf
+    """zero_any@dyn -> shrink_bench_zero_any_dyn, vector -> shrink_bench_vector_perf
     (vector_check in check mode: the one binary built twice), a full name or a
     path as it is."""
     if os.sep in spec or spec.startswith("shrink_bench_"):
@@ -422,12 +428,12 @@ def parse_args(argv=None):
                    help="build target (compile_all.sh config): omp-llvm, omp-gnu, omp-oneapi... "
                         "or cmake-build-omp-llvm")
     p.add_argument("--exec", dest="execs", nargs="+", metavar="EXE",
-                   help="executables, space- or comma-separated: full name (shrink_bench_chunk2a_dyn), "
-                        "base@size (chunk2a@dyn), vector (shrink_bench_vector_perf), a glob pattern "
-                        "(shrink_bench_chunk2a_*), or a path")
+                   help="executables, space- or comma-separated: full name (shrink_bench_zero_any_dyn), "
+                        "base@size (zero_any@dyn), vector (shrink_bench_vector_perf), a glob pattern "
+                        "(shrink_bench_zero_any_*), or a path")
     p.add_argument("--all-exec", action="store_true",
-                   help="every executable the target has here: vector, then chunk / chunk2 / chunk2a in "
-                        "each size (with --exec: added to them)")
+                   help="every executable the target has here: vector, then zero / zero_one_value / "
+                        "zero_any in each size (with --exec: added to them)")
     p.add_argument("--size", type=lambda v: [x for x in v.split(",") if x], default=None,
                    metavar="dyn,1024,...", help="--all-exec: these sizes only (default: %s)" % ",".join(SIZES))
     p.add_argument("--int64", action="store_true",
@@ -501,6 +507,8 @@ def main(argv=None):
             if not hits:
                 missing.append(spec)
             continue
+        if os.sep not in spec and not spec.startswith("shrink_bench_"):
+            spec = normalize_variant(spec, "--exec")      # chunk2a@dyn -> zero_any@dyn
         name = exe_name(spec, a.mode)
         exe = find_exe(root, target, name)
         (execs.append((name if os.sep not in name else os.path.basename(name), exe)) if exe

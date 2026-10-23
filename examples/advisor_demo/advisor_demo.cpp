@@ -22,8 +22,8 @@
 #include <iterator> // std::size
 #include <vector>   // std::vector
 
-#include "chunk/zero_any_array.h"              // zero_any::Array
-#include "chunk/zero_any_chunk.h"                // Chunk2A
+#include "chunk/zero_any_array.h"             // zero_any::Array
+#include "chunk/zero_any_chunk.h"             // zero_any
 #include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
@@ -125,7 +125,7 @@ int main()
     //  - 256: finer 128/64, coarser 512/1024, and the grid 192, 320, ...;
     //  - 1024: finer 512/256, coarser 2048, and the grid 384, 640, 1280, ... There the 256-long runs at
     //    -1.5 / 7.25 are materialised, so the finer rows must recognise them
-    //    as compressible -- Chunk2A compresses a uniform chunk at ANY value.
+    //    as compressible -- zero_any compresses a uniform chunk at ANY value.
     //    Gated on first_value/second value, the S=256 row read 4608
     //    materialised chunks against 2560 real (+80%).
     //  - 256 again, reading the data of 300 materialised chunks only (of

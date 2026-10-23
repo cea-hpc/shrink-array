@@ -34,10 +34,10 @@
 // Both executables have the chunk headers: simple_array_vector links
 // chunk_vector, simple_array_chunk chunk_zero.
 #include "chunk/param_chunk.h"                // ParamChunk
-#include "chunk/zero_array.h"                // zero::Array
+#include "chunk/zero_array.h"                 // zero::Array
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
-#include "chunk/zero_chunk_def.h"                  // ChunkDef
-#include "chunk/zero_chunk.h"                  // destroy_block_chunk
+#include "chunk/zero_chunk_def.h"             // ChunkDef
+#include "chunk/zero_chunk.h"                 // destroy_block_chunk
 #include "chunk/config.h"                     // chunk_config::use_zero*, stats
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size
 
@@ -163,7 +163,7 @@ void initialize_rng(std::mt19937& rng, const std::string& seed_file_name)
 
 using namespace shrink_array;
 
-/// simple_array_chunk (CHUNK_VARIANT_ZERO, or _V2) runs on zero::Array, simple_array_vector
+/// simple_array_chunk (CHUNK_VARIANT_ZERO, or _ZERO_ONE_VALUE) runs on zero::Array, simple_array_vector
 /// on std::vector.
 constexpr bool use_chunk_array = chunk_config::use_zero || chunk_config::use_zero_one_value;
 using Array                    = std::conditional_t<use_chunk_array, zero::Array<double>, std::vector<double>>;

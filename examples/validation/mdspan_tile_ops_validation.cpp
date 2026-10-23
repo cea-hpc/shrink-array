@@ -48,13 +48,13 @@
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector (the reference of fill_box)
 
-#include "chunk/zero_array.h"    // zero::Array
-#include "chunk/zero_one_value_array.h"   // zero_one_value::Array
-#include "chunk/zero_any_array.h"  // zero_any::Array
-#include "chunk/zero_chunk.h"      // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"         // chunk_config::use_zero_one_value*
-#include "chunk/internal/print.h" // shrink_array::println
-#include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*
+#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/manage_ompt.h"          // parallel_phase
 #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles(_mt), md::fill_box(_mt), SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/param_chunk.h" // ParamChunk::init_indexes
 #include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
@@ -256,7 +256,7 @@ void update_tiles_serial()
     }
 
     // A tile made uniform: written in one go (fill_range_mt), read back as
-    // such; Chunk2A compresses it to that value at the next pass.
+    // such; zero_any::Chunk compresses it to that value at the next pass.
     md::update_tiles(f, 0, 1,
                      [](const auto&, auto b)
                      {

@@ -17,22 +17,22 @@
 #pragma once
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PointerMapChunk2 — per-array registry of Chunk2's SECOND constant
+// zero_one_value::PointerMap — per-array registry of zero_one_value's SECOND constant
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Chunk2 compresses a chunk to one of TWO constants: first_value is fixed for the
+// zero_one_value compresses a chunk to one of TWO constants: first_value is fixed for the
 // type, the second is chosen per array at run time and a chunk folded to it stores
 // only an index. This header holds that lookup, keyed by the array's identity
 // (a void* handle) and by the value:
 //
-//   PointerMapChunk2<T>                  the map itself (key -> SecondValueInfo).
+//   zero_one_value::PointerMap<T>                  the map itself (key -> SecondValueInfo).
 //   PointerMapChunk2InfArrayPolicy<T,B>  the value -> inf_array side, as a policy:
 //                                        the <T,false> specialisation is all no-ops.
 //   ValueToInfTupleMapHelper<T>          its std::map type, ordered by ValueLess
 //                                        (value_less.h: complex has no operator<).
 //
 // The key -> value store is a LINEAR scan over a std::deque (PointerMapLinear; see
-// the storage note in PointerMapChunk2). Only the value -> inf_array side is a std::map.
+// the storage note in zero_one_value::PointerMap). Only the value -> inf_array side is a std::map.
 
 #include <array>       // std::array (report_key_not_found)
 #include <format>      // std::format_to_n (report_key_not_found)
@@ -70,13 +70,13 @@ struct ValueToInfTupleMapHelper
 
 /**
  * @brief Policy holding the fast-block-compression-only value -> inf_array
- *        lookup for PointerMapChunk2.
+ *        lookup for zero_one_value::PointerMap.
  *
- * @details An inf_array is Chunk2's `(second_value, index, num_tab)` tuple;
+ * @details An inf_array is zero_one_value's `(second_value, index, num_tab)` tuple;
  *          the map, keyed by second value, is ValueToInfTupleMapHelper's.
- *          v1 (PointerMapChunk, zero_proxy.h) has no such lookup.
+ *          zero (zero::PointerMap, zero_proxy.h) has no such lookup.
  *
- * @tparam T       Element type PointerMapChunk2 is keyed on.
+ * @tparam T       Element type zero_one_value::PointerMap is keyed on.
  * @tparam Enabled Whether the map actually exists (fast-block-compression
  *                 builds) or is a zero-overhead no-op (counter-mode builds):
  *                 chunk_config::use_fast_block_compression.
@@ -189,15 +189,14 @@ namespace zero_one_value
 {
 
 /**
- * @brief Per-array registry of Chunk2's second value: array address ->
+ * @brief Per-array registry of zero_one_value's second value: array address ->
  *        (second value, its index in the shared table, num_tab).
  *
  * @tparam T Element type.
  */
 template <typename T>
-class PointerMap
-    : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<const void*, SecondValueInfo<T>>>>,
-      public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
+class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<const void*, SecondValueInfo<T>>>>,
+                   public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
 {
   private:
     /// Internal alias for tuple representing a value with index and table number.
@@ -475,7 +474,7 @@ class PointerMap
     }
 
     // erase(), swap_entries(), exists(), size() and for_each_key() come from
-    // PointerMapLinear (shared with PointerMapChunk).
+    // PointerMapLinear (shared with zero::PointerMap).
 };
 
 } // namespace zero_one_value

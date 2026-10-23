@@ -190,8 +190,8 @@ passante telle qu'elle est.
 
 `formal/switch_mt.c` n'est pas une poignée de main de la section 5 du document Dekker : c'est le
 seul endroit où un écrivain change l'état d'un chunk sans le matérialiser. `internal::store_range_mt`,
-pour un morceau uniforme couvrant tout un chunk Chunk2A compressé, ouvre une session d'écriture
-(annonce, revérification, retrait) et appelle `Chunk2A::fill_constant_st`, dont la branche
+pour un morceau uniforme couvrant tout un chunk zero_any compressé, ouvre une session d'écriture
+(annonce, revérification, retrait) et appelle `zero_any::Chunk::fill_constant_st`, dont la branche
 « compressé » écrit l'emplacement de la seconde valeur et le type, puis le pointeur `values` --
 pas de tampon, pas de CAS. Le modèle l'oppose à une passe de compression qui tient le même chunk
 dans sa liste de candidats. Le chunk est réduit à deux mots, `values` (la première constante, deux

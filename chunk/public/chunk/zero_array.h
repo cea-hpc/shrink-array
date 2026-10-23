@@ -23,9 +23,9 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/zero_chunk.h"                     // Chunk<T>
-#include "chunk/internal/read_reclaim.h"         // read_reclaim::PassScope (perform_compression / compress in a region)
-#include "chunk/internal/array_chunk_base.h"     // ArrayChunkBase
+#include "chunk/zero_chunk.h"                   // Chunk<T>
+#include "chunk/internal/read_reclaim.h"        // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase
 #include "chunk/internal/zero_array_parallel.h" // ParallelSupport — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
@@ -33,7 +33,7 @@
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
 #include "chunk/internal/in_t.h"                        // InT<T>: resize's fill value
-#include "chunk/internal/zero_proxy.h"                       // Proxy<T>: the element proxy and its registry
+#include "chunk/internal/zero_proxy.h"                  // Proxy<T>: the element proxy and its registry
 
 namespace shrink_array
 {
@@ -46,7 +46,7 @@ namespace zero
 
 /**
  * @brief Compressed array: chunks of @p T that each compress to the first
- *        value (Chunk, variant v1).
+ *        value (zero::Chunk, variant zero).
  *
  * @tparam T        stored element type
  * @tparam IntType index type used for sizes and element positions
@@ -91,11 +91,11 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     ///        by num_tab.
     void clear_core();
 
-    /// @brief Per-array compression stats + "would Chunk2 have helped?" probe.
+    /// @brief Per-array compression stats + "would zero_one_value have helped?" probe.
     /// Plain Chunk compresses a block only when it is constant to first_value;
     /// this reports the compression ratio (vs a plain std::vector) and scans the
     /// materialised (uncompressed) blocks for ones that are in fact constant to
-    /// some OTHER value — those a Chunk2/Chunk2A would have captured. Read at the
+    /// some OTHER value — those a zero_one_value/zero_any would have captured. Read at the
     /// start of clear(), before the drain mutates chunk state.
     void print_compression_stats(std::ostream& os = std::cout) const;
 
@@ -208,7 +208,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     {
         clear();
         // Drop our (this -> num_tab) registry entry so a later array at this
-        // address does not inherit our stale num_tab via PointerMapChunk's
+        // address does not inherit our stale num_tab via zero::PointerMap's
         // first-match lookup (required for rechunk_to's tmp). Must run AFTER
         // clear(), which still needs get_num_tab(registry_key()).
         zero::Proxy<T>::share_info_array->erase(this->registry_key());
@@ -341,5 +341,5 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
 // Bodies of the two mode-specific mixins. After zero_array_inline.h, so their
 // CRTP self() sees a complete zero::Array.
-#include "chunk/internal/zero_array_parallel_inline.h"      // ParallelSupport's bodies
+#include "chunk/internal/zero_array_parallel_inline.h"       // ParallelSupport's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

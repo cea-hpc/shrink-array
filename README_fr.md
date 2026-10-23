@@ -18,7 +18,7 @@ moins de mémoire, sans toucher aux boucles.
   nouvelle indexation, pas d'étape de reconstruction, aucune perte.
 - **Compresse pendant que le programme tourne** : un chunk qui devient uniforme rend son
   tampon ; un chunk réécrit en reprend un.
-- **N'importe quelle valeur répétée**, pas seulement zéro (Chunk2A), pour tout type trivialement
+- **N'importe quelle valeur répétée**, pas seulement zéro (`zero_any`), pour tout type trivialement
   copiable : `double`, `std::complex`, vos propres structures.
 - **Fait pour beaucoup de threads** : aucun verrou à l'écriture, des tableaux de 10⁹ éléments,
   quelques centaines de threads -- ceux d'OpenMP, ou les propres `std::thread` et tâches TBB du
@@ -48,7 +48,7 @@ change :
 (La forme nue `#pragma omp parallel for` demande un build OMPT ; avec le `libgomp` de GCC,
 ouvrez la région avec `parallel_phase()`, voir [Un premier programme, parallèle et multi-thread](#un-premier-programme-parallèle-et-multi-thread).)
 
-![Mémoire du process au banc de référence : std::vector 125,9 Go, Chunk 40,2 Go, Chunk2 17,3 Go, Chunk2A 7,26 Go](docs/images/memory_bench_fr.png)
+![Mémoire du process au banc de référence : std::vector 125,9 Go, zero 40,2 Go, zero_one_value 17,3 Go, zero_any 7,26 Go](docs/images/memory_bench_fr.png)
 
 *Banc de référence ([`shrink_bench`](examples/shrink_bench)) : environ 10⁹ éléments d'une
 douzaine de types, chunks statiques de 256, mémoire du process entier à la fin. Le prix est le
@@ -165,25 +165,40 @@ métadonnées. Trois variantes décident quelles constantes comptent :
 
 | variante | classe | un chunk est compressé quand il est uniforme à… |
 |---|---|---|
-| Chunk (v1) | `zero::Array<T>` | `T{}` (zéro) seulement |
-| Chunk2 | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
-| Chunk2A | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
+| `zero` | `zero::Array<T>` | `T{}` (zéro) seulement |
+| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
+| `zero_any` | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
 
 La variante et la taille de chunk (256, 1024, ou dynamique et adaptative : `_dyn`) sont choisies
 par la bibliothèque liée : `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variantes_fr.md](docs/variantes_fr.md) dit ce que coûte chacune ;
-[docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) comment lectures, écritures et compression
+[docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) comment lectures, écritures et compression
 tournent ensemble.
 
-**Vérifié, pas seulement testé.** Les trois protocoles sans verrou -- écrivains d'éléments
+**Sans verrou, et vérifié plutôt que seulement testé.** Aucun thread ne prend de verrou pour
+lire ou écrire un élément. Les écrivains, la passe de compression qui reprend le tampon d'un
+chunk, le flush des écritures différées et les lecteurs se coordonnent uniquement par des
+atomiques et des barrières : des poignées de main à la Dekker
+([docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md)). C'est de là que
+vient la montée en threads, et c'est aussi là qu'est l'essentiel de la complexité de la
+bibliothèque. Chaque protocole n'est correct qu'avec l'ordre mémoire exact d'une poignée de
+lectures et d'écritures. Sur un processeur à ordre faible comme Grace, une erreur se manifeste
+par une écriture perdue ou un accès à un tampon rendu une fois sur des milliers d'exécutions,
+et l'histoire de la bibliothèque en compte plusieurs. Les tests seuls ne peuvent pas trancher.
+
+Les trois protocoles -- écrivains d'éléments
 contre passe de compression, passe contre flush des écritures différées, lecteurs purs contre
-réemploi des tampons -- sont vérifiées par model checking : des modèles réduits ([formal/](formal/))
+réemploi des tampons -- sont vérifiés par model checking : des modèles réduits ([formal/](formal/))
 en sont explorés exhaustivement par [GenMC](https://github.com/MPI-SWS/genmc) sous le modèle
 mémoire C11 (RC11 et IMM), sans écriture perdue, sans accès à un tampon rendu, sans course de
 données et sans attente non bornée, et les modèles refusent douze mutations, dont six états
 passés de la bibliothèque. La forme à `membarrier()` repose sur l'argument de la section 4.2 de
 [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) ; tout le reste est au
-vérificateur ([docs/formal_models_fr.md](docs/formal_models_fr.md)).
+vérificateur ([docs/formal_models_fr.md](docs/formal_models_fr.md)). Ce que cela couvre,
+précisément : toutes les exécutions que le modèle mémoire autorise, pour de petites
+configurations (jusqu'à 5 écrivains ou 3 lecteurs, un chunk, une passe). Ce n'est pas une
+preuve pour un nombre quelconque de threads, et un modèle est une réduction du source écrite à
+la main, que les mutations qu'il doit refuser gardent honnête.
 
 ## En chiffres
 
@@ -194,9 +209,9 @@ Grace, 64 threads ([comment c'est mesuré](docs/mesures_performance_fr.md)) :
 
 | | chunks statiques de 256 (`_256`) | chunks dynamiques (`_dyn`) |
 |---|---|---|
-| Chunk2A | **7,26 Go** | **6,0 Go** |
-| Chunk2 | 17,3 Go | 16,3 Go |
-| Chunk (v1) | 40,2 Go | 40,3 Go |
+| `zero_any` | **7,26 Go** | **6,0 Go** |
+| `zero_one_value` | 17,3 Go | 16,3 Go |
+| `zero` | 40,2 Go | 40,3 Go |
 | `std::vector` | 125,9 Go | — |
 
 Le prix est le temps d'accès. Dans des boucles qui ne font qu'accéder (le pire cas,
@@ -218,6 +233,20 @@ threads et atteignent 43 à 80 à 128, là où `std::vector` plafonne vers 28 à
 retombe vers 18 à 128.
 
 ![Speedup OpenMP sur AMD EPYC 7763 (Milan, 2 × 64 cœurs), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
+
+**Une référence équitable.** Le `std::vector` de ces mesures (`shrink_bench_vector_*`) est un
+vrai `std::vector`, dont la mise à zéro est parallèle
+([examples/shrink_bench/baseline_vector.h](examples/shrink_bench/baseline_vector.h)). Un
+`std::vector<T> v(n)` ordinaire initialise ses `n` éléments sur le seul thread qui le
+construit : la création est séquentielle, et sur un nœud à plusieurs sockets toutes les pages
+atterrissent sur le nœud NUMA de ce thread (premier contact), si bien que chaque boucle
+parallèle qui suit lit de la mémoire distante. Les tableaux par chunks n'allouent rien à la
+création et ne paient aucun de ces deux coûts. Face à un `std::vector` non modifié, les runs
+OpenMP de `shrink_bench` seraient plus rapides que le vector sur quelques milliers
+d'itérations, pour une raison qui n'a rien à voir avec la compression. La référence alloue donc
+sans écrire, puis met ses éléments à zéro dans une boucle parallèle à l'ordonnancement statique
+des boucles du banc, chaque page touchée en premier par le thread qui y travaille ; ses
+éléments valent `T{}` exactement comme ceux d'un `std::vector`. Seul change qui écrit les zéros.
 
 **À utiliser** sur des données surtout nulles ou faites de plages de quelques valeurs : champs
 creux, masques de matériaux, grandeurs multi-matériaux, drapeaux. **À éviter** sur des données
@@ -317,7 +346,7 @@ Une branche de développement, pas encore dans une version :
 | trouver un appel | [docs/api_fr.md](docs/api_fr.md) |
 | choisir une variante | [docs/variantes_fr.md](docs/variantes_fr.md) |
 | comparer aux formats creux, aux compresseurs, aux grilles creuses | [docs/alternatives_fr.md](docs/alternatives_fr.md) |
-| comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) |
+| comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) |
 | savoir pourquoi l'écriture n'a besoin d'aucun verrou | [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) |
 | vérifier un protocole avec un vérificateur de modèles | [docs/formal_models_fr.md](docs/formal_models_fr.md) |
 | utiliser les tailles de chunk dynamiques | [docs/rechunk_adaptatif_fr.md](docs/rechunk_adaptatif_fr.md) |

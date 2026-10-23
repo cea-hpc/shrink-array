@@ -128,11 +128,11 @@ using BenchBoolArray =
  *
  * @details The two bool containers side by side in ONE run, on the same
  *          workload -- memory (chunk filling rate, pools) and write cost:
- *            - chunk2 builds: ArrayChunkBits (bit.h), 8 bools per byte in a
+ *            - zero_one_value builds: ArrayChunkBits (bit.h), 8 bools per byte in a
  *              materialised chunk, one atomic 64-bit read-modify-write per
  *              write; tab_bool stays zero_one_value::Array<bool>, one byte per bool;
- *            - chunk (v1) / chunk2a builds: the variant's Array<bool>, i.e.
- *              tab_bool's own type -- ArrayChunkBits is chunk2's machinery;
+ *            - zero / zero_any builds: the variant's Array<bool>, i.e.
+ *              tab_bool's own type -- ArrayChunkBits is zero_one_value's machinery;
  *            - the std::vector baseline: std::vector<short>, as tab_bool
  *              (std::vector<bool> would race: its element writes are not
  *              atomic, and the phases split the loops anywhere).
@@ -164,10 +164,10 @@ inline constexpr Int bench_double_bands = 200000;
  *
  * @details The array a bit-packed container is for, and the one std::vector's
  *          own bit packing is the reference of:
- *            - chunk2 builds: ArrayChunkBits (bit.h), 8 bools per byte in a
+ *            - zero_one_value builds: ArrayChunkBits (bit.h), 8 bools per byte in a
  *              materialised chunk, and constant chunks at no data cost;
- *            - chunk (v1) / chunk2a builds: the variant's Array<bool>, one byte
- *              per bool -- ArrayChunkBits is chunk2's machinery;
+ *            - zero / zero_any builds: the variant's Array<bool>, one byte
+ *              per bool -- ArrayChunkBits is zero_one_value's machinery;
  *            - the std::vector baseline: std::vector<bool>, one bit per bool
  *              and nothing compressed. Its phases write whole 64-element
  *              blocks, one thread per block, so no word of it has two writers.
@@ -180,9 +180,9 @@ using BenchMaskArray =
 /// @brief tab_mask's default size, as a fraction of sz (--mask_scale sets it).
 /// @details 1/32. Its per-iteration update writes ~1/16 of the random and
 ///          scattered blocks and 1/32 of the constant segments, element by
-///          element through the proxies in a chunk (v1) / chunk2A build: at the
+///          element through the proxies in a zero / zero_any build: at the
 ///          8 x sz it was created with (capped at 2^31 in the 32-bit builds) it
-///          took ~75% of a 43 s chunk2a run (64 threads) that is ~7 s without it.
+///          took ~75% of a 43 s zero_any run (64 threads) that is ~7 s without it.
 ///          1/32 keeps thousands of 4096-element segments of each kind.
 inline constexpr double bench_mask_default_scale = 1.0 / 32.0;
 
@@ -278,7 +278,7 @@ struct BenchArrays
 
     Array<int>&           tab_int;
     BenchBoolArray&       tab_bool;
-    BenchBoolBitsArray&   tab_bool_bits; ///< tab_bool's twin, bit-packed in a chunk2 build
+    BenchBoolBitsArray&   tab_bool_bits; ///< tab_bool's twin, bit-packed in a zero_one_value build
     Array<ComplexDouble>& tab_complex;
     Array<float>&         tab_float;
     Array<short>&         tab_short;

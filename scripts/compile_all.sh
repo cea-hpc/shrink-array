@@ -831,7 +831,7 @@ launch_build "$build_rep/cmake-build-llvm-debug-std-alloc-address-sanitizer/$arc
 
 # Non-OMP llvm RELEASE build. Builds the _check targets (declared
 # unconditionally in CMakeLists; OMP only adds linkage) so bench_and_test can
-# run CHECK on the non-OMP path — the one that showed the Chunk2A type-2
+# run CHECK on the non-OMP path — the one that showed the zero_any type-2
 # divergence. Skipped by --debug-only like other release builds.
 if skip_release; then
     echo "[debug-only] skipping llvm non-omp release build"

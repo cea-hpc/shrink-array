@@ -30,8 +30,8 @@ def run_scaling_phase(args, extra_ldpath, errors):
     of the curve legitimately plateaus, and on a hybrid machine the points past
     the performance cores are genuinely slower -- a serialised pass shows up as
     1.5x and beyond). Each variant is its own curve: a regression confined to
-    one container (a lock only chunk2 takes, a pass only v1 runs) is exactly
-    what a single-variant guard would miss.
+    one container (a lock only zero_one_value takes, a pass only zero runs) is
+    exactly what a single-variant guard would miss.
 
     Everything it needs is a constant at the top of this file, deliberately:
     seven knobs for a guard that either says "still scales" or names the point

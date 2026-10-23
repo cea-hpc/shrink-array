@@ -22,7 +22,7 @@ namespace shrink_array
 namespace zero_any
 {
 
-/// @brief Compile-time settings of Chunk2A: compression-list and buffer-reuse thresholds.
+/// @brief Compile-time settings of zero_any: compression-list and buffer-reuse thresholds.
 class ChunkDef
 {
   private:
@@ -33,8 +33,8 @@ class ChunkDef
     // cross-thread flush scan over many writes.
     //
     // Driven by its own knob, CHUNK2A_COMPRESS_LEVEL, not CHUNK_TUNING_LEVEL: the
-    // global one also moves chunk2's thresholds and buffer reuse, which would make
-    // A/B comparisons of chunk2a meaningless. -DCHUNK2A_COMPRESS_LEVEL=<0|1|2|3>:
+    // global one also moves zero_one_value's thresholds and buffer reuse, which would make
+    // A/B comparisons of zero_any meaningless. -DCHUNK2A_COMPRESS_LEVEL=<0|1|2|3>:
     //   0 (default): factor 50 / min 500.
     //   1 : stress -- compress very often (tiny threshold).
     //   2 : intermediate between 0 and 3.

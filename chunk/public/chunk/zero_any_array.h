@@ -29,8 +29,8 @@
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 #include <type_traits>      // std::is_same_v (reclaim_second_values: bool has no registry)
 
-#include "chunk/internal/second_value_array_base.h"           // for ArrayChunk2Base
-#include "chunk/internal/zero_any_array_parallel.h"      // ParallelSupport2A — OpenMP-only mixin
+#include "chunk/internal/second_value_array_base.h"     // for SecondValueArrayBase
+#include "chunk/internal/zero_any_array_parallel.h"     // zero_any::ParallelSupport — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
@@ -39,8 +39,8 @@
 #include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share
-#include "chunk/internal/zero_any_proxy.h"                    // Proxy2A<T> and its tables
-#include "chunk/zero_any_chunk.h"                         // Chunk2A<T>
+#include "chunk/internal/zero_any_proxy.h"             // zero_any::Proxy<T> and its tables
+#include "chunk/zero_any_chunk.h"                      // zero_any::Chunk<T>
 #include "chunk/log.h"                                 // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
 
 namespace shrink_array
@@ -81,9 +81,9 @@ namespace zero_any
  * @details Same layout as zero_one_value::Array, but where zero_one_value::Array shares a SINGLE second value
  *          across the array, here every chunk registers its own (find-or-set), so a chunk
  *          compresses as soon as all its elements equal any one constant. Costs a per-chunk
- *          second-value table (ProxySpec2A), garbage-collected through GlobalVecHolder.
+ *          second-value table (zero_any::ProxySpec), garbage-collected through GlobalVecHolder.
  *
- *          Each array registers its address in Proxy2A::share_info_array to get a num_tab,
+ *          Each array registers its address in zero_any::Proxy::share_info_array to get a num_tab,
  *          the index into every per-tab metadata table. That registration is the array's
  *          identity: taken in pre_create_hook(), exchanged by rechunk_swap_identity(),
  *          released in the destructor.
@@ -99,7 +99,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
   public:
     using ManagerChunk2A = ManagerChunk<zero_any::Chunk, T>; ///< Same type as ManagerType.
 
-    using Base2   = SecondValueArrayBase<Array>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
+    using Base2   = SecondValueArrayBase<Array>; ///< Second-value common base (dirty bitset, second-value plumbing).
     using Base    = ArrayChunkBase<Array>;  ///< Base shared by every variant.
     using Hooks2A = RechunkHooks<Array>;    ///< Re-chunk hooks (dynamic geometry).
 
@@ -109,9 +109,9 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     // Re-declared (not only inherited): the mixins declare them too, so an outside
     // `Arr::ChunkType` would be ambiguous between base subobjects (lookup precedes access).
     using Traits      = Base2::Traits;      ///< ArrayChunkTraits<zero_any::Array>.
-    using ChunkType   = Base2::ChunkType;   ///< Chunk2A<T>, the chunk type held in chunk_list.
-    using ManagerType = Base2::ManagerType; ///< ManagerChunk<Chunk2A, T>, the per-type manager.
-    using ProxyType   = Base2::ProxyType;   ///< Proxy2A<T>, the write proxy of the non-const accessors.
+    using ChunkType   = Base2::ChunkType;   ///< zero_any::Chunk<T>, the chunk type held in chunk_list.
+    using ManagerType = Base2::ManagerType; ///< ManagerChunk<zero_any::Chunk, T>, the per-type manager.
+    using ProxyType   = Base2::ProxyType;   ///< zero_any::Proxy<T>, the write proxy of the non-const accessors.
     using value_type  = T;                  ///< Stored element type.
 
     // The former snake_case spellings, kept until 1.0 (types are PascalCase).
@@ -157,7 +157,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     //
     // Never an alias of the source's buffers: ArrayChunkBase::copy_from reads every element
     // through the source's gate and writes it through this array's proxy. All sequential.
-    // chunk2a finds each chunk's second value by itself: nothing to carry over.
+    // zero_any finds each chunk's second value by itself: nothing to carry over.
 
     /// @brief Deep copy: from.size() elements read from @p from. Sequential context.
     /// @param from Source array.
@@ -378,7 +378,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *          which stops the run. This marks what is referenced, over every live array of
      *          the type whatever its index type, and frees the rest:
      *            - a chunk compressed to a second value: its values pointer is the slot;
-     *            - a per-chunk second-value slot (Proxy2A's table) naming a registered value
+     *            - a per-chunk second-value slot (zero_any::Proxy's table) naming a registered value
      *              (init_values_cst_val() finds the slot from it by value).
      *          O(chunks of every zero_any::Array<T>) + O(registered values).
      *
@@ -589,7 +589,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /**
      * @brief Second value registered for the chunk holding element @p i.
      * @param i element index
-     * @return this chunk's own second value (2A registers one per chunk)
+     * @return this chunk's own second value (zero_any registers one per chunk)
      */
     auto get_metadata(IntType i) const noexcept
     {
@@ -669,7 +669,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
             });
     }
 
-    /// @brief This array holds one reference on Chunk2A<T>'s cst2 registry
+    /// @brief This array holds one reference on zero_any::Chunk<T>'s cst2 registry
     ///        (TabCstVal2Holder). See acquire_cst2_registry().
     bool holds_cst2_registry_ = false;
 };
@@ -684,5 +684,5 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
 // Bodies of the two mode-specific mixins. After zero_any_array_inline.h, so their
 // CRTP self() sees a complete zero_any::Array.
-#include "chunk/internal/zero_any_array_parallel_inline.h"    // ParallelSupport2A's bodies
+#include "chunk/internal/zero_any_array_parallel_inline.h"   // zero_any::ParallelSupport's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

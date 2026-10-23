@@ -17,7 +17,7 @@ On the reference benchmark, a billion-element workload that needs **125.9 GB** w
   rebuild step, no loss.
 - **Compresses while the program runs**: a chunk that becomes uniform gives its buffer back;
   one that is written again gets a new one.
-- **Any repeated value**, not only zero (Chunk2A), for any trivially copyable type: `double`,
+- **Any repeated value**, not only zero (`zero_any`), for any trivially copyable type: `double`,
   `std::complex`, your own structures.
 - **Built for many threads**: no lock on the write path, arrays of 10⁹ elements, a few hundred
   threads -- OpenMP's, or the program's own `std::thread`s and TBB tasks with the std backend
@@ -46,7 +46,7 @@ The loops of a code written for `std::vector` stay as they are; only the array t
 (The bare `#pragma omp parallel for` needs an OMPT build; with GCC's `libgomp`, open the
 region with `parallel_phase()`, see [A first program, parallel and multi-threaded](#a-first-program-parallel-and-multi-threaded).)
 
-![Process memory of the reference benchmark: std::vector 125.9 GB, Chunk 40.2 GB, Chunk2 17.3 GB, Chunk2A 7.26 GB](docs/images/memory_bench.png)
+![Process memory of the reference benchmark: std::vector 125.9 GB, zero 40.2 GB, zero_one_value 17.3 GB, zero_any 7.26 GB](docs/images/memory_bench.png)
 
 *Reference benchmark ([`shrink_bench`](examples/shrink_bench)): about 10⁹ elements of a dozen
 types, static chunks of 256, whole-process memory at the end. The price is access time, see
@@ -163,16 +163,26 @@ constants count:
 
 | variant | class | a chunk is compressed when it is uniform at… |
 |---|---|---|
-| Chunk (v1) | `zero::Array<T>` | `T{}` (zero) only |
-| Chunk2 | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
-| Chunk2A | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
+| `zero` | `zero::Array<T>` | `T{}` (zero) only |
+| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| `zero_any` | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
 
 The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are chosen by the
 library you link: `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
-[docs/algo_chunk2.md](docs/algo_chunk2.md) how reads, writes and compression run side by side.
+[docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) how reads, writes and compression run side by side.
 
-**Checked, not only tested.** The three lock-free handshakes -- element writers against the
+**Lock-free, and checked rather than only tested.** No thread ever takes a lock to read or
+write an element. Writers, the compression pass that takes a chunk's buffer back, the flush of
+deferred writes and the readers coordinate through atomics and fences only: Dekker-style
+handshakes ([docs/synchronisation_dekker.md](docs/synchronisation_dekker.md)). That is where
+the scaling comes from, and it is also where most of the library's complexity lies. Each
+handshake is correct only with the exact memory order of a handful of loads and stores. On a
+weakly ordered processor such as Grace, a wrong one shows up as a lost write or a
+use-after-free once in thousands of runs, and the library's history has several of those.
+Tests alone cannot settle that.
+
+The three handshakes -- element writers against the
 compression pass, the pass against the deferred-write flush, pure readers against buffer
 reclamation -- are model-checked: reduced models of them ([formal/](formal/)) are explored
 exhaustively by [GenMC](https://github.com/MPI-SWS/genmc) under the C11 memory model (RC11 and
@@ -180,6 +190,10 @@ IMM), with no lost write, no use-after-free, no data race and no unbounded wait,
 refuse twelve mutations, six of them the library as it once was. The `membarrier()` shape
 rests on the argument of [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md)
 section 4.2; everything else is the checker's ([docs/formal_models.md](docs/formal_models.md)).
+What that covers, precisely: every execution the memory model allows, for small configurations
+(up to 5 writers or 3 readers, one chunk, one pass). It is not a proof for any number of
+threads, and a model is a reduction of the source written by hand, which the mutations it must
+refuse keep honest.
 
 ## In numbers
 
@@ -190,9 +204,9 @@ over 2,000 iterations. Whole-process memory at the end, on Grace, 64 threads
 
 | | static chunks of 256 (`_256`) | dynamic chunks (`_dyn`) |
 |---|---|---|
-| Chunk2A | **7.26 GB** | **6.0 GB** |
-| Chunk2 | 17.3 GB | 16.3 GB |
-| Chunk (v1) | 40.2 GB | 40.3 GB |
+| `zero_any` | **7.26 GB** | **6.0 GB** |
+| `zero_one_value` | 17.3 GB | 16.3 GB |
+| `zero` | 40.2 GB | 40.3 GB |
 | `std::vector` | 125.9 GB | — |
 
 The price is access time. In loops that do nothing but access (the worst case,
@@ -214,6 +228,19 @@ and reaches 43 to 80 at 128, while `std::vector` peaks near 28 at 64 threads and
 to about 18 at 128.
 
 ![OpenMP speedup on AMD EPYC 7763 (Milan, 2 × 64 cores), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
+
+**A fair baseline.** The `std::vector` of these runs (`shrink_bench_vector_*`) is a real
+`std::vector` whose zeroing is parallel
+([examples/shrink_bench/baseline_vector.h](examples/shrink_bench/baseline_vector.h)). A plain
+`std::vector<T> v(n)` value-initialises its `n` elements on the one thread that constructs it:
+the creation is serial, and on a multi-socket node every page lands on that thread's NUMA node
+(first touch), so every parallel loop afterwards reads remote memory. The chunked arrays
+allocate nothing at creation and pay neither cost. Against an unmodified `std::vector`, the
+OpenMP runs of `shrink_bench` would come out faster than the vector over runs of a few thousand
+iterations, for a reason that has nothing to do with compression. The baseline therefore
+allocates without writing and zeroes its elements in a parallel loop with the bench's static
+schedule, each page first touched by the thread that works on it; its elements read `T{}`
+exactly as a `std::vector`'s do. Only who writes the zeros changes.
 
 **Use it** on data that is mostly zero or made of runs of a few values: sparse fields, material
 masks, multi-material quantities, flags. **Don't** on data where every chunk holds varied
@@ -309,7 +336,7 @@ One development branch, not in a release yet:
 | find a call | [docs/api.md](docs/api.md) |
 | choose a variant | [docs/variants.md](docs/variants.md) |
 | compare with sparse formats, compressors, sparse grids | [docs/alternatives.md](docs/alternatives.md) |
-| understand reads, writes, in-flight compression, deferred writes | [docs/algo_chunk2.md](docs/algo_chunk2.md) |
+| understand reads, writes, in-flight compression, deferred writes | [docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) |
 | know why the write path needs no lock | [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) |
 | check a handshake with a model checker | [docs/formal_models.md](docs/formal_models.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |

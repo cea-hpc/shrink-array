@@ -111,7 +111,7 @@ The block covers the whole tile, padding included: loop to `t.extent` where the 
 count. A uniform tile left unchanged by `update_tiles` is not written, so a kernel that leaves the
 background alone does not materialise it. A changed tile is written with `fill_range()` when it
 is uniform, else `copy_range()` (the serial range ops outside a parallel region, the `_mt` ones
-inside). On Chunk2A, a compressed chunk whose part of the tile comes out uniform switches its
+inside). On zero_any, a compressed chunk whose part of the tile comes out uniform switches its
 constant in place, without a buffer, in a parallel region too (`fill_range_mt`, `copy_range_mt`,
 within the write session). Outside a region a materialised chunk that comes out uniform is
 compressed at once as well; inside, it is written and queued -- its buffer is freed by the end of
@@ -313,15 +313,14 @@ auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // or any t
 
 ### A whole program: `multi-mat-md`
 
-`examples/multi-mat` exists in 2D: `multi-mat-md` is the same mock (every material carries
-three fields and a presence fraction over the whole mesh, occupies a random part of it at each
-iteration, is written there and read back by the same gadget computation), on an `nx x ny`
-mesh where a material occupies a box. Every array is seen through a 2D `mdspan`: `md::view` or
-`md::tiled_view` for the chunk arrays (v1 for the fields, Chunk2 for the fraction), a standard
-`mdspan` over `data()` for the `std::vector` ones. The loop body is written once against the
-views; the policy of the material's storage (`LoopsMd.h`) says how a box is written, zeroed and
-read, as `Loops.h` does in 1D -- and the indirection list of the 1D version is gone: the box is
-the loop.
+`examples/multi-mat` exists in 2D: `multi-mat-md` is the same mock (every material carries three
+fields and a presence fraction over the whole mesh, occupies a random part of it at each iteration,
+is written there and read back by the same gadget computation), on an `nx x ny` mesh where a
+material occupies a box. Every array is seen through a 2D `mdspan`: `md::view` or `md::tiled_view`
+for the chunk arrays (zero for the fields, zero_one_value for the fraction), a standard `mdspan`
+over `data()` for the `std::vector` ones. The loop body is written once against the views; the
+policy of the material's storage (`LoopsMd.h`) says how a box is written, zeroed and read, as
+`Loops.h` does in 1D -- and the indirection list of the 1D version is gone: the box is the loop.
 
 | `--chunk-mode` | chunk arrays | box loops |
 |---|---|---|

@@ -98,7 +98,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
     }
 
   protected:
-    /// @brief The part of resize() both chunk2 variants share: compress the
+    /// @brief The part of resize() both second-value variants share: compress the
     ///        pending candidates, drain the deferred ops, then grow or shrink
     ///        chunk_list (with its dirty bitset and the manager's counters).
     ///        The variant's resize() materialises or seeds the new chunks.
@@ -118,7 +118,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
         // &chunk_list[j] pointers that a reallocation would leave dangling. Needed in non-OMP
         // too, where the sequential compression path also queues chunks. This pass queues
         // nothing, so afterwards every list is empty and every dedup flag 0 -- the
-        // precondition of Proxy2A::resize_tab_is_int(num_tab, ...).
+        // precondition of zero_any::Proxy::resize_tab_is_int(num_tab, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
                       (build_config::not_threaded && std::is_same_v<Derived, zero_any::Array<T, IndType>>))
         {

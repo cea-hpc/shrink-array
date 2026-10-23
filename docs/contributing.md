@@ -3,7 +3,7 @@
 > French version: [contributing_fr.md](contributing_fr.md).
 
 > October 2026. How to build, test, measure and document a change. Read
-> [algo_chunk2.md](algo_chunk2.md) first: most of the library is the machinery it describes.
+> [algo_zero_one_value.md](algo_zero_one_value.md) first: most of the library is the machinery it describes.
 
 ***
 
@@ -17,7 +17,7 @@ cmake --build build
 ```
 
 A Debug build builds one static size, 256, instead of two (`CHUNK_STATIC_SIZES=auto`), which
-saves much of the build time; `-DCHUNK_VARIANTS=chunk2a` builds one variant instead of three, with its examples and
+saves much of the build time; `-DCHUNK_VARIANTS=zero_any` builds one variant instead of three, with its examples and
 harnesses only. A Debug build, `-DCHECK_OPTIM=ON` or a sanitizer also builds the validation harnesses
 (`examples/validation`).
 
@@ -92,8 +92,8 @@ The source checks run with the others (`ctest -R check_`):
   the traits and tags (`is_cplx`, `rebind`). So do the public `md::` types of `chunk/mdspan.h`
   and `chunk/mdspan_tile_ops.h`, spelt as `std::mdspan` spells its own (`layout_tiled`,
   `accessor`, `constant_boundary`): a view written against `std::mdspan` reads the same with them
-  (`STD_STYLE_API` in `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `chunk2a`; file names (`zero_any_array.h`)
-  stay as they are. Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
+  (`STD_STYLE_API` in `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `zero_any`, as in the file names (`zero_any_array.h`).
+  Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
   that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`
   checks the rest (the member suffix, the parameters) with `scripts/clang_tidy_naming.yaml`.
