@@ -53,7 +53,7 @@ double s = std::as_const(tab)[i];   // read: returns a T
 The interface is close to a `std::vector`: `size()`, `resize()`, `at()`, constant iterators,
 `swap()`, etc. Three points differ:
 
-- **Non-const `operator[]` returns a proxy** (`Proxy2<T>`), not a reference. All writes
+- **Non-const `operator[]` returns a proxy** (`zero_one_value::Proxy<T>`), not a reference. All writes
   go through it. The compound operators (`+=`, `*=`, …) are
   reimplemented on the proxy.
 - **`set_second_value()` must be called outside a parallel region**, before the writes: it
@@ -113,7 +113,7 @@ value, identified by an **index** `ind`.
 ### 4.2 The second value registry
 
 The second value **is not stored in the array**: it lives in the shared registry
-<tt>Proxy2\<T\>\::share_info_array</tt>, indexed by the **address** of the array. Each entry is an
+<tt>zero_one_value::Proxy\<T\>\::share_info_array</tt>, indexed by the **address** of the array. Each entry is an
 `InfArrayT` triplet:
 
 ```
@@ -268,7 +268,7 @@ are detailed in [synchronisation_dekker.md](synchronisation_dekker.md).
 
 ```mermaid
 flowchart TD
-    A["Proxy2::assign_impl : body ready"] --> B{"replay of a deferred<br/>operation in progress?"}
+    A["zero_one_value::Proxy::assign_impl : body ready"] --> B{"replay of a deferred<br/>operation in progress?"}
     B -->|yes| B1["run the body directly"]
     B -->|no| C{"deferred operations<br/>pending on the chunk?"}
     C -->|"other threads'"| C1["apply them (reader_sync)"]
@@ -517,7 +517,7 @@ keeping it on the element-by-element path:
   adding the chunk (`set_info_on_chunk()`), since `zero_one_value`'s lists are indexed by
   it. Without that, the chunks landed in the list of `T{}`, which no pass drains;
 - in counter mode (the serial builds), a direct store must **recount** the chunk's two
-  counters, `nb_val_eq_first_value` and `nb_val_eq_second_value`, which Proxy2 otherwise
+  counters, `nb_val_eq_first_value` and `nb_val_eq_second_value`, which zero_one_value::Proxy otherwise
   keeps up to date one write at a time (`internal::resync_counters`, as for `zero`'s count of
   zeros).
 

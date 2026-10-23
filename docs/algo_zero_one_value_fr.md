@@ -53,7 +53,7 @@ double s = std::as_const(tab)[i];   // lecture : renvoie un T
 L'interface est proche d'un `std::vector` : `size()`, `resize()`, `at()`, itérateurs constants,
 `swap()`, etc. Trois points diffèrent :
 
-- **`operator[]` non constant renvoie un proxy** (`Proxy2<T>`), pas une référence. C'est par
+- **`operator[]` non constant renvoie un proxy** (`zero_one_value::Proxy<T>`), pas une référence. C'est par
   lui que passent toutes les écritures. Les opérateurs composés (`+=`, `*=`, …) sont
   reprogrammés sur le proxy.
 - **`set_second_value()` doit être appelé hors région parallèle**, avant les écritures : il
@@ -113,7 +113,7 @@ valeur déclarée, repéré par un **indice** `ind`.
 ### 4.2 Le registre des secondes valeurs
 
 La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le registre partagé
-<tt>Proxy2\<T\>\::share_info_array</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
+<tt>zero_one_value::Proxy\<T\>\::share_info_array</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
 triplet `InfArrayT` :
 
 ```
@@ -268,7 +268,7 @@ sont détaillés dans [synchronisation_dekker_fr.md](synchronisation_dekker_fr.m
 
 ```mermaid
 flowchart TD
-    A["Proxy2::assign_impl : corps prêt"] --> B{"application d'une opération<br/>différée en cours ?"}
+    A["zero_one_value::Proxy::assign_impl : corps prêt"] --> B{"application d'une opération<br/>différée en cours ?"}
     B -->|oui| B1["exécuter le corps directement"]
     B -->|non| C{"opérations différées<br/>en attente sur le chunk ?"}
     C -->|"d'autres threads"| C1["les appliquer (reader_sync)"]
@@ -518,7 +518,7 @@ le laisser sur le chemin élément par élément :
   d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de `zero_one_value` sont indexées par
   elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
 - en mode compteur (les builds serial), une écriture directe doit **recompter** les deux
-  compteurs du chunk, `nb_val_eq_first_value` et `nb_val_eq_second_value`, que Proxy2 tient
+  compteurs du chunk, `nb_val_eq_first_value` et `nb_val_eq_second_value`, que zero_one_value::Proxy tient
   sinon à jour écriture par écriture (`internal::resync_counters`, comme le compte des zéros de
   `zero`).
 

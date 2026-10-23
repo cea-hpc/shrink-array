@@ -52,7 +52,7 @@ of object, plus 2 bytes and `sizeof(T)`), and therefore the one that gains the m
 see [adaptive_rechunk.md](adaptive_rechunk.md).
 
 When a storage is destroyed (end of life of the array, or old storage of a rechunk), its
-three rows are **freed** (`Proxy2A::clear_tab_is_int`), not just emptied. Until
+three rows are **freed** (`zero_any::Proxy::clear_tab_is_int`), not just emptied. Until
 September 2026, `clear()` kept their capacity, and each rechunk left the rows of
 the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
 

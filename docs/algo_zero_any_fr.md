@@ -52,7 +52,7 @@ d'objet, plus 2 octets et `sizeof(T)`), et donc celle qui gagne le plus à gross
 voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
 Quand un stockage est détruit (fin de vie du tableau, ou ancien stockage d'un rechunk), ses
-trois lignes sont **libérées** (`Proxy2A::clear_tab_is_int`), pas seulement vidées. Jusqu'en
+trois lignes sont **libérées** (`zero_any::Proxy::clear_tab_is_int`), pas seulement vidées. Jusqu'en
 septembre 2026, `clear()` gardait leur capacité, et chaque rechunk laissait les lignes de
 l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunkés.
 
