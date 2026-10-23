@@ -808,14 +808,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Deleted: proxy-to-proxy assignment would be ambiguous -- rebind
     ///        the proxy, or copy the value? The derived classes define what
     ///        `a[i] = b[j]` means.
-    const Derived& operator=(const Derived& from) = delete;
+    const Derived& operator=(const Derived& from) = delete("ambiguous: rebind or copy the value?");
 
     /// @brief Deleted: there is no stable address to take. The chunk may be
     ///        compressed, or reallocate under the proxy.
-    T* operator&() = delete;
+    T* operator&() = delete("no stable address: the chunk may be compressed or moved");
 
     /// @brief Deleted, as the non-const overload: no stable address to take.
-    const T* operator&() const = delete;
+    const T* operator&() const = delete("no stable address: the chunk may be compressed or moved");
 
     /// @brief Copying a proxy is fine: it rebinds to the same element.
     ProxyBase(const ProxyBase& other) = default;

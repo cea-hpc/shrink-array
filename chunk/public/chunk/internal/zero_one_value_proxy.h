@@ -984,8 +984,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     }
     Proxy(const Proxy& other) = default;
 
-    T*       operator&()       = delete;
-    const T* operator&() const = delete;
+    T*       operator&()       = delete("no stable address: the chunk may be compressed or moved");
+    const T* operator&() const = delete("no stable address: the chunk may be compressed or moved");
 
     /**
      * @brief Pointer to the owning array (used as the compression-metadata

@@ -214,7 +214,7 @@ class DynChunkSizeGuard
 class ChunkElems
 {
   public:
-    ChunkElems() = delete;
+    ChunkElems() = delete("every chunk element count must be explicit: ChunkElems{n}");
     /// @brief Wrap an element count.
     /// @param count The element count.
     constexpr explicit ChunkElems(unsigned int count) noexcept : n_(count) {}

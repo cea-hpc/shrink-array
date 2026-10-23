@@ -863,8 +863,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 
     // No address, and do not add operator T&(): `tab[nc] = val` would route
     // through it and materialise blocks for nothing. Hence foo(T&) rejects a[i].
-    T*       operator&()       = delete;
-    const T* operator&() const = delete;
+    T*       operator&()       = delete("no stable address: the chunk may be compressed or moved");
+    const T* operator&() const = delete("no stable address: the chunk may be compressed or moved");
 
     /**
      * @brief Resolve which array (table) a given pointer belongs to.

@@ -720,8 +720,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /**
      * @brief Address-of operator is disabled to prevent unsafe access.
      */
-    T*       operator&()       = delete;
-    const T* operator&() const = delete;
+    T*       operator&()       = delete("no stable address: the chunk may be compressed or moved");
+    const T* operator&() const = delete("no stable address: the chunk may be compressed or moved");
 
     /**
      * @brief Compute and store num_tab using share_info_array and ptr_on_array.

@@ -321,7 +321,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *          chunk.
      */
     template <typename T>
-    static void set_second_value(T second_value) = delete;
+    static void set_second_value(T second_value) = delete("not implemented: see zero_one_value / zero_any");
 
     /**
      * @brief Print the instrumentation report accumulated during the run.

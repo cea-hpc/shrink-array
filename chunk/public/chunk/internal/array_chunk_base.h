@@ -466,7 +466,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     using const_reverse_iterator = std::reverse_iterator<const_iterator>; ///< Reverse read-only iterator.
     using reverse_iterator       = const_reverse_iterator;                ///< Same as const_reverse_iterator.
 
-    T* data() = delete;
+    T* data() = delete("elements are not contiguous: use read_range or for_each_span");
     /**
      * @brief Set the runtime chunk geometry.
      *
