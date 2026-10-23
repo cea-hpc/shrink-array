@@ -137,8 +137,11 @@ if [ "$(uname -m)" = "aarch64" ]; then
     module load gcc/16.1.0
     ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-mcpu=native" # C++23: required by the CMakeLists itself
 else
-    echo "[x86_64 detected] Loading gcc/15.2.0 with -march=native"
-    module load gcc/15.2.0
+    # Same compiler as aarch64. The g++-16 x86_64 -O3 ICEs have their
+    # workarounds in place: -fno-tree-vectorize on shrink_bench.cpp
+    # (examples/shrink_bench/CMakeLists.txt) and the O2 pins of bench_utils.h.
+    echo "[x86_64 detected] Loading gcc/16.1.0 with -march=native"
+    module load gcc/16.1.0
     ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-march=native"
 fi
 
