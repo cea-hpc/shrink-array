@@ -69,7 +69,9 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 
 ## 3. Règles de code
 
-- **C++20.** La branche `cpp23` porte le même code avec C++23 obligatoire.
+- **C++20.** La branche `cpp23` porte le même code avec C++23 obligatoire. La branche `cpp26`
+  essaie le C++26 (réflexion, contrats, peut-être modules) et n'utilise que ce que GCC 16
+  implémente : elle n'est construite et testée qu'avec GCC 16.
 - **Anglais** pour le code, les commentaires et les messages de commit.
 - **Aucun commit de fixup n'est poussé.** Un commit `fixup!`, `squash!` ou `amend!` est fusionné
   dans sa cible avant le push (`git rebase -i --autosquash origin/<branche>`) : une fois publié,

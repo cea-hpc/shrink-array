@@ -41,7 +41,8 @@ cas réel.
 Avec Spack, la recette est dans le dépôt : voir [le README](../README_fr.md#avec-spack)
 (`spack install shrink-array`). Depuis les sources, avec un compilateur C++20 (essayé avec
 GCC 13 et 14 et Clang 18 ; les scripts de compilation couvrent aussi oneAPI, AOCC et NVHPC ;
-la branche `cpp23` demande le C++23, GCC 14 ou plus récent) et CMake ≥ 3.20 :
+la branche `cpp23` demande le C++23, GCC 14 ou plus récent ; la branche `cpp26`, GCC 16 et
+aucun autre compilateur) et CMake ≥ 3.20 :
 
 ```sh
 cmake -S shrink-array -B build -G Ninja \

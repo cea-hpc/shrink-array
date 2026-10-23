@@ -69,7 +69,9 @@ The source checks run with the others (`ctest -R check_`):
 
 ## 3. Code rules
 
-- **C++20.** The `cpp23` branch carries the same code with C++23 required.
+- **C++20.** The `cpp23` branch carries the same code with C++23 required. The `cpp26` branch
+  tries out C++26 (reflection, contracts, perhaps modules) and uses only what GCC 16
+  implements: it is built and tested with GCC 16 alone.
 - **English** for code, comments and commit messages.
 - **No fixup commit is pushed.** A `fixup!`, `squash!` or `amend!` commit is squashed into its
   target before the push (`git rebase -i --autosquash origin/<branch>`): once published it can
