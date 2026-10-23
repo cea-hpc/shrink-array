@@ -136,7 +136,7 @@
     #include <span>        // std::span (read_range's visitor)
     #include <string>      // std::string (the column names, consteval)
     #include <string_view> // std::string_view (the member names)
-    #include <tuple>       // std::tuple, std::get, std::apply
+    #include <tuple>       // std::tuple, std::get (a structured binding pack over the columns)
     #include <type_traits> // std::is_class_v
     #include <utility>     // std::index_sequence, std::declval, std::as_const
     #include <vector>      // std::vector (the member lists, consteval; a soa::plain column)
@@ -566,9 +566,10 @@ class SoaArray
     /// @p n elements, every value T{}'s (no buffer allocated; a soa::plain
     /// column is a std::vector of n V{}).
     explicit SoaArray(size_type n)
-        : columns_([n]<std::size_t... K>(std::index_sequence<K...>)
-                   { return Columns{std::tuple_element_t<K, Columns>(static_cast<int>(n))...}; }(
-                       std::make_index_sequence<n_columns_>{}))
+        : columns_(
+              [n]<std::size_t... K>(std::index_sequence<K...>) {
+                  return Columns{std::tuple_element_t<K, Columns>(static_cast<int>(n))...};
+              }(std::make_index_sequence<n_columns_>{}))
     {
     }
 
@@ -581,10 +582,8 @@ class SoaArray
     /// The write side: T's members, the columns' proxies.
     [[nodiscard]] Ref operator[](size_type i)
     {
-        return [&]<std::size_t... K>(std::index_sequence<K...>) -> Ref
-        {
-            return Ref{std::get<K>(columns_)[i]...}; // brace elision fills the nested parts in order
-        }(std::make_index_sequence<n_columns_>{});
+        auto& [... cols] = columns_; // C++26 structured binding pack
+        return Ref{cols[i]...};      // brace elision fills the nested parts in order
     }
 
     /// The read side: the element, gathered from the columns.
@@ -665,13 +664,15 @@ class SoaArray
     /// Sequential point: fold the chunks that became constant, every column.
     void shrink_to_fit()
     {
-        std::apply([](auto&... c) { (c.shrink_to_fit(), ...); }, columns_);
+        auto& [... cols] = columns_;
+        (cols.shrink_to_fit(), ...);
     }
 
     /// Sequential point: @p n elements, every column; the new ones T{}'s.
     void resize(size_type n)
     {
-        std::apply([n](auto&... c) { (c.resize(static_cast<decltype(c.size())>(n)), ...); }, columns_);
+        auto& [... cols] = columns_;
+        (cols.resize(static_cast<decltype(cols.size())>(n)), ...);
     }
 
     /// Sequential point: @p n elements, the new ones @p v (std::vector's semantics).
