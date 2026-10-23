@@ -120,6 +120,8 @@ the tag's checksum to the recipe.
 
 - `ArrayChunk`, `ArrayChunk2` and `ArrayChunk2A`: alias templates of the classes above, with a
   `[[deprecated]]` attribute, until 1.0.
+- `chunk/array_chunk.h`, `chunk/array_chunk2.h` and `chunk/array_chunk2A.h`: they include the
+  new header and emit a `#warning`, until 1.0.
 
 ### Fixed
 
