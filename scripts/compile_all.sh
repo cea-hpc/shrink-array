@@ -145,6 +145,12 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                 Forwarded to compile_all_gnu.sh.
   --debug-only  Compile only the debug builds (skip release / RelWithDebInfo).
   --only=<c>       Build only compiler <c> (gnu|oneapi|nvhpc|llvm|aocc).
+  --std=<N>        Build the tree as C++<N> (20, 23 or 26): every gnu
+                   configuration gets -DCMAKE_CXX_STANDARD=<N>. Default:
+                   CHUNK_CXX_STANDARD (functions_for_compile.sh; 26 on the cpp26
+                   branch), else each configuration's own. At 26 only the gnu
+                   builds are made (GCC 16: the only compiler with C++26
+                   reflection for now); --only=<other> is then an error.
   --target=<glob>  Build only the config(s) whose name matches <glob>
                    (e.g. omp-llvm, 'omp-llvm*', '*sanitizer*', '*check*'), or
                    any glob of a comma-separated list (omp-llvm,omp-gnu-debug).
@@ -254,6 +260,10 @@ for arg in "$@"; do
             export CHUNK_BUILD_EXEC="${arg#*=}"
             shift
             ;;
+        --std=*)
+            # Checked (20, 23, 26) in functions_for_compile.sh, sourced below.
+            export CHUNK_CXX_STANDARD="${arg#*=}"
+            shift ;;
         --only=*)
             only="${arg#*=}"
             enable_gnu=false; enable_oneapi=false; enable_nvhpc=false; enable_llvm=false; enable_aocc=false
@@ -334,6 +344,27 @@ source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
 # --target=<glob> that matches none of the configurations either script knows:
 # stop here with the closest names, before a single configure runs.
 check_target_arg $(known_build_names "$0" "$CHUNK_SCRIPT_DIR/compile_all_gnu.sh")
+
+# C++26: the gnu family only (chunk_cxx26, functions_for_compile.sh). Decided
+# before anything is configured; the llvm sanitizer, token and -cs builds live
+# inside the llvm section and go with it.
+if chunk_cxx26; then
+    if [ -n "${only:-}" ] && [ "$only" != gnu ]; then
+        echo "ERROR: --only=$only with C++$CHUNK_CXX_STANDARD: only the gnu builds compile C++26 for now (GCC 16)" >&2
+        exit 2
+    fi
+    echo "[INFO] C++$CHUNK_CXX_STANDARD: gnu builds only -- oneapi, nvhpc, llvm and aocc skipped (no C++26 reflection there yet)"
+    enable_oneapi=false
+    enable_nvhpc=false
+    enable_llvm=false
+    enable_aocc=false
+    enable_sanitizers=false
+    llvm_cs_size=""
+    WITH_TOKEN=false
+    if [ "$enable_gnu" = false ]; then
+        echo "[WARN] C++$CHUNK_CXX_STANDARD and --no-gnu: nothing to build"
+    fi
+fi
 
 # oneTBB for the std-backend builds (TBB bench, tbb_validation): TBB_CMAKE_OPT
 # and TBB_TSAN_CMAKE_OPT, see set_tbb_options in functions_for_compile.sh. Said
