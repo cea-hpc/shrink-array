@@ -20,7 +20,7 @@
  * @file array_chunk_core.h
  * @brief The part of a chunked array that does not depend on its index type.
  *
- * @details zero::Array*<T, IndT> are distinct types for every IndT, but
+ * @details zero::Array*<T, IntType> are distinct types for every IntType, but
  *          the machinery around them -- proxies, chunks, managers, the per-T
  *          registries (<tt>Proxy*\<T\>\::share_info_array</tt>) -- is templated on T alone
  *          and reaches the array through a type-erased pointer (the proxy's

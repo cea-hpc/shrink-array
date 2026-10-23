@@ -31,27 +31,27 @@ namespace shrink_array
 //   zero_any         zero and, chunk by chunk, any value
 namespace zero
 {
-template <ArrayChunkElement T, typename IndT = int>
+template <ArrayChunkElement T, typename IntType = int>
 class Array;
 } // namespace zero
 namespace zero_one_value
 {
-template <ArrayChunkElement T, typename IndT = int>
+template <ArrayChunkElement T, typename IntType = int>
 class Array;
 } // namespace zero_one_value
 namespace zero_any
 {
-template <ArrayChunkElement T, typename IndT = int>
+template <ArrayChunkElement T, typename IntType = int>
 class Array;
 } // namespace zero_any
 
 // The former names, kept until 1.0.
-template <ArrayChunkElement T, typename IndT = int>
-using ArrayChunk [[deprecated("use zero::Array")]] = zero::Array<T, IndT>;
-template <ArrayChunkElement T, typename IndT = int>
-using ArrayChunk2 [[deprecated("use zero_one_value::Array")]] = zero_one_value::Array<T, IndT>;
-template <ArrayChunkElement T, typename IndT = int>
-using ArrayChunk2A [[deprecated("use zero_any::Array")]] = zero_any::Array<T, IndT>;
+template <ArrayChunkElement T, typename IntType = int>
+using ArrayChunk [[deprecated("use zero::Array")]] = zero::Array<T, IntType>;
+template <ArrayChunkElement T, typename IntType = int>
+using ArrayChunk2 [[deprecated("use zero_one_value::Array")]] = zero_one_value::Array<T, IntType>;
+template <ArrayChunkElement T, typename IntType = int>
+using ArrayChunk2A [[deprecated("use zero_any::Array")]] = zero_any::Array<T, IntType>;
 
 template <typename T>
 class Chunk;
@@ -112,38 +112,38 @@ struct ChunkTraits<Chunk2A<T>>
 template <typename Derived>
 struct ArrayChunkTraits;
 
-/// @brief zero::Array<T, IndT> maps to Chunk<T>, Proxy<T>, ManagerChunk<Chunk, T>, value T and index IndT.
-template <ArrayChunkElement T, typename IndT>
-struct ArrayChunkTraits<zero::Array<T, IndT>>
+/// @brief zero::Array<T, IntType> maps to Chunk<T>, Proxy<T>, ManagerChunk<Chunk, T>, value T and index IntType.
+template <ArrayChunkElement T, typename IntType>
+struct ArrayChunkTraits<zero::Array<T, IntType>>
 {
     using ChunkType   = Chunk<T>;               ///< Chunk type the array holds.
     using ProxyType   = Proxy<T>;               ///< Write proxy returned by the non-const accessors.
     using ManagerType = ManagerChunk<Chunk, T>; ///< Per-type manager owning the compression machinery.
     using value_type  = T;                      ///< Stored element type.
-    using IndexType   = IndT;                   ///< Signed global index type.
+    using IndexType   = IntType;                   ///< Signed global index type.
 };
 
-/// @brief zero_any::Array<T, IndT> maps to Chunk2A<T>, Proxy2A<T>, ManagerChunk<Chunk2A, T>, value T and index
-/// IndT.
-template <ArrayChunkElement T, typename IndT>
-struct ArrayChunkTraits<zero_any::Array<T, IndT>>
+/// @brief zero_any::Array<T, IntType> maps to Chunk2A<T>, Proxy2A<T>, ManagerChunk<Chunk2A, T>, value T and index
+/// IntType.
+template <ArrayChunkElement T, typename IntType>
+struct ArrayChunkTraits<zero_any::Array<T, IntType>>
 {
     using ChunkType   = Chunk2A<T>;               ///< Chunk type the array holds.
     using ProxyType   = Proxy2A<T>;               ///< Write proxy returned by the non-const accessors.
     using ManagerType = ManagerChunk<Chunk2A, T>; ///< Per-type manager owning the compression machinery.
     using value_type  = T;                        ///< Stored element type.
-    using IndexType   = IndT;                     ///< Signed global index type.
+    using IndexType   = IntType;                     ///< Signed global index type.
 };
 
-/// @brief zero_one_value::Array<T, IndT> maps to Chunk2<T>, Proxy2<T>, ManagerChunk<Chunk2, T>, value T and index IndT.
-template <ArrayChunkElement T, typename IndT>
-struct ArrayChunkTraits<zero_one_value::Array<T, IndT>>
+/// @brief zero_one_value::Array<T, IntType> maps to Chunk2<T>, Proxy2<T>, ManagerChunk<Chunk2, T>, value T and index IntType.
+template <ArrayChunkElement T, typename IntType>
+struct ArrayChunkTraits<zero_one_value::Array<T, IntType>>
 {
     using ChunkType   = Chunk2<T>;               ///< Chunk type the array holds.
     using ProxyType   = Proxy2<T>;               ///< Write proxy returned by the non-const accessors.
     using ManagerType = ManagerChunk<Chunk2, T>; ///< Per-type manager owning the compression machinery.
     using value_type  = T;                       ///< Stored element type.
-    using IndexType   = IndT;                    ///< Signed global index type.
+    using IndexType   = IntType;                    ///< Signed global index type.
 };
 
 } // namespace shrink_array

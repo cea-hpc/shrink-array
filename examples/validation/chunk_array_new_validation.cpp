@@ -52,7 +52,7 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"   // forward decls + default IndT = int
+#include "chunk/chunk_traits.h"   // forward decls + default IntType = int
 #include "chunk/array_chunk.h"    // Chunk<T> complete (chunk_std.h): its operator new[]
 #include "chunk/array_chunk2.h"   // Chunk2<T> complete (chunk2_std.h): its operator new[]
 #include "chunk/array_chunk2A.h"  // Chunk2A<T> complete (chunk2A_std.h): its operator new[]

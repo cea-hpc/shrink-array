@@ -95,7 +95,7 @@
 #include <utility>     // std::forward (the returns lambdas: an element proxy is a temporary)
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"       // forward decls + default IndT = int
+#include "chunk/chunk_traits.h"       // forward decls + default IntType = int
 #include "chunk/array_chunk.h"        // zero::Array
 #include "chunk/array_chunk2.h"       // zero_one_value::Array
 #include "chunk/array_chunk2A.h"      // zero_any::Array

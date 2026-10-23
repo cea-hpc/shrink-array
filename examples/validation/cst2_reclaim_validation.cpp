@@ -63,7 +63,7 @@
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>   // getpid
 
-#include "chunk/chunk_traits.h"               // forward decls (Chunk2A) + default IndT = int
+#include "chunk/chunk_traits.h"               // forward decls (Chunk2A) + default IntType = int
 #include "chunk/array_chunk2A.h"              // zero_any::Array, Chunk2A complete (its registry types)
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
 #include "chunk/config.h"                     // chunk_config::use_chunk2a, build_config::has_not_ompt
