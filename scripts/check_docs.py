@@ -68,6 +68,8 @@ ALLOWED = {
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkOmpPolicy, ...)
     "Chunk2Base", "Proxy2Base", "ArrayChunk2Base", "Chunk2AOmpPolicy", "RechunkHooks2", "Chunk2Def",
+    # a former ring-log event name the CHANGELOG cites (ring_log_debug.cpp prints END_SLOW_PATH now)
+    "EV_END_SLOW_PATH",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh",
     # C++ standard library, compiler, language

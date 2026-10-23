@@ -20,7 +20,7 @@
  * @file value_hash.h
  * @brief value_hash<T>(v): a hash of a whole element value, consistent with
  *        operator== where the type lets us -- the second-value index of
- *        Chunk2A (tab_cst_val2_holder.h).
+ *        zero_any (tab_cst_val2_holder.h).
  *
  * @details - A scalar of at most 8 bytes: a 64-bit finaliser over its bits
  *            (the former index_hash formula), a floating zero normalised so
@@ -120,9 +120,8 @@ template <typename T>
     else if constexpr (std::is_class_v<T> && value_hash_detail::has_memberwise_equality(^^T))
     {
         std::uint64_t h = 0;
-        template for (constexpr std::meta::info f :
-                      std::define_static_array(std::meta::nonstatic_data_members_of(
-                          ^^T, std::meta::access_context::unchecked())))
+        template for (constexpr std::meta::info f : std::define_static_array(
+                          std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())))
         {
             using F = [:std::meta::type_of(f):];
             if constexpr (std::is_array_v<F>)

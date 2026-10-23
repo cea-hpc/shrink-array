@@ -87,7 +87,7 @@ _STATS_MIN_CREATE_FOR_GUARD = 10_000
 
 # A build with C++26 reflection (the cpp26 branch, GCC 16) also prints every
 # counter of a CHUNK_STATS block as one JSON line after it:
-#   CHUNK_STATS_JSON {"variant": "chunk2a", "alloc": 12, ..., "mark_ok": 3, ...}
+#   CHUNK_STATS_JSON {"variant": "zero_any", "alloc": 12, ..., "mark_ok": 3, ...}
 # Read first when present: one line, every counter under its field name in
 # ChunkStatsThr (chunk/internal/chunk_stats.h), nothing to keep in step with
 # the text layout. The text blocks stay the source for the other builds.

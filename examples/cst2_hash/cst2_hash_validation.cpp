@@ -44,8 +44,8 @@
 
 #include "chunk/zero_any_array.h" // shrink_array::zero_any::Array, SecondValueStats
 #include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"        // build_config::has_reflection
-#include "chunk/manage_ompt.h"   // parallel_phase
+#include "chunk/config.h"         // build_config::has_reflection
+#include "chunk/manage_ompt.h"    // parallel_phase
 
 namespace sa = shrink_array;
 

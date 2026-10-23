@@ -141,7 +141,7 @@
     #include <utility>     // std::index_sequence, std::declval, std::as_const
     #include <vector>      // std::vector (the member lists, consteval; a soa::plain column)
 
-    #include "chunk/zero_any_array.h"         // zero_any::Array, the default column
+    #include "chunk/zero_any_array.h"        // zero_any::Array, the default column
     #include "chunk/array_chunk_range_ops.h" // fill_range(_mt), copy_range(_mt), for_each_span (chunked columns)
     #include "chunk/vector_range_ops.h"      // the same on a soa::plain column (std::vector)
     #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
@@ -455,8 +455,8 @@ ref_type_of(std::meta::info t, bool marked, std::meta::info column, std::meta::i
     if (std::meta::is_array_type(t))
     {
         return std::meta::substitute(^^ArrayOf, {
-                                                     ref_type_of(std::meta::remove_extent(t), false, column, sub, next),
-                                                     std::meta::reflect_constant(std::meta::extent(t))});
+                                                    ref_type_of(std::meta::remove_extent(t), false, column, sub, next),
+                                                    std::meta::reflect_constant(std::meta::extent(t))});
     }
     if (std::meta::is_class_type(t) && splits(t, marked))
     {
@@ -566,10 +566,9 @@ class SoaArray
     /// @p n elements, every value T{}'s (no buffer allocated; a soa::plain
     /// column is a std::vector of n V{}).
     explicit SoaArray(size_type n)
-        : columns_(
-              [n]<std::size_t... K>(std::index_sequence<K...>) {
-                  return Columns{std::tuple_element_t<K, Columns>(static_cast<int>(n))...};
-              }(std::make_index_sequence<n_columns_>{}))
+        : columns_([n]<std::size_t... K>(std::index_sequence<K...>)
+                   { return Columns{std::tuple_element_t<K, Columns>(static_cast<int>(n))...}; }(
+                       std::make_index_sequence<n_columns_>{}))
     {
     }
 

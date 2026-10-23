@@ -166,9 +166,9 @@ void ParamChunk::chunk_stats()
     for (int v = 0; v < chunk_stats_n_variant; ++v)
     {
         const ChunkStatsThr stats = reduce_chunk_stats(v);
-#if SHRINK_ARRAY_HAS_REFLECT_FIELDS
+    #if SHRINK_ARRAY_HAS_REFLECT_FIELDS
         add_fields(all, stats); // every counter (the list below is the other builds')
-#else
+    #else
         all.alloc += stats.alloc;
         all.write += stats.write;
         all.read += stats.read;
@@ -204,7 +204,7 @@ void ParamChunk::chunk_stats()
         all.gate_mark_hit += stats.gate_mark_hit;
         all.rechunk_rebuilt += stats.rechunk_rebuilt;
         all.rechunk_skipped += stats.rechunk_skipped;
-#endif
+    #endif
     }
 
     std::print("\n===== CHUNK_STATS (instrumentation counters, -DCHUNK_STATS) =====\n");
@@ -443,7 +443,7 @@ void ParamChunk::chunk_stats()
             }
         }
         std::println("-------------------------------------");
-#if SHRINK_ARRAY_HAS_REFLECT_FIELDS
+    #if SHRINK_ARRAY_HAS_REFLECT_FIELDS
         // The same counters, every one of them, as one JSON line for scripts
         // (python/bench_runner/parsing.py): no regular expression per field,
         // and a counter added to ChunkStatsThr appears here by itself.
@@ -452,7 +452,7 @@ void ParamChunk::chunk_stats()
             append_json(json, stats, std::format("\"variant\": \"{}\", ", chunk_variant_name[v]));
             std::println("CHUNK_STATS_JSON {}", json);
         }
-#endif
+    #endif
     }
 
     // ── Retention, not counted by any of the above ───────────────────────────

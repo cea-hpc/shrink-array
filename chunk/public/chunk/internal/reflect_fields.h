@@ -92,7 +92,7 @@ void add_fields(T& acc, const T& x) noexcept
 /**
  * @brief Append @p obj to @p out as one JSON object, `{"f": value, ...}`, in
  *        declaration order, after the members @p prefix (already JSON, with
- *        its trailing comma, e.g. `"variant": "chunk2a", `).
+ *        its trailing comma, e.g. `"variant": "zero_any", `).
  * @details Every field must be arithmetic or bool: a report struct.
  */
 template <typename T>
