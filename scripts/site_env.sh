@@ -22,6 +22,12 @@
 #                                   also the gnu compiler), else empty (the
 #                                   compilers' own default)
 #   CHUNK_HAVE_MODULES      true when Environment Modules is available
+#   TBBROOT                 a oneTBB for the std builds' TBB bench, when one is
+#                           found (kept if already set): CHUNK_TBB_DIR, else
+#                             cea   $CCCWORKDIR/tbb
+#                             local ~/opt/tbb*, ~/opt/oneTBB*, /opt/tbb*
+#                           exported with its CMAKE_PREFIX_PATH and
+#                           LD_LIBRARY_PATH entries; CHUNK_WITH_TBB=0: no search
 #
 # Each can be set in the environment first to override. The build names
 # (cmake-build-<name>/<arch>, arch = ID_VERSION__machine from os-release) are
@@ -145,4 +151,49 @@ chunk_gcc_toolchain_opt() {
     esac
 }
 
-echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_REP, modules $CHUNK_HAVE_MODULES${CHUNK_GCC_TOOLCHAIN_DIR:+, libstdc++ from $CHUNK_GCC_TOOLCHAIN_DIR}"
+# ── oneTBB ───────────────────────────────────────────────────────────────────
+# The TBB bench of the std builds needs a oneTBB that CMake finds (TBBConfig.cmake)
+# and that the programs load at run time. A user-installed one, under a path
+# that names its user, is found here from the environment rather than written
+# in the repository. TBBROOT set beforehand (vars.sh, spack load) wins.
+chunk_find_tbb() {
+    local d l
+    for d in "${CHUNK_TBB_DIR:-}" ${CCCWORKDIR:+"$CCCWORKDIR/tbb"} \
+             "$HOME"/opt/tbb* "$HOME"/opt/oneTBB* /opt/tbb*; do
+        [ -n "$d" ] && [ -d "$d" ] || continue
+        for l in lib64 lib; do
+            if [ -f "$d/$l/cmake/TBB/TBBConfig.cmake" ]; then
+                echo "$d"
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+
+# chunk_path_prepend <var> <dir>: <dir> in front of the colon list <var>, once.
+chunk_path_prepend() {
+    local var=$1 dir=$2
+    case ":${!var:-}:" in
+        *":$dir:"*) ;;
+        *) export "$var=$dir${!var:+:${!var}}" ;;
+    esac
+}
+
+if [ "${CHUNK_WITH_TBB:-}" != 0 ]; then
+    if [ -z "${TBBROOT:-}" ]; then
+        TBBROOT=$(chunk_find_tbb) || TBBROOT=""
+    fi
+    if [ -n "$TBBROOT" ]; then
+        export TBBROOT
+        chunk_path_prepend CMAKE_PREFIX_PATH "$TBBROOT"
+        for _chunk_tbb_lib in lib64 lib; do
+            [ -d "$TBBROOT/$_chunk_tbb_lib" ] && chunk_path_prepend LD_LIBRARY_PATH "$TBBROOT/$_chunk_tbb_lib"
+        done
+        unset _chunk_tbb_lib
+    else
+        unset TBBROOT
+    fi
+fi
+
+echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_REP, modules $CHUNK_HAVE_MODULES${CHUNK_GCC_TOOLCHAIN_DIR:+, libstdc++ from $CHUNK_GCC_TOOLCHAIN_DIR}${TBBROOT:+, oneTBB $TBBROOT}"
