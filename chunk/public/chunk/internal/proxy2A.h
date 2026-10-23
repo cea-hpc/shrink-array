@@ -47,7 +47,7 @@ namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <template <typename> class ChunkT, typename T>
@@ -134,7 +134,7 @@ class PointerMapChunk2A
         }
         else
         {
-            // ankerl's erase throws on a key it finds changed; ~ArrayChunk2A
+            // ankerl's erase throws on a key it finds changed; ~zero_any::Array
             // calls this and is noexcept: fail with the key instead.
             try
             {
@@ -543,7 +543,7 @@ class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool
  * Encapsulates per-thread list management and trigger logic.
  */
 
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 {
   public:
@@ -551,8 +551,8 @@ class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 
     using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
-    using Base  = ProxyBase<Derived, T, ChunkType>;
-    using Base2 = Proxy2Base<Derived, T, ChunkType>;
+    using Base  = ProxyBase<Derived, T, ChunkT>;
+    using Base2 = Proxy2Base<Derived, T, ChunkT>;
     using Base::chunk_;
 
     using BaseSpec::BaseSpec;
@@ -593,15 +593,15 @@ class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 /**
  * @brief Specialization for Disabled Fast Compression (Zero Overhead).
  */
-template <typename Derived, typename T, typename ChunkType>
-class Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<T, Derived>
+template <typename Derived, typename T, typename ChunkT>
+class Proxy2AFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec2A<T, Derived>
 {
   public:
     using BaseSpec = ProxySpec2A<T, Derived>;
 
     using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
-    using Base = ProxyBase<Derived, T, ChunkType>;
+    using Base = ProxyBase<Derived, T, ChunkT>;
     using Base::chunk_;
 
     using BaseSpec::BaseSpec;

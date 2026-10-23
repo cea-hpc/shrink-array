@@ -160,25 +160,25 @@ struct Part
 
 /// @brief The v1 array of a field.
 template <typename T>
-shrink_array::ArrayChunk<T>& array_of(VectChunk<T>& v) noexcept
+shrink_array::zero::Array<T>& array_of(VectChunk<T>& v) noexcept
 {
     return v;
 }
 /// @brief The v1 array of a field, read-only.
 template <typename T>
-const shrink_array::ArrayChunk<T>& array_of(const VectChunk<T>& v) noexcept
+const shrink_array::zero::Array<T>& array_of(const VectChunk<T>& v) noexcept
 {
     return v;
 }
 /// @brief The Chunk2 array of a presence fraction.
 template <typename T>
-shrink_array::ArrayChunk2<T>& array_of(VectChunk2<T>& v) noexcept
+shrink_array::zero_one_value::Array<T>& array_of(VectChunk2<T>& v) noexcept
 {
     return v;
 }
 /// @brief The Chunk2 array of a presence fraction, read-only.
 template <typename T>
-const shrink_array::ArrayChunk2<T>& array_of(const VectChunk2<T>& v) noexcept
+const shrink_array::zero_one_value::Array<T>& array_of(const VectChunk2<T>& v) noexcept
 {
     return v;
 }

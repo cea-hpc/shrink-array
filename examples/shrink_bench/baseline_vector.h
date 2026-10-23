@@ -40,6 +40,8 @@
 #include <utility>     // std::forward
 #include <vector>      // std::vector: BaselineVector's base
 
+#include "chunk/PMP_CHUNK.h" // pmp::parallel_for (zero_from)
+
 namespace shrink_array
 {
 
@@ -133,11 +135,9 @@ class BaselineVector : public std::vector<T, DefaultInitAllocator<T>>
             T* const             p = this->data();
             const std::ptrdiff_t b = static_cast<std::ptrdiff_t>(first);
             const std::ptrdiff_t e = static_cast<std::ptrdiff_t>(this->size());
-#pragma omp parallel for schedule(static) if (static_cast<std::size_t>(e - b) >= parallel_min)
-            for (std::ptrdiff_t i = b; i < e; ++i)
-            {
-                p[i] = T{};
-            }
+            // `omp parallel for schedule(static) if (...)` with OpenMP.
+            pmp::parallel_for(b, e, pmp::Options{.use_team = static_cast<std::size_t>(e - b) >= parallel_min},
+                              [p](std::ptrdiff_t i) { p[i] = T{}; });
         }
     }
 };

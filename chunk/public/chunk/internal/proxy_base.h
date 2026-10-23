@@ -55,7 +55,7 @@ using ChunkFlagRowT = parallel_storage_init::NoInitVector<std::atomic<char>>;
 
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <typename T>
@@ -135,7 +135,7 @@ CHUNK_FORCE_INLINE void check_integer_divisor([[maybe_unused]] const U& v, [[may
  *
  * @tparam Derived The concrete proxy (CRTP).
  * @tparam T Element type.
- * @tparam ChunkType The chunk this proxy points into.
+ * @tparam ChunkT The chunk this proxy points into.
  * @tparam Enabled chunk_config::use_fast_block_compression.
  *
  * @details Split out so a build WITHOUT fast block compression pays nothing for
@@ -148,7 +148,7 @@ CHUNK_FORCE_INLINE void check_integer_divisor([[maybe_unused]] const U& v, [[may
  *       -- the write is being applied long after the one that enqueued it went
  *       out of scope. @see make_proxy_with_info
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 class ProxyBaseFastCompPolicy
 {
   public:
@@ -247,7 +247,7 @@ class ProxyBaseFastCompPolicy
   protected:
     /**
      * @brief Rebuild a usable proxy from a deferred operation's context.
-     * @tparam ProxyType The concrete proxy to produce.
+     * @tparam ProxyT The concrete proxy to produce.
      * @param ctx The context captured when the write was enqueued.
      * @return The rebuilt proxy, ready for the replayed write body.
      * @details Replay happens after the original proxy is gone, so the parts of
@@ -255,12 +255,12 @@ class ProxyBaseFastCompPolicy
      *          frozen chunk geometry, so the replayed write uses the geometry in
      *          force when it was enqueued rather than the current one.
      */
-    template <typename ProxyType, typename Ctx>
-    static ProxyType make_proxy_with_info(Ctx* ctx);
+    template <typename ProxyT, typename Ctx>
+    static ProxyT make_proxy_with_info(Ctx* ctx);
 
-    /// @brief The one compression manager for this (T, ChunkType) pair.
-    static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
-    static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
+    /// @brief The one compression manager for this (T, ChunkT) pair.
+    static inline constinit internal::Immortal<CompressionManager<T, ChunkT>> compression_mgr_storage_{};
+    static inline CompressionManager<T, ChunkT>& compression_mgr = compression_mgr_storage_.value;
 
     /// @brief This proxy's entry in #tab_is_inside_chunk_list_to_compress, or
     ///        null before set_ptr_is_inside_chunk_list_to_compress() runs.
@@ -286,8 +286,8 @@ class ProxyBaseFastCompPolicy
  *          took a compression path in a build that has none, which is a bug in
  *          the caller, not a case to handle.
  */
-template <typename Derived, typename T, typename ChunkType>
-class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false>
+template <typename Derived, typename T, typename ChunkT>
+class ProxyBaseFastCompPolicy<Derived, T, ChunkT, false>
 {
   public:
     /// @brief No candidate flags in this configuration; nothing to size.
@@ -315,16 +315,16 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false>
 
   protected:
     /// @brief Never callable in this configuration. Aborts.
-    template <typename ProxyType, typename Ctx>
-    static ProxyType make_proxy_with_info(Ctx* /*ctx*/)
+    template <typename ProxyT, typename Ctx>
+    static ProxyT make_proxy_with_info(Ctx* /*ctx*/)
     {
         CHUNK_INVARIANT_FAILED("make_proxy_with_info: no deferred replay in a build without fast block compression");
     }
 
     // Management members
-    static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
-    static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
-    std::atomic<char>*                              ptr_is_inside_chunk_list_to_compress_;
+    static inline constinit internal::Immortal<CompressionManager<T, ChunkT>> compression_mgr_storage_{};
+    static inline CompressionManager<T, ChunkT>& compression_mgr = compression_mgr_storage_.value;
+    std::atomic<char>*                           ptr_is_inside_chunk_list_to_compress_;
     static inline constinit internal::Immortal<std::vector<ChunkFlagRowT>>
                                               tab_is_inside_chunk_list_to_compress_storage_{};
     static inline std::vector<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
@@ -375,7 +375,7 @@ class AcquireValuesRef
  * @brief Base class for proxy types using CRTP pattern
  * @tparam Derived The derived proxy class (Proxy, Proxy2 or Proxy2A)
  * @tparam T The underlying value type
- * @tparam ChunkType The chunk type (Chunk<T>, Chunk2<T> or Chunk2A<T>)
+ * @tparam ChunkT The chunk type (Chunk<T>, Chunk2<T> or Chunk2A<T>)
  *
  * Contains all common operators, compression logic, and thread-safety mechanisms.
  *
@@ -400,12 +400,12 @@ class AcquireValuesRef
  * The reason ArrayChunkBase types its self -- a deduced one would outrank the
  * const read overloads -- does not arise, none of them having a const form.
  */
-template <typename Derived, typename T, typename ChunkType>
+template <typename Derived, typename T, typename ChunkT>
 // copy rebinds to the same element; the derived proxies
 // define what assignment means, so no assignment or move is declared here.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class ProxyBase : public ProxyOperators<Derived, T>,
-                  public ProxyBaseFastCompPolicy<Derived, T, ChunkType, chunk_config::use_fast_block_compression>
+                  public ProxyBaseFastCompPolicy<Derived, T, ChunkT, chunk_config::use_fast_block_compression>
 
 {
   protected:
@@ -417,9 +417,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ========================================================================
     // OpenMP: every read of the chunk's pointer is load(acquire), see
     // internal::AcquireValuesRef.
-    using AtomicPtrRefT = std::conditional_t<build_config::use_openmp, internal::AcquireValuesRef<T>, T*&>;
+    using AtomicPtrRefT = std::conditional_t<build_config::threaded, internal::AcquireValuesRef<T>, T*&>;
 
-    using CompressionManagerType = CompressionManager<T, ChunkType>;
+    using CompressionManagerType = CompressionManager<T, ChunkT>;
 
     /// @brief Record which array this proxy points into. @see get_num_tab
     void set_num_tab(int nt) noexcept
@@ -464,13 +464,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          acquire load of the chunk header, constant-false in a serial build.
     [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(InT<T> v) const noexcept
     {
-        return v == static_cast<T>(ChunkType::first_value) && is_cst_val1() && !chunk_.pending_any();
+        return v == static_cast<T>(ChunkT::first_value) && is_cst_val1() && !chunk_.pending_any();
     }
 
     /// @brief is_cst_val1_and_v_equal_first_value() from a loaded value pointer.
     [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(const T* values_loc, InT<T> v) const noexcept
     {
-        return v == static_cast<T>(ChunkType::first_value) && is_cst_val1(values_loc) && !chunk_.pending_any();
+        return v == static_cast<T>(ChunkT::first_value) && is_cst_val1(values_loc) && !chunk_.pending_any();
     }
 
     /// @brief Point this proxy at an already-known candidate flag.
@@ -548,7 +548,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
         // Chunk2A: the marking filter of another writer may be reading this
         // element -- relaxed atomic store, see relaxed_element.h.
-        if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
+        if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
         {
             internal::store_element_relaxed(vals + num_, static_cast<T>(v));
         }
@@ -698,8 +698,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          under it, so a write path must reload through it, never cache it.
     AtomicPtrRefT values_;
 
-    const int  num_;   ///< Offset of this element WITHIN its chunk.
-    ChunkType& chunk_; ///< The chunk that owns the element.
+    const int num_;   ///< Offset of this element WITHIN its chunk.
+    ChunkT&   chunk_; ///< The chunk that owns the element.
 
     mutable const void* ptr_on_array_; ///< The array the chunk belongs to.
     mutable int         num_chunk_;    ///< Index of the chunk within that array.
@@ -755,7 +755,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     using is_shrink_proxy_tag = void;
     using value_type          = T;
 
-    using FastCompPolicy = ProxyBaseFastCompPolicy<Derived, T, ChunkType, chunk_config::use_fast_block_compression>;
+    using FastCompPolicy = ProxyBaseFastCompPolicy<Derived, T, ChunkT, chunk_config::use_fast_block_compression>;
 
     using FastCompPolicy::compression_mgr;
     using FastCompPolicy::ptr_is_inside_chunk_list_to_compress_;
@@ -791,7 +791,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ptr_on_array and num_chunk are set before use (see the @note); left
     // unset here on purpose, this constructor runs on every element access.
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
-    explicit ProxyBase(AtomicPtrRefT values, int num, ChunkType& chunk) noexcept
+    explicit ProxyBase(AtomicPtrRefT values, int num, ChunkT& chunk) noexcept
         : values_(values), num_(num), chunk_(chunk)
     {
     }
@@ -855,7 +855,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief The chunk that owns this element.
-    [[nodiscard]] ChunkType& get_chunk() const noexcept
+    [[nodiscard]] ChunkT& get_chunk() const noexcept
     {
         return chunk_;
     }

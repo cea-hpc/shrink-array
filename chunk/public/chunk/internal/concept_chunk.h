@@ -48,11 +48,11 @@ concept IsChunk2Or2A = IsChunk2<ChunkT, T> || IsChunk2A<ChunkT, T>;
 
 /// @brief The chunk template of a chunk type (specialised below).
 template <typename>
-struct chunk_template_of;
+struct ChunkTemplateOf;
 
 /// @brief For ChunkTemplate\<T\>, type\<U\> names ChunkTemplate\<U\>.
 template <template <typename> typename ChunkTemplate, typename T>
-struct chunk_template_of<ChunkTemplate<T>>
+struct ChunkTemplateOf<ChunkTemplate<T>>
 {
     template <typename U>
     using type = ChunkTemplate<U>;

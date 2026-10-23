@@ -29,6 +29,7 @@
 | option | default | effect |
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
 | `CHUNK_STATIC_SIZES` | `auto` | static chunk sizes built (targets `_<size>`); `auto`: `256;1024`, `256` alone in a Debug or sanitizer build |
 | `CHUNK_BUILD_DYN` | `ON` | also build a dynamic-geometry library (`_dyn`) per variant |
 | `CHUNK_STD_ALLOC` | `OFF` | standard allocator for the chunk buffers instead of `fast_allocators` (useful under ASan: each buffer is a real `malloc`) |

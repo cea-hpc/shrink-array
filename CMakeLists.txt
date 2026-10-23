@@ -99,10 +99,63 @@ set_property(CACHE SANITIZER PROPERTY STRINGS none thread address token)
 
 message(STATUS "Sanitizer: ${SANITIZER}")
 
+# ── Threading backend ─────────────────────────────────────────────────────────
+# CHUNK_THREADS picks the backend the library runs its threads on
+# (docs/threading_backends.md): openmp, std (std::jthread workers of the
+# library's own, no OpenMP: OMP is set OFF) or serial. Empty (the default):
+# from OMP, as before -- the scripts pass -DOMP=ON. Set, it wins and sets OMP
+# to match.
+set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, std, serial (empty: openmp when OMP=ON, serial otherwise)")
+set_property(CACHE CHUNK_THREADS PROPERTY STRINGS "" openmp std serial)
+if(NOT CHUNK_THREADS STREQUAL "")
+    if(CHUNK_THREADS STREQUAL "std")
+        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    elseif(CHUNK_THREADS STREQUAL "openmp")
+        set(OMP ON CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    elseif(CHUNK_THREADS STREQUAL "serial")
+        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    else()
+        message(FATAL_ERROR "CHUNK_THREADS='${CHUNK_THREADS}': expected openmp, std or serial")
+    endif()
+endif()
+
 # ── OpenMP ────────────────────────────────────────────────────────────────────
 # Read by every target of the tree; the scripts pass -DOMP=ON. OFF (as an
 # undeclared variable read) builds the serial library.
 option(OMP "Build with OpenMP (the parallel library and examples)" OFF)
+if(OMP)
+    set(CHUNK_THREADS_BACKEND openmp)
+elseif(CHUNK_THREADS STREQUAL "std")
+    set(CHUNK_THREADS_BACKEND std)
+else()
+    set(CHUNK_THREADS_BACKEND serial)
+endif()
+# The library runs threads (build_config::threaded, alloc_config::threaded):
+# every backend but serial.
+if(CHUNK_THREADS_BACKEND STREQUAL "serial")
+    set(CHUNK_THREADED OFF)
+else()
+    set(CHUNK_THREADED ON)
+endif()
+message(STATUS "Threading backend: ${CHUNK_THREADS_BACKEND}")
+
+# ── oneTBB (optional) ─────────────────────────────────────────────────────────
+# CHUNK_WITH_TBB: build what needs oneTBB, i.e. the validation of the TBB
+# adaptor (chunk/tbb_adaptor.h, shrink_array::tbb::parallel_for). The adaptor
+# is header-only and installed with the other headers: the library never
+# links TBB, the program that includes the adaptor does. The adaptor serves
+# the std and serial backends (an OpenMP build refuses it), so the harness is
+# registered there only. Off by default: no new dependency for the default
+# build.
+option(CHUNK_WITH_TBB "Build the TBB adaptor's validation (needs oneTBB; the library does not link it)" OFF)
+if(CHUNK_WITH_TBB)
+    find_package(TBB REQUIRED)
+    if(CHUNK_THREADS_BACKEND STREQUAL "openmp")
+        message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is not built (OpenMP backend)")
+    else()
+        message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is built")
+    endif()
+endif()
 if(OMP)
     find_package(OpenMP 4.5 REQUIRED)
     set(CMAKE_LIBRARY_PATH /usr/local/lib/x86_64-unknown-linux-gnu ${CMAKE_LIBRARY_PATH})
@@ -161,8 +214,11 @@ if(OMP)
 endif()
 
 # ── Compiler-specific flags ───────────────────────────────────────────────────
+# The flags of one C++ compiler are for C++ only: the C targets (formal/) build
+# with the system cc when only CXX is set (compile_all.sh: CXX=icpx, nvc++...),
+# and GCC rejects -fp-model=precise, -tp=host, -xHost...
 if(CMAKE_CXX_COMPILER_ID MATCHES "PGI")
-    add_compile_options(-Kieee)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Kieee>)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -395,24 +451,24 @@ option(ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no 
 # campaigns measured before -- the check is then expected to fail.
 option(ONEAPI_FAST_FP "icpx: keep the default -fp-model=fast (the vector oracle check then fails)" OFF)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT ONEAPI_FAST_FP)
-    add_compile_options(-fp-model=precise)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fp-model=precise>)
     if(NOT ONEAPI_NO_INTEL_LIBS)
-        add_compile_options(-fimf-use-svml=true)
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fimf-use-svml=true>)
     endif()
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-        add_compile_options(-tp=host)
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-tp=host>)
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
         if(ONEAPI_XHOST)
-            add_compile_options(-xHost)
+            add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-xHost>)
         else()
             add_compile_options(-march=native)
         endif()
         if(ONEAPI_NO_INTEL_LIBS)
-            add_compile_options(-no-intel-lib -fveclib=none)
-            add_link_options(-no-intel-lib)
+            add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-no-intel-lib;-fveclib=none>")
+            add_link_options($<$<LINK_LANGUAGE:CXX>:-no-intel-lib>)
         endif()
     else()
         # GCC et Clang
@@ -552,7 +608,9 @@ if(NOT USE_MOLD STREQUAL "OFF")
             string(JOIN " " _mold_opts_text ${_mold_link_opts})
             message(STATUS "Linker: mold (${_mold_ver}) — ${MOLD_EXECUTABLE} "
                            "via ${_mold_opts_text}${_mold_note}")
-            add_link_options(${_mold_link_opts})
+            # C++ links only: -fno-link-libatomic is a Clang option, and the C
+            # targets may link with the system cc (see the compiler flags above).
+            add_link_options("$<$<LINK_LANGUAGE:CXX>:${_mold_link_opts}>")
             if(_mold_atomic_libs)
                 string(APPEND CMAKE_CXX_STANDARD_LIBRARIES " ${_mold_atomic_libs}")
             endif()
@@ -894,6 +952,8 @@ add_subdirectory(chunk)
 
 if(NOT CHUNK_STD_ALLOC)
     set(ALLOCATORS_OMP ${OMP})
+    set(ALLOCATORS_THREADED ${CHUNK_THREADED})
+    set(ALLOCATORS_THREADS_BACKEND ${CHUNK_THREADS_BACKEND})
     add_subdirectory(fast_allocators)
 endif()
 

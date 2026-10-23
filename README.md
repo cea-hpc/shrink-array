@@ -9,7 +9,7 @@
 [![Checked with GenMC](https://img.shields.io/badge/checked%20with-GenMC-8a2be2.svg)](docs/formal_models.md)
 
 **shrink-array** gives C++ HPC codes arrays that read and write like a `std::vector` -- same
-`[]`, same loops, same OpenMP threads -- but stop paying for the parts that hold the same value.
+`[]`, same loops, same OpenMP threads (or `std::thread`s, TBB) -- but stop paying for the parts that hold the same value.
 On the reference benchmark, a billion-element workload that needs **125.9 GB** with
 `std::vector` runs in **6 to 7.3 GB**: up to 20 times less memory, with no change to the loops.
 
@@ -20,7 +20,8 @@ On the reference benchmark, a billion-element workload that needs **125.9 GB** w
 - **Any repeated value**, not only zero (Chunk2A), for any trivially copyable type: `double`,
   `std::complex`, your own structures.
 - **Built for many threads**: no lock on the write path, arrays of 10⁹ elements, a few hundred
-  threads. C++23, Linux, CMake, Spack.
+  threads -- OpenMP's, or the program's own `std::thread`s and TBB tasks with the std backend
+  (`CHUNK_THREADS=std`, no OpenMP needed). C++23, Linux, CMake, Spack.
 
 *The project is `shrink-array` (repository, Spack package); the C++ namespace is
 `shrink_array`; the installed CMake package is `chunk` (`find_package(chunk)`, targets
@@ -35,7 +36,7 @@ The loops of a code written for `std::vector` stay as they are; only the array t
 +#include "chunk/array_chunk2A.h"
 
 -std::vector<double> a(n);
-+shrink_array::ArrayChunk2A<double> a(n);
++shrink_array::zero_any::Array<double> a(n);
 
  #pragma omp parallel for
  for (int i = 0; i < n; ++i)
@@ -43,7 +44,7 @@ The loops of a code written for `std::vector` stay as they are; only the array t
 ```
 
 (The bare `#pragma omp parallel for` needs an OMPT build; with GCC's `libgomp`, open the
-region with `parallel_phase()`, see [A first program](#a-first-program).)
+region with `parallel_phase()`, see [A first program, parallel and multi-threaded](#a-first-program-parallel-and-multi-threaded).)
 
 ![Process memory of the reference benchmark: std::vector 125.9 GB, Chunk 40.2 GB, Chunk2 17.3 GB, Chunk2A 7.26 GB](docs/images/memory_bench.png)
 
@@ -51,11 +52,11 @@ region with `parallel_phase()`, see [A first program](#a-first-program).)
 types, static chunks of 256, whole-process memory at the end. The price is access time, see
 [In numbers](#in-numbers).*
 
-## A first program
+## A first program, parallel and multi-threaded
 
 ```cpp
 #include <cstdio>
-#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
@@ -67,7 +68,7 @@ int main()
     sa::ParamChunk::init_indexes(true);       // optional: the first array runs it otherwise
     {
         const int                n = 1 << 24;
-        sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer yet
+        sa::zero_any::Array<double> a(n);        // every element 0.0, no buffer yet
 
         // parallel_phase opens the `omp parallel` region and runs the lambda in it, on every
         // thread; the `omp for` shares the loop over that team (see below)
@@ -107,7 +108,7 @@ sa::finalize_parallel_phase();       // outside the region: flush the queued wri
 
 Without OpenMP the lambda simply runs once, serially.
 
-**With OMPT, nothing of the library around the loops.** In an OMPT build (Clang, oneAPI: the
+**Parallel multi-threaded loops with OMPT: nothing of the library around them.** In an OMPT build (Clang, oneAPI: the
 library carries an OMPT tool, `CHUNK_OPT_OMPT`), the OpenMP runtime tells the library where
 each region begins and ends, so the loop is written as for a `std::vector` -- the same
 function fills both:
@@ -122,7 +123,7 @@ void fill(Array& t, int n)
 }
 
 std::vector<double>      v(n);
-sa::ArrayChunk2A<double> a(n);
+sa::zero_any::Array<double> a(n);
 fill(v, n);                          // the reference
 fill(a, n);                          // the same loop: no parallel_phase(), no phase calls
 ```
@@ -141,7 +142,7 @@ below.
 
 ```mermaid
 flowchart LR
-    subgraph arr["one ArrayChunk2A, cut into chunks"]
+    subgraph arr["one zero_any::Array, cut into chunks"]
         c0["chunk 0<br/>varied values<br/>own buffer"]
         c1["chunk 1<br/>all 3.5"]
         c2["chunk 2<br/>all 3.5"]
@@ -162,9 +163,9 @@ constants count:
 
 | variant | class | a chunk is compressed when it is uniform at… |
 |---|---|---|
-| Chunk (v1) | `ArrayChunk<T>` | `T{}` (zero) only |
-| Chunk2 | `ArrayChunk2<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
-| Chunk2A | `ArrayChunk2A<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
+| Chunk (v1) | `zero::Array<T>` | `T{}` (zero) only |
+| Chunk2 | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| Chunk2A | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
 
 The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are chosen by the
 library you link: `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
@@ -206,6 +207,13 @@ up to 16 threads (a speedup of 14 there, 26 to 28 at 32), reaches 48 to 70 at 12
 stays between 43 and 66 up to 288, where `std::vector` falls back to about 26.
 
 ![OpenMP speedup of the int64 builds on Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
+
+On x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cores), Intel oneAPI, at the reference size
+(`--multiply 1`): the same picture. Every variant stays on the ideal line up to 16 threads
+and reaches 43 to 80 at 128, while `std::vector` peaks near 28 at 64 threads and falls back
+to about 18 at 128.
+
+![OpenMP speedup on AMD EPYC 7763 (Milan, 2 × 64 cores), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
 
 **Use it** on data that is mostly zero or made of runs of a few values: sparse fields, material
 masks, multi-material quantities, flags. **Don't** on data where every chunk holds varied
@@ -251,10 +259,10 @@ With Spack, the recipe is in the repository:
 
 ```shell
 spack repo add <clone>/spack/spack_repo/shrink_array
-spack install shrink-array +openmp sizes=256,1024 %gcc@15
+spack install shrink-array threads=openmp sizes=256,1024 %gcc@15   # threads=std: written from std::threads or TBB
 ```
 
-The CMake options (`OMP`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,
+The CMake options (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,
 `CHUNK_STD_ALLOC`...) and the environment variables:
 [docs/environment_variables.md](docs/environment_variables.md).
 
@@ -283,20 +291,14 @@ Every call, by task: [docs/api.md](docs/api.md).
 
 ## In progress
 
-Two development branches, not in a release yet:
+One development branch, not in a release yet:
 
-- **`threads` -- OpenMP becomes optional.** The library's own parallel work goes through a
-  backend chosen at build time: OpenMP (unchanged), a pool of C++ threads (std::jthread), or serial;
-  no OpenMP pragma is left outside one backend file. The pool backend runs today with the
-  application on one thread; arrays driven from the application's own `std::thread`s (or TBB)
-  come next. Plan and status:
-  [docs/threading_backends.md](https://github.com/cea-hpc/shrink-array/blob/threads/docs/threading_backends.md).
 - **`cpp23` -- C++23 and `mdspan`.** A multidimensional view on any array: `f[i, j]` goes
   through the same write proxy, and a tiled layout (16 x 16 tiles for 256-element chunks) makes
   a uniform 2D or 3D region compress whatever its width. Needs GCC 14 or Clang 18.
   [docs/mdspan.md](https://github.com/cea-hpc/shrink-array/blob/cpp23/docs/mdspan.md).
 
-`develop` is merged into both as it moves; `cpp23` is also a Spack version
+`develop` is merged into it as it moves; it is also a Spack version
 (`spack install shrink-array@cpp23`).
 
 ## Going further
@@ -327,7 +329,8 @@ exists in French ([docs/README.md](docs/README.md)); the changes from one versio
 
 shrink-array is at version 0.1: before 1.0, a minor release may change the interface
 ([versioning policy](CHANGELOG.md)). Every push runs the source checks, the GCC 14 builds
-(OpenMP and serial), the validation harnesses and the GenMC models
+(OpenMP, serial and std threads with oneTBB), the validation harnesses, the std backend under
+ThreadSanitizer and the GenMC models
 ([CI](.github/workflows/ci.yml)).
 
 Trying it on your own data is the most useful feedback: if it saves memory in your code -- or

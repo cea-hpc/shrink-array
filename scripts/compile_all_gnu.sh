@@ -162,6 +162,10 @@ arch="$(source /etc/os-release && echo ${ID^^}_${VERSION_ID}__$(uname -m))"
 # ahead of Debug: ~700 s against 65-480 s for the others on gh200) overlap the
 # short ones instead of trailing behind them. Then the releases, then Debug.
 
+# oneTBB for the std builds (TBB bench and tbb_validation): TBB_CMAKE_OPT and
+# TBB_TSAN_CMAKE_OPT, see set_tbb_options in functions_for_compile.sh.
+set_tbb_options
+
 # Sanitizers on OPTIMISED code (RelWithDebInfo, i.e. -O2 + -g).
 #
 # Why these exist: every other sanitizer flavour here is CMAKE_BUILD_TYPE=Debug,
@@ -199,6 +203,15 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-addr
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-check-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHECK_OPTIM=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu relwithdebinfo openmp check thread sanitizer"
+
+# TSan on the std backend, optimised, CHECK_OPTIM (the validations): unlike
+# libgomp the std backend is standard C++ (std::atomic wait/notify, std::barrier), so
+# TSan sees every synchronisation of the library's teams -- a report here is
+# not a barrier the tool missed. The run for std_thread_validation:
+# OMP_NUM_THREADS=8 (the std backend's team size, and the harness's thread count).
+compile_with_cmake "$build_rep/cmake-build-std-gnu-relwithdebinfo-thread-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DCHUNK_THREADS=std -DCHECK_OPTIM=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_TSAN_CMAKE_OPT" \
+  "gnu relwithdebinfo std thread sanitizer"
 
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
@@ -279,6 +292,27 @@ else
     compile_with_cmake "$build_rep/cmake-build-gnu-std-alloc${ICF_SUFFIX}/$arch" \
       "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
       "gnu std allocator (no openmp)"
+fi
+
+# The std backend (CHUNK_THREADS=std, docs/threading_backends.md step 7): the
+# library's teams on std::jthread workers of its own, no OpenMP (it forces
+# OMP OFF). Release, for the OpenMP-vs-std timings, and CHECK_OPTIM, for the
+# validations -- std_thread_validation among them, the arrays driven from the
+# application's own std::threads.
+if skip_release; then
+    echo "[debug-only] skipping gnu std"
+else
+    compile_with_cmake "$build_rep/cmake-build-std-gnu${ICF_SUFFIX}/$arch" \
+      "-DCHUNK_THREADS=std -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT $TBB_CMAKE_OPT" \
+      "gnu std (no openmp)"
+fi
+
+if skip_release; then
+    echo "[debug-only] skipping gnu std with check"
+else
+    compile_with_cmake "$build_rep/cmake-build-std-gnu-check${ICF_SUFFIX}/$arch" \
+      "-DCHUNK_THREADS=std -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_CMAKE_OPT" \
+      "gnu std with check (no openmp)"
 fi
 
 # Sequential twin of cmake-build-omp-gnu-stats above: same release build, same

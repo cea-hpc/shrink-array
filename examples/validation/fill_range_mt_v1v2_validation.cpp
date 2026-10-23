@@ -17,13 +17,13 @@
 /**
  * @file fill_range_mt_v1v2_validation.cpp
  * @brief fill_range_mt() in a build that holds TWO variants (chunk_v1v2:
- *        CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1), on an ArrayChunk and an ArrayChunk2 side by side.
+ *        CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1), on an zero::Array and an zero_one_value::Array side by side.
  *
  * @details The range ops once chose their per-variant behaviour from the build
  *          flags (chunk_config::use_chunk / use_chunk2) instead of the array's
- *          type. In a build with both flags set, that sent an ArrayChunk2 down
+ *          type. In a build with both flags set, that sent an zero_one_value::Array down
  *          v1's paths -- a fill_range_mt() of its SECOND value was never queued
- *          for compression, its chunks stayed materialised -- and an ArrayChunk
+ *          for compression, its chunks stayed materialised -- and an zero::Array
  *          down Chunk2's, which did not even compile. This harness is that
  *          build: compiling it is the first half of the test, the second is
  *          what each fill leaves behind.
@@ -35,11 +35,11 @@
  *          the queueing by value. After the phase (flush + compression pass):
  *
  *            array         fill value              chunks left materialised
- *            ArrayChunk    first value (0)         none
- *            ArrayChunk    anything else           all  (v1 has one constant)
- *            ArrayChunk2   first value (0)         none
- *            ArrayChunk2   its second value (9)    none  <- the regression
- *            ArrayChunk2   an undeclared value     all
+ *            zero::Array    first value (0)         none
+ *            zero::Array    anything else           all  (v1 has one constant)
+ *            zero_one_value::Array   first value (0)         none
+ *            zero_one_value::Array   its second value (9)    none  <- the regression
+ *            zero_one_value::Array   an undeclared value     all
  *
  *          and every element reads back the value written. The counts are
  *          asserted in OpenMP builds only: a serial build has no fill session
@@ -53,8 +53,8 @@
  */
 
 
-#include "chunk/array_chunk.h"           // ArrayChunk
-#include "chunk/array_chunk2.h"          // ArrayChunk2
+#include "chunk/array_chunk.h"           // zero::Array
+#include "chunk/array_chunk2.h"          // zero_one_value::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/config.h"                // OmptSuspendCounter, chunk_config::use_chunk / use_chunk2
@@ -73,7 +73,7 @@ using namespace shrink_array;
 static_assert(chunk_config::use_chunk && chunk_config::use_chunk2,
               "fill_range_mt_v1v2_validation is the two-variant build: link chunk_v1v2_<size>");
 
-constexpr double second_value = 9.0; ///< the ArrayChunk2's declared second value
+constexpr double second_value = 9.0; ///< the zero_one_value::Array's declared second value
 constexpr double other_value  = 5.0; ///< a value neither array can compress to
 
 /// @brief Non-uniform content: two values alternating, so no chunk compresses.
@@ -90,7 +90,7 @@ static long materialised(const Arr& arr, long nchunks)
     long       n = 0;
     for (long j = 0; j < nchunks; ++j)
     {
-        n += arr.written(static_cast<typename Arr::ind_type>(j * s)) ? 1 : 0;
+        n += arr.written(static_cast<typename Arr::IndType>(j * s)) ? 1 : 0;
     }
     return n;
 }
@@ -123,7 +123,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
     const long n    = nchunks * s;
     const long half = s / 2;
 
-    phase(n, [&](long i) { arr[static_cast<typename Arr::ind_type>(i)] = plain(i); });
+    phase(n, [&](long i) { arr[static_cast<typename Arr::IndType>(i)] = plain(i); });
     const long before = materialised(arr, nchunks);
 
     // Two spans per chunk, adjacent iterations: with schedule(static, 1) they
@@ -140,7 +140,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
     long bad = 0;
     for (long i = 0; i < n; ++i)
     {
-        const double got = arr[static_cast<typename Arr::ind_type>(i)];
+        const double got = arr[static_cast<typename Arr::IndType>(i)];
         if (got != v)
         {
             if (bad < 3)
@@ -174,36 +174,37 @@ int main(int argc, char** argv)
     // One array per case: every case starts from fresh chunks.
     int fails = 0;
     {
-        ArrayChunk<double> a(0);
-        a.resize(static_cast<ArrayChunk<double>::ind_type>(nchunks * a.chunk_size()));
-        fails += run_case("ArrayChunk,  fill first value (0)", a, nchunks, 0.0, omp ? 0 : -1);
+        zero::Array<double> a(0);
+        a.resize(static_cast<zero::Array<double>::IndType>(nchunks * a.chunk_size()));
+        fails += run_case("zero::Array,  fill first value (0)", a, nchunks, 0.0, omp ? 0 : -1);
         a.clear();
     }
     {
-        ArrayChunk<double> a(0);
-        a.resize(static_cast<ArrayChunk<double>::ind_type>(nchunks * a.chunk_size()));
-        fails += run_case("ArrayChunk,  fill other value (5)", a, nchunks, other_value, omp ? nchunks : -1);
+        zero::Array<double> a(0);
+        a.resize(static_cast<zero::Array<double>::IndType>(nchunks * a.chunk_size()));
+        fails += run_case("zero::Array,  fill other value (5)", a, nchunks, other_value, omp ? nchunks : -1);
         a.clear();
     }
     {
-        ArrayChunk2<double> a(0);
-        a.resize(static_cast<ArrayChunk2<double>::ind_type>(nchunks * a.chunk_size()));
+        zero_one_value::Array<double> a(0);
+        a.resize(static_cast<zero_one_value::Array<double>::IndType>(nchunks * a.chunk_size()));
         a.set_second_value(second_value, false);
-        fails += run_case("ArrayChunk2, fill first value (0)", a, nchunks, 0.0, omp ? 0 : -1);
+        fails += run_case("zero_one_value::Array, fill first value (0)", a, nchunks, 0.0, omp ? 0 : -1);
         a.clear();
     }
     {
-        ArrayChunk2<double> a(0);
-        a.resize(static_cast<ArrayChunk2<double>::ind_type>(nchunks * a.chunk_size()));
+        zero_one_value::Array<double> a(0);
+        a.resize(static_cast<zero_one_value::Array<double>::IndType>(nchunks * a.chunk_size()));
         a.set_second_value(second_value, false);
-        fails += run_case("ArrayChunk2, fill second value (9)", a, nchunks, second_value, omp ? 0 : -1);
+        fails += run_case("zero_one_value::Array, fill second value (9)", a, nchunks, second_value, omp ? 0 : -1);
         a.clear();
     }
     {
-        ArrayChunk2<double> a(0);
-        a.resize(static_cast<ArrayChunk2<double>::ind_type>(nchunks * a.chunk_size()));
+        zero_one_value::Array<double> a(0);
+        a.resize(static_cast<zero_one_value::Array<double>::IndType>(nchunks * a.chunk_size()));
         a.set_second_value(second_value, false);
-        fails += run_case("ArrayChunk2, fill undeclared value (5)", a, nchunks, other_value, omp ? nchunks : -1);
+        fails +=
+            run_case("zero_one_value::Array, fill undeclared value (5)", a, nchunks, other_value, omp ? nchunks : -1);
         a.clear();
     }
 

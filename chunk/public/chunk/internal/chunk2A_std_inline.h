@@ -25,15 +25,15 @@
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (steal-mark check)
 
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*, get_thr_rank_fast
-#include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_chunk_steal_mark
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*, get_thr_rank_fast, pmp::team
+#include "chunk/config.h"                     // build_config::threaded, chunk_config::use_chunk_steal_mark
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/proxy2A.h"             // Proxy2A<T>
 #include "chunk/internal/manager_chunk.h"       // ManagerChunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
-#include "chunk/chunk_traits.h"                        // ChunkTraits<ChunkT>::proxy_type (wait_before_materialise)
+#include "chunk/chunk_traits.h"                        // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
@@ -62,7 +62,7 @@
  * applies the clears and clears the flags.
  *
  *  - **The materialise / clear functions exist twice**, on the two specialisations of
- *    Chunk2AOmpPolicy (build_config::use_openmp); the passes branch with `if constexpr`.
+ *    Chunk2AOmpPolicy (build_config::threaded); the passes branch with `if constexpr`.
  *    The serial twin often takes a shorter path (no CAS, no rank, no handshake).
  *  - **Geometry is pinned per chunk, never inherited.** A candidate list can hold chunks
  *    of several arrays, so a single pin at the top of a pass is wrong: each entry carries
@@ -227,7 +227,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2a)
 
     // The body runs in both modes; only the compression_mgr start/finish coordination is
     // OpenMP-specific.
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if (proxy2a)
         {
@@ -399,7 +399,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2a)
             proxy2a->add_to_compression_list(vec_tuple_to_compress);
         }
 
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             proxy2a->compression_mgr.template finish<Proxy2A<T>>();
         }
@@ -433,7 +433,7 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
     // OpenMP without OMPT, apply = false (the lists' purge walks): the body would only scan
     // and register a cst_val2 that make_block_compression redoes -- a large cost for no
     // compression, so skip it. apply = true (rechunk fold, chunk no writer can reach) runs.
-    if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
+    if constexpr (build_config::threaded && chunk_config::not_use_compression_with_ompt)
     {
         if (!apply)
         {
@@ -578,7 +578,7 @@ void Chunk2A<T>::fill_constant_st(int thr_rank, int num_chunk, int num_tab, InT<
 template <typename T>
 void Chunk2A<T>::compress_sweep_rank(int thr, bool apply)
 {
-    if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
+    if constexpr (build_config::threaded && chunk_config::not_use_compression_with_ompt)
     {
         // The only between-region compressor for chunk2a in this mode. No writer is live
         // between regions, so the pass runs without handshake (nullptr proxy), each rank on
@@ -620,7 +620,7 @@ bool Chunk2A<T>::have_chunk_to_compress([[maybe_unused]] int max_thr)
         return false;
     }
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         for (int thr = 0; thr < max_thr; ++thr)
         {
@@ -661,7 +661,7 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
 {
     auto& vec_tup = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
 
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         // The clear reaches free_block_to_pool(), which routes by the ambient
         // thread_chunk_size(); the list mixes arrays (e.g. an array and its rechunk tmp), so
@@ -797,7 +797,7 @@ void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank)
 {
     if constexpr (chunk_config::use_chunk_steal_mark)
     {
-        using Policy = WriteCompressSyncPolicy<typename ChunkTraits<ChunkT>::proxy_type>;
+        using Policy = WriteCompressSyncPolicy<typename ChunkTraits<ChunkT>::ProxyType>;
         if (Policy::is_thread_writing_on(thr_rank, static_cast<const void*>(&chunk)))
         {
             return; // our own write session: the pass holding the mark is parked on our flag

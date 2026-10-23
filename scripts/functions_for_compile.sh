@@ -28,6 +28,55 @@ maybe_wipe_cache() {  # <build-dir>
 # Opt-out: INT64_OPT= ./compile_all.sh (or -DSHRINK_BENCH_INT64=OFF).
 INT64_OPT=${INT64_OPT--DSHRINK_BENCH_INT64=ON}
 
+# ─── oneTBB for the std-backend builds (CHUNK_THREADS=std) ───────────────────
+# The TBB bench (shrink_bench_tbb_<variant>_<size>, the release std build, for
+# the timings) and the validation of the TBB adaptor (tbb_validation,
+# chunk/tbb_adaptor.h, the check build) need oneTBB. Sets, for the configure
+# lines of the std builds:
+#   TBB_CMAKE_OPT       -DCHUNK_WITH_TBB=ON when oneTBB is in the environment --
+#                       TBBROOT, which oneAPI's vars.sh sets (and `spack load
+#                       intel-oneapi-tbb` through it) -- or when CHUNK_WITH_TBB=1
+#                       forces it (a oneTBB installed system-wide sets no TBBROOT);
+#                       CHUNK_WITH_TBB=0 leaves it out. The library never links TBB.
+#   TBB_TSAN_CMAKE_OPT  the same for the ThreadSanitizer std build, from
+#                       CHUNK_TBB_TSAN_DIR only: the CMake package directory of a
+#                       oneTBB built with TSan (its CMake: -DTBB_SANITIZE=thread;
+#                       <prefix>/lib/cmake/TBB, or lib64). An uninstrumented
+#                       libtbb hides the hand-off of every task from TSan, which
+#                       then reports TBB's own scheduling and every value passed
+#                       from one task to another.
+# Says what it decided (once per run: the child script of compile_all.sh finds
+# CHUNK_TBB_NOTICE_DONE set), so that a std build made without the TBB bench is
+# never a surprise.
+set_tbb_options() {
+    if [ "${CHUNK_WITH_TBB:-}" = "1" ] || { [ -z "${CHUNK_WITH_TBB:-}" ] && [ -n "${TBBROOT:-}" ]; }; then
+        TBB_CMAKE_OPT="-DCHUNK_WITH_TBB=ON"
+    else
+        TBB_CMAKE_OPT=""
+    fi
+    if [ -n "${CHUNK_TBB_TSAN_DIR:-}" ] && [ "${CHUNK_WITH_TBB:-}" != "0" ]; then
+        TBB_TSAN_CMAKE_OPT="-DCHUNK_WITH_TBB=ON -DTBB_DIR=$CHUNK_TBB_TSAN_DIR"
+    else
+        TBB_TSAN_CMAKE_OPT=""
+    fi
+    if [ -z "${CHUNK_TBB_NOTICE_DONE:-}" ]; then
+        if [ -n "$TBB_CMAKE_OPT" ]; then
+            echo "[tbb] oneTBB: the std builds get the TBB bench (shrink_bench_tbb_*) and tbb_validation (${TBBROOT:-CHUNK_WITH_TBB=1})"
+        elif [ "${CHUNK_WITH_TBB:-}" = "0" ]; then
+            echo "[tbb] CHUNK_WITH_TBB=0: the std builds are made WITHOUT the TBB bench and tbb_validation"
+        else
+            echo "[tbb] oneTBB not found (TBBROOT unset): the std builds are made WITHOUT the TBB bench (shrink_bench_tbb_*)"
+            echo "[tbb]   and tbb_validation. Load oneTBB (oneAPI vars.sh, spack load intel-oneapi-tbb) or set CHUNK_WITH_TBB=1."
+        fi
+        if [ -n "$TBB_TSAN_CMAKE_OPT" ]; then
+            echo "[tbb] the std ThreadSanitizer build uses the instrumented oneTBB of CHUNK_TBB_TSAN_DIR"
+        elif [ -n "$TBB_CMAKE_OPT" ]; then
+            echo "[tbb] the std ThreadSanitizer build is made without TBB (CHUNK_TBB_TSAN_DIR names an instrumented oneTBB)"
+        fi
+        export CHUNK_TBB_NOTICE_DONE=1
+    fi
+}
+
 # ─── Hardening (CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN) ──────────────────────
 # Decides, from a cmake configure argument string, which hardening options of
 # chunk/CMakeLists.txt to switch on. One rule, applied identically to every

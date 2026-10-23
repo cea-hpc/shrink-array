@@ -137,29 +137,30 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
             std::println("");
 
-#pragma omp parallel
-            {
-                calculate_checksum_0(vec1_ch.vec, vec1_ch.checksum_thr);
-                calculate_checksum_0(vec2_ch.vec, vec2_ch.checksum_thr);
-                calculate_checksum_0(vec3_ch.vec, vec3_ch.checksum_thr);
-                calculate_checksum_0(vec4_ch.vec, vec4_ch.checksum_thr);
-                calculate_checksum_0(vec5_ch.vec, vec5_ch.checksum_thr);
+            bench_par::region(
+                [&]([[maybe_unused]] bench_par::Team& t)
+                {
+                    calculate_checksum_0(t, vec1_ch.vec, vec1_ch.checksum_thr);
+                    calculate_checksum_0(t, vec2_ch.vec, vec2_ch.checksum_thr);
+                    calculate_checksum_0(t, vec3_ch.vec, vec3_ch.checksum_thr);
+                    calculate_checksum_0(t, vec4_ch.vec, vec4_ch.checksum_thr);
+                    calculate_checksum_0(t, vec5_ch.vec, vec5_ch.checksum_thr);
 
-                calculate_checksum_0(vec_int_ch.vec, vec_int_ch.checksum_thr);
-                calculate_checksum_0(vec_bool_ch.vec, vec_bool_ch.checksum_thr);
-                calculate_checksum_0(vec_bool_bits_ch.vec, vec_bool_bits_ch.checksum_thr);
-                calculate_checksum_0(vec_complex_ch.vec, vec_complex_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_int_ch.vec, vec_int_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_bool_ch.vec, vec_bool_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_bool_bits_ch.vec, vec_bool_bits_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_complex_ch.vec, vec_complex_ch.checksum_thr);
 
-                calculate_checksum_0(vec_short_ch.vec, vec_short_ch.checksum_thr);
-                calculate_checksum_0(vec_float_ch.vec, vec_float_ch.checksum_thr);
-                calculate_checksum_0(vec_char_ch.vec, vec_char_ch.checksum_thr);
-                calculate_checksum_0(vec_long_ch.vec, vec_long_ch.checksum_thr);
-                calculate_checksum_0(vec_ulong_ch.vec, vec_ulong_ch.checksum_thr);
-                calculate_checksum_0(vec_quant_ch.vec, vec_quant_ch.checksum_thr);
-                calculate_checksum_0(vec_point_ch.vec, vec_point_ch.checksum_thr);
-                calculate_checksum_0(vec_cell_ch.vec, vec_cell_ch.checksum_thr);
-                calculate_checksum_0(vec_mask_ch.vec, vec_mask_ch.checksum_thr);
-            }
+                    calculate_checksum_0(t, vec_short_ch.vec, vec_short_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_float_ch.vec, vec_float_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_char_ch.vec, vec_char_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_long_ch.vec, vec_long_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_ulong_ch.vec, vec_ulong_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_quant_ch.vec, vec_quant_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_point_ch.vec, vec_point_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_cell_ch.vec, vec_cell_ch.checksum_thr);
+                    calculate_checksum_0(t, vec_mask_ch.vec, vec_mask_ch.checksum_thr);
+                });
 
             for (Int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
             {
@@ -208,94 +209,69 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
             std::println("");
 
-#pragma omp parallel
-            {
-#pragma omp sections nowait
+            bench_par::region(
+                [&]([[maybe_unused]] bench_par::Team& t)
                 {
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab1_0", tab1, tab1_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab2_0", tab2, tab2_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab3_0", tab3, tab3_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab4_0", tab4, tab4_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab5_0", tab5, tab5_ch);
-                    }
+                    t.single([&] { lbd_check(ind, "tab1_0", tab1, tab1_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab2_0", tab2, tab2_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab3_0", tab3, tab3_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab4_0", tab4, tab4_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab5_0", tab5, tab5_ch); }, bench_par::nowait);
 
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab_int", tab_int, tab_int_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab_bool", tab_bool, tab_bool_ch, true /* special writing for vector */);
-                        // tab_bool_bits holds what tab_bool holds: read back
-                        // against tab_bool's reference file, never written
-                        // (io_res == 1 would write the same file twice). In
-                        // this section, after tab_bool's check: a checksum
-                        // miss decompresses the file, which two sections must
-                        // not do at once.
-                        if (!no_io && io_res == 2)
-                            read_check_binary_file(ind, "tab_bool_bits",
-                                                   "data_tab_bool_" + std::to_string(ind) + ".bin", tab_bool_bits,
-                                                   tab_bool_bits_ch, no_compress, read_trace, write_trace);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab_complex", tab_complex, tab_complex_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab_short", tab_short, tab_short_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab_float", tab_float, tab_float_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab_char", tab_char, tab_char_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab_long", tab_long, tab_long_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab_ulong", tab_ulong, tab_ulong_ch);
-                    }
-#pragma omp section
-                    {
-                        lbd_check(ind, "tab_quant", tab_quant, tab_quant_ch);
-                    }
-#pragma omp section
-                    {
-                        if (bench_arr.with_struct) // --no_struct: no reference file either
-                            lbd_check(ind, "tab_point", tab_point, tab_point_ch);
-                    }
-#pragma omp section
-                    {
-                        if (bench_arr.with_struct)
-                            lbd_check(ind, "tab_cell", tab_cell, tab_cell_ch);
-                    }
-#pragma omp section
-                    {
-                        if (bench_arr.with_mask) // --no_mask: no reference file either
-                            lbd_check(ind, "tab_mask", tab_mask, tab_mask_ch, true /* one byte per bool */);
-                    }
-                }
-            }
+                    t.single([&] { lbd_check(ind, "tab_int", tab_int, tab_int_ch); }, bench_par::nowait);
+                    t.single(
+                        [&]
+                        {
+                            lbd_check(ind, "tab_bool", tab_bool, tab_bool_ch, true /* special writing for vector */);
+                            // tab_bool_bits holds what tab_bool holds: read back
+                            // against tab_bool's reference file, never written
+                            // (io_res == 1 would write the same file twice). In
+                            // this section, after tab_bool's check: a checksum
+                            // miss decompresses the file, which two of these must
+                            // not do at once.
+                            if (!no_io && io_res == 2)
+                            {
+                                read_check_binary_file(ind, "tab_bool_bits",
+                                                       "data_tab_bool_" + std::to_string(ind) + ".bin", tab_bool_bits,
+                                                       tab_bool_bits_ch, no_compress, read_trace, write_trace);
+                            }
+                        },
+                        bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab_complex", tab_complex, tab_complex_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab_short", tab_short, tab_short_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab_float", tab_float, tab_float_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab_char", tab_char, tab_char_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab_long", tab_long, tab_long_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab_ulong", tab_ulong, tab_ulong_ch); }, bench_par::nowait);
+                    t.single([&] { lbd_check(ind, "tab_quant", tab_quant, tab_quant_ch); }, bench_par::nowait);
+                    t.single(
+                        [&]
+                        {
+                            if (bench_arr.with_struct) // --no_struct: no reference file either
+                            {
+                                lbd_check(ind, "tab_point", tab_point, tab_point_ch);
+                            }
+                        },
+                        bench_par::nowait);
+                    t.single(
+                        [&]
+                        {
+                            if (bench_arr.with_struct)
+                            {
+                                lbd_check(ind, "tab_cell", tab_cell, tab_cell_ch);
+                            }
+                        },
+                        bench_par::nowait);
+                    t.single(
+                        [&]
+                        {
+                            if (bench_arr.with_mask) // --no_mask: no reference file either
+                            {
+                                lbd_check(ind, "tab_mask", tab_mask, tab_mask_ch, true /* one byte per bool */);
+                            }
+                        },
+                        bench_par::nowait);
+                });
         }
     };
 

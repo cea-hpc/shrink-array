@@ -64,7 +64,7 @@ de dépréciation.
 | `CHUNK_ADVISOR_TABLE` | `1` ou `=nom` : la table complète de l'advisor à chaque passage (tous les tableaux ou un seul) |
 | `CHUNK_RECHUNK_CHURN` | `1` ou `=nom` : matérialisations par passage et estimation du coût passager qu'elles impliquent (niveau info du canal rechunk, qu'elle active) |
 | `CHUNK_LOG=affinity=debug` (autrefois `CHUNK_AFFINITY_TRACE`) | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
-| `CHUNK_LOG=compress=info` | builds de vérification : les blocs restant à compresser après le dernier vidage, et les blocs constants de Chunk2A jamais mis en file ; le résidu de compression d'un audit (`compress()` sur ArrayChunk2 / ArrayChunk2A) ; `compress=debug` ajoute le détail par chunk d'ArrayChunk2 |
+| `CHUNK_LOG=compress=info` | builds de vérification : les blocs restant à compresser après le dernier vidage, et les blocs constants de Chunk2A jamais mis en file ; le résidu de compression d'un audit (`compress()` sur zero_one_value::Array / zero_any::Array) ; `compress=debug` ajoute le détail par chunk d'zero_one_value::Array |
 | `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `arena`) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (autrefois `CHUNK_RECYCLE_TRACE`) | builds de vérification : les blocs étrangers que le pool des écritures différées abandonne, à intervalles doublants / une ligne par bloc |
 | `CHUNK_LEDGER_REPORT` (*définie*) | le rapport du registre des blocs (builds avec registre), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ledger`) |
@@ -134,7 +134,7 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `SHRINK_INTEL_LIBM` | `ON` | x86-64 : lier la libm d'Intel si elle est trouvée |
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64 : lier `libamath` d'ArmPL (aucun gain mesuré sur Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | contournement d'une erreur interne d'icpx sur trois fichiers |
-| `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2 : tampons partagés des valeurs constantes en lecture seule (`mprotect`) ; une écriture parasite dans un chunk compressé fait une erreur de segmentation au lieu de corrompre la valeur (build de mise au point ; `compile_all.sh` le construit pour que ses branches continuent de compiler) |
+| `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2 : tampons partagés des valeurs constantes en lecture seule (`mprotect`) ; une écriture parasite dans un chunk compressé fait une erreur de segmentation au lieu de corrompre la valeur (build de mise au point ) |
 | `CHUNK_LIB_UNITY` | `ON` | chaque archive de variante (`chunk_v2a_256`, ...) compilée en une seule unité (unity build, 4 à 6 fois moins de compilation) ; un fichier qui a ses propres options de compilation reste à part |
 | `SHRINK_BENCH_UNITY` | `ON` | chaque exécutable `shrink_bench` compilé en une seule unité (unity build, 3,5 à 4 fois moins de compilation) ; `OFF` pour comparer des temps avec des campagnes antérieures, l'inlining entre fichiers du banc pouvant les changer ; `SHRINK_BENCH_UNITY_BATCH` fichiers par unité (0 = tous) |
 | `CHUNK_DEBUG_INFO` | `auto` | informations de débogage des builds optimisés : `full` (`-g`), `lines` (`-g1` : noms de fonctions et tables de lignes, assez pour perf et les backtraces gdb, pas pour les variables locales), `none` ; `auto` : `full` avec `CHECK_OPTIM` ou un sanitizer, `lines` sinon. Le code machine est le même ; `lines` compile 20 à 27 % plus vite avec 40 % de mémoire de pointe en moins. Les builds Debug ont toujours `-g` |
@@ -191,3 +191,13 @@ transmettant les options communes. `--help` donne la liste complète.
 `compile_all_gnu.sh` accepte en plus `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). La mémoire de
 compilation par job se règle par `CHUNK_MEM_PER_JOB_MB` (3 072 Mo par défaut, le double pour
 les builds sous sanitizer).
+
+Le backend de threads std (`CHUNK_THREADS=std`) a ses propres builds : `std-gnu`,
+`std-gnu-check` et un build ThreadSanitizer pour `compile_all_gnu.sh`, `std-llvm`,
+`std-llvm-check` et un build ThreadSanitizer pour `compile_all.sh`. Ils allongent la
+compilation (`--target='omp-*'` les écarte, `--target='std-*'` les construit seuls). Le banc
+TBB (`shrink_bench_tbb_*`) et `tbb_validation` demandent oneTBB dans ces builds : les scripts
+ajoutent `CHUNK_WITH_TBB=ON` quand `TBBROOT` est défini (par le script d'environnement de oneAPI
+ou `spack load intel-oneapi-tbb`) ou quand `CHUNK_WITH_TBB=1`, et le disent au début ;
+`CHUNK_WITH_TBB=0` écarte TBB. Les builds std sous ThreadSanitizer ne prennent TBB que de
+`CHUNK_TBB_TSAN_DIR`, le répertoire du paquet CMake d'un oneTBB compilé avec TSan.

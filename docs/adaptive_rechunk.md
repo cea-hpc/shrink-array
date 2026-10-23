@@ -224,7 +224,7 @@ is limited to the rebuilds.
   could make a coarsening regrettable: this is the role of learning
   (`coarsen_trust_ratio`) and of the anti-reversal rule.
 - **Rechunking boolean arrays** is validated for `ArrayChunkBits` only
-  (`bits_container_validation`, Chunk2 at dyn); `ArrayChunk2<bool>` and `ArrayChunk2A<bool>`
+  (`bits_container_validation`, Chunk2 at dyn); `zero_one_value::Array<bool>` and `zero_any::Array<bool>`
   have no harness, and the benchmark does not hand `tab_bool` to the decider.
 - **The peak remains the starting one**: a dynamic run that starts from 64 first reaches the
   memory of static 64, then goes down.

@@ -44,7 +44,7 @@
 #include "chunk/config.h"                   // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
 #include "chunk/singleton.h"                // SingletonChk
 #include "chunk/manage_ompt.h"              // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
-#include "chunk/PMP_CHUNK.h"                // g_fast_omp_rank
+#include "chunk/PMP_CHUNK.h"                // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
 #include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (CHUNK_REQUIRE_OMPT)
 #include "chunk/internal/phase_guard.h"     // phase_guard::teams (one top-level team at a time)
@@ -61,7 +61,6 @@
 // sit in. A build without OMPT compiles only the stand-ins of the #else branch.
 #if CHUNK_OPT_OMPT
 
-    #include <omp.h> // omp_in_parallel: the allocator flush runs outside any active region
     // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
     #if !CHUNK_OPT_STD_ALLOC
@@ -340,7 +339,7 @@ void parallel_end_chunk_work()
 void flush_allocator_free_batches()
 {
     #if !CHUNK_OPT_STD_ALLOC
-    if (omp_in_parallel() == 0)
+    if (!CHUNK_PMP_IN_PARALLEL_REGION)
     {
         fast_alloc::StaticConstArray::clear_info_free_elt();
     }
@@ -548,7 +547,7 @@ void shrink_array::check_ompt_tool_loaded()
     [[maybe_unused]] static const bool checked = []
     {
         // The runtime loads its tool while it initialises: make sure it has.
-        (void)omp_get_max_threads();
+        (void)CHUNK_PMP_MAX_THREADS;
         const int state = g_ompt_tool_state.load(std::memory_order_acquire);
         if (state == 1)
         {

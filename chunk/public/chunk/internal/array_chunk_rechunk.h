@@ -51,7 +51,7 @@ namespace shrink_array
 /**
  * @brief Re-chunking support, present only when the geometry is a runtime value.
  *
- * @tparam Derived the concrete array type (ArrayChunk, ArrayChunk2, ArrayChunk2A).
+ * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array, zero_any::Array).
  * @tparam Dynamic defaulted to build_config::chunk_dynamic; never pass it
  *         explicitly outside of tests.
  */
@@ -66,18 +66,18 @@ template <typename Derived>
 class RechunkSupport<Derived, true>
 {
   public:
-    using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using T          = Traits::value_type;        ///< Stored element type.
-    using ind_type   = Traits::index_type;        ///< Signed global index type.
-    using chunk_type = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
-    using proxy_type = Traits::proxy_type;        ///< Proxy type owning the per-type array registry.
+    using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using T         = Traits::value_type;        ///< Stored element type.
+    using IndType   = Traits::IndexType;         ///< Signed global index type.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
+    using ProxyType = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
 
   protected:
     // ---- Re-chunk to a new geometry S' (SEQUENTIAL / quiescent point) --------
     /**
      * @brief Re-chunk this array to a new geometry S' (sequential, quiescent point).
      *
-     * @details Shared by ArrayChunk / ArrayChunk2 / ArrayChunk2A via CRTP; the
+     * @details Shared by zero::Array / zero_one_value::Array / zero_any::Array via CRTP; the
      *          per-variant differences live in the rechunk_* hooks. The delicate
      *          invariants are documented once, in the body.
      *
@@ -88,7 +88,7 @@ class RechunkSupport<Derived, true>
      *          swap *this carries the S' storage under tmp's num_tab, and tmp
      *          destroys the old identity+geometry on scope exit.
      *
-     *          Hooks (see each ArrayChunk*):
+     *          Hooks (see each zero::Array*):
      *          - rechunk_drop_candidates() — remove this array's queued
      *            compression candidates by num_tab
      *          - rechunk_drain_reuse_list(new_size) — drain the S' reuse free-list
@@ -160,7 +160,7 @@ class RechunkSupport<Derived, true>
      * @name Re-chunk hooks (base defaults)
      *
      * Base defaults for the rechunk_* hooks: no-ops that suit a variant with no
-     * deferred candidates / no second_value / no registry. Each ArrayChunk*
+     * deferred candidates / no second_value / no registry. Each array class
      * overrides the ones it needs (they are hidden, not virtual — resolved on
      * the concrete array through self). Kept here so a variant only defines what differs.
      * @{
@@ -203,7 +203,7 @@ class RechunkSupport<Derived, true>
      */
     static void rechunk_all_to(unsigned int new_size)
     {
-        proxy_type::share_info_array->for_each_key(
+        ProxyType::share_info_array->for_each_key(
             [new_size](const void* key)
             {
                 if (key)
@@ -211,7 +211,7 @@ class RechunkSupport<Derived, true>
                     // The key is an array's core, and the arrays of this
                     // element type may differ in index type: reach each one's
                     // own rechunk_to() through the core.
-                    auto* arr = static_cast<ArrayChunkCore<chunk_type>*>(const_cast<void*>(key));
+                    auto* arr = static_cast<ArrayChunkCore<ChunkType>*>(const_cast<void*>(key));
                     arr->rechunk_erased(new_size);
                 }
             });
@@ -233,9 +233,9 @@ template <typename Derived>
 class RechunkSupport<Derived, false>
 {
   public:
-    using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using T          = Traits::value_type;        ///< Stored element type.
-    using chunk_type = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
+    using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using T         = Traits::value_type;        ///< Stored element type.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
 
   protected:
     /** @brief No-op: the geometry is fixed at compile time. */

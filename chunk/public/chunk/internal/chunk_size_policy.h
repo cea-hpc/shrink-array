@@ -67,7 +67,7 @@ inline unsigned int              g_active_chunk_size = static_chunk_size;
 inline thread_local unsigned int t_active_chunk_size = 0; // 0 = "unset, use global"
 // Set around rechunk_to()'s temporary, which the refill needs born at exactly
 // the active size: an array of packed bits is otherwise born larger
-// (packed_bit_birth_factor, ArrayChunk2::create).
+// (packed_bit_birth_factor, zero_one_value::Array::create).
 inline thread_local bool t_birth_at_active_size = false;
 
 /**

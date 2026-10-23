@@ -36,7 +36,7 @@ function(multi_mat_setup_target tgt)
     chunk_require_cxx_std(${tgt} PRIVATE)
 
     # A library carrying BOTH variant defines: the three field arrays are
-    # ArrayChunk<double> (v1), the presence fraction ArrayChunk2<double>.
+    # zero::Array<double> (v1), the presence fraction zero_one_value::Array<double>.
     # Not the bare `chunk` target: that one carries no variant define (the
     # std::vector shape of the library) while this example instantiates the
     # arrays itself, so its per-rank allocators and candidate lists were

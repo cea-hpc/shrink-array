@@ -33,8 +33,8 @@
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
 #include "chunk/log.h"                        // CHUNK_LOG, CHUNK_LOG_FIRST_N
 #include "fast_allocators/internal/svalloc.h" // svfree
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS
-#include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS, pmp::team / team_any / current_team
+#include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count
 #include "chunk/internal/compression_manager.h"  // CompressionManager (the barrier flushes)
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
@@ -155,7 +155,7 @@ void ManagerChunk<ChunkT, T>::resize_chunk_to_compress_potentially() const
     }
 
     // --- Complex types (Chunk2/2A) multi-threading logic ---
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         // Specific to Chunk2: Dual-value compression with static maps
         if constexpr (IsChunk2<ChunkT, T>)
@@ -399,15 +399,12 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::destroy_after_flush(bool in_para
 
             if constexpr (chunk_config::not_use_compression_with_ompt)
             {
-// Route-to-owner drain. destroy_after_flush(false) is only called from serial context
-// (finalize_parallel_phase_after_flush runs after the parallel region closes), so this
-// region does not nest. Each thread drains only its own index (disjoint, race-free) and
-// recycles into its own pool. Compiled out under OMPT: opening a region would fire the
-// parallel_end compression callback, which must not run from a teardown drain.
-#pragma omp parallel
-                {
-                    drain_index(CHUNK_PMP_THREAD_RANK);
-                }
+                // Route-to-owner drain. destroy_after_flush(false) is only called from serial context
+                // (finalize_parallel_phase_after_flush runs after the parallel region closes), so this
+                // region does not nest. Each thread drains only its own index (disjoint, race-free) and
+                // recycles into its own pool. Compiled out under OMPT: opening a region would fire the
+                // parallel_end compression callback, which must not run from a teardown drain.
+                pmp::team(pmp::Options{}, [&](pmp::Team& /*team*/) { drain_index(CHUNK_PMP_THREAD_RANK); });
             }
 
             // Serial mop-up: the OMPT build (no region above) and any index the team did
@@ -422,12 +419,13 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::destroy_after_flush(bool in_para
 
     if (in_parallel)
     {
-#pragma omp single
-        {
-            storage.destroy();
+        pmp::current_team().single(
+            [&]
+            {
+                storage.destroy();
 
-            ArrayType::clear_all_dirty_bitsets();
-        }
+                ArrayType::clear_all_dirty_bitsets();
+            });
     }
     else
     {
@@ -511,17 +509,17 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_paral
                 break;
             }
 
-            bool pass_flushed = false;
             int  team         = 0;
-#pragma omp parallel reduction(|| : pass_flushed)
-            {
-                const int thr_rank = CHUNK_PMP_THREAD_RANK;
-                if (thr_rank == 0)
-                {
-                    team = CHUNK_PMP_NUM_THREADS;
-                }
-                pass_flushed |= CompressionManager<T, ChunkT<T>>::flush_deferred(thr_rank);
-            }
+            bool pass_flushed = pmp::team_any(pmp::Options{},
+                                              [&](pmp::Team& /*team*/, bool& flushed)
+                                              {
+                                                  const int thr_rank = CHUNK_PMP_THREAD_RANK;
+                                                  if (thr_rank == 0)
+                                                  {
+                                                      team = CHUNK_PMP_NUM_THREADS;
+                                                  }
+                                                  flushed |= CompressionManager<T, ChunkT<T>>::flush_deferred(thr_rank);
+                                              });
             // The ranks this region's team does not have: a team opened with num_threads(n)
             // above omp_get_max_threads(), or one that shrank since, leaves ops on ranks >=
             // `team`, which storage.destroy() would discard (lost writes). Same mop-up as
@@ -592,7 +590,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::alloc_chunk_allocator_thr()
     const auto& self = static_cast<const Mgr&>(*this);
 
     // std-alloc: allocator_data is NullValueAllocator (no per-thread array to build).
-    if constexpr (build_config::use_openmp && build_config::use_fast_alloc)
+    if constexpr (build_config::threaded && build_config::use_fast_alloc)
     {
         // Built whole: an allocator is not movable.
         *ChunkT<T>::allocator_data = std::vector<TCTypeCAllocator<T>>(static_cast<std::size_t>(self.max_thr_));
@@ -682,7 +680,7 @@ void ManagerChunkDynImpl<ChunkT, T, true>::register_chunk_size(unsigned int size
 
     if constexpr (build_config::use_fast_alloc)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             // Per-thread chunk allocators for `size`.
             ChunkT<T>::register_chunk_size(size, this_thr, block_size);
@@ -729,7 +727,7 @@ void ManagerChunk<ChunkT, T>::destroy_block_chunk()
 {
     // allocator_data is declared in every build (chunk_base.h) and is a dependent name, so the
     // discarded branch is never instantiated. std-alloc: destroy() is a no-op.
-    if constexpr (build_config::not_use_openmp)
+    if constexpr (build_config::not_threaded)
     {
         ChunkT<T>::allocator_data->destroy();
     }
@@ -1167,7 +1165,7 @@ bool ManagerChunk<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int k
                                                  [[maybe_unused]] unsigned int size,
                                                  [[maybe_unused]] int          nb_chunk)
 {
-    if constexpr (build_config::chunk_dynamic && build_config::use_fast_alloc && build_config::use_openmp)
+    if constexpr (build_config::chunk_dynamic && build_config::use_fast_alloc && build_config::threaded)
     {
         // Without a slab budget there is nothing to build the keyed allocator
         // set from. Report the failure: the caller must NOT keep the key, or

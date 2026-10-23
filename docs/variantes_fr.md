@@ -7,6 +7,10 @@
 > [mesures_performance_fr.md](mesures_performance_fr.md)). En cas de doute, c'est le code qui
 > fait foi.
 
+> Noms dans le code : `zero::Array` est Chunk, `zero_one_value::Array` est Chunk2, `zero_any::Array`
+> est Chunk2A (les anciens noms de classe `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` sont des
+> alias dépréciés jusqu'à la 1.0). Ce document garde les noms historiques des variantes.
+
 ***
 
 ## 1. Le principe commun

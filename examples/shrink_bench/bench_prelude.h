@@ -79,6 +79,8 @@
 #include "chunk/singleton.h"               // SingletonChk (the bench TUs)
 #include "chunk/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
 
+#include "bench_par.h" // bench_par::region, BENCH_FOR_* (the phases' regions and loops)
+
 #if (defined CHUNK_VARIANT_V1 || defined CHUNK_VARIANT_V2 || defined CHUNK_VARIANT_V2A)
     #define SHRINK_ARRAY
 #endif
@@ -133,6 +135,38 @@
     #define BENCH_OMP_FOR_STATIC_NOWAIT _Pragma("omp for simd schedule(static) nowait")
     #define BENCH_OMP_FOR_STATIC_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for simd schedule(static) nowait reduction(+ : __VA_ARGS__))
 #endif
+
+namespace bench_par
+{
+/// @brief true on the std::vector baseline: its static loops are
+///        `omp for simd` (Team::for_static_simd); false on a shrink array,
+///        whose loops go through proxies (see above).
+#ifdef SHRINK_ARRAY
+inline constexpr bool simd_loops = false;
+#else
+inline constexpr bool simd_loops = true;
+#endif
+
+/**
+ * @brief A static nowait loop, `simd` on the std::vector baseline only.
+ * @details The choice is made at compile time: a simd loop instantiated over a
+ *          proxy, even never run, would warn (-Wpass-failed) and can leave the
+ *          sibling loops of the same region unvectorised. The call in the
+ *          discarded branch depends on @p Body, so it is not instantiated.
+ */
+template <typename Body>
+void for_static_vec(Team& t, Int b, Int e, Body&& body)
+{
+    if constexpr (simd_loops)
+    {
+        t.for_static_simd<Int>(b, e, std::forward<Body>(body), nowait);
+    }
+    else
+    {
+        t.for_static<Int>(b, e, std::forward<Body>(body), nowait);
+    }
+}
+} // namespace bench_par
 
 // ── Round-robin, chunk-aligned schedule for index-dependent loops ───────────
 //
@@ -227,12 +261,12 @@ namespace build_config = shrink_array::build_config;
 namespace chunk_config = shrink_array::chunk_config;
 
 #ifdef CHUNK_VARIANT_V1
-    #include "chunk/array_chunk.h" // ArrayChunk (the CHUNK variant)
+    #include "chunk/array_chunk.h" // zero::Array (the CHUNK variant)
 #elifdef CHUNK_VARIANT_V2
-    #include "chunk/array_chunk2.h" // ArrayChunk2 (the CHUNK2 variant)
+    #include "chunk/array_chunk2.h" // zero_one_value::Array (the CHUNK2 variant)
 #elifdef CHUNK_VARIANT_V2A
-    #include "chunk/array_chunk2.h"  // ArrayChunk2 (tab_bool, see bench_array.h)
-    #include "chunk/array_chunk2A.h" // ArrayChunk2A (the CHUNK2A variant)
+    #include "chunk/array_chunk2.h"  // zero_one_value::Array (tab_bool, see bench_array.h)
+    #include "chunk/array_chunk2A.h" // zero_any::Array (the CHUNK2A variant)
 #else
     #include <vector> // std::vector (the baseline build)
 #endif

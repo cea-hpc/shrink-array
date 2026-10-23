@@ -50,9 +50,9 @@
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>   // getpid
 
-#include "chunk/array_chunk.h"         // ArrayChunk
-#include "chunk/array_chunk2.h"        // ArrayChunk2
-#include "chunk/array_chunk2A.h"       // ArrayChunk2A
+#include "chunk/array_chunk.h"         // zero::Array
+#include "chunk/array_chunk2.h"        // zero_one_value::Array
+#include "chunk/array_chunk2A.h"       // zero_any::Array
 #include "chunk/chunk_std.h"           // release_chunk_pools
 #include "chunk/config.h"              // chunk_config::use_chunk*, build_config::has_not_ompt, any_check
 #include "chunk/internal/test_hooks.h" // test_hooks::force_defer_every
@@ -74,9 +74,10 @@ static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_confi
               "phase_protocol_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_chunk2a,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -267,9 +268,9 @@ int child(int k)
 /// The parent: run case @p k in a child, check what happened.
 int check_case(const char* self, int k)
 {
-    const Case&       c      = case_table[k];
-    const std::string log    = "/tmp/phase_protocol_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
-    const std::string cmd    = validation::self_command(self) + " --case " + std::to_string(k) + " > \"" + log + "\" 2>&1";
+    const Case&       c   = case_table[k];
+    const std::string log = "/tmp/phase_protocol_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
+    const std::string cmd = validation::self_command(self) + " --case " + std::to_string(k) + " > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;
     if (FILE* f = std::fopen(log.c_str(), "r"))

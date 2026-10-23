@@ -833,7 +833,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
             increm_chunk_read<ChunkType>();
         }
 
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             // chunk_size_frozen_ != 0: a replay proxy whose ptr_on_array may
             // dangle (see ProxyBase::chunk_size_frozen_) -- never dereference it;

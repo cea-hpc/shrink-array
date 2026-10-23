@@ -95,10 +95,10 @@
 #include <utility>     // std::forward (the returns lambdas: an element proxy is a temporary)
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"       // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"        // ArrayChunk
-#include "chunk/array_chunk2.h"       // ArrayChunk2
-#include "chunk/array_chunk2A.h"      // ArrayChunk2A
+#include "chunk/chunk_traits.h"       // forward decls + default IndT = int
+#include "chunk/array_chunk.h"        // zero::Array
+#include "chunk/array_chunk2.h"       // zero_one_value::Array
+#include "chunk/array_chunk2A.h"      // zero_any::Array
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/chunk_std.h"          // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"             // chunk_config::use_chunk2*, build_config::force_defer_every / has_not_ompt
@@ -134,9 +134,10 @@ static void end_phase()
 }
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_chunk2a,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {

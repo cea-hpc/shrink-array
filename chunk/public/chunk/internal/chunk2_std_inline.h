@@ -21,7 +21,7 @@
 #include <optional> // std::nullopt (the clears)
 
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::OMPTcc
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // ChunkElems, set_thread_chunk_size
 #include "chunk/internal/in_t.h"                // InT<T>
@@ -61,7 +61,7 @@
  *    different path: no CAS, no rank, and the element counters
  *    (`use_compression_with_counter`) to reset, which the parallel path does not
  *    maintain. The two live on the two specialisations of Chunk2OmpPolicy
- *    (build_config::use_openmp); the queue-driven compression is on
+ *    (build_config::threaded); the queue-driven compression is on
  *    Chunk2FastCompPolicy<..., true>.
  *  - **Geometry comes from the queued entry, never from the ambient size.**
  *    Every candidate tuple carries the chunk count of its owning array
@@ -383,11 +383,11 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
  * its final state.
  *
  * Today the drain has no concurrent writers (on_parallel_end() puts an
- * `omp barrier` in front of it; the ArrayChunk2 call sites are gated on
+ * `omp barrier` in front of it; the zero_one_value::Array call sites are gated on
  * !CHUNK_PMP_IN_PARALLEL_REGION), so either order works; this one stays
  * correct if that precondition slips, as on Chunk2A.
  *
- * @tparam CompressFn callable `(chunk_type*, unsigned int n_elems)`.
+ * @tparam CompressFn callable `(ChunkType*, unsigned int n_elems)`.
  * @param thr_rank     Rank whose list is drained.
  * @param key          Second value indexing the per-rank candidate map.
  * @param compress_one Per-chunk compression.
@@ -400,7 +400,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
 {
     // The store is a per-rank VECTOR of maps, sized by resize_all_list_block_free_thr();
     // until that has run, [thr_rank] is out of bounds (UB). Probing rank 0 is
-    // enough: ArrayChunk2::add_second_value registers a key for every rank in
+    // enough: zero_one_value::Array::add_second_value registers a key for every rank in
     // one loop, so an empty map at rank 0 means no key at any rank.
     if (is_vec_tuple_to_compress_potentially_empty_thr())
     {
@@ -493,7 +493,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool_
  * two things the caller supplies. Null chunk pointers are batch sentinels and
  * are skipped; each live entry is scanned at the geometry it carries.
  *
- * @tparam ScanFn callable `(chunk_type*, int num_chunk, int num_tab, ChunkElems)`.
+ * @tparam ScanFn callable `(ChunkType*, int num_chunk, int num_tab, ChunkElems)`.
  * @param thr_rank Rank whose candidate list is scanned.
  * @param key      Second value indexing the per-rank candidate map.
  * @param scan_one Per-chunk scan.
@@ -606,7 +606,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     // shared_ptr that the next dereference crashes on.
     //
     // A missing key is normal (no one declared this second value on this
-    // rank: nothing to compress, same exit as `sz == 0`); an ArrayChunk2 built
+    // rank: nothing to compress, same exit as `sz == 0`); an zero_one_value::Array built
     // without add_second_value reaches it via resize_common ->
     // make_block_compression. is_vec_tuple_to_compress_potentially_empty_thr()
     // is not enough: it only tests "no key anywhere".

@@ -48,9 +48,9 @@
 #include <utility>     // std::pair (submdspan), std::as_const
 #include <vector>      // std::vector (the buffers, the reference, the deals)
 
-#include "chunk/array_chunk.h"     // ArrayChunk
-#include "chunk/array_chunk2.h"    // ArrayChunk2
-#include "chunk/array_chunk2A.h"   // ArrayChunk2A
+#include "chunk/array_chunk.h"     // zero::Array
+#include "chunk/array_chunk2.h"    // zero_one_value::Array
+#include "chunk/array_chunk2A.h"   // zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"          // chunk_config::use_chunk2*
 #include "chunk/internal/print.h"  // shrink_array::println
@@ -66,9 +66,10 @@ using namespace shrink_array;
 namespace
 {
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_chunk2a,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
 
 using Box = std::array<long, 2>;
 

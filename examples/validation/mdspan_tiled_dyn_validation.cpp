@@ -37,9 +37,9 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::pair (the slices), std::as_const
 
-#include "chunk/array_chunk.h"     // ArrayChunk
-#include "chunk/array_chunk2.h"    // ArrayChunk2
-#include "chunk/array_chunk2A.h"   // ArrayChunk2A
+#include "chunk/array_chunk.h"     // zero::Array
+#include "chunk/array_chunk2.h"    // zero_one_value::Array
+#include "chunk/array_chunk2A.h"   // zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"          // chunk_config::use_chunk2*, build_config::chunk_dynamic
 #include "chunk/internal/print.h"  // shrink_array::println
@@ -54,9 +54,10 @@ using namespace shrink_array;
 namespace
 {
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_chunk2a,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
 
 int fails = 0;
 
@@ -101,10 +102,10 @@ void shapes()
 template <std::size_t T0, std::size_t T1>
 void same_mapping(long nx, long ny)
 {
-    using I    = int;
-    using E    = md::mdns::dextents<I, 2>;
-    using MS   = md::layout_tiled<T0, T1>::template mapping<E>;
-    using MD   = md::layout_tiled_dyn<2>::mapping<E>;
+    using I  = int;
+    using E  = md::mdns::dextents<I, 2>;
+    using MS = md::layout_tiled<T0, T1>::template mapping<E>;
+    using MD = md::layout_tiled_dyn<2>::mapping<E>;
     const MS ms(E(nx, ny));
     const MD md(E(nx, ny), {static_cast<I>(T0), static_cast<I>(T1)});
     expect(ms.required_span_size() == md.required_span_size(), "span", nx, ny);
@@ -341,22 +342,23 @@ void after_rechunk()
                 expect(static_cast<double>(f[i, j]) == cell(i, j, tile[0], tile[1]), "after rechunk", i, j);
             }
         }
-        md::update_tiles(f,
-                         [&](const auto&, auto b)
-                         {
-                             for (long i = 0; i < tile[0]; ++i)
-                             {
-                                 for (long j = 0; j < tile[1]; ++j)
-                                 {
-                                     b[i, j] *= 2.0;
-                                 }
-                             }
-                         },
-                         [](const auto&, double& v)
-                         {
-                             v *= 2.0;
-                             return true;
-                         });
+        md::update_tiles(
+            f,
+            [&](const auto&, auto b)
+            {
+                for (long i = 0; i < tile[0]; ++i)
+                {
+                    for (long j = 0; j < tile[1]; ++j)
+                    {
+                        b[i, j] *= 2.0;
+                    }
+                }
+            },
+            [](const auto&, double& v)
+            {
+                v *= 2.0;
+                return true;
+            });
         for (long i = 0; i < nx; ++i)
         {
             for (long j = 0; j < ny; ++j)

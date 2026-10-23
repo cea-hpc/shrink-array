@@ -1,4 +1,4 @@
-# The ArrayChunk2 algorithm
+# The zero_one_value::Array algorithm
 
 > French version: [algo_chunk2_fr.md](algo_chunk2_fr.md).
 
@@ -15,7 +15,7 @@
 
 ## 1. Goal
 
-`ArrayChunk2<T>` is an array split into **chunks** (fixed-size blocks, a power of 2 or a multiple of 64)
+`zero_one_value::Array<T>` is an array split into **chunks** (fixed-size blocks, a power of 2 or a multiple of 64)
 that are **compressed** as soon as all their elements equal one of **two constants**:
 
 - the **first value** `first_value` (0, the initialisation value);
@@ -28,11 +28,11 @@ The three variants of the library differ by what they can compress:
 
 | variant | compressible constants | second value metadata |
 |---|---|---|
-| `ArrayChunk` (v1) | `first_value` only | none |
-| **`ArrayChunk2`** | `first_value` **and one second value per array** | one entry per array |
-| `ArrayChunk2A` | `first_value` and **one second value per chunk** | one entry per chunk |
+| `zero::Array` (v1) | `first_value` only | none |
+| **`zero_one_value::Array`** | `first_value` **and one second value per array** | one entry per array |
+| `zero_any::Array` | `first_value` and **one second value per chunk** | one entry per chunk |
 
-`ArrayChunk2` is therefore the right choice when the data have **a single dominant
+`zero_one_value::Array` is therefore the right choice when the data have **a single dominant
 non-zero value**: its metadata are lighter than those of Chunk2A.
 
 ---
@@ -40,7 +40,7 @@ non-zero value**: its metadata are lighter than those of Chunk2A.
 ## 2. Usage
 
 ```cpp
-ArrayChunk2<double> tab(n);
+zero_one_value::Array<double> tab(n);
 tab.set_second_value(1.0);      // declare it before the parallel phases
 
 #pragma omp parallel for
@@ -59,7 +59,7 @@ The interface is close to a `std::vector`: `size()`, `resize()`, `at()`, constan
 - **`set_second_value()` must be called outside a parallel region**, before the writes: it
   records the second value in the registry and creates the compression candidate
   lists for this value. An array that never declares a second value
-  behaves like an `ArrayChunk` (compression to 0 only).
+  behaves like an `zero::Array` (compression to 0 only).
 - **Range operations** (`fill_range`, `copy_range`, `fill_range_mt` in
   `array_chunk_range_ops.h`) write a range with one decision per chunk, and
   `fill_range_mt` can be called by several threads at once (section 10).
@@ -108,7 +108,7 @@ value, identified by an **index** `ind`.
 > Warning: `Chunk2::written()` **without argument** is reserved for `bool` and returns `false`
 > for any other type. To know whether a non-boolean chunk is materialised, you need
 > `written(ind)` with the index of the array's second value
-> (`ArrayChunk2::chunk_written(j)` does it).
+> (`zero_one_value::Array::chunk_written(j)` does it).
 
 ### 4.2 The second value registry
 
@@ -125,7 +125,7 @@ The second value **is not stored in the array**: it lives in the shared registry
   (for example the "already a compression candidate" flags).
 
 The registry remains the source of truth, but each array keeps a **mirror** of it
-(`ArrayChunk2::inf_array`), re-read (`sync_registry_mirror()`) after the only three places that
+(`zero_one_value::Array::inf_array`), re-read (`sync_registry_mirror()`) after the only three places that
 write the registry: `create()`, `set_second_value()` and the rechunk identity swap.
 The write `operator[]` **arms each proxy with the address of this mirror**
 (`registry_mirror()`, `arm_inf_array()`): the write path copies the triplet instead of
@@ -139,7 +139,7 @@ is compared with the registry.
 The read operator returns a **value**, never a reference:
 
 ```cpp
-CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](ind_type i) const noexcept
+CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType i) const noexcept
 {
     const int num_chunk = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
@@ -171,11 +171,11 @@ the buffer: **use it only on a materialised chunk**, since it bypasses the proxy
 ### 6.1 The write `operator[]`: an armed proxy
 
 ```cpp
-proxy_type operator[](this Derived& self, ind_type i) noexcept
+ProxyType operator[](this Derived& self, IndType i) noexcept
 {
     const int num_chunk = self.chunk_index_of(i);
     const int num       = self.offset_in_chunk(i);
-    const proxy_type& val = self.chunk_list[num_chunk][num];
+    const ProxyType& val = self.chunk_list[num_chunk][num];
     val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab); // array, chunk, num_tab
     val.arm_inf_array(self.registry_mirror());                                 // Chunk2: the mirror
     return val;

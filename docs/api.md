@@ -24,12 +24,12 @@ All names are in namespace `shrink_array`, `build_config` and `chunk_config` inc
 
 | class | header | compresses chunks uniform at… |
 |---|---|---|
-| `ArrayChunk<T, ind_type = int>` | `chunk/array_chunk.h` | `T{}` |
-| `ArrayChunk2<T, ind_type = int>` | `chunk/array_chunk2.h` | `T{}` or the array's second value |
-| `ArrayChunk2A<T, ind_type = int>` | `chunk/array_chunk2A.h` | `T{}` or any value, per chunk |
+| `zero::Array<T, IndT = int>` | `chunk/array_chunk.h` | `T{}` |
+| `zero_one_value::Array<T, IndT = int>` | `chunk/array_chunk2.h` | `T{}` or the array's second value |
+| `zero_any::Array<T, IndT = int>` | `chunk/array_chunk2A.h` | `T{}` or any value, per chunk |
 | `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stored one bit per element (Chunk2 builds) |
 
-`ind_type` is the index type: `long` for more than 2³¹ elements. The variant compiled in is the
+`IndT` is the index type: `long` for more than 2³¹ elements. The variant compiled in is the
 one of the library linked (`chunk::chunk_v2a`, ...); `chunk_config::use_chunk`,
 `chunk_config::use_chunk2` and `chunk_config::use_chunk2a` tell which, at compile time.
 
@@ -54,30 +54,32 @@ outside any parallel region, and it invalidates the array's proxies.
 | append | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** only when it needs a new chunk |
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
-| compress **(S)** | `compress()` | a full compression pass now (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `ArrayChunk2A<T>` uses any more, so that their identifiers are reused; returns how many, 0 when refused (`ArrayChunk2A`); a sequential point over **every** array of the type, see below. `try_reclaim_second_values()` returns a `std::expected<std::size_t, ReclaimRefusal>`: how many, or why it was refused (`parallel_region`, `rechunk_in_progress`, `degraded_index`) |
+| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_one_value::Array`, `zero_any::Array`) |
+| free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `zero_any::Array<T>` uses any more, so that their identifiers are reused; returns how many, 0 when refused (`zero_any::Array`); a sequential point over **every** array of the type, see below. `try_reclaim_second_values()` returns a `std::expected<std::size_t, ReclaimRefusal>`: how many, or why it was refused (`parallel_region`, `rechunk_in_progress`, `degraded_index`) |
 | statistics | `stats()`, `get_nb_chunk_written()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones); a refused size is a warning of the log. `try_rechunk_to(n)`, `try_set_chunk_size(n)` and the free `try_set_active_chunk_size(n)` return a `std::expected<void, ChunkSizeError>` instead: nothing, or why (`not_pow2_or_x64`, `exceeds_buffer`, `fixed_geometry` in a static build), with no message |
 
 Chunk2 only: `set_second_value(v)` **(S)**, before the writes, and `get_second_value()`.
 
 **`reclaim_second_values()`: a precondition over the whole type.** The other **(S)** operations
-concern one array; this one is static and frees second values for every `ArrayChunk2A<T>` of the
+concern one array; this one is static and frees second values for every `zero_any::Array<T>` of the
 program, whatever their index type. While it runs, **no thread may write to or compress any
-`ArrayChunk2A<T>`**, not only the arrays the caller owns: in a code where several modules keep
-their own `ArrayChunk2A<double>`, the sequential point must hold for all of them.
+`zero_any::Array<T>`**, not only the arrays the caller owns: in a code where several modules keep
+their own `zero_any::Array<double>`, the sequential point must hold for all of them.
 
 - *Out of contract, the error is silent*: a chunk compressed while the reclaim runs can keep an
   identifier that the reclaim frees and then hands to another value; that chunk then reads the
   other value, with no crash and no message.
 - *What is refused, in every build*: a call inside a parallel region of the calling thread,
   during a re-chunk, or while the second-value index is degraded (it returns 0). Threads the
-  call cannot see are not detected: a `std::thread` or TBB pool, or an OpenMP team started by
-  another host thread.
+  call cannot see are not detected: a `std::thread` or TBB pool outside the phase contract, or
+  an OpenMP team started by another host thread. Under the std backend the application's
+  threads are seen between `begin_parallel_phase()` and `finalize_parallel_phase()`: the call is
+  refused there.
 - *What detects it*: check builds (Debug, `CHECK_OPTIM`) stop on any second-value lookup or
   registration that overlaps a reclaim. Run the application once in a check build with its
   reclaim calls in place; release builds pay nothing and check nothing.
-- *Watching the identifiers*: `ArrayChunk2A<T>::second_value_stats()` (static, any time, any
+- *Watching the identifiers*: `zero_any::Array<T>::second_value_stats()` (static, any time, any
   thread) returns the identifiers in use against the capacity -- running out stops the run --,
   the free ones, the reclaims run and what they freed, the reclaims refused by cause (a refused
   call returns 0 as one with nothing to free does) and whether the index is degraded (then every
@@ -135,10 +137,17 @@ otherwise, and in serial builds.
 | `finalize_parallel_phase_only_flush()` + `finalize_parallel_phase_after_flush()` | the same, split: the first inside the region (it emits a barrier), the second after it |
 | `finalize_barrier_phase()` | inside a region, after an explicit `omp barrier`: makes the writes before it visible after it |
 | `parallel_phase([n,] body)` | instead of the first two: a parallel region (`n` threads, or the runtime's) running `body` on every thread, with `begin_parallel_phase()` before it and `finalize_parallel_phase()` after the region; the worksharing (`omp for`) goes in `body` |
+| `tbb::parallel_for(...)` | a TBB program, std or serial backend (`chunk/tbb_adaptor.h`): the arguments of `oneapi::tbb::parallel_for`, with `begin_parallel_phase()` before every piece and `finalize_parallel_phase()` after the call |
 
 A `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region stops
 the program, in every build. Check builds (Debug, `CHECK_OPTIM`) also stop on a deferred write
 in a region by a thread that did not call `begin_parallel_phase()`.
+
+The application's own threads (`std::thread`, TBB) need the std backend (`CHUNK_THREADS=std`):
+every thread that writes calls `begin_parallel_phase()` before its first write, and one thread
+calls `finalize_parallel_phase()` once they have stopped. `shrink_array::tbb::parallel_for`
+makes both calls for a TBB loop; the header is installed with the others, and the program links
+TBB itself (the library does not).
 
 ## 7. Adaptive chunk size (`_dyn` libraries)
 
@@ -157,6 +166,7 @@ The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptiv
 | name | meaning |
 |---|---|
 | `build_config::use_openmp` | built with OpenMP |
+| `build_config::threaded` | the library runs threads (`CHUNK_THREADS` `openmp` or `std`) |
 | `build_config::has_ompt`, `build_config::has_not_ompt` | built with the OMPT tool, or not |
 | `build_config::chunk_dynamic` | dynamic geometry (`_dyn` library) |
 | `chunk_config::use_chunk`, `chunk_config::use_chunk2`, `chunk_config::use_chunk2a` | the variant |

@@ -66,7 +66,7 @@
 #include <thread>    // std::this_thread::yield
 #include <vector>    // std::vector
 
-#include "chunk/config.h"                              // build_config::use_openmp
+#include "chunk/config.h"                              // build_config::threaded
 #include "chunk/internal/chunk_size_policy.h"          // t_active_chunk_size / t_alloc_key, restored per released block
 #include "chunk/internal/cpu_pause.h"                  // CHUNK_CPU_PAUSE
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::heavy_barrier / asymmetric_active
@@ -79,7 +79,7 @@ namespace shrink_array::read_reclaim
 {
 
 /// @brief The protocol is compiled in: OpenMP builds only.
-inline constexpr bool enabled = build_config::use_openmp;
+inline constexpr bool enabled = build_config::threaded;
 
 /// @brief Reader slots: one per thread that has ever read, a cache line each.
 inline constexpr int slot_count = CHUNK_READ_RECLAIM_SLOTS;
@@ -91,7 +91,7 @@ struct alignas(64) ReaderSlot
 };
 
 inline std::array<ReaderSlot, slot_count> g_slots;     ///< The reader slots, claimed in order.
-inline std::atomic<int>               g_nslots{0}; ///< Slots claimed so far (may exceed slot_count).
+inline std::atomic<int>                   g_nslots{0}; ///< Slots claimed so far (may exceed slot_count).
 /// @brief Readers past slot_count: counted in one shared RMW (seq_cst), slow but
 ///        correct. A program with more reader threads than slot_count raises
 ///        CHUNK_READ_RECLAIM_SLOTS.

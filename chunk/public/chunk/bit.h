@@ -21,8 +21,8 @@
  * @brief The element type of the bit-packed container: a bool stored as one
  *        bit, 8 per byte.
  *
- * @details ArrayChunkBits is ArrayChunk2<Bit>: the whole chunk2 machinery with its own
- *          managers, pools and registries. ArrayChunk2<bool> keeps one byte per bool and a
+ * @details ArrayChunkBits is zero_one_value::Array<Bit>: the whole chunk2 machinery with its own
+ *          managers, pools and registries. zero_one_value::Array<bool> keeps one byte per bool and a
  *          plain store per write; the packed one holds 8x less per materialised chunk and
  *          pays an atomic read-modify-write of a 64-bit word per write.
  *

@@ -6,7 +6,7 @@ import os
 import platform as _platform
 from pathlib import Path
 
-from .settings import COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS, virtual_base
+from .settings import COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS, is_tbb_variant, virtual_base
 from .term import dim
 
 
@@ -210,6 +210,9 @@ def short_config_label(config):
     """Compact label for display / CSV."""
     if config.startswith("cmake-build-omp-"):
         return config[len("cmake-build-omp-"):]  # not removeprefix: Python >= 3.9 only
+    if is_std_config(config):
+        # The std backend runs threads: not a "-noomp" (serial) build.
+        return config[len("cmake-build-"):]
     if config.startswith("cmake-build-"):
         # non-OMP build dirs (cmake-build-gnu, cmake-build-llvm) would otherwise
         # collapse onto the OMP label ("gnu"/"llvm") and look like a duplicate,
@@ -234,6 +237,20 @@ def is_omp_config(config):
     return config.startswith("cmake-build-omp-")
 
 
+def is_std_config(config):
+    """True if this build directory is the std threading backend
+    (CHUNK_THREADS=std: cmake-build-std-*). It runs threads, without OpenMP;
+    OMP_NUM_THREADS still sets its team size."""
+    return config.startswith("cmake-build-std-")
+
+
+def is_threaded_config(config):
+    """True if the build runs threads: OpenMP or the std backend. Only the
+    serial builds ignore OMP_NUM_THREADS, so only they get a single thread
+    count and a single repetition."""
+    return is_omp_config(config) or is_std_config(config)
+
+
 def is_std_alloc_config(config):
     """True if this is a std-allocator build (its dir name ends in -std-alloc).
     The std_alloc *variant* binary is only built there (CHUNK_STD_ALLOC=ON)."""
@@ -249,11 +266,18 @@ def skip_variant_on_config(var, config):
     - The std_alloc variant anywhere except a -std-alloc config: it is only
       built there now (gated on CHUNK_STD_ALLOC in CMake), so looking for it
       elsewhere would just produce spurious MISSING warnings.
+    - The tbb_* variants anywhere except a std-backend (cmake-build-std-*)
+      config: the TBB bench is only built there.
     """
     base = _variant_base(var)
     if base in COMPRESSION_INSENSITIVE_VARIANTS and is_compression_only_config(config):
         return True
     if base == "std_alloc" and not is_std_alloc_config(config):
+        return True
+    # The TBB bench is built in the std-backend builds only (and only when
+    # oneTBB was there at compile time: a missing binary is then reported once,
+    # not skipped here).
+    if is_tbb_variant(var) and not is_std_config(config):
         return True
     return False
 

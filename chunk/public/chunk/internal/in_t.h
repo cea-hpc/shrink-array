@@ -86,7 +86,7 @@ namespace shrink_array
 // large user T could introduce one:
 //
 //     TabCstVal2Holder::alloc_chunk(T val)            (tab_cst_val2_holder.h)
-//     ArrayChunk2::set_second_value(T)                (array_chunk2.h and
+//     zero_one_value::Array::set_second_value(T)                (array_chunk2.h and
 //                                                       array_chunk2_inline.h)
 //     Chunk2FastCompPolicy::have_chunk_to_compress(T) (chunk2_std.h)
 //

@@ -1,4 +1,4 @@
-# The ArrayChunk2A algorithm (Chunk2A)
+# The zero_any::Array algorithm (Chunk2A)
 
 > French version: [algo_chunk2a_fr.md](algo_chunk2a_fr.md).
 

@@ -25,9 +25,9 @@ Three variants, chosen when you link:
 
 | variant | class | a chunk is compressed when it is uniform at… |
 |---|---|---|
-| Chunk (v1) | `ArrayChunk<T>` | `T{}` (zero) only |
-| Chunk2 | `ArrayChunk2<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
-| Chunk2A | `ArrayChunk2A<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
+| Chunk (v1) | `zero::Array<T>` | `T{}` (zero) only |
+| Chunk2 | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| Chunk2A | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
 
 Chunk2A compresses the most and is the one to try first. Chunk2 has lighter metadata when
 the data has a single dominant non-zero value, and Chunk (v1) is the simplest when only zeros
@@ -54,6 +54,7 @@ The options that matter to a user:
 | option | default | effect |
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
 | `CHUNK_STATIC_SIZES` | `auto` | the compile-time chunk sizes built, one library per size and variant; `auto`: `256;1024`, but `256` alone in a Debug or sanitizer build of this project (not of a project that includes it) |
 | `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen at run time, and can change (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
@@ -93,8 +94,8 @@ as the library did.
 | `chunk::chunk_vector` | none: the arrays are `std::vector` | — |
 
 Link **one** variant library per program, and write **that variant's class**:
-`ArrayChunk2A<T>` with `chunk::chunk_v2a`. The class you write is what you get -- a program
-naming `ArrayChunk2A` keeps it whatever it links -- and an array of another variant than the
+`zero_any::Array<T>` with `chunk::chunk_v2a`. The class you write is what you get -- a program
+naming `zero_any::Array` keeps it whatever it links -- and an array of another variant than the
 library's is not supported: depending on the calls, it does not compile or it crashes.
 To let the link choose, write the arrays through an alias on the variant the library
 defines (`examples/shrink_bench` and `examples/simple_array` do so):
@@ -109,9 +110,9 @@ defines (`examples/shrink_bench` and `examples/simple_array` do so):
 
 namespace sa = shrink_array;
 template <typename T>
-using Array = std::conditional_t<sa::chunk_config::use_chunk2a, sa::ArrayChunk2A<T>,
-              std::conditional_t<sa::chunk_config::use_chunk2, sa::ArrayChunk2<T>,
-              std::conditional_t<sa::chunk_config::use_chunk, sa::ArrayChunk<T>, std::vector<T>>>>;
+using Array = std::conditional_t<sa::chunk_config::use_chunk2a, sa::zero_any::Array<T>,
+              std::conditional_t<sa::chunk_config::use_chunk2, sa::zero_one_value::Array<T>,
+              std::conditional_t<sa::chunk_config::use_chunk, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
 With it, `chunk::chunk_vector` builds the same program on plain `std::vector`s, which is the
@@ -121,7 +122,7 @@ easiest way to compare memory and time.
 `chunk_OPENMP`, `chunk_OMPT` and `chunk_STD_ALLOC`, for a project that wants to check what the
 installation holds.
 
-## 4. A first program
+## 4. A first program, parallel and multi-threaded
 
 This is [`examples/getting_started/getting_started.cpp`](../examples/getting_started/getting_started.cpp),
 shortened. The directory also has the `CMakeLists.txt` of §3: it builds against an install as
@@ -131,7 +132,7 @@ well as inside the tree.
 #include <cstdio>
 #include <utility>                 // std::as_const
 
-#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
@@ -144,7 +145,7 @@ int main()
 
     {
         const int n = 1 << 24;                   // 16 M doubles: 128 MiB as a std::vector
-        sa::ArrayChunk2A<double> a(n);           // (2) all 0.0, nothing allocated yet
+        sa::zero_any::Array<double> a(n);           // (2) all 0.0, nothing allocated yet
 
         sa::parallel_phase([&] {                 // (3) a parallel region, phases marked
 #pragma omp for
@@ -192,7 +193,7 @@ int main()
 Expected output: about 12 % of the chunks hold a buffer. A `std::vector` would hold all of
 them.
 
-## 5. OpenMP: the rules
+## 5. Threads: the rules
 
 **What you can do without synchronisation.** As with a `std::vector`, different threads can
 read and write **different elements** at the same time, even elements of the same chunk:
@@ -209,7 +210,7 @@ phase call. Linked as in §3, with `OpenMP::OpenMP_CXX` too:
 #include <utility>                 // std::as_const
 #include <vector>
 
-#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
 
 namespace sa = shrink_array;
 
@@ -226,7 +227,7 @@ int main()
     const int n = 1 << 24;
 
     std::vector<double>      v(n);
-    sa::ArrayChunk2A<double> a(n);
+    sa::zero_any::Array<double> a(n);
     fill(v, n);                          // the reference
     fill(a, n);                          // the same loop: no parallel_phase(), no phase calls
 
@@ -285,7 +286,7 @@ With OMPT you may also write no phase at all: plain `#pragma omp parallel for` l
 code as on a `std::vector`.
 [`examples/getting_started/getting_started_ompt.cpp`](../examples/getting_started/getting_started_ompt.cpp)
 is the program of §4 written that way: one function fills a `std::vector<double>` and an
-`ArrayChunk2A<double>`, and the program checks that they read back the same. It refuses to
+`zero_any::Array<double>`, and the program checks that they read back the same. It refuses to
 compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1`.
 
 **Sequential points.** Everything that rebuilds an array's storage must be called outside any
@@ -294,7 +295,9 @@ parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `cl
 Chunk2, `set_second_value()`.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
-of cores, 256)` threads (about 1 KiB per element type and per thread). A program that runs
+of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else
+`OMP_NUM_THREADS` -- stands for `omp_get_max_threads()`; about 1 KiB per element type and per
+thread). A program that runs
 more threads than that sets `CHUNK_THREAD_CAPACITY=<n>`; a thread beyond the capacity stops the
 program with a message.
 
@@ -326,6 +329,42 @@ all of it. What that asks of them:
   all. `reclaim_second_values()` covers every array of a type; `CHUNK_LOG` and
   `logging::set_sink()` are one setting for all.
 
+**Without OpenMP: your own threads, TBB.** A library built with `CHUNK_THREADS=std` runs its own
+work on a pool of `std::jthread`s and takes writes from any thread of the program: `std::thread`,
+TBB, a thread pool of your own. The phases are then always explicit: every thread that writes
+calls `begin_parallel_phase()` before its first write, and **one** thread calls
+`finalize_parallel_phase()` once every writer has stopped (after the `join()`):
+
+```cpp
+std::vector<std::thread> workers;
+for (int t = 0; t < nt; ++t)
+    workers.emplace_back([&, t] {
+        sa::begin_parallel_phase();               // every thread that writes
+        for (long i = t; i < n; i += nt)
+            a[i] = f(i);
+    });
+for (auto& w : workers)
+    w.join();
+sa::finalize_parallel_phase();                    // once, after the join
+```
+
+A TBB program uses `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`): the arguments of
+`oneapi::tbb::parallel_for`, both calls made for you. The header comes with the library; the
+program links TBB itself (`TBB::tbb`), the library does not:
+
+```cpp
+#include "chunk/tbb_adaptor.h"
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r) {
+    for (long i = r.begin(); i != r.end(); ++i)
+        a[i] = f(i);
+});
+```
+
+Between `begin` and `finalize` the library counts the program's threads as a parallel region
+(the sequential points above must not be called there, as inside an OpenMP region), and each of them
+holds one of the per-thread slots while it is alive. An OpenMP build numbers only OpenMP's
+threads: for the others, use the std backend.
+
 ## 6. Pitfalls
 
 - **`auto` keeps a proxy.** On a non-const array, `tab[i]` returns a write proxy. `T v = tab[i];`
@@ -345,7 +384,7 @@ all of it. What that asks of them:
   library's own state is built at its first use and never destroyed, so the order of the
   static initialisations does not matter.
 - **Indices are `int` by default.** For more than 2³¹ elements, use the second template
-  parameter: `ArrayChunk2A<double, long>`.
+  parameter: `zero_any::Array<double, long>`.
 - **Element types**: anything trivially copyable, `==`-comparable and default-constructible
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
   type that owns a resource (`std::string`) is refused at compile time. Chunk2 also needs an

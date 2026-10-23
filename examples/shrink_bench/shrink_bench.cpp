@@ -85,7 +85,7 @@ using Array = ActiveArray<T>;
 // alloc_chunk(i) materialises the chunk holding element i ahead of the loop
 // that writes it: the loop then only stores into buffers that exist, instead
 // of materialising chunks one write at a time inside the parallel region. It
-// exists on the three variants (ArrayChunk, ArrayChunk2, ArrayChunk2A) and had
+// exists on the three variants (zero::Array, zero_one_value::Array, zero_any::Array) and had
 // no caller. The window is PARTIAL (an eighth of the array, from its first
 // quarter): the chunks around it must stay compressed, or preallocating would
 // prove nothing. bool goes through its own materialiser on Chunk2 / Chunk2A.
@@ -109,23 +109,24 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
                   })
     {
         const Int step = static_cast<Int>(a.chunk_size());
-#pragma omp parallel
-        {
-            begin_parallel_phase_g();
-#pragma omp for schedule(static)
-            for (Int c = beg / step; c <= (end - 1) / step; ++c)
+        bench_par::region(
+            [&]([[maybe_unused]] bench_par::Team& t)
             {
-                if constexpr (build_config::use_openmp)
-                {
-                    a.alloc_chunk(c * step, get_thr_rank_fast());
-                }
-                else
-                {
-                    a.alloc_chunk(c * step);
-                }
-            }
-            finalize_parallel_phase_only_flush_g();
-        }
+                begin_parallel_phase_g();
+                bench_par::for_static_vec(t, beg / step, ((end - 1) / step) + 1,
+                                          [&](const Int c) __attribute__((always_inline))
+                                          {
+                                              if constexpr (build_config::threaded)
+                                              {
+                                                  a.alloc_chunk(c * step, get_thr_rank_fast());
+                                              }
+                                              else
+                                              {
+                                                  a.alloc_chunk(c * step);
+                                              }
+                                          });
+                finalize_parallel_phase_only_flush_g();
+            });
         finalize_parallel_phase_after_flush_g();
 
         // Materialised exactly over the window: every chunk it touches, and
@@ -148,16 +149,14 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
     }
 
     // The loop over the window: stores into chunks that already exist.
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-#pragma omp for schedule(static)
-        for (Int i = beg; i < end; ++i)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& t)
         {
-            a[i] = value_at(i);
-        }
-        finalize_parallel_phase_only_flush_g();
-    }
+            begin_parallel_phase_g();
+            bench_par::for_static_vec(t, beg, end,
+                                      [&](const Int i) __attribute__((always_inline)) { a[i] = value_at(i); });
+            finalize_parallel_phase_only_flush_g();
+        });
     finalize_parallel_phase_after_flush_g();
     for (Int i = beg; i < end; ++i)
     {
@@ -369,7 +368,7 @@ int main(int argc, char* argv[])
     [[maybe_unused]] const Int freq_compress = need_compression ? 1 : std::max<Int>(1, iter_max / 10);
 
     // Period of the DEBUG audit of the inline compression ("Check compression",
-    // ArrayChunk*::compress_int). Not freq_compress: that one is 1 whenever
+    // zero::Array*::compress_int). Not freq_compress: that one is 1 whenever
     // need_compression holds, i.e. in the very builds where the audit exists.
     // Every iteration was a full sweep of every array plus a self-heal that
     // made debug compress more than the inline path alone. SHRINK_BENCH_AUDIT_FREQ
@@ -543,7 +542,7 @@ int main(int argc, char* argv[])
     // mask_scale * sz (--mask_scale, default 1/32): computed in 64 bits and
     // capped at the largest whole number of 1024-element blocks the build's Int
     // holds -- at --mask_scale 8, the size tab_mask was created with, 8 x 10^9
-    // wrapped a 32-bit Int to -589934592 and ArrayChunk2A<bool, int> threw
+    // wrapped a 32-bit Int to -589934592 and zero_any::Array<bool, int> threw
     // std::length_error. The int64 builds take the full size.
     long long mask_want = std::llround(mask_scale * static_cast<double>(sz));
     if (mask_want < 1)
@@ -803,7 +802,7 @@ int main(int argc, char* argv[])
             {
                 if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
                 {
-                    // STEP B — cst2 GC mark report (read-only) : ArrayChunk2A-only API
+                    // STEP B — cst2 GC mark report (read-only) : zero_any::Array-only API
                     // (per-chunk cst_val2 pointer registry has no equivalent on CHUNK /
                     // CHUNK2, which have no per-chunk GC-able registry to report on).
                     // %ld + a cast: k_iter is Int, which is `long` in the int64
@@ -811,15 +810,15 @@ int main(int argc, char* argv[])
                     std::fprintf(stderr, "[cst2-gc @ iter %ld]\n", static_cast<long>(k_iter));
                     // Spelled out rather than Array<T>: the enclosing
                     // `if constexpr` is in a plain lambda, so its discarded
-                    // branch is still checked, and Array<T> is ArrayChunk<T> --
+                    // branch is still checked, and Array<T> is zero::Array<T> --
                     // which has no gc_mark_report -- in a v1/v2 build. `Int`
-                    // is what matters here: ArrayChunk2A<double> would take the
-                    // default ind_type (int), a DIFFERENT instantiation from the
+                    // is what matters here: zero_any::Array<double> would take the
+                    // default IndType (int), a DIFFERENT instantiation from the
                     // one the bench fills in an int64 build, and the report would
                     // be of an array nothing ever touched.
-                    ArrayChunk2A<double, Int>::gc_mark_report();
-                    ArrayChunk2A<short, Int>::gc_mark_report();
-                    ArrayChunk2A<ComplexDouble, Int>::gc_mark_report();
+                    zero_any::Array<double, Int>::gc_mark_report();
+                    zero_any::Array<short, Int>::gc_mark_report();
+                    zero_any::Array<ComplexDouble, Int>::gc_mark_report();
                 }
             }
         }
@@ -844,16 +843,16 @@ int main(int argc, char* argv[])
             // what decides how often it can run.
             const auto  t0    = std::chrono::steady_clock::now();
             std::size_t freed = 0;
-            freed += ArrayChunk2A<double, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<float, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<int, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<long, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<unsigned long, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<short, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<unsigned char, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<ComplexDouble, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<Point3, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<Cell, Int>::reclaim_second_values();
+            freed += zero_any::Array<double, Int>::reclaim_second_values();
+            freed += zero_any::Array<float, Int>::reclaim_second_values();
+            freed += zero_any::Array<int, Int>::reclaim_second_values();
+            freed += zero_any::Array<long, Int>::reclaim_second_values();
+            freed += zero_any::Array<unsigned long, Int>::reclaim_second_values();
+            freed += zero_any::Array<short, Int>::reclaim_second_values();
+            freed += zero_any::Array<unsigned char, Int>::reclaim_second_values();
+            freed += zero_any::Array<ComplexDouble, Int>::reclaim_second_values();
+            freed += zero_any::Array<Point3, Int>::reclaim_second_values();
+            freed += zero_any::Array<Cell, Int>::reclaim_second_values();
             const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
             std::fprintf(stderr, "[cst2-reclaim @ iter %ld] %zu second value(s) freed in %.3f ms\n",
                          static_cast<long>(k_iter), freed, ms);
@@ -873,16 +872,16 @@ int main(int argc, char* argv[])
                                              : 0.0,
                              s.free, s.reclaims, s.refused(), s.degraded ? "  DEGRADED: reclaims refused" : "");
             };
-            report("double", ArrayChunk2A<double, Int>::second_value_stats());
-            report("float", ArrayChunk2A<float, Int>::second_value_stats());
-            report("int", ArrayChunk2A<int, Int>::second_value_stats());
-            report("long", ArrayChunk2A<long, Int>::second_value_stats());
-            report("unsigned long", ArrayChunk2A<unsigned long, Int>::second_value_stats());
-            report("short", ArrayChunk2A<short, Int>::second_value_stats());
-            report("unsigned char", ArrayChunk2A<unsigned char, Int>::second_value_stats());
-            report("complex_double", ArrayChunk2A<ComplexDouble, Int>::second_value_stats());
-            report("Point3", ArrayChunk2A<Point3, Int>::second_value_stats());
-            report("Cell", ArrayChunk2A<Cell, Int>::second_value_stats());
+            report("double", zero_any::Array<double, Int>::second_value_stats());
+            report("float", zero_any::Array<float, Int>::second_value_stats());
+            report("int", zero_any::Array<int, Int>::second_value_stats());
+            report("long", zero_any::Array<long, Int>::second_value_stats());
+            report("unsigned long", zero_any::Array<unsigned long, Int>::second_value_stats());
+            report("short", zero_any::Array<short, Int>::second_value_stats());
+            report("unsigned char", zero_any::Array<unsigned char, Int>::second_value_stats());
+            report("complex_double", zero_any::Array<ComplexDouble, Int>::second_value_stats());
+            report("Point3", zero_any::Array<Point3, Int>::second_value_stats());
+            report("Cell", zero_any::Array<Cell, Int>::second_value_stats());
         }
     };
 
@@ -1146,11 +1145,12 @@ int main(int argc, char* argv[])
                 const bool have_to_compress = k % freq_compress == 0;
                 if (have_to_compress)
                 {
-#pragma omp parallel
-                    {
-                        // Compiled in the std::vector build too: a no-op there.
-                        ParamChunk::force_compression();
-                    }
+                    bench_par::region(
+                        [&]([[maybe_unused]] bench_par::Team& t)
+                        {
+                            // Compiled in the std::vector build too: a no-op there.
+                            ParamChunk::force_compression();
+                        });
                 }
             }
 

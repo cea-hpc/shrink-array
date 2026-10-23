@@ -24,12 +24,12 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 
 | classe | en-tête | compresse les chunks uniformes à… |
 |---|---|---|
-| `ArrayChunk<T, ind_type = int>` | `chunk/array_chunk.h` | `T{}` |
-| `ArrayChunk2<T, ind_type = int>` | `chunk/array_chunk2.h` | `T{}` ou la seconde valeur du tableau |
-| `ArrayChunk2A<T, ind_type = int>` | `chunk/array_chunk2A.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
+| `zero::Array<T, IndT = int>` | `chunk/array_chunk.h` | `T{}` |
+| `zero_one_value::Array<T, IndT = int>` | `chunk/array_chunk2.h` | `T{}` ou la seconde valeur du tableau |
+| `zero_any::Array<T, IndT = int>` | `chunk/array_chunk2A.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
 | `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds Chunk2) |
 
-`ind_type` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
+`IndT` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
 celle de la bibliothèque liée (`chunk::chunk_v2a`, ...) ; `chunk_config::use_chunk`,
 `chunk_config::use_chunk2` et `chunk_config::use_chunk2a` indiquent laquelle, à la compilation.
 
@@ -54,8 +54,8 @@ hors de toute région parallèle, et il invalide les proxys du tableau.
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
-| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `ArrayChunk2A<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre, 0 en cas de refus (`ArrayChunk2A`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas. `try_reclaim_second_values()` renvoie un `std::expected<std::size_t, ReclaimRefusal>` : leur nombre, ou la raison du refus (`parallel_region`, `rechunk_in_progress`, `degraded_index`) |
+| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_one_value::Array`, `zero_any::Array`) |
+| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `zero_any::Array<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre, 0 en cas de refus (`zero_any::Array`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas. `try_reclaim_second_values()` renvoie un `std::expected<std::size_t, ReclaimRefusal>` : leur nombre, ou la raison du refus (`parallel_region`, `rechunk_in_progress`, `degraded_index`) |
 | statistiques | `stats()`, `get_nb_chunk_written()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) ; une taille refusée est un avertissement du journal. `try_rechunk_to(n)`, `try_set_chunk_size(n)` et la fonction libre `try_set_active_chunk_size(n)` renvoient à la place un `std::expected<void, ChunkSizeError>` : rien, ou la raison (`not_pow2_or_x64`, `exceeds_buffer`, `fixed_geometry` dans un build statique), sans message |
 
@@ -63,23 +63,25 @@ Chunk2 seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_
 
 **`reclaim_second_values()` : une précondition sur tout le type.** Les autres opérations **(S)**
 concernent un tableau ; celle-ci est statique et libère les secondes valeurs de tous les
-`ArrayChunk2A<T>` du programme, quel que soit leur type d'index. Pendant qu'elle s'exécute,
-**aucun thread ne doit écrire dans un `ArrayChunk2A<T>` ni le compresser**, pas seulement dans
+`zero_any::Array<T>` du programme, quel que soit leur type d'index. Pendant qu'elle s'exécute,
+**aucun thread ne doit écrire dans un `zero_any::Array<T>` ni le compresser**, pas seulement dans
 les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propres
-`ArrayChunk2A<double>`, le point séquentiel doit valoir pour tous.
+`zero_any::Array<double>`, le point séquentiel doit valoir pour tous.
 
 - *Hors contrat, l'erreur est silencieuse* : un chunk compressé pendant la libération peut
   garder un identifiant qu'elle libère puis attribue à une autre valeur ; ce chunk lit alors
   l'autre valeur, sans plantage ni message.
 - *Ce qui est refusé, dans tous les builds* : un appel dans une région parallèle du thread
   appelant, pendant un re-chunk, ou quand l'index des secondes valeurs est dégradé (elle renvoie
-  0). Les threads que l'appel ne voit pas ne sont pas détectés : un pool `std::thread` ou TBB,
-  ou une équipe OpenMP lancée par un autre thread hôte.
+  0). Les threads que l'appel ne voit pas ne sont pas détectés : un pool `std::thread` ou TBB
+  hors du contrat de phase, ou une équipe OpenMP lancée par un autre thread hôte. Sous le
+  backend std, les threads de l'application sont vus entre `begin_parallel_phase()` et
+  `finalize_parallel_phase()` : l'appel y est refusé.
 - *Ce qui le détecte* : les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent sur toute
   recherche ou tout enregistrement de seconde valeur qui chevauche une libération. Faites
   tourner l'application une fois dans un build de contrôle avec ses appels de libération ; les
   builds release ne paient rien et ne vérifient rien.
-- *Surveiller les identifiants* : `ArrayChunk2A<T>::second_value_stats()` (statique, à tout
+- *Surveiller les identifiants* : `zero_any::Array<T>::second_value_stats()` (statique, à tout
   moment, depuis tout thread) renvoie les identifiants en usage face à la capacité -- les épuiser
   arrête le run --, les libres, les libérations faites et ce qu'elles ont libéré, les libérations
   refusées par cause (un appel refusé renvoie 0 comme un appel qui n'a rien à libérer) et si
@@ -138,11 +140,18 @@ effet sinon, et dans les builds séquentiels.
 | `finalize_parallel_phase_only_flush()` + `finalize_parallel_phase_after_flush()` | la même chose, en deux : la première dans la région (elle émet une barrière), la seconde après |
 | `finalize_barrier_phase()` | dans une région, après un `omp barrier` explicite : rend les écritures d'avant visibles après |
 | `parallel_phase([n,] body)` | à la place des deux premiers : une région parallèle (`n` threads, ou ceux du runtime) qui exécute `body` sur chaque thread, avec `begin_parallel_phase()` avant et `finalize_parallel_phase()` après la région ; le partage du travail (`omp for`) va dans `body` |
+| `tbb::parallel_for(...)` | un programme TBB, backend std ou série (`chunk/tbb_adaptor.h`) : les arguments de `oneapi::tbb::parallel_for`, avec `begin_parallel_phase()` avant chaque morceau et `finalize_parallel_phase()` après l'appel |
 
 Un `begin_parallel_phase()` sans `finalize_parallel_phase()` depuis la région précédente arrête
 le programme, dans tous les builds. Les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent
 aussi sur une écriture différée dans une région par un thread qui n'a pas appelé
 `begin_parallel_phase()`.
+
+Les threads propres de l'application (`std::thread`, TBB) demandent le backend std
+(`CHUNK_THREADS=std`) : chaque thread qui écrit appelle `begin_parallel_phase()` avant sa
+première écriture, et un seul thread appelle `finalize_parallel_phase()` une fois qu'ils se sont
+arrêtés. `shrink_array::tbb::parallel_for` fait les deux appels pour une boucle TBB ; l'en-tête
+est installé avec les autres, et le programme lie TBB lui-même (la bibliothèque, non).
 
 ## 7. Taille de chunk adaptative (bibliothèques `_dyn`)
 
@@ -161,6 +170,7 @@ La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adap
 | nom | signification |
 |---|---|
 | `build_config::use_openmp` | construit avec OpenMP |
+| `build_config::threaded` | la bibliothèque fait tourner des threads (`CHUNK_THREADS` `openmp` ou `std`) |
 | `build_config::has_ompt`, `build_config::has_not_ompt` | construit avec l'outil OMPT, ou non |
 | `build_config::chunk_dynamic` | géométrie dynamique (bibliothèque `_dyn`) |
 | `chunk_config::use_chunk`, `chunk_config::use_chunk2`, `chunk_config::use_chunk2a` | la variante |

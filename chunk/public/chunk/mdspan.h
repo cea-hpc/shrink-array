@@ -27,13 +27,13 @@
  *          as `a[k]` does.
  *
  *          @code
- *          ArrayChunk2A<double> a(nx * ny);
+ *          zero_any::Array<double> a(nx * ny);
  *          auto f = shrink_array::md::view(a, nx, ny);   // row-major
  *          f[i, j] = 1.0;                                // same as a[i * ny + j] = 1.0
  *
  *          // Tiles of 16 x 16 = 256 elements: one tile per chunk of a _256
  *          // array, so a uniform 2D block is a uniform chunk.
- *          ArrayChunk2A<double> b(shrink_array::md::tiled_size<16, 16>(nx, ny));
+ *          zero_any::Array<double> b(shrink_array::md::tiled_size<16, 16>(nx, ny));
  *          auto g = shrink_array::md::tiled_view<16, 16>(b, nx, ny);
  *
  *          // The tile at run time (a _dyn library): a.chunk_size() elements.
@@ -176,8 +176,8 @@ struct handle
 };
 
 /**
- * @brief mdspan accessor over an array of this library (ArrayChunk, ArrayChunk2,
- *        ArrayChunk2A, or any type with value_type, reference and operator[]).
+ * @brief mdspan accessor over an array of this library (zero::Array, zero_one_value::Array,
+ *        zero_any::Array, or any type with value_type, reference and operator[]).
  * @tparam Array The array type; `const Array` gives a read-only view whose
  *         reference is the value (T), like the array's const operator[].
  */

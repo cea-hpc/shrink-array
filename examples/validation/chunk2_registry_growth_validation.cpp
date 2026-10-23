@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Chunk2 second-value registry growth harness. Chunk2 only (ArrayChunk2<T>),
+// Chunk2 second-value registry growth harness. Chunk2 only (zero_one_value::Array<T>),
 // default static size; serial and OpenMP builds.
 // ============================================================================
 //
@@ -24,7 +24,7 @@
 //
 // THE DEFECT
 //
-//   Every distinct value given to ArrayChunk2::set_second_value() gets a
+//   Every distinct value given to zero_one_value::Array::set_second_value() gets a
 //   constant array in Chunk2<T>::tab_m_ptr_cst_val2, and a chunk compressed to
 //   it stores that array's address as its `values`. The table was a
 //   std::vector<std::array<T, cst_buffer_size>> grown by resize(): past its
@@ -52,8 +52,8 @@
 #include <memory> // std::unique_ptr, std::make_unique
 #include <vector> // std::vector
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
-#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/chunk_traits.h"   // forward decls + default IndT = int
+#include "chunk/array_chunk2.h"   // zero_one_value::Array
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
 #include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"         // build_config::has_not_ompt
@@ -71,8 +71,8 @@ using namespace shrink_array;
 namespace
 {
 
-using Arr = ArrayChunk2<double>;
-using Ind = Arr::ind_type;
+using Arr = zero_one_value::Array<double>;
+using Ind = Arr::IndType;
 
 constexpr int n_chunks = 64; ///< chunks of `a`
 constexpr int n_others = 40; ///< arrays declaring a new second value each: several vector growths

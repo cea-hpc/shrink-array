@@ -68,8 +68,8 @@ inline constexpr bool relaxed_element_access_v = relaxed_element_access<T>();
 
 /// @brief The element stores of this chunk type must be relaxed atomics: some
 ///        reader looks at elements it does not own (Chunk2A only, see above).
-template <typename ChunkType, typename T>
-inline constexpr bool relaxed_element_stores_v = std::is_same_v<ChunkType, Chunk2A<T>> && relaxed_element_access_v<T>;
+template <typename ChunkT, typename T>
+inline constexpr bool relaxed_element_stores_v = std::is_same_v<ChunkT, Chunk2A<T>> && relaxed_element_access_v<T>;
 
 /// @brief Load @p *ptr through a relaxed std::atomic_ref.
 /// @param ptr Element to read.
@@ -99,10 +99,10 @@ void store_element_relaxed(T* ptr, T v) noexcept
  *          read of the copy stays plain -- the element is this writer's own,
  *          the other threads only read it.
  */
-template <typename ChunkType, typename T, typename Body>
+template <typename ChunkT, typename T, typename Body>
 void modify_element(T* ptr, int i, Body&& body)
 {
-    if constexpr (relaxed_element_stores_v<ChunkType, T>)
+    if constexpr (relaxed_element_stores_v<ChunkT, T>)
     {
         T elem = ptr[i];
         body(elem);

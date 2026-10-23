@@ -1,4 +1,4 @@
-# The ArrayChunk algorithm (Chunk, v1)
+# The zero::Array algorithm (Chunk, v1)
 
 > French version: [algo_chunk_fr.md](algo_chunk_fr.md).
 

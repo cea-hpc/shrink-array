@@ -194,9 +194,9 @@ void ProxySpec2<T, Derived>::set_info_on_chunk(this Derived& self)
 // <..., false> specialisation declares none of them, so nothing here is ever
 // looked at by a serial build. No preprocessor guard needed.
 
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_if_needed(this Derived& self,
-                                                                                         int thr_rank) noexcept
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+void Proxy2FastCompPolicy<Derived, T, ChunkT, Enabled>::trigger_compression_if_needed(this Derived& self,
+                                                                                      int           thr_rank) noexcept
 {
     if constexpr (is_not_bool)
     {
@@ -222,8 +222,8 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
     }
 }
 
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression(this Derived& self) noexcept
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+void Proxy2FastCompPolicy<Derived, T, ChunkT, Enabled>::perform_compression(this Derived& self) noexcept
 {
     // Runs inside a region, next to pure readers: the buffers this pass
     // releases wait for one grace period (read_reclaim.h).
@@ -688,9 +688,9 @@ void Proxy2<T>::execute_simple_operation(Lambda operation)
 // Two entirely different implementations depending on compression mode, one
 // per Proxy2FastCompPolicy specialisation.
 
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
+void Proxy2FastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
 {
     auto& chunk = ctx->chunk;
 
@@ -728,12 +728,12 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operat
  * @param operand Right-hand operand
  * @param operation Called when the chunk had to be materialised
  */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Op, typename Lambda, typename U>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation(this Derived& self,
-                                                                                                 Op            op,
-                                                                                                 const U&      operand,
-                                                                                                 Lambda operation)
+void Proxy2FastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation(this Derived& self,
+                                                                                              Op            op,
+                                                                                              const U&      operand,
+                                                                                              Lambda        operation)
 {
     // Same rule as ensure_writable_storage(): this function may call
     // chunk.create_value() below (via the will_be_not_second_value branch)
@@ -773,9 +773,9 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
     }
 }
 
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Op, typename Lambda, typename U>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation_async(
+void Proxy2FastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(
     auto*    ctx,
     Op       op,
     const U& operand,
@@ -808,12 +808,12 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
  *        (Enabled=false policy).
  * @tparam Lambda Callable `(op, T* values)`.
  */
-template <typename Derived, typename T, typename ChunkType>
+template <typename Derived, typename T, typename ChunkT>
 template <typename Op, typename Lambda, typename U>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_compound_operation(this Derived& self,
-                                                                                               Op            op,
-                                                                                               const U&      operand,
-                                                                                               Lambda        operation)
+void Proxy2FastCompPolicy<Derived, T, ChunkT, false>::execute_arithmetic_compound_operation(this Derived& self,
+                                                                                            Op            op,
+                                                                                            const U&      operand,
+                                                                                            Lambda        operation)
 {
     // Same rule as ensure_writable_storage(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
@@ -963,10 +963,10 @@ void Proxy2<T>::execute_inplace_operation(Lambda operation)
 // ── execute_inplace_operation_async ───────────────────────────────────────
 // Only present when fast block compression is active (the Enabled=true policy).
 
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_operation_async(auto*  ctx,
-                                                                                           Lambda operation) const
+void Proxy2FastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(auto*  ctx,
+                                                                                        Lambda operation) const
 {
     auto&     chunk = ctx->chunk;
     const int num   = ctx->num;

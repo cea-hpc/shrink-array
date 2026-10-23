@@ -15,6 +15,6 @@
  */
 
 // The template bodies are in array_chunk2_inline.h, through array_chunk2.h. No
-// explicit instantiations: each ArrayChunk2<T> is instantiated where it is used.
+// explicit instantiations: each zero_one_value::Array<T> is instantiated where it is used.
 
-#include "chunk/array_chunk2.h" // its own header: ArrayChunk2<T>, bodies in array_chunk2_inline.h
+#include "chunk/array_chunk2.h" // its own header: zero_one_value::Array<T>, bodies in array_chunk2_inline.h

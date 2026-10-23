@@ -96,7 +96,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
     // ========================================================================
 
     /// @brief Common block clear implementation for Chunk2/Chunk2A
-    /// @tparam IndexType Type of index parameter (can be std::nullopt_t for Chunk2A)
+    /// @tparam IndexT Type of index parameter (can be std::nullopt_t for Chunk2A)
     /// @param num_compress_value Which constant value to compress to (0 or 1)
     /// @param index_opt Optional index parameter (for Chunk2) or std::nullopt (for Chunk2A)
     /// @param thr_rank Thread rank
@@ -104,10 +104,10 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param ptr_second_value Pointer to second value (Chunk2A only)
     /// @param cst2_ptr The shared array to install for a type-2 compression
     ///        (Chunk2A only; the chunk keeps no copy of it)
-    template <typename IndexType>
+    template <typename IndexT>
     void block_clear_common(this Derived&        self,
                             int                  num_compress_value,
-                            IndexType            index_opt,
+                            IndexT               index_opt,
                             [[maybe_unused]] int thr_rank,
                             char*                ptr_type_cst     = nullptr,
                             SecondValueRef<T>    ptr_second_value = {},
@@ -224,14 +224,14 @@ class Chunk2Base : public ChunkBase<T, Derived>
     static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, Chunk2<T>>;
 
     /// @brief Clear chunk and reset to constant value
-    /// @tparam IndexType Type of index parameter
+    /// @tparam IndexT Type of index parameter
     /// @param index_opt Optional index (Chunk2) or std::nullopt (Chunk2A)
     /// @param thr_rank Thread rank
     /// @param ptr_type_cst Constant type pointer (Chunk2A only)
     /// @param ptr_second_value Second value pointer (Chunk2A only)
-    template <typename IndexType>
+    template <typename IndexT>
     void clear_impl(this Derived&     self,
-                    IndexType         index_opt,
+                    IndexT            index_opt,
                     int               thr_rank,
                     char*             ptr_type_cst     = nullptr,
                     SecondValueRef<T> ptr_second_value = {});

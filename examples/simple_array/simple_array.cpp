@@ -34,7 +34,7 @@
 // Both executables have the chunk headers: simple_array_vector links
 // chunk_vector, simple_array_chunk chunk_v1.
 #include "chunk/param_chunk.h"                // ParamChunk
-#include "chunk/array_chunk.h"                // ArrayChunk
+#include "chunk/array_chunk.h"                // zero::Array
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/chunk_def.h"                  // ChunkDef
 #include "chunk/chunk_std.h"                  // destroy_block_chunk
@@ -163,14 +163,14 @@ void initialize_rng(std::mt19937& rng, const std::string& seed_file_name)
 
 using namespace shrink_array;
 
-/// simple_array_chunk (CHUNK_VARIANT_V1, or _V2) runs on ArrayChunk, simple_array_vector
+/// simple_array_chunk (CHUNK_VARIANT_V1, or _V2) runs on zero::Array, simple_array_vector
 /// on std::vector.
 constexpr bool use_chunk_array = chunk_config::use_chunk || chunk_config::use_chunk2;
-using Array                    = std::conditional_t<use_chunk_array, ArrayChunk<double>, std::vector<double>>;
+using Array                    = std::conditional_t<use_chunk_array, zero::Array<double>, std::vector<double>>;
 
 /// @brief Calls @p f on @p arrays in simple_array_chunk only. @p f is a generic
-///        lambda using ArrayChunk's members (compress, stats): its body is then
-///        instantiated with ArrayChunk alone. The same call in a discarded branch
+///        lambda using zero::Array's members (compress, stats): its body is then
+///        instantiated with zero::Array alone. The same call in a discarded branch
 ///        of main(), which is not a template, would be compiled for std::vector.
 template <typename F, typename... A>
 void if_chunk(F&& f, A&... arrays)

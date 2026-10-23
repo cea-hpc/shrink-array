@@ -18,7 +18,7 @@
 
 /**
  * @file array_chunk_rechunk_hooks.h
- * @brief The re-chunk hooks of ArrayChunk (v1) and ArrayChunk2A — a
+ * @brief The re-chunk hooks of zero::Array (v1) and zero_any::Array — a
  *        CHUNK_DYNAMIC-only concern, isolated in its own mixin so they vanish
  *        from a static-geometry build.
  *
@@ -40,7 +40,7 @@
  *          bodies, the static one keeps the signatures as no-ops so the
  *          arrays' using-declarations stay valid in both modes.
  *
- * @note ArrayChunk2 keeps its own hooks (RechunkHooks2): a per-value candidate
+ * @note zero_one_value::Array keeps its own hooks (RechunkHooks2): a per-value candidate
  *       map, a second value to carry over, and an identity that must NOT be
  *       swapped.
  *
@@ -57,10 +57,10 @@ namespace shrink_array
 {
 
 /**
- * @brief The re-chunk hooks of ArrayChunk and ArrayChunk2A, present only when
+ * @brief The re-chunk hooks of zero::Array and zero_any::Array, present only when
  *        the geometry is a runtime value.
  *
- * @tparam Derived the concrete array type (ArrayChunk or ArrayChunk2A).
+ * @tparam Derived the concrete array type (zero::Array or zero_any::Array).
  * @tparam Dynamic defaulted to build_config::chunk_dynamic; never pass it
  *         explicitly outside of tests.
  */
@@ -76,13 +76,13 @@ template <typename Derived>
 class RechunkHooks<Derived, true>
 {
   public:
-    using Traits       = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using value_type   = Traits::value_type;        ///< Stored element type.
-    using proxy_type   = Traits::proxy_type;        ///< Proxy type owning the per-type array registry.
-    using manager_type = Traits::manager_type;      ///< Per-type manager owning the candidate store.
+    using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using value_type  = Traits::value_type;        ///< Stored element type.
+    using ProxyType   = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
+    using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the candidate store.
 
-    /// @brief ArrayChunk2A (otherwise ArrayChunk, v1): selects the candidate lists and the compress() call.
-    static constexpr bool is_chunk2a = std::is_same_v<typename Traits::chunk_type, Chunk2A<value_type>>;
+    /// @brief zero_any::Array (otherwise zero::Array, v1): selects the candidate lists and the compress() call.
+    static constexpr bool is_chunk2a = std::is_same_v<typename Traits::ChunkType, Chunk2A<value_type>>;
 
     /**
      * @brief Compress, then drop, this array's queued compression candidates, by num_tab.
@@ -115,11 +115,11 @@ class RechunkHooks<Derived, true>
     {
         if constexpr (is_chunk2a)
         {
-            return manager_type::chunk2a_to_compress_potentially_thr;
+            return ManagerType::chunk2a_to_compress_potentially_thr;
         }
         else
         {
-            return manager_type::chunk_to_compress_potentially_thr;
+            return ManagerType::chunk_to_compress_potentially_thr;
         }
     }
     /// @brief The manager's single candidate list of this variant (serial builds).
@@ -127,11 +127,11 @@ class RechunkHooks<Derived, true>
     {
         if constexpr (is_chunk2a)
         {
-            return manager_type::chunk2a_to_compress_potentially;
+            return ManagerType::chunk2a_to_compress_potentially;
         }
         else
         {
-            return manager_type::chunk_to_compress_potentially;
+            return ManagerType::chunk_to_compress_potentially;
         }
     }
     /// @brief Remove every candidate of the array @p num_tab from this variant's lists.
@@ -139,11 +139,11 @@ class RechunkHooks<Derived, true>
     {
         if constexpr (is_chunk2a)
         {
-            manager_type::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
+            ManagerType::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
         }
         else
         {
-            manager_type::remove_from_compress_list_chunk_by_num_tab(num_tab);
+            ManagerType::remove_from_compress_list_chunk_by_num_tab(num_tab);
         }
     }
 };

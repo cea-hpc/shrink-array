@@ -41,7 +41,7 @@ def build_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--build-root", default=os.environ.get("CHUNK_BUILD_ROOT", "."),
-                        help="Root directory holding the cmake-build-omp-*/ build "
+                        help="Root directory holding the cmake-build-*/ build "
                              "sub-directories. Default: cwd (or $CHUNK_BUILD_ROOT).")
     parser.add_argument("--configs", nargs="+", default=DEFAULT_CONFIGS,
                         help="Build sub-directories to test (in order).")
@@ -53,7 +53,9 @@ def build_parser():
     parser.add_argument("--skip-stl-test", action="store_true",
                         help="Skip the --test_stl STL-interface self-check (2c).")
     parser.add_argument("--variants", nargs="+", default=DEFAULT_VARIANTS,
-                        help="Variants to test.")
+                        help="Variants to test. tbb_chunk, tbb_chunk2, tbb_chunk2a: the TBB "
+                             "bench (shrink_bench_tbb_<variant>_<size>), looked for in the "
+                             "std-backend builds (cmake-build-std-*) only.")
     parser.add_argument("--sizes", nargs="+", default=["256", "1024", "dyn"],
                         help="Chunk-size declinations to test for the shrink "
                              "variants: any of 64/256/1024 (static compile-time "

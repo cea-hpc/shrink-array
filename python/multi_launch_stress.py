@@ -167,13 +167,30 @@ parser.add_argument("--only-checksum", action="store_true",
 #   --exec chunk,chunk2a --size 64,dyn -> 4 binaries
 #   --all_exec                  -> the full matrix
 _VARIANTS = ["chunk", "chunk2", "chunk2a"]
+# The TBB bench (shrink_bench_tbb_<variant>_<size>, std-backend builds made
+# with CHUNK_WITH_TBB): the same sources with the regions run as TBB tasks.
+# Part of the selection like the others: 'all' and --all_exec include it, and
+# so does the default (chunk2 AND tbb_chunk2). A build without it (OpenMP, serial,
+# a std build made without oneTBB) simply has no such binary: skipped silently
+# unless the variant was named in --exec.
+_TBB_VARIANTS = ["tbb_" + v for v in _VARIANTS]
+_ALL_VARIANTS = _VARIANTS + _TBB_VARIANTS
+_DEFAULT_VARIANTS = ["chunk2", "tbb_chunk2"]
 _SIZES         = ["64", "256", "1024", "dyn"]   # VALID choices (64 can still be asked with --size 64)
 _DEFAULT_SIZES = ["256", "1024", "dyn"]              # the sizes built by default (64 dropped)
 
+class _Choice(list):
+    """A parsed comma-separated selection; `named` is False when it came from 'all'."""
+    named = True
+
+
 def _csv_choices(name, valid):
+    """Comma-separated values of valid, or 'all' (every one of them)."""
     def parse(value):
         if value == "all":
-            return list(valid)
+            out = _Choice(valid)
+            out.named = False
+            return out
         items = [v.strip() for v in value.split(",") if v.strip()]
         bad = [v for v in items if v not in valid]
         if bad:
@@ -181,16 +198,19 @@ def _csv_choices(name, valid):
                 f"{name}: invalid value(s) {', '.join(bad)} "
                 f"(valid: {', '.join(valid)}, or 'all', comma-separated)")
         # dedupe, keep user order
-        return list(dict.fromkeys(items))
+        return _Choice(dict.fromkeys(items))
     return parse
 
 parser.add_argument(
     "--exec",
-    type=_csv_choices("--exec", _VARIANTS),
+    type=_csv_choices("--exec", _ALL_VARIANTS),
     default=None,
-    metavar="{chunk,chunk2,chunk2a,all}[,...]",
-    help="Variant(s) to run, comma-separated or 'all'. Default: chunk2 alone "
-         "(historical behaviour) unless --all_exec is given."
+    metavar="{chunk,chunk2,chunk2a,tbb_chunk,tbb_chunk2,tbb_chunk2a,all}[,...]",
+    help="Variant(s) to run, comma-separated or 'all' (the six). Default: chunk2 and "
+         "tbb_chunk2 unless --all_exec is given. tbb_<variant>: the TBB bench "
+         "(shrink_bench_tbb_<variant>_<size>, std-backend builds made with "
+         "CHUNK_WITH_TBB); a build without it is skipped for those, silently "
+         "unless the variant is named here."
 )
 parser.add_argument(
     "--size",
@@ -240,11 +260,13 @@ if args.builds:
 # Resolve the selection. --all_exec expands both axes (unless the user
 # narrowed one explicitly, which then wins for that axis).
 if args.all_exec:
-    variants = args.exec if args.exec else list(_VARIANTS)
+    variants = args.exec if args.exec else list(_ALL_VARIANTS)
     sizes    = args.size if args.size else list(_DEFAULT_SIZES)
 else:
-    variants = args.exec if args.exec else ["chunk2"]
+    variants = args.exec if args.exec else list(_DEFAULT_VARIANTS)
     sizes    = args.size if args.size else ["dyn"]
+# A TBB binary missing from a build is only worth a warning when it was named.
+_tbb_named = bool(args.exec) and args.exec.named and any(v in _TBB_VARIANTS for v in args.exec)
 
 # 📝 Tee all screen output into a log file in the current directory, next to
 # timings_summary.csv and the per-run output_*/error_* files.
@@ -321,13 +343,22 @@ def _build_dir_name(root, name):
     return None
 
 
+# TBB binaries the selection asked for by default and that are not built.
+_tbb_absent = []
+
+
 def _select_in_cwd():
     """Historical mode: the binaries next to the oracle, in the current directory."""
     found, missing = [], []
     for v in variants:
         for sz in sizes:
             exe = _binary_name(v, sz)
-            (found if os.path.isfile(exe) else missing).append(exe)
+            if os.path.isfile(exe):
+                found.append(exe)
+            elif v in _TBB_VARIANTS and not _tbb_named:
+                _tbb_absent.append(exe)
+            else:
+                missing.append(exe)
     return found, missing
 
 
@@ -344,6 +375,8 @@ def _select_in_build(build_root, config):
             exe = resolve_exe(build_root, config, f"{v}@{sz}", "check")
             if exe:
                 found.append(exe)
+            elif v in _TBB_VARIANTS and not _tbb_named:
+                _tbb_absent.append(f"{config}/shrink_bench_{v}_{sz}")
             else:
                 missing.append(f"{config}/shrink_bench_{v}_{sz}")
     return found, missing
@@ -386,6 +419,11 @@ if args.builds:
         sys.exit("❌ No build has a selected binary — nothing to run "
                  f"(variants={','.join(variants)} sizes={','.join(sizes)}, root={build_root})")
     print(f"🔁 {len(builds)} build(s), cycled run after run: {', '.join(builds)}")
+    if _tbb_absent:
+        with_tbb = [b for b in builds if any(os.path.basename(e).startswith("shrink_bench_tbb_")
+                                             for e in executables_of[b])]
+        print(f"ℹ️ TBB bench (tbb_*): {'in ' + ', '.join(with_tbb) if with_tbb else 'in no build'}; "
+              "the other builds have none (OpenMP or serial, or a std build made without oneTBB)")
 else:
     found, missing = _select_in_cwd()
     if missing:
@@ -400,6 +438,8 @@ else:
     if args.regen_ref and vector_of[""] is None:
         sys.exit(f"❌ --regen-ref: {VECTOR_CHECK} not found in {os.getcwd()}")
     print(f"🎯 {len(found)} binary(ies) selected: {', '.join(e.lstrip('./') for e in found)}")
+    if _tbb_absent:
+        print(f"ℹ️ no TBB bench here ({len(_tbb_absent)} tbb_* binary(ies) not built): skipped")
 
 # 🧬 Reference regeneration: the vector (std::vector) check binary writes the
 # data_tab_* oracle the chunk binaries compare against. Once per build, in the

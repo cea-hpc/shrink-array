@@ -37,7 +37,7 @@
 #include <utility>   // std::cmp_greater
 #include <unistd.h>  // sysconf(_SC_PAGESIZE): page-aware slab floor
 
-#include "chunk/config.h"                              // build_config::chunk_dynamic, use_openmp
+#include "chunk/config.h"                              // build_config::chunk_dynamic, threaded
 #include "chunk/singleton.h"                           // SingletonChk
 #include "chunk/internal/chunk_size_config.h"          // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"          // active_chunk_size
@@ -73,7 +73,7 @@ void ParamChunkParallelInterface<true, AllT>::init_thread_structures()
 
 // The one instantiation: the other thread model's body stays uninstantiated
 // (as AllTypeChunkParallelInterface in all_type_chunk.cpp).
-template struct ParamChunkParallelInterface<build_config::use_openmp, AllTypeChunk>;
+template struct ParamChunkParallelInterface<build_config::threaded, AllTypeChunk>;
 
 /**
  * @copydoc ParamChunk::init_indexes
@@ -208,7 +208,7 @@ void ParamChunk::chunk_stats()
     }
 
     std::print("\n===== CHUNK_STATS (instrumentation counters, -DCHUNK_STATS) =====\n");
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         std::println("  write/compress handshake : {}", dekker::protocol_name());
     }

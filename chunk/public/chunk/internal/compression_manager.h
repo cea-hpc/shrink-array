@@ -54,7 +54,7 @@ namespace shrink_array
  *
  *          One base for the two CompressionManagerOmpPolicy specialisations:
  *          the OpenMP policy's own drains set the flag, and the serial build
- *          still consults it from execute_operation(). Keyed by (T, ChunkType)
+ *          still consults it from execute_operation(). Keyed by (T, ChunkT)
  *          like the policy, so each manager has its own flag.
  *
  * @warning Without it, a replayed op hitting the gate would re-enqueue itself:
@@ -62,9 +62,9 @@ namespace shrink_array
  *          flush.
  *
  * @tparam T         Element type
- * @tparam ChunkType Chunk variant the manager coordinates
+ * @tparam ChunkT Chunk variant the manager coordinates
  */
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct FlushReplayState
 {
     /// @brief RAII bracket marking this thread as replaying flushed ops.
@@ -108,16 +108,16 @@ struct FlushReplayState
  *          member below sits in a branch discarded by `if constexpr` there.
  *
  * @tparam T         Element type
- * @tparam ChunkType Chunk variant the manager coordinates
- * @tparam Enabled   build_config::use_openmp; false leaves the policy empty
+ * @tparam ChunkT Chunk variant the manager coordinates
+ * @tparam Enabled   build_config::threaded; false leaves the policy empty
  */
-template <typename T, typename ChunkType, bool Enabled = build_config::use_openmp>
-class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
+template <typename T, typename ChunkT, bool Enabled = build_config::threaded>
+class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkT>
 {
   public:
     // Dependent base: the drains in compression_manager_inline.h name the guard
     // unqualified, so bring it into scope here.
-    using FlushReplayGuard = FlushReplayState<T, ChunkType>::FlushReplayGuard; // C++20: no typename in an alias
+    using FlushReplayGuard = FlushReplayState<T, ChunkT>::FlushReplayGuard; // C++20: no typename in an alias
 
     /**
      * @brief Base of every deferred write this manager can replay.
@@ -307,7 +307,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     };
 
     /// @brief One rank's set of chunks with deferred ops queued.
-    using UnorderedSetDeferredChunks = ankerl::unordered_dense::set<ChunkType*>;
+    using UnorderedSetDeferredChunks = ankerl::unordered_dense::set<ChunkT*>;
 
     /**
      * @brief One rank's pending-deferred-op count, padded to its own line.
@@ -326,7 +326,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
 
     /**
      * @brief Size the per-rank tracking structures this policy owns, once.
-     * @details Called when the manager of (T, ChunkType) is registered
+     * @details Called when the manager of (T, ChunkT) is registered
      *          (AllTypeChunk::register_manager): before the first array of the
      *          type, and before any fan-out can reach these structures. Not by
      *          the constructor of a static: that runs at an unspecified point
@@ -367,14 +367,14 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *          false: the candidates stay queued, nothing is lost.
      *          docs/synchronisation_dekker_fr.md §5.3 explains each step.
      *
-     * @tparam ProxyType proxy whose WriteCompressSyncPolicy is consulted for the
+     * @tparam ProxyT proxy whose WriteCompressSyncPolicy is consulted for the
      *                   Dekker handshake against writers and flushers
      * @return true if the caller may scan and steal its marked chunks, and must
      *         then call finish(); false if it gave up
      *
      * @pre OpenMP build; the caller has marked its candidates (steal_mark())
      */
-    template <typename ProxyType>
+    template <typename ProxyT>
     bool start();
 
     /**
@@ -384,11 +384,11 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *          hard_inflight_; the last compressor out marks its rank's
      *          candidate list safe again.
      *
-     * @tparam ProxyType same proxy type the matching start() was called with
+     * @tparam ProxyT same proxy type the matching start() was called with
      * @note Handles a negative remaining count explicitly: see hard_inflight_'s
      *       signed-counter contract for why that state is tolerated.
      */
-    template <typename ProxyType>
+    template <typename ProxyT>
     void finish();
 
     /**
@@ -472,7 +472,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @post The chunk joins this rank's deferred set and the rank is flagged as
      *       possibly holding ops.
      */
-    static void record_enqueue_deferred(int thr_rank, ChunkType& chunk) noexcept
+    static void record_enqueue_deferred(int thr_rank, ChunkT& chunk) noexcept
     {
         // Insert UNDER rank thr_rank's shard lock (the one to_be_queued()
         // already holds): flush_chunk_all_ranks() erases from this set under
@@ -482,7 +482,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         // enqueue from inside one is a write path ignoring in_flush_replay.
         if constexpr (build_config::any_check)
         {
-            if (FlushReplayState<T, ChunkType>::in_flush_replay) [[unlikely]]
+            if (FlushReplayState<T, ChunkT>::in_flush_replay) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
                                        thr_rank, static_cast<const void*>(&chunk));
@@ -530,7 +530,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *       this very chunk" -- hence the two-stage logic in
      *       wait_for_availability().
      */
-    static bool flush_chunk_all_ranks(ChunkType* chunk, bool self_only = false) noexcept;
+    static bool flush_chunk_all_ranks(ChunkT* chunk, bool self_only = false) noexcept;
 
     /**
      * @brief WAW guard: discard a superseded same-offset op on the OWN rank.
@@ -549,7 +549,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @warning Resolves only same-thread W(defer) -> W(direct). Cross-thread
      *          unsynchronised WAW stays non-deterministic, by design.
      */
-    static void erase_own_rank_op(int thr, ChunkType* chunk, int num) noexcept;
+    static void erase_own_rank_op(int thr, ChunkT* chunk, int num) noexcept;
 
     /**
      * @brief Might the calling rank hold deferred ops?
@@ -587,7 +587,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *       AFTER the write, whether this thread drives a compression
      *       (write_with_optional_lock_impl).
      */
-    [[nodiscard]] static bool must_defer_write(const ChunkType& chunk) noexcept __attribute__((always_inline))
+    [[nodiscard]] static bool must_defer_write(const ChunkT& chunk) noexcept __attribute__((always_inline))
     {
         if constexpr (chunk_config::use_chunk_steal_mark)
         {
@@ -599,7 +599,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         }
         else
         {
-            // Serial build only (no marks without OpenMP): no concurrent
+            // Serial build only (every threaded build has marks): no concurrent
             // compressor. Acquire, paired with finish()'s seq_cst decrement,
             // as when the SHRINK_SMALL_CHUNK build ran this gate under threads
             // (docs/formal_models.md, F1): a writer that sees a pass OVER also
@@ -621,7 +621,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     template <typename F>
     static void run_slow_path(F&& fn)
     {
-        increm_chunk_gate_driver<ChunkType>();
+        increm_chunk_gate_driver<ChunkT>();
         std::forward<F>(fn)();
     }
 
@@ -701,7 +701,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @note Spin discipline of the library: CHUNK_CPU_PAUSE, a yield every 1000,
      *       CHUNK_WRITE_WAIT_MAX_YIELDS yields at most (-D tunable).
      */
-    static void wait_out_compressor(const ChunkType& chunk) noexcept;
+    static void wait_out_compressor(const ChunkT& chunk) noexcept;
 
   private:
     /**
@@ -965,10 +965,10 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
 /**
  * @brief Serial specialisation: no threads to coordinate, so nothing to hold.
  * @tparam T         Element type
- * @tparam ChunkType Chunk variant the manager coordinates
+ * @tparam ChunkT Chunk variant the manager coordinates
  */
-template <typename T, typename ChunkType>
-class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
+template <typename T, typename ChunkT>
+class CompressionManagerOmpPolicy<T, ChunkT, false> : public FlushReplayState<T, ChunkT>
 {
   public:
     /**
@@ -1004,11 +1004,11 @@ class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState
  *          by execute_operation() in both modes.
  *
  * @tparam T         Element type
- * @tparam ChunkType Chunk variant the manager coordinates
+ * @tparam ChunkT Chunk variant the manager coordinates
  * @note Thread safety: All methods are thread-safe
  */
-template <typename T, typename ChunkType>
-struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, build_config::use_openmp>
+template <typename T, typename ChunkT>
+struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkT, build_config::threaded>
 {
     CompressionManager()  = default;
     ~CompressionManager() = default;

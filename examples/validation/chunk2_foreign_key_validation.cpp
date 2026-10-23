@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Chunk2 foreign-key harness. Chunk2 only (ArrayChunk2<T>), default static
+// Chunk2 foreign-key harness. Chunk2 only (zero_one_value::Array<T>), default static
 // size, OpenMP builds (the passes it is about run inside a region).
 // ============================================================================
 //
@@ -57,8 +57,8 @@
 #include <cstdint> // std::uint64_t
 #include <cstdlib> // std::getenv, std::atof
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
-#include "chunk/array_chunk2.h"   // ArrayChunk2
+#include "chunk/chunk_traits.h"   // forward decls + default IndT = int
+#include "chunk/array_chunk2.h"   // zero_one_value::Array
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
 #include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"         // build_config::has_not_ompt, build_config::use_openmp
@@ -76,8 +76,8 @@ using namespace shrink_array;
 namespace
 {
 
-using Arr = ArrayChunk2<double>;
-using Ind = Arr::ind_type;
+using Arr = zero_one_value::Array<double>;
+using Ind = Arr::IndType;
 
 constexpr long   chunks_a = 512;  ///< chunks of `a`
 constexpr long   chunks_b = 4096; ///< chunks of `b`

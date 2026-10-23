@@ -52,7 +52,7 @@
  *
  * @par Reclaiming
  * A value stays registered until the last array of the type is destroyed,
- * unless ArrayChunk2A::reclaim_second_values() runs at a sequential point:
+ * unless zero_any::Array::reclaim_second_values() runs at a sequential point:
  * it marks the identifiers still referenced and
  * GlobalVecHolder::reclaim_unmarked() frees the others. alloc_chunk() hands
  * a freed identifier out again before carving a new one, so a workload
@@ -250,7 +250,7 @@ struct Sentinel
 
 /**
  * @brief Where a type's second-value identifiers stand: what
- *        ArrayChunk2A<T>::second_value_stats() returns.
+ *        zero_any::Array<T>::second_value_stats() returns.
  *
  * @details Running out of identifiers stops the run; this tells it coming.
  *          in_use() against @c capacity, sampled over time, is the trend; a
@@ -297,7 +297,7 @@ struct SecondValueStats
  *          registry cannot be freed while any array of the type is alive.
  *          #ref_count tracks that. A value nothing refers to any more can
  *          go earlier, at a sequential point: reclaim_unmarked(), driven
- *          by ArrayChunk2A::reclaim_second_values().
+ *          by zero_any::Array::reclaim_second_values().
  */
 template <typename T>
 class GlobalVecHolder
@@ -374,7 +374,7 @@ class GlobalVecHolder
         (region_bytes / id_stride) < CHUNK_CST_VAL2_MAX_IDS ? (region_bytes / id_stride) : CHUNK_CST_VAL2_MAX_IDS;
     static_assert(max_ids < std::size_t{0xFFFFFFFFu}, "an identifier must fit id_of_ptr()'s uint32_t");
 
-    /// @brief The registered users (#ref_count): the live ArrayChunk2A<T>
+    /// @brief The registered users (#ref_count): the live zero_any::Array<T>
     ///        holding a reference. For checks at a quiescent point.
     [[nodiscard]] static int users() noexcept
     {
@@ -419,7 +419,7 @@ class GlobalVecHolder
         return id_limit < region_ids ? id_limit : region_ids;
     }
 
-    // ── Reclaim counts (ArrayChunk2A::reclaim_second_values), whole process ─
+    // ── Reclaim counts (zero_any::Array::reclaim_second_values), whole process ─
     static inline std::atomic<std::size_t> reclaim_runs{0};     ///< Calls that ran.
     static inline std::atomic<std::size_t> reclaim_freed{0};    ///< Identifiers they freed.
     static inline std::atomic<std::size_t> refused_parallel{0}; ///< Refused: in a parallel region.
@@ -562,7 +562,7 @@ class GlobalVecHolder
      * @warning clear_if_last()'s contract -- no thread registering, looking
      *          up or scanning -- AND nothing may still hold a freed
      *          identifier. That second half is the caller's mark
-     *          (ArrayChunk2A::reclaim_second_values()): an identifier it
+     *          (zero_any::Array::reclaim_second_values()): an identifier it
      *          misses goes to another value, and the chunk that kept it
      *          reads that value instead of its own, silently.
      * @warning "No thread looking up" includes a lookup already DONE whose
@@ -831,7 +831,7 @@ class GlobalVecHolder
      */
     static void init()
     {
-        // One more ArrayChunk2A<T> is using the shared list.
+        // One more zero_any::Array<T> is using the shared list.
         ref_count.fetch_add(1, std::memory_order_relaxed);
         install_head();
     }
@@ -884,7 +884,7 @@ class GlobalVecHolder
      * @param nb_val2 Incremented by the number of registered values freed.
      *
      * @details Decrements #ref_count and returns immediately while other
-     *          ArrayChunk2A<T> instances are alive. The last one out frees every
+     *          zero_any::Array<T> instances are alive. The last one out frees every
      *          segment, clears the index, gives the region back, then calls
      *          install_head() so #head is valid again for any later pass --
      *          without registering a user: #ref_count stays at 0, and the
@@ -906,7 +906,7 @@ class GlobalVecHolder
         const int remaining = ref_count.fetch_sub(1, std::memory_order_acq_rel) - 1;
         if (remaining > 0)
         {
-            return; // Other ArrayChunk2A<T> instances still alive — do not free
+            return; // Other zero_any::Array<T> instances still alive — do not free
         }
 
         // Last instance: free the segments and count what they held, for ONE
@@ -1167,7 +1167,7 @@ class GlobalVecHolder
         index_generations.clear();
     }
 
-    /// @brief Live ArrayChunk2A<T> instances. The registry is freed when it
+    /// @brief Live zero_any::Array<T> instances. The registry is freed when it
     ///        reaches zero, not before. @see clear_if_last
     static inline std::atomic<int> ref_count{0};
 

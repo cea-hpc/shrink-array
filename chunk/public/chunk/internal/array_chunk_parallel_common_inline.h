@@ -34,11 +34,11 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        // Name CompressionManager<value_type, chunk_type> directly rather than via
-        // chunk_type::CompressionManagerType: that alias is public on Chunk2 but
+        // Name CompressionManager<value_type, ChunkType> directly rather than via
+        // ChunkType::CompressionManagerType: that alias is public on Chunk2 but
         // private on Chunk2A. Both name the same type; this form avoids the
         // access check on the alias.
-        using CM = CompressionManager<value_type, chunk_type>;
+        using CM = CompressionManager<value_type, ChunkType>;
         // force: drain every rank regardless of the pending counter. Used by
         // rechunk_to() before it swaps chunk_list out -- an op left on an
         // old-geometry chunk would outlive its chunk and be replayed against a

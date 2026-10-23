@@ -62,7 +62,7 @@
 #include <utility>   // std::as_const
 #include <vector>    // std::vector (the box buffers)
 
-#include "chunk/array_chunk2A.h"  // ArrayChunk2A
+#include "chunk/array_chunk2A.h"  // zero_any::Array
 #include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/print.h" // shrink_array::println
 #include "chunk/manage_ompt.h"    // parallel_phase
@@ -113,7 +113,7 @@ struct Count
     long materialised;
 };
 
-Count count(const sa::ArrayChunk2A<double>& a)
+Count count(const sa::zero_any::Array<double>& a)
 {
     Count c{static_cast<long>(a.nb_chunk_), 0};
     for (long k = 0; k < c.chunks; ++k)
@@ -129,7 +129,7 @@ Count count(const sa::ArrayChunk2A<double>& a)
 
 // Fill the field through view f (any layout), compress, check, count.
 template <typename View>
-Count run(const char* name, sa::ArrayChunk2A<double>& a, View f, long n, int& bad)
+Count run(const char* name, sa::zero_any::Array<double>& a, View f, long n, int& bad)
 {
     sa::parallel_phase(
         [&]
@@ -143,7 +143,7 @@ Count run(const char* name, sa::ArrayChunk2A<double>& a, View f, long n, int& ba
                 }
             }
         });
-    sa::ArrayChunk2A<double>::make_block_compression();
+    sa::zero_any::Array<double>::make_block_compression();
 
     // Read back through a read-only view (values, no proxy), converted from f.
     const auto cf    = sa::md::as_const(f);
@@ -173,7 +173,7 @@ double seconds_since(std::chrono::steady_clock::time_point t0)
 
 // A tiled field, filled and compressed.
 template <std::size_t TH, std::size_t TW>
-void fill_tiled(sa::ArrayChunk2A<double>& t, long n)
+void fill_tiled(sa::zero_any::Array<double>& t, long n)
 {
     auto f = sa::md::tiled_view<TH, TW>(t, n, n);
     sa::parallel_phase(
@@ -188,16 +188,16 @@ void fill_tiled(sa::ArrayChunk2A<double>& t, long n)
                 }
             }
         });
-    sa::ArrayChunk2A<double>::make_block_compression();
+    sa::zero_any::Array<double>::make_block_compression();
 }
 
 // The sum and the update, element by element and tile by tile.
 void kernels(long n, int& bad)
 {
-    constexpr int            reps = 5;
-    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
-    sa::ArrayChunk2A<double> e(size);
-    sa::ArrayChunk2A<double> t(size);
+    constexpr int               reps = 5;
+    const long                  size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::zero_any::Array<double> e(size);
+    sa::zero_any::Array<double> t(size);
     fill_tiled<16, 16>(e, n);
     fill_tiled<16, 16>(t, n);
     auto       fe     = sa::md::tiled_view<16, 16>(e, n, n);
@@ -302,7 +302,7 @@ void kernels(long n, int& bad)
     const double u_tile = seconds_since(t0);
     const long   m_tile = count(t).materialised;
     t0                  = std::chrono::steady_clock::now();
-    sa::ArrayChunk2A<double>::make_block_compression();
+    sa::zero_any::Array<double>::make_block_compression();
     const double c_both = seconds_since(t0);
     long         wrong  = 0;
     for (long i = 0; i < n; ++i)
@@ -351,9 +351,9 @@ void paint(long n, int& bad)
         rects[r]     = Rect{{i, j}, {i + h, j + w}, 30.0 + static_cast<double>(r)};
     }
 
-    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
-    sa::ArrayChunk2A<double> e(size);
-    sa::ArrayChunk2A<double> t(size);
+    const long                  size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::zero_any::Array<double> e(size);
+    sa::zero_any::Array<double> t(size);
     fill_tiled<16, 16>(e, n);
     fill_tiled<16, 16>(t, n);
     auto fe = sa::md::tiled_view<16, 16>(e, n, n);
@@ -399,7 +399,7 @@ void paint(long n, int& bad)
 
     // fill_box_mt: each rectangle's tiles dealt to the team, a barrier between
     // two rectangles (they overlap: the next one waits for this one).
-    sa::ArrayChunk2A<double> m(size);
+    sa::zero_any::Array<double> m(size);
     fill_tiled<16, 16>(m, n);
     auto fm = sa::md::tiled_view<16, 16>(m, n, n);
     t0      = std::chrono::steady_clock::now();
@@ -432,7 +432,7 @@ void paint(long n, int& bad)
     }
     const long m_elem = count(e).materialised;
     const long m_tile = count(t).materialised;
-    sa::ArrayChunk2A<double>::make_block_compression();
+    sa::zero_any::Array<double>::make_block_compression();
     sa::println("paint 64 rect. element {:8.2f} ms   tile {:8.2f} ms   (x {:.1f})   fill_box_mt {:8.2f} ms",
                 1e3 * p_elem, 1e3 * p_tile, p_elem / p_tile, 1e3 * p_mt);
     sa::println("  materialised at the end of the phase: element {}, tile {}; after one more pass: {} and {}", m_elem,
@@ -452,8 +452,8 @@ void box_copy(long n, int& bad)
     std::vector<double>       e_out(static_cast<std::size_t>(ne));
     std::vector<double>       t_out(static_cast<std::size_t>(ne), -1.0);
 
-    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
-    sa::ArrayChunk2A<double> t(size);
+    const long                  size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::zero_any::Array<double> t(size);
     fill_tiled<16, 16>(t, n);
     auto       ft = sa::md::tiled_view<16, 16>(t, n, n);
     const auto ct = sa::md::as_const(ft);
@@ -490,7 +490,7 @@ void box_copy(long n, int& bad)
     {
         v += 1.0;
     }
-    sa::ArrayChunk2A<double> e(size);
+    sa::zero_any::Array<double> e(size);
     fill_tiled<16, 16>(e, n);
     auto fe = sa::md::tiled_view<16, 16>(e, n, n);
     t0      = std::chrono::steady_clock::now();
@@ -538,8 +538,8 @@ void box_copy(long n, int& bad)
                 i_elem / i_tile);
 
     // Row-major: each thread its slice of the box's rows.
-    sa::ArrayChunk2A<double> r(n * n);
-    auto                     fr = sa::md::view(r, n, n);
+    sa::zero_any::Array<double> r(n * n);
+    auto                        fr = sa::md::view(r, n, n);
     sa::parallel_phase(
         [&]
         {
@@ -552,7 +552,7 @@ void box_copy(long n, int& bad)
                 }
             }
         });
-    sa::ArrayChunk2A<double>::make_block_compression();
+    sa::zero_any::Array<double>::make_block_compression();
     const auto cr = sa::md::view(std::as_const(r), n, n);
     t0            = std::chrono::steady_clock::now();
     #pragma omp parallel
@@ -617,8 +617,8 @@ void box_copy_team(long n, int& bad)
     std::vector<double>       range_out(static_cast<std::size_t>(ne), -1.0);
     std::vector<double>       team_out(static_cast<std::size_t>(ne), -2.0);
 
-    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
-    sa::ArrayChunk2A<double> t(size);
+    const long                  size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::zero_any::Array<double> t(size);
     fill_tiled<16, 16>(t, n);
     auto       ft = sa::md::tiled_view<16, 16>(t, n, n);
     const auto ct = sa::md::as_const(ft);
@@ -770,8 +770,8 @@ void box_copy_team(long n, int& bad)
 // of 3.
 void stencil(long n, int& bad)
 {
-    const long               size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
-    sa::ArrayChunk2A<double> src(size);
+    const long                  size = static_cast<long>(sa::md::tiled_size<16, 16>(n, n));
+    sa::zero_any::Array<double> src(size);
     fill_tiled<16, 16>(src, n);
     const auto       cs = sa::md::as_const(sa::md::tiled_view<16, 16>(src, n, n));
     constexpr double nu = 0.2;
@@ -788,9 +788,9 @@ void stencil(long n, int& bad)
         return b;
     };
 
-    sa::ArrayChunk2A<double> e(size);
-    auto                     fe     = sa::md::tiled_view<16, 16>(e, n, n);
-    const double             t_elem = best(
+    sa::zero_any::Array<double> e(size);
+    auto                        fe     = sa::md::tiled_view<16, 16>(e, n, n);
+    const double                t_elem = best(
         [&]
         {
             sa::parallel_phase(
@@ -823,21 +823,21 @@ void stencil(long n, int& bad)
             }
         }
     };
-    sa::ArrayChunk2A<double> b(size);
-    auto                     fb     = sa::md::tiled_view<16, 16>(b, n, n);
-    const double             t_tile = best(
+    sa::zero_any::Array<double> b(size);
+    auto                        fb     = sa::md::tiled_view<16, 16>(b, n, n);
+    const double                t_tile = best(
         [&] { sa::parallel_phase([&] { sa::md::stencil_tiles_mt(cs, fb, 1L, sa::md::clamp_boundary{}, kernel); }); });
-    sa::ArrayChunk2A<double> u(size);
-    auto                     fu     = sa::md::tiled_view<16, 16>(u, n, n);
-    const double             t_unif = best(
+    sa::zero_any::Array<double> u(size);
+    auto                        fu     = sa::md::tiled_view<16, 16>(u, n, n);
+    const double                t_unif = best(
         [&]
         {
             sa::parallel_phase(
                 [&]
                 {
                     sa::md::stencil_tiles_mt(cs, fu, 1L, sa::md::clamp_boundary{}, kernel,
-                                                         [](const auto&, const double& v, double& out)
-                                                         {
+                                             [](const auto&, const double& v, double& out)
+                                             {
                                                  out = v;
                                                  return true;
                                              });
@@ -875,8 +875,8 @@ void stencil(long n, int& bad)
 // tile extents: shifts and masks, no division.
 void index_cost(long n, int& bad)
 {
-    sa::ArrayChunk2A<double> a(n * n);
-    sa::ArrayChunk2A<double> t(static_cast<long>(sa::md::tiled_size<16, 16>(n, n)));
+    sa::zero_any::Array<double> a(n * n);
+    sa::zero_any::Array<double> t(static_cast<long>(sa::md::tiled_size<16, 16>(n, n)));
     fill_tiled<16, 16>(t, n);
     sa::parallel_phase(
         [&]
@@ -890,7 +890,7 @@ void index_cost(long n, int& bad)
                 }
             }
         });
-    sa::ArrayChunk2A<double>::make_block_compression();
+    sa::zero_any::Array<double>::make_block_compression();
     const auto& ca = a;
     const auto  fr = sa::md::view(ca, n, n);
     const auto  ft = sa::md::tiled_view<16, 16>(std::as_const(t), n, n);
@@ -957,11 +957,11 @@ int main(int argc, char** argv)
     sa::println("mdspan_tiles: {} x {} doubles ({:.1f} MiB as a std::vector), chunk size 256", n, n,
                 static_cast<double>(n) * static_cast<double>(n) * sizeof(double) / (1024.0 * 1024.0));
     {
-        sa::ArrayChunk2A<double> r(n * n);
+        sa::zero_any::Array<double> r(n * n);
         run("row-major (layout_right)", r, sa::md::view(r, n, n), n, bad);
     }
     {
-        sa::ArrayChunk2A<double> t(static_cast<long>(sa::md::tiled_size<16, 16>(n, n)));
+        sa::zero_any::Array<double> t(static_cast<long>(sa::md::tiled_size<16, 16>(n, n)));
         run("tiles 16 x 16", t, sa::md::tiled_view<16, 16>(t, n, n), n, bad);
     }
     kernels(n, bad);

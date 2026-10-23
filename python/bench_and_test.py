@@ -37,8 +37,16 @@ Notable features:
   * Per-run timeout + capture of stderr from crashing runs.
   * Validation harnesses first (ctest -L validation in each build dir):
     rechunk_validation, dyn_geometry_validation, compress_roundtrip,
-    pool_accounting, deferred_path_validation, open_types_validation.
+    pool_accounting, deferred_path_validation, open_types_validation -- and,
+    in the std-backend CHECK_OPTIM builds (cmake-build-std-*-check),
+    std_thread_validation and tbb_validation.
     --skip-ctest to bypass.
+  * The std threading backend (CHUNK_THREADS=std, no OpenMP) is part of the
+    defaults: cmake-build-std-gnu / cmake-build-std-llvm for the bench, the
+    -check builds for the validations, and the TBB bench -- the tbb_chunk,
+    tbb_chunk2, tbb_chunk2a variants, shrink_bench_tbb_<variant>_<size> -- in
+    the std builds made with oneTBB (a std build without it is noted once, its
+    tbb_* variants skipped).
   * Correctness before timings: check runs, then the seq-vs-OMP
     `still compressed (at exit)` compare, then the perf sweep. The two
     CHUNK_STATS checks (that compare, and the mark/create guard applied to

@@ -26,7 +26,7 @@
  *          Every size/index/count in the bench is spelled `Int` (or `UInt`):
  *          `int` by default, `long` when the build defines BENCH_INT64 (a "big
  *          multiply" run). `Array<T>` passes `Int` to the library as its
- *          `ind_type`, so the two move together: there is no build where the
+ *          `IndT`, so the two move together: there is no build where the
  *          bench indexes in 64 bits and the array in 32.
  *
  * @note ELEMENT types are NOT affected. `Array<int> tab_int` stays an array of

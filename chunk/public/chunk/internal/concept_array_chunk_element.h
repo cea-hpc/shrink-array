@@ -23,7 +23,7 @@ namespace shrink_array
 {
 
 /**
- * @brief What an element type of ArrayChunk / ArrayChunk2 / ArrayChunk2A must be.
+ * @brief What an element type of zero::Array / zero_one_value::Array / zero_any::Array must be.
  *
  * The contract, and why each clause:
  *  - **trivially copyable**: a chunk is raw memory -- its buffer is copied,
