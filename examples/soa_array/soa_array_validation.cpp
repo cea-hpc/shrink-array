@@ -40,9 +40,18 @@
 //    a phase, read_range back into structs (a compressed chunk as a fill),
 //    a range past the end clamped; resize() with and without a value,
 //    push_back(); a uniform fill leaves its compressed columns' chunks
-//    without a buffer.
+//    without a buffer;
+//  - nested values: a Cell3 with struct members (split part by part when
+//    they are no ArrayChunkElement, or marked soa::split; one column when
+//    they are one), array members, a storage annotation inherited by a
+//    struct's parts or set inside it -- the columns, their names and types
+//    (compile time), a[i].pos.y, a[i].w[1], a[i].in.q[0] through the
+//    generated nested Ref, get/set, copy_range / read_range, against a
+//    std::vector; a nested struct with a base class or a private member
+//    refused (compile time).
 
 #include <algorithm>   // std::fill, std::copy (the reference)
+#include <cstdint>     // std::uint8_t (a colour)
 #include <cstdio>      // std::printf
 #include <type_traits> // std::is_same_v, std::remove_cvref_t (the column types)
 #include <utility>     // std::as_const
@@ -278,6 +287,195 @@ static int ranges(int n)
     return bad;
 }
 
+// Nested values.
+struct Vec3 // no operator==: no ArrayChunkElement, split part by part
+{
+    double x, y, z;
+};
+struct Rgb // an ArrayChunkElement: one column, unless marked soa::split
+{
+    std::uint8_t r, g, b;
+    bool         operator==(const Rgb&) const = default;
+};
+struct Inner
+{
+    int                                           id;
+    [[= sa::soa::column<sa::zero::Array>]] double q[2];
+};
+struct Cell3
+{
+    Vec3                      pos;   // pos.x, pos.y, pos.z
+    [[= sa::soa::plain]] Vec3 vel;   // vel.x, vel.y, vel.z: the annotation goes to every part
+    double                    w[2];  // w[0], w[1]
+    Rgb                       color; // one column of Rgb
+    [[= sa::soa::split]] Rgb  tint;  // tint.r, tint.g, tint.b
+    Inner                     in;    // in.id, in.q[0], in.q[1] (zero::Array)
+    int                       mat;
+};
+using Soa3 = sa::SoaArray<Cell3>;
+static_assert(Soa3::column_count == 16, "Cell3: 16 columns");
+static_assert(Soa3::column_name(0) == "pos.x" && Soa3::column_name(4) == "vel.y" && Soa3::column_name(7) == "w[1]" &&
+                  Soa3::column_name(8) == "color" && Soa3::column_name(11) == "tint.b" &&
+                  Soa3::column_name(13) == "in.q[0]" && Soa3::column_name(15) == "mat",
+              "Cell3: the column names");
+template <std::meta::info... P>
+using Cell3Column = std::remove_cvref_t<decltype(std::declval<Soa3&>().template column<P...>())>;
+static_assert(std::is_same_v<Cell3Column<^^Cell3::pos, ^^Vec3::y>, sa::zero_any::Array<double>>, "pos.y");
+static_assert(std::is_same_v<Cell3Column<^^Cell3::vel, ^^Vec3::z>, std::vector<double>>, "vel.z: inherited soa::plain");
+static_assert(std::is_same_v<Cell3Column<^^Cell3::color>, sa::zero_any::Array<Rgb>>, "color: one column");
+static_assert(std::is_same_v<Cell3Column<^^Cell3::tint, ^^Rgb::g>, sa::zero_any::Array<std::uint8_t>>, "tint.g: split");
+static_assert(std::is_same_v<Cell3Column<^^Cell3::in, ^^Inner::id>, sa::zero_any::Array<int>>, "in.id");
+static_assert(std::is_same_v<std::remove_cvref_t<decltype(std::declval<Soa3&>().template column_at<14>())>,
+                             sa::zero::Array<double>>,
+              "in.q[1]: the annotation inside the struct");
+static_assert(std::meta::identifier_of(
+                  std::meta::nonstatic_data_members_of(^^Soa3::Ref, std::meta::access_context::unchecked())[5]) == "in",
+              "the Ref carries Cell3's member names");
+
+struct Base
+{
+    int b;
+};
+struct Derived : Base
+{
+    int d;
+};
+struct WithDerived
+{
+    Derived v;
+};
+struct Hidden
+{
+    int a;
+
+  private:
+    int h;
+};
+struct WithHidden
+{
+    Hidden v;
+    int    k;
+};
+static_assert(!sa::soa_detail::unsupported(^^WithDerived).empty(), "a nested struct with a base class is refused");
+static_assert(!sa::soa_detail::unsupported(^^WithHidden).empty(), "a nested struct with a private member is refused");
+
+static Cell3 expected3(int i, int n)
+{
+    Cell3        c{};
+    const double d = static_cast<double>(i);
+    c.pos          = Vec3{d, i < n / 2 ? 0.0 : 1.0, 2.0};
+    c.vel          = Vec3{0.1 * d, -0.1 * d, 0.0};
+    c.w[0]         = i % 3 == 0 ? 1.0 : 0.0;
+    c.w[1]         = 7.0;
+    c.color        = Rgb{static_cast<std::uint8_t>(i / (n / 4)), 0, 255};
+    c.tint         = Rgb{1, static_cast<std::uint8_t>(i % 2), 3};
+    c.in.id        = i < n / 8 ? 9 : 0;
+    c.in.q[0]      = 0.0;
+    c.in.q[1]      = i % 1000 == 0 ? 4.0 : 0.0;
+    c.mat          = 2;
+    return c;
+}
+
+static bool same3(const Cell3& a, const Cell3& b)
+{
+    return a.pos.x == b.pos.x && a.pos.y == b.pos.y && a.pos.z == b.pos.z && a.vel.x == b.vel.x && a.vel.y == b.vel.y &&
+           a.vel.z == b.vel.z && a.w[0] == b.w[0] && a.w[1] == b.w[1] && a.color == b.color && a.tint == b.tint &&
+           a.in.id == b.in.id && a.in.q[0] == b.in.q[0] && a.in.q[1] == b.in.q[1] && a.mat == b.mat;
+}
+
+static int nested(int n)
+{
+    int                bad = 0;
+    std::vector<Cell3> v(static_cast<std::size_t>(n));
+    Soa3               a(static_cast<std::size_t>(n));
+    sa::parallel_phase(
+        [&]
+        {
+#pragma omp for
+            for (int i = 0; i < n; ++i)
+            {
+                const Cell3 c                  = expected3(i, n);
+                v[static_cast<std::size_t>(i)] = c;
+                const std::size_t k            = static_cast<std::size_t>(i);
+                if (i % 2 == 0)
+                {
+                    a[k].pos.x   = c.pos.x; // through the nested Ref
+                    a[k].pos.y   = c.pos.y;
+                    a[k].pos.z   = c.pos.z;
+                    a[k].vel.x   = c.vel.x;
+                    a[k].vel.y   = c.vel.y;
+                    a[k].vel.z   = c.vel.z;
+                    a[k].w[0]    = c.w[0];
+                    a[k].w[1]    = c.w[1];
+                    a[k].color   = c.color;
+                    a[k].tint.r  = c.tint.r;
+                    a[k].tint.g  = c.tint.g;
+                    a[k].tint.b  = c.tint.b;
+                    a[k].in.id   = c.in.id;
+                    a[k].in.q[0] = c.in.q[0];
+                    a[k].in.q[1] = c.in.q[1];
+                    a[k].mat     = c.mat;
+                }
+                else
+                {
+                    a.set(k, c);
+                }
+            }
+        });
+    sa::parallel_phase(
+        [&]
+        {
+#pragma omp for
+            for (int i = 0; i < n; i += 5)
+            {
+                a[static_cast<std::size_t>(i)].w[1] += 1.0; // a compound op on an array part
+                v[static_cast<std::size_t>(i)].w[1] += 1.0;
+            }
+        });
+    a.shrink_to_fit();
+    std::vector<Cell3> out(static_cast<std::size_t>(n));
+    read_range(a, 0, static_cast<std::size_t>(n), out.begin());
+    int w = 0;
+    for (int i = 0; i < n; ++i)
+    {
+        const std::size_t k = static_cast<std::size_t>(i);
+        w += same3(std::as_const(a)[k], v[k]) && same3(out[k], v[k]) ? 0 : 1;
+    }
+    // the way in from structs, then back
+    std::vector<Cell3> src(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i)
+    {
+        src[static_cast<std::size_t>(i)] = expected3(n - 1 - i, n);
+    }
+    sa::copy_range(a, 0, static_cast<std::size_t>(n), src.begin());
+    read_range(a, 0, static_cast<std::size_t>(n), out.begin());
+    for (int i = 0; i < n; ++i)
+    {
+        w += same3(out[static_cast<std::size_t>(i)], src[static_cast<std::size_t>(i)]) ? 0 : 1;
+    }
+    std::printf("nested: n = %d, %zu columns, %d wrong\n", n, Soa3::column_count, w);
+    a.for_each_column(
+        [](std::string_view name, const auto& col)
+        {
+            if constexpr (requires { col.stats(); })
+            {
+                std::printf("  column %-8.*s %5.1f %% of chunks hold a buffer\n", static_cast<int>(name.size()),
+                            name.data(), col.stats());
+            }
+            else
+            {
+                std::printf("  column %-8.*s plain\n", static_cast<int>(name.size()), name.data());
+            }
+        });
+    if (a.column<^^Cell3::mat>().stats() > 1.0 || a.column<^^Cell3::pos, ^^Vec3::z>().stats() > 1.0 ||
+        a.column_at<11>().stats() > 1.0)
+    {
+        std::printf("nested: a constant column holds buffers\n");
+        ++w;
+    }
+    return w + bad;
+}
+
 // What element i holds after the parallel write.
 static Cell expected(int i, int n)
 {
@@ -372,6 +570,7 @@ int main()
 
     bad += particles(1 << 20);
     bad += ranges(1 << 20);
+    bad += nested(1 << 18);
 
     sa::release_chunk_pools();
     sa::destroy_block_chunk();

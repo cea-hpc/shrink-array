@@ -93,10 +93,23 @@ the tag's checksum to the recipe.
   `fill_range_mt`, `copy_range_mt` (every thread of a phase on its own
   range), `read_range(a, lo, hi, out)` back into structs (a compressed chunk
   a fill of its member); `resize(n)`, `resize(n, v)`, `push_back(v)`; and
-  `member_count`, `member(k)`, `column_at<k>()` to walk the columns by
-  index. The file comment no longer announces a `compress()` it did not
+  `column_count`, `column_name(k)`, `column_at<k>()`, `field<k>(v)` to walk
+  the columns by index. The file comment no longer announces a `compress()` it did not
   have. `soa_array_validation` checks them against a `std::vector`, the
   `_mt` forms from a phase, a range past the end clamped.
+- `SoaArray<T>`: a member that is a struct -- with no `operator==`, so no
+  `ArrayChunkElement` -- or an array is stored part by part, one column per
+  scalar it holds (`pos.x`, `pos.y`, `w[1]`, `in.q[0]`), at any depth; a
+  struct that is an `ArrayChunkElement` stays one column unless marked
+  `[[=shrink_array::soa::split]]`. The generated `a[i]` mirrors it:
+  `a[i].pos.y = 1`, `a[i].w[1] += 2`, nested aggregates and arrays of
+  proxies (brace elision builds them from the flat list of columns).
+  `column<^^Cell::pos, ^^Vec3::y>()` finds a column by its path of members;
+  a storage annotation on a struct member goes to every part unless a part
+  has its own. `soa_array_validation` checks a `Cell3` of 16 columns --
+  names, types, the nested writes, `get`/`set`, `copy_range`/`read_range`
+  against a `std::vector` -- and that a nested struct with a base class or
+  a private member is refused.
 
 ### Fixed (cpp26)
 
