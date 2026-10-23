@@ -195,11 +195,11 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
             }
             else
             {
-                // Path for zero_any or Bool (Non-indexed)
-                if constexpr (is_bool || is_chunk2a_derived)
+                // Path for the zero_any family or Bool (Non-indexed)
+                if constexpr (is_bool || is_zero_any_family_derived)
                 {
                     is_violating = derived().is_cst_val2();
-                    if constexpr (is_chunk2a_derived)
+                    if constexpr (is_zero_any_family_derived)
                     {
                         // A chunk compressed to a second constant reads from it
                         // through its values pointer; there is no other handle.
@@ -226,7 +226,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     }
 
   private:
-    static constexpr bool is_chunk2a_derived = std::is_same_v<Derived, zero_any::Chunk<T>>;
+    static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;
     static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
 
     /// @brief Clear chunk and reset to constant value

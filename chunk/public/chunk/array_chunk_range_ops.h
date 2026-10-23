@@ -65,7 +65,7 @@
 #include "chunk/internal/conditional_counter.h"        // CounterValueT
 #include "chunk/config.h"                              // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_* (used directly, not via compression_manager.h)
-#include "chunk/chunk_traits.h"                        // zero / zero_one_value / zero_any: the type traits below
+#include "chunk/chunk_traits.h"                        // zero / zero_one_value / is_zero_any_family_v: the type traits below
 #include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/relaxed_element.h"            // fill_range_mt: zero_any's shared elements
@@ -120,9 +120,9 @@ template <typename Arr>
 inline constexpr bool is_v2_v =
     std::is_same_v<typename Arr::ChunkType, zero_one_value::Chunk<typename Arr::value_type>>;
 
-/// @brief True when @p Arr holds zero_any chunks (see is_v1_v: dispatch on the type).
+/// @brief True when @p Arr holds chunks of the zero_any family (chunk_traits.h).
 template <typename Arr>
-inline constexpr bool is_v2a_v = std::is_same_v<typename Arr::ChunkType, zero_any::Chunk<typename Arr::value_type>>;
+inline constexpr bool is_v2a_family_v = is_zero_any_family_v<typename Arr::ChunkType>;
 
 /** @brief zero_one_value on a non-bool T: the variant with a second value (and written(ind)). */
 template <typename Arr>
@@ -385,7 +385,7 @@ template <typename Arr>
 void queue_for_compression(Arr& arr, std::size_t i)
 {
     // zero_any: a candidate list in serial builds too (no counters there).
-    if constexpr (chunk_config::use_fast_block_compression || is_v2a_v<Arr>)
+    if constexpr (chunk_config::use_fast_block_compression || is_v2a_family_v<Arr>)
     {
         // zero_one_value: candidate lists are keyed by second value and exist only for
         // arrays that called set_second_value() -- skip the others, as the
@@ -654,7 +654,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
 
             // The chunk may be constant now: a fill of first_value, or on
             // zero_any of any value (a uniform run is its second constant).
-            bool compressible_value = value_is_cst1 || internal::is_v2a_v<Arr>;
+            bool compressible_value = value_is_cst1 || internal::is_v2a_family_v<Arr>;
             if constexpr (internal::is_v2_v<Arr> && requires { arr.get_second_value(); })
             {
                 compressible_value = compressible_value || value == static_cast<T>(arr.get_second_value());
@@ -893,7 +893,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
     }
     last = std::min(last, size);
 
-    constexpr bool session = (is_v2a_v<Arr> || is_v2_v<Arr> || is_v1_v<Arr>) && build_config::threaded &&
+    constexpr bool session = (is_v2a_family_v<Arr> || is_v2_v<Arr> || is_v1_v<Arr>) && build_config::threaded &&
                              chunk_config::use_fast_block_compression && (raw_fillable_v<T> || is_packed_bit_v<T>);
     if constexpr (!session)
     {

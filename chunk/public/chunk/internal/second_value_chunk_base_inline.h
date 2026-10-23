@@ -35,7 +35,7 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  n
                                                           SecondValueRef<T>    ptr_second_value,
                                                           [[maybe_unused]] T*  cst2_ptr)
 {
-    if constexpr (is_chunk2a_derived)
+    if constexpr (is_zero_any_family_derived)
     {
         // 1. Update the metadata BEFORE the CAS.
         if (num_compress_value == 0)

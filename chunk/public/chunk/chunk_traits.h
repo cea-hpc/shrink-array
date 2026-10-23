@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <type_traits> // std::false_type, std::true_type (ZeroAnyFamily)
+
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 
 namespace shrink_array
@@ -176,5 +178,35 @@ struct ArrayChunkTraits<zero_one_value::Array<T, IntType>>
     using value_type  = T;                       ///< Stored element type.
     using IndexType   = IntType;                    ///< Signed global index type.
 };
+
+// ============================================================================
+// 4. THE ZERO_ANY FAMILY
+// ============================================================================
+//
+// zero_any compresses a chunk to zero or to a value of its own. The variants
+// built on its code (pattern::Array, docs/pattern_design.md) share its
+// compression lists, its write engine, its relaxed element stores and its
+// serial compression path, and differ in what a compressed chunk's values
+// pointer names: zero_any's, a second value; pattern's, a motif to which the
+// chunk adds its offset. The shared code tests the FAMILY with this trait,
+// never the exact type -- a new member would otherwise fall into another
+// variant's branch with no build error.
+
+/// @brief Is @p ChunkT a chunk built on zero_any's machinery? Specialised for
+///        each member of the family.
+template <typename ChunkT>
+struct ZeroAnyFamily : std::false_type
+{
+};
+
+/// @brief zero_any::Chunk is the family's first member.
+template <typename T>
+struct ZeroAnyFamily<zero_any::Chunk<T>> : std::true_type
+{
+};
+
+/// @brief ZeroAnyFamily<ChunkT>::value.
+template <typename ChunkT>
+inline constexpr bool is_zero_any_family_v = ZeroAnyFamily<ChunkT>::value;
 
 } // namespace shrink_array

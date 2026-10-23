@@ -18,7 +18,7 @@
 
 #include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
 #include "chunk/config.h"                    // build_config::not_threaded, chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h"              // zero_any::Array forward declaration
+#include "chunk/chunk_traits.h"              // is_zero_any_family_v
 #include "chunk/internal/in_t.h"             // InT<T>
 #include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
 #include "chunk/internal/read_reclaim.h"     // read_reclaim::PassScope (perform_compression / compress in a region)
@@ -121,7 +121,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
         // nothing, so afterwards every list is empty and every dedup flag 0 -- the
         // precondition of zero_any::Proxy::resize_tab_is_int(num_tab, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
-                      (build_config::not_threaded && std::is_same_v<Derived, zero_any::Array<T, IndType>>))
+                      (build_config::not_threaded && is_zero_any_family_v<ChunkType>))
         {
             derived().make_block_compression();
         }

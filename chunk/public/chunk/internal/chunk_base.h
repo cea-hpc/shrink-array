@@ -30,7 +30,7 @@
 #include <optional>    // std::optional (constant_value)
 #include <sys/mman.h>  // mmap, mprotect, PROT_READ
 
-#include "chunk/chunk_traits.h"                         // zero_any::Chunk fwd decl (element_at variant gate)
+#include "chunk/chunk_traits.h"                         // is_zero_any_family_v (element_at variant gate)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"           // cst_buffer_size, thread_chunk_size, alloc_chunk_count
@@ -1239,7 +1239,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         const read_reclaim::ReadSection section;
         const T* const                  vals = values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if constexpr (std::is_same_v<Derived, zero_any::Chunk<T>>)
+        if constexpr (is_zero_any_family_v<Derived>)
         {
             // Same single load as element_at_unguarded: a chunk compressed to a
             // second constant points at an identifier, not at values.
@@ -1282,7 +1282,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             cst = load_at<false>(vals, 0);
             return true;
         }
-        if constexpr (std::is_same_v<Derived, zero_any::Chunk<T>>)
+        if constexpr (is_zero_any_family_v<Derived>)
         {
             if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
             {
@@ -1829,19 +1829,28 @@ class ChunkBase : public CRTPSupport<Derived>,
         // two loads swaps in a region identifier, and the second load indexes an
         // unmapped page. Same rule as read_values().
         //
-        // Gated on std::is_same_v, NOT on a `requires` probe for the hooks: a
-        // probe fails OPEN (where false, the read returns 0 from the unwritten
-        // region -- a wrong number, not a build error), and nvhpc evaluates it
-        // differently on the still-incomplete CRTP Derived. A type comparison
-        // against the forward-declared zero_any::Chunk (chunk_traits.h) cannot differ.
-        if constexpr (std::is_same_v<Derived, zero_any::Chunk<T>>)
+        // Gated on the family trait (chunk_traits.h), NOT on a `requires` probe
+        // for the hooks: a probe fails OPEN (where false, the read returns 0
+        // from the unwritten region -- a wrong number, not a build error), and
+        // nvhpc evaluates it differently on the still-incomplete CRTP Derived.
+        // A specialisation per member of the family cannot differ.
+        //
+        // The three reads (here, read_block, read_block_or_constant) know one
+        // kind of registry entry: a constant, zero_any's second value. A member
+        // whose entries differ element by element (pattern::Array: a motif
+        // plus the chunk's offset) fails the static_assert below until its own
+        // branch is written here. The calls stay those of zero_any, not a hook
+        // in front of them: even forced inline, one more function level on
+        // this path changed gcc 14's code for zero_any's write path.
+        if constexpr (is_zero_any_family_v<Derived>)
         {
             static_assert(
                 requires(const Derived& obj, const T* ptr) {
                     obj.is_cst_val2_ptr_of(ptr);
                     obj.second_value_from_ptr(ptr);
-                }, "zero_any::Chunk must provide is_cst_val2_ptr_of() and second_value_from_ptr(): "
-                   "its second values are identifiers, not filled arrays");
+                }, "a chunk of the zero_any family must provide is_cst_val2_ptr_of() and second_value_from_ptr(), "
+                   "or its own branch of the reads: its compressed chunks point at registry entries, not at "
+                   "their values");
             const T* const vals = values_load();
             if constexpr (!Relaxed)
             {

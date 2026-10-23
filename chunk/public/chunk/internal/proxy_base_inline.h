@@ -53,7 +53,7 @@
 #include "chunk/internal/chunk_size_policy.h"  // ChunkElems — used HERE, not via includers
 #include "chunk/internal/phase_guard.h"        // check-build guard of the phase protocol
 #include "chunk/config.h"                      // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h"                // zero_any::Chunk fwd decl
+#include "chunk/chunk_traits.h"                // is_zero_any_family_v
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast, CHUNK_PMP_IN_PARALLEL_REGION
 #include "chunk/ring_log_debug.h"              // ScopedRingLog, ring_log, get_tid
 #include "chunk/internal/arithmetic_context.h" // ArithmeticProxyContext, ArithmeticContext
@@ -773,10 +773,10 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
         // perform_compression() self-checks the threshold (size > szm/2).
         std::forward<WriteCallable>(write_body)();
 
-        // zero_any only: its compression algorithm is identical in OMP and
-        // non-OMP. zero/zero_one_value have distinct non-OMP paths and must NOT be
-        // triggered here.
-        if constexpr (build_config::not_threaded && std::is_same_v<ChunkT, zero_any::Chunk<T>>)
+        // The zero_any family only: its compression algorithm is identical in
+        // OMP and non-OMP. zero/zero_one_value have distinct non-OMP paths and
+        // must NOT be triggered here.
+        if constexpr (build_config::not_threaded && is_zero_any_family_v<ChunkT>)
         {
             // Skip during rechunk_refill / flush replay (in_flush_replay): the refill
             // materialises a chunk here and RAW-fills it right after; compressing it in
