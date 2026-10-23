@@ -28,6 +28,24 @@ maybe_wipe_cache() {  # <build-dir>
 # Opt-out: INT64_OPT= ./compile_all.sh (or -DSHRINK_BENCH_INT64=OFF).
 INT64_OPT=${INT64_OPT--DSHRINK_BENCH_INT64=ON}
 
+# ─── C++ standard of the tree (CHUNK_CXX_STANDARD) ───────────────────────────
+# Empty: each configuration keeps its own standard (C++20 at least, through
+# chunk_require_cxx20; C++23 for the gnu builds on aarch64, compile_all_gnu.sh).
+# 20, 23 or 26: every gnu configuration is configured with
+# -DCMAKE_CXX_STANDARD=<N>. At 26, compile_all.sh builds the gnu family only:
+# GCC 16 is, for now, the only compiler with C++26 static reflection (Clang 23
+# has none; oneAPI, AOCC and nvc++ follow Clang or lag behind it).
+# The cpp26 branch sets the default below to 26. The environment
+# (CHUNK_CXX_STANDARD=23 ./compile_all.sh) or compile_all.sh --std=N overrides it.
+: "${CHUNK_CXX_STANDARD:=}"
+case "$CHUNK_CXX_STANDARD" in
+    ''|20|23|26) ;;
+    *) echo "ERROR: CHUNK_CXX_STANDARD=$CHUNK_CXX_STANDARD (expected 20, 23 or 26, or empty)" >&2; exit 2 ;;
+esac
+export CHUNK_CXX_STANDARD
+# True when the tree is built as C++26: the gnu family only.
+chunk_cxx26() { [ -n "$CHUNK_CXX_STANDARD" ] && [ "$CHUNK_CXX_STANDARD" -ge 26 ]; }
+
 # ─── oneTBB for the std-backend builds (CHUNK_THREADS=std) ───────────────────
 # The TBB bench (shrink_bench_tbb_<variant>_<size>, the release std build, for
 # the timings) and the validation of the TBB adaptor (tbb_validation,
