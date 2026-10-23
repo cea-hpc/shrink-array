@@ -906,4 +906,4 @@ std::ostream& operator<<(std::ostream& os, const zero::Proxy<T>& proxy)
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy_inline.h" // the template bodies
+#include "chunk/internal/zero_proxy_inline.h" // the template bodies

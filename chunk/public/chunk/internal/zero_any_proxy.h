@@ -39,7 +39,7 @@
 #include "chunk/internal/tab_cst_val2_holder.h"          // SecondValueRef
 #include "chunk/internal/TChunk.h"                       // TChunk2AComp
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
-#include "chunk/internal/proxy2_base.h"                  // Proxy2Base
+#include "chunk/internal/second_value_proxy_base.h"                  // Proxy2Base
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/parallel_storage_init.h"        // NoInitVector, resize_filled, for_each_chunk
 
@@ -1073,4 +1073,4 @@ std::ostream& operator<<(std::ostream& os, const zero_any::Proxy<T>& proxy)
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy2A_inline.h" // the template bodies
+#include "chunk/internal/zero_any_proxy_inline.h" // the template bodies

@@ -601,10 +601,10 @@ Options CMake liées aux performances des bancs :
 
 | sujet | fichiers |
 |---|---|
-| le tableau | `zero_one_value_array.h`, `internal/zero_one_value_array_inline.h`, `internal/array_chunk2_base.h` |
+| le tableau | `zero_one_value_array.h`, `internal/zero_one_value_array_inline.h`, `internal/second_value_array_base.h` |
 | base commune, lecture, `operator[]` | `internal/array_chunk_base.h`, `internal/array_chunk_base_inline.h` |
-| le chunk, matérialisation, compression | `chunk2_std.h`, `internal/chunk2_std_inline.h`, `internal/chunk_base.h` |
-| le proxy d'écriture | `internal/proxy2.h`, `internal/proxy2_inline.h`, `internal/proxy2_base.h` |
+| le chunk, matérialisation, compression | `zero_one_value_chunk.h`, `internal/zero_one_value_chunk_inline.h`, `internal/chunk_base.h` |
+| le proxy d'écriture | `internal/zero_one_value_proxy.h`, `internal/zero_one_value_proxy_inline.h`, `internal/second_value_proxy_base.h` |
 | le moteur d'écriture | `internal/proxy_base.h`, `internal/proxy_base_inline.h` |
 | Dekker, écrivains / compresseurs | `internal/write_compress_sync_policy.h` (expliqué dans [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md)) |
 | lecteurs et récupération des tampons | `internal/read_reclaim.h` |

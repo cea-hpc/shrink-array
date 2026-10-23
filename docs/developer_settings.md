@@ -117,7 +117,7 @@ and how the shared options reach the headers, are in
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | test hook: a delay (200 µs) in one compression pass in N |
 
 And one macro specific to Chunk2A: `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 by default) selects the
-set of trigger thresholds for the compression passes (`chunk2A_def.h`). Only level 0 is built and
+set of trigger thresholds for the compression passes (`zero_any_chunk_def.h`). Only level 0 is built and
 tested. *Removal of levels 1 to 3 planned: 2026-12-31.*
 
 ## 6. CMake options

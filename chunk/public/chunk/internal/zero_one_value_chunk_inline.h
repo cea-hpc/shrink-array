@@ -25,14 +25,14 @@
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // ChunkElems, set_thread_chunk_size
 #include "chunk/internal/in_t.h"                // InT<T>
-#include "chunk/chunk2_std.h"                   // Chunk2, the class these bodies belong to
-#include "chunk/internal/proxy2.h"              // Proxy2<T>
+#include "chunk/zero_one_value_chunk.h"                   // Chunk2, the class these bodies belong to
+#include "chunk/internal/zero_one_value_proxy.h"              // Proxy2<T>
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
 /**
- * @file chunk2_std_inline.h
+ * @file zero_one_value_chunk_inline.h
  * @brief Out-of-line definitions of Chunk2's policies: materialisation and compression.
  *
  * Chunk2 is the two-constant chunk whose second value is shared by the WHOLE
@@ -69,8 +69,8 @@
  *    ambient size — after a rechunk, scanning at the ambient size overruns a
  *    buffer allocated at another geometry.
  *
- * @see chunk2_std.h for the declarations, chunk_base.h for the shared
- *      allocate/free machinery, proxy2_inline.h for the write paths that queue
+ * @see zero_one_value_chunk.h for the declarations, chunk_base.h for the shared
+ *      allocate/free machinery, zero_one_value_proxy_inline.h for the write paths that queue
  *      the candidates.
  */
 
@@ -525,7 +525,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
         {
             const int& num_chunk = std::get<1>(tup);
             const int  num_tab   = std::get<2>(tup);
-            // Per-entry geometry (see chunk2_std.h): in dynamic builds each
+            // Per-entry geometry (see zero_one_value_chunk.h): in dynamic builds each
             // queued chunk carries the chunk size of its owning array.
             scan_one(chunk_t, num_chunk, num_tab, std::get<3>(tup).count());
         }
@@ -588,7 +588,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
 // --- The sweep. Precedent: ChunkFastCompPolicy<T,Derived,Enabled>::
 // make_block_compression for plain Chunk<T>.
 
-// make_block_compression_impl (declared in chunk2_std.h). Shape: pin geometry ->
+// make_block_compression_impl (declared in zero_one_value_chunk.h). Shape: pin geometry ->
 // take the compression handshake -> scan into the two buckets -> clear each ->
 // reset every queued flag -> empty the list -> re-queue the triggering chunk.
 // The two callables are the only bool/non-bool difference.
@@ -779,7 +779,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
     }
 }
 
-// make_block_compression (declared in chunk2_std.h). Binds the non-bool scan and
+// make_block_compression (declared in zero_one_value_chunk.h). Binds the non-bool scan and
 // clear callables and hands them to the shared sweep. Instantiating it for bool
 // is a compile error (static_assert).
 template <typename T, typename Derived, bool Enabled>
@@ -806,7 +806,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
     }
 }
 
-// make_block_compression_bool (declared in chunk2_std.h). Same binding for bool:
+// make_block_compression_bool (declared in zero_one_value_chunk.h). Same binding for bool:
 // second value is `true`, and the clear goes through clear_int_st_bool, which
 // needs no index. Mirror image of the guard above -- non-bool fails to compile.
 template <typename T, typename Derived, bool Enabled>
@@ -829,7 +829,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
     }
 }
 
-// make_block_compression, thread-only overload (declared in chunk2_std.h). One
+// make_block_compression, thread-only overload (declared in zero_one_value_chunk.h). One
 // sweep per distinct second value this rank has queued (the candidate map is
 // keyed by value). Passes nullptr as the proxy: no handshake and no proxy-size
 // pin (each freed chunk is still pinned to its own size).

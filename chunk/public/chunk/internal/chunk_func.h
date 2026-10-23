@@ -19,7 +19,7 @@
 #include <vector> // std::vector (the per-rank reuse lists)
 
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_RANK_BOUND
-#include "chunk/chunk_std.h" // self-contained: needs Chunk<T>::manager_chunk
+#include "chunk/zero_chunk.h" // self-contained: needs Chunk<T>::manager_chunk
 
 // Function templates over the per-thread reuse lists, instantiated only by the
 // OpenMP manager (ManagerChunkParallelImpl<..., true>); every list access is a

@@ -20,7 +20,7 @@
  * @file pointer_map_linear.h
  * @brief The linear-scan core shared by the array→metadata registries.
  *
- * @details PointerMapChunk (proxy.h) and PointerMapChunk2 (pointer_map_chunk2.h)
+ * @details PointerMapChunk (zero_proxy.h) and PointerMapChunk2 (zero_one_value_pointer_map.h)
  *          map an array's address to its metadata by walking flat (key, payload)
  *          pairs; the plain scans live here once. Payload: a table number (v1),
  *          a (second_value, ind, num_tab) record (v2).
@@ -31,7 +31,7 @@
  *       body) would read freed memory. See PointerMapChunk2's storage note.
  *       PointerMapChunk uses a std::vector.
  *
- * @note NOT used by PointerMapChunk2A (proxy2A.h), whose small vector turns
+ * @note NOT used by PointerMapChunk2A (zero_any_proxy.h), whose small vector turns
  *       into a hash map past a threshold.
  */
 

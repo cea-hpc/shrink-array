@@ -26,9 +26,9 @@ Un chunk compressé à une seconde valeur ne possède donc pas de tampon : il po
 tableau en lecture seule, partagé par **tous** les chunks, de tous les tableaux du même type,
 qui ont cette valeur. La lecture est exactement celle des autres variantes.
 
-La bibliothèque : `chunk::chunk_v2a` (elle définit `CHUNK_VARIANT_V2A`). Code : `chunk/chunk2A_std.h`, `chunk/zero_any_array.h`,
-`internal/chunk2A_std_inline.h`, `internal/zero_any_array_inline.h`, `internal/proxy2A.h`,
-`internal/proxy2A_inline.h`, `internal/tab_cst_val2_holder.h`.
+La bibliothèque : `chunk::chunk_v2a` (elle définit `CHUNK_VARIANT_V2A`). Code : `chunk/zero_any_chunk.h`, `chunk/zero_any_array.h`,
+`internal/zero_any_chunk_inline.h`, `internal/zero_any_array_inline.h`, `internal/zero_any_proxy.h`,
+`internal/zero_any_proxy_inline.h`, `internal/tab_cst_val2_holder.h`.
 
 ## 2. Les métadonnées par chunk
 
@@ -119,7 +119,7 @@ chaque élément au premier élément du chunk) :
 
 Le tampon libéré rejoint la liste de réutilisation du thread. Le seuil de déclenchement vaut
 `somme_chunk_create / (50 × nombre de threads)`, avec un plancher de 500 candidats (niveau de
-compression par défaut, `CHUNK2A_COMPRESS_LEVEL=0`, dans `chunk2A_def.h`).
+compression par défaut, `CHUNK2A_COMPRESS_LEVEL=0`, dans `zero_any_chunk_def.h`).
 
 ## 6. L'écriture
 

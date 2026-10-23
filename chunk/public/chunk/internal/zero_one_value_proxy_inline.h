@@ -21,7 +21,7 @@
 
 #include "chunk/internal/in_t.h"          // InT<T>
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/internal/proxy2.h"        // the declarations these bodies belong to
+#include "chunk/internal/zero_one_value_proxy.h"        // the declarations these bodies belong to
 #include "chunk/config.h"                 // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
 #include "chunk/PMP_CHUNK.h"              // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationContext

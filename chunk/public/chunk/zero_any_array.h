@@ -29,7 +29,7 @@
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 #include <type_traits>      // std::is_same_v (reclaim_second_values: bool has no registry)
 
-#include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
+#include "chunk/internal/second_value_array_base.h"           // for ArrayChunk2Base
 #include "chunk/internal/zero_any_array_parallel.h"     // ParallelSupport2A — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
@@ -39,8 +39,8 @@
 #include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share
-#include "chunk/internal/proxy2A.h"                    // Proxy2A<T> and its tables
-#include "chunk/chunk2A_std.h"                         // Chunk2A<T>
+#include "chunk/internal/zero_any_proxy.h"                    // Proxy2A<T> and its tables
+#include "chunk/zero_any_chunk.h"                         // Chunk2A<T>
 #include "chunk/log.h"                                 // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
 
 namespace shrink_array

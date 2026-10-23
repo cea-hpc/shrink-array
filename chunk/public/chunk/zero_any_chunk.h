@@ -30,7 +30,7 @@
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_THREAD_RANK
 #include "chunk/ring_log_debug.h"               // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"   // ChunkElems
-#include "chunk/internal/chunk2_base.h"         // Chunk2Base
+#include "chunk/internal/second_value_chunk_base.h"         // Chunk2Base
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write
 
 #include "chunk/internal/TChunk.h"   // TChunk2AComp, VectorTuple4ChunkInt2
@@ -774,4 +774,4 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
 
 } // namespace shrink_array
 
-#include "chunk/internal/chunk2A_std_inline.h" // the template bodies
+#include "chunk/internal/zero_any_chunk_inline.h" // the template bodies

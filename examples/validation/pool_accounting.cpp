@@ -55,14 +55,14 @@
 #include "chunk/zero_one_value_array.h"       // zero_one_value::Array
 #include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"                  // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
 #include "chunk/config.h"                     // chunk_config::use_chunk*
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS, pmp::current_team
 #include "chunk/manage_ompt.h"                // parallel_phase
-#include "chunk/chunk_def.h"                  // ChunkDef
-#include "chunk/chunk2_def.h"                 // Chunk2Def
-#include "chunk/chunk2A_def.h"                // Chunk2ADef
+#include "chunk/zero_chunk_def.h"                  // ChunkDef
+#include "chunk/zero_one_value_chunk_def.h"                 // Chunk2Def
+#include "chunk/zero_any_chunk_def.h"                // Chunk2ADef
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 #include "chunk/internal/print.h"             // shrink_array::println
 
@@ -239,7 +239,7 @@ int run(int argc, char** argv)
     // The library's own teardown (see compress_roundtrip.cpp).
     // No #ifdef: release_chunk_pools() does whichever half this build needs --
     // the per-rank lists under OpenMP, the single allocator otherwise. See
-    // ChunkPoolParallelInterface in chunk_std.h.
+    // ChunkPoolParallelInterface in zero_chunk.h.
     release_chunk_pools();
     destroy_block_chunk();
 

@@ -15,11 +15,11 @@
  */
 
 /**
- * @file chunk2_candidate_list_check.h
+ * @file zero_one_value_candidate_list_check.h
  * @brief The abort taken when a Chunk2 write reaches a per-second-value
  *        compression candidate list that does not exist.
- * @details Its own header because both proxy2.h and chunk2_std.h need it and
- *          chunk2_std.h can be parsed before proxy2.h's body.
+ * @details Its own header because both zero_one_value_proxy.h and zero_one_value_chunk.h need it and
+ *          zero_one_value_chunk.h can be parsed before zero_one_value_proxy.h's body.
  */
 
 #pragma once

@@ -22,8 +22,8 @@ calls, OMPT named in 23 files. Five different uses:
 | | use | where | replaced by |
 |---|---|---|---|
 | **A** | runtime queries: rank, thread count, in-region, level | `PMP_CHUNK.h` (`CHUNK_PMP_THREAD_RANK`, `CHUNK_PMP_MAX_THREADS`, `CHUNK_PMP_IN_PARALLEL_REGION`, ...), `fast_allocators/internal/pmp_alloc.h`, `slab_arena.h` (`omp_get_max_threads`, `omp_in_parallel`), `manage_ompt.cpp` | the same macros, routed to the backend; rank of a non-OpenMP thread: dense, `thread_local`, given at its first use |
-| **B** | one-shot data-parallel loops at a serial point (`parallel for` [`reduction`] [`if`]) | `array_chunk_base_inline.h:110`, `zero_array_inline.h:117,524`, `zero_one_value_array_inline.h:450,487,535`, `zero_any_array_inline.h:150,209`, `array_chunk2_base.h:175`, `parallel_storage_init.h:143,173`, `slab_arena.h:529,822` (dynamic) | `pmp::parallel_for(n, schedule, f)`, `pmp::parallel_reduce(n, init, f, op)` |
-| **C** | team regions with worksharing and synchronisation (`parallel` + `for` / `single` / `masked` / `barrier` / `nowait`) | rechunk slices (`array_chunk_rechunk_inline.h:1139-1337`), compression passes (`zero_array_inline.h:216-357`, `zero_one_value_array_inline.h:705-1068`, `zero_any_array_inline.h:428-619`), team drain (`manager_chunk.h:1046-1300`, `manager_chunk_inline.h:414-525`), advisor (`chunk_size_advisor.h:392-722`), `all_type_chunk.cpp:305,520-545`, `array_chunk2_base.h:96`, `chunk*_std_inline.h`, `zero_array.h:301`, `manage_ompt.h:171-176` | `pmp::team(nthreads, [&](pmp::Team& t) { t.for_static(...); t.barrier(); t.single(...); })` |
+| **B** | one-shot data-parallel loops at a serial point (`parallel for` [`reduction`] [`if`]) | `array_chunk_base_inline.h:110`, `zero_array_inline.h:117,524`, `zero_one_value_array_inline.h:450,487,535`, `zero_any_array_inline.h:150,209`, `second_value_array_base.h:175`, `parallel_storage_init.h:143,173`, `slab_arena.h:529,822` (dynamic) | `pmp::parallel_for(n, schedule, f)`, `pmp::parallel_reduce(n, init, f, op)` |
+| **C** | team regions with worksharing and synchronisation (`parallel` + `for` / `single` / `masked` / `barrier` / `nowait`) | rechunk slices (`array_chunk_rechunk_inline.h:1139-1337`), compression passes (`zero_array_inline.h:216-357`, `zero_one_value_array_inline.h:705-1068`, `zero_any_array_inline.h:428-619`), team drain (`manager_chunk.h:1046-1300`, `manager_chunk_inline.h:414-525`), advisor (`chunk_size_advisor.h:392-722`), `all_type_chunk.cpp:305,520-545`, `second_value_array_base.h:96`, `chunk*_std_inline.h`, `zero_array.h:301`, `manage_ompt.h:171-176` | `pmp::team(nthreads, [&](pmp::Team& t) { t.for_static(...); t.barrier(); t.single(...); })` |
 | **D** | mutual exclusion | `#pragma omp critical` (`zero_array_inline.h:357`, `zero_one_value_array_inline.h:1009,1026,1068`, `zero_any_array_inline.h:588,619`, `static_const_array_inline.h:83,145,154` named `fast_alloc_ladder`), `#pragma omp atomic` (`chunk_size_advisor.h:463,722`) | `std::mutex` / `std::atomic` — no backend involved |
 | **E** | phase boundaries of the **application**: OMPT `parallel_begin` / `parallel_end` callbacks drive the deferred-op flush and the compression pass | `manage_ompt.cpp`, `manage_ompt.h`, `all_type_chunk.cpp:156` and `manage_ompt.cpp:295` (`#pragma omp barrier` run by **every** thread of the application's team) | the phase contract below; OMPT becomes its automatic implementation |
 
@@ -304,7 +304,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      another writer's `may_become_uniform` scan read it relaxed; Chunk2A's
      element stores must be relaxed atomics (`relaxed_element_stores_v`),
      as the compound ops' replay already was. Now
-     `store_element_relaxed` (`proxy2A_inline.h`). Not specific to the std backend:
+     `store_element_relaxed` (`zero_any_proxy_inline.h`). Not specific to the std backend:
      the replay runs in a region under OpenMP as well. Same machine code on
      x86 and Arm (an aligned store), so no value was wrong; a data race all
      the same.
@@ -355,7 +355,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    --test_stl`) is the same for the OpenMP build before the change, after it,
    and the std build, at 1, 4 and 8 threads.
    *Std backend, v1's in-write block pass*: `ChunkFastCompPolicy::make_block_compression`
-   (chunk_std_inline.h) took its writer protection -- the steal marks and
+   (zero_chunk_inline.h) took its writer protection -- the steal marks and
    `start()` / `finish()` -- only when `CHUNK_PMP_MAX_THREADS > 1`: a team of
    one meant "no other writer". Under the std backend the application's
    threads write around a team of one, so with `OMP_NUM_THREADS=1` and two

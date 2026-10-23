@@ -15,8 +15,8 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 | appel | en-tête | quand |
 |---|---|---|
 | `ParamChunk::init_indexes(true)` | `chunk/param_chunk.h` | facultatif, une fois, avant le premier tableau, pour choisir les blocs (`true` : gros blocs d'allocation) ; sans lui, le premier tableau lance `init_indexes(true)` |
-| `release_chunk_pools()` | `chunk/chunk_std.h` | facultatif, une fois, à la fin ; tant qu'un tableau vit encore (global ou `static`), il ne fait que vider les listes libres |
-| `destroy_block_chunk()` | `chunk/chunk_std.h` | facultatif, juste après `release_chunk_pools()` ; sans effet tant qu'un tableau vit |
+| `release_chunk_pools()` | `chunk/zero_chunk.h` | facultatif, une fois, à la fin ; tant qu'un tableau vit encore (global ou `static`), il ne fait que vider les listes libres |
+| `destroy_block_chunk()` | `chunk/zero_chunk.h` | facultatif, juste après `release_chunk_pools()` ; sans effet tant qu'un tableau vit |
 | `ParamChunk::force_compression()` | `chunk/param_chunk.h` | pour compresser maintenant tous les candidats en attente, pour une mesure ou un point de reprise |
 | `ParamChunk::chunk_stats()` | `chunk/param_chunk.h` | affiche les compteurs `CHUNK_STATS` (sans effet dans les autres builds) |
 

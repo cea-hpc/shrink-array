@@ -52,7 +52,7 @@
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"      // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"         // chunk_config::use_chunk2*, build_config::chunk_dynamic / any_check
 #include "chunk/internal/print.h" // shrink_array::println
 

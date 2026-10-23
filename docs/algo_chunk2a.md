@@ -26,9 +26,9 @@ A chunk compressed to a second value therefore owns no buffer: it points to a
 read-only array, shared by **all** the chunks, of all the arrays of the same type,
 that have this value. The read is exactly the same as in the other variants.
 
-The library: `chunk::chunk_v2a` (it defines `CHUNK_VARIANT_V2A`). Code: `chunk/chunk2A_std.h`, `chunk/zero_any_array.h`,
-`internal/chunk2A_std_inline.h`, `internal/zero_any_array_inline.h`, `internal/proxy2A.h`,
-`internal/proxy2A_inline.h`, `internal/tab_cst_val2_holder.h`.
+The library: `chunk::chunk_v2a` (it defines `CHUNK_VARIANT_V2A`). Code: `chunk/zero_any_chunk.h`, `chunk/zero_any_array.h`,
+`internal/zero_any_chunk_inline.h`, `internal/zero_any_array_inline.h`, `internal/zero_any_proxy.h`,
+`internal/zero_any_proxy_inline.h`, `internal/tab_cst_val2_holder.h`.
 
 ## 2. Per-chunk metadata
 
@@ -117,7 +117,7 @@ each element with the first element of the chunk):
 
 The freed buffer joins the thread's reuse list. The trigger threshold is
 `somme_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (default
-compression level, `CHUNK2A_COMPRESS_LEVEL=0`, in `chunk2A_def.h`).
+compression level, `CHUNK2A_COMPRESS_LEVEL=0`, in `zero_any_chunk_def.h`).
 
 ## 6. The write
 

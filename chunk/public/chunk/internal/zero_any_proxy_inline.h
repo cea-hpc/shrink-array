@@ -23,7 +23,7 @@
 #include <utility>         // std::move, std::cmp_greater_equal
 #include <vector>          // the per-chunk "queued" flags
 
-#include "chunk/internal/proxy2A.h"            // the declarations these bodies belong to
+#include "chunk/internal/zero_any_proxy.h"            // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"               // InT<T>
 #include "chunk/zero_any_array.h"              // zero_any::Array (dependent calls the include tools cannot attribute)
 #include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic
@@ -42,7 +42,7 @@
 #include "chunk/log.h"                            // CHUNK_LOG, CHUNK_LOG_ALWAYS
 
 /**
- * @file proxy2A_inline.h
+ * @file zero_any_proxy_inline.h
  * @brief Out-of-line definitions of Proxy2A and Proxy2AFastCompPolicy.
  *
  * Chunk2A stores TWO constants: a global `first_value` and a per-chunk
@@ -63,7 +63,7 @@
  * size to the chunk being written: allocating at the flushing thread's ambient
  * size overflows the buffer.
  *
- * @see proxy2A.h for the declarations, proxy_base_inline.h for the write engine
+ * @see zero_any_proxy.h for the declarations, proxy_base_inline.h for the write engine
  *      these bodies are handed to, zero_any_array.h for the chunk itself.
  */
 
@@ -369,7 +369,7 @@ void zero_any::Proxy<T>::ensure_writable_storage()
     // Allocate from THIS array's chunk-size pool: the per-thread size may be
     // stale (left by an op on another array), and a smaller buffer written at
     // this array's offsets overflows. The in-place path reaches create_value
-    // only through here; Proxy2A::create_value (proxy2A.h) does the same on
+    // only through here; Proxy2A::create_value (zero_any_proxy.h) does the same on
     // the direct-assignment path.
     if constexpr (build_config::chunk_dynamic)
     {

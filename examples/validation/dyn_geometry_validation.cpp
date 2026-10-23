@@ -65,7 +65,7 @@
 
 using namespace shrink_array;
 
-#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::dyn_geometry_validation

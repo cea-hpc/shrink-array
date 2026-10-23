@@ -35,9 +35,9 @@
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/PMP_CHUNK.h"                            // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
-#include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
-#include "chunk/internal/proxy2.h"                      // Proxy2
-#include "chunk/internal/chunk2_base.h"                 // Chunk2Base
+#include "chunk/internal/zero_one_value_candidate_list_check.h" // chunk2_missing_candidate_list
+#include "chunk/internal/zero_one_value_proxy.h"                      // Proxy2
+#include "chunk/internal/second_value_chunk_base.h"                 // Chunk2Base
 #include "chunk/internal/conditional_counter.h"         // ConditionalCounter, CounterValueT
 #include "chunk/internal/TChunk.h"                      // VectorTuple4ChunkInt2 (the candidate lists)
 #include "chunk/internal/immortal.h"                    // Immortal / LazyImmortal: statics safe for global arrays
@@ -1079,7 +1079,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      *          at 0 and can no longer reach `size`, so the chunk's compression is missed
      *          for good. This ctor also suppresses the implicit move, so every
      *          std::vector<Chunk2> reallocation goes through it. Same rule as Chunk v1
-     *          (chunk_std.h). `values` is atomic and is copied by hand.
+     *          (zero_chunk.h). `values` is atomic and is copied by hand.
      */
     Chunk(const Chunk& other) : CounterPolicy(other)
     {
@@ -1526,4 +1526,4 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
 } // end namespace shrink_array
 
-#include "chunk/internal/chunk2_std_inline.h" // the template bodies
+#include "chunk/internal/zero_one_value_chunk_inline.h" // the template bodies

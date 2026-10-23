@@ -551,7 +551,7 @@ void zero_any::Array<T, IntType>::compress_int(pmp::Team& team)
     // residual; a large or growing count means the incremental path is not
     // keeping up (or, in a threaded && !OMPT build, that Chunk2A::compress()
     // returns early by design and make_block_compression is the only
-    // compressor left -- see its guard in chunk2A_std_inline.h).
+    // compressor left -- see its guard in zero_any_chunk_inline.h).
     // compress=info, one line per kind and thread (its share of the chunks).
     const auto report = [&](const std::vector<int>& tab, std::string_view at)
     {

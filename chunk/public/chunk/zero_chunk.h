@@ -30,7 +30,7 @@
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
-#include "chunk/internal/proxy.h"               // Proxy<T>
+#include "chunk/internal/zero_proxy.h"               // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
@@ -44,8 +44,8 @@ template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
 /// @brief The per-type facade these verbs drive. Forward-declared, not included:
-///        chunk_std.h sits inside an include cycle (chunk_func.h -> chunk_std.h ->
-///        proxy.h -> manager_chunk.h). Only chunk_std.cpp needs the full type.
+///        zero_chunk.h sits inside an include cycle (chunk_func.h -> zero_chunk.h ->
+///        zero_proxy.h -> manager_chunk.h). Only chunk_std.cpp needs the full type.
 class AllTypeChunk;
 
 /**
@@ -638,4 +638,4 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
 } // namespace shrink_array
 
-#include "chunk/internal/chunk_std_inline.h" // the template bodies
+#include "chunk/internal/zero_chunk_inline.h" // the template bodies

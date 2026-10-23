@@ -24,14 +24,14 @@
 #include <source_location> // std::source_location
 #include <tuple>           // the candidate-list entries
 
-#include "chunk/chunk_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
+#include "chunk/zero_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/config.h"    // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists (dependent calls)
-#include "chunk/internal/proxy.h"               // Proxy<T>: the compression pass's proxy
+#include "chunk/internal/zero_proxy.h"               // Proxy<T>: the compression pass's proxy
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
@@ -59,7 +59,7 @@ void zero::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero::Chunk<
 }
 
 // Out of line on purpose, as operator new[] above: avoids a false -Wmismatched-new-delete
-// (see Chunk2AOmpPolicy::operator delete[] in chunk2A_std_inline.h).
+// (see Chunk2AOmpPolicy::operator delete[] in zero_any_chunk_inline.h).
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void zero::ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {

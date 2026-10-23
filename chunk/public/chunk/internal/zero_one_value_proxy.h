@@ -28,14 +28,14 @@
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
-#include "chunk/internal/pointer_map_chunk2.h" // PointerMapChunk2
+#include "chunk/internal/zero_one_value_pointer_map.h" // PointerMapChunk2
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/chunk_size_policy.h"            // set_thread_chunk_size
 #include "chunk/internal/TChunk.h"                       // VectorTuple4ChunkInt2
 
-#include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
+#include "chunk/internal/zero_one_value_candidate_list_check.h" // chunk2_missing_candidate_list
 #include "chunk/internal/proxy_base.h"                  // ProxyBase
-#include "chunk/internal/proxy2_base.h"                 // Proxy2Base
+#include "chunk/internal/second_value_proxy_base.h"                 // Proxy2Base
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
@@ -641,7 +641,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
     // Counter mode is the exact complement of fast block compression
     // (use_compression_with_counter == !use_fast_block_compression, config.h), so this
     // specialisation IS the counter-based mode; the handlers below are its compression trigger.
-    // Callers (proxy2_inline.h) reach them via `this->` under
+    // Callers (zero_one_value_proxy_inline.h) reach them via `this->` under
     // `if constexpr (chunk_config::use_compression_with_counter)`.
     // ------------------------------------------------------------------
     // ========================================================================
@@ -1160,4 +1160,4 @@ std::ostream& operator<<(std::ostream& os, const zero_one_value::Proxy<T>& proxy
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy2_inline.h" // the template bodies
+#include "chunk/internal/zero_one_value_proxy_inline.h" // the template bodies

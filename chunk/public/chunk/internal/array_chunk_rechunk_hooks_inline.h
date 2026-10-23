@@ -52,7 +52,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
         {
             // v1 only: this pass bypasses CompressionManager::start(), and v1's
             // replay bodies rely on no compressor changing `values` during a flush
-            // drain (see check_no_flush_outside_start, proxy_inline.h).
+            // drain (see check_no_flush_outside_start, zero_proxy_inline.h).
             check_no_flush_outside_start<ProxyType>("RechunkHooks::rechunk_drop_candidates");
             num_tab = ProxyType::share_info_array->get_num_tab(self.registry_key());
         }

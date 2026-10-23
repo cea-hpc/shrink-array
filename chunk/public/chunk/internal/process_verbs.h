@@ -23,7 +23,7 @@
  * @brief The process-wide verbs an array reaches without the manager headers.
  *
  * Declared here, once, because two facades need them and cannot include each
- * other: chunk_std.h (where the definitions' file, chunk_std.cpp, gets them)
+ * other: zero_chunk.h (where the definitions' file, chunk_std.cpp, gets them)
  * and array_chunk_base.h (whose shrink_to_fit() calls the first one).
  */
 namespace shrink_array
