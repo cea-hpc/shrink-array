@@ -29,7 +29,7 @@
 
 #include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/zero_chunk_def.h"             // ChunkDef::size_min_buffer_reuse
-#include "chunk/zero_any_chunk_def.h"         // Chunk2ADef: the reuse budget constants
+#include "chunk/zero_any_chunk_def.h"         // zero_any::ChunkDef: the reuse budget constants
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // thread_chunk_size, set_thread_chunk_size
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_REUSE_SHARE_DIV, CHUNK_REUSE_FLOOR_KB)
@@ -407,7 +407,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     /// @brief Divisor of the proportional reuse budget: a rank parks up to
     ///        chunks / (this * threads) buffers. CHUNK_REUSE_SHARE_DIV, by
-    ///        default Chunk2ADef::factor_div_somme_chunk_buffer_resuse.
+    ///        default zero_any::ChunkDef::factor_div_somme_chunk_buffer_resuse.
     /// @details The chunks counted are all the chunks created, compressed
     ///          ones included: at 99 % compression the default parks about
     ///          twice the buffers actually materialised.

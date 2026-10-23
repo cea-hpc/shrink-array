@@ -333,7 +333,7 @@ inline constexpr bool use_chunk_steal_mark = build_config::threaded;
     #define CHUNK_TUNING_LEVEL 3 // default: level 3
 #endif
 
-/// CHUNK_TUNING_LEVEL (1, 2 or 3, default 3) as a constexpr; selects Chunk2Def's thresholds.
+/// CHUNK_TUNING_LEVEL (1, 2 or 3, default 3) as a constexpr; selects zero_one_value::ChunkDef's thresholds.
 inline constexpr int tuning_level = CHUNK_TUNING_LEVEL;
 // Debug ring log: two independent switches (CMake options).
 //   CHUNK_RING_LOG_DEBUG -> ALL events, hot path included. Heavy: can mask timing bugs.

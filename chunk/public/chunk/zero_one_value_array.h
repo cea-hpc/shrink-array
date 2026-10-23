@@ -27,8 +27,8 @@
 #include "chunk/internal/in_t.h"                               // InT<T>: the element snapshots
 #include "chunk/internal/second_value_info.h"                  // SecondValueInfo (InfArrayT)
 #include "chunk/internal/second_value_array_base.h"            // for SecondValueArrayBase
-#include "chunk/internal/zero_one_value_array_parallel.h"      // ParallelSupport2 — OpenMP-only mixin
-#include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
+#include "chunk/internal/zero_one_value_array_parallel.h"      // zero_one_value::ParallelSupport — OpenMP-only mixin
+#include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // zero_one_value::RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"                   // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h"        // for ArrayChunkElement
 #include "chunk/config.h"                                      // for use_fast_block_compression, threaded
@@ -76,7 +76,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     friend Base2;                 ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<Array>; ///< For swap_identity().
 
-    // RechunkHooks2::rechunk_reown_after_swap copies the private ind_cst_val2.
+    // zero_one_value::RechunkHooks::rechunk_reown_after_swap copies the private ind_cst_val2.
     template <typename, bool>
     friend class shrink_array::zero_one_value::RechunkHooks;
 
@@ -187,7 +187,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @warning Neither erase is optional:
      *          - share_info_array->erase(registry_key()): otherwise a later array
      *            at this address inherits our num_tab and second value
-     *            (PointerMapChunk2's first-match lookup); rechunk_to()'s @c tmp
+     *            (zero_one_value::PointerMap's first-match lookup); rechunk_to()'s @c tmp
      *            makes address reuse routine.
      *          - erase_inf_array_by_ptr(&inf_array): map_inf_array entries
      *            pointing at our inf_array MEMBER would be dereferenced by the
@@ -442,7 +442,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     }
 
     /// @brief Address of the registry mirror, for ArrayChunkBase to arm write
-    ///        proxies with (ProxySpec2::arm_inf_array).
+    ///        proxies with (zero_one_value::ProxySpec::arm_inf_array).
     [[nodiscard]] const InfArrayT* registry_mirror() const noexcept
     {
         return &inf_array_;
@@ -450,7 +450,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /// @brief Re-read the mirror from the registry. Call after ANY write to
     ///        this array's registry entry -- a missed site is caught by the
-    ///        any_check comparison in ProxySpec2::load_inf_array().
+    ///        any_check comparison in zero_one_value::ProxySpec::load_inf_array().
     void sync_registry_mirror() noexcept
     {
         inf_array_ = this->get_info_second_value();
@@ -547,5 +547,5 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 #include "chunk/internal/zero_one_value_array_inline.h" // the template bodies
 
 // The mixins' bodies, after zero_one_value_array_inline.h: self() needs a complete zero_one_value::Array.
-#include "chunk/internal/zero_one_value_array_parallel_inline.h"      // ParallelSupport2's bodies
-#include "chunk/internal/zero_one_value_array_rechunk_hooks_inline.h" // RechunkHooks2's bodies
+#include "chunk/internal/zero_one_value_array_parallel_inline.h"      // zero_one_value::ParallelSupport's bodies
+#include "chunk/internal/zero_one_value_array_rechunk_hooks_inline.h" // zero_one_value::RechunkHooks's bodies

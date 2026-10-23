@@ -63,7 +63,7 @@
  * applies the clears and clears the flags.
  *
  *  - **The materialise / clear functions exist twice**, on the two specialisations of
- *    Chunk2AOmpPolicy (build_config::threaded); the passes branch with `if constexpr`.
+ *    zero_any::ChunkOmpPolicy (build_config::threaded); the passes branch with `if constexpr`.
  *    The serial twin often takes a shorter path (no CAS, no rank, no handshake).
  *  - **Geometry is pinned per chunk, never inherited.** A candidate list can hold chunks
  *    of several arrays, so a single pin at the top of a pass is wrong: each entry carries
@@ -703,7 +703,7 @@ void zero_any::Chunk<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int
 }
 
 // ---------------------------------------------------------------------------
-// Chunk2AOmpPolicy<T, Derived, true>: materialise and clear, OpenMP mode.
+// zero_any::ChunkOmpPolicy<T, Derived, true>: materialise and clear, OpenMP mode.
 // ---------------------------------------------------------------------------
 /**
  * @brief Materialise-side exclusion against the compressor's steal.
@@ -860,7 +860,7 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_
 }
 
 // ---------------------------------------------------------------------------
-// Chunk2AOmpPolicy<T, Derived, false>: materialise and clear, serial mode.
+// zero_any::ChunkOmpPolicy<T, Derived, false>: materialise and clear, serial mode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -1046,7 +1046,7 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::block_clear(int               
 /**
  * @brief Serial twin of the five-argument clear_int_st(): same commit-then-block_clear
  *        order. thr_rank is 0 here.
- * @copydetails Chunk2AOmpPolicy::clear_int_st
+ * @copydetails zero_any::ChunkOmpPolicy::clear_int_st
  */
 template <typename T, typename Derived>
 void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_int_st(int               num_compress_value,
@@ -1064,6 +1064,6 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_int_st(int              
 }
 
 // clear_st(num_compress_value, ptr_type_cst, ptr_second_value), which supplies the calling
-// rank, is defined in-class on the OpenMP Chunk2AOmpPolicy specialisation.
+// rank, is defined in-class on the OpenMP zero_any::ChunkOmpPolicy specialisation.
 
 } // namespace shrink_array

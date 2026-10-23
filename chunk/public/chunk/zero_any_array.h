@@ -29,7 +29,7 @@
 #include <type_traits>      // std::is_same_v (reclaim_second_values: bool has no registry)
 
 #include "chunk/internal/second_value_array_base.h"     // for SecondValueArrayBase
-#include "chunk/internal/zero_any_array_parallel.h"     // ParallelSupport2A — OpenMP-only mixin
+#include "chunk/internal/zero_any_array_parallel.h"     // zero_any::ParallelSupport — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
@@ -57,7 +57,7 @@ namespace zero_any
  * @details Same layout as zero_one_value::Array, but where zero_one_value::Array shares a SINGLE second value
  *          across the array, here every chunk registers its own (find-or-set), so a chunk
  *          compresses as soon as all its elements equal any one constant. Costs a per-chunk
- *          second-value table (ProxySpec2A), garbage-collected through GlobalVecHolder.
+ *          second-value table (zero_any::ProxySpec), garbage-collected through GlobalVecHolder.
  *
  *          Each array registers its address in zero_any::Proxy::share_info_array to get a num_tab,
  *          the index into every per-tab metadata table. That registration is the array's
@@ -644,5 +644,5 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
 // Bodies of the two mode-specific mixins. After zero_any_array_inline.h, so their
 // CRTP self() sees a complete zero_any::Array.
-#include "chunk/internal/zero_any_array_parallel_inline.h"   // ParallelSupport2A's bodies
+#include "chunk/internal/zero_any_array_parallel_inline.h"   // zero_any::ParallelSupport's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

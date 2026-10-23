@@ -16,11 +16,11 @@
 
 #pragma once
 
-// Bodies of RechunkHooks2<Derived, true>. Included at the end of zero_one_value_array.h:
+// Bodies of zero_one_value::RechunkHooks<Derived, true>. Included at the end of zero_one_value_array.h:
 // self() needs a complete Derived, and the manager include stays out of the class.
 #include <tuple> // std::get on candidate tuples
 
-#include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // RechunkHooks2, the class these bodies belong to
+#include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // zero_one_value::RechunkHooks, the class these bodies belong to
 #include "chunk/internal/manager_chunk.h"                      // ManagerType — candidate store + reuse free-lists
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast

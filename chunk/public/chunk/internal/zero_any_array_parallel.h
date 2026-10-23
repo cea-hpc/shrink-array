@@ -22,8 +22,8 @@
  *        isolated in its own mixin so it disappears entirely from a serial
  *        build.
  *
- * @details Same split as ParallelSupport / ParallelSupport2 do for the other
- *          two variants: ParallelSupport2A<Derived, threaded> carries
+ * @details Same split as ParallelSupport / zero_one_value::ParallelSupport do for the other
+ *          two variants: zero_any::ParallelSupport<Derived, threaded> carries
  *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
  *          three variants), a no-op in the serial specialisation.
  *
@@ -52,7 +52,7 @@ struct ParallelSupport;
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
 /**
  * @brief OpenMP specialisation: the deferred-op flush.
- * @copydetails ParallelSupport2A
+ * @copydetails zero_any::ParallelSupport
  */
 template <typename Derived>
 struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>

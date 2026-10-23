@@ -69,7 +69,7 @@ namespace zero_any
 
 // ─── Concurrent (OMP) chunk operations extracted from zero_any ──────────────
 // CRTP policy base with the lock-free CAS operations of OpenMP builds only: zero_any inherits it
-// through the OpenMP specialisation of Chunk2AOmpPolicy, so in a serial build the methods do not
+// through the OpenMP specialisation of zero_any::ChunkOmpPolicy, so in a serial build the methods do not
 // exist. Reaches zero_any's bases via self() (Base = SecondValueChunkBase, Holder = TabCstVal2Holder).
 /// @brief zero_any's lock-free CAS operations on `values` (OpenMP builds only).
 template <typename T, typename Derived>
@@ -224,7 +224,7 @@ class ChunkConcurrentOps
     }
 };
 
-// Read-side counterpart of Chunk2AConcurrentOps: lock-free classification of `values`. Needed in
+// Read-side counterpart of zero_any::ChunkConcurrentOps: lock-free classification of `values`. Needed in
 // every build, so mixed into zero_any UNCONDITIONALLY (not gated on threaded).
 /// @brief zero_any's lock-free reads of its constant state (cst_val1 / cst_val2 / written), every build.
 template <typename T, typename Derived>
@@ -356,9 +356,9 @@ class ChunkStateQueries
  * @details A serial build has no thread ranks, no CAS window and no in-flight
  *          compression to wait out, so it materialises and clears a chunk
  *          differently; each specialisation below declares exactly the verbs
- *          its mode has -- the technique of ChunkOmpPolicy / Chunk2OmpPolicy.
+ *          its mode has -- the technique of ChunkOmpPolicy / zero_one_value::ChunkOmpPolicy.
  *          The OpenMP specialisation also carries the CAS operations
- *          (Chunk2AConcurrentOps).
+ *          (zero_any::ChunkConcurrentOps).
  *
  *          Sits between zero_any and SecondValueChunkBase in the inheritance chain.
  *
@@ -530,7 +530,7 @@ class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived
 };
 
 /// @brief Chunk of values compressible to the first constant or to a second constant shared through the
-///        TabCstVal2Holder registry (see the class description above Chunk2AConcurrentOps).
+///        TabCstVal2Holder registry (see the class description above zero_any::ChunkConcurrentOps).
 /// @tparam T Element type.
 template <typename T>
 // no move operations on purpose -- a move falls back to
@@ -557,7 +557,7 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
     using Holder = TabCstVal2Holder<T>;
 
     // block_clear / clear_st / clear / clear_int_st / create_value* live on
-    // Chunk2AOmpPolicy, one specialisation per mode (see above). Both declare
+    // zero_any::ChunkOmpPolicy, one specialisation per mode (see above). Both declare
     // these names; the in-class bodies below call them unqualified.
     using OmpPolicy::block_clear;
     using OmpPolicy::clear;

@@ -56,7 +56,7 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
             if (reg.ind != inf_array_src_->ind || reg.num_tab != inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
-                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                    "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     inf_array_src_->ind, inf_array_src_->num_tab, reg.ind, reg.num_tab,
                     static_cast<const void*>(get_ptr_on_array()));
@@ -90,7 +90,7 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
             if (reg.ind != inf_array_src_->ind || reg.num_tab != inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
-                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                    "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     inf_array_src_->ind, inf_array_src_->num_tab, reg.ind, reg.num_tab,
                     static_cast<const void*>(get_ptr_on_array()));
@@ -207,7 +207,7 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk()
 
 // ── Methods only present when fast block compression is active ────────────
 // Members of the Enabled=true policy only: zero_one_value::Proxy instantiates
-// Proxy2FastCompPolicy<..., chunk_config::use_fast_block_compression>, and the
+// zero_one_value::ProxyFastCompPolicy<..., chunk_config::use_fast_block_compression>, and the
 // <..., false> specialisation declares none of them, so nothing here is ever
 // looked at by a serial build. No preprocessor guard needed.
 
@@ -594,7 +594,7 @@ template <typename T>
 void zero_one_value::Proxy<T>::ensure_writable_storage()
 {
     // Route this materialisation to THIS array's chunk-size pool -- the sync
-    // twin of Proxy2AFastCompPolicy::ensure_writable_storage_async. Required:
+    // twin of zero_any::ProxyFastCompPolicy::ensure_writable_storage_async. Required:
     // chunk.create_value() (called directly, bypassing zero_one_value::Proxy<T>::create_value()'s
     // self-correction) allocates at the per-thread thread_chunk_size, which an
     // unrelated array may have left STALE, while num/store_value use this
@@ -704,7 +704,7 @@ void zero_one_value::Proxy<T>::execute_simple_operation(Lambda operation)
 
 // ── execute_arithmetic_compound_operation ─────────────────────────────────
 // Two entirely different implementations depending on compression mode, one
-// per Proxy2FastCompPolicy specialisation.
+// per zero_one_value::ProxyFastCompPolicy specialisation.
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>

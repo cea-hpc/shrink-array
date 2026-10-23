@@ -43,7 +43,7 @@
 
 /**
  * @file zero_any_proxy_inline.h
- * @brief Out-of-line definitions of zero_any::Proxy and Proxy2AFastCompPolicy.
+ * @brief Out-of-line definitions of zero_any::Proxy and zero_any::ProxyFastCompPolicy.
  *
  * zero_any stores TWO constants: a global `first_value` and a per-chunk
  * `second_value`. A chunk is cst_val1, cst_val2, or materialised on the heap;

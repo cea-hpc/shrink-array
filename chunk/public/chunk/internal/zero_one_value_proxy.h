@@ -29,7 +29,7 @@
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/crp_helper.h"      // CRTPSupport
 #include "chunk/PMP_CHUNK.h"                // get_thr_rank_fast
-#include "chunk/internal/zero_one_value_pointer_map.h"   // PointerMapChunk2
+#include "chunk/internal/zero_one_value_pointer_map.h"   // zero_one_value::PointerMap
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/chunk_size_policy.h"            // set_thread_chunk_size
 #include "chunk/internal/TChunk.h"                       // VectorTuple4ChunkInt2
@@ -86,7 +86,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     using Base::Base;
 
     // Template: instantiated only if called, so no build-mode guard. Implemented in
-    // Proxy2FastCompPolicy<..., true>.
+    // zero_one_value::ProxyFastCompPolicy<..., true>.
     /**
      * @brief Async-context counterpart of get_ptr_on_array().
      * @param ctx Async write context.
@@ -260,7 +260,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     using Base::Base;
 
     /// @brief Arm this proxy with the owning array's registry mirror (see the non-bool
-    ///        ProxySpec2::arm_inf_array()).
+    ///        zero_one_value::ProxySpec::arm_inf_array()).
     void arm_inf_array(const InfArrayT* src) const noexcept
     {
         inf_array_src_ = src;
@@ -270,7 +270,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     ///        set_info_second_value_ind() below for why this is NOT a no-op.
     void set_info_on_chunk();
 
-    // Template: no guard needed (see the non-bool ProxySpec2).
+    // Template: no guard needed (see the non-bool zero_one_value::ProxySpec).
     /**
      * @brief Async-context counterpart of get_ptr_on_array().
      * @param ctx Async write context.
@@ -306,7 +306,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
   protected:
-    // Named as the generic ProxySpec2 member, for the using-declarations both share.
+    // Named as the generic zero_one_value::ProxySpec member, for the using-declarations both share.
     static constexpr bool second_value_ = true;
 
     /**
@@ -818,12 +818,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     // Both members exist in both ProxyBaseFastCompPolicy specialisations: no guard needed.
     // Do not add `using Base::read_values_async;`: it exists only in the Enabled=true
-    // specialisation (imported in Proxy2FastCompPolicy<..., true>), so it breaks builds
+    // specialisation (imported in zero_one_value::ProxyFastCompPolicy<..., true>), so it breaks builds
     // without fast block compression.
     using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
     using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
 
-    // Declared per Proxy2FastCompPolicy specialisation: the deferred and counter forms are
+    // Declared per zero_one_value::ProxyFastCompPolicy specialisation: the deferred and counter forms are
     // different algorithms (and pass `operation` different arguments).
     using FastCompPolicy::execute_arithmetic_compound_operation;
 

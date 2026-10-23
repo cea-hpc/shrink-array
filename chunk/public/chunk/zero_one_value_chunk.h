@@ -182,7 +182,7 @@ class ChunkSpec
     }
 };
 
-/// @brief ChunkSpec2 for bool and Bit (bit.h): the second constant is `true`, one for the type.
+/// @brief zero_one_value::ChunkSpec for bool and Bit (bit.h): the second constant is `true`, one for the type.
 template <typename T>
     requires is_bool_like_v<T>
 class ChunkSpec<T>
@@ -372,7 +372,8 @@ class ChunkCounterPolicy
  *          free-lists, and maintains per-chunk element counters that the parallel
  *          path does not; each specialisation declares exactly the verbs its mode
  *          has (as ChunkOmpPolicy does for zero). Sits between
- *          Chunk2FastCompPolicy and SecondValueChunkBase, so zero_one_value inherits both through one path.
+ *          zero_one_value::ChunkFastCompPolicy and SecondValueChunkBase, so zero_one_value inherits both through one
+ * path.
  *
  * @tparam T       stored element type
  * @tparam Derived CRTP derived chunk type (zero_one_value::Chunk<T>)
@@ -937,7 +938,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derive
                                     unsigned int         n_elems);
 };
 
-/// @brief Chunk2FastCompPolicy with fast block compression compiled out:
+/// @brief zero_one_value::ChunkFastCompPolicy with fast block compression compiled out:
 ///        no candidate list, so every query answers "empty" and every pass
 ///        is a no-op.
 template <typename T, typename Derived>
@@ -1015,7 +1016,8 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     using Base::first_value;
     using Base::values_;
 
-    using CounterPolicy = ChunkCounterPolicy; ///< The counter base, Chunk2CounterPolicy<use_compression_with_counter>.
+    using CounterPolicy =
+        ChunkCounterPolicy; ///< The counter base, zero_one_value::ChunkCounterPolicy<use_compression_with_counter>.
 
     using FastCompPolicy = ChunkFastCompPolicy<T, Chunk, chunk_config::use_fast_block_compression>;
     using OmpPolicy      = ChunkOmpPolicy<T, Chunk, build_config::threaded>;
@@ -1065,7 +1067,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /**
      * @brief Copy constructor: copies the values pointer (shallow) AND the
-     *        Chunk2CounterPolicy counters.
+     *        zero_one_value::ChunkCounterPolicy counters.
      * @param other Chunk to copy from.
      * @warning The counter base MUST be copied: default-constructed, the counters restart
      *          at 0 and can no longer reach `size`, so the chunk's compression is missed
@@ -1384,9 +1386,9 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     // --- where the rest of zero_one_value lives ----------------------------------
     // Materialisation and clearing (create_value*, clear*, block_clear) are on
-    // Chunk2OmpPolicy, one specialisation per mode; the queue-driven compression
+    // zero_one_value::ChunkOmpPolicy, one specialisation per mode; the queue-driven compression
     // (compress*, fill_list*, compress_chunk_to_compress*) is on
-    // Chunk2FastCompPolicy<T, zero_one_value::Chunk, true>, next to make_block_compression.
+    // zero_one_value::ChunkFastCompPolicy<T, zero_one_value::Chunk, true>, next to make_block_compression.
 
   private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)

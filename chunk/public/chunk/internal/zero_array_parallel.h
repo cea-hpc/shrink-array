@@ -83,7 +83,7 @@ struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Deri
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *
- * @details zero's copy of FastBlockSupport2 (zero_one_value_array_parallel.h). The only
+ * @details zero's copy of zero_one_value::FastBlockSupport (zero_one_value_array_parallel.h). The only
  *          call site (zero::Array::resize) guards with the same constexpr and
  *          so still names a declared member in every mode.
  */

@@ -61,9 +61,9 @@
  *  - **And twice again over OpenMP**, where the serial twin takes a genuinely
  *    different path: no CAS, no rank, and the element counters
  *    (`use_compression_with_counter`) to reset, which the parallel path does not
- *    maintain. The two live on the two specialisations of Chunk2OmpPolicy
+ *    maintain. The two live on the two specialisations of zero_one_value::ChunkOmpPolicy
  *    (build_config::threaded); the queue-driven compression is on
- *    Chunk2FastCompPolicy<..., true>.
+ *    zero_one_value::ChunkFastCompPolicy<..., true>.
  *  - **Geometry comes from the queued entry, never from the ambient size.**
  *    Every candidate tuple carries the chunk count of its owning array
  *    (field `<3>`), because the thread consuming the entry may have a different
@@ -107,7 +107,7 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(ze
 
 
 // ---------------------------------------------------------------------------
-// Chunk2FastCompPolicy<T, Derived, true>: the queue-driven compression.
+// zero_one_value::ChunkFastCompPolicy<T, Derived, true>: the queue-driven compression.
 // ---------------------------------------------------------------------------
 
 /**
@@ -893,7 +893,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
 }
 
 // ---------------------------------------------------------------------------
-// Chunk2OmpPolicy<T, Derived, true>: materialise and clear, OpenMP mode.
+// zero_one_value::ChunkOmpPolicy<T, Derived, true>: materialise and clear, OpenMP mode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -1025,7 +1025,7 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(bool
 }
 
 // ---------------------------------------------------------------------------
-// Chunk2OmpPolicy<T, Derived, false>: materialise and clear, serial mode.
+// zero_one_value::ChunkOmpPolicy<T, Derived, false>: materialise and clear, serial mode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -1245,6 +1245,6 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, false>::clear_int_st(int num_com
 
 // clear_st(int num_compress_value, int ind) -- the entry point that supplies
 // the calling thread's rank (or has none to supply) -- is defined in-class on
-// each Chunk2OmpPolicy specialisation.
+// each zero_one_value::ChunkOmpPolicy specialisation.
 
 } // end namespace shrink_array

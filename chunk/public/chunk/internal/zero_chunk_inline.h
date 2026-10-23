@@ -57,7 +57,7 @@ void zero::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero::Chunk<
 }
 
 // Out of line on purpose, as operator new[] above: avoids a false -Wmismatched-new-delete
-// (see Chunk2AOmpPolicy::operator delete[] in zero_any_chunk_inline.h).
+// (see zero_any::ChunkOmpPolicy::operator delete[] in zero_any_chunk_inline.h).
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void zero::ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {

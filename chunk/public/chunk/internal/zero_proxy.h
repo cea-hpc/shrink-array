@@ -22,7 +22,7 @@
 #include <utility>    // std::pair
 #include <vector>     // std::vector
 
-#include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk2
+#include "chunk/internal/pointer_map_linear.h" // linear scan shared with zero_one_value::PointerMap
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
 #include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
@@ -50,7 +50,7 @@ namespace zero
 
 /**
  * @brief Registry mapping array-element keys (pointers) to their table
- *        number. Unlike PointerMapChunk2, it has no value -> inf_array
+ *        number. Unlike zero_one_value::PointerMap, it has no value -> inf_array
  *        lookup: zero's compression does not group chunks by value.
  * @tparam T Element type this registry is keyed on.
  */
@@ -108,7 +108,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void
     /// What a key maps to: its table number.
     using InfArrayT = int;
 
-    // Storage: a std::vector (PointerMapChunk2 uses a std::deque, see there).
+    // Storage: a std::vector (zero_one_value::PointerMap uses a std::deque, see there).
     using Linear = PointerMapLinear<InfArrayT, std::vector<std::pair<const void*, InfArrayT>>>;
     /// Brings the base's storage back into this class's scope (dependent base).
     using Linear::vec_;

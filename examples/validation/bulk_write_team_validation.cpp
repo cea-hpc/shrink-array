@@ -224,7 +224,7 @@ int run_type(const char* type, long n)
     // of the build's backend, the std backend's too, where an OpenMP pragma is
     // ignored): creating, resizing or destroying arrays from several threads
     // at once is outside the library's contract -- create_common() takes no
-    // lock and the zero_any registry (PointerMapChunk2A) is not thread-safe
+    // lock and the zero_any registry (zero_any::PointerMap) is not thread-safe
     // (see region_storage_validation).
     int        region_fails = 0;
     std::mutex one_at_a_time;

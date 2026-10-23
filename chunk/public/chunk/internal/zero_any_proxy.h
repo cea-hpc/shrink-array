@@ -19,7 +19,7 @@
 #include <algorithm>   // std::min, std::copy_n, std::ranges::fill (the resize copy)
 #include <atomic>      // std::memory_order_relaxed
 #include <cstdlib>     // std::abort (debug stubs)
-#include <exception>   // std::exception (PointerMapChunk2A::erase)
+#include <exception>   // std::exception (zero_any::PointerMap::erase)
 #include <iostream>    // std::cerr (debug stubs)
 #include <memory>      // std::unique_ptr, std::addressof (operator=: operator& is deleted)
 #include <type_traits> // std::is_same_v
@@ -29,7 +29,7 @@
     #include <concepts> // std::assignable_from
 #endif
 
-#include "chunk/vendor/ankerl/unordered_dense.h" // PointerMapChunk2A::big
+#include "chunk/vendor/ankerl/unordered_dense.h" // zero_any::PointerMap::big
 
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
@@ -59,7 +59,7 @@ class ManagerChunk;
 /*---------------------------------------------------------------------------*/
 
 /**
- * @brief Forward declaration of zero_any::Chunk used by zero_any::Proxy/PointerMapChunk2A.
+ * @brief Forward declaration of zero_any::Chunk used by zero_any::Proxy/zero_any::PointerMap.
  * @tparam T element type
  */
 
@@ -73,7 +73,7 @@ class Chunk;
  * @brief Registry mapping array keys (pointers) to their table number, for
  *        zero_any: a linear-scan vector while small, switching once and for all
  *        to a hash map past SmallN entries.
- * @tparam T Element type (unused; symmetry with PointerMapChunk).
+ * @tparam T Element type (unused; symmetry with zero::PointerMap).
  * @tparam SmallN Entry count past which the hash map is used.
  */
 template <typename T, size_t SmallN = 16>
@@ -104,7 +104,7 @@ class PointerMap
                     return tab;
                 }
             }
-            CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
+            CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}",
                                    static_cast<const void*>(this), small_.size(), key);
         }
 
@@ -112,7 +112,7 @@ class PointerMap
         {
             return it->second;
         }
-        CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
+        CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}",
                                static_cast<const void*>(this), big_.size(), key);
     }
 
@@ -147,7 +147,7 @@ class PointerMap
             }
             catch (const std::exception& e)
             {
-                CHUNK_INVARIANT_FAILED("[PointerMapChunk2A erase] failed: {} (this={} key={})", e.what(),
+                CHUNK_INVARIANT_FAILED("[zero_any::PointerMap erase] failed: {} (this={} key={})", e.what(),
                                        static_cast<const void*>(this), key);
             }
         }
@@ -303,7 +303,7 @@ class PointerMap
 } // namespace zero_any
 
 /*!
- * \brief ProxySpec2A: static per-tab, per-chunk second-value storage for zero_any::Proxy
+ * \brief zero_any::ProxySpec: static per-tab, per-chunk second-value storage for zero_any::Proxy
  *        (indexed tab_second_value[num_tab][num_chunk]), so the proxy never manages
  *        the container itself.
  *
@@ -313,7 +313,7 @@ class PointerMap
 /// @brief Reallocate @p ptr from @p old_size to @p new_size elements,
 ///        keeping the first min(old_size, new_size).
 /// @warning Elements [old_size, new_size) are left INDETERMINATE: the caller
-///          fills them (ProxySpec2A<bool>::resize does). Default-initialised on
+///          fills them (zero_any::ProxySpec<bool>::resize does). Default-initialised on
 ///          purpose: a zero-fill would be overwritten by the copy and the fill.
 template <typename T>
 void realloc_unique(std::unique_ptr<T[]>& ptr, std::size_t old_size, std::size_t new_size)
@@ -448,7 +448,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 } // namespace zero_any
 
 /*!
- * \brief Specialization of ProxySpec2A for bool: one flag per chunk in a plain
+ * \brief Specialization of zero_any::ProxySpec for bool: one flag per chunk in a plain
  *        unique_ptr<bool[]> row per tab.
  */
 
@@ -628,7 +628,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
 
     using BaseSpec::BaseSpec;
 
-    /// @brief The single candidate list of a serial build (Chunk2AOmpPolicy<false>).
+    /// @brief The single candidate list of a serial build (zero_any::ChunkOmpPolicy<false>).
     TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially() const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially();
@@ -840,7 +840,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
         return chunk_.is_cst_val2();
     }
 
-    // The candidate-list accessors live on the Proxy2AFastCompPolicy specialisations.
+    // The candidate-list accessors live on the zero_any::ProxyFastCompPolicy specialisations.
 
     /**
      * @brief Marks the current chunk for compression if the new value requires it.
