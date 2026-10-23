@@ -71,17 +71,17 @@ option(FAST_ALLOC_CHECK_LISTS "Debug builds: check every slab list in full on ea
 # write) remains for TSan builds, non-Linux, and any run whose membarrier
 # registration fails; config.h has the numbers behind the choice.
 
-# Chunk2A's per-chunk second-value table holds a 4-byte identifier instead of
+# zero_any's per-chunk second-value table holds a 4-byte identifier instead of
 # the value for types wider than 4 bytes (double, long, complex<double>):
 # 4 bytes per chunk instead of 8 or 16, -3.8% RSS on the 50 M-chunk reference
 # run, for one more dependent load on every write of a materialised chunk --
 # +3% CPU on the perf bench. Off by default; see SecondValueTraits in
 # chunk/internal/tab_cst_val2_holder.h.
-option(CHUNK_SECOND_VALUE_INDEXED "Chunk2A: store second values as 4-byte identifiers (less memory, +3% write CPU)" OFF)
+option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte identifiers (less memory, +3% write CPU)" OFF)
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
 # build (chunk/build_options.h).
 
-# CHUNK_MM_PROTECT: Chunk/Chunk2's shared constant buffers (cst_val1, the cst_val2
+# CHUNK_MM_PROTECT: zero/zero_one_value's shared constant buffers (cst_val1, the cst_val2
 # region) are mprotect'ed read-only, so a stray write into a compressed chunk
 # faults at the culprit instead of corrupting a value shared by thousands of
 # chunks. A debugging build: one mprotect per buffer, and page-rounded slots.
@@ -736,7 +736,7 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
     # An icpx installed but not loaded: the llvm builds of compile_all.sh
     # reset the compiler modules, so neither icpx nor CMPLR_ROOT is visible
     # there, and the omp-llvm build on Milan silently linked glibc's libm
-    # (34.6% of the chunk2a_256 profile). INTEL_ICPX names one; otherwise the
+    # (34.6% of the zero_any_256 profile). INTEL_ICPX names one; otherwise the
     # newest match of INTEL_ICPX_GLOB is taken.
     set(INTEL_ICPX "" CACHE FILEPATH "icpx whose libimf to link when icpx is not in PATH (default: newest match of INTEL_ICPX_GLOB)")
     set(INTEL_ICPX_GLOB "/ccc/products/icx-*/system/default/*/bin/icpx" CACHE STRING
@@ -805,8 +805,8 @@ endif()
 # libimf, took shrink_bench_zero_any_256 from 15.70 s to 12.41 s on AMD Milan,
 # GNU). NVHPC is left alone: it links its own optimised math library.
 # SHRINK_ARM_LIBM is OFF by default: measured on Grace (clang 22, 64 threads,
-# same seed, RHEL 9.6 glibc vs armpl 25.07), chunk2a_dyn 8.30 -> 8.12 s,
-# chunk2a_256 6.20 -> 6.23 s, chunk2_256 5.76 -> 5.75 s -- noise; RHEL 9's
+# same seed, RHEL 9.6 glibc vs armpl 25.07), zero_any_dyn 8.30 -> 8.12 s,
+# zero_any_256 6.20 -> 6.23 s, zero_one_value_256 5.76 -> 5.75 s -- noise; RHEL 9's
 # aarch64 libm is on par with ArmPL's for these calls. Kept for re-measuring:
 # -DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir of libamath.so>; the executables
 # then carry an rpath and run without the module.

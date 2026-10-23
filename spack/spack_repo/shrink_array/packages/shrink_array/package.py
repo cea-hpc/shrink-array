@@ -72,7 +72,7 @@ class ShrinkArray(CMakePackage):
     variant(
         "second_value_indexed",
         default=False,
-        description="Chunk2A: second values as 4-byte identifiers (less memory, about +3% write time)",
+        description="zero_any: second values as 4-byte identifiers (less memory, about +3% write time)",
     )
     variant(
         "checks",

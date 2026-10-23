@@ -17,7 +17,7 @@
 #pragma once
 /**
  * @file proxy_base.h
- * @brief Common base class for Proxy2 and Proxy2A using CRTP pattern
+ * @brief Common base class for zero_one_value::Proxy and zero_any::Proxy using CRTP pattern
  *
  * ProxyBase holds all common functionality; derived classes keep only
  * chunk-specific logic.
@@ -38,7 +38,7 @@
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"              // ProxyOperators
 #include "chunk/internal/tab_cst_val2_holder.h"          // TabCstVal2Holder: second-value identifiers
-#include "chunk/internal/relaxed_element.h"              // store_value: Chunk2A's relaxed element stores
+#include "chunk/internal/relaxed_element.h"              // store_value: zero_any's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
 #include "chunk/internal/crp_helper.h"                   // CRTPSupport, CHUNK_CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
@@ -73,7 +73,7 @@ class Proxy;
 
 } // namespace zero
 
-/// @brief Whether T is a Proxy\<U\> (Proxy2 and Proxy2A are not): false by default.
+/// @brief Whether T is a zero::Proxy\<U\> (zero_one_value::Proxy and zero_any::Proxy are not): false by default.
 template <typename T>
 struct is_simple_proxy : public std::false_type
 {
@@ -88,7 +88,7 @@ namespace internal
 {
 /// @brief Element @p n behind a values pointer the caller has loaded -- the
 ///        raw read of ProxyBase::read_values() and read_values_async().
-/// @details NOT raw for a Chunk2A second constant: its pointer names an
+/// @details NOT raw for a zero_any second constant: its pointer names an
 ///          identifier in a region that is never written, so indexing it reads
 ///          a zero page; the value comes from the registry instead (arithmetic
 ///          plus one table load, no sync). Ask the POINTER, not the chunk: the
@@ -119,7 +119,7 @@ template <typename T>
 ///          (SIGFPE on x86, a silent 0 on ARM); an invariant failure says
 ///          where. Integer elements only: for a floating T the division is
 ///          IEEE (inf, NaN) and the result is defined. Compiled out of release
-///          builds. Shared by Proxy (v1) and Proxy2Base (Chunk2, Chunk2A).
+///          builds. Shared by zero::Proxy and SecondValueProxyBase (zero_one_value, zero_any).
 /// @tparam T Element type.
 /// @param v Divisor (a value or a proxy).
 /// @param op "/=" or "%=", for the message.
@@ -196,7 +196,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
         // outlives the caller's chunk_list realloc, and the cleared flag lets
         // the chunk be queued twice. The callers' compression pass (resize,
         // after its deferred-op drain) must empty the lists first; this checks
-        // it. Mirrors Proxy2A::resize_tab_is_int(num_tab, old, nb).
+        // it. Mirrors zero_any::Proxy::resize_tab_is_int(num_tab, old, nb).
         if constexpr (build_config::any_check)
         {
             if (static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
@@ -249,7 +249,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     /// @brief Read at the offset @p ctx recorded, on the replay path.
     /// @warning Same reload caveat as store_value_async().
     /// @details Through internal::element_of(), like read_values(): a raw read
-    ///          of a Chunk2A chunk compressed to its second value gives 0 (the
+    ///          of a zero_any chunk compressed to its second value gives 0 (the
     ///          identifier region), and a replayed `*=` would store 0 * x.
     [[nodiscard]] static T read_values_async(auto* ctx) noexcept
     {
@@ -310,12 +310,12 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkT, false> : public CRTPSupport<De
     /// @brief No candidate flags in this configuration; nothing to size.
     static void resize_tab_is_int([[maybe_unused]] int num_tab, [[maybe_unused]] int nb_chunk) noexcept {}
     /// @brief Release one array's candidate flags, as the enabled policy does.
-    /// @details Do not make this a no-op: Chunk2A's serial build has candidate
-    ///          lists and sizes these rows itself (Proxy2A::resize_tab_is_int).
+    /// @details Do not make this a no-op: zero_any's serial build has candidate
+    ///          lists and sizes these rows itself (zero_any::Proxy::resize_tab_is_int).
     ///          Otherwise a cleared array's flags stay at 1 with no list entry
     ///          behind them (one byte per chunk leaked) and the next
     ///          resize_tab_is_int() on that tab fails its "still queued" check.
-    ///          v1 and Chunk2 never fill a row here: the guard makes it free.
+    ///          zero and zero_one_value never fill a row here: the guard makes it free.
     static void release_tab_is_int(int num_tab) noexcept
     {
         using RowT = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
@@ -385,9 +385,9 @@ class AcquireValuesRef
 
 /**
  * @brief Base class for proxy types using CRTP pattern
- * @tparam Derived The derived proxy class (Proxy, Proxy2 or Proxy2A)
+ * @tparam Derived The derived proxy class (zero::Proxy, zero_one_value::Proxy or zero_any::Proxy)
  * @tparam T The underlying value type
- * @tparam ChunkT The chunk type (Chunk<T>, Chunk2<T> or Chunk2A<T>)
+ * @tparam ChunkT The chunk type (zero::Chunk<T>, zero_one_value::Chunk<T> or zero_any::Chunk<T>)
  *
  * Contains all common operators, compression logic, and thread-safety mechanisms.
  *
@@ -587,7 +587,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
                 CHUNK_INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num_);
             }
         }
-        // Chunk2A: the marking filter of another writer may be reading this
+        // zero_any: the marking filter of another writer may be reading this
         // element -- relaxed atomic store, see relaxed_element.h.
         if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
         {
@@ -611,7 +611,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // pending_ops_>0, wait_for_availability's replay reallocates `values`
         // under the in-flight writer. Same-offset visibility on the write path
         // is handled by the WAW erase before the write body; pure reads use
-        // read_pure(). Not raw for a Chunk2A second constant (see
+        // read_pure(). Not raw for a zero_any second constant (see
         // internal::element_of()): the compression decision must see the
         // constant, not 0.
         return read_values_at(values_);
@@ -717,7 +717,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Has a thread's candidate list grown past the point where it must be drained?
      *
      * The single definition of the "list became dangerous" threshold, shared by
-     * the trigger_compression_if_needed() of Proxy, Proxy2 and Proxy2A. Keep it
+     * the trigger_compression_if_needed() of zero::Proxy, zero_one_value::Proxy and zero_any::Proxy. Keep it
      * that way: three copies of the comparison drift apart.
      *
      * @param sz  Current candidate count for the thread.
@@ -914,7 +914,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @note Avoids the registry lookup (share_info_array->get_num_tab, a
     ///       linear scan or hash probe) on every write, a measurable cost. The
     ///       value is checked against the registry under any_check
-    ///       (Proxy2A::set_num_tab).
+    ///       (zero_any::Proxy::set_num_tab).
     void set_this_and_num_chunk(const void* array_ptr, int num_chunk, int num_tab) const noexcept
     {
         ptr_on_array_ = array_ptr;

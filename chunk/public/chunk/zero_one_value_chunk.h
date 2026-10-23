@@ -37,8 +37,8 @@
 #include "chunk/internal/bad_ptr_check.h"                       // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/PMP_CHUNK.h"                                    // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // chunk2_missing_candidate_list
-#include "chunk/internal/zero_one_value_proxy.h"                // Proxy2
-#include "chunk/internal/second_value_chunk_base.h"             // Chunk2Base
+#include "chunk/internal/zero_one_value_proxy.h"                // zero_one_value::Proxy
+#include "chunk/internal/second_value_chunk_base.h"             // SecondValueChunkBase
 #include "chunk/internal/conditional_counter.h"                 // ConditionalCounter, CounterValueT
 #include "chunk/internal/TChunk.h"                              // VectorTuple4ChunkInt2 (the candidate lists)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
@@ -366,16 +366,16 @@ class ChunkCounterPolicy
     [[no_unique_address]] ConditionalCounter<EnableCounters, 1> nb_val_eq_second_value_;
 };
 /**
- * @brief Chunk2's OpenMP-only surface: per-thread materialisation and clearing.
+ * @brief zero_one_value's OpenMP-only surface: per-thread materialisation and clearing.
  *
  * @details A serial build has no thread ranks, no CAS window and no per-thread
  *          free-lists, and maintains per-chunk element counters that the parallel
  *          path does not; each specialisation declares exactly the verbs its mode
- *          has (as ChunkOmpPolicy does for Chunk v1). Sits between
- *          Chunk2FastCompPolicy and Chunk2Base, so Chunk2 inherits both through one path.
+ *          has (as ChunkOmpPolicy does for zero). Sits between
+ *          Chunk2FastCompPolicy and SecondValueChunkBase, so zero_one_value inherits both through one path.
  *
  * @tparam T       stored element type
- * @tparam Derived CRTP derived chunk type (Chunk2<T>)
+ * @tparam Derived CRTP derived chunk type (zero_one_value::Chunk<T>)
  * @tparam Enabled build_config::threaded
  */
 template <typename T, typename Derived, bool Enabled = build_config::threaded>
@@ -395,7 +395,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
     ///        first constant (init_chunks_cst_val).
-    /// @warning `new Chunk2<T>[n]` runs the default constructors after this, which
+    /// @warning `new zero_one_value::Chunk<T>[n]` runs the default constructors after this, which
     ///          overwrite that initialisation; it only matters for placement-new
     ///          arrays. The library never array-news a chunk (zero::Array* use a
     ///          std::vector<ChunkType>).
@@ -519,7 +519,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>
 /**
  * @brief Serial specialisation: no rank, no CAS, and the element counters to reset.
  * @tparam T       stored element type
- * @tparam Derived CRTP derived chunk type (Chunk2<T>)
+ * @tparam Derived CRTP derived chunk type (zero_one_value::Chunk<T>)
  */
 template <typename T, typename Derived>
 class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
@@ -592,7 +592,7 @@ class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived
     void create_value_serial_impl(bool need_set_second_value, Init2ndFn&& init_2nd) noexcept;
 };
 
-/// @brief Chunk2's batched candidate queue and block compression (fast-block builds).
+/// @brief zero_one_value's batched candidate queue and block compression (fast-block builds).
 template <typename T, typename Derived, bool Enabled>
 class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derived>
 {
@@ -656,7 +656,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derive
     {
         if constexpr (is_not_bool)
         {
-            // One CAS against the precise expected pointer (see Chunk2A::compare_and_swap): two
+            // One CAS against the precise expected pointer (see zero_any::Chunk::compare_and_swap): two
             // CAS combined with && could succeed on the wrong side after a cst_val1 <-> cst_val2
             // race, installing a buffer whose init does not match the observed state.
             T* expected = expected_is_cst_val2 ? BaseSpec::get_cst_val2(ind) : Base::get_cst_val1();
@@ -664,7 +664,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derive
         }
         else
         {
-            CHUNK_INVARIANT_FAILED("Chunk2::compare_and_swap(values, ind, ...) on a bool chunk: "
+            CHUNK_INVARIANT_FAILED("zero_one_value::Chunk::compare_and_swap(values, ind, ...) on a bool chunk: "
                                    "compare_and_swap_bool is the bool path");
         }
     }
@@ -684,7 +684,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derive
         }
         else
         {
-            CHUNK_INVARIANT_FAILED("Chunk2::compare_and_swap_bool on a non-bool chunk");
+            CHUNK_INVARIANT_FAILED("zero_one_value::Chunk::compare_and_swap_bool on a non-bool chunk");
         }
     }
 
@@ -773,7 +773,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derive
     static VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
                                                                                       InT<T> second_value) noexcept
     {
-        // find(), not operator[]: see Proxy2::get_vec_tuple_to_compress_potentially_thr.
+        // find(), not operator[]: see zero_one_value::Proxy::get_vec_tuple_to_compress_potentially_thr.
         auto&      lists_by_value = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
         const auto it             = lists_by_value.find(second_value);
         if (it == lists_by_value.end() || it->second == nullptr) [[unlikely]]
@@ -1032,11 +1032,11 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     using ManagerChunk2 = ManagerChunk<Chunk, T>;
     // (second value, index, num_tab). Redeclared here on purpose: the policy
-    // bases declare the same name, and this one hides theirs so Chunk2's own
+    // bases declare the same name, and this one hides theirs so zero_one_value's own
     // members see one type. It must stay THEIR type -- checked below.
     using InfArrayT = SecondValueInfo<T>;
 
-    // Statistics variant tag (CHUNK_STATS): 1 = chunk2.
+    // Statistics variant tag (CHUNK_STATS): 1 = zero_one_value.
     static constexpr int stat_variant = 1;
 
     /*!
@@ -1070,7 +1070,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * @warning The counter base MUST be copied: default-constructed, the counters restart
      *          at 0 and can no longer reach `size`, so the chunk's compression is missed
      *          for good. This ctor also suppresses the implicit move, so every
-     *          std::vector<Chunk2> reallocation goes through it. Same rule as Chunk v1
+     *          std::vector<zero_one_value::Chunk> reallocation goes through it. Same rule as zero
      *          (zero_chunk.h). `values` is atomic and is copied by hand.
      */
     Chunk(const Chunk& other) : CounterPolicy(other)
@@ -1089,7 +1089,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * @brief Copy assignment: copies the values pointer (shallow) AND the counters.
      * @param other Chunk to copy from.
      * @return *this.
-     * @see Chunk2(const Chunk2&) for why the counters must follow `values`.
+     * @see Chunk(const Chunk&) for why the counters must follow `values`.
      */
     Chunk<T>& operator=(const Chunk<T>& other)
     {
@@ -1380,13 +1380,13 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     static_assert(
         std::is_same_v<InfArrayT,
                        typename ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>::InfArrayT>,
-        "Chunk2::inf_array_t must be the policies' inf_array_t");
+        "zero_one_value::Chunk::inf_array_t must be the policies' inf_array_t");
 
-    // --- where the rest of Chunk2 lives ----------------------------------
+    // --- where the rest of zero_one_value lives ----------------------------------
     // Materialisation and clearing (create_value*, clear*, block_clear) are on
     // Chunk2OmpPolicy, one specialisation per mode; the queue-driven compression
     // (compress*, fill_list*, compress_chunk_to_compress*) is on
-    // Chunk2FastCompPolicy<T, Chunk2, true>, next to make_block_compression.
+    // Chunk2FastCompPolicy<T, zero_one_value::Chunk, true>, next to make_block_compression.
 
   private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)

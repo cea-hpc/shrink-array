@@ -104,7 +104,7 @@ struct RechunkPolicy
                                         ///< it back to every tick. The analysis scans the
                                         ///< array's data, so once the geometry has settled
                                         ///< it was a fixed cost for nothing (shrink_bench
-                                        ///< v1 dyn, 64 threads: ~9% of an iteration).
+                                        ///< zero dyn, 64 threads: ~9% of an iteration).
                                         ///< 1 or 0 disables. CHUNK_ADVISOR_BACKOFF_MAX
                                         ///< overrides it at run time.
 };

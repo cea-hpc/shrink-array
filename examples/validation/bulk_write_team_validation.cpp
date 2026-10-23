@@ -62,7 +62,7 @@ namespace
 {
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "bulk_write_team_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
+              "bulk_write_team_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
@@ -74,15 +74,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -224,7 +224,7 @@ int run_type(const char* type, long n)
     // of the build's backend, the std backend's too, where an OpenMP pragma is
     // ignored): creating, resizing or destroying arrays from several threads
     // at once is outside the library's contract -- create_common() takes no
-    // lock and the Chunk2A registry (PointerMapChunk2A) is not thread-safe
+    // lock and the zero_any registry (PointerMapChunk2A) is not thread-safe
     // (see region_storage_validation).
     int        region_fails = 0;
     std::mutex one_at_a_time;

@@ -167,7 +167,7 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind_from_key(c
     ind_          = inf_array_.ind;
 }
 
-// Hidden from Doxygen: the Proxy2 alias (BaseSpec) and the bool specialization
+// Hidden from Doxygen: the zero_one_value::Proxy alias (BaseSpec) and the bool specialization
 // make this out-of-line definition ambiguous to it. Documented in zero_one_value_proxy.h.
 /// @cond
 template <typename T, typename Derived>
@@ -206,7 +206,7 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk()
 }
 
 // ── Methods only present when fast block compression is active ────────────
-// Members of the Enabled=true policy only: Proxy2 instantiates
+// Members of the Enabled=true policy only: zero_one_value::Proxy instantiates
 // Proxy2FastCompPolicy<..., chunk_config::use_fast_block_compression>, and the
 // <..., false> specialisation declares none of them, so nothing here is ever
 // looked at by a serial build. No preprocessor guard needed.
@@ -292,7 +292,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_c
             }
         }
     }
-    // Looked at, whether or not any bucket had work: see the 2A counterpart
+    // Looked at, whether or not any bucket had work: see the zero_any counterpart
     // and mark_list_dangerous_for_thread.
     CompressionManagerType::mark_list_safe_for_thread(thr_rank);
 }
@@ -325,7 +325,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> v) const noexcept
     }
 
     // ONE load of `values` for the state tests and the store, as in
-    // Proxy2A::perform_core_assignment(): is_cst_val1(), is_cst_val2() (a
+    // zero_any::Proxy::perform_core_assignment(): is_cst_val1(), is_cst_val2() (a
     // seq_cst load, ldar) and store_value() each reloaded it. Under the write
     // session the chunk cannot be compressed, only materialised by a
     // concurrent writer -- create_value() then loses its CAS, and the reload
@@ -504,7 +504,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
 
     // Synchronous core path (fast path)
     // By reference: v is this call's parameter, alive for the synchronous
-    // call (see Proxy2A::assign_impl); the deferred path copies it.
+    // call (see zero_any::Proxy::assign_impl); the deferred path copies it.
     const auto lbd_equal_core = [this, &v]
     {
         if constexpr (chunk_config::use_compression_without_counter)
@@ -595,7 +595,7 @@ void zero_one_value::Proxy<T>::ensure_writable_storage()
 {
     // Route this materialisation to THIS array's chunk-size pool -- the sync
     // twin of Proxy2AFastCompPolicy::ensure_writable_storage_async. Required:
-    // chunk.create_value() (called directly, bypassing Proxy2<T>::create_value()'s
+    // chunk.create_value() (called directly, bypassing zero_one_value::Proxy<T>::create_value()'s
     // self-correction) allocates at the per-thread thread_chunk_size, which an
     // unrelated array may have left STALE, while num/store_value use this
     // array's own size_policy_: a heap overflow once num exceeds a smaller
@@ -756,7 +756,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
 {
     // Same rule as ensure_writable_storage(): this function may call
     // chunk.create_value() below (via the will_be_not_second_value branch)
-    // without going through Proxy2<T>::create_value()'s self-correcting
+    // without going through zero_one_value::Proxy<T>::create_value()'s self-correcting
     // wrapper -- pin the ambient size to THIS array's own geometry first.
     if constexpr (build_config::chunk_dynamic)
     {

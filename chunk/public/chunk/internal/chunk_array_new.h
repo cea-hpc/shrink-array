@@ -21,8 +21,8 @@
  *
  * @details Each variant's `operator new[]` allocates, then points every chunk
  *          at its first constant (in parallel when large enough); only the
- *          per-chunk initialiser differs (`init_values_cst_val()` on v1,
- *          `init_after_constructor()` on chunk2 / chunk2A), which the helper takes.
+ *          per-chunk initialiser differs (`init_values_cst_val()` on zero,
+ *          `init_after_constructor()` on zero_one_value / zero_any), which the helper takes.
  *
  * @note For a PLACEMENT-new array only: `new C[n]` runs the default
  *       constructors afterwards, overwriting it. The library never array-news

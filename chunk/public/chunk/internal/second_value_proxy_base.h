@@ -33,14 +33,14 @@ namespace shrink_array
 {
 
 // ============================================================================
-// Proxy2Base: logic shared by Proxy2 and Proxy2A (second_value, etc.)
+// SecondValueProxyBase: logic shared by zero_one_value::Proxy and zero_any::Proxy (second_value, etc.)
 // ============================================================================
 
 /**
  * @brief Base class for proxies with a second_value (CRTP)
- * @tparam Derived The derived proxy class (Proxy2<T> or Proxy2A<T>)
+ * @tparam Derived The derived proxy class (zero_one_value::Proxy<T> or zero_any::Proxy<T>)
  * @tparam T The underlying type
- * @tparam ChunkType The chunk type (Chunk2<T> or Chunk2A<T>)
+ * @tparam ChunkType The chunk type (zero_one_value::Chunk<T> or zero_any::Chunk<T>)
  *
  * Contains the logic specific to chunks with two constant values.
  */
@@ -279,7 +279,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
-     * @brief Marking for a caller that stores AFTER marking (Proxy2A's
+     * @brief Marking for a caller that stores AFTER marking (zero_any::Proxy's
      *        assignment: mark, then perform_core_assignment).
      * @details Same test as mark_for_compression_if_needed() above, except the
      *          memory check of mark_for_compression_core() expects the OLD
@@ -293,7 +293,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @param first_value The first constant value
      * @param vals The chunk's values pointer, loaded by the caller inside the
      *        write session: the old value and the race check read through it
-     *        instead of reloading it (see Proxy2A::handle_no_bool_assignment).
+     *        instead of reloading it (see zero_any::Proxy::handle_no_bool_assignment).
      */
     void mark_for_compression_before_store(InT<T> second_val, InT<T> new_value, InT<T> first_value, const T* vals) const
     {
@@ -405,9 +405,9 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     [[nodiscard]] bool
     is_cst_val_new_value_is_other_cst_val(InT<T> new_value, InT<T> first_value, InT<T> second_val) const noexcept
     {
-        // CRTP dispatch: each variant owns its fast pre-check. Chunk2 keeps the
-        // "a constant is written" test below; Chunk2A widens it (see
-        // Proxy2A::pre_check_mark_for_compression) because its
+        // CRTP dispatch: each variant owns its fast pre-check. zero_one_value keeps the
+        // "a constant is written" test below; zero_any widens it (see
+        // zero_any::Proxy::pre_check_mark_for_compression) because its
         // should_mark_for_compression() accepts a case this test would reject.
         //
         // INVARIANT: pre_check_mark_for_compression() must never return false
@@ -419,7 +419,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
-     * @brief Default pre-check hook (Chunk2 behaviour).
+     * @brief Default pre-check hook (zero_one_value behaviour).
      * @details Variants that widen should_mark_for_compression() MUST shadow
      *          this method and widen the pre-check to match -- otherwise the
      *          extra predicate clauses are unreachable.

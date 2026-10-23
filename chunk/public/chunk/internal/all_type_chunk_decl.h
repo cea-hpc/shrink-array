@@ -33,9 +33,9 @@
  * @details For a header that must name AllTypeChunk while a variant's array
  *          class is still being defined: array_chunk_base_inline.h, whose
  *          ArrayChunkBase::create() calls ensure_manager(). The bodies
- *          (all_type_chunk_inline.h) reach the managers, then Chunk2A and
+ *          (all_type_chunk_inline.h) reach the managers, then zero_any and
  *          zero_any_array.h -- included from there, inside second_value_array_base.h,
- *          they closed a cycle and ArrayChunk2Base was not yet declared. They
+ *          they closed a cycle and SecondValueArrayBase was not yet declared. They
  *          come with all_type_chunk.h, which each variant's _inline.h
  *          includes after its class.
  *
@@ -206,8 +206,8 @@ struct AllTypeChunkDynInterface<Derived, false>
 /**
  * @brief Process-wide registry of the per-type chunk managers, reached as a singleton.
  *
- * A ManagerChunk is parameterised by both a chunk template (Chunk / Chunk2 /
- * Chunk2A) and an element type, so there is one manager per combination and no
+ * A ManagerChunk is parameterised by both a chunk template (zero / zero_one_value /
+ * zero_any) and an element type, so there is one manager per combination and no
  * single type can name them all. AllTypeChunk owns them behind
  * ManagerChunkInt pointers and offers the "do it for every type" operations the
  * rest of the library needs: allocator setup, deferred-write flush,
@@ -301,7 +301,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      *
      * @param apply true: every candidate found constant is compressed -- what
      *        the between-region passes want; false: the lists are walked,
-     *        their flags reset and (chunk2) emptied, and NOTHING is
+     *        their flags reset and (zero_one_value) emptied, and NOTHING is
      *        compressed -- the terminal sweep of a dying array uses it to
      *        purge its chunks from the lists. false does NOT drain: a
      *        caller counting "misses" after it sees only what it un-queued.

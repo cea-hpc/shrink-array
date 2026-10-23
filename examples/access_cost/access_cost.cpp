@@ -97,15 +97,15 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -126,7 +126,7 @@ void end_phase(Array<double>& arr)
     {
         shrink_array::finalize_parallel_phase();
     }
-    // Serial chunk2a has no between-region pass: run it (as variant_compare).
+    // Serial zero_any has no between-region pass: run it (as variant_compare).
     if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
         arr.make_block_compression();

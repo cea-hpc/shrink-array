@@ -345,7 +345,7 @@ class ManagerChunkParallelImpl<ChunkT, T, false> : public virtual ManagerChunkPa
  *          - **Allocator plumbing and counters** used by the statistics and the
  *            size advisor.
  *
- * @tparam ChunkT chunk variant template (Chunk, Chunk2 or Chunk2A)
+ * @tparam ChunkT chunk variant template (zero, zero_one_value or zero_any)
  * @tparam T       stored element type
  */
 template <template <typename> class ChunkT, typename T>
@@ -821,7 +821,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     const int max_thr_ = CHUNK_PMP_THREAD_CAPACITY;
 
-    /// @brief Chunk2: the second-value lists sweep_rank() drains, snapshotted
+    /// @brief zero_one_value: the second-value lists sweep_rank() drains, snapshotted
     ///        serially by sweep_prepare().
     std::vector<SecondValueInfo<T>*> sweep_inf_arrays_;
 
@@ -1199,7 +1199,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     // fast-alloc: owner-routed drain (free_elt_pow2 is only safe on
                     // an owned block). Do not "offer every block to every rank in
                     // turn": quadratic (is_free_able_elt() walks the slab chains),
-                    // and after a v1 re-chunk most parked blocks are orphans
+                    // and after a zero re-chunk most parked blocks are orphans
                     // (clear_st parks in the FREEING thread's list).
                     //
                     // Every slab names its owning instance and rank in its header
@@ -1409,7 +1409,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @details Same owner-routed drain and ownership discipline, but inside the
      *          caller's region (the serial drain opens two regions per list set,
      *          and runs on one thread under OMPT), with the bucket matrix
-     *          allocated once per re-chunk. Used at the v1 refill's slice
+     *          allocated once per re-chunk. Used at the zero refill's slice
      *          boundaries (rechunk_refill), where the serial drain cost several ms
      *          each. Ranks no team member holds are swept by one thread.
      * @pre A quiescent point for the lists of @p size: no thread parks into
@@ -1528,13 +1528,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // Serial-only on purpose: under OpenMP it would return the always-empty
     // serial store while the candidates sit per thread, so the constraint makes
     // a call fail to compile there.
-    /// @brief The Chunk2A candidate list (serial builds: a single one).
+    /// @brief The zero_any candidate list (serial builds: a single one).
     static auto& get_chunk2a_to_compress_potentially() noexcept
         requires(!build_config::threaded)
     {
         return chunk2a_to_compress_potentially;
     }
-    /// @brief Rank @p thr's Chunk2A candidate list (the single one in a
+    /// @brief Rank @p thr's zero_any candidate list (the single one in a
     ///        serial build).
     static auto& get_chunk2a_to_compress_potentially([[maybe_unused]] int thr) noexcept
     {
@@ -1548,7 +1548,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
-    /// @brief Is no Chunk2A chunk queued for compression, on any thread?
+    /// @brief Is no zero_any chunk queued for compression, on any thread?
     [[nodiscard]] static bool is_chunk2a_to_compress_potentially_empty() noexcept
     {
         if constexpr (build_config::threaded)
@@ -1562,13 +1562,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /**
-     * @brief Drop every queued Chunk2A candidate pointing into [@p lo, @p hi).
+     * @brief Drop every queued zero_any candidate pointing into [@p lo, @p hi).
      *
      * @details Teardown removal by CHUNK-POINTER RANGE: candidates hold
      *          &chunk_list[j], so filtering on the array's chunk_list span
      *          guarantees no pointer into it survives teardown. The by-num_tab
      *          form can MISS entries whose num_tab a rechunk identity swap
-     *          shifted; the dangling Chunk2A* would then be double-freed by a
+     *          shifted; the dangling zero_any::Chunk* would then be double-freed by a
      *          later compression pass.
      *
      * @param lo first address of the array's chunk_list span
@@ -1598,7 +1598,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /**
-     * @brief Drop every queued Chunk2A candidate of array @p num_tab, in every
+     * @brief Drop every queued zero_any candidate of array @p num_tab, in every
      *        rank's list (zero_any::Array::clear_core and rechunk_to).
      * @param num_tab tab index whose candidates are removed
      * @note Keeps other arrays' candidates. At teardown prefer
@@ -1621,14 +1621,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /**
-     * @brief Chunk2 analogue: drop every queued Chunk2 candidate for @p num_tab.
+     * @brief zero_one_value analogue: drop every queued zero_one_value candidate for @p num_tab.
      *
      * @details Removes the matching tuples from every rank and second-value
      *          bucket, WITHOUT compressing. Called from zero_one_value::Array::clear_core()
-     *          so no Chunk2* of a torn-down or re-chunked array dangles there.
+     *          so no zero_one_value::Chunk* of a torn-down or re-chunked array dangles there.
      *
      * @param num_tab tab index whose candidates are removed
-     * @note OpenMP builds only: a serial build queues no Chunk2 candidate (fast
+     * @note OpenMP builds only: a serial build queues no zero_one_value candidate (fast
      *       block compression is OpenMP-only), so there is nothing to drop.
      */
     static void remove_from_compress_list_chunk2_by_num_tab([[maybe_unused]] int num_tab) noexcept
@@ -1651,7 +1651,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
-    /// @brief Drop every queued Chunk (v1) candidate of array @p num_tab
+    /// @brief Drop every queued zero candidate of array @p num_tab
     ///        (zero::Array::clear_core and rechunk_to).
     /// @details Removes this array's candidates without compressing, and keeps
     ///          other arrays' intact.
@@ -1671,7 +1671,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
-    /// @brief Chunk2's candidate lists: per rank, one list per second value.
+    /// @brief zero_one_value's candidate lists: per rank, one list per second value.
     static inline constinit internal::Immortal<TChunk2CompMap<ChunkT, T>>
                                              map_chunk2_to_compress_potentially_thr_storage_{};
     static inline TChunk2CompMap<ChunkT, T>& map_chunk2_to_compress_potentially_thr =
@@ -1691,22 +1691,22 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         const auto it       = by_value.find(key);
         return it != by_value.end() ? it->second.get() : nullptr;
     }
-    /// @brief Chunk2: per rank, one list per second-value index, copied by
+    /// @brief zero_one_value: per rank, one list per second-value index, copied by
     ///        zero_one_value::Array into map_chunk2_to_compress_potentially_thr when it
     ///        registers a second value.
     static inline constinit internal::Immortal<TChunk2CompThr<ChunkT, T>> chunk2_to_compress_potentially_thr_storage_{};
     static inline TChunk2CompThr<ChunkT, T>&                              chunk2_to_compress_potentially_thr =
         chunk2_to_compress_potentially_thr_storage_.value;
-    /// @brief Chunk2A's per-rank candidate lists.
+    /// @brief zero_any's per-rank candidate lists.
     static inline constinit internal::Immortal<TChunk2ACompThr<ChunkT, T>>
                                               chunk2a_to_compress_potentially_thr_storage_{};
     static inline TChunk2ACompThr<ChunkT, T>& chunk2a_to_compress_potentially_thr =
         chunk2a_to_compress_potentially_thr_storage_.value;
-    /// @brief Chunk's (v1) per-rank candidate lists.
+    /// @brief zero's per-rank candidate lists.
     static inline constinit internal::Immortal<TChunkCompThr<ChunkT, T>> chunk_to_compress_potentially_thr_storage_{};
     static inline TChunkCompThr<ChunkT, T>&                              chunk_to_compress_potentially_thr =
         chunk_to_compress_potentially_thr_storage_.value;
-    /// @brief Chunk2A's single candidate list of a serial build.
+    /// @brief zero_any's single candidate list of a serial build.
     static inline constinit internal::Immortal<TChunk2AComp<ChunkT, T>> chunk2a_to_compress_potentially_storage_{};
     static inline TChunk2AComp<ChunkT, T>&                              chunk2a_to_compress_potentially =
         chunk2a_to_compress_potentially_storage_.value;

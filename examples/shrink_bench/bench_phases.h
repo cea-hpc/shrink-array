@@ -96,7 +96,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& end,
                       std::chrono::duration<double>&         elapsed_seconds);
 
-/// @brief Store sqrt(@p v) at index @p i of @p tab. For a v1 chunk array, the raw reference tab(i) is used only
+/// @brief Store sqrt(@p v) at index @p i of @p tab. For a zero::Array, the raw reference tab(i) is used only
 ///        when the chunk is written, operator[] otherwise.
 /// @param tab Destination array.
 /// @param i Element index.
@@ -104,7 +104,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
 template <class Arr, typename T>
 void neutral_sqrt_assign(Arr& tab, Int i, T v)
 {
-    // v1: the raw reference tab(i) is valid on a MATERIALISED chunk only. The
+    // zero: the raw reference tab(i) is valid on a MATERIALISED chunk only. The
     // write that computed v (tab2[i] = fmod(...)) can itself have compressed
     // the chunk -- a 0 completing an all-zero chunk, which the serial (counter)
     // build folds at once -- and the raw store then went into the shared

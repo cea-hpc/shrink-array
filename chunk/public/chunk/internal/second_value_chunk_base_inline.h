@@ -125,7 +125,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
     auto& ll_block_free_thr = derived().get_manager().get_list_block_free_thr(thr_rank);
     ll_block_free_thr.push_back(values_.load());
 
-    // Chunk2A specific cleanup
+    // zero_any specific cleanup
     if constexpr (std::is_same_v<IndexT, std::nullopt_t>)
     {
         ptr_second_value.reset();
@@ -134,7 +134,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
     }
     else
     {
-        // Chunk2 specific cleanup
+        // zero_one_value specific cleanup
         derived().set_cst_val_to_cst_val1();
         derived().init_values_cst_val();
 

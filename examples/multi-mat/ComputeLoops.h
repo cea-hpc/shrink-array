@@ -216,7 +216,7 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
                                  [&](int nn, double& vl)
                                  {
                                      // Gadget computation, weighted by the presence fraction
-                                     // (a read through the Chunk2 array on a chunk material)
+                                     // (a read through the zero_one_value array on a chunk material)
                                      const double vv = frac_ind[nn] * (std::cos(tab0_ind[nn]) + std::sin(tab1_ind[nn]) +
                                                                        std::tan(tab2_ind[nn])) +
                                                        std::cos(val);

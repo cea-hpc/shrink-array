@@ -29,7 +29,7 @@ namespace shrink_array
 
 /**
  * @brief CRTP base class providing arithmetic operators for proxy types
- * @tparam Derived The derived proxy class (Proxy2A, Proxy2, etc.)
+ * @tparam Derived The derived proxy class (zero_any::Proxy, zero_one_value::Proxy, etc.)
  * @tparam T The underlying value type
  *
  * Binary +, -, *, / between a proxy and a composite (result in U) or a scalar

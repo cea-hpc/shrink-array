@@ -17,15 +17,15 @@
 /**
  * @file fill_range_mt_zero_and_zero_one_value_validation.cpp
  * @brief fill_range_mt() in a build that holds TWO variants (chunk_zero_and_zero_one_value:
- *        CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1), on an zero::Array and an zero_one_value::Array side by
+ *        CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1), on a zero::Array and a zero_one_value::Array side by
  * side.
  *
  * @details The range ops once chose their per-variant behaviour from the build
  *          flags (chunk_config::use_zero / use_zero_one_value) instead of the array's
- *          type. In a build with both flags set, that sent an zero_one_value::Array down
- *          v1's paths -- a fill_range_mt() of its SECOND value was never queued
- *          for compression, its chunks stayed materialised -- and an zero::Array
- *          down Chunk2's, which did not even compile. This harness is that
+ *          type. In a build with both flags set, that sent a zero_one_value::Array down
+ *          zero's paths -- a fill_range_mt() of its SECOND value was never queued
+ *          for compression, its chunks stayed materialised -- and a zero::Array
+ *          down zero_one_value's, which did not even compile. This harness is that
  *          build: compiling it is the first half of the test, the second is
  *          what each fill leaves behind.
  *
@@ -37,7 +37,7 @@
  *
  *            array         fill value              chunks left materialised
  *            zero::Array    first value (0)         none
- *            zero::Array    anything else           all  (v1 has one constant)
+ *            zero::Array    anything else           all  (zero has one constant)
  *            zero_one_value::Array   first value (0)         none
  *            zero_one_value::Array   its second value (9)    none  <- the regression
  *            zero_one_value::Array   an undeclared value     all

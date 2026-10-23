@@ -2,10 +2,10 @@
  * Copyright 2026 CEA (www.cea.fr)
  * SPDX-License-Identifier: Apache-2.0
  *
- * switch_mt.c -- reduced GenMC model: a writer switching a compressed Chunk2A
+ * switch_mt.c -- reduced GenMC model: a writer switching a compressed zero_any
  * chunk to another constant in place (store_range_mt's in-place switch,
  * array_chunk_range_ops.h) against a compression pass that holds the same
- * chunk in its candidate list (Chunk2A::make_block_compression).
+ * chunk in its candidate list (zero_any::Chunk::make_block_compression).
  *
  * The chunk is reduced to its `values` word:
  *   CST1  the first-constant block (a real block of zeros in the library),
@@ -14,7 +14,7 @@
  *   BUF   a materialised buffer.
  * and its steal mark. The writer's flag says which chunk it is writing.
  *
- * Writer (store_range_mt, Chunk2A, a uniform span covering the chunk):
+ * Writer (store_range_mt, zero_any, a uniform span covering the chunk):
  *   announce_write(chunk)            -- flag = X; full barrier (symmetric shape)
  *   if (!must_defer_write(chunk)      -- the mark, acquire
  *       && !materialised(chunk))      -- values != BUF

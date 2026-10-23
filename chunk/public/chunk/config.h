@@ -151,7 +151,7 @@ inline constexpr bool free_guard = false;
 inline constexpr bool free_guard = true;
 #endif
 
-/// Chunk2A: second values of more than 4 bytes stored as 4-byte identifiers (CHUNK_SECOND_VALUE_INDEXED).
+/// zero_any: second values of more than 4 bytes stored as 4-byte identifiers (CHUNK_SECOND_VALUE_INDEXED).
 inline constexpr bool second_value_indexed = CHUNK_OPT_SECOND_VALUE_INDEXED != 0;
 
 /// Alignment (hence size) of one word of the per-chunk dirty bitset
@@ -257,9 +257,9 @@ inline constexpr bool use_second_value =
 [[deprecated("use use_second_value")]] inline constexpr bool   use_chunk2or2a = use_second_value;
 
 /**
- * @brief Chunk2's second-value index for an array that has declared none.
+ * @brief zero_one_value's second-value index for an array that has declared none.
  *
- * @details An zero_one_value::Array registers (T{}, this index) at construction and
+ * @details A zero_one_value::Array registers (T{}, this index) at construction and
  *          keeps it until set_second_value(). Every consumer of the index
  *          answers "no second constant" for it: get_cst_val2() is nullptr,
  *          is_cst_val2() false, written() reduces to "not cst_val1", and the

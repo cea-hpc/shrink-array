@@ -192,7 +192,7 @@ void memory_consumption(const std::string& msg)
         // SHRINK_BENCH_EXACT_RSS=1. Not on the periodic lines by default: in
         // --mode perf they run every 10 iterations INSIDE the timed loop, and
         // smaps_rollup walks the page tables of the whole process at each read
-        // (~200 reads cost ~3 s on the 64-thread chunk2a_dyn bench). statm
+        // (~200 reads cost ~3 s on the 64-thread zero_any_dyn bench). statm
         // above lags at many threads (exact_rss.h) but costs nothing.
         static const bool exact_every_line = shrink_array::env_flag("SHRINK_BENCH_EXACT_RSS");
         if (exact_every_line || checkpoint)

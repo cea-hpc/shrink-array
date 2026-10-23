@@ -18,7 +18,7 @@
 
 /**
  * @file zero_array_parallel.h
- * @brief zero::Array's (v1) two mode-gated surfaces -- the OpenMP-only one (the
+ * @brief zero::Array's two mode-gated surfaces -- the OpenMP-only one (the
  *        deferred-op flush) and the fast-block-only one
  *        (make_block_compression) -- isolated in their own mixins so they
  *        disappear entirely from a build that has neither.
@@ -83,7 +83,7 @@ struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Deri
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *
- * @details v1's copy of FastBlockSupport2 (zero_one_value_array_parallel.h). The only
+ * @details zero's copy of FastBlockSupport2 (zero_one_value_array_parallel.h). The only
  *          call site (zero::Array::resize) guards with the same constexpr and
  *          so still names a declared member in every mode.
  */

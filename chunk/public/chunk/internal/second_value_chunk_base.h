@@ -25,7 +25,7 @@
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast (the constant-buffer write check)
 #include "chunk/internal/chunk_base.h"          // ChunkBase
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef, the Chunk2A second-value slot handle
+#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef, the zero_any second-value slot handle
 #include "chunk/type_name.h"                    // type_name<T>
 
 namespace shrink_array
@@ -54,14 +54,14 @@ class Proxy;
 
 } // namespace zero_any
 
-// Specialisation for Chunk2
+// Specialisation for zero_one_value
 template <typename T>
 struct ProxyTypeTrait<zero_one_value::Chunk<T>>
 {
     using Type = zero_one_value::Proxy<T>;
 };
 
-// Specialisation for Chunk2A
+// Specialisation for zero_any
 template <typename T>
 struct ProxyTypeTrait<zero_any::Chunk<T>>
 {
@@ -69,10 +69,10 @@ struct ProxyTypeTrait<zero_any::Chunk<T>>
 };
 
 // ============================================================================
-// Chunk2Base
+// SecondValueChunkBase
 // ============================================================================
 
-/// @brief CRTP base of the two-value chunks (Chunk2 and Chunk2A), on top of ChunkBase.
+/// @brief CRTP base of the two-value chunks (zero_one_value and zero_any), on top of ChunkBase.
 /// @tparam T       Element type.
 /// @tparam Derived The chunk type.
 template <typename T, typename Derived>
@@ -101,18 +101,18 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
   protected:
     // ========================================================================
-    // Chunk2 specific deallocation with block_clear
+    // zero_one_value specific deallocation with block_clear
     // ========================================================================
 
-    /// @brief Common block clear implementation for Chunk2/Chunk2A
-    /// @tparam IndexT Type of index parameter (can be std::nullopt_t for Chunk2A)
+    /// @brief Common block clear implementation for zero_one_value/zero_any
+    /// @tparam IndexT Type of index parameter (can be std::nullopt_t for zero_any)
     /// @param num_compress_value Which constant value to compress to (0 or 1)
-    /// @param index_opt Optional index parameter (for Chunk2) or std::nullopt (for Chunk2A)
+    /// @param index_opt Optional index parameter (for zero_one_value) or std::nullopt (for zero_any)
     /// @param thr_rank Thread rank
-    /// @param ptr_type_cst Pointer to constant type indicator (Chunk2A only)
-    /// @param ptr_second_value Pointer to second value (Chunk2A only)
+    /// @param ptr_type_cst Pointer to constant type indicator (zero_any only)
+    /// @param ptr_second_value Pointer to second value (zero_any only)
     /// @param cst2_ptr The shared array to install for a type-2 compression
-    ///        (Chunk2A only; the chunk keeps no copy of it)
+    ///        (zero_any only; the chunk keeps no copy of it)
     template <typename IndexT>
     void block_clear_common(int                  num_compress_value,
                             IndexT               index_opt,
@@ -151,7 +151,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     ///        must not be compressed to either constant (the buffer would be the
     ///        shared cst_val1 / cst_val2 block).
     /// @param num_compress_value Index reported in the failure message.
-    /// @param ind_opt Chunk2's second-value slot index; empty for Chunk2A and
+    /// @param ind_opt zero_one_value's second-value slot index; empty for zero_any and
     ///        bool, whose second value is not table-indexed.
     void check_not_constant_before_clear(int num_compress_value, std::optional<int> ind_opt) const noexcept
     {
@@ -177,7 +177,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
             if (ind_opt.has_value())
             {
-                // Path for Chunk2 (Table indexed)
+                // Path for zero_one_value (Table indexed)
                 if constexpr (is_chunk2_derived)
                 {
                     const int ind = *ind_opt;
@@ -195,7 +195,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
             }
             else
             {
-                // Path for Chunk2A or Bool (Non-indexed)
+                // Path for zero_any or Bool (Non-indexed)
                 if constexpr (is_bool || is_chunk2a_derived)
                 {
                     is_violating = derived().is_cst_val2();
@@ -231,10 +231,10 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
     /// @brief Clear chunk and reset to constant value
     /// @tparam IndexT Type of index parameter
-    /// @param index_opt Optional index (Chunk2) or std::nullopt (Chunk2A)
+    /// @param index_opt Optional index (zero_one_value) or std::nullopt (zero_any)
     /// @param thr_rank Thread rank
-    /// @param ptr_type_cst Constant type pointer (Chunk2A only)
-    /// @param ptr_second_value Second value pointer (Chunk2A only)
+    /// @param ptr_type_cst Constant type pointer (zero_any only)
+    /// @param ptr_second_value Second value pointer (zero_any only)
     template <typename IndexT>
     void
     clear_impl(IndexT index_opt, int thr_rank, char* ptr_type_cst = nullptr, SecondValueRef<T> ptr_second_value = {});
@@ -253,7 +253,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
             const void* c2 = nullptr;
 
-            // Chunk2A: the secondary constants live in one region -- the test is
+            // zero_any: the secondary constants live in one region -- the test is
             // a range test on the target, not a pointer to compare with.
             bool target_in_cst2_region = false;
             if constexpr (requires { derived().tab_cst_val2_holder::is_cst_val2_ptr(target_ptr); })
@@ -266,7 +266,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
             }
             else if constexpr (requires { derived().get_cst_val2(); })
             {
-                // Chunk2 bool: one shared second constant.
+                // zero_one_value bool: one shared second constant.
                 c2 = static_cast<const void*>(derived().get_cst_val2());
             }
 

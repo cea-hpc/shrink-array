@@ -101,7 +101,7 @@ static _Atomic(int*) returned_buffer;
 
 /* ───────────────────────── elements: plain int, two access kinds ───────────────────────── */
 
-/* Chunk2A's direct store / scan load: relaxed atomics on the element (relaxed_element.h). */
+/* zero_any's direct store / scan load: relaxed atomics on the element (relaxed_element.h). */
 static void elem_store_relaxed(int* p, int v) { __atomic_store_n(p, v, __ATOMIC_RELAXED); }
 static int  elem_load_relaxed(const int* p) { return __atomic_load_n(p, __ATOMIC_RELAXED); }
 

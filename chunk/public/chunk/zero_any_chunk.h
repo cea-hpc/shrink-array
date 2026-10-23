@@ -30,7 +30,7 @@
 #include "chunk/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_RANK
 #include "chunk/ring_log_debug.h"                   // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
-#include "chunk/internal/second_value_chunk_base.h" // Chunk2Base
+#include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
 #include "chunk/internal/chunk_stats.h"             // increm_chunk_write
 
 #include "chunk/internal/TChunk.h"   // TChunk2AComp, VectorTuple4ChunkInt2
@@ -67,11 +67,11 @@ class ManagerChunk;
 namespace zero_any
 {
 
-// ─── Concurrent (OMP) chunk operations extracted from Chunk2A ───────────────
-// CRTP policy base with the lock-free CAS operations of OpenMP builds only: Chunk2A inherits it
+// ─── Concurrent (OMP) chunk operations extracted from zero_any ──────────────
+// CRTP policy base with the lock-free CAS operations of OpenMP builds only: zero_any inherits it
 // through the OpenMP specialisation of Chunk2AOmpPolicy, so in a serial build the methods do not
-// exist. Reaches Chunk2A's bases via self() (Base = Chunk2Base, Holder = TabCstVal2Holder).
-/// @brief Chunk2A's lock-free CAS operations on `values` (OpenMP builds only).
+// exist. Reaches zero_any's bases via self() (Base = SecondValueChunkBase, Holder = TabCstVal2Holder).
+/// @brief zero_any's lock-free CAS operations on `values` (OpenMP builds only).
 template <typename T, typename Derived>
 class ChunkConcurrentOps
 {
@@ -204,7 +204,7 @@ class ChunkConcurrentOps
     {
         return static_cast<const Derived*>(this);
     }
-    /// @brief `this` as a pointer to the Chunk2Base base.
+    /// @brief `this` as a pointer to the SecondValueChunkBase base.
     Base* base() noexcept
     {
         return static_cast<Base*>(self());
@@ -225,8 +225,8 @@ class ChunkConcurrentOps
 };
 
 // Read-side counterpart of Chunk2AConcurrentOps: lock-free classification of `values`. Needed in
-// every build, so mixed into Chunk2A UNCONDITIONALLY (not gated on threaded).
-/// @brief Chunk2A's lock-free reads of its constant state (cst_val1 / cst_val2 / written), every build.
+// every build, so mixed into zero_any UNCONDITIONALLY (not gated on threaded).
+/// @brief zero_any's lock-free reads of its constant state (cst_val1 / cst_val2 / written), every build.
 template <typename T, typename Derived>
 class ChunkStateQueries
 {
@@ -351,7 +351,7 @@ class ChunkStateQueries
 };
 
 /**
- * @brief Chunk2A's OpenMP-only surface: per-thread materialisation and clearing.
+ * @brief zero_any's OpenMP-only surface: per-thread materialisation and clearing.
  *
  * @details A serial build has no thread ranks, no CAS window and no in-flight
  *          compression to wait out, so it materialises and clears a chunk
@@ -360,10 +360,10 @@ class ChunkStateQueries
  *          The OpenMP specialisation also carries the CAS operations
  *          (Chunk2AConcurrentOps).
  *
- *          Sits between Chunk2A and Chunk2Base in the inheritance chain.
+ *          Sits between zero_any and SecondValueChunkBase in the inheritance chain.
  *
  * @tparam T       stored element type
- * @tparam Derived CRTP derived chunk type (Chunk2A<T>)
+ * @tparam Derived CRTP derived chunk type (zero_any::Chunk<T>)
  * @tparam Enabled build_config::threaded
  */
 template <typename T, typename Derived, bool Enabled = build_config::threaded>
@@ -381,7 +381,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConc
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
     ///        first constant (init_chunks_cst_val).
-    /// @warning `new Chunk2A<T>[n]` runs the DEFAULT CONSTRUCTORS after this, overwriting
+    /// @warning `new zero_any::Chunk<T>[n]` runs the DEFAULT CONSTRUCTORS after this, overwriting
     ///          that initialisation; it pays off only for a placement-new array. Nothing in
     ///          the library array-news a chunk (zero::Array* hold a std::vector).
     void* operator new[](std::size_t sz);
@@ -473,7 +473,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConc
  * @brief Serial specialisation: no rank, no CAS, no in-flight wait; and the
  *        eager clear verbs the sequential compression uses.
  * @tparam T       stored element type
- * @tparam Derived CRTP derived chunk type (Chunk2A<T>)
+ * @tparam Derived CRTP derived chunk type (zero_any::Chunk<T>)
  */
 template <typename T, typename Derived>
 class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
@@ -566,7 +566,7 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
     using OmpPolicy::create_value;
     using OmpPolicy::create_value_bool;
 
-    // Statistics variant tag (CHUNK_STATS): 2 = chunk2a.
+    // Statistics variant tag (CHUNK_STATS): 2 = zero_any.
     static constexpr int stat_variant = 2;
 
     Chunk()  = default;

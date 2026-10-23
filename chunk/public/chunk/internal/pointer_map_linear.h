@@ -22,8 +22,8 @@
  *
  * @details PointerMapChunk (zero_proxy.h) and PointerMapChunk2 (zero_one_value_pointer_map.h)
  *          map an array's address to its metadata by walking flat (key, payload)
- *          pairs; the plain scans live here once. Payload: a table number (v1),
- *          a (second_value, ind, num_tab) record (v2).
+ *          pairs; the plain scans live here once. Payload: a table number (zero),
+ *          a (second_value, ind, num_tab) record (zero_one_value).
  *
  * @note The CONTAINER is a template parameter on purpose: PointerMapChunk2
  *       needs a std::deque, since a std::vector reallocates as it grows and a

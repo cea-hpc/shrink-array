@@ -56,9 +56,9 @@ void ArrayChunkBase<Derived>::create_common()
 
     derived().pre_create_hook();
 
-    // In ALL modes, do not gate on use_fast_block_compression: Proxy2A needs
+    // In ALL modes, do not gate on use_fast_block_compression: zero_any::Proxy needs
     // its tab_* containers (tab_second_value, ...) even without OpenMP; for
-    // Proxy / Proxy2 it is a no-op stub outside OpenMP.
+    // zero::Proxy / zero_one_value::Proxy it is a no-op stub outside OpenMP.
     ProxyType::resize_tab_is_int(nb_tab);
 }
 
@@ -67,7 +67,7 @@ bool ArrayChunkBase<Derived>::is_written_at(int j) const noexcept
 {
     if constexpr (has_chunk_written_v<Derived>)
     {
-        // zero_one_value::Array: Chunk2::written() needs the second-value index.
+        // zero_one_value::Array: zero_one_value::Chunk::written() needs the second-value index.
         return derived().chunk_written(j);
     }
     else

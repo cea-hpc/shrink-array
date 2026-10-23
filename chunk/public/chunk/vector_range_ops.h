@@ -79,7 +79,7 @@ namespace internal
 {
 
 /**
- * @brief Is this one of the chunked arrays (Chunk, Chunk2, Chunk2A)?
+ * @brief Is this one of the chunked arrays (zero, zero_one_value, zero_any)?
  *
  * @details Detected structurally, on chunk_ref()/chunk_size(), rather than by
  *          naming the three class templates: they take a constrained element

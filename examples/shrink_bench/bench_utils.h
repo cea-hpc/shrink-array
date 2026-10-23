@@ -114,7 +114,7 @@ struct is_atomic_pointer<std::atomic<U*>> : public std::true_type
 //   - integral elements hash their VALUE, not their bytes: tab_bool is a
 //     std::vector<short> in the baseline and an Array<bool> in a shrink build
 //     (bench_array.h), and their checksums must agree; so does a packed Bit
-//     (tab_bool_bits and tab_mask in a chunk2 build), hashed as its bool --
+//     (tab_bool_bits and tab_mask in a zero_one_value build), hashed as its bool --
 //     its byte folded would never match the baseline's bool / short;
 //   - floating-point elements their bit pattern (-0.0 == T{} is skipped, as it
 //     always was: the library compresses it to +0.0 by design);

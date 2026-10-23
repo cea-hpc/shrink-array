@@ -1,7 +1,7 @@
 #!/bin/bash
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-# Chunk2A allocator diagnosis: build one configuration, then run it in a loop
+# zero_any allocator diagnosis: build one configuration, then run it in a loop
 # with a progress line.
 # Usage: ./diag_alloc.sh <variant> [nb_runs]
 #   variants: fast | std | noreuse | tsan

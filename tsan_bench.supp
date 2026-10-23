@@ -8,7 +8,7 @@ race:shrink_bench.cpp
 race:zero_any::Array*::resize
 race:zero_any::Array*::clear
 race:ManagerChunk*::clearListBlockFreeThr
-race:ArrayChunk2Base*::resize
+race:SecondValueArrayBase*::resize
 
 # --- Destructeurs STL pendant le teardown (vector/tuple/unique_ptr) ---
 race:std::_Vector_base

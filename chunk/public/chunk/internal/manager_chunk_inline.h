@@ -40,8 +40,8 @@
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_DISCARD
 #include "chunk/zero_chunk.h"                    // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/zero_one_value_chunk.h"          // Chunk2<T>: the ChunkT<T>:: calls
-#include "chunk/zero_any_chunk.h"                // Chunk2A<T>: the ChunkT<T>:: calls
+#include "chunk/zero_one_value_chunk.h"          // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/zero_any_chunk.h"                // zero_any::Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/zero_chunk_def.h"                // ChunkDef
 #include "chunk/zero_one_value_chunk_def.h"      // Chunk2Def
 #include "chunk/zero_any_chunk_def.h"            // Chunk2ADef
@@ -79,10 +79,10 @@ void load_balance_list_block_free_thr();
  * chunk variant ChunkT is. That is not incidental — the three variants keep
  * their candidates in genuinely different containers:
  *  - **Chunk** : one list per rank;
- *  - **Chunk2**: a map per rank, KEYED BY SECOND VALUE, so anything that walks
+ *  - **zero_one_value**: a map per rank, KEYED BY SECOND VALUE, so anything that walks
  *    the candidates has to iterate the array's registered second values first
  *    (and `bool`, whose second value is always `true`, takes a separate branch);
- *  - **Chunk2A**: one list per rank again, since its second value is per chunk.
+ *  - **zero_any**: one list per rank again, since its second value is per chunk.
  *
  * @warning have_chunk_to_compress_potentially() must mirror
  *          compress_chunk_to_compress_potentially()'s dispatch EXACTLY. They are
@@ -110,8 +110,8 @@ extern std::atomic<bool> g_need_flush_deferred;
  * the variant's block compression directly. Used where the caller wants the
  * memory back now rather than at the next phase boundary.
  *
- * @note Chunk and Chunk2A take a proxy argument (null here: no write triggered
- *       this), Chunk2 does not — hence the three-way `if constexpr`.
+ * @note zero and zero_any take a proxy argument (null here: no write triggered
+ *       this), zero_one_value does not — hence the three-way `if constexpr`.
  */
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunk<ChunkT, T>::force_chunk_to_compress() const
@@ -138,8 +138,8 @@ void ManagerChunk<ChunkT, T>::force_chunk_to_compress() const
  * @brief Sizes this type's compression-candidate containers to the current team.
  *
  * Which containers exist depends on the variant (see the file header): a plain
- * per-rank list for Chunk and Chunk2A, plus the per-second-value map for
- * Chunk2. A list keeps its capacity across the passes' clear(), so nothing
+ * per-rank list for zero and zero_any, plus the per-second-value map for
+ * zero_one_value. A list keeps its capacity across the passes' clear(), so nothing
  * pre-reserves it.
  */
 template <template <typename> typename ChunkT, typename T>
@@ -154,17 +154,17 @@ void ManagerChunk<ChunkT, T>::resize_chunk_to_compress_potentially() const
         chunk_to_compress_potentially_thr.resize(nthr);
     }
 
-    // --- Complex types (Chunk2/2A) multi-threading logic ---
+    // --- Complex types (zero_one_value/zero_any) multi-threading logic ---
     if constexpr (build_config::threaded)
     {
-        // Specific to Chunk2: Dual-value compression with static maps
+        // Specific to zero_one_value: Dual-value compression with static maps
         if constexpr (IsChunk2<ChunkT, T>)
         {
             map_chunk2_to_compress_potentially_thr.resize(nthr);
             chunk2_to_compress_potentially_thr.resize(nthr);
         }
 
-        // Specific to Chunk2A: Per-chunk secondary value compression
+        // Specific to zero_any: Per-chunk secondary value compression
         if constexpr (IsChunk2A<ChunkT, T>)
         {
             chunk2a_to_compress_potentially_thr.resize(nthr);
@@ -176,7 +176,7 @@ void ManagerChunk<ChunkT, T>::resize_chunk_to_compress_potentially() const
  * @brief Is there anything queued for compression for this type?
  *
  * Cheap gate for the callers that would otherwise open a parallel region for
- * nothing. For Chunk2 it has to ask once per registered second value, since
+ * nothing. For zero_one_value it has to ask once per registered second value, since
  * that is what keys the candidate map.
  *
  * @param n_thr   Number of per-rank lists to examine.
@@ -188,7 +188,7 @@ void ManagerChunk<ChunkT, T>::resize_chunk_to_compress_potentially() const
 template <template <typename> typename ChunkT, typename T>
 bool ManagerChunk<ChunkT, T>::have_chunk_to_compress_potentially(int n_thr) const
 {
-    // Mirror compress_chunk_to_compress_potentially's dispatch exactly (chunk2 is handled
+    // Mirror compress_chunk_to_compress_potentially's dispatch exactly (zero_one_value is handled
     // whenever use_fast_block_compression is on, GNU included, not only under OMPT): see the
     // file header's @warning.
     if constexpr (chunk_config::use_fast_block_compression)
@@ -219,7 +219,7 @@ bool ManagerChunk<ChunkT, T>::have_chunk_to_compress_potentially(int n_thr) cons
 /**
  * @brief Drain this type's compression-candidate backlog.
  *
- * The action whose predicate is have_chunk_to_compress_potentially(). Chunk2 is
+ * The action whose predicate is have_chunk_to_compress_potentially(). zero_one_value is
  * driven once per registered second value; the other variants have a single
  * entry point.
  *
@@ -254,7 +254,7 @@ void ManagerChunk<ChunkT, T>::compress_chunk_to_compress_potentially([[maybe_unu
     }
 }
 
-/// @brief Chunk2: snapshot the second-value lists the sweep drains.
+/// @brief zero_one_value: snapshot the second-value lists the sweep drains.
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunk<ChunkT, T>::sweep_prepare()
 {
@@ -299,7 +299,7 @@ void ManagerChunk<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unuse
     }
 }
 
-/// @brief Chunk2 always swept the ranks past the team; Chunk2A in one pass;
+/// @brief zero_one_value always swept the ranks past the team; zero_any in one pass;
 ///        Chunk never.
 template <template <typename> typename ChunkT, typename T>
 bool ManagerChunk<ChunkT, T>::sweep_mops_up([[maybe_unused]] bool apply) const

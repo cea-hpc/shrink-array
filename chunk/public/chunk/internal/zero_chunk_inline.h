@@ -143,7 +143,7 @@ void zero::Chunk<T>::compress_sweep_rank(int thr)
     // Dynamic geometry: pin the ambient chunk size to EACH candidate's own (its ChunkElems),
     // restored after the loop. free_block_to_pool() parks in the list of the AMBIENT size,
     // which after a re-chunk may be another array's: a 64-buffer parked in the 128 list
-    // is later handed out as a 128-buffer. Chunk2 and Chunk2A pin the same way.
+    // is later handed out as a 128-buffer. zero_one_value and zero_any pin the same way.
     [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
     for (auto& tup : chunk_t)
     {
@@ -158,7 +158,7 @@ void zero::Chunk<T>::compress_sweep_rank(int thr)
         // is_inside flag CASes 0->1, so a flag left at 1 means the chunk is never queued
         // again (compression stalls). Reset it TOGETHER with the list clear below: one
         // without the other lets a write re-append the chunk and make_block_compression
-        // double-clears it (see Chunk2A<T>::compress_chunk_to_compress_in_par).
+        // double-clears it (see zero_any::Chunk<T>::compress_chunk_to_compress_in_par).
         zero::Proxy<T>::reset_tab_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
     }
 
@@ -203,7 +203,8 @@ bool zero::ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int 
 }
 
 /**
- * @brief Zero-fill a freshly allocated v1 buffer before it is published (create_value's fresh-block initialiser).
+ * @brief Zero-fill a freshly allocated zero::Chunk buffer before it is published (create_value's fresh-block
+ *        initialiser).
  * @param vals buffer of shrink_array::alloc_chunk_count() elements
  * @details Only the pooled allocator needs the fill (svcalloc_align returns zeroed memory).
  *          The std path must stay on a zeroing allocator: plain malloc leaves garbage in
@@ -222,8 +223,8 @@ template <typename T, typename Derived, bool Enabled>
 void zero::ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
 {
     // Reuse pool first, then a fresh allocation (ChunkAllocPolicy::allocate_chunk_internal,
-    // shared with v2/v2A). Initialisers differ from v2/v2A: a v1 chunk is compressed only when
-    // all-zero, so a recycled buffer is already zero and needs no fill.
+    // shared with zero_one_value/zero_any). Initialisers differ from zero_one_value/zero_any: a zero::Chunk is
+    // compressed only when all-zero, so a recycled buffer is already zero and needs no fill.
     T* values_loc = Base::allocate_chunk_internal(
         thr_rank, [](T*) noexcept { /* recycled: already zero, see above */ },
         [](T* vals) noexcept { zero_fill_fresh(vals); });
@@ -340,7 +341,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
 
     // Geometry: a rank's list mixes chunks of EVERY array, at their own sizes. clear_int_st()
     // frees into the reuse list of the AMBIENT size, so pin each chunk to its own n_elems
-    // right before its clear (as Chunk2 / Chunk2A) -- never once to the triggering array's.
+    // right before its clear (as zero_one_value / zero_any) -- never once to the triggering array's.
     [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
     for (const auto& tup : ll_compt)
     {
@@ -366,7 +367,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
 
         const int num_tab = std::get<2>(tup);
         // Hand the candidate back: its mark FIRST, then the dedup flag (the reverse order can
-        // erase another pass's claim: see Chunk2A<T>::make_block_compression).
+        // erase another pass's claim: see zero_any::Chunk<T>::make_block_compression).
         if (auto* const chunk_t = std::get<0>(tup))
         {
             chunk_t->steal_unmark();
@@ -398,7 +399,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
     }
 }
 
-// CHUNK_STATS: release counter is "pool" under OpenMP, "free" serially. The OMP chunk-v1
+// CHUNK_STATS: release counter is "pool" under OpenMP, "free" serially. The OMP zero::Chunk
 // path does not come here (clear_int_st releases the block itself and counts there): do not
 // count in both if this entry point is ever wired up.
 template <typename T>

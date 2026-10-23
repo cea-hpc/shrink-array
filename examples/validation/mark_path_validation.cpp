@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Marking-path harness. Variant-agnostic: chunk / chunk2 / chunk2a follow the
-// compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the other harnesses here.
+// Marking-path harness. Variant-agnostic: zero / zero_one_value / zero_any follow the
+// compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // ============================================================================
 //
 // Guards ONE property: a chunk whose elements are ALL written back to a
@@ -36,7 +36,7 @@
 //
 //   A  plain values everywhere (2.5 / 3.5 alternating), then the first constant (0)
 //      everywhere. The chunk was materialised by a value that is NEITHER
-//      constant (nor uniform: chunk2a would take a uniform run as its
+//      constant (nor uniform: zero_any would take a uniform run as its
 //      second value), and no write ever moved it from one constant to the other.
 //      A pre-check accepting only the constant-to-constant transition
 //      leaves this chunk materialised for the run.
@@ -48,12 +48,12 @@
 //
 //   C  an array that has declared NO second value, after another array
 //      declared 7.0: a plain value, then 0; then 7.0 -- the OTHER array's
-//      second value, which must not compress here on chunk2 -- then 0, and a
+//      second value, which must not compress here on zero_one_value -- then 0, and a
 //      read-back of every element. The first 0 written over a materialised
 //      chunk of such an array must find its candidate list.
 //
-//   What is expected depends on the variant: chunk (v1) has no second
-//   constant, so its runs of 1.0 or 7.0 stay materialised; chunk2a picks a
+//   What is expected depends on the variant: zero has no second
+//   constant, so its runs of 1.0 or 7.0 stay materialised; zero_any picks a
 //   second value per chunk, so its runs of 7.0 compress even with nothing
 //   declared. The table is in expect_after().
 //
@@ -117,19 +117,19 @@ constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
-// set_second_value only exists on chunk2 / chunk2a; no-op elsewhere.
+// set_second_value only exists on zero_one_value / zero_any; no-op elsewhere.
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
@@ -142,7 +142,7 @@ void maybe_set_second_value(Arr& a, const Val& v)
 constexpr int n_chunks = 100;
 
 /// @brief The "plain" content: two values alternating, so that no chunk is
-///        uniform -- chunk2a takes any uniform run as a second constant of
+///        uniform -- zero_any takes any uniform run as a second constant of
 ///        its own, and a single plain value everywhere would compress there.
 static double plain(int i)
 {
@@ -164,14 +164,14 @@ static int materialised(const Array<double>& arr)
 
 /// @brief One region writing every element, then the between-region pass.
 ///
-/// A serial chunk2a has no between-region pass at all (there is no region):
+/// A serial zero_any has no between-region pass at all (there is no region):
 /// its candidates queue until make_block_compression() -- the pass a writer
 /// runs once its list is long enough, and resize() runs -- consumes them,
 /// and a hundred candidates never reach that length. The harness runs that
 /// pass itself there: it consumes the candidate lists, so a chunk the write
 /// path failed to queue still shows as materialised, which is the property
-/// here. Every OpenMP build compresses at finalize_parallel_phase(), chunk2a
-/// included (Chunk2A::compress_chunk_to_compress runs the writers' pass rank
+/// here. Every OpenMP build compresses at finalize_parallel_phase(), zero_any
+/// included (zero_any::Chunk::compress_chunk_to_compress runs the writers' pass rank
 /// by rank when no OMPT callback does it).
 template <typename Fn>
 static void phase(Array<double>& arr, int n, Fn&& body)
@@ -194,8 +194,8 @@ static void phase(Array<double>& arr, int n, Fn&& body)
 
 /// @brief What a constant written everywhere must leave materialised, per
 ///        variant: `first` compresses everywhere; `declared` (the array's
-///        declared second value) compresses on chunk2 / chunk2a; `other`
-///        (a value the array never declared) compresses on chunk2a alone,
+///        declared second value) compresses on zero_one_value / zero_any; `other`
+///        (a value the array never declared) compresses on zero_any alone,
 ///        which discovers its second value per chunk.
 enum class Kind : std::uint8_t
 {

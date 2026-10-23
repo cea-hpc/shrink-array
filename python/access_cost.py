@@ -93,6 +93,8 @@ def main():
                 print("round %d/%d  %s  threads=%d" % (r + 1, a.rounds, b.name, t), file=sys.stderr, flush=True)
                 for row in run_one(b, t, a.n, a.reps):
                     row["round"] = str(r)
+                    # An older binary prints its old label (chunk2a): read as the new one.
+                    row["variant"] = normalize_variant(row.get("variant"))
                     rows.append(row)
     if not rows:
         return 1

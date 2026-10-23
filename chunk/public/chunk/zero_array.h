@@ -46,7 +46,7 @@ namespace zero
 
 /**
  * @brief Compressed array: chunks of @p T that each compress to the first
- *        value (Chunk, variant v1).
+ *        value (zero::Chunk, variant zero).
  *
  * @tparam T        stored element type
  * @tparam IntType index type used for sizes and element positions
@@ -91,11 +91,11 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     ///        by num_tab.
     void clear_core();
 
-    /// @brief Per-array compression stats + "would Chunk2 have helped?" probe.
+    /// @brief Per-array compression stats + "would zero_one_value have helped?" probe.
     /// Plain Chunk compresses a block only when it is constant to first_value;
     /// this reports the compression ratio (vs a plain std::vector) and scans the
     /// materialised (uncompressed) blocks for ones that are in fact constant to
-    /// some OTHER value — those a Chunk2/Chunk2A would have captured. Read at the
+    /// some OTHER value — those a zero_one_value/zero_any would have captured. Read at the
     /// start of clear(), before the drain mutates chunk state.
     void print_compression_stats(std::ostream& os = std::cout) const;
 

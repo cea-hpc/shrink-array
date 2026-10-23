@@ -53,7 +53,7 @@
 #include "chunk/internal/chunk_size_policy.h"  // ChunkElems — used HERE, not via includers
 #include "chunk/internal/phase_guard.h"        // check-build guard of the phase protocol
 #include "chunk/config.h"                      // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h"                // Chunk2A fwd decl
+#include "chunk/chunk_traits.h"                // zero_any::Chunk fwd decl
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast, CHUNK_PMP_IN_PARALLEL_REGION
 #include "chunk/ring_log_debug.h"              // ScopedRingLog, ring_log, get_tid
 #include "chunk/internal/arithmetic_context.h" // ArithmeticProxyContext, ArithmeticContext
@@ -291,7 +291,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
                 push_to_compress_list(vec, &chunk_, num_chunk_, num_tab_, ChunkElems{this->chunk_size()});
                 if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
                 {
-                    Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
+                    Derived::note_candidate_pushed(vec); // the threshold test (zero_one_value::Proxy trigger)
                 }
             }
         }
@@ -316,8 +316,8 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
  * A deferred op cannot keep the original proxy alive, so the replay recreates
  * one and restores everything the write body needs: chunk index, table number,
  * second-value info, and the compression flag pointer. Which of those steps
- * apply is decided per proxy type with `requires`, since Proxy, Proxy2 and
- * Proxy2A do not all carry the same state.
+ * apply is decided per proxy type with `requires`, since zero::Proxy, zero_one_value::Proxy and
+ * zero_any::Proxy do not all carry the same state.
  *
  * The frozen geometry is restored too: chunk_size() must not read it back from
  * `ptr_on_array`, which may point at an array destroyed since the enqueue.
@@ -371,7 +371,7 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
  * from the proxy's own state, because the write is being applied long after it
  * was issued. Same once-only CAS discipline, same relaxed-load fast path.
  *
- * Chunk2 keeps its candidates in a context-dependent list, hence the
+ * zero_one_value keeps its candidates in a context-dependent list, hence the
  * `IsChunk2` branch on which per-thread list to push onto.
  *
  * @param ctx  Deferred-operation context being replayed.
@@ -423,7 +423,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, self.chunk_size());
         if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
         {
-            Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
+            Derived::note_candidate_pushed(vec); // the threshold test (zero_one_value::Proxy trigger)
         }
     }
 }
@@ -470,7 +470,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, derived().chunk_size());
         if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
         {
-            Derived::note_candidate_pushed(vec); // the threshold test (Proxy2 trigger)
+            Derived::note_candidate_pushed(vec); // the threshold test (zero_one_value::Proxy trigger)
         }
     }
 }
@@ -497,7 +497,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
  *     caller defers the write; a dangerous rank drives its compression pass
  *     on the way out, the others just leave.
  *
- * Without fast block compression the body simply runs, plus a Chunk2A-only
+ * Without fast block compression the body simply runs, plus a zero_any-only
  * sequential compression trigger (see the inline note).
  *
  * Each step's correctness argument is kept inline next to the code.
@@ -773,8 +773,8 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
         // perform_compression() self-checks the threshold (size > szm/2).
         std::forward<WriteCallable>(write_body)();
 
-        // Chunk2A only: its compression algorithm is identical in OMP and
-        // non-OMP. Chunk/Chunk2 have distinct non-OMP paths and must NOT be
+        // zero_any only: its compression algorithm is identical in OMP and
+        // non-OMP. zero/zero_one_value have distinct non-OMP paths and must NOT be
         // triggered here.
         if constexpr (build_config::not_threaded && std::is_same_v<ChunkT, zero_any::Chunk<T>>)
         {
@@ -899,7 +899,7 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(const U& v, Op oper
  * @brief Tests a proxy's second-constant state, false for proxies that have none.
  *
  * Lets the shared invariant checks below name is_cst_val2() unconditionally:
- * only Chunk2 / Chunk2A carry a second constant value, and the plain Chunk
+ * only zero_one_value / zero_any carry a second constant value, and zero
  * proxy simply answers false.
  *
  * @param proxy Proxy to test.
@@ -1282,7 +1282,7 @@ void ProxyBase<Derived, T, ChunkT>::bitwise_assign(InT<U> v, Op operation) noexc
 // picks the sync one or, when the write is refused, allocates the context and
 // enqueues the async one. Context type follows the proxy family: the light
 // ArithmeticProxyContext for Proxy<T>, the chunk-aware ArithmeticContext for
-// Proxy2<T> / Proxy2A<T>.
+// zero_one_value::Proxy<T> / zero_any::Proxy<T>.
 template <typename Derived, typename T, typename ChunkT>
 template <typename SyncOp, typename AsyncOp>
 void ProxyBase<Derived, T, ChunkT>::apply_inplace_operation(SyncOp sync_op, [[maybe_unused]] AsyncOp async_op) noexcept
@@ -1301,7 +1301,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_inplace_operation(SyncOp sync_op, [[ma
 
             using CtxType = std::conditional_t<is_simple_proxy<ProxyType>::value,
                                                ArithmeticProxyContext<T>,              // Proxy<T>
-                                               ArithmeticContext<T, ChunkT, ProxyType> // Proxy2<T>, Proxy2A<T>
+                                               ArithmeticContext<T, ChunkT, ProxyType> // the second-value proxies
                                                >;
             auto* ctx     = pool_new_ctx<CtxType>(derived(), ptr_on_array_);
 

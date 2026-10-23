@@ -149,7 +149,7 @@ namespace zero
 /**
  * @brief Per-chunk zero-counter, the serial path's compression trigger.
  *
- * @details Chunk v1 compresses a chunk once ALL its elements are zero. The
+ * @details zero compresses a chunk once ALL its elements are zero. The
  *          serial build keeps a running count of zero elements instead of
  *          rescanning; the OpenMP build queues candidates and scans them in
  *          batches instead (see ChunkFastCompPolicy).
@@ -454,7 +454,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
  * @details The simplest of the three variants. A chunk holds either a real
  *          buffer or, once every element is zero, the shared cst_val1 constant
  *          -- so `values` doubles as the state flag: written() is just
- *          "values != cst_val1". Chunk2 and Chunk2A extend this with a second
+ *          "values != cst_val1". zero_one_value and zero_any extend this with a second
  *          constant, shared or per-chunk respectively.
  *
  *          Three policies supply what depends on the build, so this class holds
@@ -614,7 +614,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /**
      * @brief Drain and compress every thread's candidate list.
      * @param apply true: compress the candidates found constant; false: walk
-     *        the lists only (v1 ignores it: its pass always compresses)
+     *        the lists only (zero ignores it: its pass always compresses)
      */
     static void compress_chunk_to_compress(bool apply);
 
