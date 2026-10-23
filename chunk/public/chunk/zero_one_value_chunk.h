@@ -1023,7 +1023,8 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     using Base::first_value;
     using Base::values_;
 
-    using CounterPolicy = ChunkCounterPolicy; ///< The counter base, zero_one_value::ChunkCounterPolicy<use_compression_with_counter>.
+    using CounterPolicy =
+        ChunkCounterPolicy; ///< The counter base, zero_one_value::ChunkCounterPolicy<use_compression_with_counter>.
 
     using FastCompPolicy = ChunkFastCompPolicy<T, Chunk, chunk_config::use_fast_block_compression>;
     using OmpPolicy      = ChunkOmpPolicy<T, Chunk, build_config::threaded>;

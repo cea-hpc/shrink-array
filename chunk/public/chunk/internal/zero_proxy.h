@@ -22,7 +22,7 @@
 #include <utility>    // std::pair
 #include <vector>     // std::vector
 
-#include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk2
+#include "chunk/internal/pointer_map_linear.h" // linear scan shared with zero_one_value::PointerMap
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
 #include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key

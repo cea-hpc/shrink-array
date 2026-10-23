@@ -61,8 +61,8 @@
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS, pmp::current_team
 #include "chunk/manage_ompt.h"                // parallel_phase
 #include "chunk/zero_chunk_def.h"             // ChunkDef
-#include "chunk/zero_one_value_chunk_def.h"   // Chunk2Def
-#include "chunk/zero_any_chunk_def.h"         // Chunk2ADef
+#include "chunk/zero_one_value_chunk_def.h"   // zero_one_value::ChunkDef
+#include "chunk/zero_any_chunk_def.h"         // zero_any::ChunkDef
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 #include "chunk/internal/print.h"             // shrink_array::println
 

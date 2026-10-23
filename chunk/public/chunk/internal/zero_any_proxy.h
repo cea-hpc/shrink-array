@@ -19,7 +19,7 @@
 #include <algorithm>   // std::min, std::copy_n, std::ranges::fill (the resize copy)
 #include <atomic>      // std::memory_order_relaxed
 #include <cstdlib>     // std::abort (debug stubs)
-#include <exception>   // std::exception (PointerMapChunk2A::erase)
+#include <exception>   // std::exception (zero_any::PointerMap::erase)
 #include <ostream>     // std::ostream (operator<<)
 #include <memory>      // std::unique_ptr, std::addressof (operator=: operator& is deleted)
 #include <type_traits> // std::is_same_v
@@ -29,7 +29,7 @@
     #include <concepts> // std::assignable_from
 #endif
 
-#include "chunk/vendor/ankerl/unordered_dense.h" // PointerMapChunk2A::big
+#include "chunk/vendor/ankerl/unordered_dense.h" // zero_any::PointerMap::big
 
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
@@ -103,7 +103,7 @@ class PointerMap
                     return tab;
                 }
             }
-            CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
+            CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}",
                                    static_cast<const void*>(this), small_.size(), key);
         }
 
@@ -111,7 +111,7 @@ class PointerMap
         {
             return it->second;
         }
-        CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
+        CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}",
                                static_cast<const void*>(this), big_.size(), key);
     }
 
@@ -146,7 +146,7 @@ class PointerMap
             }
             catch (const std::exception& e)
             {
-                CHUNK_INVARIANT_FAILED("[PointerMapChunk2A erase] failed: {} (this={} key={})", e.what(),
+                CHUNK_INVARIANT_FAILED("[zero_any::PointerMap erase] failed: {} (this={} key={})", e.what(),
                                        static_cast<const void*>(this), key);
             }
         }

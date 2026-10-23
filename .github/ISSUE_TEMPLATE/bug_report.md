@@ -16,7 +16,7 @@
 
 - Compiler and version:
 - Backend (openmp / pool / serial / TBB):
-- Library variant (chunk / chunk2 / chunk2a) and geometry (size / dyn):
+- Library variant (zero / zero_one_value / zero_any) and geometry (size / dyn):
 - Element type:
 - Build type (Release / check / stats):
 

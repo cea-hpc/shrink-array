@@ -66,8 +66,8 @@ ALLOWED = {
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
-    # renamed to SecondValueChunkBase / SecondValueProxyBase / SecondValueArrayBase (CHANGELOG.md)
-    "Chunk2Base", "Proxy2Base", "ArrayChunk2Base",
+    # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkOmpPolicy, ...)
+    "Chunk2Base", "Proxy2Base", "ArrayChunk2Base", "Chunk2AOmpPolicy", "RechunkHooks2", "Chunk2Def",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh",
     # C++ standard library, compiler, language

@@ -56,7 +56,7 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
             if (reg.ind != self.inf_array_src_->ind || reg.num_tab != self.inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
-                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                    "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
                     static_cast<const void*>(self.get_ptr_on_array()));
@@ -90,7 +90,7 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
             if (reg.ind != self.inf_array_src_->ind || reg.num_tab != self.inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
-                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                    "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
                     static_cast<const void*>(self.get_ptr_on_array()));
