@@ -60,9 +60,10 @@ namespace
 {
 
 template <typename T>
-using Arr = std::conditional_t<chunk_config::use_zero_any,
-                               zero_any::Array<T>,
-                               std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+using Arr =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {

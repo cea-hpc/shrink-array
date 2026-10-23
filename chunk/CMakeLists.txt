@@ -32,8 +32,8 @@ option(CHUNK_STD_ALLOC "Use standard allocator for chunk." OFF)
 # The compile-time chunk size (static_chunk_size) is frozen per library by
 # -DCHUNK_SIZE. To benchmark several fixed sizes we therefore build ONE lib
 # per (variant, size). CHUNK_STATIC_SIZES is the list of static sizes; each
-# yields chunk_v<x>_<size>. CHUNK_BUILD_DYN adds a runtime-size (CHUNK_DYNAMIC)
-# lib chunk_v<x>_dyn per variant. The list is resolved by the top-level
+# yields chunk_<variant>_<size>. CHUNK_BUILD_DYN adds a runtime-size (CHUNK_DYNAMIC)
+# lib chunk_<variant>_dyn per variant. The list is resolved by the top-level
 # CMakeLists.txt (auto: 256 alone in a Debug or sanitizer build); trim it during
 # development to cut build time (e.g. -DCHUNK_STATIC_SIZES=256). Not a cache
 # entry here: it would hide the resolved list from this directory.
@@ -42,21 +42,35 @@ if(NOT DEFINED CHUNK_STATIC_SIZES OR CHUNK_STATIC_SIZES STREQUAL "auto")
 endif()
 option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per variant." ON)
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
-# The variants built: chunk (zero::Array, chunk_zero_*), chunk2 (zero_one_value::Array,
-# chunk_zero_one_value_*), chunk2a (zero_any::Array, chunk_zero_any_*). The examples, benchmarks
-# and harnesses of a variant left out are not built nor registered as tests. A
-# build that checks one variant's option (CHUNK_SECOND_VALUE_INDEXED is
-# Chunk2A's) needs only that one; trim it during development too.
-set(CHUNK_VARIANTS "chunk;chunk2;chunk2a" CACHE STRING
-    "Semicolon list of the variants to build: chunk, chunk2, chunk2a.")
+# The variants built, named after their namespace: zero (zero::Array, chunk_zero_*),
+# zero_one_value (zero_one_value::Array, chunk_zero_one_value_*), zero_any
+# (zero_any::Array, chunk_zero_any_*). The examples, benchmarks and harnesses of
+# a variant left out are not built nor registered as tests. A build that checks
+# one variant's option (CHUNK_SECOND_VALUE_INDEXED is zero_any's) needs only that
+# one; trim it during development too. The former names chunk, chunk2, chunk2a
+# are still read, until 1.0.
+set(CHUNK_VARIANTS "zero;zero_one_value;zero_any" CACHE STRING
+    "Semicolon list of the variants to build: zero, zero_one_value, zero_any.")
+set(_chunk_variants_read "")
 foreach(_v IN LISTS CHUNK_VARIANTS)
-  if (NOT _v MATCHES "^(chunk|chunk2|chunk2a)$")
-    message(FATAL_ERROR "CHUNK_VARIANTS: unknown variant '${_v}' (chunk, chunk2, chunk2a)")
+  if (_v MATCHES "^(chunk|chunk2|chunk2a)$")
+    string(REPLACE "chunk2a" "zero_any" _new "${_v}")
+    string(REPLACE "chunk2" "zero_one_value" _new "${_new}")
+    string(REPLACE "chunk" "zero" _new "${_new}")
+    message(DEPRECATION "CHUNK_VARIANTS: '${_v}' is the former name of '${_new}'")
+    set(_v ${_new})
   endif()
+  if (NOT _v MATCHES "^(zero|zero_one_value|zero_any)$")
+    message(FATAL_ERROR "CHUNK_VARIANTS: unknown variant '${_v}' (zero, zero_one_value, zero_any)")
+  endif()
+  list(APPEND _chunk_variants_read ${_v})
 endforeach()
-if (NOT CHUNK_VARIANTS)
-  message(FATAL_ERROR "CHUNK_VARIANTS is empty: name at least one of chunk, chunk2, chunk2a")
+if (NOT _chunk_variants_read)
+  message(FATAL_ERROR "CHUNK_VARIANTS is empty: name at least one of zero, zero_one_value, zero_any")
 endif()
+# The normal (non-cache) variable, read by the examples, holds the new names.
+set(CHUNK_VARIANTS ${_chunk_variants_read})
+set(CHUNK_VARIANTS ${_chunk_variants_read} PARENT_SCOPE)
 message(STATUS "CHUNK_VARIANTS = ${CHUNK_VARIANTS}")
 
 # --- Aggressive vs release compression scheduling ------------------------
@@ -630,8 +644,8 @@ chunk_add_variant(chunk_vector "" "" FALSE)
 # Only those of CHUNK_VARIANTS.
 set(_chunk_variant_names   "")
 set(_chunk_variant_defines "")
-foreach(_pair "chunk:chunk_zero:CHUNK_VARIANT_ZERO=1" "chunk2:chunk_zero_one_value:CHUNK_VARIANT_ZERO_ONE_VALUE=1"
-              "chunk2a:chunk_zero_any:CHUNK_VARIANT_ZERO_ANY=1")
+foreach(_pair "zero:chunk_zero:CHUNK_VARIANT_ZERO=1" "zero_one_value:chunk_zero_one_value:CHUNK_VARIANT_ZERO_ONE_VALUE=1"
+              "zero_any:chunk_zero_any:CHUNK_VARIANT_ZERO_ANY=1")
   string(REPLACE ":" ";" _f "${_pair}")
   list(GET _f 0 _short)
   if (_short IN_LIST CHUNK_VARIANTS)
@@ -670,8 +684,8 @@ endforeach()
 # across directory scopes.
 list(GET CHUNK_STATIC_SIZES 0 _chunk_first_size)
 set(CHUNK_DEFAULT_SIZE ${_chunk_first_size} CACHE STRING
-    "Static size bound to the bare chunk_v<x> targets.")
-message(STATUS "CHUNK_DEFAULT_SIZE = ${CHUNK_DEFAULT_SIZE} (bare chunk_v<x> targets)")
+    "Static size bound to the bare chunk_<variant> targets.")
+message(STATUS "CHUNK_DEFAULT_SIZE = ${CHUNK_DEFAULT_SIZE} (bare chunk_<variant> targets)")
 
 foreach(_vname IN LISTS _chunk_variant_names)
   if (NOT TARGET ${_vname}_${CHUNK_DEFAULT_SIZE})
@@ -714,6 +728,25 @@ foreach(_vname IN LISTS _chunk_variant_names)
   endif()
   list(APPEND _chunk_install_targets ${_vname})
 endforeach()
+
+# The former names (chunk_v1_256, chunk_v2a_dyn, chunk_v2, ...), until 1.0:
+# INTERFACE targets that link the new library, installed too, with a
+# DEPRECATION message for the projects that import them.
+foreach(_pair "chunk_zero:chunk_v1" "chunk_zero_one_value:chunk_v2" "chunk_zero_any:chunk_v2a")
+  string(REPLACE ":" ";" _f "${_pair}")
+  list(GET _f 0 _new)
+  list(GET _f 1 _old)
+  foreach(_t IN LISTS _chunk_install_targets)
+    if (_t MATCHES "^${_new}(_[0-9]+|_dyn)?$")
+      string(REGEX REPLACE "^${_new}" "${_old}" _old_t "${_t}")
+      add_library(${_old_t} INTERFACE)
+      target_link_libraries(${_old_t} INTERFACE ${_t})
+      set_target_properties(${_old_t} PROPERTIES DEPRECATION "use chunk::${_t} (the former name of the library)")
+      list(APPEND _chunk_compat_targets ${_old_t})
+    endif()
+  endforeach()
+endforeach()
+list(APPEND _chunk_install_targets ${_chunk_compat_targets})
 
 # The installed names in the build tree too: a project that takes this one
 # through add_subdirectory() or FetchContent links chunk::chunk_zero_any, as it

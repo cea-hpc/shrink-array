@@ -54,7 +54,7 @@
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/zero_chunk.h"           // release_chunk_pools
-#include "chunk/config.h"              // chunk_config::use_zero*, build_config::has_not_ompt, any_check
+#include "chunk/config.h"               // chunk_config::use_zero*, build_config::has_not_ompt, any_check
 #include "chunk/internal/test_hooks.h" // test_hooks::force_defer_every
 #include "chunk/manage_ompt.h"         // begin_parallel_phase, finalize_parallel_phase, parallel_phase
 #include "chunk/param_chunk.h"         // ParamChunk::init_indexes

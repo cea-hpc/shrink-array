@@ -196,7 +196,8 @@ struct ChunkSizeAdvisor
         const InT<T> cst1_value = Arr::ChunkType::first_value;
         bool         has_cst2   = false;
         T            cst2_value = cst1_value;
-        if constexpr ((chunk_config::use_zero_one_value || chunk_config::use_zero_any) && requires { tab.get_second_value(); })
+        if constexpr ((chunk_config::use_zero_one_value || chunk_config::use_zero_any) &&
+                      requires { tab.get_second_value(); })
         {
             cst2_value = tab.get_second_value();
             has_cst2   = !(cst2_value == cst1_value);

@@ -16,7 +16,7 @@
 # building and correct, they measure nothing.
 # ============================================================================
 
-set(_vc_variant_names   chunk2   chunk2a)
+set(_vc_variant_names   zero_one_value zero_any)
 set(_vc_variant_libbase chunk_zero_one_value chunk_zero_any)
 
 list(LENGTH _vc_variant_names _vc_nvar)

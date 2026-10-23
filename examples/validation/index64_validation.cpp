@@ -81,10 +81,10 @@ static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chun
               "index64_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
 
 template <typename T, typename I>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T, I>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T, I>, zero::Array<T, I>>>;
+using Array = std::conditional_t<
+    chunk_config::use_zero_any,
+    zero_any::Array<T, I>,
+    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T, I>, zero::Array<T, I>>>;
 
 constexpr const char* variant_name()
 {
