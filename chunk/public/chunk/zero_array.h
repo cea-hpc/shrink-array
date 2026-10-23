@@ -70,7 +70,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     ///        create() through ArrayChunkBase.
     void pre_create_hook()
     {
-        auto& sh_inf = *zero::Proxy<T>::share_info_array;
+        auto& sh_inf = *Proxy<T>::share_info_array;
 
         sh_inf.insert(this->registry_key(), Base::nb_tab);
 
@@ -105,7 +105,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     {
         using std::swap;
         swap(this->num_tab_, other.num_tab_);
-        zero::Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
+        Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
     }
 
   public:
@@ -127,7 +127,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     using Base::nb_chunk_;
     using Base::nb_tab;
     using Base::size_policy_;
-    using Manager = ManagerChunk<zero::Chunk, T>; ///< Same type as ManagerType.
+    using Manager = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
 
     // Mode-specific members live in the two mixins above. Do not drop these
     // using-declarations: ArrayChunkBase re-exports RechunkSupport's hook
@@ -141,7 +141,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
     // make_block_compression() comes from FastBlockSupport (a no-op outside
     // fast-block compression). Re-exported so resize() can call it unqualified.
-    using zero::FastBlockSupport<Array>::make_block_compression;
+    using FastBlockSupport<Array>::make_block_compression;
 
     /**
      * @brief Build an array of @p sz elements.
@@ -152,7 +152,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     {
         if constexpr (build_config::threaded)
         {
-            WriteCompressSyncPolicy<zero::Proxy<T>>::ensure_initialized();
+            WriteCompressSyncPolicy<Proxy<T>>::ensure_initialized();
         }
 
         this->create(sz);
@@ -211,7 +211,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
         // address does not inherit our stale num_tab via zero::PointerMap's
         // first-match lookup (required for rechunk_to's tmp). Must run AFTER
         // clear(), which still needs get_num_tab(registry_key()).
-        zero::Proxy<T>::share_info_array->erase(this->registry_key());
+        Proxy<T>::share_info_array->erase(this->registry_key());
     }
 
     /**

@@ -69,15 +69,15 @@ namespace zero_any
  */
 template <ArrayChunkElement T, typename IntType>
 class Array : public SecondValueArrayBase<Array<T, IntType>>,
-              public zero_any::ParallelSupport<Array<T, IntType>>,
+              public ParallelSupport<Array<T, IntType>>,
               public RechunkHooks<Array<T, IntType>>
 {
   public:
     using ManagerChunk2A = ManagerChunk<zero_any::Chunk, T>; ///< Same type as ManagerType.
 
     using Base2   = SecondValueArrayBase<Array>; ///< Second-value common base (dirty bitset, second-value plumbing).
-    using Base    = ArrayChunkBase<Array>;  ///< Base shared by every variant.
-    using Hooks2A = RechunkHooks<Array>;    ///< Re-chunk hooks (dynamic geometry).
+    using Base    = ArrayChunkBase<Array>;       ///< Base shared by every variant.
+    using Hooks2A = RechunkHooks<Array>;         ///< Re-chunk hooks (dynamic geometry).
 
     friend Base2;                 ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<Array>; ///< For swap_identity().
@@ -123,7 +123,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     {
         if constexpr (build_config::threaded)
         {
-            WriteCompressSyncPolicy<zero_any::Proxy<T>>::ensure_initialized();
+            WriteCompressSyncPolicy<Proxy<T>>::ensure_initialized();
         }
 
         this->create(sz);
@@ -179,7 +179,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     ~Array()
     {
         clear();
-        zero_any::Proxy<T>::share_info_array->erase(this->registry_key());
+        Proxy<T>::share_info_array->erase(this->registry_key());
     }
 
     /**
@@ -270,8 +270,8 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
         {
             return true;
         }
-        const auto        csz = static_cast<long long>(this->chunk_size());
-        std::atomic<bool> differ{false};
+        const auto  csz = static_cast<long long>(this->chunk_size());
+        std::atomic differ{false};
         parallel_storage_init::for_each_chunk(
             this->chunk_index_of(m_size_ - 1) + 1,
             [&](int c)
@@ -409,7 +409,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
                 Gvh::refused_degraded.fetch_add(1, std::memory_order_relaxed);
                 // Sticky until the last array of the type goes: say it once, the
                 // run will otherwise end on the identifier exhaustion with no cause.
-                static std::atomic<bool> warned{false};
+                static std::atomic warned{false};
                 if (!warned.exchange(true, std::memory_order_relaxed))
                 {
                     CHUNK_LOG(warn, compress,
@@ -433,7 +433,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
             std::vector<std::uint8_t> referenced(handed_out + 1, 0);
 
             // Chunks compressed to a second value.
-            zero_any::Proxy<T>::share_info_array->for_each_key(
+            Proxy<T>::share_info_array->for_each_key(
                 [&referenced](const void* key)
                 {
                     if (key == nullptr)
@@ -455,7 +455,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
             // Every slot of every row: a released row is empty, a stale entry only keeps a
             // value one pass longer.
-            using Spec              = zero_any::Proxy<T>::BaseSpec;
+            using Spec              = Proxy<T>::BaseSpec;
             const std::size_t nrows = Spec::second_value_row_count();
             for (std::size_t r = 0; r < nrows; ++r)
             {
@@ -582,7 +582,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     {
         if (!holds_cst2_registry_)
         {
-            zero_any::Chunk<T>::Holder::create();
+            Chunk<T>::Holder::create();
             holds_cst2_registry_ = true;
         }
     }
@@ -595,7 +595,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
         using std::swap;
         swap(this->num_tab_, other.num_tab_);
         swap(holds_cst2_registry_, other.holds_cst2_registry_);
-        zero_any::Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
+        Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
     }
 
     // ── cst2 mark-sweep GC: read-only mark + report ──────────────────────────
@@ -612,7 +612,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      */
     static void gc_collect_live(std::unordered_set<const void*>& live)
     {
-        zero_any::Proxy<T>::share_info_array->for_each_key(
+        Proxy<T>::share_info_array->for_each_key(
             [&](const void* key)
             {
                 // The key is the array's core, whatever its index type.

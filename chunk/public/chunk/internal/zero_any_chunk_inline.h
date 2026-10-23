@@ -170,7 +170,7 @@ void zero_any::Chunk<T>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
         }
 
         // CHUNK_STATS: one candidate scanned (compress/compress_attempt = scan yield).
-        increm_chunk_compress_attempt<zero_any::Chunk<T>>();
+        increm_chunk_compress_attempt<Chunk<T>>();
 
         // Already at its second value (compress() ran over it while queued): do not scan.
         // `values` is a second-value slot that reads as all first_value; the chunk would go
@@ -239,7 +239,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
             // released when the pass is done with it, and all again at the end.
             // A flush in progress makes start() decline: ask first, before marking
             // (block_pass_precheck.h).
-            if (block_pass_yields_to_flush<zero_any::Proxy<T>, zero_any::Chunk<T>>(CHUNK_PMP_MAX_THREADS))
+            if (block_pass_yields_to_flush<Proxy<T>, Chunk<T>>(CHUNK_PMP_MAX_THREADS))
             {
                 return;
             }
@@ -250,7 +250,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
                     chunk_t->steal_mark();
                 }
             }
-            const bool ret = proxy2a->compression_mgr.template start<zero_any::Proxy<T>>();
+            const bool ret = proxy2a->compression_mgr.template start<Proxy<T>>();
             if (!ret)
             {
                 for (int k = 0; k < sz; ++k)
@@ -298,11 +298,11 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
         }
 
-        char* ptr_type_cst = &zero_any::Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
+        char* ptr_type_cst = &Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
 
         // Long form in both modes: thr is 0 with OpenMP off.
         const SecondValueRef<T> ptr_second_value =
-            zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
         chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
         chunk_ptr->steal_unmark();
     }
@@ -321,12 +321,12 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
         {
             if (second_v != T{})
             {
-                char* ptr_type_cst = &zero_any::Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
+                char* ptr_type_cst = &Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
 
                 // find_or_set records the second value in the chunk's slot and returns the
                 // shared array; clear_int_st installs it as `values` (the CAS).
                 const SecondValueRef<T> ptr_second_value =
-                    zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+                    Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
 
                 T* new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
 
@@ -341,10 +341,10 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
                 chunk_ptr->Holder::find_or_set_ind_cst_val2();
             }
 
-            char* ptr_type_cst = &zero_any::Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
+            char* ptr_type_cst = &Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
 
             const SecondValueRef<T> ptr_second_value =
-                zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+                Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
@@ -386,7 +386,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
         {
             const int num_tab = std::get<2>(tup);
 
-            zero_any::Proxy<T>::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
+            Proxy<T>::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
         }
     }
 
@@ -405,7 +405,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
 
         if constexpr (build_config::threaded)
         {
-            proxy2a->compression_mgr.template finish<zero_any::Proxy<T>>();
+            proxy2a->compression_mgr.template finish<Proxy<T>>();
         }
     }
 }
@@ -464,7 +464,7 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
             // Against values[0], as fill_list_to_compress does, not the registered second
             // value: a chunk uniform at another value is compressed to THAT value.
             const SecondValueRef<T> ptr_second_value =
-                zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+                Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             const InT<T> second_v = Base::read_value_scan(0);
             const auto   scan     = Base::scan_constants(first_value, second_v, size.count());
             compact1              = scan.first;
@@ -491,8 +491,8 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
         if (apply)
         {
             const SecondValueRef<T> ptr_second_value =
-                zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            char* ptr_type_cst = &zero_any::Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
+                Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            char* ptr_type_cst = &Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
             if (compact1)
             {
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
@@ -626,7 +626,7 @@ void zero_any::Chunk<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int 
                 // Same condition as the list clear below: see the @warning above.
                 if constexpr (chunk_config::use_compression_with_ompt)
                 {
-                    zero_any::Proxy<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
+                    Proxy<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
                 }
             }
         }
@@ -645,7 +645,7 @@ void zero_any::Chunk<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int 
 
             // Per-entry geometry, as above: a default size would under-scan dynamic chunks.
             std::get<0>(tup)->compress(0, num_chunk, num_tab, apply, std::get<3>(tup));
-            zero_any::Proxy<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
+            Proxy<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
         }
     }
 
