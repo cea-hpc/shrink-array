@@ -163,7 +163,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::set_ptr_is_inside_chu
  * Serial builds do nothing here — the whole body is OpenMP-only.
  *
  * @param vec_tuple Candidate list to push onto.
- * @pre `ptr_is_inside_chunk_list_to_compress` is armed, i.e. set_info_on_chunk()
+ * @pre `ptr_is_inside_chunk_list_to_compress_` is armed, i.e. set_info_on_chunk()
  *      ran on this write path (checked under `build_config::any_check`).
  */
 template <typename Derived, typename T, typename ChunkT>
@@ -233,7 +233,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
  * Only compiled under `chunk_config::use_fast_block_compression`; the serial
  * fallback below it uses plain accesses instead of atomics.
  *
- * @pre `ptr_is_inside_chunk_list_to_compress` is armed (checked under
+ * @pre `ptr_is_inside_chunk_list_to_compress_` is armed (checked under
  *      `build_config::any_check`).
  */
 template <typename Derived, typename T, typename ChunkT>
@@ -322,7 +322,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
  * The frozen geometry is restored too: chunk_size() must not read it back from
  * `ptr_on_array`, which may point at an array destroyed since the enqueue.
  *
- * @tparam ProxyType Proxy type to rebuild.
+ * @tparam ProxyT    Proxy type to rebuild.
  * @tparam Ctx       Context type recorded at enqueue time.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
@@ -349,9 +349,10 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
     // A probe fails open: for the zero_any family, whose replayed proxy NEEDS its table
     // number (its second-value slot is found through it), a false probe is a build
     // error, not a proxy left at num_tab -1 (a null second-value slot at replay).
-    static_assert(!is_zero_any_family_v<ChunkT> || requires(ProxyT p) { p.set_num_tab(0); },
-                  "make_proxy_with_info: a zero_any proxy's set_num_tab(int) must be reachable from here "
-                  "(it is private: the proxy befriends ::shrink_array::ProxyBaseFastCompPolicy)");
+    static_assert(
+        !is_zero_any_family_v<ChunkT> || requires(ProxyT p) { p.set_num_tab(0); },
+        "make_proxy_with_info: a zero_any proxy's set_num_tab(int) must be reachable from here "
+        "(it is private: the proxy befriends ::shrink_array::ProxyBaseFastCompPolicy)");
     if constexpr (requires(ProxyT proxy) { proxy.set_num_tab(0); })
     {
         proxy.set_num_tab(ctx->num_tab);

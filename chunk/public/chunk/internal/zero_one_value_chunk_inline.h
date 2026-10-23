@@ -99,9 +99,8 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(
-    zero_one_value::Chunk<T>* v,
-    std::size_t               count) noexcept
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_one_value::Chunk<T>* v,
+                                                                                 std::size_t count) noexcept
 {
     chunk_array_new::init_chunks(v, count, [](zero_one_value::Chunk<T>& chunk) { chunk.init_after_constructor(); });
 }
@@ -401,7 +400,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
 {
     // The store is a per-rank VECTOR of maps, sized by resize_all_list_block_free_thr();
     // until that has run, [thr_rank] is out of bounds (UB). Probing rank 0 is
-    // enough: zero_one_value::Array::add_second_value registers a key for every rank in
+    // enough: zero_one_value::Array::set_second_value registers a key for every rank in
     // one loop, so an empty map at rank 0 means no key at any rank.
     if (is_vec_tuple_to_compress_potentially_empty_thr())
     {
@@ -409,7 +408,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
     }
 
     auto* const vec_tuple_p = ManagerChunk2::compress_candidates(thr_rank, key);
-    assert(vec_tuple_p != nullptr && "key registered for every rank by add_second_value()");
+    assert(vec_tuple_p != nullptr && "key registered for every rank by set_second_value()");
     if (vec_tuple_p == nullptr) [[unlikely]]
     {
         return;
@@ -509,7 +508,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
     ScanFn&& scan_one)
 {
     const auto* const vec_tuple_p = ManagerChunk2::compress_candidates(thr_rank, key);
-    assert(vec_tuple_p != nullptr && "key registered for every rank by add_second_value()");
+    assert(vec_tuple_p != nullptr && "key registered for every rank by set_second_value()");
     if (vec_tuple_p == nullptr) [[unlikely]]
     {
         return;
@@ -614,7 +613,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
     //
     // A missing key is normal (no one declared this second value on this
     // rank: nothing to compress, same exit as `sz == 0`); a zero_one_value::Array built
-    // without add_second_value reaches it via resize_common ->
+    // without set_second_value reaches it via resize_common ->
     // make_block_compression. is_vec_tuple_to_compress_potentially_empty_thr()
     // is not enough: it only tests "no key anywhere".
     auto&      map_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];

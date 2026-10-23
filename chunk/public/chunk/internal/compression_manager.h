@@ -397,7 +397,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
      * @details Takes the same per-rank, owner-recursive shard lock the drains
      *          use: a pairwise exclusion per rank. A global back-off here
      *          convoys every enqueuer.
-     * @note Public on purpose, so to_be_queued() can bracket its insert; the raw
+     * @note Public on purpose, so to_be_queued_for_deferred_processing() can bracket its insert; the raw
      *       acquire/release stay private to the drain paths.
      */
     static void enqueue_lock(int thr_rank) noexcept
@@ -474,7 +474,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
      */
     static void record_enqueue_deferred(int thr_rank, ChunkT& chunk) noexcept
     {
-        // Insert UNDER rank thr_rank's shard lock (the one to_be_queued()
+        // Insert UNDER rank thr_rank's shard lock (the one to_be_queued_for_deferred_processing()
         // already holds): flush_chunk_all_ranks() erases from this set under
         // it, and an unlocked insert races that erase on the table's storage.
         //

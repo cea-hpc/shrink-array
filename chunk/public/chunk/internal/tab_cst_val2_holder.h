@@ -37,7 +37,7 @@
  *
  * @par Two paths, and only one of them takes a lock
  * Registering a value that is ALREADY known -- every type-2 chunk after the
- * first one per value -- is a lock-free probe of GlobalVecHolder::index_.
+ * first one per value -- is a lock-free probe of GlobalVecHolder::index_tab.
  * Only a genuinely new value, or an index miss, takes
  * GlobalVecHolder::insert_mutex, under which the whole find-or-append is
  * plain sequential code.
@@ -109,7 +109,7 @@ inline bool cst2_thp_advise() noexcept
  * @details Nothing here is atomic, deliberately. Segments are mutated and
  *          scanned only under GlobalVecHolder::insert_mutex, or on the
  *          single-threaded clear paths; the lock-free readers reach values
- *          through GlobalVecHolder::index_ and never touch a Segment at all.
+ *          through GlobalVecHolder::index_tab and never touch a Segment at all.
  *
  * @note The chain is append-only between clears and reclaims
  *       (GlobalVecHolder::reclaim_unmarked() rebuilds it packed), so

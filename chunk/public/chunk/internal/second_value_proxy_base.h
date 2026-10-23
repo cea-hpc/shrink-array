@@ -40,7 +40,7 @@ namespace shrink_array
  * @brief Base class for proxies with a second_value (CRTP)
  * @tparam Derived The derived proxy class (zero_one_value::Proxy<T> or zero_any::Proxy<T>)
  * @tparam T The underlying type
- * @tparam ChunkType The chunk type (zero_one_value::Chunk<T> or zero_any::Chunk<T>)
+ * @tparam ChunkT The chunk type (zero_one_value::Chunk<T> or zero_any::Chunk<T>)
  *
  * Contains the logic specific to chunks with two constant values.
  */

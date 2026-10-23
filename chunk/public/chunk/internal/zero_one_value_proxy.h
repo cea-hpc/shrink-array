@@ -57,16 +57,6 @@ class Chunk;
 
 } // namespace zero_one_value
 
-/**
- * @brief zero_one_value::Proxy class for managing operations on a zero_one_value::Chunk<T>.
- *
- * This class encapsulates read/write operations, compression logic,
- * and constant value handling within a chunk. It is optimized for
- * multithreaded environments and supports optional OpenMP integration.
- *
- * @tparam T The data type managed by the chunk.
- */
-
 namespace zero_one_value
 {
 
@@ -771,8 +761,15 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
     static constexpr bool is_not_bool = !is_bool;
 };
 
-/// @brief Proxy to one element of a zero_one_value::Chunk<T> chunk: reads, assignments and compound operators on it.
-/// @tparam T Element type.
+/**
+ * @brief Proxy to one element of a zero_one_value::Chunk<T> chunk: reads, assignments and compound
+ *        operators on it.
+ *
+ * Encapsulates the read/write operations, the compression logic and the constant-value handling
+ * of one element of a chunk, for serial and threaded builds.
+ *
+ * @tparam T Element type.
+ */
 template <typename T>
 // no move assignment on purpose -- assigning a proxy
 // WRITES the element (see its operator=); a defaulted move would rebind it instead.

@@ -58,14 +58,10 @@ class ManagerChunk;
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
-/**
- * @brief Forward declaration of zero_any::Chunk used by zero_any::Proxy/zero_any::PointerMap.
- * @tparam T element type
- */
-
 namespace zero_any
 {
 
+// Used by zero_any::Proxy and zero_any::PointerMap.
 template <typename T>
 class Chunk;
 
@@ -636,21 +632,19 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
 };
 
 } // namespace zero_any
+
+namespace zero_any
+{
+
 /**
- * @brief zero_any::Proxy class providing element access to a chunked sparse array representation.
+ * @brief Proxy to one element of a zero_any::Chunk<T> chunk.
  *
  * Reads/writes one slot of a zero_any::Chunk<T>, with fast-path/slow-path locking around
  * compression, and manages the per-chunk metadata (second values, type-of-constant
  * flags, compression bookkeeping).
  *
- * @tparam T stored element type
+ * @tparam T Element type.
  */
-
-namespace zero_any
-{
-
-/// @brief Proxy to one element of a zero_any::Chunk<T> chunk (see the class description above).
-/// @tparam T Element type.
 template <typename T>
 // no move assignment on purpose -- assigning a proxy
 // WRITES the element (see its operator=); a defaulted move would rebind it instead.

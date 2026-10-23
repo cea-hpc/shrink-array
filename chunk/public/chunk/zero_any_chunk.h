@@ -56,14 +56,6 @@ class Proxy;
 template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
 
-/*!
- * \brief Block compression class (power of 2) 2 values automatic detection
- * This class manages a chunk of values that can either be constant (val1 or val2)
- * or dynamically allocated. It supports compression by identifying and optimizing
- * for repeated values.
- *
- * \tparam T Type of the values stored in the chunk
- */
 
 namespace zero_any
 {
@@ -803,8 +795,8 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
 };
 
 /// @brief Chunk of values compressible to the first constant or to a second constant shared through the
-///        TabCstVal2Holder registry (see the class description above zero_any::ChunkConcurrentOps). All of
-///        it is ChunkImpl's, shared by the zero_any family.
+///        TabCstVal2Holder registry, detected automatically. All of it is ChunkImpl's, shared by the
+///        zero_any family.
 /// @tparam T Element type.
 template <typename T>
 class Chunk : public ChunkImpl<T, Chunk<T>>

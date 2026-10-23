@@ -49,7 +49,7 @@ inline constexpr int membarrier_cmd_register_private_expedited = 1 << 4; // MEMB
  *          (an IPI, or the barrier a context switch implies) and returns only
  *          once all have. Cost: some tens of microseconds at 64 threads, paid
  *          on the rare side only; chunk_config::asymmetric_dekker explains the
- *          trade, print_chunk_stats() counts the calls (gate start / flush /
+ *          trade, ParamChunk::chunk_stats() counts the calls (gate start / flush /
  *          driver).
  *
  *          The expedited command must be registered once, before use;
@@ -128,7 +128,7 @@ inline void heavy_barrier() noexcept
     }
 }
 
-/// @brief What print_chunk_stats() reports as the handshake in use.
+/// @brief What ParamChunk::chunk_stats() reports as the handshake in use.
 [[nodiscard]] inline const char* protocol_name() noexcept
 {
     if constexpr (!chunk_config::asymmetric_dekker)
@@ -176,9 +176,9 @@ inline void heavy_barrier() noexcept
  *          site can announce without its ordering -- see announce_write() for
  *          both proofs, and docs/synchronisation_dekker_fr.md.
  *
- *          This class owns ONLY the write/flush handshake state. The slow-path
- *          driver counter lives in CompressionManager::state_, packed with
- *          its hard `inflight` count.
+ *          This class owns ONLY the write/flush handshake state. The
+ *          compressors' own counts (hard_inflight_, stealing_inflight_) live in
+ *          CompressionManager.
  *
  *          The whole policy is OpenMP-only; the serial build gets the empty
  *          specialisation below, since a single thread cannot race with itself.

@@ -168,6 +168,11 @@ the tag's checksum to the recipe.
   targets with a `DEPRECATION` property, installed), `CHUNK_VARIANT_V*` macros (defined from the new
   ones, and the other way round) and `chunk_config::use_chunk*` constants (`[[deprecated]]`), until 1.0.
 
+### Removed
+
+- Two internal headers nothing included: `chunk/internal/diag_mutex.h` (the lock of the
+  diagnostic reports, which are `CHUNK_LOG` lines now) and `chunk/internal/nano_sleeper.h`.
+
 ### Fixed
 
 - Chunk2A: the deferred replay of `=` stored the element with a plain store

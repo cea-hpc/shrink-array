@@ -134,7 +134,7 @@ using fast_alloc::TCTypeAllocator;
 // DeferredReadGate: read-side visibility gate, selected by compile-time mode
 // ----------------------------------------------------------------------------
 // The read gate (reader_sync + ArrayChunkBase::sync_chunk) as a CRTP policy, in
-// the same style as zero_one_value::ChunkCounterPolicy / zero_one_value::ProxyCounterPolicy. Not `if
+// the same style as zero::ChunkCounterPolicy / zero_one_value::ChunkCounterPolicy. Not `if
 // constexpr`: pending_ops_ / wait_for_availability exist in
 // some builds only, and a discarded branch would still phase-1-look-up a
 // missing member. Each specialization names ONLY the members of its config.

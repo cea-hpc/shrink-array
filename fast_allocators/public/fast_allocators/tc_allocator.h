@@ -180,7 +180,7 @@ enum class FreeLinks : std::uint8_t
 /**
  * @brief One slab of fixed-size elements, and a node of a slab list.
  *
- * @details The block is carved linearly while it is fresh (`UsedSize` is a bump
+ * @details The block is carved linearly while it is fresh (`used_size` is a bump
  *          index) and from a free list afterwards; @p Links says where that
  *          free list keeps its links. Freeing the element the bump pointer just
  *          handed out rewinds the bump instead, so an allocate/free pair leaves
