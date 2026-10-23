@@ -26,7 +26,7 @@ A chunk compressed to a second value therefore owns no buffer: it points to a
 read-only array, shared by **all** the chunks, of all the arrays of the same type,
 that have this value. The read is exactly the same as in the other variants.
 
-The library: `chunk::chunk_v2a` (it defines `CHUNK_VARIANT_V2A`). Code: `chunk/zero_any_chunk.h`, `chunk/zero_any_array.h`,
+The library: `chunk::chunk_zero_any` (it defines `CHUNK_VARIANT_ZERO_ANY`). Code: `chunk/zero_any_chunk.h`, `chunk/zero_any_array.h`,
 `internal/zero_any_chunk_inline.h`, `internal/zero_any_array_inline.h`, `internal/zero_any_proxy.h`,
 `internal/zero_any_proxy_inline.h`, `internal/tab_cst_val2_holder.h`.
 

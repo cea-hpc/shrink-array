@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Read / reclaim harness. Variant-agnostic: chunk / chunk2 / chunk2a follow the
-// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses here.
+// compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the other harnesses here.
 // OpenMP builds only: the property is about two threads.
 // ============================================================================
 //
@@ -127,7 +127,7 @@
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"         // ParamChunk::init_indexes
 #include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"              // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
+#include "chunk/config.h"              // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
 #include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/test_hooks.h" // test_hooks::read_delay_* / pass_delay_*
 #include "chunk/internal/print.h"      // shrink_array::println
@@ -146,20 +146,20 @@ static_assert(build_config::use_openmp, "read_reclaim_validation needs an OpenMP
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 using Arr = Array<double>;
 using Ind = Arr::IndType;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }
@@ -227,7 +227,7 @@ constexpr double second_value = 2.0;
 /// @brief The `compound` mode (see the file header). @return the exit status.
 int run_compound(int team, int writers, double seconds, long pollute)
 {
-    if constexpr (!chunk_config::use_chunk2 && !chunk_config::use_chunk2a)
+    if constexpr (!chunk_config::use_zero_one_value && !chunk_config::use_zero_any)
     {
         println("[{}/read-reclaim compound] SKIP: no second value on this variant", variant_name());
         return 77;

@@ -26,7 +26,7 @@ Un chunk compressé à une seconde valeur ne possède donc pas de tampon : il po
 tableau en lecture seule, partagé par **tous** les chunks, de tous les tableaux du même type,
 qui ont cette valeur. La lecture est exactement celle des autres variantes.
 
-La bibliothèque : `chunk::chunk_v2a` (elle définit `CHUNK_VARIANT_V2A`). Code : `chunk/zero_any_chunk.h`, `chunk/zero_any_array.h`,
+La bibliothèque : `chunk::chunk_zero_any` (elle définit `CHUNK_VARIANT_ZERO_ANY`). Code : `chunk/zero_any_chunk.h`, `chunk/zero_any_array.h`,
 `internal/zero_any_chunk_inline.h`, `internal/zero_any_array_inline.h`, `internal/zero_any_proxy.h`,
 `internal/zero_any_proxy_inline.h`, `internal/tab_cst_val2_holder.h`.
 

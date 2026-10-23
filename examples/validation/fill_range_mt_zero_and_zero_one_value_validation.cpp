@@ -15,12 +15,13 @@
  */
 
 /**
- * @file fill_range_mt_v1v2_validation.cpp
- * @brief fill_range_mt() in a build that holds TWO variants (chunk_v1v2:
- *        CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1), on an zero::Array and an zero_one_value::Array side by side.
+ * @file fill_range_mt_zero_and_zero_one_value_validation.cpp
+ * @brief fill_range_mt() in a build that holds TWO variants (chunk_zero_and_zero_one_value:
+ *        CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1), on an zero::Array and an zero_one_value::Array side by
+ * side.
  *
  * @details The range ops once chose their per-variant behaviour from the build
- *          flags (chunk_config::use_chunk / use_chunk2) instead of the array's
+ *          flags (chunk_config::use_zero / use_zero_one_value) instead of the array's
  *          type. In a build with both flags set, that sent an zero_one_value::Array down
  *          v1's paths -- a fill_range_mt() of its SECOND value was never queued
  *          for compression, its chunks stayed materialised -- and an zero::Array
@@ -49,15 +50,15 @@
  *          as multi-mat uses it: this program defines the switch the library
  *          reads, and makes the phase calls itself.
  *
- *          Usage: fill_range_mt_v1v2_validation [chunks]
+ *          Usage: fill_range_mt_zero_and_zero_one_value_validation [chunks]
  */
 
 
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/config.h"                // OmptSuspendCounter, chunk_config::use_chunk / use_chunk2
+#include "chunk/config.h"                // OmptSuspendCounter, chunk_config::use_zero / use_zero_one_value
 #include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
@@ -65,13 +66,14 @@
 
 
 /// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT
-/// callback exists in this binary (chunk_v1v2 is built without the tool).
+/// callback exists in this binary (chunk_zero_and_zero_one_value is built without the tool).
 shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1};
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_chunk && chunk_config::use_chunk2,
-              "fill_range_mt_v1v2_validation is the two-variant build: link chunk_v1v2_<size>");
+static_assert(chunk_config::use_zero && chunk_config::use_zero_one_value,
+              "fill_range_mt_zero_and_zero_one_value_validation is the two-variant build: link "
+              "chunk_zero_and_zero_one_value_<size>");
 
 constexpr double second_value = 9.0; ///< the zero_one_value::Array's declared second value
 constexpr double other_value  = 5.0; ///< a value neither array can compress to
@@ -168,8 +170,8 @@ int main(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     constexpr bool omp = build_config::use_openmp;
-    println("=== fill_range_mt_v1v2_validation  chunks={}  threads={}  ({}) ===", nchunks, CHUNK_PMP_MAX_THREADS,
-            omp ? "OpenMP: counts asserted" : "serial: values only");
+    println("=== fill_range_mt_zero_and_zero_one_value_validation  chunks={}  threads={}  ({}) ===", nchunks,
+            CHUNK_PMP_MAX_THREADS, omp ? "OpenMP: counts asserted" : "serial: values only");
 
     // One array per case: every case starts from fresh chunks.
     int fails = 0;

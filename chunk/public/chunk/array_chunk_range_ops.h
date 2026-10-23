@@ -106,10 +106,10 @@ inline constexpr bool raw_fillable_v = !is_bool_like_v<T>;
 /**
  * @brief Which chunk variant does array type @p Arr hold?
  *
- * @details Dispatch on the TYPE, never on chunk_config::use_chunk /
- *          use_chunk2 / use_chunk2a: those say which variants the BUILD
- *          contains, and a build may contain several (CHUNK_VARIANT_V1=1 with
- *          CHUNK_VARIANT_V2=1): testing the flags sends an zero_one_value::Array down
+ * @details Dispatch on the TYPE, never on chunk_config::use_zero /
+ *          use_zero_one_value / use_zero_any: those say which variants the BUILD
+ *          contains, and a build may contain several (CHUNK_VARIANT_ZERO=1 with
+ *          CHUNK_VARIANT_ZERO_ONE_VALUE=1): testing the flags sends an zero_one_value::Array down
  *          v1's paths and an zero::Array down Chunk2's.
  */
 template <typename Arr>

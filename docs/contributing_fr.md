@@ -51,7 +51,7 @@ Que lancer, selon ce que touche la modification :
 | marquage pour la compression, les passes | `mark_path_validation`, `compress_roundtrip`, le banc en mode check |
 | allocateurs, listes de réutilisation, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, le build avec registre des blocs (ledger) (`--with-ledger`), ASan dans un build std-alloc |
 | rechunk, géométrie dynamique | `rechunk_validation`, `dyn_geometry_validation`, le banc avec `CHUNK_FORCE_RECHUNK_TOGGLE=1` |
-| opérations sur des plages | `fill_range_mt_validation`, `fill_range_mt_v1v2_validation`, `range_counters_validation` |
+| opérations sur des plages | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_one_value_validation`, `range_counters_validation` |
 | rangs des threads, régions | `thread_growth_validation`, `nested_region_validation` |
 | interface du conteneur | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
 | documentation | `check_docs` |

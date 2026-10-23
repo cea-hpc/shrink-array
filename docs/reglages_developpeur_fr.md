@@ -135,7 +135,7 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64 : lier `libamath` d'ArmPL (aucun gain mesuré sur Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | contournement d'une erreur interne d'icpx sur trois fichiers |
 | `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2 : tampons partagés des valeurs constantes en lecture seule (`mprotect`) ; une écriture parasite dans un chunk compressé fait une erreur de segmentation au lieu de corrompre la valeur (build de mise au point ) |
-| `CHUNK_LIB_UNITY` | `ON` | chaque archive de variante (`chunk_v2a_256`, ...) compilée en une seule unité (unity build, 4 à 6 fois moins de compilation) ; un fichier qui a ses propres options de compilation reste à part |
+| `CHUNK_LIB_UNITY` | `ON` | chaque archive de variante (`chunk_zero_any_256`, ...) compilée en une seule unité (unity build, 4 à 6 fois moins de compilation) ; un fichier qui a ses propres options de compilation reste à part |
 | `SHRINK_BENCH_UNITY` | `ON` | chaque exécutable `shrink_bench` compilé en une seule unité (unity build, 3,5 à 4 fois moins de compilation) ; `OFF` pour comparer des temps avec des campagnes antérieures, l'inlining entre fichiers du banc pouvant les changer ; `SHRINK_BENCH_UNITY_BATCH` fichiers par unité (0 = tous) |
 | `CHUNK_DEBUG_INFO` | `auto` | informations de débogage des builds optimisés : `full` (`-g`), `lines` (`-g1` : noms de fonctions et tables de lignes, assez pour perf et les backtraces gdb, pas pour les variables locales), `none` ; `auto` : `full` avec `CHECK_OPTIM` ou un sanitizer, `lines` sinon. Le code machine est le même ; `lines` compile 20 à 27 % plus vite avec 40 % de mémoire de pointe en moins. Les builds Debug ont toujours `-g` |
 | `CHUNK_VALIDATION_UNITY` | `ON` | les harnesses de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par harness |
@@ -183,7 +183,7 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--with-ledger` | ajouter `cmake-build-omp-gnu-debug-ledger` (Debug OpenMP avec `CHUNK_FORCE_LEDGER=ON`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi |
 | `--with-token-sanitizer` | ajouter `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`SANITIZER=token`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi ; `--no-sanitizers` l'en retire |
 | `--target=<glob>` | seulement les configurations dont le nom correspond (`omp-llvm`, ou un motif du shell entre apostrophes) ; un motif qui ne correspond à rien est une erreur |
-| `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_chunk_64`, ou un motif du shell entre apostrophes) |
+| `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_zero_64`, ou un motif du shell entre apostrophes) |
 | `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles |
 | `--no-hardening` | sans `CHUNK_GLIBCXX_ASSERTIONS` ni `CHUNK_UBSAN` sur les builds Debug et sanitizer |
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |

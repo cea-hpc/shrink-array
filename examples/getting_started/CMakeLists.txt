@@ -4,7 +4,7 @@
 #
 # Builds two ways:
 #  - inside the shrink-array tree (examples/CMakeLists.txt adds it), against
-#    the tree's chunk_v2a library;
+#    the tree's chunk_zero_any library;
 #  - on its own, against an INSTALLED shrink-array, the way a user project
 #    does it:
 #        cmake -S examples/getting_started -B build-gs -DCMAKE_PREFIX_PATH=<prefix>
@@ -15,18 +15,18 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(getting_started LANGUAGES CXX)
   set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
-  # Brings chunk::chunk_v1, chunk::chunk_v2, chunk::chunk_v2a (default size),
-  # chunk::chunk_v2a_<size>, chunk::chunk_v2a_dyn, ... and their dependencies
+  # Brings chunk::chunk_zero, chunk::chunk_zero_one_value, chunk::chunk_zero_any (default size),
+  # chunk::chunk_zero_any_<size>, chunk::chunk_zero_any_dyn, ... and their dependencies
   # (fast_allocators, OpenMP and Threads when the library was built with them).
   find_package(chunk 0.1 REQUIRED)
-  set(GETTING_STARTED_LIB chunk::chunk_v2a CACHE STRING "The shrink-array library to link")
+  set(GETTING_STARTED_LIB chunk::chunk_zero_any CACHE STRING "The shrink-array library to link")
 else()
-  set(GETTING_STARTED_LIB chunk_v2a)
+  set(GETTING_STARTED_LIB chunk_zero_any)
 endif()
 
 add_executable(getting_started getting_started.cpp)
 # Linking the variant library is all it takes: it carries its compile
-# definitions (CHUNK_VARIANT_V2A=1, CHUNK_SIZE or CHUNK_DYNAMIC), its include
+# definitions (CHUNK_VARIANT_ZERO_ANY=1, CHUNK_SIZE or CHUNK_DYNAMIC), its include
 # directories (with the generated chunk/build_options.h, the options it was
 # built with) and -fopenmp when it was built with OpenMP.
 target_link_libraries(getting_started PRIVATE ${GETTING_STARTED_LIB})

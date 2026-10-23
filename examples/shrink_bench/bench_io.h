@@ -415,7 +415,7 @@ void read_check_binary_file(Int                ind,
                 // Pure text search on the trace line -- no variant API at all -- and the
                 // enclosing lambda is generic, so the guard was never more than an
                 // `if constexpr` written with the preprocessor.
-                if constexpr (chunk_config::use_chunk2or2a)
+                if constexpr (chunk_config::use_second_value)
                 {
                     if (line.find("is_cst_val2") != std::string::npos)
                     {
@@ -431,7 +431,7 @@ void read_check_binary_file(Int                ind,
 
             // false everywhere but CHUNK2, exactly as the #else branch gave.
             bool is_val2 = false;
-            if constexpr (chunk_config::use_chunk2)
+            if constexpr (chunk_config::use_zero_one_value)
             {
                 static constexpr bool is_bool     = shrink_array::is_bool_like_v<T>; // bool, Bit
                 static constexpr bool is_not_bool = !is_bool;
@@ -453,7 +453,7 @@ void read_check_binary_file(Int                ind,
                 std::cerr << "number inside chunk : " << num << "\n";
                 std::cerr << "is values           : " << is_values << "\n";
                 std::cerr << "is_cst_val1         : " << is_val1 << "\n";
-                if constexpr (chunk_config::use_chunk2or2a)
+                if constexpr (chunk_config::use_second_value)
                 {
                     std::cerr << "is_cst_val2         : " << is_val2 << "\n";
                 }
@@ -479,7 +479,7 @@ void read_check_binary_file(Int                ind,
                 exit(0);
             }
 
-            if constexpr (chunk_config::use_chunk2or2a)
+            if constexpr (chunk_config::use_second_value)
             {
                 if (is_cst_val2)
                 {
@@ -680,7 +680,7 @@ void read_check_binary_file(Int                ind,
                     log_message("value  = " + std::to_string(val) + "\n");
                     log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
 
-                    if constexpr (chunk_config::use_chunk2)
+                    if constexpr (chunk_config::use_zero_one_value)
                     {
                         if (chunk_t.is_cst_val1())
                         {
@@ -873,7 +873,7 @@ void read_check_binary_file(Int                ind,
                     }
                 }
 
-                if constexpr (chunk_config::use_chunk2or2a)
+                if constexpr (chunk_config::use_second_value)
                 {
                     // num_chunk is recomputed rather than hoisted out of the block
                     // above: the ratio report sitting between the two must keep
@@ -896,7 +896,7 @@ void read_check_binary_file(Int                ind,
                         [&]
                         {
                             // bool / Bit: one second value, no index.
-                            if constexpr (chunk_config::use_chunk2 && !shrink_array::is_bool_like_v<T>)
+                            if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T>)
                             {
                                 return chunk_t.is_cst_val2(data_check.get_ind_second_value());
                             }
@@ -932,7 +932,7 @@ void read_check_binary_file(Int                ind,
                             log_message("\n[Info] should be cst_val1 (all zero)!\n");
                         }
 
-                        if constexpr (chunk_config::use_chunk2a)
+                        if constexpr (chunk_config::use_zero_any)
                         {
                             const T* m_ptr_cst_values = chunk_t.values_load(); // a cst2 chunk reads from its array
                             log_message("\nm_ptr_cst_val2 contain : ");

@@ -52,18 +52,18 @@
 #include <memory> // std::unique_ptr, std::make_unique
 #include <vector> // std::vector
 
-#include "chunk/chunk_traits.h"   // forward decls + default IntType = int
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"         // build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
-namespace validation::chunk2_registry_growth_validation
+namespace validation::zero_one_value_registry_growth_validation
 {
 
 using namespace shrink_array;
@@ -161,7 +161,7 @@ int run(int /*argc*/, char** /*argv*/)
         const long s = static_cast<long>(a.chunk_size());
         a.resize(static_cast<Ind>(n_chunks * s));
         a.set_second_value(1.0);
-        println("=== chunk2_registry_growth_validation  chunk_size={}  threads={}  others={} ===", s,
+        println("=== zero_one_value_registry_growth_validation  chunk_size={}  threads={}  others={} ===", s,
                 CHUNK_PMP_MAX_THREADS, n_others);
 
         // 1. `a` compressed to its second value.
@@ -225,4 +225,4 @@ int run(int /*argc*/, char** /*argv*/)
     return fails ? 1 : 0;
 }
 
-} // namespace validation::chunk2_registry_growth_validation
+} // namespace validation::zero_one_value_registry_growth_validation

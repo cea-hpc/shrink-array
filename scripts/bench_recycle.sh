@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-# shrink_bench int64 binaries (chunk@dyn by default), the scaling guard's workload,
+# shrink_bench int64 binaries (zero@dyn by default), the scaling guard's workload,
 # with/without slab recycling and numactl --interleave.
 # Usage: bench_recycle.sh <build_root> [reps] [dir containing numa_launch.py]
 #    or: bench_recycle.sh <build_root> <python_dir> [reps]
@@ -9,8 +9,8 @@
 #   python dir: found next to this script, in ../python or in build_root/python if omitted
 # Environment (defaults in brackets):
 #   THREADS ["32 64 128"]  RECYCLE ["1 0"]  CONFIGS ["omp-llvm omp-gnu"]
-#   VARIANTS ["chunk@dyn"]: base@size, run as shrink_bench_<base>_int64_<size>
-#            (chunk2@1024, chunk2a@dyn, ...); CHUNK_RECHUNK_RECYCLE only acts on chunk
+#   VARIANTS ["zero@dyn"]: base@size, run as shrink_bench_<base>_int64_<size>
+#            (zero_one_value@1024, zero_any@dyn, ...); CHUNK_RECHUNK_RECYCLE only acts on zero
 #   MULTIPLY [2]: --multiply of the workload
 #   NUMA ["auto"]: auto = numactl --interleave over the nodes the run spans, as
 #                  bench_and_test.py does; off = no numactl; "auto off" = both
@@ -41,7 +41,7 @@ export OMP_PROC_BIND=close OMP_PLACES=cores
 numa() { python3 -c "import sys; sys.path.insert(0,'$PYDIR'); import numa_launch as n
 print(' '.join(n.interleave_prefix({'OMP_NUM_THREADS':'$1','OMP_PROC_BIND':'close'})))"; }
 THREADS=${THREADS:-32 64 128}; RECYCLE=${RECYCLE:-1 0}; NUMA=${NUMA:-auto}
-CONFIGS=${CONFIGS:-omp-llvm omp-gnu}; VARIANTS=${VARIANTS:-chunk@dyn}
+CONFIGS=${CONFIGS:-omp-llvm omp-gnu}; VARIANTS=${VARIANTS:-zero@dyn}
 for m in $NUMA; do [ "$m" = auto ] || [ "$m" = off ] || { echo "NUMA: auto or off, not '$m'" >&2; exit 1; }; done
 ENVS=${ENVS:--}
 for e in $ENVS; do
@@ -61,8 +61,8 @@ for c in $CONFIGS; do
   name=shrink_bench_${v%@*}_int64_${v#*@}
   exe=$(ls "$ROOT/$cfg"/*/examples/shrink_bench/$name 2>/dev/null | grep "$(uname -m)" | head -1)
   [ -x "$exe" ] || { echo "missing $name in $cfg" >&2; continue; }
-  # one label per config and variant; chunk@dyn alone keeps the bare config name
-  lab0=${cfg#cmake-build-}; [ "$VARIANTS" = chunk@dyn ] || lab0=$lab0:$v
+  # one label per config and variant; zero@dyn alone keeps the bare config name
+  lab0=${cfg#cmake-build-}; [ "$VARIANTS" = zero@dyn ] || lab0=$lab0:$v
   for es in $ENVS; do
   if [ "$es" = - ]; then lab=$lab0; envset=(); else lab=$lab0+${es%%:*}; read -ra envset <<<"$(tr , ' ' <<<"${es#*:}")"; fi
   for t in $THREADS; do

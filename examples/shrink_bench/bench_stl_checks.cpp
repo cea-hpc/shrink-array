@@ -152,7 +152,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         }
         // front()/back() on empty: our chunk container throws (safety choice);
         // std::vector leaves it UB, so only assert the throw in chunk mode.
-        if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a)
+        if constexpr (chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any)
         {
             Array<double> empty_arr(0);
             bool          threw = false;

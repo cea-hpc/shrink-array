@@ -23,12 +23,12 @@
 //   1. defines BZIP2 by default (unless already defined by the build system),
 //   2. pulls the base chunk headers in the correct order,
 //   3. derives SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION from the
-//      variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A) and the mode macros
+//      variant macros (CHUNK_VARIANT_ZERO / _V2 / _V2A) and the mode macros
 //      (CHUNK_OPT_DEBUG / CHECK),
 //   4. pulls the variant-specific array_chunk* headers,
 //   5. defines the ComplexDouble alias used across TUs.
 //
-// The variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A) MUST be defined identically
+// The variant macros (CHUNK_VARIANT_ZERO / _V2 / _V2A) MUST be defined identically
 // on every TU of a given executable target. In practice they are defined
 // PUBLIC on the chunk_vN library target so nothing else has to worry.
 
@@ -81,7 +81,7 @@
 
 #include "bench_par.h" // bench_par::region, BENCH_FOR_* (the phases' regions and loops)
 
-#if (defined CHUNK_VARIANT_V1 || defined CHUNK_VARIANT_V2 || defined CHUNK_VARIANT_V2A)
+#if (defined CHUNK_VARIANT_ZERO || defined CHUNK_VARIANT_ZERO_ONE_VALUE || defined CHUNK_VARIANT_ZERO_ANY)
     #define SHRINK_ARRAY
 #endif
 
@@ -260,11 +260,11 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
 namespace build_config = shrink_array::build_config;
 namespace chunk_config = shrink_array::chunk_config;
 
-#if defined CHUNK_VARIANT_V1
+#if defined CHUNK_VARIANT_ZERO
     #include "chunk/zero_array.h" // zero::Array (the CHUNK variant)
-#elif defined CHUNK_VARIANT_V2
+#elif defined CHUNK_VARIANT_ZERO_ONE_VALUE
     #include "chunk/zero_one_value_array.h" // zero_one_value::Array (the CHUNK2 variant)
-#elif defined CHUNK_VARIANT_V2A
+#elif defined CHUNK_VARIANT_ZERO_ANY
     #include "chunk/zero_one_value_array.h" // zero_one_value::Array (tab_bool, see bench_array.h)
     #include "chunk/zero_any_array.h"       // zero_any::Array (the CHUNK2A variant)
 #else

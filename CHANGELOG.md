@@ -111,6 +111,15 @@ the tag's checksum to the recipe.
   `chunk/internal/zero_any_proxy.h`, ... (were proxy.h, proxy2.h, proxy2A.h), and
   `second_value_chunk_base.h`, `second_value_proxy_base.h`, `second_value_array_base.h` (were
   chunk2_base.h, proxy2_base.h, array_chunk2_base.h).
+- The build names the variants after their namespace too: `CHUNK_VARIANTS` takes `zero`,
+  `zero_one_value`, `zero_any` (was `chunk`, `chunk2`, `chunk2a`); the libraries are
+  `chunk_zero_<size>`, `chunk_zero_one_value_<size>`, `chunk_zero_any_<size>`, `..._dyn` and the bare
+  `chunk::chunk_zero_any`, ... (were `chunk_v1_*`, `chunk_v2_*`, `chunk_v2a_*`); the macros
+  `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_ONE_VALUE`, `CHUNK_VARIANT_ZERO_ANY` (were
+  `CHUNK_VARIANT_V1`, `_V2`, `_V2A`); `chunk_config::use_zero`, `use_zero_one_value`, `use_zero_any`,
+  `use_second_value` (were `use_chunk`, `use_chunk2`, `use_chunk2a`, `use_chunk2or2a`); and the
+  executables and tests, `shrink_bench_zero_any_256`, `validation_zero_dyn`, ... (were
+  `shrink_bench_chunk2a_256`, ...).
 - Types are PascalCase, with no `xxx_type` exception: the member aliases of the arrays
   (`chunk_type`, `manager_type`, `proxy_type`, `ind_type`, `chunk_list_type`) and the
   internal ones (`index_type`, `cst_val1_type`) become `ChunkType`, `ManagerType`, `ProxyType`,
@@ -138,6 +147,9 @@ the tag's checksum to the recipe.
   the classes above, until 1.0.
 - `chunk/chunk_std.h`, `chunk2_std.h`, `chunk2A_std.h`, `chunk_def.h`, `chunk2_def.h` and
   `chunk2A_def.h`: they include the new header and emit a `#warning`, until 1.0.
+- The former `CHUNK_VARIANTS` values (a CMake deprecation message), library names (INTERFACE
+  targets with a `DEPRECATION` property, installed), `CHUNK_VARIANT_V*` macros (defined from the new
+  ones, and the other way round) and `chunk_config::use_chunk*` constants (`[[deprecated]]`), until 1.0.
 
 ### Fixed
 

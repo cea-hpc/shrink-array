@@ -72,7 +72,7 @@ The chunk size is held **by each array** (`size_policy_`, see
 `chunk_size_policy.h`), not by a global variable:
 
 - **fixed geometry**: the size is a compile-time constant, one library per
-  size (`chunk_v2_256`, …, list `CHUNK_STATIC_SIZES`, the first one giving
+  size (`chunk_zero_one_value_256`, …, list `CHUNK_STATIC_SIZES`, the first one giving
   `CHUNK_DEFAULT_SIZE`);
 - **dynamic geometry** (`CHUNK_DYNAMIC`, `_dyn` libraries): the size is set at
   run time and can **change during the lifetime of the array** (`rechunk_to()`, section 9),
@@ -535,8 +535,8 @@ single-threaded forms (`fill_range`, `copy_range`) read those three elements pla
 
 **The wrong values of September 2026.** With the direct path open to Chunk2,
 `bench_and_test.py` reported on Grace wrong values **after compression**:
-`rechunk_validation_chunk2_dyn` (`scale-64-to-tgt`, POST-FAIL) and the check mode of
-`shrink_bench_chunk2_256` ("is_cst_val2 should be not"). Not a race between threads:
+`rechunk_validation_zero_one_value_dyn` (`scale-64-to-tgt`, POST-FAIL) and the check mode of
+`shrink_bench_zero_one_value_256` ("is_cst_val2 should be not"). Not a race between threads:
 the re-chunk test fails identically on a single core in the serial Debug build, and the
 failing Grace configurations were the serial ones. The cause was the counters of the third
 point above: the direct paths (`fill_range`, `copy_range`, used by the re-chunk's rebuild)
@@ -573,7 +573,7 @@ CMake options related to benchmark performance:
 
 | option | effect |
 |---|---|
-| `SHRINK_INTEL_LIBM` (ON) | x86-64, not icpx: links the executables against Intel's libm (`libimf`) if it is found (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, or next to `icpx`). AMD Milan, GNU: 15.7 s → 12.4 s on `shrink_bench_chunk2a_256` |
+| `SHRINK_INTEL_LIBM` (ON) | x86-64, not icpx: links the executables against Intel's libm (`libimf`) if it is found (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, or next to `icpx`). AMD Milan, GNU: 15.7 s → 12.4 s on `shrink_bench_zero_any_256` |
 | `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang: links ArmPL's `libamath` (`ARMPL_LIBM_DIR`). No gain measured on Grace (RHEL 9.6); kept to redo the measurement (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
 
 ---

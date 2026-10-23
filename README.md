@@ -133,7 +133,7 @@ is that program, which then compares the two arrays element by element. It needs
 build: it does not compile against a library built with GCC's libgomp, where the phases would
 never be marked.
 
-Link it with `chunk::chunk_v2a` (see [Install](#install)). The complete version, which checks
+Link it with `chunk::chunk_zero_any` (see [Install](#install)). The complete version, which checks
 what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp);
 [docs/getting_started.md](docs/getting_started.md) walks through it, then through the rules
 below.
@@ -168,7 +168,7 @@ constants count:
 | Chunk2A | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
 
 The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are chosen by the
-library you link: `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
+library you link: `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
 [docs/algo_chunk2.md](docs/algo_chunk2.md) how reads, writes and compression run side by side.
 
@@ -264,7 +264,7 @@ Then, in your project:
 
 ```cmake
 find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
-target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
 `add_subdirectory(shrink-array)` works too, and so does `FetchContent`, with nothing to
@@ -278,7 +278,7 @@ FetchContent_Declare(shrink_array
 set(OMP ON)                            # build the OpenMP libraries
 FetchContent_MakeAvailable(shrink_array)
 
-target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
 With Spack, the recipe is in the repository:

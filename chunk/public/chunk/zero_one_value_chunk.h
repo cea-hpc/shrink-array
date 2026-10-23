@@ -69,7 +69,7 @@ class ChunkSpec
     // The registered second-constant arrays. A chunk compressed to one stores its ADDRESS as
     // `values`, so the container must never move them: use a std::deque grown at the end, not a
     // std::vector (a reallocation would leave every such chunk pointing at freed memory).
-    // chunk2_registry_growth_validation guards it. MM_PROTECT holds pointers to its own
+    // zero_one_value_registry_growth_validation guards it. MM_PROTECT holds pointers to its own
     // mappings, which never move.
     using VecArrayChunkSizeMax =
         std::conditional_t<build_config::use_mm_protect, std::vector<T*>, std::deque<std::array<T, cst_buffer_size>>>;

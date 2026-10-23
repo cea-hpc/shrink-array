@@ -4,11 +4,11 @@
 # variant_compare: Chunk2 against Chunk2A on one workload (variant_compare.cpp).
 #
 # One source, one executable per variant at the default static size (no dyn:
-# a re-chunk would sit in the timings): variant_compare_chunk2_<size>,
-# variant_compare_chunk2a_<size>. A perf target -- no CHECK define.
+# a re-chunk would sit in the timings): variant_compare_zero_one_value_<size>,
+# variant_compare_zero_any_<size>. A perf target -- no CHECK define.
 #
-#   OMP_NUM_THREADS=64 ./variant_compare_chunk2_256  --constants 1
-#   OMP_NUM_THREADS=64 ./variant_compare_chunk2a_256 --constants 1
+#   OMP_NUM_THREADS=64 ./variant_compare_zero_one_value_256  --constants 1
+#   OMP_NUM_THREADS=64 ./variant_compare_zero_any_256 --constants 1
 #   (then --constants 4)
 #
 # The smoke tests run a small N with --verify (values against a std::vector)
@@ -16,8 +16,8 @@
 # building and correct, they measure nothing.
 # ============================================================================
 
-set(_vc_variant_names   chunk2   chunk2a)
-set(_vc_variant_libbase chunk_v2 chunk_v2a)
+set(_vc_variant_names   zero_one_value zero_any)
+set(_vc_variant_libbase chunk_zero_one_value chunk_zero_any)
 
 list(LENGTH _vc_variant_names _vc_nvar)
 math(EXPR _vc_nvar_last "${_vc_nvar} - 1")
@@ -31,7 +31,7 @@ foreach(_vi RANGE ${_vc_nvar_last})
 
   set(_tgt variant_compare_${_vname}_${CHUNK_DEFAULT_SIZE})
   add_executable(${_tgt} variant_compare.cpp)
-  target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_V2 / _V2A, CHUNK_SIZE: PUBLIC
+  target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO_ONE_VALUE / _V2A, CHUNK_SIZE: PUBLIC
   if (OMP)
     target_link_libraries(${_tgt} PUBLIC OpenMP::OpenMP_CXX)
   endif ()

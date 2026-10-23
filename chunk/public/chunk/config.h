@@ -191,6 +191,28 @@ extern OmptSuspendCounter g_ompt_suspended;
 } // namespace shrink_array
 
 
+// Former names of the variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A), until 1.0:
+// a program that defines an old one gets the new one, and one that tests an old
+// one finds it defined.
+#if defined(CHUNK_VARIANT_V1) && !defined(CHUNK_VARIANT_ZERO)
+    #define CHUNK_VARIANT_ZERO CHUNK_VARIANT_V1
+#endif
+#if defined(CHUNK_VARIANT_V2) && !defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
+    #define CHUNK_VARIANT_ZERO_ONE_VALUE CHUNK_VARIANT_V2
+#endif
+#if defined(CHUNK_VARIANT_V2A) && !defined(CHUNK_VARIANT_ZERO_ANY)
+    #define CHUNK_VARIANT_ZERO_ANY CHUNK_VARIANT_V2A
+#endif
+#if defined(CHUNK_VARIANT_ZERO) && !defined(CHUNK_VARIANT_V1)
+    #define CHUNK_VARIANT_V1 CHUNK_VARIANT_ZERO
+#endif
+#if defined(CHUNK_VARIANT_ZERO_ONE_VALUE) && !defined(CHUNK_VARIANT_V2)
+    #define CHUNK_VARIANT_V2 CHUNK_VARIANT_ZERO_ONE_VALUE
+#endif
+#if defined(CHUNK_VARIANT_ZERO_ANY) && !defined(CHUNK_VARIANT_V2A)
+    #define CHUNK_VARIANT_V2A CHUNK_VARIANT_ZERO_ANY
+#endif
+
 /**
  * @namespace chunk_config
  * @brief Represents the internal logic of the compression engine (The "How").
@@ -202,29 +224,37 @@ using namespace build_config;
 // --- Array Type Selection ---
 // Per library, from its CMake target (PUBLIC definitions): what a program
 // spells must be what the library it links was built with -- link_check.h.
-/// True with CHUNK_VARIANT_V1: the Chunk variant is the selected array type.
-#ifdef CHUNK_VARIANT_V1
-inline constexpr bool use_chunk = true;
+/// True with CHUNK_VARIANT_ZERO: zero::Array is the selected array type.
+#ifdef CHUNK_VARIANT_ZERO
+inline constexpr bool use_zero = true;
 #else
-inline constexpr bool use_chunk = false;
+inline constexpr bool use_zero = false;
 #endif
 
-/// True with CHUNK_VARIANT_V2: the Chunk2 variant is the selected array type.
-#ifdef CHUNK_VARIANT_V2
-inline constexpr bool use_chunk2 = true;
+/// True with CHUNK_VARIANT_ZERO_ONE_VALUE: zero_one_value::Array is the selected array type.
+#ifdef CHUNK_VARIANT_ZERO_ONE_VALUE
+inline constexpr bool use_zero_one_value = true;
 #else
-inline constexpr bool use_chunk2 = false;
+inline constexpr bool use_zero_one_value = false;
 #endif
 
-/// True with CHUNK_VARIANT_V2A: the Chunk2A variant is the selected array type.
-#ifdef CHUNK_VARIANT_V2A
-inline constexpr bool use_chunk2a = true;
+/// True with CHUNK_VARIANT_ZERO_ANY: zero_any::Array is the selected array type.
+#ifdef CHUNK_VARIANT_ZERO_ANY
+inline constexpr bool use_zero_any = true;
 #else
-inline constexpr bool use_chunk2a = false;
+inline constexpr bool use_zero_any = false;
 #endif
 
-inline constexpr bool is_shrink_enabled = use_chunk || use_chunk2 || use_chunk2a; ///< A chunked variant is selected.
-inline constexpr bool use_chunk2or2a    = use_chunk2 || use_chunk2a;              ///< Chunk2 or Chunk2A is selected.
+inline constexpr bool is_shrink_enabled =
+    use_zero || use_zero_one_value || use_zero_any; ///< A chunked variant is selected.
+inline constexpr bool use_second_value =
+    use_zero_one_value || use_zero_any; ///< zero_one_value or zero_any is selected.
+
+// Former names, until 1.0.
+[[deprecated("use use_zero")]] inline constexpr bool           use_chunk      = use_zero;
+[[deprecated("use use_zero_one_value")]] inline constexpr bool use_chunk2     = use_zero_one_value;
+[[deprecated("use use_zero_any")]] inline constexpr bool       use_chunk2a    = use_zero_any;
+[[deprecated("use use_second_value")]] inline constexpr bool   use_chunk2or2a = use_second_value;
 
 /**
  * @brief Chunk2's second-value index for an array that has declared none.

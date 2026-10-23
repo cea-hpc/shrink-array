@@ -45,7 +45,7 @@
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/zero_chunk.h"         // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"             // chunk_config::use_chunk*
+#include "chunk/config.h"             // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // parallel_phase
 #include "chunk/internal/env_parse.h" // shrink_array::arg_number
@@ -61,22 +61,22 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "bulk_write_team_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
+              "bulk_write_team_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }
@@ -165,7 +165,7 @@ int run_type(const char* type, long n)
     c = a;
     fails += check(type, "copy-assign", c, ref);
 
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         if (!(b == a) || !(c == a))
         {
@@ -254,7 +254,7 @@ int run_type(const char* type, long n)
     if (fails == 0)
     {
         println("[{}/{}] OK: N={} copy, assign, resize(n, val), shrink{}", variant_name(), type, n,
-                chunk_config::use_chunk2a ? ", operator==" : "");
+                chunk_config::use_zero_any ? ", operator==" : "");
     }
     return fails;
 }

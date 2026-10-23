@@ -12,9 +12,9 @@ endif()
 @PACKAGE_INIT@
 
 # What this installation holds, for a consumer that wants to choose:
-#   chunk_STATIC_SIZES  the compile-time sizes built (chunk::chunk_v2a_<size>)
-#   chunk_DEFAULT_SIZE  the size of the bare chunk::chunk_v1 / _v2 / _v2a
-#   chunk_HAS_DYN       chunk::chunk_v<x>_dyn exist (runtime chunk size)
+#   chunk_STATIC_SIZES  the compile-time sizes built (chunk::chunk_zero_any_<size>)
+#   chunk_DEFAULT_SIZE  the size of the bare chunk::chunk_zero / _zero_one_value / _zero_any
+#   chunk_HAS_DYN       chunk::chunk_<variant>_dyn exist (runtime chunk size)
 #   chunk_OPENMP        built with OpenMP (consumers are compiled with it too)
 #   chunk_THREADS       the threading backend: openmp, std or serial
 #   chunk_OMPT          built with the OMPT tool (no phase brackets needed)
