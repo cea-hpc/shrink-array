@@ -60,6 +60,13 @@ except ImportError:
     import types as _types  # noqa: E402
 
     _numa = _types.SimpleNamespace(MODES=("auto", "off"), interleave_prefix=lambda env, mode="auto": [])
+# --exec chunk2a & co.: the old variant labels, read as their new names until 1.0.
+try:
+    from bench_runner.settings import normalize_variant  # noqa: E402
+except ImportError:
+    # Copied alone: the new labels only.
+    def normalize_variant(label, warn=None):
+        return label
     print(f"[{os.path.basename(__file__)}] numa_launch.py not found next to the script: "
           "--numa-interleave has no effect", file=sys.stderr)
 
@@ -163,19 +170,19 @@ parser.add_argument("--only-checksum", action="store_true",
 #   plus a bare 'default' declination with no suffix (compile-time default).
 # Both options accept a comma-separated list or 'all', so subsets compose:
 #   --size dyn                  -> the 3 dyn binaries (default behaviour)
-#   --exec chunk2a              -> the 5 chunk2a binaries
-#   --exec chunk,chunk2a --size 64,dyn -> 4 binaries
+#   --exec zero_any             -> the 5 zero_any binaries
+#   --exec zero,zero_any --size 64,dyn -> 4 binaries
 #   --all_exec                  -> the full matrix
-_VARIANTS = ["chunk", "chunk2", "chunk2a"]
+_VARIANTS = ["zero", "zero_one_value", "zero_any"]
 # The TBB bench (shrink_bench_tbb_<variant>_<size>, std-backend builds made
 # with CHUNK_WITH_TBB): the same sources with the regions run as TBB tasks.
 # Part of the selection like the others: 'all' and --all_exec include it, and
-# so does the default (chunk2 AND tbb_chunk2). A build without it (OpenMP, serial,
-# a std build made without oneTBB) simply has no such binary: skipped silently
-# unless the variant was named in --exec.
+# so does the default (zero_one_value AND tbb_zero_one_value). A build without
+# it (OpenMP, serial, a std build made without oneTBB) simply has no such
+# binary: skipped silently unless the variant was named in --exec.
 _TBB_VARIANTS = ["tbb_" + v for v in _VARIANTS]
 _ALL_VARIANTS = _VARIANTS + _TBB_VARIANTS
-_DEFAULT_VARIANTS = ["chunk2", "tbb_chunk2"]
+_DEFAULT_VARIANTS = ["zero_one_value", "tbb_zero_one_value"]
 _SIZES         = ["64", "256", "1024", "dyn"]   # VALID choices (64 can still be asked with --size 64)
 _DEFAULT_SIZES = ["256", "1024", "dyn"]              # the sizes built by default (64 dropped)
 
@@ -192,6 +199,8 @@ def _csv_choices(name, valid):
             out.named = False
             return out
         items = [v.strip() for v in value.split(",") if v.strip()]
+        if name == "--exec":
+            items = [normalize_variant(v, name) for v in items]
         bad = [v for v in items if v not in valid]
         if bad:
             raise argparse.ArgumentTypeError(
@@ -205,9 +214,9 @@ parser.add_argument(
     "--exec",
     type=_csv_choices("--exec", _ALL_VARIANTS),
     default=None,
-    metavar="{chunk,chunk2,chunk2a,tbb_chunk,tbb_chunk2,tbb_chunk2a,all}[,...]",
-    help="Variant(s) to run, comma-separated or 'all' (the six). Default: chunk2 and "
-         "tbb_chunk2 unless --all_exec is given. tbb_<variant>: the TBB bench "
+    metavar="{zero,zero_one_value,zero_any,tbb_zero,tbb_zero_one_value,tbb_zero_any,all}[,...]",
+    help="Variant(s) to run, comma-separated or 'all' (the six). Default: zero_one_value "
+         "and tbb_zero_one_value unless --all_exec is given. tbb_<variant>: the TBB bench "
          "(shrink_bench_tbb_<variant>_<size>, std-backend builds made with "
          "CHUNK_WITH_TBB); a build without it is skipped for those, silently "
          "unless the variant is named here."

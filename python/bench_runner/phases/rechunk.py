@@ -9,7 +9,7 @@ from ..builds import (
 )
 from ..progress import CONFIG_W, VARIANT_W
 from ..runs import _append_error_now, effective_timeout, repro_line, run_cmd
-from ..settings import config_env, sanitizer_env_for
+from ..settings import SHRINK_VARIANTS, config_env, sanitizer_env_for
 from ..term import _hms, bold, cyan, dim, green, red, yellow
 
 
@@ -52,7 +52,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
     bases = []
     for v in args.variants:
         b = _variant_base(v)
-        if b in ("chunk", "chunk2", "chunk2a") and b not in bases:
+        if b in SHRINK_VARIANTS and b not in bases:
             bases.append(b)
     if not bases:
         print(dim("   (no chunk-family variants selected — skipped)"))

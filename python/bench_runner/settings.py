@@ -87,13 +87,48 @@ DEFAULT_CONFIGS = [
 # (shrink_bench_tbb_<variant>_<size>, examples/shrink_bench/CMakeLists.txt). It
 # exists only in the std-backend builds made with CHUNK_WITH_TBB, so these
 # variants are looked for there and nowhere else (builds.skip_variant_on_config).
-TBB_VARIANTS = ["tbb_chunk", "tbb_chunk2", "tbb_chunk2a"]
-DEFAULT_VARIANTS       = ["vector", "chunk", "chunk2", "chunk2a", "std_alloc"] + TBB_VARIANTS
+TBB_VARIANTS = ["tbb_zero", "tbb_zero_one_value", "tbb_zero_any"]
+SHRINK_VARIANTS = ["zero", "zero_one_value", "zero_any"]   # the three array variants
+DEFAULT_VARIANTS       = ["vector"] + SHRINK_VARIANTS + ["std_alloc"] + TBB_VARIANTS
 
 
 def is_tbb_variant(var):
-    """True for a TBB bench variant ("tbb_chunk2a", "tbb_chunk2a@256")."""
+    """True for a TBB bench variant ("tbb_zero_any", "tbb_zero_any@256")."""
     return var.split("@", 1)[0] in TBB_VARIANTS
+
+
+# The variants were named chunk / chunk2 / chunk2a until they took the name of
+# their namespace. Command lines, perf databases, bench_summary.csv files, JSON
+# logs and CHUNK_STATS tags of older builds still carry the old labels: they
+# are read as their new names until 1.0.
+LEGACY_VARIANTS = {
+    "chunk": "zero", "chunk2": "zero_one_value", "chunk2a": "zero_any",
+    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_one_value",
+    "tbb_chunk2a": "tbb_zero_any",
+}
+
+
+def normalize_variant(label, warn=None):
+    """The current name of a variant label: an old one (chunk2a, chunk2a@256,
+    chunk2a_int64@dyn, tbb_chunk2) becomes its new name (zero_any, zero_any@256,
+    zero_any_int64@dyn, tbb_zero_one_value); anything else comes back unchanged.
+    `warn`: a context string -- when given and the label is an old one, a
+    one-line deprecation note goes to stderr."""
+    if not isinstance(label, str):
+        return label
+    base, at, size = label.partition("@")
+    suffix = ""
+    if base.endswith("_int64"):
+        base, suffix = base[:-len("_int64")], "_int64"
+    new = LEGACY_VARIANTS.get(base)
+    if new is None:
+        return label
+    out = new + suffix + at + size
+    if warn:
+        import sys
+        print(f"note: {warn}: variant '{label}' is the old name of '{out}' "
+              "(accepted until 1.0)", file=sys.stderr)
+    return out
 
 # ── Sanitizer CHECK configs ──────────────────────────────────────────────────
 # Two llvm sanitizer build dirs (created by compile_all.sh) run in the CHECK
@@ -209,7 +244,7 @@ DEFAULT_FULL_REPS_THREADS = [64]
 # all three size declinations, a light thread sweep, a quick --divisor.
 DEFAULT_SEQ_OMP_THREADS  = [8, 16, 64]
 DEFAULT_SEQ_OMP_SIZES    = ["256", "1024", "dyn"]
-DEFAULT_SEQ_OMP_VARIANTS = ["chunk", "chunk2", "chunk2a"]
+DEFAULT_SEQ_OMP_VARIANTS = list(SHRINK_VARIANTS)
 DEFAULT_SEQ_OMP_SEED     = 42
 DEFAULT_SEQ_OMP_ITER_MAX = 2000
 DEFAULT_SEQ_OMP_DIVISOR  = 100
@@ -225,7 +260,7 @@ DEFAULT_SEQ_OMP_DIVISOR  = 100
 #   - release GNU, because libgomp has no OMPT: the phase-end path is not the
 #     same (finalize_parallel_phase_after_flush calls destroy_after_flush after
 #     EVERY phase), and that is where the AMD Milan stall was -- ~21 s of a
-#     ~30 s chunk2a run on the master, 63 threads at the barrier -- which
+#     ~30 s zero_any run on the master, 63 threads at the barrier -- which
 #     neither the OMPT builds (LLVM, oneAPI, AOCC) nor this guard on LLVM alone
 #     could see.
 SCALING_CONFIGS  = ["cmake-build-omp-llvm", "cmake-build-omp-gnu"]
@@ -258,7 +293,7 @@ SCALING_FALLBACK_ITER_MAX = 200
 SCALING_MAX_SLOWDOWN = 1.25
 # The guard's runs never go through numactl --interleave, whatever
 # --numa-interleave says: interleaving puts half of each thread's slabs on the
-# other socket, where first touch keeps them local. Grace, chunk@dyn int64
+# other socket, where first touch keeps them local. Grace, zero@dyn int64
 # --multiply 2, 128 threads (2 sockets), best of 3 interleaved rounds: llvm
 # 14.57 s interleaved / 13.02 s not, gnu 16.49 / 14.68 (-11%); 64 threads
 # (one socket) unchanged. With it, the 128-thread point failed the guard
@@ -269,10 +304,10 @@ SCALING_NUMA_INTERLEAVE = "off"
 # A few --mode check runs of the int64 binaries against the 32-bit oracle of
 # the same config: the data_tab* files hold element values, independent of the
 # index type, so the int64 build must reproduce them exactly. One per variant,
-# both geometries between them; chunk2a@dyn is the richest path (a second
+# both geometries between them; zero_any@dyn is the richest path (a second
 # value per chunk, re-chunking). Not a sweep: the 32-bit checks cover the
 # rest, and this only asks whether 64-bit indices change a result.
-INT64_CHECK_VARIANTS = ["chunk@1024", "chunk2@1024", "chunk2a@dyn"]
+INT64_CHECK_VARIANTS = ["zero@1024", "zero_one_value@1024", "zero_any@dyn"]
 
 # --- Mode presets --------------------------------------------------------
 # Each preset overrides threads / reps_perf / full_reps_threads unless the user
@@ -305,7 +340,7 @@ MODE_PRESETS = {
     "fast": {
         # One point, the reference: the curve is normal's and full's job, and
         # the 16-thread point was the most expensive run of the sweep (on
-        # aarch64, chunk2a@dyn 100.3 s at 16 threads against 70.3 s at 64).
+        # aarch64, zero_any@dyn 100.3 s at 16 threads against 70.3 s at 64).
         "threads":           [64],
         # 2 runs: enough to see a run that crashed or doubled, not to publish.
         "reps_perf":         2,
@@ -402,4 +437,4 @@ def fit_threads(wanted, cap, machine_points):
     return sorted(kept)
 
 
-DEFAULT_STATS_MARK_RATIO_MIN = {"chunk2": 0.3, "chunk2a": 0.3}
+DEFAULT_STATS_MARK_RATIO_MIN = {"zero_one_value": 0.3, "zero_any": 0.3}

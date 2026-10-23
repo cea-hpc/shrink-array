@@ -11,18 +11,18 @@ from ..term import cyan, green, red
 # STL self-check: one run per gnu/llvm front-end present (phase 2c).
 # One STL self-check per compiler front-end (gnu/llvm). The check is
 # functional and config-agnostic, so prefer the plain config name but fall
-# back to ANY config of that front-end that has a chunk2a/chunk check exe —
+# back to ANY config of that front-end that has a zero_any/zero check exe —
 # otherwise a build set with only suffixed configs (e.g. -std-alloc) reports
 # 0 STL runs and silently skips the check.
 def stl_exe_for(check_exes, config):
-    """A chunk2a (else chunk) check binary of `config`, whatever its size.
+    """A zero_any (else zero) check binary of `config`, whatever its size.
 
-    check_exes is keyed by the EXPANDED variant -- "chunk2a@dyn", "chunk@256"
+    check_exes is keyed by the EXPANDED variant -- "zero_any@dyn", "zero@256"
     -- so a lookup by BARE variant name never matches (and the phase would
     silently report "0 STL"). The check is functional and size-agnostic, so any
-    declination will do; chunk2a first because it exercises the widest surface.
+    declination will do; zero_any first because it exercises the widest surface.
     """
-    for base in ("chunk2a", "chunk"):
+    for base in ("zero_any", "zero"):
         for (c, var), exe in check_exes.items():
             if c == config and (var == base or var.startswith(base + "@")):
                 return exe
@@ -47,7 +47,7 @@ def stl_representative_exes(args, check_exes):
     # where only fast_alloc configs are present, whose dir names don't carry
     # the omp-gnu/omp-llvm marker), the STL self-check would silently be
     # skipped (0 STL). It is a functional, config-agnostic test, so run it once
-    # on the first present config that has a chunk2a/chunk check exe.
+    # on the first present config that has a zero_any/zero check exe.
     if not reps:
         for c in args.configs:
             exe = stl_exe_for(check_exes, c)

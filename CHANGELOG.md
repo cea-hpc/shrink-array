@@ -120,6 +120,15 @@ the tag's checksum to the recipe.
   `use_second_value` (were `use_chunk`, `use_chunk2`, `use_chunk2a`, `use_chunk2or2a`); and the
   executables and tests, `shrink_bench_zero_any_256`, `validation_zero_dyn`, ... (were
   `shrink_bench_chunk2a_256`, ...).
+- The python scripts use the new labels too: `bench_and_test.py` (`bench_runner`),
+  `multi_launch_stress.py`, `omp_speedup.py`, `access_cost.py`, `perf_db.py` and `shrink_gui` take
+  and show `zero`, `zero_one_value`, `zero_any`, `tbb_zero`, ... (`--variants`, `--exec`,
+  `--stats-mark-ratio-min zero_any=0.4`, ...), and so does the CHUNK_STATS tag the library prints.
+  The old labels (chunk, chunk2a@256, tbb_chunk2, ...) are still read as their new names until
+  1.0: on the command line, with a note on stderr, and in the perf databases, bench_summary.csv
+  files, logs, CHUNK_STATS tags and executable names (shrink_bench_chunk2a_dyn) written before.
+  `--mem-zero-any-vs-zero-one-value-max` was --mem-chunk2a-vs-chunk2-max (still accepted, hidden),
+  and `diag_zero_rechunk_slowdown.py` was diag_v1_rechunk_slowdown.py.
 - Types are PascalCase, with no `xxx_type` exception: the member aliases of the arrays
   (`chunk_type`, `manager_type`, `proxy_type`, `ind_type`, `chunk_list_type`) and the
   internal ones (`index_type`, `cst_val1_type`) become `ChunkType`, `ManagerType`, `ProxyType`,

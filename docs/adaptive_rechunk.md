@@ -208,7 +208,7 @@ is limited to the rebuilds.
   v1 rebuild is to blame. Neither the scheduling of the rebuild nor the
   compression thresholds explain the gap. Cause still unknown.
   Measured again in October 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
-  2,000 iterations, `diag_v1_rechunk_slowdown.py`): +17% per
+  2,000 iterations, `diag_zero_rechunk_slowdown.py`): +17% per
   iteration after the switch to 1,024. Unchanged by one slice, a static rebuild
   schedule, no slab recycling, no `chunk_list` reuse, lazy affinity; the NUMA
   placement is balanced like the static run's. Most of it was the advisor: its

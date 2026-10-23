@@ -6,7 +6,7 @@ that span more than one NUMA node, shared by bench_and_test.py and
 multi_launch_stress.py.
 
 Why: on Grace (4 sockets of 72 cores, one CPU node each, plus 32 CPU-less
-nodes -- the GPUs' memory), shrink_bench_chunk2_int64_1024 --multiply 4 at 144
+nodes -- the GPUs' memory), shrink_bench_zero_one_value_int64_1024 --multiply 4 at 144
 threads (close, cores) ran 14.18 s by default and 13.20 s under
 `numactl --interleave=0,1` (-6.9%, 3 interleaved rounds each). The process
 memory was already split evenly between the two nodes (numastat: 34.6 / 33.5

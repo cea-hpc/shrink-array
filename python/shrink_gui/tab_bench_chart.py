@@ -1,9 +1,9 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """The Graphique tab of bench_and_test.py: bench_summary.csv as one line per
-variant (chunk, chunk2, chunk2a) against threads, for one config; "Comparer
-avec" overlays another run of the same architecture, dashed, and gives the
-ratio B / A over their common points.
+variant (zero, zero_one_value, zero_any) against threads, for one config;
+"Comparer avec" overlays another run of the same architecture, dashed, and
+gives the ratio B / A over their common points.
 
 A mixin of the main window (app.Main): its methods use the window's
 attributes. The data come from remote_helper bench_points."""
@@ -20,7 +20,7 @@ from shrink_gui.i18n import T, tip
 from shrink_gui.widgets import ScatterView, TLabel
 
 # Colour follows the variant, never its rank (config.COLOR_BY "Variante").
-VARIANTS = ["chunk", "chunk2", "chunk2a"]
+VARIANTS = ["zero", "zero_one_value", "zero_any"]
 
 # What the y axis shows: (row index in bench_points, axis title, unit, lower is better).
 METRICS = {

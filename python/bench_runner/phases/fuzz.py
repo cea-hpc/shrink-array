@@ -7,6 +7,7 @@ from ..builds import _variant_base, resolve_exe, short_config_label, skip_varian
 from ..parsing import _parse_last_long_val_sum, _write_pinned_seed
 from ..progress import CONFIG_W, VARIANT_W
 from ..runs import _append_error_now, effective_timeout, run_cmd
+from ..settings import SHRINK_VARIANTS
 from ..term import _hms, bold, cyan, dim, green, red
 
 
@@ -63,7 +64,7 @@ def run_fuzz_phase(args, extra_ldpath, errors):
     print(cyan(bold(f"\n🎲 Randomised parameter sweep — {args.fuzz_cases} case(s)")))
     print(dim("   replay a case with the parameters and seed printed on its line"))
 
-    bases = [b for b in ("chunk", "chunk2", "chunk2a")
+    bases = [b for b in SHRINK_VARIANTS
              if any(_variant_base(v) == b for v in args.variants)]
     if not bases:
         print(dim("   (no chunk-family variant selected -- skipped)"))
