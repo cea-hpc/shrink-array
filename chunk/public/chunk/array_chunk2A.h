@@ -470,7 +470,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
 
             // Every slot of every row: a released row is empty, a stale entry only keeps a
             // value one pass longer.
-            using Spec              = typename Proxy2A<T>::BaseSpec;
+            using Spec              = Proxy2A<T>::BaseSpec;
             const std::size_t nrows = Spec::second_value_row_count();
             for (std::size_t r = 0; r < nrows; ++r)
             {
