@@ -77,8 +77,8 @@ int main()
     const int n = 1 << 22;
     int       bad = 0;
     {
-        std::vector<Cell>  v(static_cast<std::size_t>(n));
-        sa::SoaArray<Cell> a(static_cast<std::size_t>(n));
+        std::vector<Cell>  v(n);
+        sa::SoaArray<Cell> a(n);
 
         // Parallel write: member by member through the generated Ref, and the
         // whole struct through set().
@@ -88,18 +88,18 @@ int main()
 #pragma omp for
                 for (int i = 0; i < n; ++i)
                 {
-                    const Cell c = expected(i, n);
-                    v[static_cast<std::size_t>(i)] = c;
+                    const Cell& c = expected(i, n);
+                    v[i] = c;
                     if (i % 2 == 0)
                     {
-                        a[static_cast<std::size_t>(i)].rho  = c.rho;
-                        a[static_cast<std::size_t>(i)].temp = c.temp;
-                        a[static_cast<std::size_t>(i)].mat  = c.mat;
-                        a[static_cast<std::size_t>(i)].flag = c.flag;
+                        a[i].rho  = c.rho;
+                        a[i].temp = c.temp;
+                        a[i].mat  = c.mat;
+                        a[i].flag = c.flag;
                     }
                     else
                     {
-                        a.set(static_cast<std::size_t>(i), c);
+                        a.set(i, c);
                     }
                 }
             });
@@ -111,8 +111,8 @@ int main()
 #pragma omp for
                 for (int i = n / 2; i < n / 2 + n / 16; ++i)
                 {
-                    a[static_cast<std::size_t>(i)].temp += 100.0;
-                    v[static_cast<std::size_t>(i)].temp += 100.0;
+                    a[i].temp += 100.0;
+                    v[i].temp += 100.0;
                 }
             });
 
@@ -122,7 +122,7 @@ int main()
 #pragma omp parallel for reduction(+ : bad)
         for (int i = 0; i < n; ++i)
         {
-            if (!same(ca[static_cast<std::size_t>(i)], v[static_cast<std::size_t>(i)]))
+            if (!same(ca[i], v[i]))
             {
                 ++bad;
             }
