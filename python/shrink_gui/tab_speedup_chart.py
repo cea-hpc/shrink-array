@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """The Graphique tab of omp_speedup.py: its summary.csv as one line per
 executable against threads -- speedup (with the ideal line), efficiency or
-time. Colour = the variant (vector, chunk, chunk2, chunk2a), marker = the size
-(dyn, 1024, 256, 64): with --all-exec a run has a dozen curves, and colour
-alone cannot tell them apart. "Comparer avec" overlays another run of the same
+time. Colour = the variant (vector, zero, zero_one_value, zero_any), marker =
+the size (dyn, 1024, 256, 64): with --all-exec a run has a dozen curves, and
+colour alone cannot tell them apart. "Comparer avec" overlays another run of the same
 architecture, dashed (another compiler, another commit), and gives the ratio
 B / A over the common points.
 
@@ -20,13 +20,16 @@ from PySide6.QtGui import QBrush, QColor, QPen
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from shrink_gui.config import VIZ
+from shrink_gui.remote_helper import normalize_variant
 from shrink_gui.i18n import T, tip
 from shrink_gui.widgets import ScatterView, TLabel
 
 # Colour follows the variant, never its rank; vector is the reference, in ink.
-VARIANT_SLOT = {"chunk": 0, "chunk2": 1, "chunk2a": 2}
+VARIANT_SLOT = {"zero": 0, "zero_one_value": 1, "zero_any": 2}
 SIZE_SHAPES = ["dyn", "1024", "256", "64"]
-EXE_RE = re.compile(r"^shrink_bench_(vector|std_alloc|chunk2a|chunk2|chunk)(?:_int64)?(?:_(\w+))?$")
+# The old names too (shrink_bench_chunk2a_dyn), read as the new ones; longest first.
+EXE_RE = re.compile(r"^shrink_bench_(vector|std_alloc|zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)"
+                    r"(?:_int64)?(?:_(\w+))?$")
 
 # What the y axis shows: (row index in speedup_points, axis title, log scale by default).
 METRICS = {
@@ -42,12 +45,13 @@ def is_speedup_chart(meta):
 
 
 def exe_key(exe):
-    """shrink_bench_chunk2a_int64_dyn -> ("chunk2a", "dyn"); vector_perf -> ("vector", "")."""
+    """shrink_bench_zero_any_int64_dyn -> ("zero_any", "dyn") (shrink_bench_chunk2a_int64_dyn
+    too); vector_perf -> ("vector", "")."""
     m = EXE_RE.match(exe)
     if not m:
         return exe, ""
     size = m.group(2) or ""
-    return m.group(1), "" if size in ("perf", "check") else size
+    return normalize_variant(m.group(1)), "" if size in ("perf", "check") else size
 
 
 def _shape(size):
@@ -66,7 +70,7 @@ class SpeedupChart:
             self.sc_metric.addItem(T(k), k)
         self.sc_metric.currentIndexChanged.connect(self.draw_speedup)
         self.sc_variant = QComboBox()
-        for v in ("toutes", "vector", "chunk", "chunk2", "chunk2a"):
+        for v in ("toutes", "vector", "zero", "zero_one_value", "zero_any"):
             self.sc_variant.addItem(T(v), v)
         self.sc_variant.currentIndexChanged.connect(self.draw_speedup)
         self.sc_size = QComboBox()

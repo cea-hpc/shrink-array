@@ -223,11 +223,11 @@ def test_target_and_exec_pickers(gui, site, monkeypatch):
     assert sorted(got) == (["omp-gnu-debug", "omp-llvm"] if multi else ["omp-gnu-debug"])   # one glob: the last ticked
     w.form.widgets["target"][1].setText("omp-llvm")
     monkeypatch.setattr(widgets_mod.PickerDialog, "exec",
-                        lambda dlg: fake_exec(dlg, ["shrink_bench_chunk_64", "shrink_bench_chunk_dyn"]))
+                        lambda dlg: fake_exec(dlg, ["shrink_bench_zero_64", "shrink_bench_zero_dyn"]))
     w.pick("exec")
     exes = seen["--exec : exécutables"]
-    assert set(exes) >= {"shrink_bench_chunk_64", "shrink_bench_chunk_dyn"}
-    assert "shrink_bench_chunk_256" not in exes                     # x86_64 build: not on gh200
+    assert set(exes) >= {"shrink_bench_zero_64", "shrink_bench_zero_dyn"}
+    assert "shrink_bench_zero_256" not in exes                     # x86_64 build: not on gh200
     assert ("--exec=" + w.form.widgets["exec"][1].text()) in w.preview.toPlainText().replace("'", "")
 
 
@@ -511,9 +511,9 @@ def test_errors_column_and_first_error_notice(gui, site):
     w.notify_changes()
     w.notify_changes()
     w.statusBar().clearMessage()
-    w.runs = [dict(run, errors=[1, "CHECK_FAIL: chunk2a t=4"])]
+    w.runs = [dict(run, errors=[1, "CHECK_FAIL: zero_any t=4"])]
     w.notify_changes()
-    assert w.statusBar().currentMessage() == "r9 : première erreur — CHECK_FAIL: chunk2a t=4"
+    assert w.statusBar().currentMessage() == "r9 : première erreur — CHECK_FAIL: zero_any t=4"
     w.statusBar().clearMessage()
     w.runs = [dict(run, errors=[3, "CHECK_FAIL: x"])]
     w.notify_changes()
@@ -547,19 +547,19 @@ def test_bench_chart_and_comparison(gui, site):
 
 
 def _fake_speedup_build(site):
-    """A build root with fake shrink_bench binaries: vector and chunk2a@dyn
-    scale, chunk@dyn always fails (an error line, rc 1)."""
+    """A build root with fake shrink_bench binaries: vector and zero_any@dyn
+    scale, zero@dyn always fails (an error line, rc 1)."""
     import platform
     d = site.home / "br" / "cmake-build-omp-llvm" / f"Linux__{platform.machine()}" / "examples" / "shrink_bench"
     d.mkdir(parents=True)
     body = ('#!/bin/bash\nm=1; while [ $# -gt 0 ]; do [ "$1" = --multiply ] && m=$2; shift; done\n'
             'python3 -c "print(\'Memory consumption (peak): 10.0 Mo\'); '
             'print(\'Elapsed time computation : %%.4fs\' %% (%s * $m / $OMP_NUM_THREADS))"\n')
-    for name, base in (("shrink_bench_vector_perf", 2.0), ("shrink_bench_chunk2a_dyn", 1.5)):
+    for name, base in (("shrink_bench_vector_perf", 2.0), ("shrink_bench_zero_any_dyn", 1.5)):
         (d / name).write_text(body % base)
         (d / name).chmod(0o755)
-    (d / "shrink_bench_chunk_dyn").write_text("#!/bin/bash\necho 'error: no chunk today' >&2\nexit 1\n")
-    (d / "shrink_bench_chunk_dyn").chmod(0o755)
+    (d / "shrink_bench_zero_dyn").write_text("#!/bin/bash\necho 'error: no chunk today' >&2\nexit 1\n")
+    (d / "shrink_bench_zero_dyn").chmod(0o755)
     return site.home / "br"
 
 
@@ -570,7 +570,7 @@ def test_omp_speedup_submitted_from_the_window(gui, site):
     assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
     from PySide6.QtWidgets import QPushButton
     assert w.findChild(QPushButton, "pick_execs") is not None and w.findChild(QPushButton, "pick_target")
-    vals = {"target": "omp-llvm", "execs": "vector,chunk2a@dyn", "min_threads": "1", "max_threads": "2",
+    vals = {"target": "omp-llvm", "execs": "vector,zero_any@dyn", "min_threads": "1", "max_threads": "2",
             "reps": "2", "build_root": str(br)}
     a = _submit(w, pump, vals, len(w.runs))
     assert _wait_status(w, pump, a, "fini")
@@ -587,10 +587,10 @@ def test_omp_speedup_submitted_from_the_window(gui, site):
     assert pump(lambda: w.pt_stack.currentIndex() == 2 and len(w.sc_view.points) == 4, 10)
     assert w.sc_note.text().startswith("4 point(s)")
     # B: the same at --multiply 2, plus an executable that fails
-    b = _submit(w, pump, dict(vals, execs="vector,chunk2a@dyn,chunk@dyn", multiply="2"), len(w.runs))
+    b = _submit(w, pump, dict(vals, execs="vector,zero_any@dyn,zero@dyn", multiply="2"), len(w.runs))
     assert _wait_status(w, pump, b, "fini")
     run = next(r for r in w.runs if r["id"] == b)
-    assert run["code"] == 1 and run["errors"][0] == 4 and run["errors"][1].startswith("RUN_FAIL: shrink_bench_chunk_dyn")
+    assert run["code"] == 1 and run["errors"][0] == 4 and run["errors"][1].startswith("RUN_FAIL: shrink_bench_zero_dyn")
     w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == a))
     w.sc_cmp.setCurrentIndex(w.sc_cmp.findData(b))
     assert pump(lambda: "B / A : ×1.000" in w.sc_note.text(), 10)  # the speedups match
@@ -638,7 +638,7 @@ def test_omp_speedup_refused_without_exec(gui, site):
     w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8", "all_exec": True})
     assert w.missing_options("omp_speedup.py") is None
     w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8"})
-    w.extra.setText("--exec chunk2a@dyn")
+    w.extra.setText("--exec zero_any@dyn")
     assert w.missing_options("omp_speedup.py") is None
     w.extra.setText("")
 

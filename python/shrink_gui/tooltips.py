@@ -67,7 +67,7 @@ class Tooltips:
         "follow": "Fait défiler le log jusqu'à la fin à chaque nouvelle ligne. Décochée, le log "
                   "reste où vous êtes.",
         "pt_build": "Ne montre que les runs de ce build.",
-        "pt_variant": "Ne montre que les runs de cette variante (chunk, chunk2, chunk2a).",
+        "pt_variant": "Ne montre que les runs de cette variante (zero, zero_one_value, zero_any).",
         "pt_color": "Ce que la couleur distingue : la variante, la taille de chunk, ou rien. Trois "
                     "couleurs au plus ; le reste est groupé en gris « autres ».",
         "pt_log": "Axe du temps en échelle logarithmique : utile quand les temps s'étalent sur "

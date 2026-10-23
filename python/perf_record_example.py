@@ -10,9 +10,9 @@ the comparison workflow needs -- repetitions, not single shots.
 
     # take a reference on the current commit
     python3 perf_record_example.py perf.sqlite \\
-        --exe .../shrink_bench_chunk2a_dyn \\
+        --exe .../shrink_bench_zero_any_dyn \\
         --threads 64 --divisor 5 --iter-max 50 --reps 3 \\
-        --config omp-gnu-std-alloc --variant chunk2a --geometry dyn \\
+        --config omp-gnu-std-alloc --variant zero_any --geometry dyn \\
         --compiler gcc-16.1.0
 
     # ... change something, rebuild, run it again ...

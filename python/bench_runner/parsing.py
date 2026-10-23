@@ -5,6 +5,7 @@ import os
 import re as _re
 
 from . import state
+from .settings import normalize_variant
 
 
 # Matches the binary's line: "Memory consumption <msg> : <value> Mo"
@@ -65,9 +66,9 @@ def detect_nonfinite_checksum(stdout_text):
 # collapse of IN-FLIGHT compression: the final sweep compresses everything
 # anyway, so that counter stays identical while memory blows up. The counters
 # that DO move when in-flight marking breaks are `mark` (writes that newly
-# flagged a chunk) against `create` (chunks materialised): a healthy chunk2 run
-# sits around mark/create ~0.65; the Sept-2026 chunk2a regression (isv
-# pre-check rejecting the chunk2a-only predicate clause) dropped it to ~0.07
+# flagged a chunk) against `create` (chunks materialised): a healthy zero_one_value run
+# sits around mark/create ~0.65; the Sept-2026 zero_any regression (isv
+# pre-check rejecting the zero_any-only predicate clause) dropped it to ~0.07
 # while `still compressed (at exit)` did not budge. We flag a run whose ratio
 # falls under a per-variant floor. Only variants listed in the floor map are
 # checked; a run without a CHUNK_STATS block (non-stats build) is never flagged.
@@ -85,13 +86,14 @@ _STATS_MIN_CREATE_FOR_GUARD = 10_000
 
 def parse_chunk_stats_counters(stdout_text):
     """Return {stat_tag: {"mark": int, "create": int, "compress_exec": int|None}}
-    for every CHUNK_STATS block in the output (tag = 'chunk', 'chunk2',
-    'chunk2a'...). Missing counters are omitted from the inner dict."""
+    for every CHUNK_STATS block in the output (tag = 'zero', 'zero_one_value',
+    'zero_any'; the old tags of an older build, 'chunk', 'chunk2', 'chunk2a',
+    are read as these). Missing counters are omitted from the inner dict."""
     out = {}
     if not stdout_text:
         return out
     for m in _CHUNK_STATS_BLOCK_RE.finditer(stdout_text):
-        tag, body = m.group(1), m.group(2)
+        tag, body = normalize_variant(m.group(1)), m.group(2)
         d = {}
         mk = _STATS_MARK_RE.search(body)
         cr = _STATS_CREATE_RE.search(body)
@@ -145,7 +147,7 @@ def _parse_still_at_exit(stdout_text, variant_base):
     this run's stdout, or None if that block never appeared (e.g. the binary
     reports a different stat_variant tag than expected, or zero activity)."""
     for m in _CHUNK_STATS_BLOCK_RE.finditer(stdout_text):
-        if m.group(1) == variant_base:
+        if normalize_variant(m.group(1)) == normalize_variant(variant_base):
             sm = _STILL_AT_EXIT_RE.search(m.group(2))
             return int(sm.group(1)) if sm else None
     return None

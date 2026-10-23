@@ -36,7 +36,7 @@ USAGE
     # after a benchmark run
     db = PerfDB("perf.sqlite")
     run_id = db.start_run(commit="abc1234", compiler="gcc-16.1.0", ...)
-    db.record(run_id, config="omp-gnu-std-alloc", variant="chunk2a",
+    db.record(run_id, config="omp-gnu-std-alloc", variant="zero_any",
               geometry="dyn", threads=64, divisor=5, iter_max=50,
               seconds=[12.9, 13.1, 12.8], peak_mo=[6222, 6230, 6218], ...)
 
@@ -55,6 +55,15 @@ import statistics
 import subprocess
 import sys
 from datetime import datetime, timezone
+
+try:
+    # Rows recorded before the rename carry chunk / chunk2 / chunk2a: read as
+    # zero / zero_one_value / zero_any until 1.0.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from bench_runner.settings import normalize_variant
+except ImportError:
+    def normalize_variant(label, warn=None):   # copied alone: labels as stored
+        return label
 
 SCHEMA_VERSION = 1
 
@@ -91,7 +100,7 @@ CREATE TABLE IF NOT EXISTS measurements (
 
     -- what was measured
     config         TEXT    NOT NULL,  -- build flavour, e.g. omp-gnu-std-alloc
-    variant        TEXT    NOT NULL,  -- chunk / chunk2 / chunk2a
+    variant        TEXT    NOT NULL,  -- zero / zero_one_value / zero_any (old rows: chunk...)
     geometry       TEXT    NOT NULL,  -- "256", "1024", "dyn"
     threads        INTEGER NOT NULL,
     divisor        INTEGER,
@@ -222,6 +231,7 @@ class PerfDB:
         cannot distinguish from a genuinely stable measurement -- so pass at
         least three where the number matters.
         """
+        variant = normalize_variant(variant)
         seconds = list(seconds or [])
         peak_mo = list(peak_mo or [])
         current_mo = list(current_mo or [])
@@ -296,7 +306,8 @@ class PerfDB:
             for r in self.conn.execute(
                     "SELECT * FROM measurements WHERE run_id = ? AND ok = 1",
                     (run_id,)):
-                out[tuple(r[k] for k in key)] = r
+                out[tuple(normalize_variant(r[k]) if k == "variant" else r[k]
+                          for k in key)] = r
             return out
 
         bm, hm = by_key(base["id"]), by_key(head["id"])

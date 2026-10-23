@@ -76,7 +76,7 @@ def resolve_run_parameters(args):
         print(yellow(f"⚠️  Thread count(s) {over} passed explicitly exceed the {cap} usable CPUs: "
                      "those runs are oversubscribed"))
     # --- Expand variants across the requested size declinations -----------
-    # Shrink variants (chunk/chunk2/chunk2a/std_alloc) gain a "@<size>" suffix
+    # Shrink variants (zero/zero_one_value/zero_any/std_alloc) gain a "@<size>" suffix
     # so each (variant, size) pair is handled independently by the existing
     # machinery (resolve_exe decodes "base@size"). "vector" has no chunk
     # geometry and is left as-is. light_variants get the same treatment so a
@@ -129,11 +129,11 @@ def reduce_matrix(args):
                           f"({', '.join(dropped)}) — ≈ release on this workload"))
             args.configs = kept
         args.light_variants = sorted(set(args.light_variants) | {"std_alloc"})
-        # No rule demoting chunk/chunk2/chunk2a on a -std-alloc config to a
+        # No rule demoting zero/zero_one_value/zero_any on a -std-alloc config to a
         # light smoke run: the allocator moves the numbers well outside
-        # smoke-test territory -- on aarch64, chunk@1024 at 64 threads is
+        # smoke-test territory -- on aarch64, zero@1024 at 64 threads is
         # 14.53 s under gnu and 12.60 s under gnu-std-alloc (+15%), and
-        # chunk@dyn 56.4 s vs 40.3 s (+40%). Those are results, not duplicates.
+        # zero@dyn 56.4 s vs 40.3 s (+40%). Those are results, not duplicates.
         # (Any such test must compare _variant_base(var): `var` carries its
         # @<size> declination.)
         #

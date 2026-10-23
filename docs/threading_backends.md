@@ -299,7 +299,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      an application phase), so the frees `in_parallel()` routes are not
      reached by writes and passes; the maintenance calls (reclaim, trim,
      sweeps) are what it protects there.
-   - Found by the harness under TSan (chunk2a, dyn, 8 threads): the deferred
+   - Found by the harness under TSan (zero_any, dyn, 8 threads): the deferred
      replay of `=` on Chunk2A stored the element with a plain store while
      another writer's `may_become_uniform` scan read it relaxed; Chunk2A's
      element stores must be relaxed atomics (`relaxed_element_stores_v`),
@@ -462,10 +462,10 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      reference the `std::vector` run writes (fixture `shrink_bench_oracle`,
      as the other check runs).
    - Checked (gcc 13, CHECK_OPTIM): the array checksums of the TBB bench equal
-     the OpenMP bench's, chunk and chunk2a, 1, 4 and 8 threads; against the
+     the OpenMP bench's, zero and zero_any, 1, 4 and 8 threads; against the
      reference files (the singles of the check pass, the critical section),
      162 of 162 checksums at 8 and 64 threads; under TSan against a oneTBB
-     built with `-DTBB_SANITIZE=thread`, chunk and chunk2a at 1 and 8
+     built with `-DTBB_SANITIZE=thread`, zero and zero_any at 1 and 8
      threads: no report.
 
 ## 4. Rules for the branch
@@ -491,12 +491,12 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      `compile_all_gnu.sh`. The oneTBB decision is one function for both scripts
      (`set_tbb_options`, `functions_for_compile.sh`), announced at the start of the run.
    - `bench_and_test.py` runs `cmake-build-std-gnu`, `cmake-build-std-llvm` and their
-     `-check` builds by default, and the TBB bench as the variants `tbb_zero`, `tbb_zero_one_value`
-     and `tbb_zero_any` (`shrink_bench_tbb_<variant>_<size>`, looked for in the std builds
-     only; a std build made without oneTBB is noted once). The std builds count as threaded:
-     the thread sweep and the repetitions are those of the OpenMP builds. The std
-     ThreadSanitizer build joins the sanitizer phase.
-   - `multi_launch_stress.py` runs `tbb_zero_one_value` next to `chunk2` by default and the six
-     variants with `--all_exec` or `--exec all`; `build_arm.txt` and `build_x86_64.txt` list the
-     four std builds.
+     `-check` builds by default, and the TBB bench as the variants `tbb_zero`,
+     `tbb_zero_one_value` and `tbb_zero_any` (`shrink_bench_tbb_<variant>_<size>`, looked
+     for in the std builds only; a std build made without oneTBB is noted once). The std
+     builds count as threaded: the thread sweep and the repetitions are those of the OpenMP
+     builds. The std ThreadSanitizer build joins the sanitizer phase.
+   - `multi_launch_stress.py` runs `tbb_zero_one_value` next to `zero_one_value` by default
+     and the six variants with `--all_exec` or `--exec all`; `build_arm.txt` and
+     `build_x86_64.txt` list the four std builds.
 

@@ -55,7 +55,7 @@ def _why_failed(returncode, oom_before, stdout_text, err_tail):
 def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text, status=None):
     """When --full-log-dir is set, dump one child run's COMPLETE stdout+stderr to
     its own file. The name encodes binary, OMP thread count, a global run counter
-    and the status, so each execution is identifiable (chunk2 vs chunk2a, which run
+    and the status, so each execution is identifiable (zero_one_value vs zero_any, which run
     re-chunked / crashed). No-op when off. Never raises: logging must not break the
     bench. The path is kept for _note_run (_take_full_log)."""
     state._LAST_FULL_LOG.path = None

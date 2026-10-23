@@ -208,7 +208,7 @@ se limite aux reconstructions.
   reconstruction de v1 qui est en cause. Ni l'ordonnancement de la reconstruction, ni les
   seuils de compression n'expliquent l'écart. Cause encore inconnue.
   Remesuré en octobre 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
-  2 000 itérations, `diag_v1_rechunk_slowdown.py`) : +17 % par itération après le
+  2 000 itérations, `diag_zero_rechunk_slowdown.py`) : +17 % par itération après le
   passage à 1 024. Inchangé avec une seule tranche, une reconstruction en
   ordonnancement statique, sans recyclage des slabs, sans réutilisation de
   `chunk_list`, en affinité lazy ; le placement NUMA est équilibré comme celui du

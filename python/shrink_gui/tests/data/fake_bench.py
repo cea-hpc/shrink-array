@@ -24,34 +24,34 @@ os.makedirs(logs, exist_ok=True)
 cases = os.path.join(od, "failed_cases.jsonl")
 if a.rerun_failed is not None:
     print("rerun %d" % a.rerun_repeat)
-    log = os.path.join(logs, "shrink_bench_chunk2a__omp4__00001__rc-11.log")
+    log = os.path.join(logs, "shrink_bench_zero_any__omp4__00001__rc-11.log")
     with open(log, "w") as f:
-        f.write("# cmd: shrink_bench_chunk2a\n# ===== STDERR =====\nstill crashing\n")
+        f.write("# cmd: shrink_bench_zero_any\n# ===== STDERR =====\nstill crashing\n")
     with open(cases, "w") as f:
-        f.write(json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: chunk2a t=4 code=-11",
+        f.write(json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: zero_any t=4 code=-11",
                             "runs": [{"cmd": ["x"], "log": log}]}) + "\n")
     raise SystemExit(1)
-log = os.path.join(logs, "shrink_bench_chunk2a__omp4__00003__rc-11.log")
+log = os.path.join(logs, "shrink_bench_zero_any__omp4__00003__rc-11.log")
 with open(log, "w") as f:
-    f.write("# cmd: shrink_bench_chunk2a\n# ===== STDERR =====\nSegmentation fault at chunk 17\n")
-with open(os.path.join(logs, "shrink_bench_chunk__omp4__00001__ok.log"), "w") as f:
+    f.write("# cmd: shrink_bench_zero_any\n# ===== STDERR =====\nSegmentation fault at chunk 17\n")
+with open(os.path.join(logs, "shrink_bench_zero__omp4__00001__ok.log"), "w") as f:
     f.write("fine\n")
 with open(os.path.join(od, "bench_summary.csv"), "w") as f:
     f.write("Config,Variant,Threads,AvgTime_s,PeakMem_Mo,Speedup_vs_baseline,MemRatio_vs_baseline,"
             "MemSaved_Mo_vs_baseline\n")
     for cfg in ("omp-gnu", "omp-llvm"):
-        for var, base in (("chunk", 4.0), ("chunk2", 3.0), ("chunk2a", 2.5)):
+        for var, base in (("zero", 4.0), ("zero_one_value", 3.0), ("zero_any", 2.5)):
             for th in (1, 4, 16, 64):
                 t = a.speed * base * (0.2 + 4.0 / th)
-                sp = "" if var == "chunk" else "%.3f" % (4.0 / base)
+                sp = "" if var == "zero" else "%.3f" % (4.0 / base)
                 f.write("%s,%s,%d,%.6f,%.1f,%s,,\n" % (cfg, var, th, t, 100 * base, sp))
 with open(os.path.join(od, "bench_errors.log"), "w") as f:
-    f.write("CHECK_FAIL: chunk2a t=4 code=-11\n  stderr_tail:\n    Segmentation fault\n"
-            "MEM_GUARD: chunk2a/chunk2 1.4 > 1.2\n")
+    f.write("CHECK_FAIL: zero_any t=4 code=-11\n  stderr_tail:\n    Segmentation fault\n"
+            "MEM_GUARD: zero_any/zero_one_value 1.4 > 1.2\n")
 with open(cases, "w") as f:
-    f.write(json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: chunk2a t=4 code=-11",
+    f.write(json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: zero_any t=4 code=-11",
                         "runs": [{"cmd": ["x"], "log": log}]}) + "\n")
-    f.write(json.dumps({"kind": "MEM_GUARD", "summary": "MEM_GUARD: chunk2a/chunk2 1.4 > 1.2",
+    f.write(json.dumps({"kind": "MEM_GUARD", "summary": "MEM_GUARD: zero_any/zero_one_value 1.4 > 1.2",
                         "runs": []}) + "\n")
 keep = os.environ.get("CHUNK_BENCH_KEEP_DIR")       # as bench_runner/report.py keep_run_outputs
 if keep:

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""diag_v1_rechunk_slowdown.py -- why does dynamic v1 run slower after its
+"""diag_zero_rechunk_slowdown.py -- why does dynamic zero run slower after its
 re-chunk than static 1024 (docs/adaptive_rechunk.md, "Known limitations")?
 
 Read-only diagnosis: nothing in the library changes, every factor is switched
 by an environment variable the library already reads. Run it INSIDE a job
 allocation on one compute node (ccc_msub / salloc), from anywhere:
 
-    python3 diag_v1_rechunk_slowdown.py --bindir <build>/examples/shrink_bench \\
-        --threads 64 --out /ccc/work/.../diag_v1 [--perf] [--reps 2]
+    python3 diag_zero_rechunk_slowdown.py --bindir <build>/examples/shrink_bench \\
+        --threads 64 --out /ccc/work/.../diag_zero [--perf] [--reps 2]
 
 shrink_bench runs in --mode perf (large sizes, --iter_max iterations; the
 default check mode stops at 33 iterations of a small problem and never
@@ -245,10 +245,6 @@ def main():
     if "--iter_max" not in args:
         args += ["--iter_max", "2000"]
     wanted = set(a.configs.split(","))
-    missing = sorted({exe for name, exe, _ in CONFIGS if name in wanted and not (bindir / exe).is_file()})
-    if missing:
-        print(f"error: not found in {bindir}: {', '.join(missing)}", file=sys.stderr)
-        return 1
     summary = [f"# {time.strftime('%Y-%m-%d %H:%M:%S')}  threads={a.threads}  args='{' '.join(args)}'  "
                f"OMP_PROC_BIND={os.environ.get('OMP_PROC_BIND', 'close')} "
                f"OMP_PLACES={os.environ.get('OMP_PLACES', 'cores')}  host={os.uname().nodename}"]

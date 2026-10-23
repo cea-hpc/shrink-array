@@ -13,6 +13,23 @@ library. Imported by the tests, it runs nothing (see the end).
 """
 import base64, glob, io, json, os, re, shlex, signal, socket, subprocess, sys, tarfile
 
+# The variants were named chunk / chunk2 / chunk2a (tbb_chunk...) until they took
+# the name of their namespace: the summaries, logs and executables of before read
+# as the new names until 1.0. The table of bench_runner/settings.py, copied: this
+# file imports nothing of the repository.
+LEGACY_VARIANTS = {
+    "chunk": "zero", "chunk2": "zero_one_value", "chunk2a": "zero_any",
+    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_one_value", "tbb_chunk2a": "tbb_zero_any",
+}
+
+def normalize_variant(label):
+    """chunk2a -> zero_any, chunk2a@256 -> zero_any@256, chunk_int64@dyn ->
+    zero_int64@dyn; a label that is not an old one comes back as it is."""
+    base, at, size = label.partition("@")
+    suffix = "_int64" if base.endswith("_int64") else ""
+    new = LEGACY_VARIANTS.get(base[:len(base) - len(suffix)])
+    return new + suffix + at + size if new else label
+
 def rdir(base, rid=None):
     d = os.path.expanduser(base)
     return os.path.join(d, rid) if rid else d
@@ -1008,6 +1025,7 @@ def bench_points(d, meta):
         for r in rd:
             try:
                 c, v, th, avg = r[col["Config"]], r[col["Variant"]], int(r[col["Threads"]]), float(r[col["AvgTime_s"]])
+                v = normalize_variant(v)        # a summary written before the rename
             except (KeyError, ValueError, IndexError):
                 continue
             mem = num(r[col["PeakMem_Mo"]]) if "PeakMem_Mo" in col and len(r) > col["PeakMem_Mo"] else None

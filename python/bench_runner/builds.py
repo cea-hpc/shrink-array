@@ -6,7 +6,8 @@ import os
 import platform as _platform
 from pathlib import Path
 
-from .settings import COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS, is_tbb_variant, virtual_base
+from .settings import (COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS, SHRINK_VARIANTS,
+                       is_tbb_variant, virtual_base)
 from .term import dim
 
 
@@ -29,14 +30,14 @@ def _arch_matches_current(arch_dirname):
 
 def _variant_base(var):
     """Strip a "@<size>" declination suffix, returning the bare variant name
-    (e.g. "chunk2a@256" -> "chunk2a", "vector" -> "vector"). Used wherever the
+    (e.g. "zero_any@256" -> "zero_any", "vector" -> "vector"). Used wherever the
     logic keys on the variant identity rather than its size."""
     return var.split("@", 1)[0]
 
 
 def int64_variant(var):
     """The int64 declination of a --variants entry, spelled for resolve_exe:
-    "chunk2a@1024" -> "chunk2a_int64@1024" (shrink_bench_chunk2a_int64_1024),
+    "zero_any@1024" -> "zero_any_int64@1024" (shrink_bench_zero_any_int64_1024),
     "vector" -> "vector_int64" (with stage perf: shrink_bench_vector_int64_perf).
     Built on the release OpenMP configs only, for 1024 and dyn (see
     examples/shrink_bench/CMakeLists.txt, SHRINK_BENCH_INT64)."""
@@ -110,8 +111,8 @@ def resolve_exe(build_root, config, var, stage):
          (old flat convention)
     Returns the absolute path of the first hit, or None.
     """
-    # A variant may carry a size declination as "base@size" (e.g. "chunk2a@dyn",
-    # "chunk2@256"). The executable name is then shrink_bench_{base}_{size}.
+    # A variant may carry a size declination as "base@size" (e.g. "zero_any@dyn",
+    # "zero_one_value@256"). The executable name is then shrink_bench_{base}_{size}.
     #
     # No {stage} in that name any more: check and perf are ONE binary, the mode
     # being a run-time flag (--mode, added by run_with_rebuild_retry and by the
@@ -178,7 +179,7 @@ def built_static_sizes(build_root, config):
 
 
 def size_not_built(build_root, config, var):
-    """True when `var` names a static size ("chunk2a@1024") that `config` does
+    """True when `var` names a static size ("zero_any@1024") that `config` does
     not build: skipped, not MISSING. dyn and variants without a size: False."""
     if "@" not in var:
         return False
@@ -196,8 +197,8 @@ def config_dir_present(build_root, config):
     # Probe both legacy names (vector, or a build without size declinations)
     # and the multi-size names (base@size) so a config built either way is
     # detected. We only need ONE hit to consider the config present.
-    probe_vars = ["vector", "chunk", "chunk2", "chunk2a", "std_alloc"]
-    probe_vars += [f"{v}@{s}" for v in ("chunk", "chunk2", "chunk2a", "std_alloc")
+    probe_vars = ["vector", *SHRINK_VARIANTS, "std_alloc"]
+    probe_vars += [f"{v}@{s}" for v in (*SHRINK_VARIANTS, "std_alloc")
                    for s in ("256", "1024", "dyn")]
     for var in probe_vars:
         for stage in ("perf", "check"):

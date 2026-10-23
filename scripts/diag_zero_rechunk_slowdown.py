@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""diag_v1_rechunk_slowdown.py -- why does dynamic v1 run slower after its
+"""diag_zero_rechunk_slowdown.py -- why does dynamic zero run slower after its
 re-chunk than static 1024 (docs/adaptive_rechunk.md, "Known limitations")?
 
 Read-only diagnosis: nothing in the library changes, every factor is switched
 by an environment variable the library already reads. Run it INSIDE a job
 allocation on one compute node (ccc_msub / salloc), from anywhere:
 
-    python3 diag_v1_rechunk_slowdown.py --bindir <build>/examples/shrink_bench \\
-        --threads 64 --out /ccc/work/.../diag_v1 [--perf] [--reps 2]
+    python3 diag_zero_rechunk_slowdown.py --bindir <build>/examples/shrink_bench \\
+        --threads 64 --out /ccc/work/.../diag_zero [--perf] [--reps 2]
 
 shrink_bench runs in --mode perf (large sizes, --iter_max iterations; the
 default check mode stops at 33 iterations of a small problem and never
 re-chunks) unless --args names a --mode.
 
-Part 1 -- A/B on the rebuild's state (always). shrink_bench_chunk_1024
-(static) and shrink_bench_chunk_dyn under:
+Part 1 -- A/B on the rebuild's state (always). shrink_bench_zero_1024
+(static) and shrink_bench_zero_dyn under:
     dyn            the default
     dyn_1slice     CHUNK_RECHUNK_SLICES=1
     dyn_static1    CHUNK_RECHUNK_SLICES=1 CHUNK_RECHUNK_SCHEDULE=static
@@ -81,16 +81,16 @@ RECHUNK_RE = re.compile(r"^(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\
 FREEPATH_RE = re.compile(r"\[FREEPATH\] (\S+)\s+freed=(\d+)\s+parked_own=(\d+)\s+parked_foreign=(\d+)")
 
 CONFIGS = [
-    ("static", "shrink_bench_chunk_1024", {}),
-    ("dyn", "shrink_bench_chunk_dyn", {}),
-    ("dyn_1slice", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_SLICES": "1"}),
-    ("dyn_static1", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_SLICES": "1", "CHUNK_RECHUNK_SCHEDULE": "static"}),
-    ("dyn_norecycle", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_RECYCLE": "0"}),
-    ("dyn_noreuse", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_REUSE_LIST": "0"}),
-    ("dyn_lazy", "shrink_bench_chunk_dyn", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}),
+    ("static", "shrink_bench_zero_1024", {}),
+    ("dyn", "shrink_bench_zero_dyn", {}),
+    ("dyn_1slice", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1"}),
+    ("dyn_static1", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1", "CHUNK_RECHUNK_SCHEDULE": "static"}),
+    ("dyn_norecycle", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_RECYCLE": "0"}),
+    ("dyn_noreuse", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_REUSE_LIST": "0"}),
+    ("dyn_lazy", "shrink_bench_zero_dyn", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}),
     # the advisor's own share: analyses without any re-chunk, and none at all
-    ("dyn_dryrun", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_DRY_RUN": "1"}),
-    ("dyn_noadvisor", "shrink_bench_chunk_dyn", {"CHUNK_ADVISOR_PERIOD": "0"}),
+    ("dyn_dryrun", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_DRY_RUN": "1"}),
+    ("dyn_noadvisor", "shrink_bench_zero_dyn", {"CHUNK_ADVISOR_PERIOD": "0"}),
 ]
 
 
@@ -225,7 +225,7 @@ def stat_summary(run):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--bindir", required=True, help="directory holding shrink_bench_chunk_dyn and _1024")
+    ap.add_argument("--bindir", required=True, help="directory holding shrink_bench_zero_dyn and _1024")
     ap.add_argument("--threads", type=int, default=64)
     ap.add_argument("--out", required=True, help="output directory (put it in your work space)")
     ap.add_argument("--args", default="", help="extra shrink_bench arguments (default adds --mode perf --iter_max 2000)")
@@ -245,6 +245,10 @@ def main():
     if "--iter_max" not in args:
         args += ["--iter_max", "2000"]
     wanted = set(a.configs.split(","))
+    missing = sorted({exe for name, exe, _ in CONFIGS if name in wanted and not (bindir / exe).is_file()})
+    if missing:
+        print(f"error: not found in {bindir}: {', '.join(missing)}", file=sys.stderr)
+        return 1
     summary = [f"# {time.strftime('%Y-%m-%d %H:%M:%S')}  threads={a.threads}  args='{' '.join(args)}'  "
                f"OMP_PROC_BIND={os.environ.get('OMP_PROC_BIND', 'close')} "
                f"OMP_PLACES={os.environ.get('OMP_PLACES', 'cores')}  host={os.uname().nodename}"]
