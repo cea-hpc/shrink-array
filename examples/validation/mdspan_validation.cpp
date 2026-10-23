@@ -35,9 +35,9 @@
 #include <utility>     // std::as_const, std::pair (the sub-view)
 #include <vector>      // std::vector (the bijection check)
 
-#include "chunk/array_chunk.h"    // zero::Array
-#include "chunk/array_chunk2.h"   // zero_one_value::Array
-#include "chunk/array_chunk2A.h"  // zero_any::Array
+#include "chunk/zero_array.h"    // zero::Array
+#include "chunk/zero_one_value_array.h"   // zero_one_value::Array
+#include "chunk/zero_any_array.h"  // zero_any::Array
 #include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"         // chunk_config::use_chunk2*
 #include "chunk/internal/print.h" // shrink_array::println

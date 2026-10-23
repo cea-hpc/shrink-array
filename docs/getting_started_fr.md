@@ -108,9 +108,9 @@ passer par un alias sur la variante que la bibliothèque définit (`examples/shr
 ```cpp
 #include <type_traits>
 #include <vector>
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
+#include "chunk/zero_array.h"
+#include "chunk/zero_one_value_array.h"
+#include "chunk/zero_any_array.h"
 #include "chunk/config.h"
 
 namespace sa = shrink_array;
@@ -137,7 +137,7 @@ installation comme dans l'arbre des sources.
 #include <cstdio>
 #include <utility>                 // std::as_const
 
-#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
@@ -215,7 +215,7 @@ ni `parallel_phase()`, ni appel de phase. Lié comme au §3, avec `OpenMP::OpenM
 #include <utility>                 // std::as_const
 #include <vector>
 
-#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
 
 namespace sa = shrink_array;
 

@@ -17,8 +17,8 @@
 #pragma once
 
 // Out-of-line bodies of the re-chunk hooks of zero::Array and zero_any::Array
-// (RechunkHooks<Derived, true>). Included at the end of array_chunk.h and of
-// array_chunk2A.h, after the class, so `self` (deducing this) is a complete
+// (RechunkHooks<Derived, true>). Included at the end of zero_array.h and of
+// zero_any_array.h, after the class, so `self` (deducing this) is a complete
 // Derived and so the manager include stays out of the container declaration itself.
 #include <tuple>   // std::get on candidate tuples
 #include <utility> // std::swap

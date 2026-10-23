@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-// Template method bodies live in chunk/internal/array_chunk2A_inline.h, included
-// transitively via chunk/array_chunk2A.h. No explicit instantiations: each
+// Template method bodies live in chunk/internal/zero_any_array_inline.h, included
+// transitively via chunk/zero_any_array.h. No explicit instantiations: each
 // zero_any::Array<T> the consumer uses is instantiated at its use site (weak-symbol
 // dedup).
 
-#include "chunk/array_chunk2A.h" // its own header: zero_any::Array<T>, bodies in array_chunk2A_inline.h
+#include "chunk/zero_any_array.h" // its own header: zero_any::Array<T>, bodies in zero_any_array_inline.h

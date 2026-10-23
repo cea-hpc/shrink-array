@@ -1027,9 +1027,9 @@ NEW_FILES = {
 #include <utility>     // std::as_const
 #include <vector>      // std::vector (the references)
 
-#include "chunk/array_chunk.h"     // ArrayChunk
-#include "chunk/array_chunk2.h"    // ArrayChunk2
-#include "chunk/array_chunk2A.h"   // ArrayChunk2A
+#include "chunk/zero_array.h"     // ArrayChunk
+#include "chunk/zero_one_value_array.h"    // ArrayChunk2
+#include "chunk/zero_any_array.h"   // ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"          // chunk_config::use_chunk2*
 #include "chunk/internal/print.h"  // shrink_array::println

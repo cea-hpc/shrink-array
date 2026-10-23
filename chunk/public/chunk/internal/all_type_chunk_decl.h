@@ -34,7 +34,7 @@
  *          class is still being defined: array_chunk_base_inline.h, whose
  *          ArrayChunkBase::create() calls ensure_manager(). The bodies
  *          (all_type_chunk_inline.h) reach the managers, then Chunk2A and
- *          array_chunk2A.h -- included from there, inside array_chunk2_base.h,
+ *          zero_any_array.h -- included from there, inside array_chunk2_base.h,
  *          they closed a cycle and ArrayChunk2Base was not yet declared. They
  *          come with all_type_chunk.h, which each variant's _inline.h
  *          includes after its class.
@@ -491,7 +491,7 @@ bool set_max_malloc_arenas(int max_arenas);
  *
  * @details Free function so a caller can reach it without pulling AllTypeChunk's
  *          full definition -- array_chunk_rechunk_inline.h cannot include that
- *          header without closing an include cycle through array_chunk2A.h.
+ *          header without closing an include cycle through zero_any_array.h.
  *          Defined in all_type_chunk.cpp.
  *
  * @param label prefix for the printed lines, e.g. "before drain"

@@ -17,24 +17,22 @@
 #pragma once
 
 /**
- * @file array_chunk2_parallel.h
- * @brief zero_one_value::Array's two mode-gated surfaces -- the OpenMP-only one (the
+ * @file zero_array_parallel.h
+ * @brief zero::Array's (v1) two mode-gated surfaces -- the OpenMP-only one (the
  *        deferred-op flush) and the fast-block-only one
  *        (make_block_compression) -- isolated in their own mixins so they
  *        disappear entirely from a build that has neither.
  *
- * @details Same split as ParallelSupport does for zero::Array (v1):
- *          ParallelSupport2<Derived, threaded> carries
- *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
- *          three variants), a no-op in the serial specialisation.
+ * @details ParallelSupport<Derived, threaded> carries
+ *          flush_pending_deferred_ops(), which drains the deferred writes
+ *          queued on this array's chunks (ParallelSupportCommon, shared with the
+ *          two other variants); the serial specialisation is an empty class
+ *          whose flush is a no-op. FastBlockSupport<Derived,
+ *          use_fast_block_compression> carries the fast-block compression pass,
+ *          whose gate is stricter than threaded.
  *
- *          make_block_compression() gets its own mixin rather than joining
- *          the first one: its gate is chunk_config::use_fast_block_compression,
- *          which is STRICTER than threaded (it also needs embedded -- i.e. not
- *          manual -- compression).
- *
- * @see array_chunk2_parallel_inline.h for the body
- * @see array_chunk_parallel.h for v1's version of the same split
+ * @see zero_array_parallel_inline.h for the body
+ * @see array_chunk_parallel_common.h for the shared part
  */
 
 #include "chunk/config.h"       // build_config::threaded, chunk_config::use_fast_block_compression
@@ -45,22 +43,23 @@ namespace shrink_array
 {
 
 /**
- * @brief The OpenMP-only members of zero_one_value::Array, present only when the build has OpenMP.
+ * @brief The OpenMP-only members of an array, present only when the build has OpenMP.
  *
- * @tparam Derived the concrete array type (only zero_one_value::Array today).
+ * @tparam Derived the concrete array type (only zero::Array today).
  * @tparam Enabled defaulted to build_config::threaded; never pass it
- *         explicitly outside of tests.
+ *         explicitly outside of tests — the point of the parameter is that the
+ *         two specialisations below are selected by the build mode.
  */
 template <typename Derived, bool Enabled = build_config::threaded>
-struct ParallelSupport2;
+struct ParallelSupport;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
 /**
  * @brief OpenMP specialisation: the deferred-op flush.
- * @copydetails ParallelSupport2
+ * @copydetails ParallelSupport
  */
 template <typename Derived>
-struct ParallelSupport2<Derived, true> : public ParallelSupportCommon<Derived>
+struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
 {
     // flush_pending_deferred_ops() and self() come from ParallelSupportCommon.
 };
@@ -70,30 +69,31 @@ struct ParallelSupport2<Derived, true> : public ParallelSupportCommon<Derived>
  * @brief Serial specialisation: the same verb, inert.
  */
 template <typename Derived>
-struct ParallelSupport2<Derived, false> : public ParallelSupportCommonSerial<Derived>
+struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Derived>
 {
 };
 
 /**
- * @brief zero_one_value::Array's fast-block compression pass, present only in that mode.
+ * @brief zero::Array's fast-block compression pass, present only in that mode.
  *
- * @tparam Derived the concrete array type (only zero_one_value::Array today).
+ * @tparam Derived the concrete array type (only zero::Array today).
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *
- * @details Not virtual: the only call site (ArrayChunk2Base::resize_common)
- *          goes through CRTP, and no type-erased pass drives live arrays.
+ * @details v1's copy of FastBlockSupport2 (zero_one_value_array_parallel.h). The only
+ *          call site (zero::Array::resize) guards with the same constexpr and
+ *          so still names a declared member in every mode.
  */
 template <typename Derived, bool Enabled = chunk_config::use_fast_block_compression>
-class FastBlockSupport2;
+class FastBlockSupport;
 
 // ── Fast-block build: the real pass ──────────────────────────────────────────
 /**
  * @brief Fast-block specialisation: the deferred-candidate compression pass.
- * @copydetails FastBlockSupport2
+ * @copydetails FastBlockSupport
  */
 template <typename Derived>
-class FastBlockSupport2<Derived, true>
+class FastBlockSupport<Derived, true>
 {
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
@@ -110,13 +110,9 @@ class FastBlockSupport2<Derived, true>
 // ── Any other mode: no candidate queue to drain ──────────────────────────────
 /**
  * @brief Inert specialisation: nothing queues block-compression candidates.
- *
- * @details Kept (rather than removed) so that ArrayChunk2Base::resize_common,
- *          which guards the call with the same condition, still names a
- *          declared member in every mode.
  */
 template <typename Derived>
-class FastBlockSupport2<Derived, false>
+class FastBlockSupport<Derived, false>
 {
   public:
     /** @brief No-op: this mode has no deferred candidate list. */

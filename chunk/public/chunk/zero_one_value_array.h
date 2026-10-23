@@ -27,8 +27,8 @@
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/internal/second_value_info.h"           // SecondValueInfo (InfArrayT)
 #include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
-#include "chunk/internal/array_chunk2_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
-#include "chunk/internal/array_chunk2_rechunk_hooks.h"  // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
+#include "chunk/internal/zero_one_value_array_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
+#include "chunk/internal/zero_one_value_array_rechunk_hooks.h"  // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for use_fast_block_compression, threaded
@@ -544,8 +544,8 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
 } // namespace shrink_array
 
 // Template bodies, after the class, so every TU instantiates the T it needs.
-#include "chunk/internal/array_chunk2_inline.h" // the template bodies
+#include "chunk/internal/zero_one_value_array_inline.h" // the template bodies
 
-// The mixins' bodies, after array_chunk2_inline.h: self() needs a complete zero_one_value::Array.
-#include "chunk/internal/array_chunk2_parallel_inline.h"      // ParallelSupport2's bodies
-#include "chunk/internal/array_chunk2_rechunk_hooks_inline.h" // RechunkHooks2's bodies
+// The mixins' bodies, after zero_one_value_array_inline.h: self() needs a complete zero_one_value::Array.
+#include "chunk/internal/zero_one_value_array_parallel_inline.h"      // ParallelSupport2's bodies
+#include "chunk/internal/zero_one_value_array_rechunk_hooks_inline.h" // RechunkHooks2's bodies

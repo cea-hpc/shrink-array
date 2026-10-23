@@ -17,12 +17,12 @@
 #pragma once
 
 // Out-of-line bodies of zero_one_value::Array's mode-gated surfaces (ParallelSupport2,
-// FastBlockSupport2). Included at the end of array_chunk2.h, so self() sees a complete
+// FastBlockSupport2). Included at the end of zero_one_value_array.h, so self() sees a complete
 // Derived.
 
 #include <tuple> // std::get on the candidate tuples (sweep of the other second-value keys)
 
-#include "chunk/internal/array_chunk2_parallel.h"              // FastBlockSupport2, the class these bodies belong to
+#include "chunk/internal/zero_one_value_array_parallel.h"              // FastBlockSupport2, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
 #include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression

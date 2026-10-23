@@ -21,7 +21,7 @@ whole interface. The view is an `mdspan` whose accessor goes through the array's
 compression, the same rules.
 
 ```cpp
-#include "chunk/array_chunk2A.h"
+#include "chunk/zero_any_array.h"
 #include "chunk/mdspan.h"
 
 namespace sa = shrink_array;

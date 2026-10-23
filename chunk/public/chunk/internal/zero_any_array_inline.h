@@ -27,7 +27,7 @@
 #include <utility>     // std::pair (the clear() summary)
 #include <vector>      // std::vector
 
-#include "chunk/array_chunk2A.h"                        // zero_any::Array, the class these bodies belong to
+#include "chunk/zero_any_array.h"                        // zero_any::Array, the class these bodies belong to
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled (the size prediction's gate)

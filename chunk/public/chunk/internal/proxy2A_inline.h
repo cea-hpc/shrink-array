@@ -25,7 +25,7 @@
 
 #include "chunk/internal/proxy2A.h"            // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"               // InT<T>
-#include "chunk/array_chunk2A.h"               // zero_any::Array (dependent calls the include tools cannot attribute)
+#include "chunk/zero_any_array.h"               // zero_any::Array (dependent calls the include tools cannot attribute)
 #include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h" // ArithmeticAffectationContext
@@ -64,7 +64,7 @@
  * size overflows the buffer.
  *
  * @see proxy2A.h for the declarations, proxy_base_inline.h for the write engine
- *      these bodies are handed to, array_chunk2A.h for the chunk itself.
+ *      these bodies are handed to, zero_any_array.h for the chunk itself.
  */
 
 namespace shrink_array

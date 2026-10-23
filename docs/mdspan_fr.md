@@ -21,7 +21,7 @@ tableau : `f[i, j] = v` est `a[k] = v`, avec `k` donné par le layout -- le mêm
 d'écriture, la même compression, les mêmes règles.
 
 ```cpp
-#include "chunk/array_chunk2A.h"
+#include "chunk/zero_any_array.h"
 #include "chunk/mdspan.h"
 
 namespace sa = shrink_array;

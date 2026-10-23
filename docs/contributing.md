@@ -92,7 +92,7 @@ The source checks run with the others (`ctest -R check_`):
   the traits and tags (`is_cplx`, `rebind`). So do the public `md::` types of `chunk/mdspan.h`
   and `chunk/mdspan_tile_ops.h`, spelt as `std::mdspan` spells its own (`layout_tiled`,
   `accessor`, `constant_boundary`): a view written against `std::mdspan` reads the same with them
-  (`STD_STYLE_API` in `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `chunk2a`; file names (`array_chunk2A.h`)
+  (`STD_STYLE_API` in `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `chunk2a`; file names (`zero_any_array.h`)
   stay as they are. Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
   that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`

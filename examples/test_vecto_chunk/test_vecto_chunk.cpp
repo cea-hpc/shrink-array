@@ -35,7 +35,7 @@
 
 
 #include "chunk/param_chunk.h"                // ParamChunk
-#include "chunk/array_chunk.h"                // zero::Array
+#include "chunk/zero_array.h"                // zero::Array
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/chunk_def.h"                  // ChunkDef
 #include "chunk/chunk_std.h"                  // destroy_block_chunk

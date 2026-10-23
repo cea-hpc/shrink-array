@@ -17,7 +17,7 @@
 #pragma once
 
 /**
- * @file array_chunk2A_parallel.h
+ * @file zero_any_array_parallel.h
  * @brief The OpenMP-only surface of zero_any::Array -- the deferred-op flush --
  *        isolated in its own mixin so it disappears entirely from a serial
  *        build.
@@ -27,7 +27,7 @@
  *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
  *          three variants), a no-op in the serial specialisation.
  *
- * @see array_chunk_parallel.h, array_chunk2_parallel.h for the other two variants
+ * @see zero_array_parallel.h, zero_one_value_array_parallel.h for the other two variants
  */
 
 #include "chunk/config.h"                               // build_config::threaded

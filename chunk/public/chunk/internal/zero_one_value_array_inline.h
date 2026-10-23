@@ -29,7 +29,7 @@
 #include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
 
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
-#include "chunk/array_chunk2.h"                         // zero_one_value::Array, the class these bodies belong to
+#include "chunk/zero_one_value_array.h"                         // zero_one_value::Array, the class these bodies belong to
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
 #include "chunk/internal/proxy2.h"                      // Proxy2<T>
@@ -49,7 +49,7 @@
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, cst_buffer_size
 
 /**
- * @file array_chunk2_inline.h
+ * @file zero_one_value_array_inline.h
  * @brief Out-of-line definitions of zero_one_value::Array.
  *
  * zero_one_value::Array is the array of Chunk2 blocks: every chunk compresses either to
@@ -79,7 +79,7 @@
  *    or parks buffers sets it from `size_policy_.size()` first; getting this
  *    wrong frees through the wrong size pool.
  *
- * @see array_chunk2.h for the declarations and each member's contract,
+ * @see zero_one_value_array.h for the declarations and each member's contract,
  *      array_chunk2_base.h for the parts shared with zero_any::Array.
  */
 

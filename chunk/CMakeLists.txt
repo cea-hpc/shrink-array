@@ -345,24 +345,24 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/all_type_chunk_decl.h
         public/chunk/internal/all_type_chunk_inline.h
         public/chunk/internal/arithmetic_context.h
-        public/chunk/internal/array_chunk2A_inline.h
-        public/chunk/internal/array_chunk2A_parallel.h
-        public/chunk/internal/array_chunk2A_parallel_inline.h
+        public/chunk/internal/zero_any_array_inline.h
+        public/chunk/internal/zero_any_array_parallel.h
+        public/chunk/internal/zero_any_array_parallel_inline.h
         public/chunk/internal/array_chunk2_base.h
-        public/chunk/internal/array_chunk2_inline.h
-        public/chunk/internal/array_chunk2_parallel.h
-        public/chunk/internal/array_chunk2_parallel_inline.h
-        public/chunk/internal/array_chunk2_rechunk_hooks.h
-        public/chunk/internal/array_chunk2_rechunk_hooks_inline.h
+        public/chunk/internal/zero_one_value_array_inline.h
+        public/chunk/internal/zero_one_value_array_parallel.h
+        public/chunk/internal/zero_one_value_array_parallel_inline.h
+        public/chunk/internal/zero_one_value_array_rechunk_hooks.h
+        public/chunk/internal/zero_one_value_array_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk_base.h
         public/chunk/internal/array_chunk_base_inline.h
         public/chunk/internal/array_chunk_dirty_bitset.h
         public/chunk/internal/array_chunk_for.h
-        public/chunk/internal/array_chunk_inline.h
-        public/chunk/internal/array_chunk_parallel.h
+        public/chunk/internal/zero_array_inline.h
+        public/chunk/internal/zero_array_parallel.h
         public/chunk/internal/array_chunk_parallel_common.h
         public/chunk/internal/array_chunk_parallel_common_inline.h
-        public/chunk/internal/array_chunk_parallel_inline.h
+        public/chunk/internal/zero_array_parallel_inline.h
         public/chunk/internal/array_chunk_rechunk.h
         public/chunk/internal/array_chunk_rechunk_hooks.h
         public/chunk/internal/array_chunk_rechunk_hooks_inline.h
@@ -432,9 +432,9 @@ set(CHUNK_INTERNAL_HEADERS
 set(CHUNK_PUBLIC_HEADERS
         public/chunk/PMP_CHUNK.h
         public/chunk/all_type_chunk.h
-        public/chunk/array_chunk.h
-        public/chunk/array_chunk2.h
-        public/chunk/array_chunk2A.h
+        public/chunk/zero_array.h
+        public/chunk/zero_one_value_array.h
+        public/chunk/zero_any_array.h
         public/chunk/array_chunk_range_ops.h
         public/chunk/chunk2A_def.h
         public/chunk/chunk2A_std.h
@@ -460,9 +460,9 @@ set(CHUNK_PUBLIC_HEADERS
 )
 
 set(CHUNK_SOURCES
-        private/array_chunk.cpp
-        private/array_chunk2.cpp
-        private/array_chunk2A.cpp
+        private/zero_array.cpp
+        private/zero_one_value_array.cpp
+        private/zero_any_array.cpp
         private/manager_chunk.cpp
         private/all_type_chunk.cpp
         private/param_chunk.cpp
@@ -476,11 +476,11 @@ set(CHUNK_SOURCES
 # like every other target.
 # If the icpx EmitCtorList ICE comes back, CHUNK_ICPX_O0_WORKAROUND=ON builds
 # only the three TUs it hit at -O0, under icpx only.
-option(CHUNK_ICPX_O0_WORKAROUND "icpx only: compile array_chunk2A.cpp, array_chunk2.cpp and manager_chunk.cpp at -O0 (EmitCtorList ICE)" OFF)
+option(CHUNK_ICPX_O0_WORKAROUND "icpx only: compile zero_any_array.cpp, zero_one_value_array.cpp and manager_chunk.cpp at -O0 (EmitCtorList ICE)" OFF)
 if (CHUNK_ICPX_O0_WORKAROUND AND CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-  set_property(SOURCE private/array_chunk2A.cpp private/array_chunk2.cpp private/manager_chunk.cpp
+  set_property(SOURCE private/zero_any_array.cpp private/zero_one_value_array.cpp private/manager_chunk.cpp
                APPEND PROPERTY COMPILE_OPTIONS "-O0;-fno-use-init-array")
-  message(STATUS "CHUNK_ICPX_O0_WORKAROUND: array_chunk2A.cpp, array_chunk2.cpp, manager_chunk.cpp at -O0 (icpx)")
+  message(STATUS "CHUNK_ICPX_O0_WORKAROUND: zero_any_array.cpp, zero_one_value_array.cpp, manager_chunk.cpp at -O0 (icpx)")
 endif()
 
 # --- Variant factory -----------------------------------------------------
