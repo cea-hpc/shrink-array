@@ -83,7 +83,7 @@ using namespace shrink_array;
 static_assert(chunk_config::use_chunk2a, "cst2_reclaim_validation is Chunk2A's registry: link chunk_v2a_<size>");
 
 using Arr      = zero_any::Array<double>;
-using Registry = Chunk2A<double>::Holder::VecHolder;
+using Registry = zero_any::Chunk<double>::Holder::VecHolder;
 
 static void begin_phase()
 {

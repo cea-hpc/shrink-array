@@ -69,7 +69,7 @@ inline constexpr bool relaxed_element_access_v = relaxed_element_access<T>();
 /// @brief The element stores of this chunk type must be relaxed atomics: some
 ///        reader looks at elements it does not own (Chunk2A only, see above).
 template <typename ChunkT, typename T>
-inline constexpr bool relaxed_element_stores_v = std::is_same_v<ChunkT, Chunk2A<T>> && relaxed_element_access_v<T>;
+inline constexpr bool relaxed_element_stores_v = std::is_same_v<ChunkT, zero_any::Chunk<T>> && relaxed_element_access_v<T>;
 
 /// @brief Load @p *ptr through a relaxed std::atomic_ref.
 /// @param ptr Element to read.

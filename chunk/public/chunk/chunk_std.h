@@ -143,6 +143,9 @@ extern bool need_load_balance_list_block_free();
  */
 extern void release_chunk_pools();
 
+namespace zero
+{
+
 /**
  * @brief Per-chunk zero-counter, the serial path's compression trigger.
  *
@@ -630,6 +633,8 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     static inline constinit internal::LazyImmortal<Manager> s_manager_;
 };
+
+} // namespace zero
 
 } // namespace shrink_array
 

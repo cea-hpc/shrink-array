@@ -514,15 +514,15 @@ int main(int argc, char* argv[])
 
     if constexpr (chunk_config::use_chunk2a)
     {
-        print_chunk_size.operator()<Chunk2A>("CHUNK2A");
+        print_chunk_size.operator()<zero_any::Chunk>("CHUNK2A");
     }
     else if constexpr (chunk_config::use_chunk2)
     {
-        print_chunk_size.operator()<Chunk2>("CHUNK2");
+        print_chunk_size.operator()<zero_one_value::Chunk>("CHUNK2");
     }
     else if constexpr (chunk_config::use_chunk)
     {
-        print_chunk_size.operator()<Chunk>("CHUNK");
+        print_chunk_size.operator()<zero::Chunk>("CHUNK");
     }
 
     // Array<bool> in a shrink build, std::vector<short> in the baseline

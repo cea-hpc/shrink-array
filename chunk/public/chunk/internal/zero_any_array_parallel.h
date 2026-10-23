@@ -36,6 +36,9 @@
 namespace shrink_array
 {
 
+namespace zero_any
+{
+
 /**
  * @brief The OpenMP-only members of zero_any::Array, present only when the build has OpenMP.
  *
@@ -44,7 +47,7 @@ namespace shrink_array
  *         explicitly outside of tests.
  */
 template <typename Derived, bool Enabled = build_config::threaded>
-struct ParallelSupport2A;
+struct ParallelSupport;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
 /**
@@ -52,7 +55,7 @@ struct ParallelSupport2A;
  * @copydetails ParallelSupport2A
  */
 template <typename Derived>
-struct ParallelSupport2A<Derived, true> : public ParallelSupportCommon<Derived>
+struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
 {
     // flush_pending_deferred_ops() and self() come from ParallelSupportCommon.
 };
@@ -62,8 +65,10 @@ struct ParallelSupport2A<Derived, true> : public ParallelSupportCommon<Derived>
  * @brief Serial specialisation: the same verb, inert.
  */
 template <typename Derived>
-struct ParallelSupport2A<Derived, false> : public ParallelSupportCommonSerial<Derived>
+struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Derived>
 {
 };
+
+} // namespace zero_any
 
 } // namespace shrink_array

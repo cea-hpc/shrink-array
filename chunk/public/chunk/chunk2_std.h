@@ -53,13 +53,16 @@ struct CompressionManager;
 template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
+namespace zero_one_value
+{
+
 template <typename T>
-class Proxy2;
+class Proxy;
 
 /// @brief Static table of the registered second-constant arrays of element type T (tab_m_ptr_cst_val2),
 ///        with the lookups and checks on it.
 template <typename T>
-class ChunkSpec2
+class ChunkSpec
 {
   public:
     // The registered second-constant arrays. A chunk compressed to one stores its ADDRESS as
@@ -181,7 +184,7 @@ class ChunkSpec2
 /// @brief ChunkSpec2 for bool and Bit (bit.h): the second constant is `true`, one for the type.
 template <typename T>
     requires is_bool_like_v<T>
-class ChunkSpec2<T>
+class ChunkSpec<T>
 {
   public:
     /*!
@@ -257,7 +260,7 @@ class ChunkSpec2<T>
  * \tparam EnableCounters Whether the counters actually exist and count.
  */
 template <bool EnableCounters>
-class Chunk2CounterPolicy
+class ChunkCounterPolicy
 {
   public:
     /// @brief Reset the second-value counter to 0.
@@ -375,12 +378,12 @@ class Chunk2CounterPolicy
  * @tparam Enabled build_config::threaded
  */
 template <typename T, typename Derived, bool Enabled = build_config::threaded>
-class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
+class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>
 {
   public:
-    using Base          = Chunk2Base<T, Derived>;
-    using BaseSpec      = ChunkSpec2<T>;
-    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
+    using Base          = SecondValueChunkBase<T, Derived>;
+    using BaseSpec      = ChunkSpec<T>;
+    using ManagerChunk2 = ManagerChunk<Chunk, T>;
     using InfArrayT     = SecondValueInfo<T>;
 
     using Base::first_value;
@@ -490,7 +493,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     ///          one it stays on the calling thread: only that thread allocates, and an
     ///          orphaned `omp for` would hang waiting for the others. Shared by the
     ///          variants (chunk_array_new::init_chunks).
-    static void init_chunks_cst_val(Chunk2<T>* v, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
 
     /**
      * \brief Shared body of create_value() and create_value_bool().
@@ -521,11 +524,11 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
  * @tparam Derived CRTP derived chunk type (Chunk2<T>)
  */
 template <typename T, typename Derived>
-class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
+class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
 {
   public:
-    using Base      = Chunk2Base<T, Derived>;
-    using BaseSpec  = ChunkSpec2<T>;
+    using Base      = SecondValueChunkBase<T, Derived>;
+    using BaseSpec  = ChunkSpec<T>;
     using InfArrayT = SecondValueInfo<T>;
 
     using Base::first_value;
@@ -592,12 +595,12 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 
 /// @brief Chunk2's batched candidate queue and block compression (fast-block builds).
 template <typename T, typename Derived, bool Enabled>
-class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Derived>
+class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derived>
 {
   public:
-    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
-    using Base          = Chunk2Base<T, Derived>;
-    using BaseSpec      = ChunkSpec2<T>;
+    using ManagerChunk2 = ManagerChunk<Chunk, T>;
+    using Base          = SecondValueChunkBase<T, Derived>;
+    using BaseSpec      = ChunkSpec<T>;
 
     using Base::first_value;
     using Base::values_;
@@ -605,7 +608,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     // Local aliases, as ChunkFastCompPolicy carries its own rather than reaching into Derived.
     // (chunk, num_chunk, num_tab, n_elems) -- n_elems is the chunk's OWN geometry, carried
     // from the candidate queue so the clear loop can pin the thread to it before freeing.
-    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk2<T>*, int, int, unsigned int>>;
+    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
     using InfArrayT           = SecondValueInfo<T>;
 
     /**
@@ -692,14 +695,14 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * @param inf_array (second_value, ...) identifying the candidate list.
      * @param proxy2 Owning proxy, or nullptr for the thread-only sweep.
      */
-    static void make_block_compression(int thr_rank, const InfArrayT& inf_array, Proxy2<T>* proxy2);
+    static void make_block_compression(int thr_rank, const InfArrayT& inf_array, Proxy<T>* proxy2);
 
     /**
      * @brief Bool specialization of make_block_compression().
      * @param thr_rank Thread whose candidate list to drain.
      * @param proxy2 Owning proxy, or nullptr for the thread-only sweep.
      */
-    static void make_block_compression_bool(int thr_rank, Proxy2<T>* proxy2);
+    static void make_block_compression_bool(int thr_rank, Proxy<T>* proxy2);
 
     /**
      * @brief Thread-only sweep: drain every second_value candidate list of thr_rank.
@@ -768,7 +771,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * @param second_value The type-2 constant these chunks are candidates for.
      * @return Reference to the (thr, second_value) candidate list.
      */
-    static VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
+    static VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
                                                                                        InT<T> second_value) noexcept
     {
         // find(), not operator[]: see Proxy2::get_vec_tuple_to_compress_potentially_thr.
@@ -797,7 +800,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     template <typename FillFunc, typename ClearFunc>
     static void make_block_compression_impl(int         thr_rank,
                                             T           second_value,
-                                            Proxy2<T>*  proxy2,
+                                            Proxy<T>*  proxy2,
                                             FillFunc&&  fill_func,
                                             ClearFunc&& clear_func);
 
@@ -946,11 +949,11 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
 ///        no candidate list, so every query answers "empty" and every pass
 ///        is a no-op.
 template <typename T, typename Derived>
-class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derived>, public ChunkSpec2<T>
+class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>, public ChunkSpec<T>
 {
   public:
     /// (chunk, num_chunk, num_tab, n_elems); see the true specialisation.
-    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk2<T>*, int, int, unsigned int>>;
+    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
     /// (second value, its index in the shared value table, num_tab).
     using InfArrayT = SecondValueInfo<T>;
 
@@ -966,9 +969,9 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
         return false;
     }
 
-    static void make_block_compression(int /*thr_rank*/, const InfArrayT& /*inf_array*/, Proxy2<T>* /*proxy2*/) {}
+    static void make_block_compression(int /*thr_rank*/, const InfArrayT& /*inf_array*/, Proxy<T>* /*proxy2*/) {}
 
-    static void make_block_compression_bool(int /*thr_rank*/, Proxy2<T>* /*proxy2*/) {}
+    static void make_block_compression_bool(int /*thr_rank*/, Proxy<T>* /*proxy2*/) {}
 
     static void make_block_compression(int /*thr_rank*/) {}
     /// @}
@@ -987,7 +990,7 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
     template <typename FillFunc, typename ClearFunc>
     static void make_block_compression_impl(int /*thr_rank*/,
                                             T /*second_value*/,
-                                            Proxy2<T>* /*proxy2*/,
+                                            Proxy<T>* /*proxy2*/,
                                             FillFunc&& /*fill_func*/,
                                             ClearFunc&& /*clear_func*/)
     {
@@ -1003,27 +1006,27 @@ template <typename T>
 // no move operations on purpose -- a move falls back to
 // the copy, which carries the per-chunk state the way the copy constructor documents.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_counter>,
-               public Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>
+class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_counter>,
+               public ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>
 {
   public:
-    friend class Proxy2<T>;
-    friend class Chunk2Base<T, Chunk2>;
+    friend class Proxy<T>;
+    friend class SecondValueChunkBase<T, Chunk>;
 
-    using Base     = Chunk2Base<T, Chunk2>;
-    using BaseSpec = ChunkSpec2<T>;
+    using Base     = SecondValueChunkBase<T, Chunk>;
+    using BaseSpec = ChunkSpec<T>;
 
-    using ChunkType              = Chunk2;
+    using ChunkType              = Chunk;
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
     using Base::allocator_data;
     using Base::first_value;
     using Base::values_;
 
-    using CounterPolicy = Chunk2CounterPolicy; ///< The counter base, Chunk2CounterPolicy<use_compression_with_counter>.
+    using CounterPolicy = ChunkCounterPolicy; ///< The counter base, Chunk2CounterPolicy<use_compression_with_counter>.
 
-    using FastCompPolicy = Chunk2FastCompPolicy<T, Chunk2, chunk_config::use_fast_block_compression>;
-    using OmpPolicy      = Chunk2OmpPolicy<T, Chunk2, build_config::threaded>;
+    using FastCompPolicy = ChunkFastCompPolicy<T, Chunk, chunk_config::use_fast_block_compression>;
+    using OmpPolicy      = ChunkOmpPolicy<T, Chunk, build_config::threaded>;
 
     // Both OmpPolicy specialisations declare these (with mode-specific
     // signatures); the in-class bodies below call them unqualified.
@@ -1033,9 +1036,9 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     using OmpPolicy::create_value;
     using OmpPolicy::create_value_bool;
 
-    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk2*, int, int>>;
+    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk*, int, int>>;
 
-    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
+    using ManagerChunk2 = ManagerChunk<Chunk, T>;
     // (second value, index, num_tab). Redeclared here on purpose: the policy
     // bases declare the same name, and this one hides theirs so Chunk2's own
     // members see one type. It must stay THEIR type -- checked below.
@@ -1047,11 +1050,11 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     /*!
      * \brief Default constructor.
      */
-    Chunk2() = default;
+    Chunk() = default;
     /*!
      * \brief Default destructor.
      */
-    ~Chunk2() = default;
+    ~Chunk() = default;
 
     /// @brief Get reference to the chunk manager (static access)
     /// @return Reference to the ManagerChunk2 static instance
@@ -1078,7 +1081,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      *          std::vector<Chunk2> reallocation goes through it. Same rule as Chunk v1
      *          (chunk_std.h). `values` is atomic and is copied by hand.
      */
-    Chunk2(const Chunk2& other) : CounterPolicy(other)
+    Chunk(const Chunk& other) : CounterPolicy(other)
     {
         if constexpr (build_config::threaded)
         {
@@ -1096,7 +1099,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      * @return *this.
      * @see Chunk2(const Chunk2&) for why the counters must follow `values`.
      */
-    Chunk2<T>& operator=(const Chunk2<T>& other)
+    Chunk<T>& operator=(const Chunk<T>& other)
     {
         if (this == &other)
         {
@@ -1383,7 +1386,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
     static_assert(std::is_same_v<
                       InfArrayT,
-                      typename Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>::InfArrayT>,
+                      typename ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>::InfArrayT>,
                   "Chunk2::inf_array_t must be the policies' inf_array_t");
 
     // --- where the rest of Chunk2 lives ----------------------------------
@@ -1518,6 +1521,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
     static inline constinit internal::LazyImmortal<ManagerChunk2> s_manager_;
 };
+
+} // namespace zero_one_value
 
 } // end namespace shrink_array
 

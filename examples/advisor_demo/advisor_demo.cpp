@@ -116,7 +116,7 @@ int main()
         if (meta == 0.)
         {
             const ChunkSizeAdvisor<double>::Options o;
-            meta = sizeof(Chunk2A<double>) + o.meta_extra_bytes;
+            meta = sizeof(zero_any::Chunk<double>) + o.meta_extra_bytes;
         }
         truths.push_back(ground_truth(tab, meta));
     }

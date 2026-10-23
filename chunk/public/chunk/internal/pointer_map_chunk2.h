@@ -185,6 +185,9 @@ class PointerMapChunk2InfArrayPolicy<T, false>
     static void insert(InT<T> /*key*/, InfArrayT* /*ind*/) {}
 };
 
+namespace zero_one_value
+{
+
 /**
  * @brief Per-array registry of Chunk2's second value: array address ->
  *        (second value, its index in the shared table, num_tab).
@@ -192,7 +195,7 @@ class PointerMapChunk2InfArrayPolicy<T, false>
  * @tparam T Element type.
  */
 template <typename T>
-class PointerMapChunk2
+class PointerMap
     : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<const void*, SecondValueInfo<T>>>>,
       public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
 {
@@ -474,5 +477,7 @@ class PointerMapChunk2
     // erase(), swap_entries(), exists(), size() and for_each_key() come from
     // PointerMapLinear (shared with PointerMapChunk).
 };
+
+} // namespace zero_one_value
 
 } // namespace shrink_array

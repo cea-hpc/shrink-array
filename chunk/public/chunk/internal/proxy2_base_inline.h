@@ -31,7 +31,7 @@ namespace shrink_array
 
 template <typename Derived, typename T, typename ChunkT>
 template <typename... Args>
-void Proxy2Base<Derived, T, ChunkT>::mark_for_compression_core(this const Derived& self,
+void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_core(this const Derived& self,
                                                                InT<T>              old_value,
                                                                InT<T>              new_value,
                                                                InT<T>              expected_in_memory,

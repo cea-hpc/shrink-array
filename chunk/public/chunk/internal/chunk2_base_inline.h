@@ -28,7 +28,7 @@ namespace shrink_array
 
 template <typename T, typename Derived>
 template <typename IndexT>
-void Chunk2Base<T, Derived>::block_clear_common(this Derived&        self,
+void SecondValueChunkBase<T, Derived>::block_clear_common(this Derived&        self,
                                                 int                  num_compress_value,
                                                 IndexT               index_opt,
                                                 [[maybe_unused]] int thr_rank,
@@ -85,7 +85,7 @@ void Chunk2Base<T, Derived>::block_clear_common(this Derived&        self,
 
 template <typename T, typename Derived>
 template <typename IndexT>
-void Chunk2Base<T, Derived>::clear_impl(this Derived&     self,
+void SecondValueChunkBase<T, Derived>::clear_impl(this Derived&     self,
                                         IndexT            index_opt,
                                         int               thr_rank,
                                         char*             ptr_type_cst,

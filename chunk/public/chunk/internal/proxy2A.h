@@ -61,8 +61,11 @@ class ManagerChunk;
  * @tparam T element type
  */
 
+namespace zero_any
+{
+
 template <typename T>
-class Chunk2A;
+class Chunk;
 
 /**
  * @brief Registry mapping array keys (pointers) to their table number, for
@@ -72,15 +75,15 @@ class Chunk2A;
  * @tparam SmallN Entry count past which the hash map is used.
  */
 template <typename T, size_t SmallN = 16>
-class PointerMapChunk2A
+class PointerMap
 {
   public:
-    PointerMapChunk2A()                                        = default;
-    ~PointerMapChunk2A()                                       = default;
-    PointerMapChunk2A(const PointerMapChunk2A&)                = default;
-    PointerMapChunk2A(PointerMapChunk2A&&) noexcept            = default;
-    PointerMapChunk2A& operator=(const PointerMapChunk2A&)     = default;
-    PointerMapChunk2A& operator=(PointerMapChunk2A&&) noexcept = default;
+    PointerMap()                                        = default;
+    ~PointerMap()                                       = default;
+    PointerMap(const PointerMap&)                = default;
+    PointerMap(PointerMap&&) noexcept            = default;
+    PointerMap& operator=(const PointerMap&)     = default;
+    PointerMap& operator=(PointerMap&&) noexcept = default;
 
     /**
      * @brief Look up the table number registered for a key.
@@ -295,6 +298,8 @@ class PointerMapChunk2A
     bool                                           using_big_ = false;
 };
 
+} // namespace zero_any
+
 /*!
  * \brief ProxySpec2A: static per-tab, per-chunk second-value storage for Proxy2A
  *        (indexed tab_second_value[num_tab][num_chunk]), so the proxy never manages
@@ -322,12 +327,15 @@ void realloc_unique(std::unique_ptr<T[]>& ptr, std::size_t old_size, std::size_t
     ptr = std::move(new_ptr);
 }
 
+namespace zero_any
+{
+
 /// @brief Per-table, per-chunk second-value storage used by Proxy2A (see the description above realloc_unique).
 template <typename T, typename Derived>
-class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
+class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 {
   public:
-    using Base2 = Proxy2Base<Derived, T, Chunk2A<T>>;
+    using Base2 = SecondValueProxyBase<Derived, T, Chunk<T>>;
 
     /// @brief What a slot holds: the value, or for a wide T the identifier
     ///        of its shared array (SecondValueTraits) -- 4 bytes per chunk
@@ -435,26 +443,31 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     static inline std::vector<SecondValueRowT>& tab_second_value = tab_second_value_storage_.value;
 };
 
+} // namespace zero_any
+
 /*!
  * \brief Specialization of ProxySpec2A for bool: one flag per chunk in a plain
  *        unique_ptr<bool[]> row per tab.
  */
 
+namespace zero_any
+{
+
 template <typename Derived>
-class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool>>
+class ProxySpec<bool, Derived> : public SecondValueProxyBase<Derived, bool, Chunk<bool>>
 {
   public:
-    using ChunkType = Chunk2A<bool>;
+    using ChunkType = Chunk<bool>;
 
-    using Base2 = Proxy2Base<Derived, bool, ChunkType>;
+    using Base2 = SecondValueProxyBase<Derived, bool, ChunkType>;
 
-    using ValuesTypeRef = Proxy2Base<Derived, bool, ChunkType>::ValuesTypeRef;
+    using ValuesTypeRef = SecondValueProxyBase<Derived, bool, ChunkType>::ValuesTypeRef;
 
     /// @brief Forward the element reference, index and chunk to Proxy2Base.
     /// @param v Reference to the chunk's values.
     /// @param num Index of the element in the chunk.
     /// @param chunk Owning chunk.
-    explicit ProxySpec2A(ValuesTypeRef v, int num, ChunkType& chunk) noexcept : Base2(v, num, chunk) {}
+    explicit ProxySpec(ValuesTypeRef v, int num, ChunkType& chunk) noexcept : Base2(v, num, chunk) {}
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
@@ -538,21 +551,26 @@ class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool
     static inline std::vector<std::unique_ptr<bool[]>>& tab_second_value = tab_second_value_storage_.value;
 };
 
+} // namespace zero_any
+
 /**
  * @brief Policy to handle Fast Block Compression specific logic for Proxy2A.
  * Encapsulates per-thread list management and trigger logic.
  */
 
+namespace zero_any
+{
+
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
+class ProxyFastCompPolicy : public ProxySpec<T, Derived>
 {
   public:
-    using BaseSpec = ProxySpec2A<T, Derived>;
+    using BaseSpec = ProxySpec<T, Derived>;
 
     using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
     using Base  = ProxyBase<Derived, T, ChunkT>;
-    using Base2 = Proxy2Base<Derived, T, ChunkT>;
+    using Base2 = SecondValueProxyBase<Derived, T, ChunkT>;
     using Base::chunk_;
 
     using BaseSpec::BaseSpec;
@@ -571,7 +589,7 @@ class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
     void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& v, Body lbd) const;
 
     /// @brief Rank @p thr's Chunk2A candidate list.
-    TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+    TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially_thr(thr);
     }
@@ -594,10 +612,10 @@ class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
  * @brief Specialization for Disabled Fast Compression (Zero Overhead).
  */
 template <typename Derived, typename T, typename ChunkT>
-class Proxy2AFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec2A<T, Derived>
+class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Derived>
 {
   public:
-    using BaseSpec = ProxySpec2A<T, Derived>;
+    using BaseSpec = ProxySpec<T, Derived>;
 
     using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
@@ -607,11 +625,13 @@ class Proxy2AFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec2A<T, D
     using BaseSpec::BaseSpec;
 
     /// @brief The single candidate list of a serial build (Chunk2AOmpPolicy<false>).
-    TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially() const noexcept
+    TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially() const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially();
     }
 };
+
+} // namespace zero_any
 /**
  * @brief Proxy2A class providing element access to a chunked sparse array representation.
  *
@@ -622,24 +642,27 @@ class Proxy2AFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec2A<T, D
  * @tparam T stored element type
  */
 
+namespace zero_any
+{
+
 /// @brief Proxy to one element of a Chunk2A<T> chunk (see the class description above).
 /// @tparam T Element type.
 template <typename T>
 // no move assignment on purpose -- assigning a proxy
 // WRITES the element (see its operator=); a defaulted move would rebind it instead.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_config::use_fast_block_compression>
+class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::use_fast_block_compression>
 {
   public:
     /// @brief Stream output of the element's value (defined below).
     template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& proxy);
+    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
 
-    using ChunkType          = Chunk2A<T>;
-    using Base2              = Proxy2Base<Proxy2A, T, ChunkType>;
-    using Base               = ProxyBase<Proxy2A, T, ChunkType>;
-    using BaseFastCompPolicy = Proxy2AFastCompPolicy<Proxy2A, T, ChunkType, chunk_config::use_fast_block_compression>;
-    using BaseSpec           = ProxySpec2A<T, Proxy2A>;
+    using ChunkType          = Chunk<T>;
+    using Base2              = SecondValueProxyBase<Proxy, T, ChunkType>;
+    using Base               = ProxyBase<Proxy, T, ChunkType>;
+    using BaseFastCompPolicy = ProxyFastCompPolicy<Proxy, T, ChunkType, chunk_config::use_fast_block_compression>;
+    using BaseSpec           = ProxySpec<T, Proxy>;
 
     friend Base;
     friend Base2;
@@ -654,8 +677,8 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @param num index within array
      * @param chunk owning chunk
      */
-    explicit Proxy2A(BaseFastCompPolicy::ValuesTypeRef values, int num, Chunk2A<T>& chunk) noexcept
-        : Proxy2AFastCompPolicy<Proxy2A, T, Chunk2A<T>, chunk_config::use_fast_block_compression>(values, num, chunk)
+    explicit Proxy(BaseFastCompPolicy::ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept
+        : ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>(values, num, chunk)
     {
     }
 
@@ -683,7 +706,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @param from Proxy to read the value from.
      * @return *this.
      */
-    const Proxy2A& operator=(const Proxy2A& from) noexcept
+    const Proxy& operator=(const Proxy& from) noexcept
     {
         if (std::addressof(from) != this) // operator& is deleted
         {
@@ -692,7 +715,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         }
         return *this;
     }
-    Proxy2A(const Proxy2A& other) = default;
+    Proxy(const Proxy& other) = default;
 
     /**
      * @brief Address-of operator is disabled to prevent unsafe access.
@@ -780,10 +803,10 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     /**
      * @brief Mapping from pointer to tab information for chunk lookup.
      */
-    static inline constinit internal::LazyImmortal<PointerMapChunk2A<T>> share_info_array; ///< pointer->tab mapping
+    static inline constinit internal::LazyImmortal<PointerMap<T>> share_info_array; ///< pointer->tab mapping
 
   private:
-    using ManagerChunk2A = ManagerChunk<Chunk2A, T>;
+    using ManagerChunk2A = ManagerChunk<Chunk, T>;
 
     using Base::read_values;
     using Base::values_;
@@ -1035,10 +1058,12 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     char* ptr_type_cst_ = nullptr; ///< pointer into tab_type_cst_val[num_tab]
 };
 
+} // namespace zero_any
+
 /// @brief Write the element's value, read through proxy.read_values(), to @p os.
 /// @return @p os.
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const Proxy2A<T>& proxy)
+std::ostream& operator<<(std::ostream& os, const zero_any::Proxy<T>& proxy)
 {
     // Through the proxy's read entry: values[] directly is wrong for a chunk
     // compressed to a second constant (an unbacked slot).

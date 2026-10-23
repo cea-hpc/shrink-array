@@ -403,7 +403,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         if (key != 0)
         {
             (*size_buffer_reuse_by_key_)[key] =
-                std::max(budget, reuse_floor_buffers(size, ChunkDef::size_min_buffer_reuse));
+                std::max(budget, reuse_floor_buffers(size, zero::ChunkDef::size_min_buffer_reuse));
         }
     }
 
@@ -417,7 +417,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         static const long div =
             std::max(1L, env_number<long>("CHUNK_REUSE_SHARE_DIV",
-                                          static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse)));
+                                          static_cast<long>(zero_any::ChunkDef::factor_div_somme_chunk_buffer_resuse)));
         return div;
     }
 

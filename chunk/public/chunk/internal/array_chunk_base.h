@@ -1080,7 +1080,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         // write path copies (second_value, ind, num_tab) instead of scanning
         // share_info_array. Tested on the DECLARED proxy type, not a `requires`:
         // a renamed member must fail to compile, not fall back silently.
-        if constexpr (std::is_same_v<ProxyType, Proxy2<T>>)
+        if constexpr (std::is_same_v<ProxyType, zero_one_value::Proxy<T>>)
         {
             val.arm_inf_array(self.registry_mirror());
         }

@@ -92,14 +92,14 @@ namespace zero_any
  * @tparam IntType index type used for sizes and element positions
  */
 template <ArrayChunkElement T, typename IntType>
-class Array : public ArrayChunk2Base<Array<T, IntType>>,
-              public ParallelSupport2A<Array<T, IntType>>,
+class Array : public SecondValueArrayBase<Array<T, IntType>>,
+              public zero_any::ParallelSupport<Array<T, IntType>>,
               public RechunkHooks<Array<T, IntType>>
 {
   public:
-    using ManagerChunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as ManagerType.
+    using ManagerChunk2A = ManagerChunk<zero_any::Chunk, T>; ///< Same type as ManagerType.
 
-    using Base2   = ArrayChunk2Base<Array>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
+    using Base2   = SecondValueArrayBase<Array>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
     using Base    = ArrayChunkBase<Array>;  ///< Base shared by every variant.
     using Hooks2A = RechunkHooks<Array>;    ///< Re-chunk hooks (dynamic geometry).
 
@@ -147,7 +147,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
     {
         if constexpr (build_config::threaded)
         {
-            WriteCompressSyncPolicy<Proxy2A<T>>::ensure_initialized();
+            WriteCompressSyncPolicy<zero_any::Proxy<T>>::ensure_initialized();
         }
 
         this->create(sz);
@@ -203,7 +203,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
     ~Array()
     {
         clear();
-        Proxy2A<T>::share_info_array->erase(this->registry_key());
+        zero_any::Proxy<T>::share_info_array->erase(this->registry_key());
     }
 
     /**
@@ -448,7 +448,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
             std::vector<std::uint8_t> referenced(handed_out + 1, 0);
 
             // Chunks compressed to a second value.
-            Proxy2A<T>::share_info_array->for_each_key(
+            zero_any::Proxy<T>::share_info_array->for_each_key(
                 [&referenced](const void* key)
                 {
                     if (key == nullptr)
@@ -456,7 +456,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
                         return;
                     }
                     // The key is the array's core, whatever its index type.
-                    const auto* arr = static_cast<const ArrayChunkCore<Chunk2A<T>>*>(key);
+                    const auto* arr = static_cast<const ArrayChunkCore<zero_any::Chunk<T>>*>(key);
                     const int   nc  = arr->chunk_count();
                     for (int j = 0; j < nc; ++j)
                     {
@@ -470,7 +470,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
 
             // Every slot of every row: a released row is empty, a stale entry only keeps a
             // value one pass longer.
-            using Spec              = Proxy2A<T>::BaseSpec;
+            using Spec              = zero_any::Proxy<T>::BaseSpec;
             const std::size_t nrows = Spec::second_value_row_count();
             for (std::size_t r = 0; r < nrows; ++r)
             {
@@ -568,7 +568,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
      */
     void pre_create_hook()
     {
-        auto& sh_inf = *Proxy2A<T>::share_info_array;
+        auto& sh_inf = *zero_any::Proxy<T>::share_info_array;
 
         sh_inf.insert(this->registry_key(), nb_tab);
         num_tab_ = nb_tab;
@@ -593,7 +593,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
      */
     auto get_metadata(IntType i) const noexcept
     {
-        return Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(i));
+        return zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(i));
     }
 
     /// @brief Storage teardown shared by clear() and rechunk_to().
@@ -622,7 +622,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
     {
         if (!holds_cst2_registry_)
         {
-            Chunk2A<T>::Holder::create();
+            zero_any::Chunk<T>::Holder::create();
             holds_cst2_registry_ = true;
         }
     }
@@ -635,7 +635,7 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
         using std::swap;
         swap(this->num_tab_, other.num_tab_);
         swap(holds_cst2_registry_, other.holds_cst2_registry_);
-        Proxy2A<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
+        zero_any::Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
     }
 
     // ── cst2 mark-sweep GC: read-only mark + report ──────────────────────────
@@ -652,11 +652,11 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
      */
     static void gc_collect_live(std::unordered_set<const void*>& live)
     {
-        Proxy2A<T>::share_info_array->for_each_key(
+        zero_any::Proxy<T>::share_info_array->for_each_key(
             [&](const void* key)
             {
                 // The key is the array's core, whatever its index type.
-                auto*     arr = static_cast<const ArrayChunkCore<Chunk2A<T>>*>(key);
+                auto*     arr = static_cast<const ArrayChunkCore<zero_any::Chunk<T>>*>(key);
                 const int nc  = arr->chunk_count();
                 for (int j = 0; j < nc; ++j)
                 {

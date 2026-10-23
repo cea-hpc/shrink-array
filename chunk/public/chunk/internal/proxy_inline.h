@@ -36,7 +36,7 @@ namespace shrink_array
 {
 
 template <typename T>
-const Proxy<T>& Proxy<T>::operator=(const Proxy<T>& from) noexcept
+const zero::Proxy<T>& zero::Proxy<T>::operator=(const zero::Proxy<T>& from) noexcept
 {
     // std::addressof: Proxy's operator& is deleted (no element address).
     if (std::addressof(from) != this)
@@ -56,16 +56,16 @@ const Proxy<T>& Proxy<T>::operator=(const Proxy<T>& from) noexcept
 }
 
 template <typename T>
-T* Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
+T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (v == static_cast<T>(Chunk<T>::first_value))
+        if (v == static_cast<T>(zero::Chunk<T>::first_value))
         {
             if (is_not_cst_val())
             {
                 // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-                if (values_[num_] != Chunk<T>::first_value)
+                if (values_[num_] != zero::Chunk<T>::first_value)
                 {
                     chunk_.inc_nb_val_eq_zero();
                 }
@@ -78,7 +78,7 @@ T* Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
             }
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        else if (is_not_cst_val() && values_[num_] == Chunk<T>::first_value)
+        else if (is_not_cst_val() && values_[num_] == zero::Chunk<T>::first_value)
         {
             chunk_.dec_nb_val_eq_zero();
         }
@@ -113,7 +113,7 @@ T* Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
                     {
                         proxy->chunk_.set_nb_val_eq_zero(proxy->chunk_size() - 1);
                     }
-                    else if (val == Chunk<T>::first_value)
+                    else if (val == zero::Chunk<T>::first_value)
                     {
                         proxy->chunk_.inc_nb_val_eq_zero();
                     }
@@ -150,7 +150,7 @@ T* Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
  * state (a concurrent write).
  */
 template <typename Derived, typename T, bool Enabled>
-void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(this const Derived& self,
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(this const Derived& self,
                                                                          InT<T>              old_value,
                                                                          InT<T>              new_value,
                                                                          InT<T>              expected_in_memory)
@@ -162,7 +162,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(this co
 }
 
 template <typename Derived, typename T, bool Enabled>
-void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(this const Derived& self,
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(this const Derived& self,
                                                                          InT<T>              old_value,
                                                                          InT<T>              new_value,
                                                                          InT<T>              expected_in_memory,
@@ -178,7 +178,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(this co
 
 template <typename T>
 template <typename Op, typename Body, typename U>
-void Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& v, Body lbd)
+void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& v, Body lbd)
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -272,7 +272,7 @@ inline void check_replay_store([[maybe_unused]] ChunkT&     chunk,
 /// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename Op, typename Lambda, typename U>
-void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(auto* ctx,
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(auto* ctx,
                                                                                            Op    op,
                                                                                            [[maybe_unused]] const U& v,
                                                                                            Lambda lbd) const
@@ -292,7 +292,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_opera
     }
     else
     {
-        const Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
+        const zero::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
         auto&     chunk_loc = ctx->chunk;
         const int num       = ctx->num;
@@ -314,7 +314,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_opera
 
 template <typename T>
 template <typename U>
-T Proxy<T>::assign_impl(InT<U> v) noexcept
+T zero::Proxy<T>::assign_impl(InT<U> v) noexcept
 {
     this->check_not_stale();
     if (is_cst_val_and_v_equal_zero(v))
@@ -478,14 +478,14 @@ T Proxy<T>::assign_impl(InT<U> v) noexcept
 
 template <typename T>
 template <typename Lambda>
-void Proxy<T>::execute_simple_operation(Lambda operation)
+void zero::Proxy<T>::execute_simple_operation(Lambda operation)
 {
     // Snapshot BEFORE any arming, to maintain nb_val_eq_zero across the write
     // for an ALREADY-ARMED chunk (0 -> non-zero must decrement it, else the
     // counter drifts up and manage_full_zero() compresses a non-zero chunk).
     // Mirrors execute_inplace_operation.
     // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
-    [[maybe_unused]] const bool was_first_value = values_[num_] == static_cast<T>(Chunk<T>::first_value);
+    [[maybe_unused]] const bool was_first_value = values_[num_] == static_cast<T>(zero::Chunk<T>::first_value);
 
     const bool is_val1 = Base::is_cst_val1();
 
@@ -507,7 +507,7 @@ void Proxy<T>::execute_simple_operation(Lambda operation)
         // 0 += 0 leaves it at the first value and neither transition below
         // fires, so the count would stay one short for good. Settle the bet.
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (is_val1 && values_[num_] == static_cast<T>(Chunk<T>::first_value))
+        if (is_val1 && values_[num_] == static_cast<T>(zero::Chunk<T>::first_value))
         {
             chunk_.inc_nb_val_eq_zero();
             if (chunk_.is_full_zero(this->chunk_size()))
@@ -518,12 +518,12 @@ void Proxy<T>::execute_simple_operation(Lambda operation)
         }
         // Already-armed transitions (arming handled above).
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (was_first_value && !is_val1 && values_[num_] != static_cast<T>(Chunk<T>::first_value))
+        if (was_first_value && !is_val1 && values_[num_] != static_cast<T>(zero::Chunk<T>::first_value))
         {
             chunk_.dec_nb_val_eq_zero();
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (values_[num_] == static_cast<T>(Chunk<T>::first_value) && !was_first_value)
+        if (values_[num_] == static_cast<T>(zero::Chunk<T>::first_value) && !was_first_value)
         {
             chunk_.inc_nb_val_eq_zero();
             if (chunk_.is_full_zero(this->chunk_size()))
@@ -538,7 +538,7 @@ void Proxy<T>::execute_simple_operation(Lambda operation)
 /// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename Lambda>
-void ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
 {
     const bool is_val1 = ctx->chunk.is_cst_val1();
 
@@ -554,10 +554,10 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(au
 
 template <typename T>
 template <typename Lambda>
-void Proxy<T>::execute_inplace_operation(Lambda operation)
+void zero::Proxy<T>::execute_inplace_operation(Lambda operation)
 {
     // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
-    [[maybe_unused]] const bool was_first_value = values_[num_] == static_cast<T>(Chunk<T>::first_value);
+    [[maybe_unused]] const bool was_first_value = values_[num_] == static_cast<T>(zero::Chunk<T>::first_value);
 
     const bool         is_val = is_cst_val();
     [[maybe_unused]] T v_old  = T{};
@@ -569,9 +569,9 @@ void Proxy<T>::execute_inplace_operation(Lambda operation)
         // operation (a pure function of the element) is tried on the constant.
         if (is_val)
         {
-            auto probe = static_cast<T>(Chunk<T>::first_value);
+            auto probe = static_cast<T>(zero::Chunk<T>::first_value);
             operation(probe);
-            if (probe == static_cast<T>(Chunk<T>::first_value))
+            if (probe == static_cast<T>(zero::Chunk<T>::first_value))
             {
                 return;
             }
@@ -604,7 +604,7 @@ void Proxy<T>::execute_inplace_operation(Lambda operation)
     {
         // Unreachable after the probe above; kept as execute_simple_operation's twin.
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (is_val && values_[num_] == static_cast<T>(Chunk<T>::first_value))
+        if (is_val && values_[num_] == static_cast<T>(zero::Chunk<T>::first_value))
         {
             chunk_.inc_nb_val_eq_zero();
             if (chunk_.is_full_zero(this->chunk_size()))
@@ -614,12 +614,12 @@ void Proxy<T>::execute_inplace_operation(Lambda operation)
             return;
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (was_first_value && !is_val && values_[num_] != Chunk<T>::first_value)
+        if (was_first_value && !is_val && values_[num_] != zero::Chunk<T>::first_value)
         {
             chunk_.dec_nb_val_eq_zero();
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (values_[num_] == static_cast<T>(Chunk<T>::first_value) && !was_first_value)
+        if (values_[num_] == static_cast<T>(zero::Chunk<T>::first_value) && !was_first_value)
         {
             chunk_.inc_nb_val_eq_zero();
             if (chunk_.is_full_zero(this->chunk_size()))
@@ -639,14 +639,14 @@ void Proxy<T>::execute_inplace_operation(Lambda operation)
 /// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename Lambda>
-void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(auto* ctx, Lambda operation)
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(auto* ctx, Lambda operation)
 {
     auto&     chunk_loc = ctx->chunk;
     const int num       = ctx->num;
 
     const InT<T> v_old = Base::read_values_async(ctx);
 
-    const Proxy proxy  = Base::template make_proxy_with_info<Derived>(ctx);
+    const zero::Proxy proxy  = Base::template make_proxy_with_info<Derived>(ctx);
     const bool  is_val = chunk_loc.is_cst_val1();
 
     if (is_val)
@@ -670,7 +670,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(a
 
 template <typename T>
 template <typename U, typename BinaryOp>
-void Proxy<T>::apply_compound_operation(InT<U> v, BinaryOp op)
+void zero::Proxy<T>::apply_compound_operation(InT<U> v, BinaryOp op)
 {
     this->check_not_stale();
     // Cross-rank RMW materialisation: pull any foreign deferred write first.
@@ -737,7 +737,7 @@ void Proxy<T>::apply_compound_operation(InT<U> v, BinaryOp op)
 }
 
 template <typename Derived, typename T, bool Enabled>
-void ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int thr_rank) noexcept
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int thr_rank) noexcept
 {
     const auto& vec_tuple = Manager::chunk_to_compress_potentially_thr[thr_rank];
 
@@ -756,7 +756,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int
     }
 }
 template <typename Derived, typename T, bool Enabled>
-void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression(this const Derived& self) noexcept
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression(this const Derived& self) noexcept
 {
     // Runs inside a region, next to pure readers: the buffers this pass
     // releases wait for one grace period (read_reclaim.h).
@@ -780,7 +780,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression(this const De
         std::atomic_thread_fence(std::memory_order_seq_cst);
 
         // std::addressof: the proxies delete operator&.
-        Chunk<T>::make_block_compression(thr_rank, std::addressof(self));
+        zero::Chunk<T>::make_block_compression(thr_rank, std::addressof(self));
     }
     // Looked at, whether or not there was work: clear the flag. See
     // mark_list_dangerous_for_thread.

@@ -31,7 +31,7 @@ namespace shrink_array
  *        resize().
  */
 template <typename Derived>
-class ArrayChunk2Base : public ArrayChunkBase<Derived>
+class SecondValueArrayBase : public ArrayChunkBase<Derived>
 {
   private:
     using Base = ArrayChunkBase<Derived>;

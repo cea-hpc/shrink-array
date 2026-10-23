@@ -81,8 +81,8 @@ using Array =
                        std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
 
 using VariantDef = std::conditional_t<chunk_config::use_chunk2a,
-                                      Chunk2ADef,
-                                      std::conditional_t<chunk_config::use_chunk2, Chunk2Def, ChunkDef>>;
+                                      zero_any::ChunkDef,
+                                      std::conditional_t<chunk_config::use_chunk2, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
 constexpr const char* variant_name()
 {

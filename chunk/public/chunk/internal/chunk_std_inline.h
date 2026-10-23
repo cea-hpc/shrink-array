@@ -45,29 +45,29 @@ namespace shrink_array
 
 // Out of line on purpose, as operator delete[] below: see there.
 template <typename T, typename Derived, bool Enabled>
-[[gnu::noinline]] void* ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
+[[gnu::noinline]] void* zero::ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
-    auto* v = static_cast<Chunk<T>*>(::operator new(sz));
-    init_chunks_cst_val(v, sz / sizeof(Chunk<T>));
+    auto* v = static_cast<zero::Chunk<T>*>(::operator new(sz));
+    init_chunks_cst_val(v, sz / sizeof(zero::Chunk<T>));
     return static_cast<void*>(v);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept
+void zero::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero::Chunk<T>* v, std::size_t count) noexcept
 {
-    chunk_array_new::init_chunks(v, count, [](Chunk<T>& chunk) { chunk.init_values_cst_val(); });
+    chunk_array_new::init_chunks(v, count, [](zero::Chunk<T>& chunk) { chunk.init_values_cst_val(); });
 }
 
 // Out of line on purpose, as operator new[] above: avoids a false -Wmismatched-new-delete
 // (see Chunk2AOmpPolicy::operator delete[] in chunk2A_std_inline.h).
 template <typename T, typename Derived, bool Enabled>
-[[gnu::noinline]] void ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
+[[gnu::noinline]] void zero::ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
     ::operator delete(ptr);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int thr, VecTupleChunkpInt2& ll_compt)
+void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int thr, VecTupleChunkpInt2& ll_compt)
 {
     const auto& vec_tup = Derived::Manager::chunk_to_compress_potentially_thr[thr];
 
@@ -93,7 +93,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_pa
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&       self,
+void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&       self,
                                                                      VecTupleChunkpInt2& ll_compt,
                                                                      int                 num_chunk,
                                                                      int                 num_tab,
@@ -111,7 +111,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derive
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::compress(this Derived& self, int thr_rank, unsigned int n_elems)
+void zero::ChunkOmpPolicy<T, Derived, Enabled>::compress(this Derived& self, int thr_rank, unsigned int n_elems)
 {
     // Already compressed: nothing to do. Required: a chunk can be reached twice (its queued
     // candidate outlives a compression by another path, e.g. the re-chunk fold). On a cst1
@@ -137,10 +137,10 @@ void ChunkOmpPolicy<T, Derived, Enabled>::compress(this Derived& self, int thr_r
 }
 
 template <typename T>
-void Chunk<T>::compress_sweep_rank(int thr)
+void zero::Chunk<T>::compress_sweep_rank(int thr)
 {
     // Bypasses CompressionManager::start(): see check_no_flush_outside_start.
-    check_no_flush_outside_start<Proxy<T>>("Chunk::compress_sweep_rank");
+    check_no_flush_outside_start<zero::Proxy<T>>("Chunk::compress_sweep_rank");
     auto& chunk_t = Manager::chunk_to_compress_potentially_thr[thr];
     // Dynamic geometry: pin the ambient chunk size to EACH candidate's own (its ChunkElems),
     // restored after the loop. free_block_to_pool() parks in the list of the AMBIENT size,
@@ -161,7 +161,7 @@ void Chunk<T>::compress_sweep_rank(int thr)
         // again (compression stalls). Reset it TOGETHER with the list clear below: one
         // without the other lets a write re-append the chunk and make_block_compression
         // double-clears it (see Chunk2A<T>::compress_chunk_to_compress_in_par).
-        Proxy<T>::reset_tab_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
+        zero::Proxy<T>::reset_tab_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
     }
 
     if constexpr (build_config::chunk_dynamic)
@@ -173,7 +173,7 @@ void Chunk<T>::compress_sweep_rank(int thr)
 }
 
 template <typename T>
-void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
+void zero::Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 {
     // Each rank its own list, the ranks beyond the team too: a flag left at 1 is a
     // chunk never queued again (see ChunkBase::sweep_every_rank).
@@ -183,7 +183,7 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 
 
 template <typename T, typename Derived, bool Enabled>
-bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_thr)
+bool zero::ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_thr)
 {
     if (Manager::chunk_to_compress_potentially_thr.empty())
     {
@@ -212,7 +212,7 @@ bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_th
  *          cells read before written.
  */
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
+void zero::ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
 {
     if constexpr (build_config::use_fast_alloc)
     {
@@ -221,7 +221,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived& self, int thr_rank) noexcept
+void zero::ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived& self, int thr_rank) noexcept
 {
     // Reuse pool first, then a fresh allocation (ChunkAllocPolicy::allocate_chunk_internal,
     // shared with v2/v2A). Initialisers differ from v2/v2A: a v1 chunk is compressed only when
@@ -242,13 +242,13 @@ void ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived& self, int t
 // OpenMP: delegates to the rank-aware overload. The serial specialisation below allocates
 // directly (no per-thread free list).
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived& self) noexcept
+void zero::ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived& self) noexcept
 {
     self.create_value(get_thr_rank_fast());
 }
 
 template <typename T, typename Derived>
-void ChunkOmpPolicy<T, Derived, false>::create_value(this Derived& self) noexcept
+void zero::ChunkOmpPolicy<T, Derived, false>::create_value(this Derived& self) noexcept
 {
     // Serially there is no reuse list: the first initialiser is ignored (serial
     // ChunkAllocPolicy).
@@ -265,7 +265,7 @@ void ChunkOmpPolicy<T, Derived, false>::create_value(this Derived& self) noexcep
 
 // No guard needed: the primary template is only instantiated with Enabled=true.
 template <typename T, typename Derived, bool Enabled>
-void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, const Proxy<T>* proxy)
+void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, const zero::Proxy<T>* proxy)
 {
     // Before the first parallel region the per-rank lists do not exist (sized at region
     // begin), yet zero::Array::resize() calls this from create(): do not index them.
@@ -294,7 +294,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
     {
         // A flush in progress makes start() decline: ask first, before marking, or the pass
         // spins in mark/unmark rounds (block_pass_precheck.h).
-        if (block_pass_yields_to_flush<Proxy<T>, Chunk<T>>(max_thr))
+        if (block_pass_yields_to_flush<zero::Proxy<T>, zero::Chunk<T>>(max_thr))
         {
             return;
         }
@@ -308,7 +308,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
                 chunk_t->steal_mark();
             }
         }
-        const bool ret = proxy->compression_mgr.template start<Proxy<T>>();
+        const bool ret = proxy->compression_mgr.template start<zero::Proxy<T>>();
 
         if (!ret)
         {
@@ -383,7 +383,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
                                        static_cast<const void*>(marked));
             }
         }
-        Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);
+        zero::Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);
     }
 
     vec_tuple_to_compress.clear();
@@ -396,7 +396,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
             proxy->add_to_compression_list(vec_tuple_to_compress);
         }
 
-        proxy->compression_mgr.template finish<Proxy<T>>();
+        proxy->compression_mgr.template finish<zero::Proxy<T>>();
     }
 }
 
@@ -404,20 +404,20 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
 // path does not come here (clear_int_st releases the block itself and counts there): do not
 // count in both if this entry point is ever wired up.
 template <typename T>
-void Chunk<T>::block_clear(this auto& self, [[maybe_unused]] int thr_rank)
+void zero::Chunk<T>::block_clear(this auto& self, [[maybe_unused]] int thr_rank)
 {
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_compress<Chunk<T>>();
-        add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
+        increm_chunk_compress<zero::Chunk<T>>();
+        add_chunk_bytes_freed<zero::Chunk<T>>(static_cast<long>(sizeof(T)) *
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
         if constexpr (build_config::threaded)
         {
-            increm_chunk_release_pool<Chunk<T>>();
+            increm_chunk_release_pool<zero::Chunk<T>>();
         }
         else
         {
-            increm_chunk_release_free<Chunk<T>>();
+            increm_chunk_release_free<zero::Chunk<T>>();
         }
     }
 
@@ -433,17 +433,17 @@ void Chunk<T>::block_clear(this auto& self, [[maybe_unused]] int thr_rank)
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived& self, int thr_rank)
+void zero::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived& self, int thr_rank)
 {
     T* old = self.try_mark_cst_and_get_old();
     if (old)
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_compress<Chunk<T>>();
-            add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
+            increm_chunk_compress<zero::Chunk<T>>();
+            add_chunk_bytes_freed<zero::Chunk<T>>(static_cast<long>(sizeof(T)) *
                                             static_cast<long>(shrink_array::alloc_chunk_count()));
-            increm_chunk_release_pool<Chunk<T>>();
+            increm_chunk_release_pool<zero::Chunk<T>>();
         }
         self.Base::free_block_to_pool(thr_rank, old);
     }
@@ -451,22 +451,22 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived& self, int t
 
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(this Derived& self, int thr_rank, unsigned int n_elems)
+void zero::ChunkOmpPolicy<T, Derived, Enabled>::clear_st(this Derived& self, int thr_rank, unsigned int n_elems)
 {
     // CHUNK_STATS: a compression completing. Count here, not in init_values_cst_val (also
     // reached from teardown/neutralisation, which are not compressions). The re-chunk
     // rebuild releases through release_st() directly so it is not counted as compression.
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_compress<Chunk<T>>();
-        add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
-        increm_chunk_release_park<Chunk<T>>();
+        increm_chunk_compress<zero::Chunk<T>>();
+        add_chunk_bytes_freed<zero::Chunk<T>>(static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
+        increm_chunk_release_park<zero::Chunk<T>>();
     }
     self.release_st(thr_rank, n_elems, /*count_release=*/false);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::release_st(this Derived& self,
+void zero::ChunkOmpPolicy<T, Derived, Enabled>::release_st(this Derived& self,
                                                      int           thr_rank,
                                                      unsigned int  n_elems,
                                                      bool          count_release)
@@ -477,7 +477,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(this Derived& self,
     {
         if (count_release)
         {
-            add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
+            add_chunk_released<zero::Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
         }
     }
 
@@ -504,27 +504,27 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(this Derived& self,
 }
 
 template <typename T, typename Derived>
-void ChunkOmpPolicy<T, Derived, false>::clear_st(this Derived& self)
+void zero::ChunkOmpPolicy<T, Derived, false>::clear_st(this Derived& self)
 {
     // CHUNK_STATS: serial twin of the OpenMP clear_st above.
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_compress<Chunk<T>>();
-        add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
+        increm_chunk_compress<zero::Chunk<T>>();
+        add_chunk_bytes_freed<zero::Chunk<T>>(static_cast<long>(sizeof(T)) *
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
-        increm_chunk_release_free<Chunk<T>>();
+        increm_chunk_release_free<zero::Chunk<T>>();
     }
     self.release_st(/*count_release=*/false);
 }
 
 template <typename T, typename Derived>
-void ChunkOmpPolicy<T, Derived, false>::release_st(this Derived& self, bool count_release)
+void zero::ChunkOmpPolicy<T, Derived, false>::release_st(this Derived& self, bool count_release)
 {
     if constexpr (chunk_config::stats)
     {
         if (count_release)
         {
-            add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
+            add_chunk_released<zero::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
                                                 static_cast<long>(shrink_array::alloc_chunk_count()));
         }
     }

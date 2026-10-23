@@ -21,26 +21,41 @@
 namespace shrink_array
 {
 
+namespace zero
+{
+
 template <typename T>
 class Chunk;
 
-template <typename T>
-class Chunk2;
+} // namespace zero
+
+namespace zero_one_value
+{
 
 template <typename T>
-class Chunk2A;
+class Chunk;
+
+} // namespace zero_one_value
+
+namespace zero_any
+{
+
+template <typename T>
+class Chunk;
+
+} // namespace zero_any
 
 /// @brief ChunkT<T> is Chunk<T>.
 template <template <typename> typename ChunkT, typename T>
-concept IsChunk = std::is_same_v<ChunkT<T>, Chunk<T>>;
+concept IsChunk = std::is_same_v<ChunkT<T>, zero::Chunk<T>>;
 
 /// @brief ChunkT<T> is Chunk2A<T>.
 template <template <typename> typename ChunkT, typename T>
-concept IsChunk2A = std::is_same_v<ChunkT<T>, Chunk2A<T>>;
+concept IsChunk2A = std::is_same_v<ChunkT<T>, zero_any::Chunk<T>>;
 
 /// @brief ChunkT<T> is Chunk2<T>.
 template <template <typename> typename ChunkT, typename T>
-concept IsChunk2 = std::is_same_v<ChunkT<T>, Chunk2<T>>;
+concept IsChunk2 = std::is_same_v<ChunkT<T>, zero_one_value::Chunk<T>>;
 
 /// @brief ChunkT<T> is Chunk2<T> or Chunk2A<T>.
 template <template <typename> typename ChunkT, typename T>

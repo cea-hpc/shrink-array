@@ -46,7 +46,7 @@ namespace shrink_array
  */
 
 template <typename Derived, typename T, typename ChunkT>
-class Proxy2Base : public ProxyBase<Derived, T, ChunkT>
+class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 {
   public:
     using Base = ProxyBase<Derived, T, ChunkT>;
@@ -193,7 +193,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkT>
      * @param num Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit Proxy2Base(ValuesTypeRef values, int num, ChunkT& chunk) noexcept : Base(values, num, chunk) {}
+    explicit SecondValueProxyBase(ValuesTypeRef values, int num, ChunkT& chunk) noexcept : Base(values, num, chunk) {}
 
     /**
      * @brief Negation of is_cst_val2().
