@@ -62,6 +62,17 @@
  *   (chunk/internal/invariant_check.h), which no setting can turn off.
  */
 
+// __cpp_lib_reflection comes with <meta>: included first where the language
+// has reflection (the name tables are then checked against the enums).
+#if defined(__cpp_impl_reflection)
+    #include <meta> // std::meta (the names_match check)
+#endif
+#if defined(__cpp_impl_reflection) && defined(__cpp_lib_reflection)
+    #define FAST_ALLOC_LOG_HAS_REFLECTION 1
+#else
+    #define FAST_ALLOC_LOG_HAS_REFLECTION 0
+#endif
+
 #include <array>           // std::array (the thresholds, the names)
 #include <atomic>          // std::atomic
 #include <bit>             // std::has_single_bit (CHUNK_LOG_POW2)
@@ -129,6 +140,33 @@ inline constexpr std::array<std::string_view, n_channels> channel_names{
     "compress", "recycle", "ledger", "ompt",  "affinity", "advisor", "memory",
 };
 inline constexpr std::array<std::string_view, n_levels> level_names{"fatal", "error", "warn", "info", "debug", "trace"};
+
+#if FAST_ALLOC_LOG_HAS_REFLECTION
+/// @brief True when @p names spells E's enumerators, in order -- and E has
+///        no other but, when @p with_count, a last one (count_). C++26
+///        reflection: the tables above, which CHUNK_LOG is parsed against,
+///        cannot drift from the enums (a forgotten name was an empty string,
+///        a swapped one a wrong channel, both silent).
+template <typename E, std::size_t N>
+consteval bool names_match(const std::array<std::string_view, N>& names, bool with_count)
+{
+    const auto ens = std::meta::enumerators_of(^^E);
+    if (ens.size() != N + (with_count ? 1 : 0))
+    {
+        return false;
+    }
+    for (std::size_t k = 0; k < N; ++k)
+    {
+        if (std::meta::identifier_of(ens[k]) != names[k] || std::meta::extract<E>(ens[k]) != static_cast<E>(k))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(names_match<Channel>(channel_names, true), "channel_names must spell Channel's enumerators, in order");
+static_assert(names_match<Level>(level_names, false), "level_names must spell Level's enumerators, in order");
+#endif
 
 /// @brief The name CHUNK_LOG spells channel @p c with.
 [[nodiscard]] constexpr std::string_view name(Channel c) noexcept

@@ -149,6 +149,15 @@ the tag's checksum to the recipe.
   `CHUNK_STATS_JSON {"variant": "chunk2a", "alloc": ..., ...}`, which
   `python/bench_runner/parsing.py` reads first (the text blocks for the other
   builds; both give the same figures).
+- The name tables that a parser walks are checked against their enum by
+  reflection (a `static_assert` in the reflection builds; the tables stay for
+  the others): `channel_names` and `level_names`, which `CHUNK_LOG` is parsed
+  against, against `logging::Channel` and `Level` (`log_core.h`; a channel
+  added without its name was an empty string, two names swapped a wrong
+  channel, both silent); the `CHUNK_RECHUNK_SCHEDULE` kinds against
+  `ChunkPmpSched`, the if-chain that parsed them now a loop over that table
+  (`sched_names`, `array_chunk_rechunk_inline.h`). `enum_name.h` gains
+  `names_match<E>(names, prefix, first)` for it.
 
 ### Added (cpp23)
 

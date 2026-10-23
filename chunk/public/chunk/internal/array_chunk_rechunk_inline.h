@@ -30,7 +30,6 @@
 #include <cstddef>     // std::size_t
 #include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstring>     // std::memcpy / std::memcmp (refill bulk read)
-#include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstdlib>     // std::getenv (CHUNK_RECHUNK_RECYCLE, CHUNK_RECHUNK_SCHEDULE)
 #include <optional>    // the affinity scope around tmp
 #include <type_traits> // std::is_same_v, the zero bool guard
@@ -55,6 +54,7 @@
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 #include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED (refill bulk read check)
+#include "chunk/internal/enum_name.h"           // names_match (sched_names, reflection builds)
 
 namespace shrink_array::internal
 {
@@ -171,6 +171,14 @@ struct RebuildSchedule
     std::array<char, 32> text{"guided,16"};
 };
 
+/// @brief The kinds CHUNK_RECHUNK_SCHEDULE names, in ChunkPmpSched's order
+///        (sched_static = 1 first): the enumerators without "sched_".
+inline constexpr std::array<std::string_view, 4> sched_names{"static", "dynamic", "guided", "auto"};
+#if SHRINK_ARRAY_HAS_ENUM_NAME
+static_assert(names_match<ChunkPmpSched>(sched_names, "sched_", 1),
+              "sched_names must list ChunkPmpSched's enumerators, in order, without \"sched_\"");
+#endif
+
 /// @brief The rebuild loop's schedule, parsed once from CHUNK_RECHUNK_SCHEDULE ("kind[,chunk]").
 /// @return The parsed schedule, or the default guided,16 when the variable is unset or not understood.
 inline const RebuildSchedule& rebuild_schedule() noexcept
@@ -199,25 +207,11 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         }
         if (ok)
         {
-            if (kv == "static")
+            ok = false;
+            for (std::size_t i = 0; i < sched_names.size() && !ok; ++i)
             {
-                k = ChunkPmpSched::sched_static;
-            }
-            else if (kv == "dynamic")
-            {
-                k = ChunkPmpSched::sched_dynamic;
-            }
-            else if (kv == "guided")
-            {
-                k = ChunkPmpSched::sched_guided;
-            }
-            else if (kv == "auto")
-            {
-                k = ChunkPmpSched::sched_auto;
-            }
-            else
-            {
-                ok = false;
+                ok = kv == sched_names[i];
+                k  = ok ? static_cast<ChunkPmpSched>(i + 1) : k;
             }
         }
         if (!ok)

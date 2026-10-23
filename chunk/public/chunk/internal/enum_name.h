@@ -28,7 +28,11 @@
  *          - upper_enum_name(en, prefix): the name of the enumerator @p en,
  *            a string with static storage, usable at run time;
  *          - table_matches<E>(table, prefix): true when @p table gives, for
- *            every enumerator of E, that same name.
+ *            every enumerator of E, that same name;
+ *          - names_match<E>(names, prefix, first): true when @p names, an
+ *            array of strings, lists E's enumerators in order, as spelled
+ *            (lower case, without @p prefix), enumerator k of value
+ *            first + k -- for a table that a parser walks (string to enum).
  *
  *          Only where the compiler has reflection (GCC 16, -freflection):
  *          SHRINK_ARRAY_HAS_ENUM_NAME says so. A caller keeps its switch for
@@ -48,6 +52,7 @@
 
 #if SHRINK_ARRAY_HAS_ENUM_NAME
 
+    #include <cstddef>     // std::size_t
     #include <string>      // std::string (consteval only: the name being built)
     #include <string_view> // std::string_view
 
@@ -87,6 +92,36 @@ consteval bool table_matches(Table table, std::string_view prefix)
     for (std::meta::info en : std::meta::enumerators_of(^^E))
     {
         if (std::string_view(table(std::meta::extract<E>(en))) != upper_enum_name(en, prefix))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief True when @p names lists the enumerators of E, in declaration
+ *        order: names[k] is the identifier of enumerator k without the
+ *        leading @p prefix, and its value is @p first + k; E has exactly
+ *        names.size() enumerators.
+ */
+template <typename E, typename Names>
+consteval bool names_match(const Names& names, std::string_view prefix, long long first = 0)
+{
+    const auto ens = std::meta::enumerators_of(^^E);
+    if (ens.size() != names.size())
+    {
+        return false;
+    }
+    for (std::size_t k = 0; k < ens.size(); ++k)
+    {
+        std::string_view id = std::meta::identifier_of(ens[k]);
+        if (id.starts_with(prefix))
+        {
+            id.remove_prefix(prefix.size());
+        }
+        if (id != std::string_view(names[k]) ||
+            static_cast<long long>(std::meta::extract<E>(ens[k])) != first + static_cast<long long>(k))
         {
             return false;
         }
