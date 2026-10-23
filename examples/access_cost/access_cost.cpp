@@ -71,7 +71,7 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"       // the IndT = int default of the arrays
+#include "chunk/chunk_traits.h"       // the IntType = int default of the arrays
 #include "chunk/array_chunk.h"        // zero::Array
 #include "chunk/array_chunk2.h"       // zero_one_value::Array
 #include "chunk/array_chunk2A.h"      // zero_any::Array

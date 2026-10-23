@@ -59,13 +59,13 @@ namespace zero_one_value
  *          hooks (2A has three).
  *
  * @tparam T        stored element type
- * @tparam IndT index type used for sizes and element positions
+ * @tparam IntType index type used for sizes and element positions
  */
-template <ArrayChunkElement T, typename IndT>
-class Array : public ArrayChunk2Base<Array<T, IndT>>,
-              public ParallelSupport2<Array<T, IndT>>,
-              public FastBlockSupport2<Array<T, IndT>>,
-              public RechunkHooks2<Array<T, IndT>>
+template <ArrayChunkElement T, typename IntType>
+class Array : public ArrayChunk2Base<Array<T, IntType>>,
+              public ParallelSupport2<Array<T, IntType>>,
+              public FastBlockSupport2<Array<T, IntType>>,
+              public RechunkHooks2<Array<T, IntType>>
 {
   public:
     using Base2      = ArrayChunk2Base<Array>;   ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
@@ -78,7 +78,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
 
     // RechunkHooks2::rechunk_reown_after_swap copies the private ind_cst_val2.
     template <typename, bool>
-    friend class shrink_array::RechunkHooks2;
+    friend class RechunkHooks2;
 
     // Re-declared, not only inherited: the mixins declare them too, and an
     // outside `Arr::ChunkType` would be ambiguous between base subobjects.
@@ -92,7 +92,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
     using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
     using manager_type [[deprecated("types are PascalCase: use ManagerType")]]      = ManagerType;
     using proxy_type [[deprecated("types are PascalCase: use ProxyType")]]          = ProxyType;
-    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IndT;
+    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
     using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
     using Base2::chunk_list_;
@@ -127,7 +127,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
      */
-    explicit Array(IndT sz = 0)
+    explicit Array(IntType sz = 0)
     {
         if constexpr (build_config::threaded)
         {
@@ -169,7 +169,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
     /// @param first Start of the source range.
     /// @param last End of the source range.
     template <std::forward_iterator It>
-    Array(It first, It last) : Array(static_cast<IndT>(std::distance(first, last)))
+    Array(It first, It last) : Array(static_cast<IntType>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
@@ -291,7 +291,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      * @param i element index
      * @return false while that chunk is still compressed to a constant
      */
-    [[nodiscard]] bool written(IndT i) const
+    [[nodiscard]] bool written(IntType i) const
     {
         return chunk_written(this->chunk_index_of(i));
     }
@@ -324,7 +324,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list keeps its capacity.
      */
-    void resize(IndT newsz);
+    void resize(IntType newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
@@ -388,7 +388,7 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      * @brief Register the array and allocate its storage.
      * @param sz element count
      */
-    void create(IndT sz);
+    void create(IntType sz);
 
     /**
      * @brief (Re)allocate storage at the current active geometry.
@@ -397,12 +397,12 @@ class Array : public ArrayChunk2Base<Array<T, IndT>>,
      *          array switching geometry (rechunk_to()).
      * @param sz element count to allocate for
      */
-    void rebuild_storage(IndT sz);
+    void rebuild_storage(IntType sz);
 
     /// @brief CRTP hook: the metadata the base needs for any element.
     /// @return this array's shared second-value tuple (element index unused,
     ///         since the value is array-wide -- unlike zero_any::Array)
-    auto get_metadata(IndT /*ind*/) const noexcept
+    auto get_metadata(IntType /*ind*/) const noexcept
     {
         return this->get_info_second_value();
     }

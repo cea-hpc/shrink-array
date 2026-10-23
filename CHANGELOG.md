@@ -98,7 +98,7 @@ the tag's checksum to the recipe.
   internal ones (`index_type`, `cst_val1_type`) become `ChunkType`, `ManagerType`, `ProxyType`,
   `IndType`, `ChunkListType`, `IndexType`, `CstVal1Type`; `chunk_template_of` and
   `for_each_type_impl` become `ChunkTemplateOf` and `ForEachTypeImpl`. The template parameters
-  that carried those names are now `ChunkT`, `ProxyT`, `IndT`, `IndexT`. The former spellings of
+  that carried those names are now `ChunkT`, `ProxyT`, `IntType`, `IndexT`. The former spellings of
   the five public aliases stay on `ArrayChunk`, `ArrayChunk2` and `ArrayChunk2A` as
   `[[deprecated]]` aliases until 1.0. Only the standard library's own names (`value_type`,
   `size_type`, ...) keep their shape; `scripts/check_naming.py` and

@@ -20,7 +20,7 @@
 // other harnesses here.
 // ============================================================================
 //
-// The arrays take their index type as a template parameter (IndT, `int`
+// The arrays take their index type as a template parameter (IntType, `int`
 // by default). Guards the two things a `long` index needs:
 //
 //   past-int-max  one zero::Array*<char, long> of more than INT_MAX elements,
@@ -54,7 +54,7 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"               // forward decls + default IndT = int
+#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
 #include "chunk/array_chunk.h"                // zero::Array
 #include "chunk/array_chunk2.h"               // zero_one_value::Array
 #include "chunk/array_chunk2A.h"              // zero_any::Array
