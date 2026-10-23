@@ -34,8 +34,15 @@
 //    annotation left alone -- gets those column types (compile time), reads
 //    back as a std::vector after parallel writes, compound ops and set(), and
 //    its compressed columns compress; two storage annotations on one member
-//    are refused (compile time).
+//    are refused (compile time);
+//  - the range operations, member by member: fill_range, copy_range (from a
+//    std::vector<Particle>: AoS to SoA), their _mt forms from every thread of
+//    a phase, read_range back into structs (a compressed chunk as a fill),
+//    a range past the end clamped; resize() with and without a value,
+//    push_back(); a uniform fill leaves its compressed columns' chunks
+//    without a buffer.
 
+#include <algorithm>   // std::fill, std::copy (the reference)
 #include <cstdio>      // std::printf
 #include <type_traits> // std::is_same_v, std::remove_cvref_t (the column types)
 #include <utility>     // std::as_const
@@ -174,6 +181,103 @@ static int particles(int n)
     return bad;
 }
 
+static bool same_particle(const Particle& p, const Particle& q)
+{
+    return p.x == q.x && p.mat == q.mat && p.rho == q.rho && p.flag == q.flag;
+}
+
+static int ranges(int n)
+{
+    int                    bad = 0;
+    std::vector<Particle>  v(static_cast<std::size_t>(n));
+    sa::SoaArray<Particle> a(static_cast<std::size_t>(n));
+    const auto             check = [&](const char* what)
+    {
+        std::vector<Particle> out(static_cast<std::size_t>(n), Particle{-1.0, -1, -1.0, true});
+        const auto            end = read_range(a, 0, static_cast<std::size_t>(n), out.begin());
+        int                   w   = end == out.end() ? 0 : 1;
+        for (int i = 0; i < n; ++i)
+        {
+            w += same_particle(out[static_cast<std::size_t>(i)], v[static_cast<std::size_t>(i)]) &&
+                         same_particle(std::as_const(a)[static_cast<std::size_t>(i)], v[static_cast<std::size_t>(i)])
+                     ? 0
+                     : 1;
+        }
+        if (w != 0)
+        {
+            std::printf("ranges: %s, %d wrong\n", what, w);
+            ++bad;
+        }
+    };
+
+    // Serial: a uniform fill over whole chunks, then a copy from structs.
+    const Particle u{3.5, 7, 2.0, true};
+    sa::fill_range(a, static_cast<std::size_t>(n / 8), static_cast<std::size_t>(n / 4), u);
+    std::fill(v.begin() + n / 8, v.begin() + n / 4, u);
+    check("fill_range");
+    if (a.column<^^Particle::rho>().stats() > 1.0 || a.column<^^Particle::flag>().stats() > 1.0)
+    {
+        std::printf("ranges: a uniform fill left buffers in a compressed column\n");
+        ++bad;
+    }
+    std::vector<Particle> src(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i)
+    {
+        src[static_cast<std::size_t>(i)] = expected_particle(i, n);
+    }
+    sa::copy_range(a, static_cast<std::size_t>(n / 2), static_cast<std::size_t>(n) + 100, src.begin()); // clamped
+    std::copy(src.begin(), src.begin() + (n - n / 2), v.begin() + n / 2);
+    check("copy_range");
+
+    // _mt: every thread its blocks, in a phase.
+    const int block = 4096;
+    sa::parallel_phase(
+        [&]
+        {
+#pragma omp for schedule(static)
+            for (int b = 0; b < n / block; ++b)
+            {
+                const auto lo = static_cast<std::size_t>(b) * block;
+                if (b % 3 == 0)
+                {
+                    sa::fill_range_mt(a, lo, lo + block, Particle{1.0 * b, b % 5, 0.5, false});
+                }
+                else
+                {
+                    sa::copy_range_mt(a, lo, lo + block, src.begin() + static_cast<std::ptrdiff_t>(lo));
+                }
+            }
+        });
+    for (int b = 0; b < n / block; ++b)
+    {
+        const auto lo = static_cast<std::size_t>(b) * block;
+        for (std::size_t i = lo; i < lo + block; ++i)
+        {
+            v[i] = b % 3 == 0 ? Particle{1.0 * b, b % 5, 0.5, false} : src[i];
+        }
+    }
+    check("fill_range_mt, copy_range_mt");
+
+    // resize, push_back.
+    a.resize(static_cast<std::size_t>(n) + 1000, u);
+    v.resize(static_cast<std::size_t>(n) + 1000, u);
+    a.push_back(src[5]);
+    v.push_back(src[5]);
+    n = static_cast<int>(v.size());
+    if (a.size() != v.size())
+    {
+        std::printf("ranges: size %zu after resize and push_back, expected %zu\n", a.size(), v.size());
+        ++bad;
+    }
+    check("resize(n, v), push_back");
+    a.resize(static_cast<std::size_t>(n / 2));
+    v.resize(static_cast<std::size_t>(n / 2));
+    n = static_cast<int>(v.size());
+    check("resize(n)");
+    std::printf("ranges: %d wrong\n", bad);
+    return bad;
+}
+
 // What element i holds after the parallel write.
 static Cell expected(int i, int n)
 {
@@ -267,6 +371,7 @@ int main()
     } // the columns release their chunks here
 
     bad += particles(1 << 20);
+    bad += ranges(1 << 20);
 
     sa::release_chunk_pools();
     sa::destroy_block_chunk();

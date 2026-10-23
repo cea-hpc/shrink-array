@@ -85,6 +85,18 @@ the tag's checksum to the recipe.
   `soa_array_validation` checks the column types, the values after parallel
   writes, compound ops and `set()`, and that the annotated compressed columns
   compress.
+- `SoaArray<T>`: the range operations, member by member, each column
+  keeping its own semantics (a chunk filled with one value takes it as its
+  constant, a `soa::plain` column is a `std::fill` / `std::copy`):
+  `fill_range(a, lo, hi, v)`, `copy_range(a, lo, hi, src)` from structs (the
+  AoS to SoA transposition, through a projection of each member),
+  `fill_range_mt`, `copy_range_mt` (every thread of a phase on its own
+  range), `read_range(a, lo, hi, out)` back into structs (a compressed chunk
+  a fill of its member); `resize(n)`, `resize(n, v)`, `push_back(v)`; and
+  `member_count`, `member(k)`, `column_at<k>()` to walk the columns by
+  index. The file comment no longer announces a `compress()` it did not
+  have. `soa_array_validation` checks them against a `std::vector`, the
+  `_mt` forms from a phase, a range past the end clamped.
 
 ### Fixed (cpp26)
 
