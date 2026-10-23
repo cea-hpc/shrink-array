@@ -84,7 +84,7 @@ set_tbb_options() {
             echo "[tbb] CHUNK_WITH_TBB=0: the std builds are made WITHOUT the TBB bench and tbb_validation"
         else
             echo "[tbb] oneTBB not found (TBBROOT unset): the std builds are made WITHOUT the TBB bench (shrink_bench_tbb_*)"
-            echo "[tbb]   and tbb_validation. Install oneTBB in \$CCCWORKDIR/tbb or ~/opt/tbb (found by site_env.sh), set CHUNK_TBB_DIR,"
+            echo "[tbb]   and tbb_validation. Install oneTBB in \$CCCWORKDIR/tbb-\$(uname -m) or ~/opt/tbb (found by site_env.sh), set CHUNK_TBB_DIR,"
             echo "[tbb]   or load one (oneAPI vars.sh, spack load intel-oneapi-tbb)."
         fi
         if [ -n "$TBB_TSAN_CMAKE_OPT" ]; then
