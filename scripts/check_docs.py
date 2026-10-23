@@ -100,8 +100,8 @@ ALLOWED = {
 }
 
 # Names the build GENERATES, so that they appear nowhere whole in the sources:
-# the variant libraries (chunk_v2a_256, chunk::chunk_v2a_dyn, ...) and the
-# per-variant executables (shrink_bench_chunk2a_256, validation_chunk_dyn, ...).
+# the variant libraries (chunk_zero_any_256, chunk::chunk_zero_any_dyn, ...) and the
+# per-variant executables (shrink_bench_zero_any_256, validation_zero_dyn, ...).
 GENERATED = re.compile(r"^(chunk::)?chunk_v(1|2|2a)(_(\d+|dyn))?$"
                        r"|^(shrink_bench|validation|variant_compare|rechunk_validation|dyn_geometry_validation)"
                        r"_(chunk|chunk2|chunk2a|vector)(_\w+)?$")

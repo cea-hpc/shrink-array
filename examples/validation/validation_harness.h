@@ -26,7 +26,7 @@
 // namespace, validation::<harness>, and its entry point is
 // validation::<harness>::run(argc, argv), called by the driver's main():
 //
-//     validation_chunk2a_256 compress_roundtrip [args...]
+//     validation_zero_any_256 compress_roundtrip [args...]
 //
 // run() sees the same argv a standalone main() did: argv[0] the executable,
 // then the arguments after the harness name.
@@ -44,7 +44,7 @@ namespace validation
 ///        child process (thread_growth, nested_region, stale_proxy,
 ///        cst2_registry).
 /// @param argv0 the run()'s argv[0]
-/// @return e.g. `"/path/validation_chunk2a_256" stale_proxy_validation`
+/// @return e.g. `"/path/validation_zero_any_256" stale_proxy_validation`
 std::string self_command(const char* argv0);
 
 } // namespace validation

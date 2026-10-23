@@ -120,8 +120,8 @@
 #                           from its own constant, and on Chunk2A no switch
 #                           allocates a buffer and reclaim_second_values()
 #                           frees the constants no chunk holds any more.
-#   fill_range_mt_v1v2_validation  the range ops in a TWO-variant build
-#                           (chunk_v1v2): an zero::Array and an zero_one_value::Array side
+#   fill_range_mt_zero_and_zero_one_value_validation  the range ops in a TWO-variant build
+#                           (chunk_zero_and_zero_one_value): an zero::Array and an zero_one_value::Array side
 #                           by side, fill_range_mt of each compressible value.
 #                           The ops must dispatch on the array's type, not on
 #                           the build flags -- otherwise an zero_one_value::Array
@@ -170,7 +170,7 @@
 #                           on), and std::sortable is false (no in-place
 #                           sort, by construction).
 #
-# All sources are variant-agnostic (the array type follows the CHUNK_VARIANT_V1 /
+# All sources are variant-agnostic (the array type follows the CHUNK_VARIANT_ZERO /
 # _V2 / _V2A macro) and depend on the library alone -- none of the shrink_bench
 # bench files -- which is why they live here rather than next to the bench.
 # Every test carries the `validation` label: `ctest -L validation` runs the
@@ -203,10 +203,10 @@ endfunction()
 # namespace, validation::<harness>, with a run() the shared driver calls
 # (validation_harness.h, validation_driver.cpp):
 #
-#     validation_chunk2a_256 compress_roundtrip [args...]
+#     validation_zero_any_256 compress_roundtrip [args...]
 #
 # The ctest names are the ones of the one-executable-per-harness layout
-# (compress_roundtrip_chunk2a_256_8thr, rechunk_validation_chunk_dyn_val2-grow,
+# (compress_roundtrip_zero_any_256_8thr, rechunk_validation_zero_dyn_val2-grow,
 # ...), so `ctest -R` and python/bench_and_test.py see no difference.
 # CHUNK_VALIDATION_UNITY=OFF goes back to one executable per harness, named as
 # before -- the one to debug a harness alone. CHUNK_VALIDATION_UNITY_BATCH caps
@@ -223,9 +223,9 @@ endfunction()
 option(CHUNK_VALIDATION_UNITY "One unity-built executable per variant and geometry for the validation harnesses" ON)
 set(CHUNK_VALIDATION_UNITY_BATCH "0" CACHE STRING "Harnesses per unity translation unit (0: all of a group)")
 
-set(_rt_variant_names   chunk       chunk2      chunk2a)
-set(_rt_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
-set(_rt_variant_macro   CHUNK_VARIANT_V1 CHUNK_VARIANT_V2 CHUNK_VARIANT_V2A)
+set(_rt_variant_names   zero       zero_one_value      zero_any)
+set(_rt_variant_libbase chunk_zero    chunk_zero_one_value    chunk_zero_any)
+set(_rt_variant_macro   CHUNK_VARIANT_ZERO CHUNK_VARIANT_ZERO_ONE_VALUE CHUNK_VARIANT_ZERO_ANY)
 
 # Every static size built (CHUNK_STATIC_SIZES: 256;1024 by default), then dyn.
 # A static size other than CHUNK_DEFAULT_SIZE gets the round-trip harnesses
@@ -352,32 +352,32 @@ foreach(_geom IN LISTS _rt_geometries)
     endif()
     # bits_container_validation: ArrayChunkBits (zero_one_value::Array<Bit>) against
     # std::vector<bool>. Chunk2 libraries only, every geometry.
-    if (_vname STREQUAL "chunk2")
+    if (_vname STREQUAL "zero_one_value")
       list(APPEND _group bits_container_validation)
     endif()
     # cst2_registry_validation: Chunk2A's second-value registry lifecycle.
     # Chunk2A only, at the default static size.
-    if (_vname STREQUAL "chunk2a" AND NOT _geom STREQUAL "dyn")
+    if (_vname STREQUAL "zero_any" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group cst2_registry_validation)
     endif()
     # cst2_reclaim_validation: reclaim_second_values() frees what nothing
     # refers to and the identifiers are reused. Chunk2A only, at the default
     # static size and at dyn (where it reclaims across a re-chunk too).
-    if (_vname STREQUAL "chunk2a")
+    if (_vname STREQUAL "zero_any")
       list(APPEND _group cst2_reclaim_validation)
     endif()
-    # chunk2_registry_growth_validation: Chunk2's second-value registry must
+    # zero_one_value_registry_growth_validation: Chunk2's second-value registry must
     # not move the constant arrays chunks point at when a new value is
     # declared (the harness says why). Chunk2 only, default static size, at 1
     # and 4 threads.
-    if (_vname STREQUAL "chunk2" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group chunk2_registry_growth_validation)
+    if (_vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group zero_one_value_registry_growth_validation)
     endif()
-    # chunk2_foreign_key_validation: a chunk is only ever compressed to its own
+    # zero_one_value_foreign_key_validation: a chunk is only ever compressed to its own
     # array's second value (the harness says why). Chunk2 only, default static
     # size, at 8 threads; OpenMP builds only (the passes run in a region).
-    if (OMP AND _vname STREQUAL "chunk2" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group chunk2_foreign_key_validation)
+    if (OMP AND _vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group zero_one_value_foreign_key_validation)
     endif()
     # deferred_path_validation: every write path through the deferred queue,
     # forced by the test hook (test_hooks.h, switched on by the harness), at
@@ -456,10 +456,10 @@ foreach(_geom IN LISTS _rt_geometries)
         validation_add_test(${_base}_np2 ${_exe} ${_h} "1;8" --size 384)
       elseif (_h STREQUAL "bits_container_validation")
         validation_add_test(bits_container_validation_${_geom} ${_exe} ${_h} "1;8")
-      elseif (_h STREQUAL "chunk2_registry_growth_validation")
-        validation_add_test(chunk2_registry_growth_validation ${_exe} ${_h} "1;4")
-      elseif (_h STREQUAL "chunk2_foreign_key_validation")
-        validation_add_test(chunk2_foreign_key_validation ${_exe} ${_h} "8")
+      elseif (_h STREQUAL "zero_one_value_registry_growth_validation")
+        validation_add_test(zero_one_value_registry_growth_validation ${_exe} ${_h} "1;4")
+      elseif (_h STREQUAL "zero_one_value_foreign_key_validation")
+        validation_add_test(zero_one_value_foreign_key_validation ${_exe} ${_h} "8")
       elseif (_h STREQUAL "deferred_path_validation")
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
       elseif (_h STREQUAL "phase_protocol_validation")
@@ -502,12 +502,12 @@ foreach(_vi RANGE ${_rt_nvar_last})
     set_property(TEST ${_tgt} PROPERTY LABELS validation)
   endif()
 endforeach()
-if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
+if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
   foreach(_case RANGE 1 8)
     set(_tgt element_ref_misuse_${_case})
     add_library(${_tgt} OBJECT EXCLUDE_FROM_ALL element_ref_validation.cpp)
-    target_link_libraries(${_tgt} PRIVATE chunk_v2a_${CHUNK_DEFAULT_SIZE})
-    validation_variant_defs(${_tgt} CHUNK_VARIANT_V2A ${CHUNK_DEFAULT_SIZE})
+    target_link_libraries(${_tgt} PRIVATE chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+    validation_variant_defs(${_tgt} CHUNK_VARIANT_ZERO_ANY ${CHUNK_DEFAULT_SIZE})
     target_compile_definitions(${_tgt} PRIVATE ELEMENT_REF_CASE=${_case})
     validation_setup_target(${_tgt})
     add_test(NAME ${_tgt} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${_tgt})
@@ -524,8 +524,8 @@ if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
   if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|IntelLLVM")
     set(_tgt element_ref_misuse_9)
     add_library(${_tgt} OBJECT EXCLUDE_FROM_ALL element_ref_validation.cpp)
-    target_link_libraries(${_tgt} PRIVATE chunk_v2a_${CHUNK_DEFAULT_SIZE})
-    validation_variant_defs(${_tgt} CHUNK_VARIANT_V2A ${CHUNK_DEFAULT_SIZE})
+    target_link_libraries(${_tgt} PRIVATE chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+    validation_variant_defs(${_tgt} CHUNK_VARIANT_ZERO_ANY ${CHUNK_DEFAULT_SIZE})
     target_compile_definitions(${_tgt} PRIVATE ELEMENT_REF_CASE=9)
     validation_setup_target(${_tgt})
     add_test(NAME ${_tgt} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${_tgt})
@@ -536,14 +536,14 @@ if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
   endif()
 endif()
 
-# --- fill_range_mt_v1v2_validation: the two-variant library (CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1,
+# --- fill_range_mt_zero_and_zero_one_value_validation: the two-variant library (CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes
 # the phase calls, as multi-mat does), zero::Array and zero_one_value::Array in one
 # program. At 1 and 8 threads like the others.
-if (TARGET chunk_v1v2_${CHUNK_DEFAULT_SIZE})
-  set(_tgt fill_range_mt_v1v2_validation)
-  add_executable(${_tgt} fill_range_mt_v1v2_validation.cpp)
-  target_link_libraries(${_tgt} PRIVATE chunk_v1v2_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_V1, _V2, CHUNK_SIZE: PUBLIC
+if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
+  set(_tgt fill_range_mt_zero_and_zero_one_value_validation)
+  add_executable(${_tgt} fill_range_mt_zero_and_zero_one_value_validation.cpp)
+  target_link_libraries(${_tgt} PRIVATE chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO, _V2, CHUNK_SIZE: PUBLIC
   validation_setup_target(${_tgt})
   foreach(_nthr 1 8)
     add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
@@ -713,7 +713,7 @@ foreach(_vi RANGE ${_rt_nvar_last})
     foreach(_nthr 1 8)
       set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
     endforeach()
-    if (_vname STREQUAL "chunk2a")
+    if (_vname STREQUAL "zero_any")
       add_test(NAME mdspan_submdspan_misaligned
                COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=misaligned
                        "-DEXPECT=a tiled sub-view takes ranges" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)
@@ -769,7 +769,7 @@ foreach(_vi RANGE ${_rt_nvar_last})
     foreach(_nthr 1 8)
       set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
     endforeach()
-    if (OMP AND _vname STREQUAL "chunk2a" AND CHUNK_DEFAULT_SIZE GREATER 64)
+    if (OMP AND _vname STREQUAL "zero_any" AND CHUNK_DEFAULT_SIZE GREATER 64)
       add_test(NAME mdspan_tile_ops_misaligned
                COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=misaligned
                        "-DEXPECT=two threads would share a chunk" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)
@@ -818,7 +818,7 @@ foreach(_vi RANGE ${_rt_nvar_last})
     foreach(_nthr 1 8)
       set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
     endforeach()
-    if (_vname STREQUAL "chunk2a")
+    if (_vname STREQUAL "zero_any")
       add_test(NAME mdspan_stencil_alias
                COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=alias
                        "-DEXPECT=the source and the destination are one array" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)

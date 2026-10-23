@@ -106,7 +106,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // the per-array-invariant result would fix. Hundreds: the list grew.
     // Chunk2 only -- Chunk2A carries its second value in the pointer and has no
     // such map.
-    if constexpr (chunk_config::use_chunk2)
+    if constexpr (chunk_config::use_zero_one_value)
     {
         std::println("\n[share_info] entries still mapped after clear():  double {}  Int {}  float {}  short {}",
                      shrink_array::zero_one_value::Proxy<double>::share_info_array->share_info_entries(),

@@ -17,7 +17,7 @@
 // ============================================================================
 // A compressed chunk switched to another constant by a range op. Variant-
 // agnostic: chunk / chunk2 / chunk2a follow the compile-time macro
-// (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses here.
+// (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the other harnesses here.
 // ============================================================================
 //
 // On Chunk2A, fill_range over a whole chunk, and copy_range over a whole chunk
@@ -59,7 +59,7 @@
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, fill_range_mt, copy_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // chunk_config::use_chunk*
+#include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println
 
@@ -72,17 +72,17 @@ using namespace shrink_array;
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }
@@ -116,7 +116,7 @@ static void phase(Array<double>& arr, long n, Fn&& body)
     {
         finalize_parallel_phase();
     }
-    if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
         arr.make_block_compression(); // a serial chunk2a has no between-region pass
     }
@@ -150,7 +150,7 @@ static int phase_count(Array<double>& arr, Fn&& body)
     {
         finalize_parallel_phase();
     }
-    if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
         arr.make_block_compression();
     }
@@ -161,7 +161,7 @@ static int phase_count(Array<double>& arr, Fn&& body)
 ///        the region, where a switch in place leaves none.
 static void check_in_region(const char* step, int got)
 {
-    if constexpr (chunk_config::use_chunk2a && build_config::use_openmp)
+    if constexpr (chunk_config::use_zero_any && build_config::use_openmp)
     {
         if (got != 0)
         {
@@ -195,7 +195,7 @@ static void check(const char* step, const Array<double>& arr, Expect&& expect, i
         bad += (std::as_const(arr)[static_cast<int>(i)] != expect(i));
     }
     const int  mat    = materialised(arr);
-    const bool mat_ok = !chunk_config::use_chunk2a || mat == mat_expected;
+    const bool mat_ok = !chunk_config::use_zero_any || mat == mat_expected;
     if (bad == 0 && mat_ok)
     {
         println("[{}] ok    {:<34} {:3} materialised", variant_name(), step, mat);
@@ -236,7 +236,7 @@ static void check_reclaim(const Arr& a, Expect&& expect)
     }
     else
     {
-        static_assert(!chunk_config::use_chunk2a, "check_reclaim: a Chunk2A build tests an zero_any::Array");
+        static_assert(!chunk_config::use_zero_any, "check_reclaim: a Chunk2A build tests an zero_any::Array");
     }
 }
 

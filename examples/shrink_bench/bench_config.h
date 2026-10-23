@@ -89,7 +89,7 @@ inline constexpr bool have_bzip2 = false;
 // NOT mirrored here, on purpose -- chunk/config.h already exposes them, and a
 // second spelling would be one more thing to keep in step:
 //   SHRINK_ARRAY    -> chunk_config::is_shrink_enabled
-//   CHUNK_VARIANT_V1/_V2/_V2A -> chunk_config::use_chunk / use_chunk2 / use_chunk2a
+//   CHUNK_VARIANT_ZERO/_V2/_V2A -> chunk_config::use_zero / use_zero_one_value / use_zero_any
 //   CHUNK_OPT_RING_LOG_DEBUG  -> chunk_config::ring_log_debug
 //   CHUNK_DYNAMIC             -> build_config::chunk_dynamic
 //   CHUNK_OPT_OPENMP          -> build_config::use_openmp (and CHUNK_PMP_MAX_THREADS)

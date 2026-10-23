@@ -1,7 +1,7 @@
 # Copyright 2024-2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # ---------------------------------------------------------------------------
-# A variant library is compiled with one of CHUNK_VARIANT_V1 / _V2 / _V2A
+# A variant library is compiled with one of CHUNK_VARIANT_ZERO / _V2 / _V2A
 # defined (or none, for the vector-mode build), PUBLIC: the macros drive
 # `chunk_config::is_shrink_enabled` and friends in public/chunk/config.h, and
 # they are read *inside* library-side .cpp files (AllTypeChunk.cpp,
@@ -42,8 +42,8 @@ if(NOT DEFINED CHUNK_STATIC_SIZES OR CHUNK_STATIC_SIZES STREQUAL "auto")
 endif()
 option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per variant." ON)
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
-# The variants built: chunk (zero::Array, chunk_v1_*), chunk2 (zero_one_value::Array,
-# chunk_v2_*), chunk2a (zero_any::Array, chunk_v2a_*). The examples, benchmarks
+# The variants built: chunk (zero::Array, chunk_zero_*), chunk2 (zero_one_value::Array,
+# chunk_zero_one_value_*), chunk2a (zero_any::Array, chunk_zero_any_*). The examples, benchmarks
 # and harnesses of a variant left out are not built nor registered as tests. A
 # build that checks one variant's option (CHUNK_SECOND_VALUE_INDEXED is
 # Chunk2A's) needs only that one; trim it during development too.
@@ -501,7 +501,7 @@ endif()
 #
 # CHUNK_LIB_UNITY (ON): each variant archive compiled as one unity translation
 # unit. Its nine sources each included the whole header-only engine:
-# chunk_v2a_256 took 19.4 s of compilation in Debug and 21.3 s at -O2 -g
+# chunk_zero_any_256 took 19.4 s of compilation in Debug and 21.3 s at -O2 -g
 # apart, 3.0 s and 5.0 s as one unit -- for twelve archives per configuration.
 # A source with options of its own (CHUNK_ICPX_O0_WORKAROUND's -O0,
 # alloc_token_rt.cpp's -fno-sanitize) is left out of the unit by CMake and
@@ -626,12 +626,12 @@ endfunction()
 chunk_add_variant(chunk_vector "" "" FALSE)
 
 # The three shrink variants, each in every static size + an optional dyn lib.
-# Naming: chunk_v1_64, chunk_v1_256, ..., chunk_v2a_dyn.
+# Naming: chunk_zero_64, chunk_zero_256, ..., chunk_zero_any_dyn.
 # Only those of CHUNK_VARIANTS.
 set(_chunk_variant_names   "")
 set(_chunk_variant_defines "")
-foreach(_pair "chunk:chunk_v1:CHUNK_VARIANT_V1=1" "chunk2:chunk_v2:CHUNK_VARIANT_V2=1"
-              "chunk2a:chunk_v2a:CHUNK_VARIANT_V2A=1")
+foreach(_pair "chunk:chunk_zero:CHUNK_VARIANT_ZERO=1" "chunk2:chunk_zero_one_value:CHUNK_VARIANT_ZERO_ONE_VALUE=1"
+              "chunk2a:chunk_zero_any:CHUNK_VARIANT_ZERO_ANY=1")
   string(REPLACE ":" ";" _f "${_pair}")
   list(GET _f 0 _short)
   if (_short IN_LIST CHUNK_VARIANTS)
@@ -661,7 +661,7 @@ foreach(_vi RANGE ${_nvar_last})
 endforeach()
 
 # --- Backwards-compatible bare-name targets ------------------------------
-# The examples link the bare names chunk_v1 / chunk_v2 / chunk_v2a; forward
+# The examples link the bare names chunk_zero / chunk_zero_one_value / chunk_zero_any; forward
 # them to the default static size. NOTE: a raw (unknown) name given to
 # target_link_libraries is silently treated by CMake as a system library
 # (-lchunk_v1), so no usage requirement (-I, PUBLIC defines) propagates and
@@ -689,8 +689,8 @@ endforeach()
 # "nothing forbids a build from selecting more than one"); what the second
 # define costs v1 is the raw fill of its range ops (raw_fillable_v). Without
 # the OMPT tool: the example carries its own (examples/multi-mat/manage_ompt.cpp).
-if ("chunk" IN_LIST CHUNK_VARIANTS AND "chunk2" IN_LIST CHUNK_VARIANTS)
-  chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1" ${CHUNK_DEFAULT_SIZE} FALSE
+if ("zero" IN_LIST CHUNK_VARIANTS AND "zero_one_value" IN_LIST CHUNK_VARIANTS)
+  chunk_add_variant(chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1" ${CHUNK_DEFAULT_SIZE} FALSE
                     NO_OMPT_TOOL)
 endif()
 
@@ -699,9 +699,9 @@ endif()
 chunk_add_variant(chunk "" "" FALSE)
 
 # --- Install: every variant library, under the chunk:: namespace ---------
-# chunk::chunk_v2a_256, chunk::chunk_v2a_dyn, ..., the bare chunk::chunk_v1 /
-# chunk::chunk_v2 / chunk::chunk_v2a (default static size), chunk::chunk_vector
-# (std::vector mode) and chunk::chunk. Not chunk_v1v2_*: built for
+# chunk::chunk_zero_any_256, chunk::chunk_zero_any_dyn, ..., the bare chunk::chunk_zero /
+# chunk::chunk_zero_one_value / chunk::chunk_zero_any (default static size), chunk::chunk_vector
+# (std::vector mode) and chunk::chunk. Not chunk_zero_and_zero_one_value_*: built for
 # examples/multi-mat, without the OMPT tool.
 include(GNUInstallDirs)
 set(_chunk_install_targets chunk chunk_vector)
@@ -716,7 +716,7 @@ foreach(_vname IN LISTS _chunk_variant_names)
 endforeach()
 
 # The installed names in the build tree too: a project that takes this one
-# through add_subdirectory() or FetchContent links chunk::chunk_v2a, as it
+# through add_subdirectory() or FetchContent links chunk::chunk_zero_any, as it
 # would after find_package(chunk).
 foreach(_t IN LISTS _chunk_install_targets)
   if (NOT TARGET chunk::${_t})

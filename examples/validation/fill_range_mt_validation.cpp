@@ -52,7 +52,7 @@
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/config.h"                // chunk_config::use_chunk2*, build_config::has_not_ompt
+#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
@@ -83,17 +83,17 @@ static void end_phase()
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }

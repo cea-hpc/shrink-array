@@ -30,8 +30,8 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 | `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds Chunk2) |
 
 `IntType` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
-celle de la bibliothèque liée (`chunk::chunk_v2a`, ...) ; `chunk_config::use_chunk`,
-`chunk_config::use_chunk2` et `chunk_config::use_chunk2a` indiquent laquelle, à la compilation.
+celle de la bibliothèque liée (`chunk::chunk_zero_any`, ...) ; `chunk_config::use_zero`,
+`chunk_config::use_zero_one_value` et `chunk_config::use_zero_any` indiquent laquelle, à la compilation.
 
 `chunk/mdspan.h` pose une vue multidimensionnelle, `f[i, j]`, sur chacun d'eux (`mdspan` C++23,
 ligne par ligne ou en tuiles alignées sur les chunks), et `chunk/mdspan_tile_ops.h` lit et met à jour
@@ -173,7 +173,7 @@ La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adap
 | `build_config::threaded` | la bibliothèque fait tourner des threads (`CHUNK_THREADS` `openmp` ou `std`) |
 | `build_config::has_ompt`, `build_config::has_not_ompt` | construit avec l'outil OMPT, ou non |
 | `build_config::chunk_dynamic` | géométrie dynamique (bibliothèque `_dyn`) |
-| `chunk_config::use_chunk`, `chunk_config::use_chunk2`, `chunk_config::use_chunk2a` | la variante |
+| `chunk_config::use_zero`, `chunk_config::use_zero_one_value`, `chunk_config::use_zero_any` | la variante |
 | `chunk_config::stats` | build `CHUNK_STATS` |
 
 Variables d'environnement et options de build : [variables_environnement_fr.md](variables_environnement_fr.md).

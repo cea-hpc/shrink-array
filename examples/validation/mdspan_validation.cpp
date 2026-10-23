@@ -39,7 +39,7 @@
 #include "chunk/zero_one_value_array.h"   // zero_one_value::Array
 #include "chunk/zero_any_array.h"  // zero_any::Array
 #include "chunk/zero_chunk.h"      // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"         // chunk_config::use_chunk2*
+#include "chunk/config.h"         // chunk_config::use_zero_one_value*
 #include "chunk/internal/print.h" // shrink_array::println
 #include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
@@ -52,9 +52,9 @@ namespace
 {
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 int fails = 0;
 

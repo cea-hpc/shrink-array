@@ -8,9 +8,9 @@
 # geometry (one array per size), hence the dyn chunk2A library only.
 if (CHUNK_BUILD_DYN)
     add_executable(advisor_demo advisor_demo.cpp)
-    target_link_libraries(advisor_demo PRIVATE chunk_v2a_dyn)
+    target_link_libraries(advisor_demo PRIVATE chunk_zero_any_dyn)
     target_compile_definitions(advisor_demo PRIVATE
-        CHUNK_VARIANT_V2A CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
+        CHUNK_VARIANT_ZERO_ANY CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
     if (OMP)
         find_package(OpenMP REQUIRED)
         target_link_libraries(advisor_demo PUBLIC OpenMP::OpenMP_CXX)

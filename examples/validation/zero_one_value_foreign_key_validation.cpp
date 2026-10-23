@@ -68,7 +68,7 @@
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
-namespace validation::chunk2_foreign_key_validation
+namespace validation::zero_one_value_foreign_key_validation
 {
 
 using namespace shrink_array;
@@ -159,7 +159,7 @@ int run(int /*argc*/, char** /*argv*/)
         const Arr& ca   = a;
         const Arr& cb   = b;
         const int  team = CHUNK_PMP_MAX_THREADS;
-        println("=== chunk2_foreign_key_validation  chunk_size={}  threads={}  a: {} chunks of {:g} (declares "
+        println("=== zero_one_value_foreign_key_validation  chunk_size={}  threads={}  a: {} chunks of {:g} (declares "
                 "{:g})  b: {} chunks (declares {:g}) ===",
                 S, team, chunks_a, val_b, val_a, chunks_b, val_b);
 
@@ -277,4 +277,4 @@ int run(int /*argc*/, char** /*argv*/)
     return fails ? 1 : 0;
 }
 
-} // namespace validation::chunk2_foreign_key_validation
+} // namespace validation::zero_one_value_foreign_key_validation

@@ -109,12 +109,12 @@ endfunction()
 # (CHUNK_VARIANTS, chunk/CMakeLists.txt).
 
 # The program of docs/getting_started.md (also builds against an install)
-if ("chunk2a" IN_LIST CHUNK_VARIANTS)
+if ("zero_any" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(getting_started)
 endif()
 
 # Simple example
-if ("chunk" IN_LIST CHUNK_VARIANTS)
+if ("zero" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(simple_array)
 endif()
 
@@ -140,20 +140,20 @@ add_subdirectory(variant_compare)
 add_subdirectory(access_cost)
 
 # Multi-dimensional array example (chunk and chunk2 in one program)
-if (TARGET chunk_v1v2_${CHUNK_DEFAULT_SIZE})
+if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
     add_subdirectory(multi-mat)
 endif()
 
 # study vectorization whith OpenMP and chunk
-if ("chunk" IN_LIST CHUNK_VARIANTS)
+if ("zero" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(test_vecto_chunk)
 endif()
 
 # The chunk-size advisor's step-0 check (dyn chunk2A only).
-if ("chunk2a" IN_LIST CHUNK_VARIANTS)
+if ("zero_any" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(advisor_demo)
 endif()
 
 # A 2D field through the mdspan view (chunk/mdspan.h), row-major against tiles
-# (chunk_v2a_256: left out with chunk2a, mdspan_tiles/CMakeLists.txt).
+# (chunk_zero_any_256: left out with chunk2a, mdspan_tiles/CMakeLists.txt).
 add_subdirectory(mdspan_tiles)

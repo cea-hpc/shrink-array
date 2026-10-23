@@ -75,7 +75,7 @@ inline const bool g_eager = []() noexcept
     const char* e = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
     if (e == nullptr || e[0] == '\0')
     {
-        return chunk_config::use_chunk; // the variant's default
+        return chunk_config::use_zero; // the variant's default
     }
     return e[0] != '0';
 }();

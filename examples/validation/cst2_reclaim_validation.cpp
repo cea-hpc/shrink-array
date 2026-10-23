@@ -66,7 +66,7 @@
 #include "chunk/chunk_traits.h"               // forward decls (Chunk2A) + default IntType = int
 #include "chunk/zero_any_array.h"             // zero_any::Array, Chunk2A complete (its registry types)
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
-#include "chunk/config.h"                     // chunk_config::use_chunk2a, build_config::has_not_ompt
+#include "chunk/config.h"                     // chunk_config::use_zero_any, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"         // arg_number (checked, not atoi)
@@ -80,7 +80,7 @@ namespace validation::cst2_reclaim_validation
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_chunk2a, "cst2_reclaim_validation is Chunk2A's registry: link chunk_v2a_<size>");
+static_assert(chunk_config::use_zero_any, "cst2_reclaim_validation is Chunk2A's registry: link chunk_zero_any_<size>");
 
 using Arr      = zero_any::Array<double>;
 using Registry = zero_any::Chunk<double>::Holder::VecHolder;

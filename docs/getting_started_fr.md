@@ -64,7 +64,7 @@ Les options qui comptent pour un utilisateur :
 
 La première compilation construit aussi les exemples et le banc, ce qui prend un moment. Pour
 ne construire que les bibliothèques, configurer avec `-DSHRINK_ARRAY_BUILD_EXAMPLES=OFF`, ou
-donner leurs cibles à `cmake --build` (`--target chunk_v2a_256 ...`) avant `cmake --install`.
+donner leurs cibles à `cmake --build` (`--target chunk_zero_any_256 ...`) avant `cmake --install`.
 Intégré à un autre projet par `add_subdirectory` ou `FetchContent`, seules les bibliothèques
 sont construites.
 
@@ -80,25 +80,25 @@ project(mon_appli LANGUAGES CXX)
 find_package(chunk 0.1 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 
 add_executable(mon_appli main.cpp)
-target_link_libraries(mon_appli PRIVATE chunk::chunk_v2a)
+target_link_libraries(mon_appli PRIVATE chunk::chunk_zero_any)
 ```
 
 La bibliothèque liée **choisit la variante et la taille de chunk**. Les en-têtes sont les mêmes
 pour toutes, et la bibliothèque apporte les définitions de compilation qui sélectionnent la
-sienne (`CHUNK_VARIANT_V2A=1`, `CHUNK_SIZE=256` ou `CHUNK_DYNAMIC`), ainsi que le C++20,
+sienne (`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` ou `CHUNK_DYNAMIC`), ainsi que le C++20,
 `-fopenmp` si elle a été construite avec OpenMP, et ses dépendances. Les autres options de sa
 construction sont dans `chunk/build_options.h`, installé, que lisent les en-têtes : un
 programme les compile comme la bibliothèque.
 
 | cible | variante | taille de chunk |
 |---|---|---|
-| `chunk::chunk_v1`, `chunk::chunk_v2`, `chunk::chunk_v2a` | v1, Chunk2, Chunk2A | la première de `CHUNK_STATIC_SIZES` (256) |
-| `chunk::chunk_v2a_1024`, … | | cette taille, fixée à la compilation |
-| `chunk::chunk_v2a_dyn`, … | | choisie à l'exécution, par tableau (modifiable par `rechunk_to()` ou par le décideur adaptatif) |
+| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | v1, Chunk2, Chunk2A | la première de `CHUNK_STATIC_SIZES` (256) |
+| `chunk::chunk_zero_any_1024`, … | | cette taille, fixée à la compilation |
+| `chunk::chunk_zero_any_dyn`, … | | choisie à l'exécution, par tableau (modifiable par `rechunk_to()` ou par le décideur adaptatif) |
 | `chunk::chunk_vector` | aucune : les tableaux sont des `std::vector` | — |
 
 Lier **une seule** bibliothèque de variante par programme, et écrire **la classe de cette
-variante** : `zero_any::Array<T>` avec `chunk::chunk_v2a`. La classe écrite est celle que l'on
+variante** : `zero_any::Array<T>` avec `chunk::chunk_zero_any`. La classe écrite est celle que l'on
 obtient -- un programme qui nomme `zero_any::Array` la garde quelle que soit la bibliothèque --,
 et un tableau d'une autre variante que celle de la bibliothèque n'est pas pris en charge :
 selon les appels, il ne compile pas ou il plante. Pour que l'édition de liens choisisse,
@@ -115,9 +115,9 @@ passer par un alias sur la variante que la bibliothèque définit (`examples/shr
 
 namespace sa = shrink_array;
 template <typename T>
-using Array = std::conditional_t<sa::chunk_config::use_chunk2a, sa::zero_any::Array<T>,
-              std::conditional_t<sa::chunk_config::use_chunk2, sa::zero_one_value::Array<T>,
-              std::conditional_t<sa::chunk_config::use_chunk, sa::zero::Array<T>, std::vector<T>>>>;
+using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero_one_value, sa::zero_one_value::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
 Avec lui, `chunk::chunk_vector` construit le même programme sur de simples `std::vector`, ce

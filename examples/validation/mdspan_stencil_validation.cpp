@@ -46,7 +46,7 @@
 #include "chunk/zero_one_value_array.h"    // zero_one_value::Array
 #include "chunk/zero_any_array.h"   // zero_any::Array
 #include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // chunk_config::use_chunk2*
+#include "chunk/config.h"          // chunk_config::use_zero_one_value*
 #include "chunk/internal/print.h"  // shrink_array::println
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/mdspan_tile_ops.h" // md::stencil_tiles(_mt), SHRINK_ARRAY_HAS_MDSPAN
@@ -60,9 +60,9 @@ namespace
 {
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 int fails = 0;
 
@@ -294,7 +294,7 @@ void case_2d(const char* name, long size, Make&& make, long h, Border b, How w, 
                     uniform = uniform && want[static_cast<std::size_t>((t.origin[0] + i) * ny + t.origin[1] + j)] == v0;
                 }
             }
-            if (uniform && (v0 == 0.0 || chunk_config::use_chunk2a))
+            if (uniform && (v0 == 0.0 || chunk_config::use_zero_any))
             {
                 kept += d.written(static_cast<int>(k * S)) ? 1 : 0;
             }

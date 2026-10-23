@@ -72,7 +72,7 @@ La taille de chunk est portée **par chaque tableau** (`size_policy_`, voir
 `chunk_size_policy.h`), et non par une variable globale :
 
 - **géométrie fixe** : la taille est une constante de compilation, une bibliothèque par
-  taille (`chunk_v2_256`, …, liste `CHUNK_STATIC_SIZES`, la première donnant
+  taille (`chunk_zero_one_value_256`, …, liste `CHUNK_STATIC_SIZES`, la première donnant
   `CHUNK_DEFAULT_SIZE`) ;
 - **géométrie dynamique** (`CHUNK_DYNAMIC`, bibliothèques `_dyn`) : la taille est fixée à
   l'exécution et peut **changer au cours de la vie du tableau** (`rechunk_to()`, section 9),
@@ -553,8 +553,8 @@ morceau qui couvre tout le chunk avec une seule valeur. Les formes à un seul th
 
 **Les valeurs fausses de septembre 2026.** Avec le chemin direct ouvert à Chunk2,
 `bench_and_test.py` a signalé sur Grace des valeurs fausses **après compression** :
-`rechunk_validation_chunk2_dyn` (`scale-64-to-tgt`, POST-FAIL) et le mode check de
-`shrink_bench_chunk2_256` (« is_cst_val2 should be not »). Ce n'était pas une course entre
+`rechunk_validation_zero_one_value_dyn` (`scale-64-to-tgt`, POST-FAIL) et le mode check de
+`shrink_bench_zero_one_value_256` (« is_cst_val2 should be not »). Ce n'était pas une course entre
 threads : le test de re-chunk échoue à l'identique sur un seul cœur dans le build serial Debug,
 et les configurations en échec sur Grace étaient les serial. La cause était les compteurs du
 troisième point ci-dessus : les chemins directs (`fill_range`, `copy_range`, qu'utilise la
@@ -592,7 +592,7 @@ Options CMake liées aux performances des bancs :
 
 | option | effet |
 |---|---|
-| `SHRINK_INTEL_LIBM` (ON) | x86-64, hors icpx : lie les exécutables à la libm d'Intel (`libimf`) si elle est trouvée (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, ou à côté d'`icpx`). AMD Milan, GNU : 15,7 s → 12,4 s sur `shrink_bench_chunk2a_256` |
+| `SHRINK_INTEL_LIBM` (ON) | x86-64, hors icpx : lie les exécutables à la libm d'Intel (`libimf`) si elle est trouvée (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, ou à côté d'`icpx`). AMD Milan, GNU : 15,7 s → 12,4 s sur `shrink_bench_zero_any_256` |
 | `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang : lie `libamath` d'ArmPL (`ARMPL_LIBM_DIR`). Aucun gain mesuré sur Grace (RHEL 9.6) ; conservée pour refaire la mesure (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
 
 ---

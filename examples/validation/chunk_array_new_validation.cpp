@@ -57,7 +57,7 @@
 #include "chunk/zero_one_value_array.h" // Chunk2<T> complete (zero_one_value_chunk.h): its operator new[]
 #include "chunk/zero_any_array.h"       // Chunk2A<T> complete (zero_any_chunk.h): its operator new[]
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_chunk*
+#include "chunk/config.h"         // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/print.h" // shrink_array::println
 
@@ -77,17 +77,17 @@ namespace
 {
 
 /// The chunk type of this build, as the arrays pick theirs.
-using Ch = std::conditional_t<chunk_config::use_chunk2a,
+using Ch = std::conditional_t<chunk_config::use_zero_any,
                               zero_any::Chunk<double>,
-                              std::conditional_t<chunk_config::use_chunk2, zero_one_value::Chunk<double>, zero::Chunk<double>>>;
+                              std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Chunk<double>, zero::Chunk<double>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }

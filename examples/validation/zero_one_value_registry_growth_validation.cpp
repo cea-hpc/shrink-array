@@ -63,7 +63,7 @@
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
-namespace validation::chunk2_registry_growth_validation
+namespace validation::zero_one_value_registry_growth_validation
 {
 
 using namespace shrink_array;
@@ -161,7 +161,7 @@ int run(int /*argc*/, char** /*argv*/)
         const long s = static_cast<long>(a.chunk_size());
         a.resize(static_cast<Ind>(n_chunks * s));
         a.set_second_value(1.0);
-        println("=== chunk2_registry_growth_validation  chunk_size={}  threads={}  others={} ===", s,
+        println("=== zero_one_value_registry_growth_validation  chunk_size={}  threads={}  others={} ===", s,
                 CHUNK_PMP_MAX_THREADS, n_others);
 
         // 1. `a` compressed to its second value.
@@ -225,4 +225,4 @@ int run(int /*argc*/, char** /*argv*/)
     return fails ? 1 : 0;
 }
 
-} // namespace validation::chunk2_registry_growth_validation
+} // namespace validation::zero_one_value_registry_growth_validation

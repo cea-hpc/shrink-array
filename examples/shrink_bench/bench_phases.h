@@ -111,7 +111,7 @@ void neutral_sqrt_assign(Arr& tab, Int i, T v)
     // constant (harmless for sqrt(0) = 0, an CHUNK_INVARIANT_FAILED in checked
     // builds; seed-dependent). Same value either way, so the reference data
     // do not change.
-    if constexpr (chunk_config::use_chunk)
+    if constexpr (chunk_config::use_zero)
     {
         if (tab.written(i))
         {

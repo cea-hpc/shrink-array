@@ -16,7 +16,7 @@
 
 // ============================================================================
 // copy_range over whole chunks. Variant-agnostic: chunk / chunk2 / chunk2a
-// follow the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the
+// follow the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like the
 // other harnesses here.
 // ============================================================================
 //
@@ -77,7 +77,7 @@
 #include "chunk/array_chunk_range_ops.h" // copy_range
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // chunk_config::use_chunk*
+#include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println
 
@@ -90,17 +90,17 @@ using namespace shrink_array;
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }
@@ -147,7 +147,7 @@ static void phase(Array<double>& arr, long n, Fn&& body)
     {
         finalize_parallel_phase();
     }
-    if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
         arr.make_block_compression(); // a serial chunk2a has no between-region pass
     }
@@ -308,8 +308,8 @@ int run(int /*argc*/, char** /*argv*/)
         const long bad =
             mismatches(a, 0, Ntot, [&](long i)
                        { return (i >= c.lo && i < c.hi) ? c.src[static_cast<std::size_t>(i)] : before(i); });
-        constexpr bool v1           = !chunk_config::use_chunk2a && !chunk_config::use_chunk2;
-        const int      mat_expected = chunk_config::use_chunk2a ? c.mat_expected : v1 ? c.mat_v1 : c.mat_v2;
+        constexpr bool v1           = !chunk_config::use_zero_any && !chunk_config::use_zero_one_value;
+        const int      mat_expected = chunk_config::use_zero_any ? c.mat_expected : v1 ? c.mat_v1 : c.mat_v2;
         fails += report(c.name, bad, materialised(a, 0, c.count_to), mat_expected, mat_expected >= 0);
         a.clear();
     }

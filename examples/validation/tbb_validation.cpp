@@ -77,7 +77,7 @@
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"         // ParamChunk::init_indexes
 #include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"              // chunk_config::use_chunk*
+#include "chunk/config.h"              // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"           // pmp::*, CHUNK_PMP_* (THREAD_CAPACITY: the registry), get_thr_rank_fast
 #include "chunk/tbb_adaptor.h"         // shrink_array::tbb::parallel_for, phase_body
 #include "chunk/internal/env_parse.h"  // arg_number
@@ -94,17 +94,17 @@ using oneapi::tbb::blocked_range;
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }

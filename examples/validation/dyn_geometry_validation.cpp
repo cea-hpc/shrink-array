@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Dynamic-geometry validation harness. Variant-agnostic: tests chunk / chunk2 /
-// chunk2a depending on the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like
+// chunk2a depending on the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like
 // rechunk_validation.cpp and shrink_bench.cpp.
 // ============================================================================
 //
@@ -59,7 +59,7 @@
 #include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h"                     // chunk_config::use_chunk*
+#include "chunk/config.h"                     // chunk_config::use_zero*
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 #include "chunk/internal/print.h"             // shrink_array::println
 
@@ -72,8 +72,8 @@ namespace validation::dyn_geometry_validation
 {
 
 // --- Active variant selection (same shape as rechunk_validation.cpp) ---------
-static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "dyn_geometry_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
+              "dyn_geometry_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
 
 static_assert(build_config::chunk_dynamic,
               "dyn_geometry_validation is meaningless without CHUNK_DYNAMIC: with the "
@@ -81,17 +81,17 @@ static_assert(build_config::chunk_dynamic,
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }

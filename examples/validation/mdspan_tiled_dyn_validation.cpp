@@ -41,7 +41,7 @@
 #include "chunk/zero_one_value_array.h"    // zero_one_value::Array
 #include "chunk/zero_any_array.h"   // zero_any::Array
 #include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // chunk_config::use_chunk2*, build_config::chunk_dynamic
+#include "chunk/config.h"          // chunk_config::use_zero_one_value*, build_config::chunk_dynamic
 #include "chunk/internal/print.h"  // shrink_array::println
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/mdspan_tile_ops.h" // md::layout_tiled_dyn, md::tiled_view_dyn, the tile operations
@@ -55,9 +55,9 @@ namespace
 {
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 int fails = 0;
 
@@ -274,7 +274,7 @@ void tile_ops(Array<double>& a, const View& f, const char* name)
             expect(static_cast<double>(f[i, j]) == (in ? 5.0 : cell(i, j, t0, t1)), name, i, j);
         }
     }
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         if (f.mapping().tile_elements() == static_cast<long>(a.chunk_size()))
         {

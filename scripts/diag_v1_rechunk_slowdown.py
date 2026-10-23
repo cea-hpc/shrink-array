@@ -15,8 +15,8 @@ shrink_bench runs in --mode perf (large sizes, --iter_max iterations; the
 default check mode stops at 33 iterations of a small problem and never
 re-chunks) unless --args names a --mode.
 
-Part 1 -- A/B on the rebuild's state (always). shrink_bench_chunk_1024
-(static) and shrink_bench_chunk_dyn under:
+Part 1 -- A/B on the rebuild's state (always). shrink_bench_zero_1024
+(static) and shrink_bench_zero_dyn under:
     dyn            the default
     dyn_1slice     CHUNK_RECHUNK_SLICES=1
     dyn_static1    CHUNK_RECHUNK_SLICES=1 CHUNK_RECHUNK_SCHEDULE=static
@@ -81,16 +81,16 @@ RECHUNK_RE = re.compile(r"^(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\
 FREEPATH_RE = re.compile(r"\[FREEPATH\] (\S+)\s+freed=(\d+)\s+parked_own=(\d+)\s+parked_foreign=(\d+)")
 
 CONFIGS = [
-    ("static", "shrink_bench_chunk_1024", {}),
-    ("dyn", "shrink_bench_chunk_dyn", {}),
-    ("dyn_1slice", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_SLICES": "1"}),
-    ("dyn_static1", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_SLICES": "1", "CHUNK_RECHUNK_SCHEDULE": "static"}),
-    ("dyn_norecycle", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_RECYCLE": "0"}),
-    ("dyn_noreuse", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_REUSE_LIST": "0"}),
-    ("dyn_lazy", "shrink_bench_chunk_dyn", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}),
+    ("static", "shrink_bench_zero_1024", {}),
+    ("dyn", "shrink_bench_zero_dyn", {}),
+    ("dyn_1slice", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1"}),
+    ("dyn_static1", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1", "CHUNK_RECHUNK_SCHEDULE": "static"}),
+    ("dyn_norecycle", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_RECYCLE": "0"}),
+    ("dyn_noreuse", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_REUSE_LIST": "0"}),
+    ("dyn_lazy", "shrink_bench_zero_dyn", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}),
     # the advisor's own share: analyses without any re-chunk, and none at all
-    ("dyn_dryrun", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_DRY_RUN": "1"}),
-    ("dyn_noadvisor", "shrink_bench_chunk_dyn", {"CHUNK_ADVISOR_PERIOD": "0"}),
+    ("dyn_dryrun", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_DRY_RUN": "1"}),
+    ("dyn_noadvisor", "shrink_bench_zero_dyn", {"CHUNK_ADVISOR_PERIOD": "0"}),
 ]
 
 
@@ -225,7 +225,7 @@ def stat_summary(run):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--bindir", required=True, help="directory holding shrink_bench_chunk_dyn and _1024")
+    ap.add_argument("--bindir", required=True, help="directory holding shrink_bench_zero_dyn and _1024")
     ap.add_argument("--threads", type=int, default=64)
     ap.add_argument("--out", required=True, help="output directory (put it in your work space)")
     ap.add_argument("--args", default="", help="extra shrink_bench arguments (default adds --mode perf --iter_max 2000)")

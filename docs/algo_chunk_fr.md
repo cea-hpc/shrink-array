@@ -26,7 +26,7 @@ propre nombre d'éléments : la géométrie vit dans la politique de taille du t
 (`size_policy_`), et c'est pourquoi les listes de candidats à la compression transportent le
 nombre d'éléments de chaque chunk (voir `TChunk.h`).
 
-La bibliothèque : `chunk::chunk_v1` (elle définit `CHUNK_VARIANT_V1`). Code : `chunk/zero_chunk.h`, `chunk/zero_array.h`,
+La bibliothèque : `chunk::chunk_zero` (elle définit `CHUNK_VARIANT_ZERO`). Code : `chunk/zero_chunk.h`, `chunk/zero_array.h`,
 `internal/zero_chunk_inline.h`, `internal/zero_array_inline.h`, `internal/zero_proxy.h`.
 
 ## 2. Ce que coûte un chunk

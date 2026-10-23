@@ -455,7 +455,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      the library's own team (`bench_par::team_regions`). The per-thread
      checksum slots are indexed by the region's rank (`t.rank()`, a virtual
      rank under TBB), no longer by the library's.
-   - `multi_launch_stress.py --exec tbb_chunk2a` runs it (by name only:
+   - `multi_launch_stress.py --exec tbb_zero_any` runs it (by name only:
      `all` stays the three variants); `compile_all_gnu.sh` builds it in the
      release std build when oneTBB is there. ctest:
      `shrink_bench_tbb_<variant>_check_<size>`, `--mode check` against the
@@ -491,12 +491,12 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      `compile_all_gnu.sh`. The oneTBB decision is one function for both scripts
      (`set_tbb_options`, `functions_for_compile.sh`), announced at the start of the run.
    - `bench_and_test.py` runs `cmake-build-std-gnu`, `cmake-build-std-llvm` and their
-     `-check` builds by default, and the TBB bench as the variants `tbb_chunk`, `tbb_chunk2`
-     and `tbb_chunk2a` (`shrink_bench_tbb_<variant>_<size>`, looked for in the std builds
+     `-check` builds by default, and the TBB bench as the variants `tbb_zero`, `tbb_zero_one_value`
+     and `tbb_zero_any` (`shrink_bench_tbb_<variant>_<size>`, looked for in the std builds
      only; a std build made without oneTBB is noted once). The std builds count as threaded:
      the thread sweep and the repetitions are those of the OpenMP builds. The std
      ThreadSanitizer build joins the sanitizer phase.
-   - `multi_launch_stress.py` runs `tbb_chunk2` next to `chunk2` by default and the six
+   - `multi_launch_stress.py` runs `tbb_zero_one_value` next to `chunk2` by default and the six
      variants with `--all_exec` or `--exec all`; `build_arm.txt` and `build_x86_64.txt` list the
      four std builds.
 

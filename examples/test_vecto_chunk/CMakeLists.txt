@@ -14,13 +14,13 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
 endif ()
 chunk_require_cxx_std(test_vecto_chunk PRIVATE)
 
-# test_vecto_chunk doesn't use CHUNK_VARIANT_V1 / _V2 / _V2A → chunk_vector.
+# test_vecto_chunk doesn't use CHUNK_VARIANT_ZERO / _V2 / _V2A → chunk_vector.
 # The v1 (Chunk<T>) variant at the default static size, not the bare
 # `chunk_vector` target: that one carries no variant define (the std::vector
 # shape of the library) while this example instantiates zero::Array<double>
 # itself -- the same mismatch multi-mat had (its allocators and lists never
 # set up: SIGSEGV in create_value from the first parallel write).
-target_link_libraries(test_vecto_chunk PRIVATE chunk_v1_${CHUNK_DEFAULT_SIZE})
+target_link_libraries(test_vecto_chunk PRIVATE chunk_zero_${CHUNK_DEFAULT_SIZE})
 
 add_test(NAME test_vecto_chunk COMMAND test_vecto_chunk)
 
