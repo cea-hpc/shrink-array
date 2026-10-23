@@ -409,7 +409,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     /// @brief Divisor of the proportional reuse budget: a rank parks up to
     ///        chunks / (this * threads) buffers. CHUNK_REUSE_SHARE_DIV, by
-    ///        default Chunk2ADef::factor_div_somme_chunk_buffer_resuse.
+    ///        default zero_any::ChunkDef::factor_div_somme_chunk_buffer_resuse.
     /// @details The chunks counted are all the chunks created, compressed
     ///          ones included: at 99 % compression the default parks about
     ///          twice the buffers actually materialised.

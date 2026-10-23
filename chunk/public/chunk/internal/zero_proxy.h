@@ -50,7 +50,7 @@ namespace zero
 
 /**
  * @brief Registry mapping array-element keys (pointers) to their table
- *        number. Unlike PointerMapChunk2, it has no value -> inf_array
+ *        number. Unlike zero_one_value::PointerMap, it has no value -> inf_array
  *        lookup: zero's compression does not group chunks by value.
  * @tparam T Element type this registry is keyed on.
  */
@@ -108,7 +108,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void
     /// What a key maps to: its table number.
     using InfArrayT = int;
 
-    // Storage: a std::vector (PointerMapChunk2 uses a std::deque, see there).
+    // Storage: a std::vector (zero_one_value::PointerMap uses a std::deque, see there).
     using Linear = PointerMapLinear<InfArrayT, std::vector<std::pair<const void*, InfArrayT>>>;
     /// Brings the base's storage back into this class's scope (dependent base).
     using Linear::vec_;

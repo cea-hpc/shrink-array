@@ -32,7 +32,7 @@
  * | policy                | storage                       | layout                 | box loops                 |
  * |-----------------------|-------------------------------|------------------------|---------------------------|
  * | LoopsMdVector         | std::vector                   | row-major (std mdspan) | cells, `omp simd`         |
- * | LoopsMdTiles          | chunk arrays (v1, Chunk2)     | md::layout_tiled       | tiles (mdspan_tile_ops.h) |
+ * | LoopsMdTiles          | chunk arrays (v1, zero_one_value::Chunk)     | md::layout_tiled       | tiles (mdspan_tile_ops.h) |
  * | LoopsMdTilesElements  | chunk arrays                  | md::layout_tiled       | cells, `f[i, j]`          |
  * | LoopsMdRows           | chunk arrays                  | row-major (md::view)   | cells, `f[i, j]`          |
  *
@@ -170,13 +170,13 @@ const shrink_array::zero::Array<T>& array_of(const VectChunk<T>& v) noexcept
 {
     return v;
 }
-/// @brief The Chunk2 array of a presence fraction.
+/// @brief The zero_one_value::Chunk array of a presence fraction.
 template <typename T>
 shrink_array::zero_one_value::Array<T>& array_of(VectChunk2<T>& v) noexcept
 {
     return v;
 }
-/// @brief The Chunk2 array of a presence fraction, read-only.
+/// @brief The zero_one_value::Chunk array of a presence fraction, read-only.
 template <typename T>
 const shrink_array::zero_one_value::Array<T>& array_of(const VectChunk2<T>& v) noexcept
 {

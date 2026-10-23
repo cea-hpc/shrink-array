@@ -16,16 +16,16 @@
 
 // ============================================================================
 // fill_range (serial) over whole chunks. Variant-agnostic, like the other
-// harnesses here; the compression checks are Chunk2A's.
+// harnesses here; the compression checks are zero_any::Chunk's.
 // ============================================================================
 //
-// fill_range compresses a fully covered Chunk2A chunk at once, whatever the
-// value (Chunk2A::compress, as the rechunk fold): no chunk of the range is
+// fill_range compresses a fully covered zero_any::Chunk chunk at once, whatever the
+// value (zero_any::Chunk::compress, as the rechunk fold): no chunk of the range is
 // left materialised, the buffer of one is back in the pool before the next is
-// armed. v1 does the same for a fill of first_value, Chunk2 for a fill of
+// armed. v1 does the same for a fill of first_value, zero_one_value::Chunk for a fill of
 // either of its constants. Guards, on every variant: the values read back. On
-// Chunk2A: no covered chunk stays materialised, from each starting state; on
-// v1 and Chunk2, after a fill of one of their constants.
+// zero_any::Chunk: no covered chunk stays materialised, from each starting state; on
+// v1 and zero_one_value::Chunk, after a fill of one of their constants.
 //
 //   fresh     all chunks at first_value, filled with a plain value;
 //   second    all compressed at V (a second value), filled with W;
@@ -38,7 +38,7 @@
 //             back every value (the teardown checks the registry is empty).
 //   second-value  an array whose second value is 1.0: materialised chunks
 //             filled with 1.0, then chunks at first_value filled with 1.0 --
-//             compressed at once on Chunk2 and Chunk2A, not on v1 (1.0 is no
+//             compressed at once on zero_one_value::Chunk and zero_any::Chunk, not on v1 (1.0 is no
 //             constant of v1);
 //   constant  a fresh array filled with first_value, whole and in part, then
 //             fill_range_mt from every thread: nothing to write, no chunk
@@ -131,7 +131,7 @@ long materialised(const Array<double>& a, long c0, long c1)
 
 int fails = 0;
 
-// Chunk2 and Chunk2A: register @p v as the array's second value (v1 has none).
+// zero_one_value::Chunk and zero_any::Chunk: register @p v as the array's second value (v1 has none).
 template <typename Arr>
 void maybe_set_second_value(Arr& a, double v)
 {
@@ -159,9 +159,9 @@ void expect_values(const char* scenario, const Array<double>& a, auto want)
     fails += bad ? 1 : 0;
 }
 
-// The covered chunks [c0, c1) are all compressed: on Chunk2A whatever the
-// value, on v1 and Chunk2 after a fill of a constant of theirs
-// (@p constant_fill: first_value, or Chunk2's second value).
+// The covered chunks [c0, c1) are all compressed: on zero_any::Chunk whatever the
+// value, on v1 and zero_one_value::Chunk after a fill of a constant of theirs
+// (@p constant_fill: first_value, or zero_one_value::Chunk's second value).
 void expect_compressed(const char* scenario, const Array<double>& a, long c0, long c1, bool constant_fill = false)
 {
     if (chunk_config::use_zero_any || constant_fill)
@@ -248,7 +248,7 @@ int run(int /*argc*/, char** /*argv*/)
         expect_compressed("distinct", a, 0, n_chunks, true);
     }
 
-    // second-value: Chunk2's second constant (Chunk2A: any value; v1: none).
+    // second-value: zero_one_value::Chunk's second constant (zero_any::Chunk: any value; v1: none).
     {
         constexpr bool v1 = !chunk_config::use_zero_any && !chunk_config::use_zero_one_value;
         Array<double>  a(static_cast<int>(N));

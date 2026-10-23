@@ -56,7 +56,7 @@ class RechunkHooks;
 // ── CHUNK_DYNAMIC build: the real hooks ──────────────────────────────────────
 /**
  * @brief Dynamic specialisation: the six hooks zero_one_value overrides.
- * @copydetails RechunkHooks2
+ * @copydetails zero_one_value::RechunkHooks
  */
 template <typename Derived>
 class RechunkHooks<Derived, true>

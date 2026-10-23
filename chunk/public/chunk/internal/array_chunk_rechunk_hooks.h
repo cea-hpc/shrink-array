@@ -40,7 +40,7 @@
  *          bodies, the static one keeps the signatures as no-ops so the
  *          arrays' using-declarations stay valid in both modes.
  *
- * @note zero_one_value::Array keeps its own hooks (RechunkHooks2): a per-value candidate
+ * @note zero_one_value::Array keeps its own hooks (zero_one_value::RechunkHooks): a per-value candidate
  *       map, a second value to carry over, and an identity that must NOT be
  *       swapped.
  *

@@ -16,7 +16,7 @@
 
 #pragma once
 
-// Bodies of RechunkHooks2<Derived, true>. Included at the end of zero_one_value_array.h:
+// Bodies of zero_one_value::RechunkHooks<Derived, true>. Included at the end of zero_one_value_array.h:
 // self() needs a complete Derived, and the manager include stays out of the class.
 #include <tuple> // std::get on candidate tuples
 

@@ -24,7 +24,7 @@
 //   - tiled_view_dyn(a, ext...) takes a tile of a.chunk_size() elements; the
 //     tile operations on it (for_each_tile, update_tiles serially and in a
 //     parallel phase, fill_box) give the element formula, and a uniform tile
-//     is a compressed chunk (Chunk2A); an odd tile (3 x 5, more than 8 KiB of
+//     is a compressed chunk (zero_any::Chunk); an odd tile (3 x 5, more than 8 KiB of
 //     elements) goes through the same operations.
 //   - in a _dyn library: after a re-chunk the view still reads and writes the
 //     right elements (nothing moves), serially.
@@ -263,7 +263,7 @@ void tile_ops(Array<double>& a, const View& f, const char* name)
         }
     }
 
-    // fill_box, then the tile at (t0, t1) covered: a compressed chunk (Chunk2A,
+    // fill_box, then the tile at (t0, t1) covered: a compressed chunk (zero_any::Chunk,
     // a tile per chunk).
     md::fill_box(f, std::array<long, 2>{t0 / 2, 0}, std::array<long, 2>{3 * t0, 2 * t1 + 1}, 5.0);
     for (long i = 0; i < nx; ++i)

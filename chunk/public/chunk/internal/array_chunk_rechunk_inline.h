@@ -340,8 +340,8 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
 
     // No dense O(n) snapshot: the refill streams old -> new chunk by chunk.
 
-    // Variant state captured BEFORE the geometry switch (Chunk2's
-    // array-level second_value; T{} / ignored for Chunk & Chunk2A).
+    // Variant state captured BEFORE the geometry switch (zero_one_value::Chunk's
+    // array-level second_value; T{} / ignored for Chunk & zero_any::Chunk).
     const InT<T> state = self.rechunk_capture_state();
 
     // 2) build the fresh array at S'. Set the active geometry around its
@@ -1037,7 +1037,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 // second value to fold to, so it simply does nothing here.
                 //
                 // AND gated on use_fast_block_compression: this four-argument
-                // compress() lives in Chunk2FastCompPolicy<..., Enabled>, which
+                // compress() lives in zero_one_value::ChunkFastCompPolicy<..., Enabled>, which
                 // zero_one_value inherits with Enabled = use_fast_block_compression
                 // (= threaded): a SERIAL build has no such overload. There,
                 // copy_range() above already folded every chunk it left uniform,

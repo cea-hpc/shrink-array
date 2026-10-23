@@ -81,7 +81,7 @@ namespace zero_any
  * @details Same layout as zero_one_value::Array, but where zero_one_value::Array shares a SINGLE second value
  *          across the array, here every chunk registers its own (find-or-set), so a chunk
  *          compresses as soon as all its elements equal any one constant. Costs a per-chunk
- *          second-value table (ProxySpec2A), garbage-collected through GlobalVecHolder.
+ *          second-value table (zero_any::ProxySpec), garbage-collected through GlobalVecHolder.
  *
  *          Each array registers its address in zero_any::Proxy::share_info_array to get a num_tab,
  *          the index into every per-tab metadata table. That registration is the array's

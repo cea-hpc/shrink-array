@@ -26,8 +26,8 @@
 //      before (first constant, second constant, materialised) and whatever
 //      the source holds (uniform per chunk, mixed, uniform but for one
 //      element that the three-element guess does not look at);
-//   2. on Chunk2A, a chunk the range covers whole and whose source is
-//      uniform is compressed AT ONCE (Chunk2A::compress, apply = true):
+//   2. on zero_any::Chunk, a chunk the range covers whole and whose source is
+//      uniform is compressed AT ONCE (zero_any::Chunk::compress, apply = true):
 //      right after the call, with no pass between, it no longer holds a
 //      buffer. A chunk with a mixed source keeps its buffer (the scan
 //      refuses it), and so does a chunk covered in part.
@@ -35,9 +35,9 @@
 // The other variants queue the chunks for the pass: only property 1 is
 // checked there, and
 //
-//   3. on v1 and Chunk2, a source equal to the constant a chunk is
+//   3. on v1 and zero_one_value::Chunk, a source equal to the constant a chunk is
 //      compressed at writes nothing: the chunk stays compressed (whole or in
-//      part, at the first constant or Chunk2's second); a source equal to it
+//      part, at the first constant or zero_one_value::Chunk's second); a source equal to it
 //      on a prefix only materialises the chunk from the first other value.
 //
 // WHAT IT EXERCISES -- an array of n_chunks chunks plus a partial tail:
@@ -55,7 +55,7 @@
 //   same-first  first constant <- the first constant (0.0) everywhere, partial
 //               last chunk included: nothing materialised on any variant
 //   same-part   first constant <- 0.0 over [S/2, N - S/2): nothing materialised
-//   same-second second value   <- 1.0 everywhere: nothing on Chunk2 and Chunk2A
+//   same-second second value   <- 1.0 everywhere: nothing on zero_one_value::Chunk and zero_any::Chunk
 //   prefix      first constant <- 0.0 on the first half of each chunk, plain
 //               values after: every chunk materialised, every element right
 //
@@ -178,7 +178,7 @@ static long mismatches(const Array<double>& arr, long lo, long hi, Expect&& expe
 }
 
 /// @brief The checks of a case: the read-back, and the chunks materialised
-///        when @p check_mat (Chunk2A always, the others for property 3).
+///        when @p check_mat (zero_any::Chunk always, the others for property 3).
 static int report(const char* scase, long bad, int mat, int mat_expected, bool check_mat)
 {
     int fails = 0;
@@ -231,7 +231,7 @@ int run(int /*argc*/, char** /*argv*/)
     const auto near      = [S](long i) { return (i % S == S / 2 + 1) ? 9.5 : 4.0; };
 
     // Each case: setup of the destination, the source over [lo, hi), the
-    // chunks expected to keep a buffer on Chunk2A.
+    // chunks expected to keep a buffer on zero_any::Chunk.
     enum class Dst
     {
         fresh,
@@ -248,7 +248,7 @@ int run(int /*argc*/, char** /*argv*/)
         int                 mat_expected;
         int                 count_to;    // chunks counted: [0, count_to)
         int                 mat_v1 = -1; // v1: chunks expected materialised, -1 unchecked
-        int                 mat_v2 = -1; // Chunk2: likewise
+        int                 mat_v2 = -1; // zero_one_value::Chunk: likewise
     };
 
     // Half of each chunk at the first constant, then plain values.

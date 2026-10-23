@@ -2,10 +2,10 @@
  * Copyright 2026 CEA (www.cea.fr)
  * SPDX-License-Identifier: Apache-2.0
  *
- * switch_mt.c -- reduced GenMC model: a writer switching a compressed Chunk2A chunk to
- * another constant in place (Chunk2A::fill_constant_st, compressed branch, called by
+ * switch_mt.c -- reduced GenMC model: a writer switching a compressed zero_any::Chunk chunk to
+ * another constant in place (zero_any::Chunk::fill_constant_st, compressed branch, called by
  * internal::store_range_mt for a uniform span over the whole chunk) against a compression
- * pass that holds the same chunk in its candidate list (Chunk2A::make_block_compression).
+ * pass that holds the same chunk in its candidate list (zero_any::Chunk::make_block_compression).
  *
  * The chunk is reduced to two words:
  *   values   the pointer: CST1 (the first-constant block), CST2A / CST2B (two second-value
@@ -15,7 +15,7 @@
  *            library's `char` and slot: GenMC checks races on it).
  * and its steal mark. The writer's flag says which chunk it is writing.
  *
- * Writer (store_range_mt, Chunk2A, a uniform span covering the chunk):
+ * Writer (store_range_mt, zero_any::Chunk, a uniform span covering the chunk):
  *   announce_write(chunk)             -- flag = X; full barrier (symmetric shape)
  *   if (!must_defer_write(chunk)       -- the mark, acquire
  *       && !materialised(chunk))       -- values != BUF
@@ -30,7 +30,7 @@
  *     is_cst_val2()       -- load 2; a chunk at a second value is skipped
  *     scan                -- load 3: the chunk goes on the compact1 list (all first_value) or
  *                            the compact2 list (all one other value)
- *   clear_int_st -> block_clear_common (Chunk2A):
+ *   clear_int_st -> block_clear_common (zero_any::Chunk):
  *     meta = the target's                -- BEFORE the CAS, as the source orders it
  *     old = try_mark_cst_and_get_old():  -- a chunk already at a constant gives nullptr, else
  *                                           CAS(values: old -> the constant), acq_rel

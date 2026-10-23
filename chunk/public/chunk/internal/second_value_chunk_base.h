@@ -272,7 +272,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
             }
             else if constexpr (requires { self.get_cst_val2(); })
             {
-                // Chunk2 bool: one shared second constant.
+                // zero_one_value::Chunk bool: one shared second constant.
                 c2 = static_cast<const void*>(self.get_cst_val2());
             }
 

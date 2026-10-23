@@ -88,7 +88,7 @@ namespace shrink_array
 //     TabCstVal2Holder::alloc_chunk(T val)            (tab_cst_val2_holder.h)
 //     zero_one_value::Array::set_second_value(T)                (zero_one_value_array.h and
 //                                                       zero_one_value_array_inline.h)
-//     Chunk2FastCompPolicy::have_chunk_to_compress(T) (zero_one_value_chunk.h)
+//     zero_one_value::ChunkFastCompPolicy::have_chunk_to_compress(T) (zero_one_value_chunk.h)
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //

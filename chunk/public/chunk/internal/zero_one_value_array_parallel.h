@@ -24,7 +24,7 @@
  *        disappear entirely from a build that has neither.
  *
  * @details Same split as ParallelSupport does for zero::Array:
- *          ParallelSupport2<Derived, threaded> carries
+ *          zero_one_value::ParallelSupport<Derived, threaded> carries
  *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
  *          three variants), a no-op in the serial specialisation.
  *
@@ -60,7 +60,7 @@ struct ParallelSupport;
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
 /**
  * @brief OpenMP specialisation: the deferred-op flush.
- * @copydetails ParallelSupport2
+ * @copydetails zero_one_value::ParallelSupport
  */
 template <typename Derived>
 struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
@@ -93,7 +93,7 @@ class FastBlockSupport;
 // ── Fast-block build: the real pass ──────────────────────────────────────────
 /**
  * @brief Fast-block specialisation: the deferred-candidate compression pass.
- * @copydetails FastBlockSupport2
+ * @copydetails zero_one_value::FastBlockSupport
  */
 template <typename Derived>
 class FastBlockSupport<Derived, true>

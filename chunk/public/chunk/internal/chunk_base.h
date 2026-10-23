@@ -136,7 +136,7 @@ using fast_alloc::TCTypeAllocator;
 // DeferredReadGate: read-side visibility gate, selected by compile-time mode
 // ----------------------------------------------------------------------------
 // The read gate (reader_sync + ArrayChunkBase::sync_chunk) as a CRTP policy, in
-// the same style as Chunk2CounterPolicy / Proxy2CounterPolicy. Not `if
+// the same style as zero_one_value::ChunkCounterPolicy / zero_one_value::ProxyCounterPolicy. Not `if
 // constexpr`: pending_ops_ / wait_for_availability exist in
 // some builds only, and a discarded branch would still phase-1-look-up a
 // missing member. Each specialization names ONLY the members of its config.
@@ -382,7 +382,7 @@ class DeferredReadGate<Derived, DeferReadGate::precise>
 // allocate, initialise and keep stats/ledger in sync; only OpenMP tries the
 // per-thread free list first. static_cast<Derived&>(*this), not an explicit
 // object parameter: allocate_chunk_internal is called as
-// Base::allocate_chunk_internal(...) from sibling policies (Chunk2OmpPolicy...),
+// Base::allocate_chunk_internal(...) from sibling policies (zero_one_value::ChunkOmpPolicy...),
 // whose *this is not a Derived and would not bind to `this Derived&`.
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool Threaded = build_config::threaded>

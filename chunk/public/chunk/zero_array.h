@@ -208,7 +208,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     {
         clear();
         // Drop our (this -> num_tab) registry entry so a later array at this
-        // address does not inherit our stale num_tab via PointerMapChunk's
+        // address does not inherit our stale num_tab via zero::PointerMap's
         // first-match lookup (required for rechunk_to's tmp). Must run AFTER
         // clear(), which still needs get_num_tab(registry_key()).
         zero::Proxy<T>::share_info_array->erase(this->registry_key());

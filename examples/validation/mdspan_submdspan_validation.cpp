@@ -289,7 +289,7 @@ void tiled()
         a, [&](long i, long j) { return (i >= i0 + 8 && i < i0 + 40 && j >= j0 && j < j0 + 50) ? 5.0 : cell(i, j); },
         "fill_box tiled sub");
 
-    // A whole tile of the sub-view at 5.0 is a compressed chunk (Chunk2A:
+    // A whole tile of the sub-view at 5.0 is a compressed chunk (zero_any::Chunk:
     // fill_range sets it without a buffer).
     if constexpr (chunk_config::use_zero_any)
     {

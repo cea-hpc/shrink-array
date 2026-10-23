@@ -202,7 +202,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
   private:
     /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
-    ///        two are compared (model: Proxy2A::set_num_tab).
+    ///        two are compared (model: zero_any::Proxy::set_num_tab).
     [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
@@ -229,7 +229,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     using Base::Base;
 
     /// @brief Arm this proxy with the owning array's registry mirror (see the non-bool
-    ///        ProxySpec2::arm_inf_array()).
+    ///        zero_one_value::ProxySpec::arm_inf_array()).
     void arm_inf_array(const InfArrayT* src) const noexcept
     {
         inf_array_src_ = src;
@@ -265,7 +265,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
   protected:
-    // Named as the generic ProxySpec2 member, for the using-declarations both share.
+    // Named as the generic zero_one_value::ProxySpec member, for the using-declarations both share.
     static constexpr bool second_value_ = true;
 
     /**
@@ -312,7 +312,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
     /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
-    ///        two are compared (model: Proxy2A::set_num_tab).
+    ///        two are compared (model: zero_any::Proxy::set_num_tab).
     [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
@@ -763,12 +763,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     // Both members exist in both ProxyBaseFastCompPolicy specialisations: no guard needed.
     // Do not add `using Base::read_values_async;`: it exists only in the Enabled=true
-    // specialisation (imported in Proxy2FastCompPolicy<..., true>), so it breaks builds
+    // specialisation (imported in zero_one_value::ProxyFastCompPolicy<..., true>), so it breaks builds
     // without fast block compression.
     using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
     using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
 
-    // Declared per Proxy2FastCompPolicy specialisation: the deferred and counter forms are
+    // Declared per zero_one_value::ProxyFastCompPolicy specialisation: the deferred and counter forms are
     // different algorithms (and pass `operation` different arguments).
     using FastCompPolicy::execute_arithmetic_compound_operation;
 

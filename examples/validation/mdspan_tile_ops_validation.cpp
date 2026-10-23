@@ -256,7 +256,7 @@ void update_tiles_serial()
     }
 
     // A tile made uniform: written in one go (fill_range_mt), read back as
-    // such; Chunk2A compresses it to that value at the next pass.
+    // such; zero_any::Chunk compresses it to that value at the next pass.
     md::update_tiles(f, 0, 1,
                      [](const auto&, auto b)
                      {

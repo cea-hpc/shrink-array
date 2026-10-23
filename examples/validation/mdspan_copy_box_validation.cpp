@@ -27,7 +27,7 @@
 //     uniform at another value, varied -- leaves the view equal to the
 //     reference everywhere (inside the box and out); a box of whole tiles
 //     copied at first_value leaves its tiles compressed (every variant), at
-//     another value too on Chunk2A;
+//     another value too on zero_any::Chunk;
 //   - parallel: both, tile by tile (tiled view) or row slice by row slice
 //     (row-major view), from every thread of a phase;
 //   - team (copy_box_out_mt / copy_box_in_mt, called by every thread): every
@@ -113,7 +113,7 @@ long box_size(const Box& lo, const Box& hi)
 }
 
 // The field of cell() written in a phase -- the end-of-phase pass then
-// compresses its uniform tiles (0 on every variant, 3.0 on Chunk2A) -- and the
+// compresses its uniform tiles (0 on every variant, 3.0 on zero_any::Chunk) -- and the
 // reference.
 template <typename View>
 void fill_from_cells(const View& f, std::vector<double>& ref)
@@ -243,7 +243,7 @@ void row_major_serial()
 }
 
 // A box of whole tiles copied in uniform: its tiles hold no buffer after --
-// at first_value on every variant, at another value on Chunk2A.
+// at first_value on every variant, at another value on zero_any::Chunk.
 void compression()
 {
     const long S    = static_cast<long>(Array<double>(1).chunk_size());

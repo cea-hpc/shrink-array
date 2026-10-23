@@ -1200,7 +1200,7 @@ bool ManagerChunk<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int k
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunk<ChunkT, T>::compute_size_buffer_reuse()
 {
-    // Chunk2ADef's reuse constants serve every variant (zero_any_chunk_def.h);
+    // zero_any::ChunkDef's reuse constants serve every variant (zero_any_chunk_def.h);
     // CHUNK_REUSE_SHARE_DIV / CHUNK_REUSE_FLOOR_KB override them.
     size_buffer_reuse = static_cast<int>(somme_chunk_create / (reuse_share_div() * CHUNK_PMP_MAX_THREADS));
     size_buffer_reuse = std::max(size_buffer_reuse,
@@ -1217,7 +1217,7 @@ void ManagerChunk<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress
     auto& global_stats = SingletonChk<GlobalStatsChunkList>::get_ref();
 
     // Take the tuning constants from THIS manager's own variant: they differ a great deal
-    // (see ChunkDef / Chunk2Def / Chunk2ADef). The value is divided by the thread count, so at
+    // (see ChunkDef / zero_one_value::ChunkDef / zero_any::ChunkDef). The value is divided by the thread count, so at
     // high thread counts the floor IS the threshold. Another variant's higher floor means a
     // rank's list almost never reaches it: compression almost never runs during execution and
     // every materialisation allocates afresh.

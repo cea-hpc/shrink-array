@@ -16,8 +16,8 @@
 
 #pragma once
 
-// Out-of-line bodies of zero_one_value::Array's mode-gated surfaces (ParallelSupport2,
-// FastBlockSupport2). Included at the end of zero_one_value_array.h, so self() sees a complete
+// Out-of-line bodies of zero_one_value::Array's mode-gated surfaces (zero_one_value::ParallelSupport,
+// zero_one_value::FastBlockSupport). Included at the end of zero_one_value_array.h, so self() sees a complete
 // Derived.
 
 #include <tuple> // std::get on the candidate tuples (sweep of the other second-value keys)

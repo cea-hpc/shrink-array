@@ -366,12 +366,12 @@ template <typename Arr, typename ChunkClass>
 }
 
 /**
- * @brief The constant a v1 or Chunk2 chunk is compressed at, if it is: every
+ * @brief The constant a v1 or zero_one_value::Chunk chunk is compressed at, if it is: every
  *        element reads @p c, with no buffer.
  *
- * @details v1: first_value. Chunk2 (non-bool): first_value, or the array's
+ * @details v1: first_value. zero_one_value::Chunk (non-bool): first_value, or the array's
  *          second value (index @p ind2). Other variants: false (their
- *          whole-chunk paths are their own: fill_constant_st on Chunk2A; bool
+ *          whole-chunk paths are their own: fill_constant_st on zero_any::Chunk; bool
  *          and Bit element by element or word by word).
  *          A state read, as materialised(): in fill_range_mt the caller also
  *          checks that no deferred write is pending on the chunk.
@@ -553,15 +553,15 @@ void packed_chunk_store(Arr&         arr,
  *          - fully covered and @p v is the compressible constant: make the
  *            chunk constant outright. A materialised chunk releases its buffer;
  *            an already-constant one costs nothing. No allocation either way
- *            (v1; Chunk2A below).
- *          - v1 at first_value, Chunk2 at either of its constants, and @p v
+ *            (v1; zero_any::Chunk below).
+ *          - v1 at first_value, zero_one_value::Chunk at either of its constants, and @p v
  *            that constant (whole chunk or part of it): nothing to do, O(1).
- *          - Chunk2, fully covered, @p v one of its constants: a materialised
+ *          - zero_one_value::Chunk, fully covered, @p v one of its constants: a materialised
  *            chunk releases its buffer at once (clear_st, the pass's clear);
  *            one compressed at the other constant is armed, then compressed
  *            at once rather than queued.
- *          - Chunk2A, fully covered, any value: the chunk takes @p v as its
- *            constant by state alone (Chunk2A::fill_constant_st): a
+ *          - zero_any::Chunk, fully covered, any value: the chunk takes @p v as its
+ *            constant by state alone (zero_any::Chunk::fill_constant_st): a
  *            materialised chunk releases its buffer, a compressed one
  *            switches its constant in place. No buffer allocated, stored or
  *            scanned.
@@ -620,7 +620,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
 
     const bool value_is_cst1 = (value == static_cast<T>(ChunkType::first_value));
 
-    // Chunk2: which of the array's constants the value is -- 0 the first, 1
+    // zero_one_value::Chunk: which of the array's constants the value is -- 0 the first, 1
     // the second (index ind2), -1 neither. A whole chunk filled with one of
     // them is compressed at once (below).
     [[maybe_unused]] int chunk2_cst = -1;
@@ -652,12 +652,12 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
         // ── Whole chunk set to the compressible constant: no storage needed ──
         //
         // v1 only, named by its chunk type (internal::is_v1_v), not by the
-        // clear_st spellings it offers: Chunk2's clear_st(int num_compress_value,
+        // clear_st spellings it offers: zero_one_value::Chunk's clear_st(int num_compress_value,
         // int ind) accepts (thr, n) by conversion and would take a THREAD RANK
         // as the constant to compress to, and v1 has one spelling per build
         // (threaded policy: clear_st(thr, n); serial: clear_st()) -- a test
         // asking for both was false everywhere and the shortcut never ran.
-        // Chunk2A takes fill_constant_st below; Chunk2 the paths below.
+        // zero_any::Chunk takes fill_constant_st below; zero_one_value::Chunk the paths below.
         constexpr bool can_release = internal::is_v1_v<Arr> && internal::raw_fillable_v<T> && !is_packed_bit_v<T>;
 
         if constexpr (can_release)
@@ -721,10 +721,10 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
         }
         else
         {
-            // ── Chunk2A, whole chunk: a constant, no buffer ──────────────────
+            // ── zero_any::Chunk, whole chunk: a constant, no buffer ──────────────────
             // Whatever the value and the chunk's state: a materialised chunk
             // releases its buffer, a compressed one switches its constant in
-            // place (Chunk2A::fill_constant_st). Nothing allocated, stored or
+            // place (zero_any::Chunk::fill_constant_st). Nothing allocated, stored or
             // scanned; nothing queued for a pass.
             if constexpr (internal::is_v2a_v<Arr>)
             {
@@ -736,7 +736,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             }
 
             // ── Already that constant: nothing to write ──────────────────────
-            // v1 at first_value, Chunk2 at either constant (whole or part of
+            // v1 at first_value, zero_one_value::Chunk at either constant (whole or part of
             // the chunk). The arming loop below would walk every element of the
             // range through the proxy to find that no write materialises it.
             if (internal::holds_constant(arr, ch, ind2, static_cast<T>(value)))
@@ -744,7 +744,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
                 continue;
             }
 
-            // ── Chunk2, whole chunk, one of its constants: compressed at once ──
+            // ── zero_one_value::Chunk, whole chunk, one of its constants: compressed at once ──
             // A chunk that owns a buffer releases it through the pass's own
             // clear (clear_st(num, ind2)), as v1 above: nothing stored, scanned
             // or queued. owns_live_buffer(), not written(ind2): a chunk at the
@@ -794,7 +794,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
                 continue;
             }
 
-            // Chunk2, a whole chunk the arming took from its other constant to
+            // zero_one_value::Chunk, a whole chunk the arming took from its other constant to
             // this one: compressed now rather than left to a pass.
             if constexpr (internal::is_v2_v<Arr> && requires { arr.get_second_value(); })
             {
@@ -830,9 +830,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
  * @details Same per-chunk strategy as fill_range, minus the constant shortcut:
  *          the source values are not known to be uniform, so a chunk is set
  *          constant only when the arming loop finds every value to be the
- *          compressible constant. A v1 or Chunk2 chunk compressed at c skips
+ *          compressible constant. A v1 or zero_one_value::Chunk chunk compressed at c skips
  *          the source elements equal to c before arming (a span equal to c
- *          writes nothing). Chunk2A, a fully covered chunk: its source
+ *          writes nothing). zero_any::Chunk, a fully covered chunk: its source
  *          span is read first (three elements, then all of it if they agree);
  *          uniform, the chunk is set to that constant by state alone, as
  *          fill_range does (no buffer); mixed, it is copied and not queued.
@@ -906,10 +906,10 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         }
         else
         {
-            // ── Chunk2A, whole chunk: a uniform source span is a constant ────
+            // ── zero_any::Chunk, whole chunk: a uniform source span is a constant ────
             // Read the span first (the three-element guess, then all of it):
             // uniform, the chunk takes its constant by state alone
-            // (Chunk2A::fill_constant_st: no buffer allocated, stored, scanned
+            // (zero_any::Chunk::fill_constant_st: no buffer allocated, stored, scanned
             // and freed); mixed, it is copied below and stays materialised --
             // the copy is exactly the span, so the copied chunk is mixed too.
             bool span_mixed = false;
@@ -943,7 +943,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
 
             std::size_t i = lo;
 
-            // ── v1 / Chunk2 compressed at c: the source elements equal to c
+            // ── v1 / zero_one_value::Chunk compressed at c: the source elements equal to c
             // are already right. Start at the first that is not -- a plain
             // read of the source each, where the arming loop below writes
             // each through the proxy -- and nothing to do if none is.
@@ -985,7 +985,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             }
 
             // The source is not known to be uniform: the pass decides -- for
-            // the chunks that can be. Not a Chunk2A chunk covered whole: its
+            // the chunks that can be. Not a zero_any::Chunk chunk covered whole: its
             // span was read above and is mixed.
             if (!span_mixed && internal::may_be_uniform(dst, s))
             {
@@ -1072,10 +1072,10 @@ void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::s
  *            7. queue the chunk as a compression candidate when it can be
  *               uniform (the pass drops it if it is not).
  *          Before those steps, for a span whose values are all one value v:
- *            - v is the constant a v1 or Chunk2 chunk already holds, no
+ *            - v is the constant a v1 or zero_one_value::Chunk chunk already holds, no
  *              deferred write pending on it: the span is skipped
  *              (holds_constant);
- *            - Chunk2A, the span covers the whole chunk and the chunk is
+ *            - zero_any::Chunk, the span covers the whole chunk and the chunk is
  *              compressed: it switches to v in place (fill_constant_st's
  *              compressed branch) within a session -- steps 1 to 4 and 6,
  *              no buffer.
@@ -1217,7 +1217,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
             };
 
             // A uniform span of the constant the chunk already holds: nothing
-            // to write (v1, Chunk2; see holds_constant). Not with deferred
+            // to write (v1, zero_one_value::Chunk; see holds_constant). Not with deferred
             // writes pending on the chunk: one of this thread's on the span
             // would replay after and win -- the element path, below, erases
             // those.
@@ -1229,7 +1229,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                 }
             }
 
-            // Chunk2A, a uniform span over the whole of a compressed chunk:
+            // zero_any::Chunk, a uniform span over the whole of a compressed chunk:
             // the chunk switches its constant in place (fill_constant_st's
             // compressed branch: second-value slot, type, values pointer), no
             // buffer allocated, filled, queued and scanned again by a pass.
@@ -1381,7 +1381,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
  *          once per chunk span: see internal::store_range_mt. Unlike
  *          fill_range, a chunk is never RELEASED here (a whole-chunk fill of
  *          the constant leaves it materialised and queued). A chunk already
- *          at the value is skipped (v1, Chunk2), and on Chunk2A a compressed
+ *          at the value is skipped (v1, zero_one_value::Chunk), and on zero_any::Chunk a compressed
  *          chunk covered whole switches its constant in place, as fill_range
  *          does.
  *

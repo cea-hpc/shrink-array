@@ -136,7 +136,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(this Derived&     self,
     }
     else
     {
-        // Chunk2 specific cleanup
+        // zero_one_value::Chunk specific cleanup
         self.set_cst_val_to_cst_val1();
         self.init_values_cst_val();
 
