@@ -83,8 +83,8 @@ namespace shrink_array
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void* zero_any::ChunkThreadPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
-    auto* v = static_cast<zero_any::Chunk<T>*>(::operator new(sz));
-    init_chunks_cst_val(v, sz / sizeof(zero_any::Chunk<T>));
+    auto* v = static_cast<Derived*>(::operator new(sz));
+    init_chunks_cst_val(v, sz / sizeof(Derived));
     return static_cast<void*>(v);
 }
 
@@ -98,10 +98,9 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_any::Chunk<T>* v,
-                                                                           std::size_t         count) noexcept
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(Derived* v, std::size_t count) noexcept
 {
-    chunk_array_new::init_chunks(v, count, [](zero_any::Chunk<T>& chunk) { chunk.init_after_constructor(); });
+    chunk_array_new::init_chunks(v, count, [](Derived& chunk) { chunk.init_after_constructor(); });
 }
 
 /**
@@ -110,8 +109,8 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_
  * @param num_compress_value 0 for the first constant, anything else for the second.
  * @param ptr_type_cst Slot of the per-chunk type table to write.
  */
-template <typename T>
-void zero_any::Chunk<T>::set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_cst) noexcept
+template <typename T, typename Derived>
+void zero_any::ChunkImpl<T, Derived>::set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_cst) noexcept
 {
     if (num_compress_value == 0)
     {
@@ -144,8 +143,8 @@ void zero_any::Chunk<T>::set_cst_val_to_cst_val(int num_compress_value, char* pt
  * @note make_block_compression() treats a `T{}` second value as "skip": unambiguous only
  *       because `first_value` is 0 (an all-zero chunk is classified compact1).
  */
-template <typename T>
-void zero_any::Chunk<T>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
+template <typename T, typename Derived>
+void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
                                                VecTupleChunkA2pTint2& ll_compt2,
                                                int                    num_chunk,
                                                int                    num_tab,
@@ -170,7 +169,7 @@ void zero_any::Chunk<T>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
         }
 
         // CHUNK_STATS: one candidate scanned (compress/compress_attempt = scan yield).
-        increm_chunk_compress_attempt<Chunk<T>>();
+        increm_chunk_compress_attempt<Derived>();
 
         // Already at its second value (compress() ran over it while queued): do not scan.
         // `values` is a second-value slot that reads as all first_value; the chunk would go
@@ -186,11 +185,11 @@ void zero_any::Chunk<T>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
 
         if (scan.first)
         {
-            ll_compt1.emplace_back(std::make_tuple(this, num_chunk, num_tab, size));
+            ll_compt1.emplace_back(std::make_tuple(static_cast<Derived*>(this), num_chunk, num_tab, size));
         }
         if (scan.second)
         {
-            ll_compt2.emplace_back(std::make_tuple(this, second_v, num_chunk, num_tab, size));
+            ll_compt2.emplace_back(std::make_tuple(static_cast<Derived*>(this), second_v, num_chunk, num_tab, size));
         }
     }
 }
@@ -211,8 +210,8 @@ void zero_any::Chunk<T>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
  * @note Under OpenMP the body is gated by `compression_mgr.start()`, which can decline
  *       (another thread is compressing): the pass then does nothing.
  */
-template <typename T>
-void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* proxy2a)
+template <typename T, typename Derived>
+void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType* proxy2a)
 {
     // Geometry is pinned PER CHUNK, never once here (see the @file comment): each entry
     // carries its array's ChunkElems (from push_to_compress_list()), pinned right before
@@ -239,7 +238,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
             // released when the pass is done with it, and all again at the end.
             // A flush in progress makes start() decline: ask first, before marking
             // (block_pass_precheck.h).
-            if (block_pass_yields_to_flush<Proxy<T>, Chunk<T>>(CHUNK_PMP_MAX_THREADS))
+            if (block_pass_yields_to_flush<ProxyType, Derived>(CHUNK_PMP_MAX_THREADS))
             {
                 return;
             }
@@ -250,7 +249,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
                     chunk_t->steal_mark();
                 }
             }
-            const bool ret = proxy2a->compression_mgr.template start<Proxy<T>>();
+            const bool ret = proxy2a->compression_mgr.template start<ProxyType>();
             if (!ret)
             {
                 for (int k = 0; k < sz; ++k)
@@ -298,11 +297,11 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
         }
 
-        char* ptr_type_cst = &Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
+        char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 
         // Long form in both modes: thr is 0 with OpenMP off.
         const SecondValueRef<T> ptr_second_value =
-            Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
         chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
         chunk_ptr->steal_unmark();
     }
@@ -321,12 +320,12 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
         {
             if (second_v != T{})
             {
-                char* ptr_type_cst = &Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
+                char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 
                 // find_or_set records the second value in the chunk's slot and returns the
                 // shared array; clear_int_st installs it as `values` (the CAS).
                 const SecondValueRef<T> ptr_second_value =
-                    Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+                    ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
 
                 T* new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
 
@@ -341,10 +340,10 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
                 chunk_ptr->Holder::find_or_set_ind_cst_val2();
             }
 
-            char* ptr_type_cst = &Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
+            char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 
             const SecondValueRef<T> ptr_second_value =
-                Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+                ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
@@ -386,7 +385,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
         {
             const int num_tab = std::get<2>(tup);
 
-            Proxy<T>::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
+            ProxyType::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
         }
     }
 
@@ -405,7 +404,7 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
 
         if constexpr (build_config::threaded)
         {
-            proxy2a->compression_mgr.template finish<Proxy<T>>();
+            proxy2a->compression_mgr.template finish<ProxyType>();
         }
     }
 }
@@ -427,8 +426,8 @@ void zero_any::Chunk<T>::make_block_compression(int thr, zero_any::Proxy<T>* pro
  *       make_block_compression() (compress_chunk_to_compress); this is what
  *       the rechunk fold calls on a chunk of its own, with apply = true.
  */
-template <typename T>
-void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
+template <typename T, typename Derived>
+void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
                                   int                   num_chunk,
                                   int                   num_tab,
                                   [[maybe_unused]] bool apply,
@@ -451,7 +450,7 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
     if (this->written())
     {
         // CHUNK_STATS: one candidate scanned (compress/compress_attempt = scan yield).
-        increm_chunk_compress_attempt<Chunk>();
+        increm_chunk_compress_attempt<Derived>();
         bool compact1 = false;
         bool compact2 = false;
 
@@ -464,7 +463,7 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
             // Against values[0], as fill_list_to_compress does, not the registered second
             // value: a chunk uniform at another value is compressed to THAT value.
             const SecondValueRef<T> ptr_second_value =
-                Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+                ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             const InT<T> second_v = Base::read_value_scan(0);
             const auto   scan     = Base::scan_constants(first_value, second_v, size.count());
             compact1              = scan.first;
@@ -491,8 +490,8 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
         if (apply)
         {
             const SecondValueRef<T> ptr_second_value =
-                Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            char* ptr_type_cst = &Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
+                ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
             if (compact1)
             {
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
@@ -515,8 +514,8 @@ void zero_any::Chunk<T>::compress([[maybe_unused]] int  thr_rank,
  * @param thr            Rank whose candidate chunks are compressed.
  * @param apply          Forwarded to compress().
  */
-template <typename T>
-void zero_any::Chunk<T>::compress_sweep_rank(int thr, bool apply)
+template <typename T, typename Derived>
+void zero_any::ChunkImpl<T, Derived>::compress_sweep_rank(int thr, bool apply)
 {
     if constexpr (build_config::threaded && chunk_config::not_use_compression_with_ompt)
     {
@@ -533,8 +532,8 @@ void zero_any::Chunk<T>::compress_sweep_rank(int thr, bool apply)
     compress_chunk_to_compress_in_par(thr, apply);
 }
 
-template <typename T>
-void zero_any::Chunk<T>::compress_chunk_to_compress(bool apply)
+template <typename T, typename Derived>
+void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress(bool apply)
 {
     // Inside a region the calling rank runs compress_chunk_to_compress_in_par; outside,
     // compress_sweep_rank, and the ranks beyond the team only when
@@ -551,8 +550,8 @@ void zero_any::Chunk<T>::compress_chunk_to_compress(bool apply)
  * @param max_thr Number of per-thread lists to examine (OpenMP builds only).
  * @return True as soon as one list is non-empty.
  */
-template <typename T>
-bool zero_any::Chunk<T>::have_chunk_to_compress([[maybe_unused]] int max_thr)
+template <typename T, typename Derived>
+bool zero_any::ChunkImpl<T, Derived>::have_chunk_to_compress([[maybe_unused]] int max_thr)
 {
     const bool is_empty = is_vec_tuple_to_compress_potentially_empty_thr();
     if (is_empty)
@@ -596,8 +595,8 @@ bool zero_any::Chunk<T>::have_chunk_to_compress([[maybe_unused]] int max_thr)
  *          condition (`use_compression_with_ompt`): a flag cleared with the entry still listed
  *          lets a later write queue the chunk twice, and the second clear hits a constant.
  */
-template <typename T>
-void zero_any::Chunk<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, bool apply)
+template <typename T, typename Derived>
+void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, bool apply)
 {
     auto& vec_tup = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
 
@@ -626,7 +625,7 @@ void zero_any::Chunk<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int 
                 // Same condition as the list clear below: see the @warning above.
                 if constexpr (chunk_config::use_compression_with_ompt)
                 {
-                    Proxy<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
+                    ProxyType::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
                 }
             }
         }
@@ -645,7 +644,7 @@ void zero_any::Chunk<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int 
 
             // Per-entry geometry, as above: a default size would under-scan dynamic chunks.
             std::get<0>(tup)->compress(0, num_chunk, num_tab, apply, std::get<3>(tup));
-            Proxy<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
+            ProxyType::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
         }
     }
 
@@ -668,8 +667,8 @@ void zero_any::Chunk<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int 
  * @param claimed   Whether the caller claimed (steal-marked) the candidates
  *                  first; forwarded to fill_list_to_compress().
  */
-template <typename T>
-void zero_any::Chunk<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int   thr,
+template <typename T, typename Derived>
+void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int   thr,
                                                             VecTupleChunkA2pInt2&  ll_compt1,
                                                             VecTupleChunkA2pTint2& ll_compt2,
                                                             [[maybe_unused]] bool  claimed)

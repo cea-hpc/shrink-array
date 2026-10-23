@@ -25,6 +25,7 @@
 #include <vector>          // std::vector
 
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
+#include "chunk/chunk_traits.h"                     // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
 #include "chunk/internal/tab_cst_val2_holder.h"     // TabCstVal2Holder, SecondValueRef
 #include "chunk/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_RANK
@@ -33,7 +34,7 @@
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
 #include "chunk/internal/chunk_stats.h"             // increm_chunk_write
 
-#include "chunk/internal/TChunk.h"   // TChunk2AComp, VectorTuple4ChunkInt2
+#include "chunk/internal/TChunk.h"   // TChunk2ACompOf, VectorTuple4ChunkInt2
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 
@@ -371,7 +372,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
 {
   public:
     using Base                   = SecondValueChunkBase<T, Derived>;
-    using ManagerChunk2A         = ManagerChunk<Chunk, T>;
+    using ManagerChunk2A         = typename ChunkTraits<Derived>::ManagerType;
     using CompressionManagerType = CompressionManager<T, Derived>;
 
     using Base::derived;
@@ -466,7 +467,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Shared by the three
     ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Derived* v, std::size_t count) noexcept;
 };
 
 /**
@@ -480,7 +481,7 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
 {
   public:
     using Base           = SecondValueChunkBase<T, Derived>;
-    using ManagerChunk2A = ManagerChunk<Chunk, T>;
+    using ManagerChunk2A = typename ChunkTraits<Derived>::ManagerType;
 
     using Base::derived;
     using Base::is_bool;
@@ -488,7 +489,7 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
     using Base::values_;
 
     /// @brief The single candidate list of a serial build.
-    static TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially() noexcept
+    static TChunk2ACompOf<Derived>& get_vec_tuple_to_compress_potentially() noexcept
     {
         return ManagerChunk2A::chunk2a_to_compress_potentially;
     }
@@ -529,26 +530,36 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
                      T* cst2_ptr);
 };
 
-/// @brief Chunk of values compressible to the first constant or to a second constant shared through the
-///        TabCstVal2Holder registry (see the class description above zero_any::ChunkConcurrentOps).
-/// @tparam T Element type.
-template <typename T>
+/**
+ * @brief The body of zero_any::Chunk, shared by the zero_any family
+ *        (chunk_traits.h): a member's chunk class derives from
+ *        ChunkImpl<T, itself>.
+ * @details Everything that names the chunk type names Derived: the candidate
+ *          lists, the manager (ChunkTraits<Derived>::ManagerType) and the proxy
+ *          (Base::ProxyType) are per chunk type, so a member gets its own.
+ *          zero_any::Chunk<T> derives from ChunkImpl<T, Chunk<T>> and adds
+ *          nothing.
+ * @tparam T       Element type.
+ * @tparam Derived The member's chunk class.
+ */
+template <typename T, typename Derived>
 // no move operations on purpose -- a move falls back to
 // the copy, which carries the per-chunk state the way the copy constructor documents.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class Chunk : public ChunkThreadPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, public ChunkStateQueries<T, Chunk<T>>
+class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<T>, public ChunkStateQueries<T, Derived>
 {
   public:
-    friend class SecondValueChunkBase<T, Chunk>;
-    friend class Proxy<T>;
+    using Base         = SecondValueChunkBase<T, Derived>;                      ///< The CRTP chunk base.
+    using ThreadPolicy = ChunkThreadPolicy<T, Derived, build_config::threaded>; ///< This build's thread-model policy.
+    using ProxyType    = typename Base::ProxyType;                              ///< The member's write proxy.
 
-    using Base         = SecondValueChunkBase<T, Chunk>;                      ///< The CRTP chunk base.
-    using ThreadPolicy = ChunkThreadPolicy<T, Chunk, build_config::threaded>; ///< This build's thread-model policy.
+    friend class SecondValueChunkBase<T, Derived>;
+    friend ProxyType;
 
-    using ManagerChunk2A = ManagerChunk<Chunk, T>;
+    using ManagerChunk2A = typename ChunkTraits<Derived>::ManagerType;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
-    using VecTupleChunkA2pInt2  = std::vector<std::tuple<Chunk*, int, int, ChunkElems>>;
-    using VecTupleChunkA2pTint2 = std::vector<std::tuple<Chunk*, T, int, int, ChunkElems>>;
+    using VecTupleChunkA2pInt2  = std::vector<std::tuple<Derived*, int, int, ChunkElems>>;
+    using VecTupleChunkA2pTint2 = std::vector<std::tuple<Derived*, T, int, int, ChunkElems>>;
 
     using Base::allocator_data;
     using Base::first_value;
@@ -569,18 +580,18 @@ class Chunk : public ChunkThreadPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>,
     // Statistics variant tag (CHUNK_STATS): 2 = zero_any.
     static constexpr int stat_variant = 2;
 
-    Chunk()  = default;
-    ~Chunk() = default;
+    ChunkImpl()  = default;
+    ~ChunkImpl() = default;
 
     /// @brief Copy the per-chunk state of @p other (Base::values_store(other.values_load())).
-    Chunk(const Chunk& other)
+    ChunkImpl(const ChunkImpl& other)
     {
         Base::values_store(other.values_load()); // the whole per-chunk state
     }
 
     /// @brief Copy the per-chunk state of @p other unless it is this chunk.
     /// @return *this.
-    Chunk& operator=(const Chunk& other)
+    ChunkImpl& operator=(const ChunkImpl& other)
     {
         if (this != &other)
         {
@@ -663,7 +674,7 @@ class Chunk : public ChunkThreadPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>,
     }
 
     /// @brief Rank @p thr's candidate list.
-    static TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
+    static TChunk2ACompOf<Derived>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
     {
         return ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
     }
@@ -744,10 +755,10 @@ class Chunk : public ChunkThreadPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>,
     }
     static bool have_chunk_to_compress(int max_thr);
 
-    static void make_block_compression(int thr, Proxy<T>* proxy2a);
+    static void make_block_compression(int thr, ProxyType* proxy2a);
 
   private:
-    using ChunkType              = Chunk;
+    using ChunkType              = Derived;
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
     static constexpr char is_val1 = 0;
@@ -789,6 +800,15 @@ class Chunk : public ChunkThreadPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>,
                                bool                   claimed = false);
 
     static inline constinit internal::LazyImmortal<ManagerChunk2A> s_manager_;
+};
+
+/// @brief Chunk of values compressible to the first constant or to a second constant shared through the
+///        TabCstVal2Holder registry (see the class description above zero_any::ChunkConcurrentOps). All of
+///        it is ChunkImpl's, shared by the zero_any family.
+/// @tparam T Element type.
+template <typename T>
+class Chunk : public ChunkImpl<T, Chunk<T>>
+{
 };
 
 } // namespace zero_any
