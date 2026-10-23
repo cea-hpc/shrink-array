@@ -16,7 +16,6 @@
 
 #pragma once
 
-#include <cstdlib>     // std::abort
 #include <functional>  // std::divides, std::multiplies
 #include <type_traits> // std::is_integral_v, std::is_same_v
 #include <utility>     // std::forward

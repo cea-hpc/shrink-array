@@ -39,7 +39,6 @@
 #include <string_view> // std::string_view (report_key_not_found)
 #include <deque>       // std::deque: share_info storage, no realloc invalidation
 #include <map>         // std::map
-#include <type_traits> // std::is_same_v
 #include <utility>     // std::pair
 #include <vector>      // std::vector
 

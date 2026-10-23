@@ -21,7 +21,6 @@
 #include <cstddef>  // std::size_t
 #include <memory>   // std::addressof (operator=: operator& is deleted)
 #include <ostream>  // std::ostream
-#include <vector>   // std::vector
 
 #include "chunk/bit.h"                      // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"            // InT<T>
