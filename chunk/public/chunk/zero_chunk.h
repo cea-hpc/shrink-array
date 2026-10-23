@@ -204,7 +204,7 @@ class ChunkCounterPolicy
  *
  * @details A serial build has no thread ranks, CAS-stealing window or
  *          per-thread free-lists. Split on build_config::threaded (as
- *          ChunkDeferredOpsPolicy, CompressionManagerOmpPolicy): each mode
+ *          ChunkDeferredOpsPolicy, CompressionManagerThreadPolicy): each mode
  *          declares the clearing verb it has, clear_st(int) here, clear_st()
  *          serially.
  *
@@ -216,7 +216,7 @@ class ChunkCounterPolicy
  * @tparam Enabled build_config::threaded
  */
 template <typename T, typename Derived, bool Enabled = build_config::threaded>
-class ChunkOmpPolicy : public ChunkBase<T, Derived>
+class ChunkThreadPolicy : public ChunkBase<T, Derived>
 {
   public:
     using Base      = ChunkBase<T, Derived>;
@@ -328,7 +328,7 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
  * @tparam Derived CRTP derived chunk type (Chunk<T>)
  */
 template <typename T, typename Derived>
-class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
+class ChunkThreadPolicy<T, Derived, false> : public ChunkBase<T, Derived>
 {
   public:
     using Base = ChunkBase<T, Derived>;
@@ -345,7 +345,7 @@ class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
     /// @brief Release this chunk's buffer WITHOUT counting a compression --
     ///        the teardown, counted as teardown_clear (clear_st = count +
     ///        release_st).
-    /// @param count_release as in the OpenMP policy's release_st
+    /// @param count_release as in the threaded policy's release_st
     void release_st(bool count_release = true);
 };
 
@@ -365,7 +365,7 @@ class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
  *                 no-ops
  */
 template <typename T, typename Derived, bool Enabled>
-class ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
+class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
 {
   public:
     // 4th element: the chunk's OWN geometry, captured at enqueue by
@@ -422,7 +422,7 @@ class ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
  * @tparam Derived CRTP derived chunk type (Chunk<T>)
  */
 template <typename T, typename Derived>
-class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
+class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Derived>
 {
   public:
     // 4th element: the chunk's own geometry (see the enabled policy).
@@ -461,7 +461,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
  *          only what every mode needs:
  *          - ChunkCounterPolicy -- the eager zero-counter trigger (serial)
  *          - ChunkFastCompPolicy -- the batched candidate queue (OpenMP)
- *          - ChunkOmpPolicy -- per-thread allocation, CAS and clearing
+ *          - ChunkThreadPolicy -- per-thread allocation, CAS and clearing
  *
  * @tparam T stored element type
  * @note The chunk does NOT know its own element count: the geometry lives in
@@ -625,7 +625,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     static void compress_sweep_rank(int thr);
 
   private:
-    // compress(int thr_rank, unsigned n_elems) lives in ChunkOmpPolicy (needs a rank).
+    // compress(int thr_rank, unsigned n_elems) lives in ChunkThreadPolicy (needs a rank).
     constexpr static T zero{};
 
     /**

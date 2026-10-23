@@ -176,7 +176,8 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    except the three shapes of the phase contract only OpenMP has
    (`finalize_parallel_phase_only_flush`, `finalize_parallel_phase_after_flush`,
    `finalize_barrier_phase`), which keep `use_openmp`. The `*OmpPolicy`
-   class names stay. The examples and harnesses, OpenMP programs, are left
+   class names stayed then; they became `*ThreadPolicy` later, since the
+   policies follow `threaded`. The examples and harnesses, OpenMP programs, are left
    as they are.
    *7b done*: `CHUNK_THREADS=std` (OMP off, `FAST_ALLOC_PMP_STD=1` PUBLIC on
    the targets, checked by both generated build options against `CHUNK_OPT_STD_THREADS` /

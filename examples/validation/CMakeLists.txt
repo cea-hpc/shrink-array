@@ -322,8 +322,8 @@ foreach(_geom IN LISTS _rt_geometries)
     set(_rt_group ${_group})
     # chunk_array_new_validation: the variant's operator new[] hands back an
     # array whose every chunk is at the first constant. OpenMP builds only: the
-    # operators are the *OmpPolicy's, and their serial specialisations declare
-    # nothing.
+    # operators are the threaded *ThreadPolicy's (the serial specialisations
+    # declare none), and the harness calls them from an `omp single`.
     if (OMP)
       list(APPEND _group chunk_array_new_validation)
     endif()

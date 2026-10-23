@@ -628,7 +628,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
 
     using BaseSpec::BaseSpec;
 
-    /// @brief The single candidate list of a serial build (zero_any::ChunkOmpPolicy<false>).
+    /// @brief The single candidate list of a serial build (zero_any::ChunkThreadPolicy<false>).
     TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially() const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially();

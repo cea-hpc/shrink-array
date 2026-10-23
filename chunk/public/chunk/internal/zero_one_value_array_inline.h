@@ -955,7 +955,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
 
         if constexpr (is_not_bool)
         {
-            // Call clear_st(num, ind), the one name both zero_one_value::ChunkOmpPolicy
+            // Call clear_st(num, ind), the one name both zero_one_value::ChunkThreadPolicy
             // specialisations declare, and let the policy choose: under OpenMP
             // clear_int_st(num, ind, thr_rank); serially the 2-arg
             // clear_int_st(num, ind), a different algorithm (eager, no queue,

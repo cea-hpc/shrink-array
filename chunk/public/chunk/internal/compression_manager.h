@@ -52,8 +52,8 @@ namespace shrink_array
  *          and have already drained the hard compressors, so no compressor can
  *          steal values during the replay.
  *
- *          One base for the two CompressionManagerOmpPolicy specialisations:
- *          the OpenMP policy's own drains set the flag, and the serial build
+ *          One base for the two CompressionManagerThreadPolicy specialisations:
+ *          the threaded policy's own drains set the flag, and the serial build
  *          still consults it from execute_operation(). Keyed by (T, ChunkT)
  *          like the policy, so each manager has its own flag.
  *
@@ -112,7 +112,7 @@ struct FlushReplayState
  * @tparam Enabled   build_config::threaded; false leaves the policy empty
  */
 template <typename T, typename ChunkT, bool Enabled = build_config::threaded>
-class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkT>
+class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
 {
   public:
     // Dependent base: the drains in compression_manager_inline.h name the guard
@@ -322,7 +322,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkT>
     /// @brief Nothing to build: constexpr, so that the compression_mgr of each
     ///        proxy is constant-initialised (chunk/internal/immortal.h). The
     ///        per-rank structures are sized by ensure_initialised().
-    constexpr CompressionManagerOmpPolicy() = default;
+    constexpr CompressionManagerThreadPolicy() = default;
 
     /**
      * @brief Size the per-rank tracking structures this policy owns, once.
@@ -343,13 +343,13 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkT>
                        });
     }
 
-    ~CompressionManagerOmpPolicy() = default;
+    ~CompressionManagerThreadPolicy() = default;
 
-    CompressionManagerOmpPolicy(const CompressionManagerOmpPolicy&)            = delete;
-    CompressionManagerOmpPolicy& operator=(const CompressionManagerOmpPolicy&) = delete;
+    CompressionManagerThreadPolicy(const CompressionManagerThreadPolicy&)            = delete;
+    CompressionManagerThreadPolicy& operator=(const CompressionManagerThreadPolicy&) = delete;
 
-    CompressionManagerOmpPolicy(CompressionManagerOmpPolicy&&)            = delete;
-    CompressionManagerOmpPolicy& operator=(CompressionManagerOmpPolicy&&) = delete;
+    CompressionManagerThreadPolicy(CompressionManagerThreadPolicy&&)            = delete;
+    CompressionManagerThreadPolicy& operator=(CompressionManagerThreadPolicy&&) = delete;
 
     /**
      * @brief Open a compression window: the compressor's side of the Dekker
@@ -968,13 +968,13 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkT>
  * @tparam ChunkT Chunk variant the manager coordinates
  */
 template <typename T, typename ChunkT>
-class CompressionManagerOmpPolicy<T, ChunkT, false> : public FlushReplayState<T, ChunkT>
+class CompressionManagerThreadPolicy<T, ChunkT, false> : public FlushReplayState<T, ChunkT>
 {
   public:
     /**
      * @brief Serial builds queue nothing, so no rank can hold deferred ops.
      *
-     * @details Mirrors the OpenMP policy's have_deferred_queue(). The write path
+     * @details Mirrors the threaded policy's have_deferred_queue(). The write path
      *          calls it unconditionally -- see Proxy::apply_compound_operation,
      *          where the guard reads
      *          `v_old != zero || CompressionManagerType::have_deferred_queue()`.
@@ -998,7 +998,7 @@ class CompressionManagerOmpPolicy<T, ChunkT, false> : public FlushReplayState<T,
  *
  * @details Coordinates compression against concurrent writers and flushes. Most
  *          of that coordination only exists under OpenMP and lives in
- *          CompressionManagerOmpPolicy, which this class inherits; what remains
+ *          CompressionManagerThreadPolicy, which this class inherits; what remains
  *          here is what the serial build also needs: the pure predicate
  *          should_mark_for_compression(), and the flush-replay guard consulted
  *          by execute_operation() in both modes.
@@ -1008,7 +1008,7 @@ class CompressionManagerOmpPolicy<T, ChunkT, false> : public FlushReplayState<T,
  * @note Thread safety: All methods are thread-safe
  */
 template <typename T, typename ChunkT>
-struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkT, build_config::threaded>
+struct CompressionManager : public CompressionManagerThreadPolicy<T, ChunkT, build_config::threaded>
 {
     CompressionManager()  = default;
     ~CompressionManager() = default;

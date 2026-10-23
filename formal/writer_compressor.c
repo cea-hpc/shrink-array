@@ -322,7 +322,7 @@ static void* writer(void* arg)                          /* write_with_optional_l
 
 /* ───────────────────────── the compressor ───────────────────────── */
 
-static bool compressor_start(void)                      /* CompressionManagerOmpPolicy::start() */
+static bool compressor_start(void)                      /* CompressionManagerThreadPolicy::start() */
 {
     atomic_fetch_add_explicit(&hard_inflight, 1, memory_order_seq_cst);   /* parked */
     /* (flush early-out: handshake 2, not modelled here) */
@@ -346,7 +346,7 @@ static bool compressor_start(void)                      /* CompressionManagerOmp
     return true;
 }
 
-static void compressor_finish(void)                     /* CompressionManagerOmpPolicy::finish() */
+static void compressor_finish(void)                     /* CompressionManagerThreadPolicy::finish() */
 {
     atomic_fetch_sub_explicit(&stealing_inflight, 1, memory_order_seq_cst);
     atomic_fetch_sub_explicit(&hard_inflight, 1, memory_order_seq_cst);

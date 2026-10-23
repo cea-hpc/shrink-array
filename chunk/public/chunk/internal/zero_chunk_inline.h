@@ -37,13 +37,13 @@
 
 namespace shrink_array
 {
-// No build guard: the ChunkOmpPolicy definitions below belong to the PRIMARY template,
+// No build guard: the ChunkThreadPolicy definitions below belong to the PRIMARY template,
 // instantiated only with Enabled=true (OpenMP); the serial build uses the <..., false>
 // specialisation. Chunk's own members compile in both modes.
 
 // Out of line on purpose, as operator delete[] below: see there.
 template <typename T, typename Derived, bool Enabled>
-[[gnu::noinline]] void* zero::ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
+[[gnu::noinline]] void* zero::ChunkThreadPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
     auto* v = static_cast<zero::Chunk<T>*>(::operator new(sz));
     init_chunks_cst_val(v, sz / sizeof(zero::Chunk<T>));
@@ -51,15 +51,15 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero::Chunk<T>* v, std::size_t count) noexcept
+void zero::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero::Chunk<T>* v, std::size_t count) noexcept
 {
     chunk_array_new::init_chunks(v, count, [](zero::Chunk<T>& chunk) { chunk.init_values_cst_val(); });
 }
 
 // Out of line on purpose, as operator new[] above: avoids a false -Wmismatched-new-delete
-// (see zero_any::ChunkOmpPolicy::operator delete[] in zero_any_chunk_inline.h).
+// (see zero_any::ChunkThreadPolicy::operator delete[] in zero_any_chunk_inline.h).
 template <typename T, typename Derived, bool Enabled>
-[[gnu::noinline]] void zero::ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
+[[gnu::noinline]] void zero::ChunkThreadPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
     ::operator delete(ptr);
 }
@@ -109,7 +109,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(VecTu
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkOmpPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_elems)
+void zero::ChunkThreadPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_elems)
 {
     // Already compressed: nothing to do. Required: a chunk can be reached twice (its queued
     // candidate outlives a compression by another path, e.g. the re-chunk fold). On a cst1
@@ -211,7 +211,7 @@ bool zero::ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int 
  *          cells read before written.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
+void zero::ChunkThreadPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
 {
     if constexpr (build_config::use_fast_alloc)
     {
@@ -220,7 +220,7 @@ void zero::ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcep
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
+void zero::ChunkThreadPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
 {
     // Reuse pool first, then a fresh allocation (ChunkAllocPolicy::allocate_chunk_internal,
     // shared with zero_one_value/zero_any). Initialisers differ from zero_one_value/zero_any: a zero::Chunk is
@@ -241,13 +241,13 @@ void zero::ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexc
 // OpenMP: delegates to the rank-aware overload. The serial specialisation below allocates
 // directly (no per-thread free list).
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkOmpPolicy<T, Derived, Enabled>::create_value() noexcept
+void zero::ChunkThreadPolicy<T, Derived, Enabled>::create_value() noexcept
 {
     create_value(get_thr_rank_fast());
 }
 
 template <typename T, typename Derived>
-void zero::ChunkOmpPolicy<T, Derived, false>::create_value() noexcept
+void zero::ChunkThreadPolicy<T, Derived, false>::create_value() noexcept
 {
     // Serially there is no reuse list: the first initialiser is ignored (serial
     // ChunkAllocPolicy).
@@ -432,7 +432,7 @@ void zero::Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
+void zero::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
 {
     T* old = try_mark_cst_and_get_old();
     if (old)
@@ -450,7 +450,7 @@ void zero::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
 
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_elems)
+void zero::ChunkThreadPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_elems)
 {
     // CHUNK_STATS: a compression completing. Count here, not in init_values_cst_val (also
     // reached from teardown/neutralisation, which are not compressions). The re-chunk
@@ -465,7 +465,7 @@ void zero::ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned 
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int n_elems, bool count_release)
+void zero::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int n_elems, bool count_release)
 {
     // CHUNK_STATS: a release that is not a compression (re-chunk rebuild): bytes still
     // leave the live figure.
@@ -500,7 +500,7 @@ void zero::ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigne
 }
 
 template <typename T, typename Derived>
-void zero::ChunkOmpPolicy<T, Derived, false>::clear_st()
+void zero::ChunkThreadPolicy<T, Derived, false>::clear_st()
 {
     // CHUNK_STATS: serial twin of the OpenMP clear_st above.
     if constexpr (chunk_config::stats)
@@ -514,7 +514,7 @@ void zero::ChunkOmpPolicy<T, Derived, false>::clear_st()
 }
 
 template <typename T, typename Derived>
-void zero::ChunkOmpPolicy<T, Derived, false>::release_st(bool count_release)
+void zero::ChunkThreadPolicy<T, Derived, false>::release_st(bool count_release)
 {
     if constexpr (chunk_config::stats)
     {

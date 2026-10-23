@@ -302,7 +302,7 @@ void zero_any::Proxy<T>::perform_compression() noexcept
     if (sz_before > sz_threshold)
     {
         // Serial builds defer nothing, and flush_deferred exists only in the
-        // OpenMP policy specialisation.
+        // threaded policy specialisation.
         if constexpr (build_config::threaded)
         {
             static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));

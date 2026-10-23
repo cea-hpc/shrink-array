@@ -61,9 +61,10 @@
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/print.h" // shrink_array::println
 
-// The *OmpPolicy serial specialisations declare no array-new, so there is
-// nothing to test without OpenMP; CMake builds this target under OMP alone.
-static_assert(shrink_array::build_config::use_openmp, "OpenMP builds only: the array-new is the *OmpPolicy's");
+// The array-new is the threaded *ThreadPolicy's (the serial specialisations declare
+// none), and the "region" cases call it from an `omp single`: CMake builds this
+// target under OMP alone, so the std backend's array-new is not covered here.
+static_assert(shrink_array::build_config::use_openmp, "OpenMP builds only: the region cases use omp single");
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp

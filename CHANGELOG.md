@@ -102,10 +102,14 @@ the tag's checksum to the recipe.
 - The chunk and proxy classes of each variant move into its namespace: `zero::Chunk`,
   `zero_one_value::Chunk`, `zero_any::Chunk` (were `Chunk`, `Chunk2`, `Chunk2A`), `zero::Proxy`,
   `zero_one_value::Proxy`, `zero_any::Proxy` (were `Proxy`, `Proxy2`, `Proxy2A`), and so do their
-  definitions, specs, policies, pointer maps and array mixins (`zero_any::ChunkOmpPolicy` was
+  definitions, specs, policies, pointer maps and array mixins (`zero_any::ChunkThreadPolicy` was
   `Chunk2AOmpPolicy`, `zero_one_value::RechunkHooks` was `RechunkHooks2`, ...). The bases shared by
   `zero_one_value` and `zero_any` become `SecondValueChunkBase`, `SecondValueProxyBase` and
   `SecondValueArrayBase` (were `Chunk2Base`, `Proxy2Base`, `ArrayChunk2Base`).
+- The thread-model policies are named after `build_config::threaded`, which selects their
+  specialisation under OpenMP and under the std backend alike: `ChunkThreadPolicy` in each
+  variant's namespace (was `ChunkOmpPolicy`), `CompressionManagerThreadPolicy` (was
+  `CompressionManagerOmpPolicy`).
 - Their files follow: `chunk/zero_chunk.h`, `zero_one_value_chunk.h`, `zero_any_chunk.h` (were
   `chunk_std.h`, `chunk2_std.h`, `chunk2A_std.h`), `zero_chunk_def.h`, ... (were `chunk_def.h`, ...),
   `chunk/internal/zero_any_proxy.h`, ... (were proxy.h, proxy2.h, proxy2A.h), and

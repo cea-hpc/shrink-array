@@ -63,7 +63,7 @@
  * applies the clears and clears the flags.
  *
  *  - **The materialise / clear functions exist twice**, on the two specialisations of
- *    zero_any::ChunkOmpPolicy (build_config::threaded); the passes branch with `if constexpr`.
+ *    zero_any::ChunkThreadPolicy (build_config::threaded); the passes branch with `if constexpr`.
  *    The serial twin often takes a shorter path (no CAS, no rank, no handshake).
  *  - **Geometry is pinned per chunk, never inherited.** A candidate list can hold chunks
  *    of several arrays, so a single pin at the top of a pass is wrong: each entry carries
@@ -81,7 +81,7 @@ namespace shrink_array
 // ── Array-new (placement-new arrays; see chunk_array_new.h) ────────────────
 // Out of line on purpose, as operator delete[] below: see there.
 template <typename T, typename Derived, bool Enabled>
-[[gnu::noinline]] void* zero_any::ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
+[[gnu::noinline]] void* zero_any::ChunkThreadPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
     auto* v = static_cast<zero_any::Chunk<T>*>(::operator new(sz));
     init_chunks_cst_val(v, sz / sizeof(zero_any::Chunk<T>));
@@ -92,14 +92,14 @@ template <typename T, typename Derived, bool Enabled>
 // -Wmismatched-new-delete a ::operator new/delete paired with the class's other operator
 // (a false positive). As calls, the pair it sees is the class's own new[] / delete[].
 template <typename T, typename Derived, bool Enabled>
-[[gnu::noinline]] void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
+[[gnu::noinline]] void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
     ::operator delete(ptr);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_any::Chunk<T>* v,
-                                                                        std::size_t         count) noexcept
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_any::Chunk<T>* v,
+                                                                           std::size_t         count) noexcept
 {
     chunk_array_new::init_chunks(v, count, [](zero_any::Chunk<T>& chunk) { chunk.init_after_constructor(); });
 }
@@ -703,7 +703,7 @@ void zero_any::Chunk<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int
 }
 
 // ---------------------------------------------------------------------------
-// zero_any::ChunkOmpPolicy<T, Derived, true>: materialise and clear, OpenMP mode.
+// zero_any::ChunkThreadPolicy<T, Derived, true>: materialise and clear, threaded mode.
 // ---------------------------------------------------------------------------
 /**
  * @brief Materialise-side exclusion against the compressor's steal.
@@ -770,9 +770,9 @@ void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank)
  *          thread waits on the lock that flusher holds -- a deadlock.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value(bool              need_set_second_value,
-                                                                 SecondValueRef<T> ptr_second_value,
-                                                                 int               thr_rank)
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(bool              need_set_second_value,
+                                                                    SecondValueRef<T> ptr_second_value,
+                                                                    int               thr_rank)
 {
     if constexpr (is_not_bool)
     {
@@ -818,7 +818,7 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value(bool           
  * @note Same wait_before_materialise() as create_value(): bool chunks are stolen alike.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value, int thr_rank)
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value, int thr_rank)
 {
     if constexpr (is_bool)
     {
@@ -846,21 +846,21 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_
 
 /// @brief create_value() on the calling thread's rank.
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value(bool              need_set_second_value,
-                                                                 SecondValueRef<T> ptr_second_value)
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(bool              need_set_second_value,
+                                                                    SecondValueRef<T> ptr_second_value)
 {
     create_value(need_set_second_value, ptr_second_value, get_thr_rank_fast());
 }
 
 /// @brief create_value_bool() on the calling thread's rank.
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value)
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value)
 {
     create_value_bool(need_set_second_value, get_thr_rank_fast());
 }
 
 // ---------------------------------------------------------------------------
-// zero_any::ChunkOmpPolicy<T, Derived, false>: materialise and clear, serial mode.
+// zero_any::ChunkThreadPolicy<T, Derived, false>: materialise and clear, serial mode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -870,8 +870,8 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_
  * assigned to `values`.
  */
 template <typename T, typename Derived>
-void zero_any::ChunkOmpPolicy<T, Derived, false>::create_value(bool              need_set_second_value,
-                                                               SecondValueRef<T> ptr_second_value)
+void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value(bool              need_set_second_value,
+                                                                  SecondValueRef<T> ptr_second_value)
 {
     const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
     {
@@ -896,7 +896,7 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::create_value(bool             
  * @param need_set_second_value Fill value — true for the second constant, false for the first.
  */
 template <typename T, typename Derived>
-void zero_any::ChunkOmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second_value)
+void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value_bool(bool need_set_second_value)
 {
     // bool's second value is always `true`: this IS create_value() at that value
     // (Base::init_block() is the `false` fill).
@@ -912,9 +912,9 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::create_value_bool(bool need_se
  * @param thr_rank         Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::clear(char*             ptr_type_cst,
-                                                          SecondValueRef<T> ptr_second_value,
-                                                          int               thr_rank)
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear(char*             ptr_type_cst,
+                                                             SecondValueRef<T> ptr_second_value,
+                                                             int               thr_rank)
 {
     Base::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
 }
@@ -929,7 +929,7 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::clear(char*             ptr_
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
-void zero_any::ChunkOmpPolicy<T, Derived, false>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+void zero_any::ChunkThreadPolicy<T, Derived, false>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
 {
     if (this->written())
     {
@@ -951,7 +951,7 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::clear(char* ptr_type_cst, Seco
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
-void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
 {
     Base::debug_check_written();
 
@@ -969,11 +969,11 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, S
  * the "block compressed" statistic is counted here and nowhere else.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
-                                                                char*                ptr_type_cst,
-                                                                SecondValueRef<T>    ptr_second_value,
-                                                                [[maybe_unused]] int thr_rank,
-                                                                T*                   cst2_ptr)
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
+                                                                   char*                ptr_type_cst,
+                                                                   SecondValueRef<T>    ptr_second_value,
+                                                                   [[maybe_unused]] int thr_rank,
+                                                                   T*                   cst2_ptr)
 {
     // CHUNK_STATS: one block released (see the function comment).
     increm_chunk_compress<Derived>();
@@ -989,11 +989,11 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::block_clear(int             
  * block_clear(), which installs it; otherwise it would pick up a stale one.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_compress_value,
-                                                                 char*             ptr_type_cst,
-                                                                 SecondValueRef<T> ptr_second_value,
-                                                                 int               thr_rank,
-                                                                 T*                new_cst_val2_ptr)
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int               num_compress_value,
+                                                                    char*             ptr_type_cst,
+                                                                    SecondValueRef<T> ptr_second_value,
+                                                                    int               thr_rank,
+                                                                    T*                new_cst_val2_ptr)
 {
     Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
 
@@ -1014,11 +1014,11 @@ void zero_any::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int            
 /// @param cst2_ptr           Second-value slot of the constant (type 2).
 /// @note The rank argument is unused: there is no rank pool serially.
 template <typename T, typename Derived>
-void zero_any::ChunkOmpPolicy<T, Derived, false>::block_clear(int               num_compress_value,
-                                                              char*             ptr_type_cst,
-                                                              SecondValueRef<T> ptr_second_value,
-                                                              int /*thr_rank*/,
-                                                              T* cst2_ptr)
+void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(int               num_compress_value,
+                                                                 char*             ptr_type_cst,
+                                                                 SecondValueRef<T> ptr_second_value,
+                                                                 int /*thr_rank*/,
+                                                                 T* cst2_ptr)
 {
     // As try_mark_cst_and_get_old() on the OpenMP side: a chunk already at a constant has no
     // buffer; freeing that pointer corrupts the allocator (or faults). The type table already
@@ -1046,14 +1046,14 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::block_clear(int               
 /**
  * @brief Serial twin of the five-argument clear_int_st(): same commit-then-block_clear
  *        order. thr_rank is 0 here.
- * @copydetails zero_any::ChunkOmpPolicy::clear_int_st
+ * @copydetails zero_any::ChunkThreadPolicy::clear_int_st
  */
 template <typename T, typename Derived>
-void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_int_st(int               num_compress_value,
-                                                               char*             ptr_type_cst,
-                                                               SecondValueRef<T> ptr_second_value,
-                                                               int               thr_rank,
-                                                               T*                new_cst_val2_ptr)
+void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int               num_compress_value,
+                                                                  char*             ptr_type_cst,
+                                                                  SecondValueRef<T> ptr_second_value,
+                                                                  int               thr_rank,
+                                                                  T*                new_cst_val2_ptr)
 {
     Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
@@ -1064,6 +1064,6 @@ void zero_any::ChunkOmpPolicy<T, Derived, false>::clear_int_st(int              
 }
 
 // clear_st(num_compress_value, ptr_type_cst, ptr_second_value), which supplies the calling
-// rank, is defined in-class on the OpenMP zero_any::ChunkOmpPolicy specialisation.
+// rank, is defined in-class on the OpenMP zero_any::ChunkThreadPolicy specialisation.
 
 } // namespace shrink_array

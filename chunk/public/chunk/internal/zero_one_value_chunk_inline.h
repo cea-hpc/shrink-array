@@ -61,7 +61,7 @@
  *  - **And twice again over OpenMP**, where the serial twin takes a genuinely
  *    different path: no CAS, no rank, and the element counters
  *    (`use_compression_with_counter`) to reset, which the parallel path does not
- *    maintain. The two live on the two specialisations of zero_one_value::ChunkOmpPolicy
+ *    maintain. The two live on the two specialisations of zero_one_value::ChunkThreadPolicy
  *    (build_config::threaded); the queue-driven compression is on
  *    zero_one_value::ChunkFastCompPolicy<..., true>.
  *  - **Geometry comes from the queued entry, never from the ambient size.**
@@ -81,7 +81,7 @@ namespace shrink_array
 // ── Array-new (placement-new arrays; see chunk_array_new.h) ────────────────
 // Out of line on purpose, as operator delete[] below: see there.
 template <typename T, typename Derived, bool Enabled>
-[[gnu::noinline]] void* zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
+[[gnu::noinline]] void* zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
     auto* v = static_cast<zero_one_value::Chunk<T>*>(::operator new(sz));
     init_chunks_cst_val(v, sz / sizeof(zero_one_value::Chunk<T>));
@@ -93,14 +93,15 @@ template <typename T, typename Derived, bool Enabled>
 // other operator, a false positive. Kept as calls, it sees the class's own
 // new[] / delete[] pair.
 template <typename T, typename Derived, bool Enabled>
-[[gnu::noinline]] void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
+[[gnu::noinline]] void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
     ::operator delete(ptr);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_one_value::Chunk<T>* v,
-                                                                              std::size_t               count) noexcept
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(
+    zero_one_value::Chunk<T>* v,
+    std::size_t               count) noexcept
 {
     chunk_array_new::init_chunks(v, count, [](zero_one_value::Chunk<T>& chunk) { chunk.init_after_constructor(); });
 }
@@ -893,7 +894,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
 }
 
 // ---------------------------------------------------------------------------
-// zero_one_value::ChunkOmpPolicy<T, Derived, true>: materialise and clear, OpenMP mode.
+// zero_one_value::ChunkThreadPolicy<T, Derived, true>: materialise and clear, threaded mode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -923,7 +924,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
  */
 template <typename T, typename Derived, bool Enabled>
 template <bool IsBoolCas, typename InitFn>
-void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::create_value_impl(
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_impl(
     int                   thr_rank,
     InitFn&&              init_func,
     [[maybe_unused]] int  ind,
@@ -971,9 +972,9 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::create_value_impl(
  *       apply_cas_or_recup().
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::create_value(bool             need_set_second_value,
-                                                                       const InfArrayT& inf_array,
-                                                                       int              thr_rank) noexcept
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value(bool             need_set_second_value,
+                                                                          const InfArrayT& inf_array,
+                                                                          int              thr_rank) noexcept
 {
     if constexpr (is_not_bool)
     {
@@ -1005,8 +1006,8 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::create_value(bool     
  * Same allocate-fill-CAS shape as create_value(), with no index to carry.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value,
-                                                                            int  thr_rank) noexcept
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value,
+                                                                               int  thr_rank) noexcept
 {
     create_value_impl</*IsBoolCas=*/true>(
         thr_rank,
@@ -1025,7 +1026,7 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(bool
 }
 
 // ---------------------------------------------------------------------------
-// zero_one_value::ChunkOmpPolicy<T, Derived, false>: materialise and clear, serial mode.
+// zero_one_value::ChunkThreadPolicy<T, Derived, false>: materialise and clear, serial mode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -1043,8 +1044,8 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::create_value_bool(bool
  */
 template <typename T, typename Derived>
 template <typename Init2ndFn>
-void zero_one_value::ChunkOmpPolicy<T, Derived, false>::create_value_serial_impl(bool        need_set_second_value,
-                                                                                 Init2ndFn&& init_2nd) noexcept
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::create_value_serial_impl(bool        need_set_second_value,
+                                                                                    Init2ndFn&& init_2nd) noexcept
 {
     const auto init_func = [this, need_set_second_value, &init_2nd](T* ptr)
     {
@@ -1067,8 +1068,8 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, false>::create_value_serial_impl
 }
 
 template <typename T, typename Derived>
-void zero_one_value::ChunkOmpPolicy<T, Derived, false>::create_value(bool             need_set_second_value,
-                                                                     const InfArrayT& inf_array) noexcept
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::create_value(bool             need_set_second_value,
+                                                                        const InfArrayT& inf_array) noexcept
 {
     if constexpr (is_not_bool)
     {
@@ -1086,7 +1087,7 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, false>::create_value(bool       
  * @brief Materialises a `bool` chunk (serial build).
  */
 template <typename T, typename Derived>
-void zero_one_value::ChunkOmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second_value) noexcept
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::create_value_bool(bool need_set_second_value) noexcept
 {
     if constexpr (is_bool)
     {
@@ -1103,7 +1104,7 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, false>::create_value_bool(bool n
  * @brief Compresses this chunk back to first_value, if it is materialised.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::clear(int ind, int thr_rank)
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear(int ind, int thr_rank)
 {
     Base::clear_impl(ind, thr_rank);
 }
@@ -1115,7 +1116,7 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::clear(int ind, int thr
  * survives as a debug-only assertion.
  */
 template <typename T, typename Derived>
-void zero_one_value::ChunkOmpPolicy<T, Derived, false>::clear_st(int ind)
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_st(int ind)
 {
     Base::debug_check_written(ind);
 
@@ -1136,13 +1137,13 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, false>::clear_st(int ind)
  * statistics are counted here and nowhere else.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
-                                                                      int                  ind,
-                                                                      [[maybe_unused]] int thr_rank)
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
+                                                                         int                  ind,
+                                                                         [[maybe_unused]] int thr_rank)
 {
     // CHUNK_STATS: one materialised block released by a successful compression,
     // counted here: block_clear is the single point every variant and both
-    // OMP/non-OMP modes funnel through.
+    // threaded/serial modes funnel through.
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     Base::block_clear_common(num_compress_value, ind, thr_rank);
@@ -1152,9 +1153,11 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::block_clear(int       
 /// pool, and resets the per-chunk element counters. The rank argument is
 /// unused (documented with the declaration).
 template <typename T, typename Derived>
-void zero_one_value::ChunkOmpPolicy<T, Derived, false>::block_clear(int num_compress_value, int ind, int /*thr_rank*/)
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::block_clear(int num_compress_value,
+                                                                       int ind,
+                                                                       int /*thr_rank*/)
 {
-    // CHUNK_STATS: as the OpenMP block_clear above.
+    // CHUNK_STATS: as the threaded block_clear above.
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     Base::free_values(values_);
@@ -1173,7 +1176,7 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, false>::block_clear(int num_comp
  *      check_not_constant_before_clear().
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int num_compress_value, int ind, int thr_rank)
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int num_compress_value, int ind, int thr_rank)
 {
     Base::check_not_constant_before_clear(num_compress_value, ind);
     block_clear(num_compress_value, ind, thr_rank);
@@ -1183,7 +1186,7 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int num_c
  * @brief Bool twin of clear_int_st(): no second-value index to pass.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_compress_value, int thr_rank)
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_compress_value, int thr_rank)
 {
     if constexpr (is_bool)
     {
@@ -1203,7 +1206,7 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st_bool(int 
  * @pre The chunk is materialised (debug-only assertion).
  */
 template <typename T, typename Derived>
-void zero_one_value::ChunkOmpPolicy<T, Derived, false>::clear_int_st(int num_compress_value, int ind)
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_compress_value, int ind)
 {
     // Debug-only check. Bool chunks share a single second value with no index:
     // no-arg written check and the bool-specific reinit; non-bool is indexed.
@@ -1245,6 +1248,6 @@ void zero_one_value::ChunkOmpPolicy<T, Derived, false>::clear_int_st(int num_com
 
 // clear_st(int num_compress_value, int ind) -- the entry point that supplies
 // the calling thread's rank (or has none to supply) -- is defined in-class on
-// each zero_one_value::ChunkOmpPolicy specialisation.
+// each zero_one_value::ChunkThreadPolicy specialisation.
 
 } // end namespace shrink_array

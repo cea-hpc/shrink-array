@@ -69,7 +69,7 @@ namespace zero_any
 
 // ─── Concurrent (OMP) chunk operations extracted from zero_any ──────────────
 // CRTP policy base with the lock-free CAS operations of OpenMP builds only: zero_any inherits it
-// through the OpenMP specialisation of zero_any::ChunkOmpPolicy, so in a serial build the methods do not
+// through the OpenMP specialisation of zero_any::ChunkThreadPolicy, so in a serial build the methods do not
 // exist. Reaches zero_any's bases via self() (Base = SecondValueChunkBase, Holder = TabCstVal2Holder).
 /// @brief zero_any's lock-free CAS operations on `values` (OpenMP builds only).
 template <typename T, typename Derived>
@@ -356,7 +356,7 @@ class ChunkStateQueries
  * @details A serial build has no thread ranks, no CAS window and no in-flight
  *          compression to wait out, so it materialises and clears a chunk
  *          differently; each specialisation below declares exactly the verbs
- *          its mode has -- the technique of ChunkOmpPolicy / zero_one_value::ChunkOmpPolicy.
+ *          its mode has -- the technique of ChunkThreadPolicy / zero_one_value::ChunkThreadPolicy.
  *          The OpenMP specialisation also carries the CAS operations
  *          (zero_any::ChunkConcurrentOps).
  *
@@ -367,7 +367,7 @@ class ChunkStateQueries
  * @tparam Enabled build_config::threaded
  */
 template <typename T, typename Derived, bool Enabled = build_config::threaded>
-class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConcurrentOps<T, Derived>
+class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConcurrentOps<T, Derived>
 {
   public:
     using Base                   = SecondValueChunkBase<T, Derived>;
@@ -476,7 +476,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConc
  * @tparam Derived CRTP derived chunk type (zero_any::Chunk<T>)
  */
 template <typename T, typename Derived>
-class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
+class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
 {
   public:
     using Base           = SecondValueChunkBase<T, Derived>;
@@ -536,14 +536,14 @@ template <typename T>
 // no move operations on purpose -- a move falls back to
 // the copy, which carries the per-chunk state the way the copy constructor documents.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, public ChunkStateQueries<T, Chunk<T>>
+class Chunk : public ChunkThreadPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, public ChunkStateQueries<T, Chunk<T>>
 {
   public:
     friend class SecondValueChunkBase<T, Chunk>;
     friend class Proxy<T>;
 
-    using Base      = SecondValueChunkBase<T, Chunk>;                   ///< The CRTP chunk base.
-    using OmpPolicy = ChunkOmpPolicy<T, Chunk, build_config::threaded>; ///< This build's thread-model policy.
+    using Base         = SecondValueChunkBase<T, Chunk>;                      ///< The CRTP chunk base.
+    using ThreadPolicy = ChunkThreadPolicy<T, Chunk, build_config::threaded>; ///< This build's thread-model policy.
 
     using ManagerChunk2A = ManagerChunk<Chunk, T>;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
@@ -557,14 +557,14 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
     using Holder = TabCstVal2Holder<T>;
 
     // block_clear / clear_st / clear / clear_int_st / create_value* live on
-    // zero_any::ChunkOmpPolicy, one specialisation per mode (see above). Both declare
+    // zero_any::ChunkThreadPolicy, one specialisation per mode (see above). Both declare
     // these names; the in-class bodies below call them unqualified.
-    using OmpPolicy::block_clear;
-    using OmpPolicy::clear;
-    using OmpPolicy::clear_int_st;
-    using OmpPolicy::clear_st;
-    using OmpPolicy::create_value;
-    using OmpPolicy::create_value_bool;
+    using ThreadPolicy::block_clear;
+    using ThreadPolicy::clear;
+    using ThreadPolicy::clear_int_st;
+    using ThreadPolicy::clear_st;
+    using ThreadPolicy::create_value;
+    using ThreadPolicy::create_value_bool;
 
     // Statistics variant tag (CHUNK_STATS): 2 = zero_any.
     static constexpr int stat_variant = 2;
