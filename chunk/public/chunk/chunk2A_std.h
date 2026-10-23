@@ -44,8 +44,13 @@ namespace shrink_array
 template <typename T, typename ChunkT>
 struct CompressionManager;
 
+namespace zero_any
+{
+
 template <typename T>
-class Proxy2A;
+class Proxy;
+
+} // namespace zero_any
 
 template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
@@ -59,16 +64,19 @@ class ManagerChunk;
  * \tparam T Type of the values stored in the chunk
  */
 
+namespace zero_any
+{
+
 // ─── Concurrent (OMP) chunk operations extracted from Chunk2A ───────────────
 // CRTP policy base with the lock-free CAS operations of OpenMP builds only: Chunk2A inherits it
 // through the OpenMP specialisation of Chunk2AOmpPolicy, so in a serial build the methods do not
 // exist. Reaches Chunk2A's bases via self() (Base = Chunk2Base, Holder = TabCstVal2Holder).
 /// @brief Chunk2A's lock-free CAS operations on `values` (OpenMP builds only).
 template <typename T, typename Derived>
-class Chunk2AConcurrentOps
+class ChunkConcurrentOps
 {
   public:
-    using Base   = Chunk2Base<T, Derived>;
+    using Base   = SecondValueChunkBase<T, Derived>;
     using Holder = TabCstVal2Holder<T>;
 
     /// @brief Atomically mark this chunk constant and hand back its old buffer.
@@ -220,10 +228,10 @@ class Chunk2AConcurrentOps
 // every build, so mixed into Chunk2A UNCONDITIONALLY (not gated on threaded).
 /// @brief Chunk2A's lock-free reads of its constant state (cst_val1 / cst_val2 / written), every build.
 template <typename T, typename Derived>
-class Chunk2AStateQueries
+class ChunkStateQueries
 {
   public:
-    using Base   = Chunk2Base<T, Derived>;
+    using Base   = SecondValueChunkBase<T, Derived>;
     using Holder = TabCstVal2Holder<T>;
 
     /// @brief Is the chunk compressed to a second value (its values pointer
@@ -359,11 +367,11 @@ class Chunk2AStateQueries
  * @tparam Enabled build_config::threaded
  */
 template <typename T, typename Derived, bool Enabled = build_config::threaded>
-class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrentOps<T, Derived>
+class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConcurrentOps<T, Derived>
 {
   public:
-    using Base                   = Chunk2Base<T, Derived>;
-    using ManagerChunk2A         = ManagerChunk<Chunk2A, T>;
+    using Base                   = SecondValueChunkBase<T, Derived>;
+    using ManagerChunk2A         = ManagerChunk<Chunk, T>;
     using CompressionManagerType = CompressionManager<T, Derived>;
 
     using Base::derived;
@@ -458,7 +466,7 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Shared by the three
     ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Chunk2A<T>* v, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
 };
 
 /**
@@ -468,11 +476,11 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
  * @tparam Derived CRTP derived chunk type (Chunk2A<T>)
  */
 template <typename T, typename Derived>
-class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
+class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
 {
   public:
-    using Base           = Chunk2Base<T, Derived>;
-    using ManagerChunk2A = ManagerChunk<Chunk2A, T>;
+    using Base           = SecondValueChunkBase<T, Derived>;
+    using ManagerChunk2A = ManagerChunk<Chunk, T>;
 
     using Base::derived;
     using Base::is_bool;
@@ -480,7 +488,7 @@ class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     using Base::values_;
 
     /// @brief The single candidate list of a serial build.
-    static TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially() noexcept
+    static TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially() noexcept
     {
         return ManagerChunk2A::chunk2a_to_compress_potentially;
     }
@@ -528,21 +536,19 @@ template <typename T>
 // no move operations on purpose -- a move falls back to
 // the copy, which carries the per-chunk state the way the copy constructor documents.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
-                public TabCstVal2Holder<T>,
-                public Chunk2AStateQueries<T, Chunk2A<T>>
+class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, public ChunkStateQueries<T, Chunk<T>>
 {
   public:
-    friend class Chunk2Base<T, Chunk2A>;
-    friend class Proxy2A<T>;
+    friend class SecondValueChunkBase<T, Chunk>;
+    friend class Proxy<T>;
 
-    using Base      = Chunk2Base<T, Chunk2A>;                               ///< The CRTP chunk base.
-    using OmpPolicy = Chunk2AOmpPolicy<T, Chunk2A, build_config::threaded>; ///< This build's thread-model policy.
+    using Base      = SecondValueChunkBase<T, Chunk>;                   ///< The CRTP chunk base.
+    using OmpPolicy = ChunkOmpPolicy<T, Chunk, build_config::threaded>; ///< This build's thread-model policy.
 
-    using ManagerChunk2A = ManagerChunk<Chunk2A, T>;
+    using ManagerChunk2A = ManagerChunk<Chunk, T>;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
-    using VecTupleChunkA2pInt2  = std::vector<std::tuple<Chunk2A*, int, int, ChunkElems>>;
-    using VecTupleChunkA2pTint2 = std::vector<std::tuple<Chunk2A*, T, int, int, ChunkElems>>;
+    using VecTupleChunkA2pInt2  = std::vector<std::tuple<Chunk*, int, int, ChunkElems>>;
+    using VecTupleChunkA2pTint2 = std::vector<std::tuple<Chunk*, T, int, int, ChunkElems>>;
 
     using Base::allocator_data;
     using Base::first_value;
@@ -563,18 +569,18 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     // Statistics variant tag (CHUNK_STATS): 2 = chunk2a.
     static constexpr int stat_variant = 2;
 
-    Chunk2A()  = default;
-    ~Chunk2A() = default;
+    Chunk()  = default;
+    ~Chunk() = default;
 
     /// @brief Copy the per-chunk state of @p other (Base::values_store(other.values_load())).
-    Chunk2A(const Chunk2A& other)
+    Chunk(const Chunk& other)
     {
         Base::values_store(other.values_load()); // the whole per-chunk state
     }
 
     /// @brief Copy the per-chunk state of @p other unless it is this chunk.
     /// @return *this.
-    Chunk2A& operator=(const Chunk2A& other)
+    Chunk& operator=(const Chunk& other)
     {
         if (this != &other)
         {
@@ -657,7 +663,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     }
 
     /// @brief Rank @p thr's candidate list.
-    static TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
+    static TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
     {
         return ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
     }
@@ -738,10 +744,10 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     }
     static bool have_chunk_to_compress(int max_thr);
 
-    static void make_block_compression(int thr, Proxy2A<T>* proxy2a);
+    static void make_block_compression(int thr, Proxy<T>* proxy2a);
 
   private:
-    using ChunkType              = Chunk2A;
+    using ChunkType              = Chunk;
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
     static constexpr char is_val1 = 0;
@@ -784,6 +790,8 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
 
     static inline constinit internal::LazyImmortal<ManagerChunk2A> s_manager_;
 };
+
+} // namespace zero_any
 
 } // namespace shrink_array
 

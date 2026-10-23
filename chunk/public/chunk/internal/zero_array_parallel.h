@@ -42,6 +42,9 @@
 namespace shrink_array
 {
 
+namespace zero
+{
+
 /**
  * @brief The OpenMP-only members of an array, present only when the build has OpenMP.
  *
@@ -130,5 +133,7 @@ class FastBlockSupport<Derived, false>
     /** @brief No-op: this mode has no deferred candidate list. */
     void make_block_compression() noexcept {}
 };
+
+} // namespace zero
 
 } // namespace shrink_array

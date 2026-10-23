@@ -20,11 +20,14 @@
 namespace shrink_array
 {
 
+namespace zero_one_value
+{
+
 /**
  * @brief Compile-time settings of Chunk2: the compression-list thresholds,
  *        adjusted by chunk_config::tuning_level.
  */
-struct Chunk2Def
+struct ChunkDef
 {
     // --- Compression List Settings ---
     // Level 1: Trigger compression every 2 modified chunks (Extreme stress)
@@ -60,5 +63,7 @@ struct Chunk2Def
         }
     }();
 };
+
+} // namespace zero_one_value
 
 } // namespace shrink_array

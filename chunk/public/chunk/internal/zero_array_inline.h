@@ -53,7 +53,7 @@ void zero::Array<T, IntType>::rebuild_storage(IntType sz)
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                Proxy<T>::resize_tab_is_int(this->num_tab_, nb_chunk_);
+                zero::Proxy<T>::resize_tab_is_int(this->num_tab_, nb_chunk_);
             }
         }
         else if (sz && !this->size_policy_.size())
@@ -86,7 +86,7 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
         return;
     }
 
-    const auto& sh_inf  = *Proxy<T>::share_info_array;
+    const auto& sh_inf  = *zero::Proxy<T>::share_info_array;
     const int   num_tab = sh_inf.get_num_tab(this->registry_key());
 
     // Read before the clear() drain mutates state. Not written() = compressed
@@ -118,7 +118,7 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
             {
                 return;
             }
-            if (*v0 == Chunk<T>::first_value)
+            if (*v0 == zero::Chunk<T>::first_value)
             {
                 ++acc[0]; // compressible now; the drain just had not caught it yet
             }
@@ -133,9 +133,9 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
     // Plain Chunk has no type-2 (n_t1 = 0).
     if constexpr (chunk_config::stats)
     {
-        add_chunk_still_compressed_at_exit<Chunk<T>>(n_compressed);
+        add_chunk_still_compressed_at_exit<zero::Chunk<T>>(n_compressed);
         // Dyn-only end-of-life size distribution (see chunk_stats.h).
-        record_chunk_size_at_exit<Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
+        record_chunk_size_at_exit<zero::Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
     print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk_,
                                 /*n_t1=*/0, "Chunk",
@@ -177,7 +177,7 @@ void zero::Array<T, IntType>::clear_core()
     // it to keep foreign-geometry chunks out of the shared list.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf   = *Proxy<T>::share_info_array;
+        const auto& sh_inf   = *zero::Proxy<T>::share_info_array;
         const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
         Manager::remove_from_compress_list_chunk_by_num_tab(num_tab_);
     }
@@ -209,7 +209,7 @@ void zero::Array<T, IntType>::clear_core()
                   {
                       const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_);
 
-                      std::vector<Chunk<T>*> ll_chunk_loc;
+                      std::vector<zero::Chunk<T>*> ll_chunk_loc;
                       ll_chunk_loc.reserve(nb_chunk0);
 
                       team.for_static<int>(
@@ -220,10 +220,11 @@ void zero::Array<T, IntType>::clear_core()
                               {
                                   if constexpr (chunk_config::stats)
                                   {
-                                      increm_chunk_teardown_clear<Chunk<T>>();
+                                      increm_chunk_teardown_clear<zero::Chunk<T>>();
                                       // Released below without a compression: out of the live figures.
-                                      add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                          static_cast<long>(this->size_policy_.size()));
+                                      add_chunk_released<zero::Chunk<T>>(
+                                          1,
+                                          static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
                                   }
                                   ll_chunk_loc.push_back(&chunk_list_[j]);
                               }
@@ -241,7 +242,7 @@ void zero::Array<T, IntType>::clear_core()
                           // the LEGACY list, which drain_reuse_list_for_size() never
                           // drains: those blocks then stay until teardown.
                           const unsigned int my_sz = this->size_policy_.size();
-                          auto&              lbf = Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                          auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                           for (int k = 0; k < nb; ++k)
                           {
@@ -271,7 +272,7 @@ void zero::Array<T, IntType>::clear_core()
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<Chunk<T>>();
+                    increm_chunk_teardown_clear<zero::Chunk<T>>();
                 }
                 // release_st: counted as teardown_clear above, not also as a
                 // compression.
@@ -291,13 +292,13 @@ void zero::Array<T, IntType>::clear_core()
     // own region. Key 0: nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        ManagerChunk<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
+        ManagerChunk<zero::Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
     }
 
     // The candidate flags (one byte per chunk): released now that the purge
     // at the top has run and the chunks are gone -- a re-chunk's old storage
     // dies under its own num_tab, which nothing reuses.
-    Proxy<T>::release_tab_is_int(this->num_tab_);
+    zero::Proxy<T>::release_tab_is_int(this->num_tab_);
 }
 
 template <ArrayChunkElement T, typename IntType>
@@ -327,7 +328,7 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
                 // bypasses compress(), which would otherwise count it.
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_compress_attempt<Chunk<T>>();
+                    increm_chunk_compress_attempt<zero::Chunk<T>>();
                 }
 
                 if (chunk.is_constant_to(T{}, static_cast<unsigned int>(this->size_policy_.size())))
@@ -384,15 +385,15 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
             first, last, [my_sz]() -> auto&
-            { return Chunk<T>::Manager::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
+            { return zero::Chunk<T>::Manager::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this, my_sz](int j, auto& lbf)
             {
                 if (chunk_list_[j].written())
                 {
                     if constexpr (chunk_config::stats)
                     {
-                        increm_chunk_teardown_clear<Chunk<T>>();
-                        add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                        increm_chunk_teardown_clear<zero::Chunk<T>>();
+                        add_chunk_released<zero::Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
                     }
                     // As clear_core(): v1's reuse lists hold zeroed buffers.
                     T*          values_loc = chunk_list_[j].values_;
@@ -412,7 +413,7 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<Chunk<T>>();
+                    increm_chunk_teardown_clear<zero::Chunk<T>>();
                 }
                 chunk_list_[j].release_st();
             }
@@ -438,7 +439,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
         make_block_compression();
     }
 
-    const auto& sh_inf = *Proxy<T>::share_info_array;
+    const auto& sh_inf = *zero::Proxy<T>::share_info_array;
 
     const int num_tab = sh_inf.get_num_tab(this->registry_key());
 
@@ -462,7 +463,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        Proxy<T>::resize_tab_is_int(num_tab, nb_chunk_);
+        zero::Proxy<T>::resize_tab_is_int(num_tab, nb_chunk_);
     }
     Manager::increm_somme_chunk_create(nb_chunk_ - old_nb_chunk);
     Manager::compute_size_buffer_reuse();

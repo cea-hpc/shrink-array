@@ -44,6 +44,9 @@
 namespace shrink_array
 {
 
+namespace zero_one_value
+{
+
 /**
  * @brief The OpenMP-only members of zero_one_value::Array, present only when the build has OpenMP.
  *
@@ -52,7 +55,7 @@ namespace shrink_array
  *         explicitly outside of tests.
  */
 template <typename Derived, bool Enabled = build_config::threaded>
-struct ParallelSupport2;
+struct ParallelSupport;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
 /**
@@ -60,7 +63,7 @@ struct ParallelSupport2;
  * @copydetails ParallelSupport2
  */
 template <typename Derived>
-struct ParallelSupport2<Derived, true> : public ParallelSupportCommon<Derived>
+struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
 {
     // flush_pending_deferred_ops() and self() come from ParallelSupportCommon.
 };
@@ -70,7 +73,7 @@ struct ParallelSupport2<Derived, true> : public ParallelSupportCommon<Derived>
  * @brief Serial specialisation: the same verb, inert.
  */
 template <typename Derived>
-struct ParallelSupport2<Derived, false> : public ParallelSupportCommonSerial<Derived>
+struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Derived>
 {
 };
 
@@ -85,7 +88,7 @@ struct ParallelSupport2<Derived, false> : public ParallelSupportCommonSerial<Der
  *          goes through CRTP, and no type-erased pass drives live arrays.
  */
 template <typename Derived, bool Enabled = chunk_config::use_fast_block_compression>
-class FastBlockSupport2;
+class FastBlockSupport;
 
 // ── Fast-block build: the real pass ──────────────────────────────────────────
 /**
@@ -93,7 +96,7 @@ class FastBlockSupport2;
  * @copydetails FastBlockSupport2
  */
 template <typename Derived>
-class FastBlockSupport2<Derived, true>
+class FastBlockSupport<Derived, true>
 {
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
@@ -128,11 +131,13 @@ class FastBlockSupport2<Derived, true>
  *          declared member in every mode.
  */
 template <typename Derived>
-class FastBlockSupport2<Derived, false>
+class FastBlockSupport<Derived, false>
 {
   public:
     /** @brief No-op: this mode has no deferred candidate list. */
     void make_block_compression() noexcept {}
 };
+
+} // namespace zero_one_value
 
 } // namespace shrink_array

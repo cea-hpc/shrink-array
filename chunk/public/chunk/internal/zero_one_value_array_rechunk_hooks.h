@@ -40,6 +40,9 @@
 namespace shrink_array
 {
 
+namespace zero_one_value
+{
+
 /**
  * @brief zero_one_value::Array's re-chunk hooks, present only when the geometry is a runtime value.
  *
@@ -48,7 +51,7 @@ namespace shrink_array
  *         explicitly outside of tests.
  */
 template <typename Derived, bool Dynamic = build_config::chunk_dynamic>
-class RechunkHooks2;
+class RechunkHooks;
 
 // ── CHUNK_DYNAMIC build: the real hooks ──────────────────────────────────────
 /**
@@ -56,7 +59,7 @@ class RechunkHooks2;
  * @copydetails RechunkHooks2
  */
 template <typename Derived>
-class RechunkHooks2<Derived, true>
+class RechunkHooks<Derived, true>
 {
   public:
     using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
@@ -121,7 +124,7 @@ class RechunkHooks2<Derived, true>
  * @details Never called; kept for zero_one_value::Array's using-declarations.
  */
 template <typename Derived>
-class RechunkHooks2<Derived, false>
+class RechunkHooks<Derived, false>
 {
   public:
     using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
@@ -146,5 +149,7 @@ class RechunkHooks2<Derived, false>
     /** @brief No-op: no identity was swapped, so nothing to re-own. */
     void rechunk_reown_after_swap(Derived& /*tmp*/, InT<value_type> /*state*/) const noexcept {}
 };
+
+} // namespace zero_one_value
 
 } // namespace shrink_array

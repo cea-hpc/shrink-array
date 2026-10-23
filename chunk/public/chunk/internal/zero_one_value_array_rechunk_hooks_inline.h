@@ -31,7 +31,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
+void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates()
 {
     // num_tab from the registry, never the member. The drop happens at the
     // owning geometry (see RechunkSupport::rechunk_to). COMPRESS the candidates
@@ -68,13 +68,14 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size) const
+void zero_one_value::RechunkHooks<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size) const
 {
     ManagerType::drain_reuse_list_for_size(new_size);
 }
 
 template <typename Derived>
-RechunkHooks2<Derived, true>::value_type RechunkHooks2<Derived, true>::rechunk_capture_state() const
+zero_one_value::RechunkHooks<Derived, true>::value_type
+zero_one_value::RechunkHooks<Derived, true>::rechunk_capture_state() const
 {
     // The array-level second value; bool's is re-established by create().
     if constexpr (Derived::is_not_bool)
@@ -88,7 +89,7 @@ RechunkHooks2<Derived, true>::value_type RechunkHooks2<Derived, true>::rechunk_c
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_seed_fresh(InT<value_type> state)
+void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(InT<value_type> state)
 {
     // On the FRESH array before refill. Not value_type{}: that is already its
     // state, and re-declaring it would make a degenerate cst_val2 == cst_val1 buffer.
@@ -106,7 +107,7 @@ void RechunkHooks2<Derived, true>::rechunk_seed_fresh(InT<value_type> state)
 }
 
 template <typename Derived>
-bool RechunkHooks2<Derived, true>::rechunk_swap_identity(Derived& tmp)
+bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
     // The num_tab, ind_cst_val2 and inf_array MEMBERS are NOT swapped: the
     // identity comes from share_info_array, and the members may be
@@ -116,7 +117,7 @@ bool RechunkHooks2<Derived, true>::rechunk_swap_identity(Derived& tmp)
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<value_type> state)
+void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<value_type> state)
 {
     // Re-own the registration of `state`: map_inf_array[state] points at
     // &tmp.inf_array, which dangles once the stack tmp dies, and the next

@@ -104,15 +104,15 @@ void AllTypeChunk::initialize()
     // a build may select more than one (chunk_config::use_chunk*).
     if constexpr (chunk_config::use_chunk)
     {
-        fill_manager_chunk<Chunk, Types>();
+        fill_manager_chunk<zero::Chunk, Types>();
     }
     if constexpr (chunk_config::use_chunk2)
     {
-        fill_manager_chunk<Chunk2, Types>();
+        fill_manager_chunk<zero_one_value::Chunk, Types>();
     }
     if constexpr (chunk_config::use_chunk2a)
     {
-        fill_manager_chunk<Chunk2A, Types>();
+        fill_manager_chunk<zero_any::Chunk, Types>();
     }
 }
 

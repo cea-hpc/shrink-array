@@ -24,11 +24,15 @@
 namespace shrink_array
 {
 
-template <typename T>
-class Chunk;
+namespace zero
+{
 
 template <typename T>
+class Chunk;
+template <typename T>
 class Proxy;
+
+} // namespace zero
 
 /// @brief The proxy's num_tab: its armed value where the proxy keeps one
 ///        (get_num_tab_cached, v1), get_num_tab(array_ptr) where the proxy
@@ -60,7 +64,7 @@ constexpr int get_num_tab_helper(const ProxyT& proxy, const void* array_ptr) noe
  *          needed) or any cached compression metadata: a deferred write never
  *          uses stale state.
  */
-template <typename T, typename ProxyT, typename ChunkT = Chunk<T>>
+template <typename T, typename ProxyT, typename ChunkT = zero::Chunk<T>>
 struct BaseArithmeticContext
 {
     /// @brief Capture the proxy's position, chunk, geometry and allocation key.
@@ -119,27 +123,27 @@ struct BaseArithmeticContext
 
 /// @brief Context of a deferred Proxy<T> write without operand or operation.
 template <typename T>
-struct ArithmeticProxyContext : public BaseArithmeticContext<T, Proxy<T>>
+struct ArithmeticProxyContext : public BaseArithmeticContext<T, zero::Proxy<T>>
 {
-    using Base = BaseArithmeticContext<T, Proxy<T>>;
+    using Base = BaseArithmeticContext<T, zero::Proxy<T>>;
 
     /// @brief Build the context from @p proxy.
     /// @param proxy Proxy the context is built from.
     /// @param array_ptr Owning array.
-    ArithmeticProxyContext(const Proxy<T>& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
+    ArithmeticProxyContext(const zero::Proxy<T>& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
 };
 
 /// @brief Context of a deferred Proxy<T> assignment: the assigned value.
 template <typename T, typename U>
-struct ArithmeticAffectationProxyContext : public BaseArithmeticContext<T, Proxy<T>>
+struct ArithmeticAffectationProxyContext : public BaseArithmeticContext<T, zero::Proxy<T>>
 {
-    using Base = BaseArithmeticContext<T, Proxy<T>>;
+    using Base = BaseArithmeticContext<T, zero::Proxy<T>>;
 
     /// @brief Build the context from @p proxy with the value to assign.
     /// @param proxy Proxy the context is built from.
     /// @param op_value Assigned value, stored in operand.
     /// @param array_ptr Owning array.
-    ArithmeticAffectationProxyContext(const Proxy<T>& proxy, InT<U> op_value, const void* array_ptr)
+    ArithmeticAffectationProxyContext(const zero::Proxy<T>& proxy, InT<U> op_value, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value)
     {
     }
@@ -150,16 +154,16 @@ struct ArithmeticAffectationProxyContext : public BaseArithmeticContext<T, Proxy
 /// @brief Context of a deferred Proxy<T> compound operation (+=, -=, *= ...):
 ///        the operand and the operation.
 template <typename T, typename Op>
-struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, Proxy<T>>
+struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, zero::Proxy<T>>
 {
-    using Base = BaseArithmeticContext<T, Proxy<T>>;
+    using Base = BaseArithmeticContext<T, zero::Proxy<T>>;
 
     /// @brief Build the context from @p proxy with an operand and the operation to apply.
     /// @param proxy Proxy the context is built from.
     /// @param op_value Right-hand operand.
     /// @param op Functor implementing the operation.
     /// @param array_ptr Owning array.
-    ArithmeticOperationProxyContext(const Proxy<T>& proxy, InT<T> op_value, Op op, const void* array_ptr)
+    ArithmeticOperationProxyContext(const zero::Proxy<T>& proxy, InT<T> op_value, Op op, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }

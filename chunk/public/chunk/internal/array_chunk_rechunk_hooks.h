@@ -82,7 +82,7 @@ class RechunkHooks<Derived, true>
     using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the candidate store.
 
     /// @brief zero_any::Array (otherwise zero::Array, v1): selects the candidate lists and the compress() call.
-    static constexpr bool is_chunk2a = std::is_same_v<typename Traits::ChunkType, Chunk2A<value_type>>;
+    static constexpr bool is_chunk2a = std::is_same_v<typename Traits::ChunkType, zero_any::Chunk<value_type>>;
 
     /**
      * @brief Compress, then drop, this array's queued compression candidates, by num_tab.

@@ -790,8 +790,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // would be looked up even in a discarded branch.
                     const T    v   = static_cast<T>(std::as_const(self())[base]);
                     auto&      nch = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
-                    const auto psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
-                    char*      ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
+                    const auto psv = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
+                    char*      ptc = &zero_any::Proxy<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
                     (void)nch.find_or_set_ind_cst_val2(v, psv);
                     ChunkType::set_cst_val_to_cst_val2(ptc);
                     nch.init_values_cst_val(ptc, psv);

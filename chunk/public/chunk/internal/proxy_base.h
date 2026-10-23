@@ -65,8 +65,13 @@ struct ArithmeticProxyContext;
 template <typename T, typename Op>
 struct ArithmeticOperationProxyContext;
 
+namespace zero
+{
+
 template <typename T>
 class Proxy;
+
+} // namespace zero
 
 /// @brief Whether T is a Proxy\<U\> (Proxy2 and Proxy2A are not): false by default.
 template <typename T>
@@ -76,7 +81,7 @@ struct is_simple_proxy : public std::false_type
 
 /// @brief Proxy<T> is a simple proxy.
 template <typename T>
-struct is_simple_proxy<Proxy<T>> : public std::true_type
+struct is_simple_proxy<zero::Proxy<T>> : public std::true_type
 {
 };
 namespace internal

@@ -32,7 +32,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void FastBlockSupport2<Derived, true>::make_block_compression()
+void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression()
 {
     if constexpr (build_config::chunk_dynamic)
     {

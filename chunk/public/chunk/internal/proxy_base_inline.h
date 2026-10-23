@@ -776,7 +776,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
         // Chunk2A only: its compression algorithm is identical in OMP and
         // non-OMP. Chunk/Chunk2 have distinct non-OMP paths and must NOT be
         // triggered here.
-        if constexpr (build_config::not_threaded && std::is_same_v<ChunkT, Chunk2A<T>>)
+        if constexpr (build_config::not_threaded && std::is_same_v<ChunkT, zero_any::Chunk<T>>)
         {
             // Skip during rechunk_refill / flush replay (in_flush_replay): the refill
             // materialises a chunk here and RAW-fills it right after; compressing it in

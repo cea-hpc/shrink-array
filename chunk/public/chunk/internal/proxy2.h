@@ -49,8 +49,13 @@ namespace shrink_array
 template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
+namespace zero_one_value
+{
+
 template <typename T>
-class Chunk2;
+class Chunk;
+
+} // namespace zero_one_value
 
 /**
  * @brief Proxy2 class for managing operations on a Chunk2<T>.
@@ -62,17 +67,20 @@ class Chunk2;
  * @tparam T The data type managed by the chunk.
  */
 
+namespace zero_one_value
+{
+
 template <typename T, typename Derived>
 // ind is set by load_inf_array() before
 // any use; left unset here on purpose, the proxy is built on every element access.
 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
-class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
+class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 {
   public:
-    using ChunkType = Chunk2<T>;
-    using Base      = Proxy2Base<Derived, T, Chunk2<T>>;
+    using ChunkType = Chunk<T>;
+    using Base      = SecondValueProxyBase<Derived, T, Chunk<T>>;
     using Base::derived;
-    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkType>::ValuesTypeRef;
+    using ValuesTypeRef = SecondValueProxyBase<Derived, T, ChunkType>::ValuesTypeRef;
     using InfArrayT     = SecondValueInfo<T>;
 
     using Base::Base;
@@ -238,16 +246,16 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 // bool and Bit (bit.h): the second constant is `true`, only num_tab is per array.
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
+class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
 {
   public:
-    using Base = Proxy2Base<Derived, T, Chunk2<T>>;
+    using Base = SecondValueProxyBase<Derived, T, Chunk<T>>;
     using Base::derived;
     using InfArrayT = SecondValueInfo<T>;
 
-    using ChunkType = Chunk2<T>;
+    using ChunkType = Chunk<T>;
 
-    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkType>::ValuesTypeRef;
+    using ValuesTypeRef = SecondValueProxyBase<Derived, T, ChunkType>::ValuesTypeRef;
 
     using Base::Base;
 
@@ -371,11 +379,11 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
  * Encapsulates per-thread list management and trigger logic.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
+class ProxyFastCompPolicy : public ProxySpec<T, Derived>
 {
   public:
-    using Base2 = Proxy2Base<Derived, T, Chunk2<T>>;
-    using Base  = ProxyBase<Derived, T, Chunk2<T>>;
+    using Base2 = SecondValueProxyBase<Derived, T, Chunk<T>>;
+    using Base  = ProxyBase<Derived, T, Chunk<T>>;
 
     using Base::chunk_;
     using Base::num_;
@@ -383,21 +391,21 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     using Base::read_values_async;
     using Base::tab_is_inside_chunk_list_to_compress;
     using Base::values_;
-    using ProxySpec2<T, Derived>::inf_array_;
+    using ProxySpec<T, Derived>::inf_array_;
 
     // second_value is in a dependent base: import it for unqualified use (two-phase lookup).
-    using ProxySpec2<T, Derived>::second_value_;
+    using ProxySpec<T, Derived>::second_value_;
 
-    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
+    using ManagerChunk2 = ManagerChunk<Chunk, T>;
 
     using CRTPSupport<Derived>::derived;
     using CRTPSupport<Derived>::self;
 
     using CompressionManagerType = CompressionManager<T, ChunkT>;
 
-    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkT>::ValuesTypeRef;
+    using ValuesTypeRef = SecondValueProxyBase<Derived, T, ChunkT>::ValuesTypeRef;
 
-    using ProxySpec2<T, Derived>::ProxySpec2;
+    using ProxySpec<T, Derived>::ProxySpec;
 
     /**
      * @brief Check if compression should be triggered for current thread
@@ -504,7 +512,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          This allows grouping chunks with the same second_value for batch compression.
      */
 
-    VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+    VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
         const auto second_value = get_second_value();
         // find(), not operator[]: operator[] INSERTS a null entry for a missing
@@ -524,7 +532,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @param thr Thread rank [0, MAX_THREADS).
      * @return Reference to vector of (chunk*, chunk_idx, tab_idx) tuples.
      */
-    VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const
+    VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const
     {
         const auto second_value = get_second_value(ctx);
         // find(), not operator[]: operator[] INSERTS a null entry for a missing
@@ -548,7 +556,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
 
     void mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const
     {
-        Base2::mark_for_compression_if_needed(second_value_, old_value, new_value, Chunk2<T>::first_value);
+        Base2::mark_for_compression_if_needed(second_value_, old_value, new_value, Chunk<T>::first_value);
     }
 
     /**
@@ -660,7 +668,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      */
     void mark_for_compression_if_needed(InT<T> new_value) const
     {
-        Base2::mark_for_compression_if_needed(second_value_, new_value, Chunk2<T>::first_value);
+        Base2::mark_for_compression_if_needed(second_value_, new_value, Chunk<T>::first_value);
     }
 
   private:
@@ -672,17 +680,17 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
  * @brief Specialization for Disabled Fast Compression (Zero Overhead).
  */
 template <typename Derived, typename T, typename ChunkT>
-class Proxy2FastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec2<T, Derived>
+class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Derived>
 {
   public:
-    using ValuesTypeRef = Proxy2Base<Derived, T, ChunkT>::ValuesTypeRef;
-    using Base          = ProxyBase<Derived, T, Chunk2<T>>;
+    using ValuesTypeRef = SecondValueProxyBase<Derived, T, ChunkT>::ValuesTypeRef;
+    using Base          = ProxyBase<Derived, T, Chunk<T>>;
     using Base::chunk_;
     using CRTPSupport<Derived>::derived;
-    using ProxySpec2<T, Derived>::second_value_;
-    using ProxySpec2<T, Derived>::inf_array_;
+    using ProxySpec<T, Derived>::second_value_;
+    using ProxySpec<T, Derived>::inf_array_;
 
-    using ProxySpec2<T, Derived>::ProxySpec2;
+    using ProxySpec<T, Derived>::ProxySpec;
 
     // ------------------------------------------------------------------
     // Counter mode is the exact complement of fast block compression
@@ -769,17 +777,17 @@ template <typename T>
 // no move assignment on purpose -- assigning a proxy
 // WRITES the element (see its operator=); a defaulted move would rebind it instead.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config::use_fast_block_compression>
+class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::use_fast_block_compression>
 {
   public:
     /// @brief Stream output of the element's value (defined below).
     template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy2<U>& proxy);
+    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
 
-    using Base2          = Proxy2Base<Proxy2, T, Chunk2<T>>;
-    using Base           = ProxyBase<Proxy2, T, Chunk2<T>>;
-    using ChunkType      = Chunk2<T>;
-    using FastCompPolicy = Proxy2FastCompPolicy<Proxy2, T, Chunk2<T>, chunk_config::use_fast_block_compression>;
+    using Base2          = SecondValueProxyBase<Proxy, T, Chunk<T>>;
+    using Base           = ProxyBase<Proxy, T, Chunk<T>>;
+    using ChunkType      = Chunk<T>;
+    using FastCompPolicy = ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
@@ -788,12 +796,12 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
 
     using Base::set_num_tab;
 
-    using BaseSpec = ProxySpec2<T, Proxy2>;
+    using BaseSpec = ProxySpec<T, Proxy>;
     using BaseSpec::second_value_;
 
   private:
     /// Alias for the chunk manager associated with type T.
-    using ManagerChunk2 = ManagerChunk<Chunk2, T>;
+    using ManagerChunk2 = ManagerChunk<Chunk, T>;
 
     using Base::chunk_;        ///< Reference to the associated chunk.
     using Base::num_;          ///< Index of the current element within the chunk.
@@ -981,8 +989,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @param num Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit Proxy2(ValuesTypeRef values, int num, Chunk2<T>& chunk) noexcept
-        : Proxy2FastCompPolicy<Proxy2, T, Chunk2<T>, chunk_config::use_fast_block_compression>(values, num, chunk)
+    explicit Proxy(ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept
+        : ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>(values, num, chunk)
     {
     }
 
@@ -1020,7 +1028,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @param from Proxy to read the value from.
      * @return *this.
      */
-    const Proxy2& operator=(const Proxy2& from) noexcept
+    const Proxy& operator=(const Proxy& from) noexcept
     {
         if (std::addressof(from) != this) // operator& is deleted
         {
@@ -1029,7 +1037,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         }
         return *this;
     }
-    Proxy2(const Proxy2& other) = default;
+    Proxy(const Proxy& other) = default;
 
     T*       operator&()       = delete;
     const T* operator&() const = delete;
@@ -1190,13 +1198,15 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *
      * Used to retrieve compression-related information for a given value.
      */
-    static inline constinit internal::LazyImmortal<PointerMapChunk2<T>> share_info_array;
+    static inline constinit internal::LazyImmortal<PointerMap<T>> share_info_array;
 };
+
+} // namespace zero_one_value
 
 /// @brief Write the element's value, read through proxy.read_pure(), to @p os.
 /// @return @p os.
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const Proxy2<T>& proxy)
+std::ostream& operator<<(std::ostream& os, const zero_one_value::Proxy<T>& proxy)
 {
     // Through the proxy's read entry, like operator T(): the raw values[num] snapshot is stale
     // while a deferred op pends on this offset.

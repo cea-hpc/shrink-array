@@ -77,9 +77,10 @@ namespace
 {
 
 /// The chunk type of this build, as the arrays pick theirs.
-using Ch = std::conditional_t<chunk_config::use_chunk2a,
-                              Chunk2A<double>,
-                              std::conditional_t<chunk_config::use_chunk2, Chunk2<double>, Chunk<double>>>;
+using Ch = std::conditional_t<
+    chunk_config::use_chunk2a,
+    zero_any::Chunk<double>,
+    std::conditional_t<chunk_config::use_chunk2, zero_one_value::Chunk<double>, zero::Chunk<double>>>;
 
 constexpr const char* variant_name()
 {

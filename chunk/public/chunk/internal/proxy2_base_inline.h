@@ -31,11 +31,11 @@ namespace shrink_array
 
 template <typename Derived, typename T, typename ChunkT>
 template <typename... Args>
-void Proxy2Base<Derived, T, ChunkT>::mark_for_compression_core(InT<T> old_value,
-                                                               InT<T> new_value,
-                                                               InT<T> expected_in_memory,
-                                                               bool   isv,
-                                                               Args&&... compression_args) const
+void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_core(InT<T> old_value,
+                                                                         InT<T> new_value,
+                                                                         InT<T> expected_in_memory,
+                                                                         bool   isv,
+                                                                         Args&&... compression_args) const
 {
     // Check if transition is valid for compression OR if memory changed unexpectedly (Race)
     // isv (Is Valid) guards the entire check for performance.

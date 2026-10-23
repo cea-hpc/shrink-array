@@ -19,8 +19,11 @@
 namespace shrink_array
 {
 
+namespace zero_any
+{
+
 /// @brief Compile-time settings of Chunk2A: compression-list and buffer-reuse thresholds.
-class Chunk2ADef
+class ChunkDef
 {
   private:
     // --- Compression List Settings ---
@@ -82,5 +85,7 @@ class Chunk2ADef
     /// Reuse budget per thread = chunks / (this * max threads); used for every variant, global and per size.
     constexpr static int factor_div_somme_chunk_buffer_resuse = 50;
 };
+
+} // namespace zero_any
 
 } // namespace shrink_array

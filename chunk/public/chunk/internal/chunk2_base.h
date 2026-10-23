@@ -34,30 +34,38 @@ namespace shrink_array
 template <typename Derived>
 struct ProxyTypeTrait;
 
-template <typename T>
-class Chunk2;
+namespace zero_one_value
+{
 
 template <typename T>
-class Proxy2;
+class Chunk;
+template <typename T>
+class Proxy;
+
+} // namespace zero_one_value
+
+namespace zero_any
+{
 
 template <typename T>
-class Chunk2A;
-
+class Chunk;
 template <typename T>
-class Proxy2A;
+class Proxy;
+
+} // namespace zero_any
 
 // Specialisation for Chunk2
 template <typename T>
-struct ProxyTypeTrait<Chunk2<T>>
+struct ProxyTypeTrait<zero_one_value::Chunk<T>>
 {
-    using Type = Proxy2<T>;
+    using Type = zero_one_value::Proxy<T>;
 };
 
 // Specialisation for Chunk2A
 template <typename T>
-struct ProxyTypeTrait<Chunk2A<T>>
+struct ProxyTypeTrait<zero_any::Chunk<T>>
 {
-    using Type = Proxy2A<T>;
+    using Type = zero_any::Proxy<T>;
 };
 
 // ============================================================================
@@ -68,7 +76,7 @@ struct ProxyTypeTrait<Chunk2A<T>>
 /// @tparam T       Element type.
 /// @tparam Derived The chunk type.
 template <typename T, typename Derived>
-class Chunk2Base : public ChunkBase<T, Derived>
+class SecondValueChunkBase : public ChunkBase<T, Derived>
 {
   public:
     using Base = ChunkBase<T, Derived>;
@@ -84,12 +92,12 @@ class Chunk2Base : public ChunkBase<T, Derived>
     using Base::values_load;
     using Base::values_store;
 
-    Chunk2Base()                             = default;
-    ~Chunk2Base()                            = default;
-    Chunk2Base(const Chunk2Base&)            = default;
-    Chunk2Base& operator=(const Chunk2Base&) = default;
-    Chunk2Base(Chunk2Base&&)                 = default;
-    Chunk2Base& operator=(Chunk2Base&&)      = default;
+    SecondValueChunkBase()                                       = default;
+    ~SecondValueChunkBase()                                      = default;
+    SecondValueChunkBase(const SecondValueChunkBase&)            = default;
+    SecondValueChunkBase& operator=(const SecondValueChunkBase&) = default;
+    SecondValueChunkBase(SecondValueChunkBase&&)                 = default;
+    SecondValueChunkBase& operator=(SecondValueChunkBase&&)      = default;
 
   protected:
     // ========================================================================
@@ -218,8 +226,8 @@ class Chunk2Base : public ChunkBase<T, Derived>
     }
 
   private:
-    static constexpr bool is_chunk2a_derived = std::is_same_v<Derived, Chunk2A<T>>;
-    static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, Chunk2<T>>;
+    static constexpr bool is_chunk2a_derived = std::is_same_v<Derived, zero_any::Chunk<T>>;
+    static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
 
     /// @brief Clear chunk and reset to constant value
     /// @tparam IndexT Type of index parameter
@@ -241,7 +249,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
     {
         if constexpr (build_config::any_check)
         {
-            const auto* c1 = static_cast<const void*>(Chunk2Base::get_cst_val1());
+            const auto* c1 = static_cast<const void*>(SecondValueChunkBase::get_cst_val1());
 
             const void* c2 = nullptr;
 

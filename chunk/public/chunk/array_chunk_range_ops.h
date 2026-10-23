@@ -113,15 +113,16 @@ inline constexpr bool raw_fillable_v = !is_bool_like_v<T>;
  *          v1's paths and an zero::Array down Chunk2's.
  */
 template <typename Arr>
-inline constexpr bool is_v1_v = std::is_same_v<typename Arr::ChunkType, Chunk<typename Arr::value_type>>;
+inline constexpr bool is_v1_v = std::is_same_v<typename Arr::ChunkType, zero::Chunk<typename Arr::value_type>>;
 
 /// @brief True when @p Arr holds Chunk2 chunks (see is_v1_v: dispatch on the type).
 template <typename Arr>
-inline constexpr bool is_v2_v = std::is_same_v<typename Arr::ChunkType, Chunk2<typename Arr::value_type>>;
+inline constexpr bool is_v2_v =
+    std::is_same_v<typename Arr::ChunkType, zero_one_value::Chunk<typename Arr::value_type>>;
 
 /// @brief True when @p Arr holds Chunk2A chunks (see is_v1_v: dispatch on the type).
 template <typename Arr>
-inline constexpr bool is_v2a_v = std::is_same_v<typename Arr::ChunkType, Chunk2A<typename Arr::value_type>>;
+inline constexpr bool is_v2a_v = std::is_same_v<typename Arr::ChunkType, zero_any::Chunk<typename Arr::value_type>>;
 
 /** @brief Chunk2 on a non-bool T: the variant with a second value (and written(ind)). */
 template <typename Arr>
@@ -151,15 +152,15 @@ inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_
  *          adjust (as rechunk_refill). Chunk2's second-value count is taken
  *          against the array's second value, as Proxy2 counts it.
  */
-template <typename Arr, typename Chunk, typename T>
-void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, unsigned int s)
+template <typename Arr, typename ChunkClass, typename T>
+void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst, unsigned int s)
 {
     if constexpr (track_zeros_v<Arr>)
     {
         CounterValueT nz = 0;
         for (unsigned int k = 0; k < s; ++k)
         {
-            if (dst[k] == static_cast<T>(Chunk::first_value))
+            if (dst[k] == static_cast<T>(ChunkClass::first_value))
             {
                 ++nz;
             }
@@ -173,7 +174,7 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
         CounterValueT n2 = 0;
         for (unsigned int k = 0; k < s; ++k)
         {
-            if (dst[k] == static_cast<T>(Chunk::first_value))
+            if (dst[k] == static_cast<T>(ChunkClass::first_value))
             {
                 ++n1;
             }
@@ -203,8 +204,8 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
  * @return true when the chunk was folded: its buffer is gone, the caller must
  *         not read it again.
  */
-template <typename Arr, typename Chunk>
-[[nodiscard]] bool fold_if_full(Arr& arr, Chunk& ch, std::size_t c_begin, unsigned int s)
+template <typename Arr, typename ChunkClass>
+[[nodiscard]] bool fold_if_full(Arr& arr, ChunkClass& ch, std::size_t c_begin, unsigned int s)
 {
     if constexpr (track_chunk2_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
     {
@@ -212,7 +213,7 @@ template <typename Arr, typename Chunk>
         using T           = typename Arr::value_type;
         const bool first  = ch.is_full_first_value(s);
         const bool second = !first && ch.is_full_second_value(s) &&
-                            !(static_cast<T>(arr.get_second_value()) == static_cast<T>(Chunk::first_value));
+                            !(static_cast<T>(arr.get_second_value()) == static_cast<T>(ChunkClass::first_value));
         if (!first && !second)
         {
             return false;
@@ -351,8 +352,8 @@ template <typename Arr>
  *          cst_val1; Chunk2A: neither constant. Chunk2's index-less written()
  *          is bool-only (false for every other T), so it is asked with @p ind2.
  */
-template <typename Arr, typename Chunk>
-[[nodiscard]] bool materialised(const Arr& /*arr*/, const Chunk& ch, [[maybe_unused]] int ind2) noexcept
+template <typename Arr, typename ChunkClass>
+[[nodiscard]] bool materialised(const Arr& /*arr*/, const ChunkClass& ch, [[maybe_unused]] int ind2) noexcept
 {
     if constexpr (has_second_value_v<Arr>)
     {
@@ -403,7 +404,8 @@ void queue_for_compression(Arr& arr, std::size_t i)
         // of Chunk2's candidate list -- and the chunk would land in the list of
         // T{}, which no pass drains. set_info_on_chunk() loads (second_value,
         // ind, num_tab) and the flag pointer.
-        constexpr bool is_proxy2 = std::is_same_v<typename Arr::ProxyType, Proxy2<typename Arr::value_type>>;
+        constexpr bool is_proxy2 =
+            std::is_same_v<typename Arr::ProxyType, zero_one_value::Proxy<typename Arr::value_type>>;
         if constexpr (!is_proxy2 && requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
         {
             proxy.set_num_tab_ptr_is_inside_chunk(); // Proxy2A
@@ -429,9 +431,9 @@ void queue_for_compression(Arr& arr, std::size_t i)
  *          queued if it came out uniform -- an exact word scan, not a
  *          three-element guess.
  */
-template <typename Arr, typename Chunk, typename ValueAt, typename StoreBits>
+template <typename Arr, typename ChunkClass, typename ValueAt, typename StoreBits>
 void packed_chunk_store(Arr&         arr,
-                        Chunk&       ch,
+                        ChunkClass&  ch,
                         std::size_t  c_begin,
                         std::size_t  lo,
                         std::size_t  hi,

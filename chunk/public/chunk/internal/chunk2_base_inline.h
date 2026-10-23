@@ -28,12 +28,12 @@ namespace shrink_array
 
 template <typename T, typename Derived>
 template <typename IndexT>
-void Chunk2Base<T, Derived>::block_clear_common(int                  num_compress_value,
-                                                IndexT               index_opt,
-                                                [[maybe_unused]] int thr_rank,
-                                                char*                ptr_type_cst,
-                                                SecondValueRef<T>    ptr_second_value,
-                                                [[maybe_unused]] T*  cst2_ptr)
+void SecondValueChunkBase<T, Derived>::block_clear_common(int                  num_compress_value,
+                                                          IndexT               index_opt,
+                                                          [[maybe_unused]] int thr_rank,
+                                                          char*                ptr_type_cst,
+                                                          SecondValueRef<T>    ptr_second_value,
+                                                          [[maybe_unused]] T*  cst2_ptr)
 {
     if constexpr (is_chunk2a_derived)
     {
@@ -84,10 +84,10 @@ void Chunk2Base<T, Derived>::block_clear_common(int                  num_compres
 
 template <typename T, typename Derived>
 template <typename IndexT>
-void Chunk2Base<T, Derived>::clear_impl(IndexT            index_opt,
-                                        int               thr_rank,
-                                        char*             ptr_type_cst,
-                                        SecondValueRef<T> ptr_second_value)
+void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
+                                                  int               thr_rank,
+                                                  char*             ptr_type_cst,
+                                                  SecondValueRef<T> ptr_second_value)
 {
     bool is_written = false;
     if constexpr (std::is_same_v<IndexT, std::nullopt_t>)

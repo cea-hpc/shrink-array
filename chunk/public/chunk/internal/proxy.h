@@ -45,6 +45,9 @@ namespace shrink_array
 template <template <typename> class ChunkT, typename T>
 class ManagerChunk;
 
+namespace zero
+{
+
 /**
  * @brief Registry mapping array-element keys (pointers) to their table
  *        number. Unlike PointerMapChunk2, it has no value -> inf_array
@@ -52,7 +55,7 @@ class ManagerChunk;
  * @tparam T Element type this registry is keyed on.
  */
 template <typename T>
-class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const void*, int>>>
+class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void*, int>>>
 {
   public:
     /**
@@ -878,13 +881,15 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /// Registry of every v1 array: array address -> table number.
-    static inline constinit internal::LazyImmortal<PointerMapChunk<T>> share_info_array;
+    static inline constinit internal::LazyImmortal<PointerMap<T>> share_info_array;
 };
+
+} // namespace zero
 
 /// @brief Write the element's value, read through proxy.read_pure(), to @p os.
 /// @return @p os.
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const Proxy<T>& proxy)
+std::ostream& operator<<(std::ostream& os, const zero::Proxy<T>& proxy)
 {
     // Through the read entry, like operator T(): values[num] is stale while a
     // deferred op pends on this offset.

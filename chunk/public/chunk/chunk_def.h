@@ -26,6 +26,9 @@ namespace shrink_array
 template <typename T>
 concept ComplexType = requires { typename T::value_type; } && std::is_same_v<T, std::complex<typename T::value_type>>;
 
+namespace zero
+{
+
 /// @brief Compile-time settings of Chunk: CHUNK_SIZE bound, compression-list and buffer-reuse thresholds.
 struct ChunkDef
 {
@@ -38,5 +41,7 @@ struct ChunkDef
     constexpr static int factor_div_nb_chunk_for_compress      = 100; ///< Threshold = chunks / (this * max threads)
     constexpr static int size_min_buffer_reuse                 = 100; ///< Floor of a per-size reuse budget
 };
+
+} // namespace zero
 
 } // namespace shrink_array

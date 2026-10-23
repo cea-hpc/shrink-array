@@ -136,7 +136,7 @@ inline void replay_retry(int&                        retry_count,
 
 // Full arming: resolves num_tab, then every cached pointer.
 template <typename T>
-void Proxy2A<T>::set_info_on_chunk() noexcept
+void zero_any::Proxy<T>::set_info_on_chunk() noexcept
 {
     set_num_tab();
 
@@ -156,7 +156,7 @@ void Proxy2A<T>::set_info_on_chunk() noexcept
  * @note No-op for bool, whose specialisation keeps no per-chunk second value.
  */
 template <typename T>
-void Proxy2A<T>::set_ptr_second_value() noexcept
+void zero_any::Proxy<T>::set_ptr_second_value() noexcept
 {
     if constexpr (is_not_bool)
     {
@@ -168,14 +168,14 @@ void Proxy2A<T>::set_ptr_second_value() noexcept
 // variant below wherever the caller already knows it. bool carries no per-chunk
 // second value, so it routes to the plain ProxyBase form.
 template <typename T>
-void Proxy2A<T>::mark_for_compression_if_needed(InT<T> new_value, [[maybe_unused]] const T* vals) const
+void zero_any::Proxy<T>::mark_for_compression_if_needed(InT<T> new_value, [[maybe_unused]] const T* vals) const
 {
     if constexpr (is_not_bool)
     {
         // Called BEFORE the store (handle_no_bool_assignment): the memory check
         // must expect the old value -- see mark_for_compression_before_store.
-        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value_.get(), new_value, Chunk2A<T>::first_value,
-                                                 vals);
+        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value_.get(), new_value,
+                                                 zero_any::Chunk<T>::first_value, vals);
     }
     else
     {
@@ -187,12 +187,12 @@ void Proxy2A<T>::mark_for_compression_if_needed(InT<T> new_value, [[maybe_unused
 // could race with another writer). bool routes to Proxy2Base's (old, new) form;
 // this arm is not instantiated today, so a wrong qualifier would not be caught.
 template <typename T>
-void Proxy2A<T>::mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const
+void zero_any::Proxy<T>::mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const
 {
     if constexpr (is_not_bool)
     {
         Base2::mark_for_compression_if_needed(BaseSpec::ptr_second_value_.get(), old_value, new_value,
-                                              Chunk2A<T>::first_value);
+                                              zero_any::Chunk<T>::first_value);
     }
     else
     {
@@ -203,7 +203,7 @@ void Proxy2A<T>::mark_for_compression_if_needed_with_value(InT<T> old_value, InT
 // Grow the three per-tab tables in lockstep. They are indexed by the same
 // num_tab, so they must always share the same outer length.
 template <typename T>
-void Proxy2A<T>::resize_tab_is_int(int nb_tab)
+void zero_any::Proxy<T>::resize_tab_is_int(int nb_tab)
 {
     BaseSpec::resize(nb_tab);
     tab_type_cst_val.resize(nb_tab);
@@ -219,7 +219,7 @@ void Proxy2A<T>::resize_tab_is_int(int nb_tab)
 // (whose replay can queue chunks) BEFORE the compression pass that empties every
 // list. Do not swap those two steps. Asserted below (flag 1 <=> entry in a list).
 template <typename T>
-void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
+void zero_any::Proxy<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
 {
     BaseSpec::resize(num_tab, nb_chunk_old, nb_chunk);
     // Check builds: no chunk of this tab may still be queued (see above).
@@ -253,7 +253,7 @@ void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
  * @param thr_rank Rank whose candidate list is examined.
  */
 template <typename T>
-void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
+void zero_any::Proxy<T>::trigger_compression_if_needed(int thr_rank)
 {
     const auto& vec_to_compress_potantially = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr_rank);
 
@@ -284,7 +284,7 @@ void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
  * before their chunks are compressed), then runs the block compression.
  */
 template <typename T>
-void Proxy2A<T>::perform_compression() noexcept
+void zero_any::Proxy<T>::perform_compression() noexcept
 {
     // Runs inside a region, next to pure readers: the buffers this pass
     // releases wait for one grace period (read_reclaim.h).
@@ -316,7 +316,7 @@ void Proxy2A<T>::perform_compression() noexcept
             shrink_array::set_thread_chunk_size(this->chunk_size());
             shrink_array::set_thread_alloc_key(this->alloc_key());
         }
-        Chunk2A<T>::make_block_compression(thr_rank, this);
+        zero_any::Chunk<T>::make_block_compression(thr_rank, this);
     }
     // Cleared whether or not there was work. Do not move it inside the `if`:
     // a list drained meanwhile would keep the rank on the slow path for every
@@ -330,7 +330,7 @@ void Proxy2A<T>::perform_compression() noexcept
 // Materialises a constant chunk onto the heap. is_cst_val2() is sampled BEFORE
 // set_info_on_chunk(); the arming sits between the sample and create_value().
 template <typename T>
-void Proxy2A<T>::ensure_writable_storage()
+void zero_any::Proxy<T>::ensure_writable_storage()
 {
     if constexpr (build_config::chunk_dynamic)
     {
@@ -413,7 +413,8 @@ void Proxy2A<T>::ensure_writable_storage()
  *       replay, so `proxy.chunk_size()` is the live geometry here.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage_async(const Derived& proxy) const
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage_async(
+    const Derived& proxy) const
 {
     const bool is_val2 = proxy.is_cst_val2();
 
@@ -463,7 +464,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage
  *      callers, which arm exactly what their branch needs).
  */
 template <typename T>
-void Proxy2A<T>::perform_core_assignment(T* vals, InT<T> v) const
+void zero_any::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const
 {
     // The one reload, after a materialisation: a concurrent writer may have won
     // the CAS (ours went back to the pool). Stable until the session ends.
@@ -546,7 +547,7 @@ void Proxy2A<T>::perform_core_assignment(T* vals, InT<T> v) const
  * @param v Value to assign.
  */
 template <typename T>
-void Proxy2A<T>::handle_no_bool_assignment(InT<T> v)
+void zero_any::Proxy<T>::handle_no_bool_assignment(InT<T> v)
 {
     if constexpr (is_not_bool)
     {
@@ -587,7 +588,7 @@ void Proxy2A<T>::handle_no_bool_assignment(InT<T> v)
  * @param v Value to assign.
  */
 template <typename T>
-void Proxy2A<T>::handle_bool_assignment(InT<T> v)
+void zero_any::Proxy<T>::handle_bool_assignment(InT<T> v)
 {
     if constexpr (is_bool)
     {
@@ -621,7 +622,7 @@ void Proxy2A<T>::handle_bool_assignment(InT<T> v)
 // cached metadata, so it works off a fresh values pointer under the retry protocol.
 template <typename T>
 template <typename U>
-T Proxy2A<T>::assign_impl(InT<U> v) noexcept
+T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
 {
     this->check_not_stale();
     if (Base::is_cst_val1_and_v_equal_first_value(v))
@@ -651,7 +652,7 @@ T Proxy2A<T>::assign_impl(InT<U> v) noexcept
         {
             // The context stores the operand by value: U itself, or the type
             // behind the large-operand operator='s `const U&`.
-            using CtxType = ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, Proxy2A<T>>;
+            using CtxType = ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, zero_any::Proxy<T>>;
 
             auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array_);
 
@@ -659,7 +660,7 @@ T Proxy2A<T>::assign_impl(InT<U> v) noexcept
             {
                 auto&      chunk = ctx->chunk;
                 const int  num   = ctx->num;
-                const auto proxy = Base::template make_proxy_with_info<Proxy2A>(ctx);
+                const auto proxy = Base::template make_proxy_with_info<Proxy>(ctx);
 
                 // The flusher's ambient chunk size is unrelated to THIS op's chunk:
                 // pin the frozen per-op geometry, restored on exit for the
@@ -733,7 +734,7 @@ T Proxy2A<T>::assign_impl(InT<U> v) noexcept
                     // A relaxed atomic store where Chunk2A's element stores must be one
                     // (relaxed_element.h): other writers' scans (may_become_uniform)
                     // read this element meanwhile -- as the compound ops' replay does.
-                    if constexpr (internal::relaxed_element_stores_v<Chunk2A<T>, T>)
+                    if constexpr (internal::relaxed_element_stores_v<zero_any::Chunk<T>, T>)
                     {
                         internal::store_element_relaxed(values_before + num, static_cast<T>(ctx->operand));
                     }
@@ -803,7 +804,7 @@ T Proxy2A<T>::assign_impl(InT<U> v) noexcept
  */
 template <typename T>
 template <typename ModifyFn>
-void Proxy2A<T>::execute_simple_operation(ModifyFn modify_fn)
+void zero_any::Proxy<T>::execute_simple_operation(ModifyFn modify_fn)
 {
     ensure_writable_storage();
 
@@ -837,13 +838,14 @@ void Proxy2A<T>::execute_simple_operation(ModifyFn modify_fn)
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(auto*  ctx,
+                                                                                                Lambda operation)
 {
     int retry_count = 0;
 
     while (true)
     {
-        const Proxy2A proxy = Base::template make_proxy_with_info<Derived>(ctx);
+        const zero_any::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
         derived().ensure_writable_storage_async(proxy);
 
         const InT<T> v_old = Base::read_values_async(ctx);
@@ -890,7 +892,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operatio
  */
 template <typename T>
 template <typename Op, typename ModifyFn, typename U>
-void Proxy2A<T>::execute_arithmetic_compound_operation(Op op, const U& v, ModifyFn modify_fn)
+void zero_any::Proxy<T>::execute_arithmetic_compound_operation(Op op, const U& v, ModifyFn modify_fn)
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -960,10 +962,11 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(Op op, const U& v, Modify
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Op, typename Body, typename U>
-void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(auto*    ctx,
-                                                                                                     Op       op,
-                                                                                                     const U& v,
-                                                                                                     Body     lbd) const
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(
+    auto*    ctx,
+    Op       op,
+    const U& v,
+    Body     lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -972,7 +975,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_comp
     while (true)
     {
         // Rebuilt each iteration: it caches state that must be fresh.
-        const Proxy2A proxy = Base::template make_proxy_with_info<Derived>(ctx);
+        const zero_any::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
         // create_value below must allocate at THIS op's frozen geometry, not the
         // stale per-thread size: otherwise the store overflows the buffer (heap
@@ -1133,13 +1136,13 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_comp
  */
 template <typename T>
 template <typename ModifyFn>
-void Proxy2A<T>::execute_inplace_operation(ModifyFn modify_fn)
+void zero_any::Proxy<T>::execute_inplace_operation(ModifyFn modify_fn)
 {
     const InT<T> v_old = read_values();
 
     ensure_writable_storage();
 
-    internal::modify_element<Chunk2A<T>, T>(values_, num_, modify_fn);
+    internal::modify_element<zero_any::Chunk<T>, T>(values_, num_, modify_fn);
 
     mark_for_compression_if_needed_with_value(v_old, read_values());
 }
@@ -1148,8 +1151,8 @@ void Proxy2A<T>::execute_inplace_operation(ModifyFn modify_fn)
 // builds assert the chunk did not go back to a constant during the store.
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(auto*  ctx,
-                                                                                         Lambda operation) const
+void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operation_async(auto*  ctx,
+                                                                                                 Lambda operation) const
 {
     int retry_count = 0;
 
@@ -1158,7 +1161,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operati
         // Best-effort; re-checked by the post-store test.
         const InT<T> v_old = Base::read_values_async(ctx);
 
-        const Proxy2A proxy = Base::template make_proxy_with_info<Derived>(ctx);
+        const zero_any::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
         derived().ensure_writable_storage_async(proxy);
 
@@ -1216,7 +1219,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace_operati
  */
 template <typename T>
 template <typename U, typename Op>
-void Proxy2A<T>::apply_compound_operation(Op op, InT<U> v) noexcept
+void zero_any::Proxy<T>::apply_compound_operation(Op op, InT<U> v) noexcept
 {
     this->check_not_stale();
     // No set_info_on_chunk() here: nothing before apply_atomic_op() reads the
@@ -1236,7 +1239,7 @@ void Proxy2A<T>::apply_compound_operation(Op op, InT<U> v) noexcept
     // first_value absorbs (0 * v == 0). Racy but safe: a concurrent writer
     // cannot make the "was first_value" branch wrong, provided v_old is a value
     // the element really held (hence the ReadSection).
-    if (v_old != Chunk2A<T>::first_value)
+    if (v_old != zero_any::Chunk<T>::first_value)
     {
         // Serial build: apply_atomic_op() runs the body without the engine's
         // lbd_info, and the body reads ptr_second_value.

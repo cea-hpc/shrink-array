@@ -198,7 +198,7 @@ int main()
 {
     const int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
 
-    assert(chunk_size <= ChunkDef::size_max);
+    assert(chunk_size <= zero::ChunkDef::size_max);
 
 
     if constexpr (chunk_size == 0)
