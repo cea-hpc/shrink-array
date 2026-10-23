@@ -25,3 +25,5 @@ std-llvm
 std-llvm-check
 omp-oneapi
 omp-aocc
+std-oneapi
+std-aocc

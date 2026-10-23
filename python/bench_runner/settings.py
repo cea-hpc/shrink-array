@@ -67,6 +67,8 @@ DEFAULT_CONFIGS = [
     # absent-config step drops them with one note.
     "cmake-build-omp-oneapi",                          # release oneAPI (icpx)
     "cmake-build-omp-aocc",                            # RelWithDebInfo AOCC (AMD clang)
+    "cmake-build-std-oneapi",                          # oneAPI, std backend (+ TBB bench)
+    "cmake-build-std-aocc",                            # AOCC, std backend (+ TBB bench)
     # Non-OpenMP builds — cover the `if constexpr(!use_openmp)` code paths so a
     # serial-path regression is caught. Build them with -DOMP:BOOL=OFF; if the
     # directory is absent it is skipped with a single note (see
