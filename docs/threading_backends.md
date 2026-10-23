@@ -88,7 +88,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    `static_chunks(c)`, `dynamic(c)`). The loops that had no `schedule` clause
    get `schedule(static)`, the default of libgomp and libomp. Converted: the
    exit-census counts of the three variants, `get_nb_chunk_written`, the
-   Chunk2A size-prediction scan, `for_each_chunk`, `for_each_chunk_in`,
+   `zero_any` size-prediction scan, `for_each_chunk`, `for_each_chunk_in`,
    `construct_range`, the two `madvise` sweeps of `slab_arena.h`.
 4. **C**: `pmp::team` and `pmp::Team` (`for_static`, `for_dynamic`, `barrier`,
    `single`, `masked`, `rank`, `size`), OpenMP implementation (a `parallel`
@@ -288,7 +288,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    - `std_thread_validation`, two more cases. *Cross-rank frees*: each thread
      materialises its array, then folds its neighbour's (constants,
      `compress()`), while the neighbour does the same to the next one.
-     *Maintenance refused in the phase* (Chunk2A): `reclaim_second_values()`
+     *Maintenance refused in the phase* (`zero_any`): `reclaim_second_values()`
      from one application thread while the others write is refused as "in
      a parallel region" (`second_value_stats().refused_parallel`) and runs
      after `finalize_parallel_phase()`. The mutation that drops the
@@ -300,8 +300,8 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      reached by writes and passes; the maintenance calls (reclaim, trim,
      sweeps) are what it protects there.
    - Found by the harness under TSan (zero_any, dyn, 8 threads): the deferred
-     replay of `=` on Chunk2A stored the element with a plain store while
-     another writer's `may_become_uniform` scan read it relaxed; Chunk2A's
+     replay of `=` on `zero_any` stored the element with a plain store while
+     another writer's `may_become_uniform` scan read it relaxed; `zero_any`'s
      element stores must be relaxed atomics (`relaxed_element_stores_v`),
      as the compound ops' replay already was. Now
      `store_element_relaxed` (`zero_any_proxy_inline.h`). Not specific to the std backend:
@@ -350,11 +350,11 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    - The prealloc test and the compression dispatch passed the rank to
      `alloc_chunk` and drained the queued candidates only under
      `use_openmp`; now under `threaded`.
-   Checked here (gcc 13, Release + CHECK_OPTIM, chunk2a_256): every array
+   Checked here (gcc 13, Release + CHECK_OPTIM, zero_any_256): every array
    checksum of `--mode check --no_io` runs (with and without `--test_prealloc
    --test_stl`) is the same for the OpenMP build before the change, after it,
    and the std build, at 1, 4 and 8 threads.
-   *Std backend, v1's in-write block pass*: `ChunkFastCompPolicy::make_block_compression`
+   *Std backend, `zero`'s in-write block pass*: `ChunkFastCompPolicy::make_block_compression`
    (zero_chunk_inline.h) took its writer protection -- the steal marks and
    `start()` / `finish()` -- only when `CHUNK_PMP_MAX_THREADS > 1`: a team of
    one meant "no other writer". Under the std backend the application's
@@ -365,8 +365,8 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    thread or an application phase is open (`pmp::in_application_phase()`,
    always false outside the std backend: OpenMP unchanged), decided once for
    the `start()` and its `finish()`. The harness `std_thread_validation` (chunk, 256, 1 thread)
-   under TSan: 6 runs of 6 clean, against 6 of 6 with races before. Chunk2
-   and Chunk2A take the protection in every threaded build.
+   under TSan: 6 runs of 6 clean, against 6 of 6 with races before. `zero_one_value`
+   and `zero_any` take the protection in every threaded build.
 8. **TBB**: the adaptor of section 2 (8a), then, on demand, a TBB backend for
    the library's own loops, inside the application's arena,
    `static_partitioner` (8b).
@@ -411,8 +411,8 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      `-DTBB_SANITIZE=thread`). With an uninstrumented libtbb TSan sees no
      hand-off between tasks, and it reports TBB's own scheduling and every
      value one task passes to another (hundreds of reports on the first
-     loop). Against an instrumented oneTBB 2021.11: no report (Chunk2 and
-     Chunk2A, 8 threads), while a plain counter incremented in the pieces is
+     loop). Against an instrumented oneTBB 2021.11: no report (`zero_one_value` and
+     `zero_any`, 8 threads), while a plain counter incremented in the pieces is
      reported at once. `compile_all_gnu.sh` gives the std TSan build TBB
      only from `CHUNK_TBB_TSAN_DIR`, the package directory of such a build.
    - The registry must hold every TBB thread alive at once and the calling

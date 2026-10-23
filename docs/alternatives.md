@@ -4,7 +4,7 @@
 
 shrink-array is a drop-in replacement for a `std::vector` that the program keeps reading and
 writing in place, from OpenMP threads: same index space, same `[]`, no loss, and every repeated
-value is compressed chunk by chunk (Chunk2A), not only zero. Other structures save memory on
+value is compressed chunk by chunk (`zero_any`), not only zero. Other structures save memory on
 other data, and are the better choice there:
 
 | alternative | what it does | prefer it when |

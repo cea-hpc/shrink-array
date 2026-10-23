@@ -27,7 +27,7 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 | `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
 | `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` ou la seconde valeur du tableau |
 | `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
-| `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds Chunk2) |
+| `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds `zero_one_value`) |
 
 `IntType` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
 celle de la bibliothèque liée (`chunk::chunk_zero_any`, ...) ; `chunk_config::use_zero`,
@@ -59,7 +59,7 @@ hors de toute région parallèle, et il invalide les proxys du tableau.
 | statistiques | `stats()`, `get_nb_chunk_written()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) ; une taille refusée est un avertissement du journal. `try_rechunk_to(n)`, `try_set_chunk_size(n)` et la fonction libre `try_set_active_chunk_size(n)` renvoient à la place un `std::expected<void, ChunkSizeError>` : rien, ou la raison (`not_pow2_or_x64`, `exceeds_buffer`, `fixed_geometry` dans un build statique), sans message |
 
-Chunk2 seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_second_value()`.
+`zero_one_value` seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_second_value()`.
 
 **`reclaim_second_values()` : une précondition sur tout le type.** Les autres opérations **(S)**
 concernent un tableau ; celle-ci est statique et libère les secondes valeurs de tous les

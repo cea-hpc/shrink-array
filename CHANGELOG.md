@@ -292,6 +292,10 @@ the tag's checksum to the recipe.
   files, logs, CHUNK_STATS tags and executable names (shrink_bench_chunk2a_dyn) written before.
   `--mem-zero-any-vs-zero-one-value-max` was --mem-chunk2a-vs-chunk2-max (still accepted, hidden),
   and `diag_zero_rechunk_slowdown.py` was diag_v1_rechunk_slowdown.py.
+- The documentation and the README name the variants by their namespace, `zero`,
+  `zero_one_value`, `zero_any` (were Chunk or v1, Chunk2, Chunk2A); `docs/algo_zero.md`,
+  `docs/algo_zero_one_value.md`, `docs/algo_zero_any.md` and their French versions (`_fr.md`)
+  were algo_chunk.md, algo_chunk2.md, algo_chunk2a.md.
 - Types are PascalCase, with no `xxx_type` exception: the member aliases of the arrays
   (`chunk_type`, `manager_type`, `proxy_type`, `ind_type`, `chunk_list_type`) and the
   internal ones (`index_type`, `cst_val1_type`) become `ChunkType`, `ManagerType`, `ProxyType`,

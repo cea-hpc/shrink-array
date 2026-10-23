@@ -27,7 +27,7 @@ All names are in namespace `shrink_array`, `build_config` and `chunk_config` inc
 | `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
 | `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` or the array's second value |
 | `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` or any value, per chunk |
-| `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stored one bit per element (Chunk2 builds) |
+| `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stored one bit per element (`zero_one_value` builds) |
 
 `IntType` is the index type: `long` for more than 2³¹ elements. The variant compiled in is the
 one of the library linked (`chunk::chunk_zero_any`, ...); `chunk_config::use_zero`,
@@ -59,7 +59,7 @@ outside any parallel region, and it invalidates the array's proxies.
 | statistics | `stats()`, `get_nb_chunk_written()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones); a refused size is a warning of the log. `try_rechunk_to(n)`, `try_set_chunk_size(n)` and the free `try_set_active_chunk_size(n)` return a `std::expected<void, ChunkSizeError>` instead: nothing, or why (`not_pow2_or_x64`, `exceeds_buffer`, `fixed_geometry` in a static build), with no message |
 
-Chunk2 only: `set_second_value(v)` **(S)**, before the writes, and `get_second_value()`.
+`zero_one_value` only: `set_second_value(v)` **(S)**, before the writes, and `get_second_value()`.
 
 **`reclaim_second_values()`: a precondition over the whole type.** The other **(S)** operations
 concern one array; this one is static and frees second values for every `zero_any::Array<T>` of the
