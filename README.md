@@ -208,6 +208,13 @@ stays between 43 and 66 up to 288, where `std::vector` falls back to about 26.
 
 ![OpenMP speedup of the int64 builds on Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
 
+On x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cores), Intel oneAPI, at the reference size
+(`--multiply 1`): the same picture. Every variant stays on the ideal line up to 16 threads
+and reaches 43 to 80 at 128, while `std::vector` peaks near 28 at 64 threads and falls back
+to about 18 at 128.
+
+![OpenMP speedup on AMD EPYC 7763 (Milan, 2 × 64 cores), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
+
 **Use it** on data that is mostly zero or made of runs of a few values: sparse fields, material
 masks, multi-material quantities, flags. **Don't** on data where every chunk holds varied
 values: there it costs a little more memory than a `std::vector`, and is slower. Sparse

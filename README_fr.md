@@ -212,6 +212,13 @@ droite idéale jusqu'à 16 threads (un speedup de 14, puis 26 à 28 à 32), atte
 
 ![Speedup OpenMP des builds int64 sur Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
 
+Sur x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cœurs), Intel oneAPI, à la taille de référence
+(`--multiply 1`) : même tableau. Toutes les variantes restent sur la droite idéale jusqu'à 16
+threads et atteignent 43 à 80 à 128, là où `std::vector` plafonne vers 28 à 64 threads et
+retombe vers 18 à 128.
+
+![Speedup OpenMP sur AMD EPYC 7763 (Milan, 2 × 64 cœurs), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
+
 **À utiliser** sur des données surtout nulles ou faites de plages de quelques valeurs : champs
 creux, masques de matériaux, grandeurs multi-matériaux, drapeaux. **À éviter** sur des données
 où chaque chunk contient des valeurs variées : elles y coûtent un peu plus de mémoire qu'un
