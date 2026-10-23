@@ -1203,8 +1203,8 @@ void ManagerChunk<ChunkT, T>::compute_size_buffer_reuse()
     // Chunk2ADef's reuse constants serve every variant (chunk2A_def.h);
     // CHUNK_REUSE_SHARE_DIV / CHUNK_REUSE_FLOOR_KB override them.
     size_buffer_reuse = static_cast<int>(somme_chunk_create / (reuse_share_div() * CHUNK_PMP_MAX_THREADS));
-    size_buffer_reuse =
-        std::max(size_buffer_reuse, reuse_floor_buffers(alloc_chunk_count(), zero_any::ChunkDef::size_min_buffer_reuse));
+    size_buffer_reuse = std::max(size_buffer_reuse,
+                                 reuse_floor_buffers(alloc_chunk_count(), zero_any::ChunkDef::size_min_buffer_reuse));
 }
 
 // compute_size_max_number_of_chunk_to_check_compress (documented in
@@ -1221,8 +1221,9 @@ void ManagerChunk<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress
     // high thread counts the floor IS the threshold. Another variant's higher floor means a
     // rank's list almost never reaches it: compression almost never runs during execution and
     // every materialisation allocates afresh.
-    using VariantDef = std::conditional_t<IsChunk2A<ChunkT, T>, zero_any::ChunkDef,
-                                          std::conditional_t<IsChunk2<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
+    using VariantDef =
+        std::conditional_t<IsChunk2A<ChunkT, T>, zero_any::ChunkDef,
+                           std::conditional_t<IsChunk2<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
     int threshold = somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
     threshold     = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);

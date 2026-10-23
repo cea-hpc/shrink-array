@@ -195,9 +195,8 @@ namespace zero_one_value
  * @tparam T Element type.
  */
 template <typename T>
-class PointerMap
-    : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<const void*, SecondValueInfo<T>>>>,
-      public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
+class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<const void*, SecondValueInfo<T>>>>,
+                   public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
 {
   private:
     /// Internal alias for tuple representing a value with index and table number.

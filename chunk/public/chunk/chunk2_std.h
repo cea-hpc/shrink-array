@@ -772,7 +772,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derive
      * @return Reference to the (thr, second_value) candidate list.
      */
     static VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
-                                                                                       InT<T> second_value) noexcept
+                                                                                      InT<T> second_value) noexcept
     {
         // find(), not operator[]: see Proxy2::get_vec_tuple_to_compress_potentially_thr.
         auto&      lists_by_value = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
@@ -800,7 +800,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derive
     template <typename FillFunc, typename ClearFunc>
     static void make_block_compression_impl(int         thr_rank,
                                             T           second_value,
-                                            Proxy<T>*  proxy2,
+                                            Proxy<T>*   proxy2,
                                             FillFunc&&  fill_func,
                                             ClearFunc&& clear_func);
 
@@ -1007,7 +1007,7 @@ template <typename T>
 // the copy, which carries the per-chunk state the way the copy constructor documents.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_counter>,
-               public ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>
+              public ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>
 {
   public:
     friend class Proxy<T>;

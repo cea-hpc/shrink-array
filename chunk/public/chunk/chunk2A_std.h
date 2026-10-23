@@ -508,15 +508,13 @@ template <typename T>
 // no move operations on purpose -- a move falls back to
 // the copy, which carries the per-chunk state the way the copy constructor documents.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class Chunk : public ChunkOmpPolicy<T, Chunk<T>>,
-                public TabCstVal2Holder<T>,
-                public ChunkStateQueries<T, Chunk<T>>
+class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, public ChunkStateQueries<T, Chunk<T>>
 {
   public:
     friend class SecondValueChunkBase<T, Chunk>;
     friend class Proxy<T>;
 
-    using Base      = SecondValueChunkBase<T, Chunk>;                               ///< The CRTP chunk base.
+    using Base      = SecondValueChunkBase<T, Chunk>;                   ///< The CRTP chunk base.
     using OmpPolicy = ChunkOmpPolicy<T, Chunk, build_config::threaded>; ///< This build's thread-model policy.
 
     using ManagerChunk2A = ManagerChunk<Chunk, T>;

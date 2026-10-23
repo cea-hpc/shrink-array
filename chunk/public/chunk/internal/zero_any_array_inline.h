@@ -630,7 +630,7 @@ void zero_any::Array<T, IntType>::release_chunk_range(int first, int last)
                         increm_chunk_teardown_clear<zero_any::Chunk<T>>();
                         // The size read here, not captured: stats builds only use it.
                         add_chunk_released<zero_any::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                              static_cast<long>(this->size_policy_.size()));
+                                                                      static_cast<long>(this->size_policy_.size()));
                     }
                     T* values_loc = chunk_list_[j].values_;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");

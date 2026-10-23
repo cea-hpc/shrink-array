@@ -123,7 +123,7 @@ struct ChunkTraits<zero::Chunk<T>>
 template <typename T>
 struct ChunkTraits<zero_one_value::Chunk<T>>
 {
-    using ProxyType   = zero_one_value::Proxy<T>;               ///< Write proxy returned by the chunk's non-const operator[].
+    using ProxyType   = zero_one_value::Proxy<T>; ///< Write proxy returned by the chunk's non-const operator[].
     using ManagerType = ManagerChunk<zero_one_value::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 

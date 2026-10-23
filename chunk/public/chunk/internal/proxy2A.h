@@ -78,8 +78,8 @@ template <typename T, size_t SmallN = 16>
 class PointerMap
 {
   public:
-    PointerMap()                                        = default;
-    ~PointerMap()                                       = default;
+    PointerMap()                                 = default;
+    ~PointerMap()                                = default;
     PointerMap(const PointerMap&)                = default;
     PointerMap(PointerMap&&) noexcept            = default;
     PointerMap& operator=(const PointerMap&)     = default;

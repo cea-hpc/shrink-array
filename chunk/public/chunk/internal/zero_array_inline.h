@@ -242,7 +242,7 @@ void zero::Array<T, IntType>::clear_core()
                           // the LEGACY list, which drain_reuse_list_for_size() never
                           // drains: those blocks then stay until teardown.
                           const unsigned int my_sz = this->size_policy_.size();
-                          auto&              lbf = zero::Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                          auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                           for (int k = 0; k < nb; ++k)
                           {

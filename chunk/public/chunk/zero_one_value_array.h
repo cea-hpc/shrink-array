@@ -68,7 +68,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
               public zero_one_value::RechunkHooks<Array<T, IntType>>
 {
   public:
-    using Base2      = SecondValueArrayBase<Array>;   ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
+    using Base2      = SecondValueArrayBase<Array>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
     using Base       = ArrayChunkBase<Array>;    ///< Base shared by every variant.
     using FastBlock2 = zero_one_value::FastBlockSupport<Array>; ///< Fast-block compression pass.
     using Hooks2     = zero_one_value::RechunkHooks<Array>;     ///< Re-chunk hooks (dynamic geometry).

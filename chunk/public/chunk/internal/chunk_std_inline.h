@@ -67,7 +67,8 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int thr, VecTupleChunkpInt2& ll_compt)
+void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int                 thr,
+                                                                                        VecTupleChunkpInt2& ll_compt)
 {
     const auto& vec_tup = Derived::Manager::chunk_to_compress_potentially_thr[thr];
 
@@ -410,7 +411,7 @@ void zero::Chunk<T>::block_clear(this auto& self, [[maybe_unused]] int thr_rank)
     {
         increm_chunk_compress<zero::Chunk<T>>();
         add_chunk_bytes_freed<zero::Chunk<T>>(static_cast<long>(sizeof(T)) *
-                                        static_cast<long>(shrink_array::alloc_chunk_count()));
+                                              static_cast<long>(shrink_array::alloc_chunk_count()));
         if constexpr (build_config::threaded)
         {
             increm_chunk_release_pool<zero::Chunk<T>>();
@@ -442,7 +443,7 @@ void zero::ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived& self,
         {
             increm_chunk_compress<zero::Chunk<T>>();
             add_chunk_bytes_freed<zero::Chunk<T>>(static_cast<long>(sizeof(T)) *
-                                            static_cast<long>(shrink_array::alloc_chunk_count()));
+                                                  static_cast<long>(shrink_array::alloc_chunk_count()));
             increm_chunk_release_pool<zero::Chunk<T>>();
         }
         self.Base::free_block_to_pool(thr_rank, old);
@@ -511,7 +512,7 @@ void zero::ChunkOmpPolicy<T, Derived, false>::clear_st(this Derived& self)
     {
         increm_chunk_compress<zero::Chunk<T>>();
         add_chunk_bytes_freed<zero::Chunk<T>>(static_cast<long>(sizeof(T)) *
-                                        static_cast<long>(shrink_array::alloc_chunk_count()));
+                                              static_cast<long>(shrink_array::alloc_chunk_count()));
         increm_chunk_release_free<zero::Chunk<T>>();
     }
     self.release_st(/*count_release=*/false);
@@ -525,7 +526,7 @@ void zero::ChunkOmpPolicy<T, Derived, false>::release_st(this Derived& self, boo
         if (count_release)
         {
             add_chunk_released<zero::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                static_cast<long>(shrink_array::alloc_chunk_count()));
+                                                      static_cast<long>(shrink_array::alloc_chunk_count()));
         }
     }
 

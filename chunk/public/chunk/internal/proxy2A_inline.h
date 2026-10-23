@@ -174,8 +174,8 @@ void zero_any::Proxy<T>::mark_for_compression_if_needed(InT<T> new_value, [[mayb
     {
         // Called BEFORE the store (handle_no_bool_assignment): the memory check
         // must expect the old value -- see mark_for_compression_before_store.
-        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value_.get(), new_value, zero_any::Chunk<T>::first_value,
-                                                 vals);
+        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value_.get(), new_value,
+                                                 zero_any::Chunk<T>::first_value, vals);
     }
     else
     {

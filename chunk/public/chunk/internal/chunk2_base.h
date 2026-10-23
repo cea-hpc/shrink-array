@@ -91,8 +91,8 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     using Base::values_load;
     using Base::values_store;
 
-    SecondValueChunkBase()                             = default;
-    ~SecondValueChunkBase()                            = default;
+    SecondValueChunkBase()                                       = default;
+    ~SecondValueChunkBase()                                      = default;
     SecondValueChunkBase(const SecondValueChunkBase&)            = default;
     SecondValueChunkBase& operator=(const SecondValueChunkBase&) = default;
     SecondValueChunkBase(SecondValueChunkBase&&)                 = default;

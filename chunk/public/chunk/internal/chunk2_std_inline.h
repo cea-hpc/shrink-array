@@ -98,7 +98,8 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_one_value::Chunk<T>* v, std::size_t count) noexcept
+void zero_one_value::ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_one_value::Chunk<T>* v,
+                                                                              std::size_t               count) noexcept
 {
     chunk_array_new::init_chunks(v, count, [](zero_one_value::Chunk<T>& chunk) { chunk.init_after_constructor(); });
 }
@@ -337,7 +338,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_bool(thi
  *       team size); inside a region it sweeps the calling rank only.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const InfArrayT& inf_array, bool apply)
+void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const InfArrayT& inf_array,
+                                                                                          bool             apply)
 {
     // Everything the per-rank body touches is rank-local --
     // map_chunk2_to_compress_potentially_thr[thr_rank], the freed buffer goes to
@@ -476,7 +478,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
  * @param apply          Forwarded to compress_bool().
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool_in_par(int thr_rank, bool apply)
+void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool_in_par(int  thr_rank,
+                                                                                                      bool apply)
 {
     if constexpr (is_bool)
     {
@@ -781,8 +784,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
 // is a compile error (static_assert).
 template <typename T, typename Derived, bool Enabled>
 void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int              thr_rank,
-                                                                       const InfArrayT& inf_array,
-                                                                       zero_one_value::Proxy<T>*       proxy2)
+                                                                                      const InfArrayT& inf_array,
+                                                                                      zero_one_value::Proxy<T>* proxy2)
 {
     if constexpr (is_not_bool)
     {

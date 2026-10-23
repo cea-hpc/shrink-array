@@ -117,7 +117,8 @@ inline constexpr bool is_v1_v = std::is_same_v<typename Arr::ChunkType, zero::Ch
 
 /// @brief True when @p Arr holds Chunk2 chunks (see is_v1_v: dispatch on the type).
 template <typename Arr>
-inline constexpr bool is_v2_v = std::is_same_v<typename Arr::ChunkType, zero_one_value::Chunk<typename Arr::value_type>>;
+inline constexpr bool is_v2_v =
+    std::is_same_v<typename Arr::ChunkType, zero_one_value::Chunk<typename Arr::value_type>>;
 
 /// @brief True when @p Arr holds Chunk2A chunks (see is_v1_v: dispatch on the type).
 template <typename Arr>
@@ -463,7 +464,8 @@ void queue_for_compression(Arr& arr, std::size_t i)
         // of Chunk2's candidate list -- and the chunk would land in the list of
         // T{}, which no pass drains. set_info_on_chunk() loads (second_value,
         // ind, num_tab) and the flag pointer.
-        constexpr bool is_proxy2 = std::is_same_v<typename Arr::ProxyType, zero_one_value::Proxy<typename Arr::value_type>>;
+        constexpr bool is_proxy2 =
+            std::is_same_v<typename Arr::ProxyType, zero_one_value::Proxy<typename Arr::value_type>>;
         if constexpr (!is_proxy2 && requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
         {
             proxy.set_num_tab_ptr_is_inside_chunk(); // Proxy2A
@@ -491,7 +493,7 @@ void queue_for_compression(Arr& arr, std::size_t i)
  */
 template <typename Arr, typename ChunkClass, typename ValueAt, typename StoreBits>
 void packed_chunk_store(Arr&         arr,
-                        ChunkClass&       ch,
+                        ChunkClass&  ch,
                         std::size_t  c_begin,
                         std::size_t  lo,
                         std::size_t  hi,

@@ -504,7 +504,8 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
         // Asynchronous slow path: simple but safe
         if (need_async)
         {
-            using CtxType = ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, zero_one_value::Proxy<T>>;
+            using CtxType =
+                ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, zero_one_value::Proxy<T>>;
 
             // Capture only location + operand
             auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array_);
@@ -690,7 +691,8 @@ void zero_one_value::Proxy<T>::execute_simple_operation(Lambda operation)
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename Lambda>
-void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_operation_async(auto*  ctx,
+                                                                                                      Lambda operation)
 {
     auto& chunk = ctx->chunk;
 

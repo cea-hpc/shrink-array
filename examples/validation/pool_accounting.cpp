@@ -80,9 +80,10 @@ using Array =
                        zero_any::Array<T>,
                        std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
 
-using VariantDef = std::conditional_t<chunk_config::use_chunk2a,
-                                      zero_any::ChunkDef,
-                                      std::conditional_t<chunk_config::use_chunk2, zero_one_value::ChunkDef, zero::ChunkDef>>;
+using VariantDef =
+    std::conditional_t<chunk_config::use_chunk2a,
+                       zero_any::ChunkDef,
+                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
 constexpr const char* variant_name()
 {

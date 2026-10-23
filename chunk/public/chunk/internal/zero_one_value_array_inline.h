@@ -463,7 +463,8 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                                               {
                                                                   return;
                                                               }
-                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0 : 1];
+                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0
+                                                                                                                 : 1];
                                                               return;
                                                           }
                                                           ++acc[ck.is_cst_val1() ? 0 : 1];
@@ -488,7 +489,8 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                                               {
                                                                   return;
                                                               }
-                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0 : 1];
+                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0
+                                                                                                                 : 1];
                                                               return;
                                                           }
                                                           ++acc[ck.is_cst_val1() ? 0 : 1];
