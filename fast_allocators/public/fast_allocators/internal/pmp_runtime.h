@@ -50,9 +50,12 @@
 
 #ifdef _OPENMP
     #include <omp.h> // omp_get_thread_num, omp_get_max_threads, omp_in_parallel, omp_get_level, ...
-#elif FAST_ALLOC_PMP_BACKEND_STD
-    #include "fast_allocators/internal/pmp_std_state.h" // std_backend::tls, std_backend::settings: what the queries read
 #endif
+
+// Every build, not the std backend's only: standard library only, its
+// per-thread state made on first use. The std backend's blocks below are then
+// `if constexpr`, compiled -- and checked -- whatever the backend.
+#include "fast_allocators/internal/pmp_std_state.h" // std_backend::tls, std_backend::settings: what the queries read
 
 /// 1 when the build's backend runs threads (OpenMP, std), 0 for the serial
 /// backend: for the declaration-level switches, where an `if constexpr` cannot
@@ -157,11 +160,14 @@ inline constexpr bool threaded = backend != BackendKind::serial;
 ///        where the runtime sees the application's threads.
 [[nodiscard]] inline bool in_application_phase() noexcept
 {
-#if FAST_ALLOC_PMP_BACKEND_STD
-    return std_backend::settings().application_phase.load(std::memory_order_acquire);
-#else
-    return false;
-#endif
+    if constexpr (backend == BackendKind::std_threads)
+    {
+        return std_backend::settings().application_phase.load(std::memory_order_acquire);
+    }
+    else
+    {
+        return false;
+    }
 }
 
 /// @brief The calling thread begins a phase (begin_parallel_phase()). Std
@@ -169,25 +175,27 @@ inline constexpr bool threaded = backend != BackendKind::serial;
 ///        thread, so open the application phase. Nothing otherwise.
 inline void enter_application_phase() noexcept
 {
-#if FAST_ALLOC_PMP_BACKEND_STD
-    if (std_backend::tls().level == 0)
+    if constexpr (backend == BackendKind::std_threads)
     {
-        auto& flag = std_backend::settings().application_phase;
-        if (!flag.load(std::memory_order_relaxed))
+        if (std_backend::tls().level == 0)
         {
-            flag.store(true, std::memory_order_seq_cst);
+            auto& flag = std_backend::settings().application_phase;
+            if (!flag.load(std::memory_order_relaxed))
+            {
+                flag.store(true, std::memory_order_seq_cst);
+            }
         }
     }
-#endif
 }
 
 /// @brief The phase ends (finalize_parallel_phase(), after the application's
 ///        threads stopped writing): close the application phase. Std backend only.
 inline void leave_application_phase() noexcept
 {
-#if FAST_ALLOC_PMP_BACKEND_STD
-    std_backend::settings().application_phase.store(false, std::memory_order_seq_cst);
-#endif
+    if constexpr (backend == BackendKind::std_threads)
+    {
+        std_backend::settings().application_phase.store(false, std::memory_order_seq_cst);
+    }
 }
 
 /// @brief Nesting level of the calling thread, serialised regions included
@@ -442,12 +450,13 @@ inline bool configure_thread_rank_registry(int capacity) noexcept
         if (cap <= 0)
         {
             cap = static_cast<int>(std::thread::hardware_concurrency());
-#if FAST_ALLOC_PMP_BACKEND_STD
-            // As chunk's chunk_thread_capacity(), which configures it first when
-            // the chunk library is there: the team size, the hardware threads,
-            // CHUNK_THREAD_CAPACITY, the largest.
-            cap = std::max({cap, std_backend::nthreads_var(), std_backend::env_threads("CHUNK_THREAD_CAPACITY")});
-#endif
+            if constexpr (backend == BackendKind::std_threads)
+            {
+                // As chunk's chunk_thread_capacity(), which configures it first when
+                // the chunk library is there: the team size, the hardware threads,
+                // CHUNK_THREAD_CAPACITY, the largest.
+                cap = std::max({cap, std_backend::nthreads_var(), std_backend::env_threads("CHUNK_THREAD_CAPACITY")});
+            }
         }
         auto* r = new RankRegistry(cap); // NOLINT(cppcoreguidelines-owning-memory): immortal
         detail::g_registry_built.store(true, std::memory_order_release);
@@ -511,12 +520,13 @@ inline void release_registered_rank() noexcept
     {
         thread_rank_registry().release(slot.rank);
         slot.rank = -1;
-#if FAST_ALLOC_PMP_BACKEND_STD
-        if (std_backend::tls().active_rank < 0)
+        if constexpr (backend == BackendKind::std_threads)
         {
-            std_backend::tls().rank_cache = -1; // it held the rank just given back
+            if (std_backend::tls().active_rank < 0)
+            {
+                std_backend::tls().rank_cache = -1; // it held the rank just given back
+            }
         }
-#endif
     }
 }
 
@@ -546,14 +556,13 @@ inline void release_registered_rank() noexcept
 #endif
 }
 
-#if FAST_ALLOC_PMP_BACKEND_STD
 /// @brief Std backend: the calling thread's cache of the library's rank (-1:
 ///        empty), cleared whenever thread_rank() may change (std_backend::FrameGuard,
-///        release_registered_rank()).
+///        release_registered_rank()). Declared in every build, used by the std
+///        backend's only (chunk_rank_cache()).
 [[nodiscard]] inline int& rank_cache() noexcept
 {
     return std_backend::tls().rank_cache;
 }
-#endif
 
 } // namespace fast_alloc::pmp

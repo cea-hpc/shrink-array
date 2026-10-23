@@ -379,16 +379,13 @@ void region(int num_threads, Body&& body)
     return static_lo(t, b, e) + (n / nt) + (r < n % nt ? 1 : 0);
 }
 
-/// @brief v += x, atomically (`omp atomic` with OpenMP).
+/// @brief v += x, atomically, whatever the backend: std::atomic_ref is atomic
+///        against OpenMP's threads as against the std backend's (it compiles
+///        to the same instruction as `omp atomic`).
 template <typename T>
 inline void atomic_add(T& v, T x) noexcept
 {
-#ifdef _OPENMP
-    #pragma omp atomic
-    v += x;
-#else
     std::atomic_ref<T>(v).fetch_add(x, std::memory_order_relaxed);
-#endif
 }
 
 /// @brief A block size for Team::for_static_chunks (an int): the bench's
@@ -417,7 +414,8 @@ template <typename T, typename Body>
 void for_static_sum(Team& t, Int b, Int e, T& v, Body&& body)
 {
     T part{};
-    t.for_static<Int>(b, e, [&](const Int i) __attribute__((always_inline)) { body(i, part); }, shrink_array::pmp::nowait);
+    t.for_static<Int>(
+        b, e, [&](const Int i) __attribute__((always_inline)) { body(i, part); }, shrink_array::pmp::nowait);
     atomic_add(v, part);
 }
 
@@ -427,7 +425,8 @@ template <typename T, typename Body>
 void for_static_chunks_sum(Team& t, Int b, Int e, int chunk, T& v, Body&& body)
 {
     T part{};
-    t.for_static_chunks<Int>(b, e, chunk, [&](const Int i) __attribute__((always_inline)) { body(i, part); }, shrink_array::pmp::nowait);
+    t.for_static_chunks<Int>(
+        b, e, chunk, [&](const Int i) __attribute__((always_inline)) { body(i, part); }, shrink_array::pmp::nowait);
     atomic_add(v, part);
 }
 
