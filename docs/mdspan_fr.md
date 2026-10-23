@@ -21,7 +21,7 @@ tableau : `f[i, j] = v` est `a[k] = v`, avec `k` donné par le layout -- le mêm
 d'écriture, la même compression, les mêmes règles.
 
 ```cpp
-#include "chunk/array_chunk2A.h"
+#include "chunk/zero_any_array.h"
 #include "chunk/mdspan.h"
 
 namespace sa = shrink_array;
@@ -56,7 +56,7 @@ chunk : 16 x 16 pour 256, 32 x 32 pour 1024, 8 x 8 x 4 pour 256 en 3D.
 
 `examples/mdspan_tiles` écrit le même champ (un fond uniforme, des disques et des bandes étroites
 d'un matériau chacun, et un coin bruité qui ne se compresse dans aucun des deux layouts) par les
-deux vues d'un tableau `chunk::chunk_v2a_256`, puis compte les chunks restés matérialisés après
+deux vues d'un tableau `chunk::chunk_zero_any_256`, puis compte les chunks restés matérialisés après
 la passe de compression :
 
 | champ de 2048 x 2048 doubles (32 Mio) | chunks | matérialisés | valeurs gardées |

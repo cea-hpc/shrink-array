@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Range ops and the per-chunk counters. Variant-agnostic: tests chunk / chunk2
-// / chunk2a depending on the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A),
+// / chunk2a depending on the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A),
 // like the other harnesses here.
 // ============================================================================
 //
@@ -27,7 +27,7 @@
 // store most of a chunk straight into its buffer, past those counters, so they
 // must recount afterwards (internal::resync_counters). Chunk2 was once left out:
 // its stale counts reached chunk_size on a MIXED chunk and the pass folded it
-// to a constant, losing everything else in it (rechunk_validation_chunk2_dyn,
+// to a constant, losing everything else in it (rechunk_validation_zero_one_value_dyn,
 // 34819 elements of 1e6).
 //
 // Each case: a whole chunk filled with a plain value through the raw path,
@@ -48,13 +48,13 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"          // forward decls + default IntType = int
-#include "chunk/array_chunk.h"           // zero::Array
-#include "chunk/array_chunk2.h"          // zero_one_value::Array
-#include "chunk/array_chunk2A.h"         // zero_any::Array
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h"          // zero_one_value::Array
+#include "chunk/zero_any_array.h"         // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // chunk_config::use_chunk2*, use_compression_with_counter
+#include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"                // chunk_config::use_zero_one_value*, use_compression_with_counter
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println
 
@@ -68,22 +68,22 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "range_counters_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
+              "range_counters_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A");
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }
@@ -157,7 +157,7 @@ const char* case_name(Case c)
 /// it) through the raw path, one proxied constant, a compression pass.
 int run_case(Case c)
 {
-    const bool second_applies = chunk_config::use_chunk2 || chunk_config::use_chunk2a;
+    const bool second_applies = chunk_config::use_zero_one_value || chunk_config::use_zero_any;
     if (c == Case::second && !second_applies)
     {
         return 0;
@@ -214,10 +214,10 @@ int run_case(Case c)
 /// did not (Proxy2::apply_compound_operation), so it stayed one too high and the
 /// LAST of the following second-value writes reached chunk_size with the zero
 /// still in the chunk: folded to cst2, the zero read back as the second value
-/// (shrink_bench_chunk2_dyn, one element of a chunk in a check run).
+/// (shrink_bench_zero_one_value_dyn, one element of a chunk in a check run).
 int run_mul_zero_case()
 {
-    if constexpr (!chunk_config::use_chunk2)
+    if constexpr (!chunk_config::use_zero_one_value)
     {
         return 0;
     }
@@ -331,7 +331,7 @@ int run_compound_case(Op o)
             break;
     }
     int        bad    = 0;
-    const bool check  = chunk_config::use_chunk && chunk_config::use_compression_with_counter;
+    const bool check  = chunk_config::use_zero && chunk_config::use_compression_with_counter;
     const bool after1 = std::as_const(a).written(k);
     a[k]              = I{9};
     a[k]              = I{0};

@@ -19,13 +19,30 @@
 namespace shrink_array
 {
 
+namespace zero
+{
+
 // Forward declarations of chunk types
 template <typename T>
 class Chunk;
+
+} // namespace zero
+
+namespace zero_one_value
+{
+
 template <typename T>
-class Chunk2;
+class Chunk;
+
+} // namespace zero_one_value
+
+namespace zero_any
+{
+
 template <typename T>
-class Chunk2A;
+class Chunk;
+
+} // namespace zero_any
 
 template <typename ChunkT>
 class ArrayChunkCore;

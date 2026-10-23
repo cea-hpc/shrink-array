@@ -15,8 +15,8 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 | appel | en-tête | quand |
 |---|---|---|
 | `ParamChunk::init_indexes(true)` | `chunk/param_chunk.h` | facultatif, une fois, avant le premier tableau, pour choisir les blocs (`true` : gros blocs d'allocation) ; sans lui, le premier tableau lance `init_indexes(true)` |
-| `release_chunk_pools()` | `chunk/chunk_std.h` | facultatif, une fois, à la fin ; tant qu'un tableau vit encore (global ou `static`), il ne fait que vider les listes libres |
-| `destroy_block_chunk()` | `chunk/chunk_std.h` | facultatif, juste après `release_chunk_pools()` ; sans effet tant qu'un tableau vit |
+| `release_chunk_pools()` | `chunk/zero_chunk.h` | facultatif, une fois, à la fin ; tant qu'un tableau vit encore (global ou `static`), il ne fait que vider les listes libres |
+| `destroy_block_chunk()` | `chunk/zero_chunk.h` | facultatif, juste après `release_chunk_pools()` ; sans effet tant qu'un tableau vit |
 | `ParamChunk::force_compression()` | `chunk/param_chunk.h` | pour compresser maintenant tous les candidats en attente, pour une mesure ou un point de reprise |
 | `ParamChunk::chunk_stats()` | `chunk/param_chunk.h` | affiche les compteurs `CHUNK_STATS` (sans effet dans les autres builds) |
 
@@ -24,14 +24,14 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 
 | classe | en-tête | compresse les chunks uniformes à… |
 |---|---|---|
-| `zero::Array<T, IntType = int>` | `chunk/array_chunk.h` | `T{}` |
-| `zero_one_value::Array<T, IntType = int>` | `chunk/array_chunk2.h` | `T{}` ou la seconde valeur du tableau |
-| `zero_any::Array<T, IntType = int>` | `chunk/array_chunk2A.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
+| `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
+| `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` ou la seconde valeur du tableau |
+| `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
 | `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds Chunk2) |
 
 `IntType` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
-celle de la bibliothèque liée (`chunk::chunk_v2a`, ...) ; `chunk_config::use_chunk`,
-`chunk_config::use_chunk2` et `chunk_config::use_chunk2a` indiquent laquelle, à la compilation.
+celle de la bibliothèque liée (`chunk::chunk_zero_any`, ...) ; `chunk_config::use_zero`,
+`chunk_config::use_zero_one_value` et `chunk_config::use_zero_any` indiquent laquelle, à la compilation.
 
 `chunk/mdspan.h` pose une vue multidimensionnelle, `f[i, j]`, sur chacun d'eux (`mdspan` C++23,
 ligne par ligne ou en tuiles alignées sur les chunks), et `chunk/mdspan_tile_ops.h` lit et met à jour
@@ -173,7 +173,7 @@ La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adap
 | `build_config::threaded` | la bibliothèque fait tourner des threads (`CHUNK_THREADS` `openmp` ou `std`) |
 | `build_config::has_ompt`, `build_config::has_not_ompt` | construit avec l'outil OMPT, ou non |
 | `build_config::chunk_dynamic` | géométrie dynamique (bibliothèque `_dyn`) |
-| `chunk_config::use_chunk`, `chunk_config::use_chunk2`, `chunk_config::use_chunk2a` | la variante |
+| `chunk_config::use_zero`, `chunk_config::use_zero_one_value`, `chunk_config::use_zero_any` | la variante |
 | `chunk_config::stats` | build `CHUNK_STATS` |
 
 Variables d'environnement et options de build : [variables_environnement_fr.md](variables_environnement_fr.md).

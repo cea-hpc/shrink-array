@@ -51,7 +51,7 @@ Que lancer, selon ce que touche la modification :
 | marquage pour la compression, les passes | `mark_path_validation`, `compress_roundtrip`, le banc en mode check |
 | allocateurs, listes de réutilisation, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, le build avec registre des blocs (ledger) (`--with-ledger`), ASan dans un build std-alloc |
 | rechunk, géométrie dynamique | `rechunk_validation`, `dyn_geometry_validation`, le banc avec `CHUNK_FORCE_RECHUNK_TOGGLE=1` |
-| opérations sur des plages | `fill_range_mt_validation`, `fill_range_mt_v1v2_validation`, `range_counters_validation` |
+| opérations sur des plages | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_one_value_validation`, `range_counters_validation` |
 | rangs des threads, régions | `thread_growth_validation`, `nested_region_validation` |
 | interface du conteneur | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
 | documentation | `check_docs` |
@@ -95,7 +95,7 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   `accessor`, `constant_boundary`) : une vue écrite pour `std::mdspan` se lit de même avec eux
   (`STD_STYLE_API` dans `scripts/check_naming.py`) ; leurs aides `detail::` sont en PascalCase.
   Dans un nom en snake_case, la
-  variante s'écrit `chunk2a` ; les noms de fichiers (`array_chunk2A.h`) restent tels quels. Les
+  variante s'écrit `chunk2a` ; les noms de fichiers (`zero_any_array.h`) restent tels quels. Les
   globales prennent le préfixe `g_` ; aucun nom ne commence par `__` (réservé). Un nom public qui
   change garde son ancienne graphie en alias `[[deprecated]]` jusqu'à la 1.0. `check_naming`
   vérifie ce qu'une ligne montre ; le `readability-identifier-naming` de clang-tidy vérifie le

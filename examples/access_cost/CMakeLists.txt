@@ -5,19 +5,19 @@
 # and on the variant's array, in the same binary (access_cost.cpp).
 #
 # One executable per variant at the default static size:
-# access_cost_chunk_<size>, access_cost_chunk2_<size>, access_cost_chunk2a_<size>.
+# access_cost_zero_<size>, access_cost_zero_one_value_<size>, access_cost_zero_any_<size>.
 # A perf target -- no CHECK define. python/access_cost.py runs them over
 # rounds and thread counts and prints the medians and the ratios.
 #
-#   OMP_PROC_BIND=close OMP_PLACES=cores OMP_NUM_THREADS=64 ./access_cost_chunk2a_256
+#   OMP_PROC_BIND=close OMP_PLACES=cores OMP_NUM_THREADS=64 ./access_cost_zero_any_256
 #
 # The smoke tests run a small N with --verify at 1 and 8 threads, under the
 # `validation` label: they keep the program building and correct, they
 # measure nothing.
 # ============================================================================
 
-set(_ac_variant_names   chunk    chunk2   chunk2a)
-set(_ac_variant_libbase chunk_v1 chunk_v2 chunk_v2a)
+set(_ac_variant_names   zero    zero_one_value   zero_any)
+set(_ac_variant_libbase chunk_zero chunk_zero_one_value chunk_zero_any)
 
 list(LENGTH _ac_variant_names _ac_nvar)
 math(EXPR _ac_nvar_last "${_ac_nvar} - 1")

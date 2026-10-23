@@ -53,11 +53,11 @@
 #include <type_traits> // std::conditional_t
 
 #include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/array_chunk.h"    // Chunk<T> complete (chunk_std.h): its operator new[]
-#include "chunk/array_chunk2.h"   // Chunk2<T> complete (chunk2_std.h): its operator new[]
-#include "chunk/array_chunk2A.h"  // Chunk2A<T> complete (chunk2A_std.h): its operator new[]
+#include "chunk/zero_array.h"    // Chunk<T> complete (zero_chunk.h): its operator new[]
+#include "chunk/zero_one_value_array.h"   // Chunk2<T> complete (zero_one_value_chunk.h): its operator new[]
+#include "chunk/zero_any_array.h"  // Chunk2A<T> complete (zero_any_chunk.h): its operator new[]
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_chunk*
+#include "chunk/config.h"         // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/print.h" // shrink_array::println
 
@@ -77,17 +77,17 @@ namespace
 {
 
 /// The chunk type of this build, as the arrays pick theirs.
-using Ch = std::conditional_t<chunk_config::use_chunk2a,
-                              Chunk2A<double>,
-                              std::conditional_t<chunk_config::use_chunk2, Chunk2<double>, Chunk<double>>>;
+using Ch = std::conditional_t<chunk_config::use_zero_any,
+                              zero_any::Chunk<double>,
+                              std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Chunk<double>, zero::Chunk<double>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }

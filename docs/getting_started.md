@@ -61,7 +61,7 @@ The options that matter to a user:
 
 The first build compiles the examples and the benchmark too, which takes a while. To build
 only the libraries, configure with `-DSHRINK_ARRAY_BUILD_EXAMPLES=OFF`, or give
-`cmake --build` their targets (`--target chunk_v2a_256 ...`) before `cmake --install`. Taken
+`cmake --build` their targets (`--target chunk_zero_any_256 ...`) before `cmake --install`. Taken
 into another project with `add_subdirectory` or `FetchContent`, the libraries alone are built.
 
 With Clang or oneAPI, an OpenMP build also uses the runtime's **OMPT** interface, which spares
@@ -76,25 +76,25 @@ project(my_app LANGUAGES CXX)
 find_package(chunk 0.1 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
 
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
 The library you link **chooses the variant and the chunk size**. The headers are the same
 for all of them, and the library brings the compile definitions that select its own
-(`CHUNK_VARIANT_V2A=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++20,
+(`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++20,
 `-fopenmp` when it was built with OpenMP, and its dependencies. The other options it was built
 with are in the installed `chunk/build_options.h`, which the headers read: a program compiles them
 as the library did.
 
 | target | variant | chunk size |
 |---|---|---|
-| `chunk::chunk_v1`, `chunk::chunk_v2`, `chunk::chunk_v2a` | v1, Chunk2, Chunk2A | the first of `CHUNK_STATIC_SIZES` (256) |
-| `chunk::chunk_v2a_1024`, … | | that compile-time size |
-| `chunk::chunk_v2a_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
+| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | v1, Chunk2, Chunk2A | the first of `CHUNK_STATIC_SIZES` (256) |
+| `chunk::chunk_zero_any_1024`, … | | that compile-time size |
+| `chunk::chunk_zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
 | `chunk::chunk_vector` | none: the arrays are `std::vector` | — |
 
 Link **one** variant library per program, and write **that variant's class**:
-`zero_any::Array<T>` with `chunk::chunk_v2a`. The class you write is what you get -- a program
+`zero_any::Array<T>` with `chunk::chunk_zero_any`. The class you write is what you get -- a program
 naming `zero_any::Array` keeps it whatever it links -- and an array of another variant than the
 library's is not supported: depending on the calls, it does not compile or it crashes.
 To let the link choose, write the arrays through an alias on the variant the library
@@ -103,16 +103,16 @@ defines (`examples/shrink_bench` and `examples/simple_array` do so):
 ```cpp
 #include <type_traits>
 #include <vector>
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
+#include "chunk/zero_array.h"
+#include "chunk/zero_one_value_array.h"
+#include "chunk/zero_any_array.h"
 #include "chunk/config.h"
 
 namespace sa = shrink_array;
 template <typename T>
-using Array = std::conditional_t<sa::chunk_config::use_chunk2a, sa::zero_any::Array<T>,
-              std::conditional_t<sa::chunk_config::use_chunk2, sa::zero_one_value::Array<T>,
-              std::conditional_t<sa::chunk_config::use_chunk, sa::zero::Array<T>, std::vector<T>>>>;
+using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero_one_value, sa::zero_one_value::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
 With it, `chunk::chunk_vector` builds the same program on plain `std::vector`s, which is the
@@ -132,8 +132,8 @@ well as inside the tree.
 #include <cstdio>
 #include <utility>                 // std::as_const
 
-#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
-#include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
+#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
@@ -210,7 +210,7 @@ phase call. Linked as in §3, with `OpenMP::OpenMP_CXX` too:
 #include <utility>                 // std::as_const
 #include <vector>
 
-#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
 
 namespace sa = shrink_array;
 

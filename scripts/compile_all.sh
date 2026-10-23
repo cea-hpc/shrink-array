@@ -159,11 +159,11 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    (exit 2) naming the closest ones, before anything runs.
   --exec=<glob>    Build only the Ninja target(s) matching <glob> inside each
                    selected build dir. A literal name builds one executable,
-                   e.g. --exec=shrink_bench_chunk_64. A pattern builds a
+                   e.g. --exec=shrink_bench_zero_64. A pattern builds a
                    family, e.g. --exec='*_dyn' (all dynamic exes) or
                    --exec='*_256' (all static-256 exes) or
-                   --exec='shrink_bench_chunk2a_*', or a comma-separated list
-                   of names and patterns (--exec='shrink_bench_chunk_64,*_dyn').
+                   --exec='shrink_bench_zero_any_*', or a comma-separated list
+                   of names and patterns (--exec='shrink_bench_zero_64,*_dyn').
                    Patterns are matched against
                    the real Ninja target list; quote them so the shell does not
                    expand the glob first. Ninja still builds each target's deps

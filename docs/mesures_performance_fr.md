@@ -15,7 +15,7 @@
 `VmRSS` (`/proc/self/status`), `/proc/self/statm` et `ru_maxrss` (`getrusage`) lisent les
 compteurs de mémoire résidente du noyau. Ces compteurs sont tenus **par thread**, et reportés
 dans le total du processus seulement de temps en temps. Avec 64 threads qui font des défauts
-de page, le total prend du retard. Mesuré sur `shrink_bench_chunk2a_dyn` :
+de page, le total prend du retard. Mesuré sur `shrink_bench_zero_any_dyn` :
 
 | moment | `VmRSS` | exact (`smaps_rollup`) | retard |
 |---|---|---|---|

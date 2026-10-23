@@ -16,7 +16,7 @@
 
 #pragma once
 
-// The settings a program must share with its variant library (CHUNK_VARIANT_V1 /
+// The settings a program must share with its variant library (CHUNK_VARIANT_ZERO /
 // _V2 / _V2A, CHUNK_SIZE, CHUNK_DYNAMIC), spelled into one function name. The
 // library defines its own (chunk/private/link_check.cpp); the first array of
 // each element type calls the program's (AllTypeChunk::ensure_manager). A
@@ -32,17 +32,17 @@
 
 // The 0/1 flags are pasted (##) into the symbol name below, so they must stay macros.
 // NOLINTBEGIN(modernize-macro-to-enum)
-#ifdef CHUNK_VARIANT_V1
+#ifdef CHUNK_VARIANT_ZERO
     #define CHUNK_LINK_CHECK_V1 1
 #else
     #define CHUNK_LINK_CHECK_V1 0
 #endif
-#ifdef CHUNK_VARIANT_V2
+#ifdef CHUNK_VARIANT_ZERO_ONE_VALUE
     #define CHUNK_LINK_CHECK_V2 1
 #else
     #define CHUNK_LINK_CHECK_V2 0
 #endif
-#ifdef CHUNK_VARIANT_V2A
+#ifdef CHUNK_VARIANT_ZERO_ANY
     #define CHUNK_LINK_CHECK_V2A 1
 #else
     #define CHUNK_LINK_CHECK_V2A 0

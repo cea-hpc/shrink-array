@@ -51,7 +51,7 @@ What to run, by what the change touches:
 | compression marking, the passes | `mark_path_validation`, `compress_roundtrip`, the benchmark in check mode |
 | allocators, reuse lists, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, the ledger build (`--with-ledger`), ASan in a std-alloc build |
 | re-chunk, dynamic geometry | `rechunk_validation`, `dyn_geometry_validation`, the benchmark with `CHUNK_FORCE_RECHUNK_TOGGLE=1` |
-| range operations | `fill_range_mt_validation`, `fill_range_mt_v1v2_validation`, `range_counters_validation` |
+| range operations | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_one_value_validation`, `range_counters_validation` |
 | thread ranks, regions | `thread_growth_validation`, `nested_region_validation` |
 | container interface | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
 | documentation | `check_docs` |
@@ -92,7 +92,7 @@ The source checks run with the others (`ctest -R check_`):
   the traits and tags (`is_cplx`, `rebind`). So do the public `md::` types of `chunk/mdspan.h`
   and `chunk/mdspan_tile_ops.h`, spelt as `std::mdspan` spells its own (`layout_tiled`,
   `accessor`, `constant_boundary`): a view written against `std::mdspan` reads the same with them
-  (`STD_STYLE_API` in `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `chunk2a`; file names (`array_chunk2A.h`)
+  (`STD_STYLE_API` in `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `chunk2a`; file names (`zero_any_array.h`)
   stay as they are. Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
   that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`

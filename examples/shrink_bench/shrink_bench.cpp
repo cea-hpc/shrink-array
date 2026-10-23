@@ -394,15 +394,15 @@ int main(int argc, char* argv[])
     std::println("Pid : {}", getpid());
     std::fflush(stdout);
 
-    if constexpr (chunk_config::use_chunk)
+    if constexpr (chunk_config::use_zero)
     {
         std::println("{}{}MODE: {}CHUNK (Single Value)", tc.bold, tc.magenta, tc.reset);
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         std::println("{}{}MODE: {}CHUNK2 (Dual Value)", tc.bold, tc.magenta, tc.reset);
     }
-    else if constexpr (chunk_config::use_chunk2a)
+    else if constexpr (chunk_config::use_zero_any)
     {
         std::println("{}{}MODE: {}CHUNK2A (Advanced Dual Value)", tc.bold, tc.magenta, tc.reset);
     }
@@ -512,22 +512,22 @@ int main(int argc, char* argv[])
     maybe_set_second_value(tab_point, second_value_p);
     maybe_set_second_value(tab_cell, second_value_cell);
 
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        print_chunk_size.operator()<Chunk2A>("CHUNK2A");
+        print_chunk_size.operator()<zero_any::Chunk>("CHUNK2A");
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        print_chunk_size.operator()<Chunk2>("CHUNK2");
+        print_chunk_size.operator()<zero_one_value::Chunk>("CHUNK2");
     }
-    else if constexpr (chunk_config::use_chunk)
+    else if constexpr (chunk_config::use_zero)
     {
-        print_chunk_size.operator()<Chunk>("CHUNK");
+        print_chunk_size.operator()<zero::Chunk>("CHUNK");
     }
 
     // Array<bool> in a shrink build, std::vector<short> in the baseline
     // (bench_array.h says why): one alias, where four declarations under
-    // #if defined CHUNK_VARIANT_V1 / _V2 / _V2A stood.
+    // #if defined CHUNK_VARIANT_ZERO / _V2 / _V2A stood.
     BenchBoolArray tab_bool(sz);
     // tab_bool's twin, written with the same values at the same places:
     // ArrayChunkBits (8 bools per byte) in a chunk2 build, tab_bool's own type
@@ -791,14 +791,14 @@ int main(int argc, char* argv[])
             // tab_mask: an ArrayChunkBits in a chunk2 build, whose advisor
             // knows the packed layout (the other variants' Array<bool> is not
             // what this array is for).
-            if constexpr (chunk_config::use_chunk2)
+            if constexpr (chunk_config::use_zero_one_value)
             {
                 if (!no_mask)
                 {
                     rechunk_decider.consider<typename BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
                 }
             }
-            if constexpr (chunk_config::use_chunk2a)
+            if constexpr (chunk_config::use_zero_any)
             {
                 if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
                 {
@@ -832,7 +832,7 @@ int main(int argc, char* argv[])
     // not needed (-Wunused-lambda-capture) where the branch below is discarded.
     const auto cst2_reclaim_tick = [&](Int k_iter)
     {
-        if constexpr (chunk_config::use_chunk2a)
+        if constexpr (chunk_config::use_zero_any)
         {
             if (cst2_reclaim_period <= 0 || (k_iter % cst2_reclaim_period) != 0)
             {
@@ -1163,8 +1163,8 @@ int main(int argc, char* argv[])
             // materialised constant chunk stays so until it is written.
             const bool audit_now = (k % freq_audit == 0) || (k + 1 == iter_max);
 
-            if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 ||
-                          (chunk_config::use_chunk2a && chunk_config::use_fast_block_compression))
+            if constexpr (chunk_config::use_zero || chunk_config::use_zero_one_value ||
+                          (chunk_config::use_zero_any && chunk_config::use_fast_block_compression))
             {
                 if (audit_now)
                 {
@@ -1216,7 +1216,7 @@ int main(int argc, char* argv[])
     if constexpr (has_advisor)
     {
         // Full re-chunk report: the advisor/decider runs in every dynamic-chunked
-        // build (CHUNK_VARIANT_V1 / _V2 / _V2A), so rechunk_decider (and its per-event
+        // build (CHUNK_VARIANT_ZERO / _V2 / _V2A), so rechunk_decider (and its per-event
         // log) exists here for all of them.
         std::print("{}", tc.bold);
         rechunk_decider.print_rechunk_log(stdout);

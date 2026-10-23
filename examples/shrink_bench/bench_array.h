@@ -49,11 +49,11 @@ namespace shrink_array
 // array would overflow inside the library instead of inside main().
 template <typename T>
 using ActiveArray = std::conditional_t<
-    chunk_config::use_chunk2a,
+    chunk_config::use_zero_any,
     zero_any::Array<T, Int>,
-    std::conditional_t<chunk_config::use_chunk2,
+    std::conditional_t<chunk_config::use_zero_one_value,
                        zero_one_value::Array<T, Int>,
-                       std::conditional_t<chunk_config::use_chunk, zero::Array<T, Int>, BaselineVector<T>>>>;
+                       std::conditional_t<chunk_config::use_zero, zero::Array<T, Int>, BaselineVector<T>>>>;
 
 
 // Runtime chunk size for CHUNK_DYNAMIC builds. Seeded into g_active_chunk_size
@@ -144,7 +144,7 @@ using BenchBoolArray =
  *          static build gives both the same chunk size.
  */
 using BenchBoolBitsArray =
-    std::conditional_t<chunk_config::use_chunk2, shrink_array::ArrayChunkBits<Int>, BenchBoolArray>;
+    std::conditional_t<chunk_config::use_zero_one_value, shrink_array::ArrayChunkBits<Int>, BenchBoolArray>;
 
 /// @brief Distinct levels tab_quant may take, hence the distinct second values
 ///        it registers.
@@ -173,7 +173,7 @@ inline constexpr Int bench_double_bands = 200000;
  *              blocks, one thread per block, so no word of it has two writers.
  */
 using BenchMaskArray =
-    std::conditional_t<chunk_config::use_chunk2,
+    std::conditional_t<chunk_config::use_zero_one_value,
                        shrink_array::ArrayChunkBits<Int>,
                        std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<bool>>>;
 

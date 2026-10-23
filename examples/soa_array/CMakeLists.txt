@@ -6,7 +6,7 @@
 # (CHUNK_HAVE_REFLECTION: GCC 16, -freflection).
 
 add_executable(soa_array_validation soa_array_validation.cpp)
-target_link_libraries(soa_array_validation PRIVATE chunk_v2a)
+target_link_libraries(soa_array_validation PRIVATE chunk_zero_any)
 chunk_require_cxx_std(soa_array_validation PRIVATE)
 if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_test(NAME soa_array_validation COMMAND soa_array_validation)

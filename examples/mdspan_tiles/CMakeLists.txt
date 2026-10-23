@@ -5,10 +5,10 @@
 # chunk size 256; prints the chunks left materialised in each layout. Needs
 # <mdspan> (libstdc++ 16, libc++ 17) or kokkos/mdspan on the include path;
 # without either it exits 77, which ctest reports as skipped.
-if (TARGET chunk_v2a_256)
+if (TARGET chunk_zero_any_256)
     add_executable(mdspan_tiles mdspan_tiles.cpp)
-    target_link_libraries(mdspan_tiles PRIVATE chunk_v2a_256)
-    target_compile_definitions(mdspan_tiles PRIVATE CHUNK_VARIANT_V2A)
+    target_link_libraries(mdspan_tiles PRIVATE chunk_zero_any_256)
+    target_compile_definitions(mdspan_tiles PRIVATE CHUNK_VARIANT_ZERO_ANY)
     if (OMP)
         find_package(OpenMP REQUIRED)
         target_link_libraries(mdspan_tiles PUBLIC OpenMP::OpenMP_CXX)

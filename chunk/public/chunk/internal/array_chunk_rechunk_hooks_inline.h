@@ -17,8 +17,8 @@
 #pragma once
 
 // Out-of-line bodies of the re-chunk hooks of zero::Array and zero_any::Array
-// (RechunkHooks<Derived, true>). Included at the end of array_chunk.h and of
-// array_chunk2A.h, after the class, so `self` (deducing this) is a complete
+// (RechunkHooks<Derived, true>). Included at the end of zero_array.h and of
+// zero_any_array.h, after the class, so `self` (deducing this) is a complete
 // Derived and so the manager include stays out of the container declaration itself.
 #include <tuple>   // std::get on candidate tuples
 #include <utility> // std::swap
@@ -52,7 +52,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
         {
             // v1 only: this pass bypasses CompressionManager::start(), and v1's
             // replay bodies rely on no compressor changing `values` during a flush
-            // drain (see check_no_flush_outside_start, proxy_inline.h).
+            // drain (see check_no_flush_outside_start, zero_proxy_inline.h).
             check_no_flush_outside_start<ProxyType>("RechunkHooks::rechunk_drop_candidates");
             num_tab = ProxyType::share_info_array->get_num_tab(self.registry_key());
         }

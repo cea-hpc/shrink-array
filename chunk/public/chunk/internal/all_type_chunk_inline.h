@@ -24,7 +24,7 @@
 #include <mutex>  // std::scoped_lock (registry_mutex_)
 
 #include "chunk/internal/all_type_chunk_decl.h" // the declarations these bodies belong to
-#include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::use_chunk*
+#include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::use_zero*
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/for_each_type.h"       // for_each_type
 #include "chunk/internal/manager_chunk.h"       // ManagerChunk<ChunkT, T>
@@ -101,18 +101,18 @@ void AllTypeChunk::initialize()
     // (init_manager primes a per-thread allocator, register_chunk_size a set
     // per geometry, and the arena never releases), so registering unused
     // variants multiplies the primed memory. Three independent `if constexpr`:
-    // a build may select more than one (chunk_config::use_chunk*).
-    if constexpr (chunk_config::use_chunk)
+    // a build may select more than one (chunk_config::use_zero*).
+    if constexpr (chunk_config::use_zero)
     {
-        fill_manager_chunk<Chunk, Types>();
+        fill_manager_chunk<zero::Chunk, Types>();
     }
-    if constexpr (chunk_config::use_chunk2)
+    if constexpr (chunk_config::use_zero_one_value)
     {
-        fill_manager_chunk<Chunk2, Types>();
+        fill_manager_chunk<zero_one_value::Chunk, Types>();
     }
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        fill_manager_chunk<Chunk2A, Types>();
+        fill_manager_chunk<zero_any::Chunk, Types>();
     }
 }
 

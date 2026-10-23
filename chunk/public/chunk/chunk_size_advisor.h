@@ -68,7 +68,7 @@
 #include "chunk/bit.h"                         // is_bool_like_v, is_packed_bit_v
 #include "chunk/internal/element_access.h"     // internal::as_words: Bit sub-blocks scanned by word
 #include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform, bits::WordT
-#include "chunk/config.h"                      // chunk_config::use_chunk2 / use_chunk2a
+#include "chunk/config.h"                      // chunk_config::use_zero_one_value / use_zero_any
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
 #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
@@ -175,11 +175,11 @@ struct ChunkSizeAdvisor
             // bool / Bit: one second value, `true`, no index --
             // get_ind_second_value() aborts for them; classify() below asks
             // the unindexed is_cst_val2().
-            if constexpr (chunk_config::use_chunk2 && !is_bool_like_v<T>)
+            if constexpr (chunk_config::use_zero_one_value && !is_bool_like_v<T>)
             {
                 return tab.get_ind_second_value();
             }
-            else if constexpr (chunk_config::use_chunk2)
+            else if constexpr (chunk_config::use_zero_one_value)
             {
                 return 0;
             }
@@ -196,7 +196,7 @@ struct ChunkSizeAdvisor
         const InT<T> cst1_value = Arr::ChunkType::first_value;
         bool         has_cst2   = false;
         T            cst2_value = cst1_value;
-        if constexpr ((chunk_config::use_chunk2 || chunk_config::use_chunk2a) && requires { tab.get_second_value(); })
+        if constexpr ((chunk_config::use_zero_one_value || chunk_config::use_zero_any) && requires { tab.get_second_value(); })
         {
             cst2_value = tab.get_second_value();
             has_cst2   = !(cst2_value == cst1_value);
@@ -208,7 +208,7 @@ struct ChunkSizeAdvisor
             // below to it: the finer rows would miss every other uniform
             // sub-block, and a costly coarsening could never look worse than
             // refining back.
-            if constexpr (chunk_config::use_chunk2a)
+            if constexpr (chunk_config::use_zero_any)
             {
                 return true;
             }
@@ -231,7 +231,7 @@ struct ChunkSizeAdvisor
             {
                 return 0;
             }
-            if constexpr (chunk_config::use_chunk2a)
+            if constexpr (chunk_config::use_zero_any)
             {
                 if (chunk.is_cst_val2())
                 {
@@ -239,7 +239,7 @@ struct ChunkSizeAdvisor
                     return 1;
                 }
             }
-            else if constexpr (chunk_config::use_chunk2)
+            else if constexpr (chunk_config::use_zero_one_value)
             {
                 bool is_cst2 = false;
                 if constexpr (is_bool_like_v<T>)

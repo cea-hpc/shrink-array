@@ -35,10 +35,10 @@
 
 
 #include "chunk/param_chunk.h"                // ParamChunk
-#include "chunk/array_chunk.h"                // zero::Array
+#include "chunk/zero_array.h"                // zero::Array
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
-#include "chunk/chunk_def.h"                  // ChunkDef
-#include "chunk/chunk_std.h"                  // destroy_block_chunk
+#include "chunk/zero_chunk_def.h"                  // ChunkDef
+#include "chunk/zero_chunk.h"                  // destroy_block_chunk
 #include "chunk/config.h"                     // chunk_config::stats
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size
 
@@ -198,7 +198,7 @@ int main()
 {
     const int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
 
-    assert(chunk_size <= ChunkDef::size_max);
+    assert(chunk_size <= zero::ChunkDef::size_max);
 
 
     if constexpr (chunk_size == 0)

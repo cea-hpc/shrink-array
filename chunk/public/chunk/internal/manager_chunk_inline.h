@@ -39,13 +39,13 @@
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_DISCARD
-#include "chunk/chunk_std.h"                     // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/chunk2_std.h"                    // Chunk2<T>: the ChunkT<T>:: calls
-#include "chunk/chunk2A_std.h"                   // Chunk2A<T>: the ChunkT<T>:: calls
-#include "chunk/chunk_def.h"                     // ChunkDef
-#include "chunk/chunk2_def.h"                    // Chunk2Def
-#include "chunk/chunk2A_def.h"                   // Chunk2ADef
-#include "chunk/array_chunk.h"                   // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
+#include "chunk/zero_chunk.h"                     // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/zero_one_value_chunk.h"                    // Chunk2<T>: the ChunkT<T>:: calls
+#include "chunk/zero_any_chunk.h"                   // Chunk2A<T>: the ChunkT<T>:: calls
+#include "chunk/zero_chunk_def.h"                     // ChunkDef
+#include "chunk/zero_one_value_chunk_def.h"                    // Chunk2Def
+#include "chunk/zero_any_chunk_def.h"                   // Chunk2ADef
+#include "chunk/zero_array.h"                   // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
 #include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"        // IsChunk, IsChunk2, IsChunk2A, IsChunk2Or2A
 #include "chunk/global_stats_chunk_list.h"       // GlobalStatsChunkList
@@ -55,7 +55,7 @@
 
 namespace shrink_array
 {
-// Forward declarations breaking the include cycle chunk_func.h -> chunk_std.h -> proxy.h ->
+// Forward declarations breaking the include cycle chunk_func.h -> zero_chunk.h -> zero_proxy.h ->
 // manager_chunk.h -> THIS file -> chunk_func.h: when chunk_func.h is the entry point, its
 // templates are not yet declared here (#pragma once skips it), and the explicit
 // load_balance_list_block_free_thr<T>() calls below need a declaration. Defined in chunk_func.h.
@@ -197,7 +197,7 @@ bool ManagerChunk<ChunkT, T>::have_chunk_to_compress_potentially(int n_thr) cons
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf           = *Proxy2<T>::share_info_array;
+                const auto& sh_inf           = *zero_one_value::Proxy<T>::share_info_array;
                 const auto& v_all_second_val = sh_inf.get_all_second_value();
                 return std::ranges::any_of(v_all_second_val, [n_thr](const auto& second_value)
                                            { return ChunkT<T>::have_chunk_to_compress(second_value, n_thr); });
@@ -235,7 +235,7 @@ void ManagerChunk<ChunkT, T>::compress_chunk_to_compress_potentially([[maybe_unu
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf          = *Proxy2<T>::share_info_array;
+                const auto& sh_inf          = *zero_one_value::Proxy<T>::share_info_array;
                 const auto& v_all_inf_array = sh_inf.get_all_inf_array();
                 for (const auto& inf_array : v_all_inf_array)
                 {
@@ -262,7 +262,7 @@ void ManagerChunk<ChunkT, T>::sweep_prepare()
     {
         if constexpr (is_not_bool)
         {
-            const auto v = Proxy2<T>::share_info_array->get_all_inf_array();
+            const auto v = zero_one_value::Proxy<T>::share_info_array->get_all_inf_array();
             sweep_inf_arrays_.assign(v.begin(), v.end());
         }
     }
@@ -1200,11 +1200,11 @@ bool ManagerChunk<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int k
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunk<ChunkT, T>::compute_size_buffer_reuse()
 {
-    // Chunk2ADef's reuse constants serve every variant (chunk2A_def.h);
+    // Chunk2ADef's reuse constants serve every variant (zero_any_chunk_def.h);
     // CHUNK_REUSE_SHARE_DIV / CHUNK_REUSE_FLOOR_KB override them.
     size_buffer_reuse = static_cast<int>(somme_chunk_create / (reuse_share_div() * CHUNK_PMP_MAX_THREADS));
     size_buffer_reuse =
-        std::max(size_buffer_reuse, reuse_floor_buffers(alloc_chunk_count(), Chunk2ADef::size_min_buffer_reuse));
+        std::max(size_buffer_reuse, reuse_floor_buffers(alloc_chunk_count(), zero_any::ChunkDef::size_min_buffer_reuse));
 }
 
 // compute_size_max_number_of_chunk_to_check_compress (documented in
@@ -1221,8 +1221,8 @@ void ManagerChunk<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress
     // high thread counts the floor IS the threshold. Another variant's higher floor means a
     // rank's list almost never reaches it: compression almost never runs during execution and
     // every materialisation allocates afresh.
-    using VariantDef = std::conditional_t<IsChunk2A<ChunkT, T>, Chunk2ADef,
-                                          std::conditional_t<IsChunk2<ChunkT, T>, Chunk2Def, ChunkDef>>;
+    using VariantDef = std::conditional_t<IsChunk2A<ChunkT, T>, zero_any::ChunkDef,
+                                          std::conditional_t<IsChunk2<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
     int threshold = somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
     threshold     = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);

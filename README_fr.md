@@ -35,7 +35,7 @@ change :
 
 ```diff
 -#include <vector>
-+#include "chunk/array_chunk2A.h"
++#include "chunk/zero_any_array.h"
 
 -std::vector<double> a(n);
 +shrink_array::zero_any::Array<double> a(n);
@@ -58,8 +58,8 @@ temps d'accès, voir [En chiffres](#en-chiffres).*
 
 ```cpp
 #include <cstdio>
-#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
-#include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
+#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
@@ -135,7 +135,7 @@ est ce programme, qui compare ensuite les deux tableaux élément par élément.
 OMPT : il ne compile pas contre une bibliothèque construite avec la libgomp de GCC, où les phases
 ne seraient jamais marquées.
 
-Le lier à `chunk::chunk_v2a` (voir [Installer](#installer)). La version complète, qui vérifie
+Le lier à `chunk::chunk_zero_any` (voir [Installer](#installer)). La version complète, qui vérifie
 ce qu'elle relit, est [examples/getting_started](examples/getting_started/getting_started.cpp) ;
 [docs/getting_started_fr.md](docs/getting_started_fr.md) la commente pas à pas, puis les règles
 ci-dessous.
@@ -170,7 +170,7 @@ métadonnées. Trois variantes décident quelles constantes comptent :
 | Chunk2A | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
 
 La variante et la taille de chunk (256, 1024, ou dynamique et adaptative : `_dyn`) sont choisies
-par la bibliothèque liée : `chunk::chunk_v2a_256`, `chunk::chunk_v2a_dyn`, ...
+par la bibliothèque liée : `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variantes_fr.md](docs/variantes_fr.md) dit ce que coûte chacune ;
 [docs/algo_chunk2_fr.md](docs/algo_chunk2_fr.md) comment lectures, écritures et compression
 tournent ensemble.
@@ -242,7 +242,7 @@ Puis, dans votre projet :
 
 ```cmake
 find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
-target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
 `add_subdirectory(shrink-array)` marche aussi, et `FetchContent` aussi, sans rien installer
@@ -256,7 +256,7 @@ FetchContent_Declare(shrink_array
 set(OMP ON)                            # compiler les bibliothèques OpenMP
 FetchContent_MakeAvailable(shrink_array)
 
-target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
 Avec Spack, la recette est dans le dépôt :

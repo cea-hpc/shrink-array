@@ -30,9 +30,9 @@ dynamique. Elles diffèrent par **ce qu'elles savent compresser**.
 
 | variante | bibliothèque (macro qu'elle définit) | un chunk est compressé s'il est uniforme à… | coût d'une constante |
 |---|---|---|---|
-| **Chunk** (v1) | `chunk::chunk_v1` (`CHUNK_VARIANT_V1`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
-| **Chunk2** | `chunk::chunk_v2` (`CHUNK_VARIANT_V2`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
-| **Chunk2A** | `chunk::chunk_v2a` (`CHUNK_VARIANT_V2A`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
+| **Chunk** (v1) | `chunk::chunk_zero` (`CHUNK_VARIANT_ZERO`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
+| **Chunk2** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
+| **Chunk2A** | `chunk::chunk_zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
 
 Les tableaux de booléens des builds Chunk2 peuvent en plus utiliser `ArrayChunkBits`, qui
 range 8 booléens par octet dans un chunk matérialisé.

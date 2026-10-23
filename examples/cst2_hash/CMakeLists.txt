@@ -6,7 +6,7 @@
 # are exact only with C++26 reflection (CHUNK_HAVE_REFLECTION).
 
 add_executable(cst2_hash_validation cst2_hash_validation.cpp)
-target_link_libraries(cst2_hash_validation PRIVATE chunk_v2a)
+target_link_libraries(cst2_hash_validation PRIVATE chunk_zero_any)
 chunk_require_cxx_std(cst2_hash_validation PRIVATE)
 if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_test(NAME cst2_hash_validation COMMAND cst2_hash_validation)

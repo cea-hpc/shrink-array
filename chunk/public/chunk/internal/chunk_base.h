@@ -96,17 +96,21 @@ struct CompressionManager;
 template <typename Derived>
 struct ProxyTypeTrait;
 
+namespace zero
+{
+
 template <typename T>
 class Chunk;
-
 template <typename T>
 class Proxy;
 
+} // namespace zero
+
 // Specialisation for Chunk
 template <typename T>
-struct ProxyTypeTrait<Chunk<T>>
+struct ProxyTypeTrait<zero::Chunk<T>>
 {
-    using Type = Proxy<T>;
+    using Type = zero::Proxy<T>;
 };
 
 // STAYS a directive. Not a twin of the declaration at the top of this file:
@@ -1235,7 +1239,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         const read_reclaim::ReadSection section;
         const T* const                  vals = self.values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
+        if constexpr (std::is_same_v<Derived, zero_any::Chunk<T>>)
         {
             // Same single load as element_at_unguarded: a chunk compressed to a
             // second constant points at an identifier, not at values.
@@ -1278,7 +1282,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
             cst = load_at<false>(vals, 0);
             return true;
         }
-        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
+        if constexpr (std::is_same_v<Derived, zero_any::Chunk<T>>)
         {
             if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
             {
@@ -1830,7 +1834,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         // region -- a wrong number, not a build error), and nvhpc evaluates it
         // differently on the still-incomplete CRTP Derived. A type comparison
         // against the forward-declared Chunk2A (chunk_traits.h) cannot differ.
-        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
+        if constexpr (std::is_same_v<Derived, zero_any::Chunk<T>>)
         {
             static_assert(
                 requires(const Derived& obj, const T* ptr) {

@@ -30,9 +30,9 @@ geometry. They differ in **what they can compress**.
 
 | variant | library (macro it defines) | a chunk is compressed if it is uniform at… | cost of a constant |
 |---|---|---|---|
-| **Chunk** (v1) | `chunk::chunk_v1` (`CHUNK_VARIANT_V1`) | **zero** (`T{}`) | nothing: one shared constant buffer |
-| **Chunk2** | `chunk::chunk_v2` (`CHUNK_VARIANT_V2`) | zero, **or** a **second value** specific to the array (`set_second_value`) | nothing beyond the array |
-| **Chunk2A** | `chunk::chunk_v2a` (`CHUNK_VARIANT_V2A`) | zero, **or any other value**, chosen chunk by chunk | one array from the second-value registry (`tab_cst_val2_holder.h`) per distinct value, shared by the whole process |
+| **Chunk** (v1) | `chunk::chunk_zero` (`CHUNK_VARIANT_ZERO`) | **zero** (`T{}`) | nothing: one shared constant buffer |
+| **Chunk2** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zero, **or** a **second value** specific to the array (`set_second_value`) | nothing beyond the array |
+| **Chunk2A** | `chunk::chunk_zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zero, **or any other value**, chosen chunk by chunk | one array from the second-value registry (`tab_cst_val2_holder.h`) per distinct value, shared by the whole process |
 
 Boolean arrays in Chunk2 builds can also use `ArrayChunkBits`, which
 packs 8 booleans per byte in a materialised chunk.

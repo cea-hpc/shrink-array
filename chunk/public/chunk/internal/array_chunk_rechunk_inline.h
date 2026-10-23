@@ -50,7 +50,7 @@
 #include "chunk/log.h"                          // CHUNK_LOG, logging::enabled (the traces)
 #include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
 #include "chunk/vector_range_ops.h"             // assume_drained
-#include "chunk/config.h"                       // build_config::threaded, chunk_config::use_chunk2a
+#include "chunk/config.h"                       // build_config::threaded, chunk_config::use_zero_any
 #include "chunk/chunk_traits.h"                 // Proxy2A<T>
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 #include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
@@ -613,7 +613,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
     // chunk2, which need the second_value index. While filled, a chunk only
     // goes cst1 -> real buffer (never cst2, a compression result), so "still
     // cst1" == "not yet materialised" for every variant.
-    if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any)
     {
         const IndType total = self.m_size_;
         const int     n_new = tmp.nb_chunk_;
@@ -648,12 +648,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // Deduced, not named: only zero_one_value::Array has InfArrayT, and the
         // discarded branch of an `if constexpr` inside the immediately-invoked
         // lambda is never instantiated.
-        // NESTED, not `use_chunk2 && Derived::is_not_bool`: `&&` short-circuits
+        // NESTED, not `use_zero_one_value && Derived::is_not_bool`: `&&` short-circuits
         // EVALUATION, never NAME LOOKUP, so a v1 build (zero::Array has no
         // is_not_bool) would fail to compile the condition itself.
         [[maybe_unused]] const int ind_old2 = [&]
         {
-            if constexpr (chunk_config::use_chunk2)
+            if constexpr (chunk_config::use_zero_one_value)
             {
                 if constexpr (Derived::is_not_bool)
                 {
@@ -671,7 +671,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         }();
         [[maybe_unused]] const auto inf_new2 = [&]
         {
-            if constexpr (chunk_config::use_chunk2)
+            if constexpr (chunk_config::use_zero_one_value)
             {
                 if constexpr (Derived::is_not_bool)
                 {
@@ -692,7 +692,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // of the old one: every old chunk then lies inside one new chunk.
         [[maybe_unused]] const bool                    aligned_coarsening = new_size % old_size == 0;
         [[maybe_unused]] std::vector<std::atomic<int>> old_done;
-        if constexpr (chunk_config::use_chunk && build_config::threaded)
+        if constexpr (chunk_config::use_zero && build_config::threaded)
         {
             if (!aligned_coarsening)
             {
@@ -735,7 +735,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             for (int oc = old_first; oc <= old_last; ++oc)
             {
                 const auto& och = self.chunk_list_[static_cast<std::size_t>(oc)];
-                if constexpr (chunk_config::use_chunk2a)
+                if constexpr (chunk_config::use_zero_any)
                 {
                     if (och.is_cst_val1())
                     {
@@ -745,7 +745,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 if (!och.is_cst_val1())
                 {
                     all_cst1 = false;
-                    if constexpr (chunk_config::use_chunk2a)
+                    if constexpr (chunk_config::use_zero_any)
                     {
                         if (!och.is_cst_val2())
                         {
@@ -760,7 +760,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                             same_cst2 = false;
                         }
                     }
-                    else if constexpr (chunk_config::use_chunk2)
+                    else if constexpr (chunk_config::use_zero_one_value)
                     {
                         // Nested for the same reason as ind_old2 above.
                         if constexpr (Derived::is_not_bool)
@@ -799,18 +799,18 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // second-value slot, type table, values pointer), minus the buffer;
             // tmp's chunk is reachable by no other thread until the swap, so no
             // CAS.
-            if constexpr (chunk_config::use_chunk2a && !std::is_same_v<T, bool>)
+            if constexpr (chunk_config::use_zero_any && !std::is_same_v<T, bool>)
             {
                 if (all_folded && same_cst2 && !any_cst1_src && cst2_src != nullptr)
                 {
                     set_thread_chunk_size(old_size);
                     // auto: SecondValueRef is not declared in every TU that
-                    // instantiates this file (array_chunk2.cpp), and the name
+                    // instantiates this file (zero_one_value_array.cpp), and the name
                     // would be looked up even in a discarded branch.
                     const T    v   = static_cast<T>(std::as_const(self)[base]);
                     auto&      nch = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
-                    const auto psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
-                    char*      ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
+                    const auto psv = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
+                    char*      ptc = &zero_any::Proxy<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
                     (void)nch.find_or_set_ind_cst_val2(v, psv);
                     ChunkType::set_cst_val_to_cst_val2(ptc);
                     nch.init_values_cst_val(ptc, psv);
@@ -856,7 +856,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     const auto     n       = static_cast<std::size_t>(hi - lo);
                     const auto     off     = static_cast<std::size_t>(lo - oc_base);
                     const T* const vals    = och.values_load();
-                    if constexpr (chunk_config::use_chunk2a)
+                    if constexpr (chunk_config::use_zero_any)
                     {
                         if (och.is_cst_val2_ptr_of(vals))
                         {
@@ -935,7 +935,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // early would need the matching teardown of that state. Chunk<T>'s
             // clear_st(thr, n_elems) frees the buffer and marks the chunk cst1,
             // which is exactly what "already transcribed" means here.
-            if constexpr (chunk_config::use_chunk && build_config::threaded)
+            if constexpr (chunk_config::use_zero && build_config::threaded)
             {
                 const int thr = get_thr_rank_fast();
                 for (int oc = old_first; oc <= old_last; ++oc)
@@ -1007,7 +1007,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // Wired for 2A (compress() by num_chunk, num_tab) and Chunk2 (by the
             // array's inf_array record). bool registers no second value
             // (get_ind_second_value aborts) and is bit-packed: never this path.
-            if constexpr (chunk_config::use_chunk2a)
+            if constexpr (chunk_config::use_zero_any)
             {
                 if (all_folded)
                 {
@@ -1031,7 +1031,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // Chunk<T>::compress() keeps the guard that a second visit to a
             // cst1 chunk must not park the zero sentinel -- load-bearing for
             // the sweep regardless of this loop.
-            else if constexpr (chunk_config::use_chunk2)
+            else if constexpr (chunk_config::use_zero_one_value)
             {
                 // Nested for the same reason as ind_old2 above; bool has no
                 // second value to fold to, so it simply does nothing here.
@@ -1088,7 +1088,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // loop has no business synthesising), so they have nothing to give back
         // between slices and the extra regions would be pure cost.
         int n_slices = 1;
-        if constexpr (chunk_config::use_chunk && build_config::use_fast_alloc && build_config::threaded)
+        if constexpr (chunk_config::use_zero && build_config::use_fast_alloc && build_config::threaded)
         {
             // 16: cuts the peak above the pre-re-chunk level about fourfold;
             // more slices gain little. The remainder is the two geometries
@@ -1469,11 +1469,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             {
                 const auto& ch         = tmp.chunk_list_[static_cast<std::size_t>(c)];
                 bool        compressed = ch.is_cst_val1();
-                if constexpr (chunk_config::use_chunk2a)
+                if constexpr (chunk_config::use_zero_any)
                 {
                     compressed = compressed || ch.is_cst_val2();
                 }
-                else if constexpr (chunk_config::use_chunk2)
+                else if constexpr (chunk_config::use_zero_one_value)
                 {
                     // Nested, like the four sites above: `&&` short-circuits
                     // evaluation, never name lookup, so Derived::is_not_bool is

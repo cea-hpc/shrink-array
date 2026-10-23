@@ -17,7 +17,7 @@
 // ============================================================================
 // SEQUENTIAL re-chunk validation harness (path C, non-OMP) -- v3.
 // Variant-agnostic: tests chunk / chunk2 / chunk2a depending on the
-// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like shrink_bench.cpp.
+// compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like shrink_bench.cpp.
 // ============================================================================
 //
 // Proves CONTENT INVARIANCE and, on failure, LOCATES the cause:
@@ -26,8 +26,8 @@
 //   - shows the first mismatches along with the corresponding chunk boundary.
 //
 // The variant is selected by the macro passed by CMake (one executable per
-// variant, linked against the matching dyn lib: chunk_v2_dyn / chunk_v2a_dyn /
-// chunk_v1_dyn). No std::vector fallback: re-chunk is specific to the chunked
+// variant, linked against the matching dyn lib: chunk_zero_one_value_dyn / chunk_zero_any_dyn /
+// chunk_zero_dyn). No std::vector fallback: re-chunk is specific to the chunked
 // variants, hence the static_assert.
 //
 // Chunk2 CONTRACT: the compression-candidate list is indexed by
@@ -65,12 +65,12 @@
 #include <utility>     // std::pair (try_set_active_chunk_size's cases)
 
 #include "chunk/chunk_traits.h"               // forward decls + default IntType = int
-#include "chunk/array_chunk.h"                // zero::Array
-#include "chunk/array_chunk2.h"               // zero_one_value::Array
-#include "chunk/array_chunk2A.h"              // zero_any::Array
+#include "chunk/zero_array.h"                // zero::Array
+#include "chunk/zero_one_value_array.h"               // zero_one_value::Array
+#include "chunk/zero_any_array.h"              // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h"                     // chunk_config::use_chunk*
+#include "chunk/config.h"                     // chunk_config::use_zero*
 #include "chunk/array_chunk_range_ops.h"      // fill_range / copy_range
 #include "chunk/manage_ompt.h"                // finalize_parallel_phase (compression backlog drain)
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
@@ -78,7 +78,7 @@
 
 using namespace shrink_array;
 
-#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::rechunk_validation
@@ -179,23 +179,23 @@ std::string pass_label(const char* label)
 } // namespace
 
 // --- Active variant selection (same shape as shrink_bench.cpp) -------
-static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "rechunk_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A "
+static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
+              "rechunk_validation must be built with CHUNK_VARIANT_ZERO, _V2 or _V2A "
               "(re-chunk is chunk-only; no std::vector fallback here)");
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }

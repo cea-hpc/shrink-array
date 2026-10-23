@@ -39,12 +39,12 @@
 #include <utility>     // std::move
 #include <vector>      // std::vector (push_back / emplace_back)
 
-#include "chunk/array_chunk.h"    // zero::Array
-#include "chunk/array_chunk2.h"   // zero_one_value::Array
-#include "chunk/array_chunk2A.h"  // zero_any::Array
-#include "chunk/config.h"         // chunk_config::use_chunk2*, build_config::strict_element_ref
+#include "chunk/zero_array.h"    // zero::Array
+#include "chunk/zero_one_value_array.h"   // zero_one_value::Array
+#include "chunk/zero_any_array.h"  // zero_any::Array
+#include "chunk/config.h"         // chunk_config::use_zero_one_value*, build_config::strict_element_ref
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"      // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/print.h" // shrink_array::println
 
 using namespace shrink_array;
@@ -53,9 +53,9 @@ namespace
 {
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 int fails = 0;
 

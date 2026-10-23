@@ -22,8 +22,8 @@
 #include <iterator> // std::size
 #include <vector>   // std::vector
 
-#include "chunk/array_chunk2A.h"              // zero_any::Array
-#include "chunk/chunk2A_std.h"                // Chunk2A
+#include "chunk/zero_any_array.h"              // zero_any::Array
+#include "chunk/zero_any_chunk.h"                // Chunk2A
 #include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes
@@ -116,7 +116,7 @@ int main()
         if (meta == 0.)
         {
             const ChunkSizeAdvisor<double>::Options o;
-            meta = sizeof(Chunk2A<double>) + o.meta_extra_bytes;
+            meta = sizeof(zero_any::Chunk<double>) + o.meta_extra_bytes;
         }
         truths.push_back(ground_truth(tab, meta));
     }

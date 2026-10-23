@@ -72,11 +72,11 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"       // the IntType = int default of the arrays
-#include "chunk/array_chunk.h"        // zero::Array
-#include "chunk/array_chunk2.h"       // zero_one_value::Array
-#include "chunk/array_chunk2A.h"      // zero_any::Array
+#include "chunk/zero_array.h"        // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/config.h"             // chunk_config::use_chunk*, build_config::use_openmp / has_not_ompt
+#include "chunk/config.h"             // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
@@ -84,22 +84,22 @@
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "access_cost: link chunk_v1_*, chunk_v2_* or chunk_v2a_*");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
+              "access_cost: link chunk_zero_*, chunk_zero_one_value_* or chunk_zero_any_*");
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }
@@ -127,7 +127,7 @@ void end_phase(Array<double>& arr)
         shrink_array::finalize_parallel_phase();
     }
     // Serial chunk2a has no between-region pass: run it (as variant_compare).
-    if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
         arr.make_block_compression();
     }

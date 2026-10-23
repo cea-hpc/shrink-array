@@ -30,8 +30,8 @@
 #include <ranges>        // fold_left, views::transform / values (parked_blocks)
 
 #include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/chunk_def.h"                  // ChunkDef::size_min_buffer_reuse
-#include "chunk/chunk2A_def.h"                // Chunk2ADef: the reuse budget constants
+#include "chunk/zero_chunk_def.h"                  // ChunkDef::size_min_buffer_reuse
+#include "chunk/zero_any_chunk_def.h"                // Chunk2ADef: the reuse budget constants
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // thread_chunk_size, set_thread_chunk_size
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_REUSE_SHARE_DIV, CHUNK_REUSE_FLOOR_KB)
@@ -403,7 +403,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         if (key != 0)
         {
             (*size_buffer_reuse_by_key_)[key] =
-                std::max(budget, reuse_floor_buffers(size, ChunkDef::size_min_buffer_reuse));
+                std::max(budget, reuse_floor_buffers(size, zero::ChunkDef::size_min_buffer_reuse));
         }
     }
 
@@ -417,7 +417,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         static const long div =
             std::max(1L, env_number<long>("CHUNK_REUSE_SHARE_DIV",
-                                          static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse)));
+                                          static_cast<long>(zero_any::ChunkDef::factor_div_somme_chunk_buffer_resuse)));
         return div;
     }
 

@@ -73,7 +73,7 @@ template <typename ProxyT, typename ChunkT>
 /**
  * @brief Check builds: trip if a flush is in progress while a compressor runs
  *        OUTSIDE CompressionManager::start().
- * @details The v1 replay bodies (proxy_inline.h, `*_async`) rely on no
+ * @details The v1 replay bodies (zero_proxy_inline.h, `*_async`) rely on no
  *          compressor changing `values` during a flush drain; see "The v1
  *          replay bodies" there. The compressors that bypass start() are safe
  *          only where no drain can run; this turns a violation into a
@@ -90,7 +90,7 @@ inline void check_no_flush_outside_start([[maybe_unused]] const char* where) noe
         if (WriteCompressSyncPolicy<ProxyT>::any_thread_flushing(0)) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("{}: compresses outside CompressionManager::start() while a deferred-op flush is in "
-                                   "progress; a v1 replay storing into this chunk would be lost (proxy_inline.h)",
+                                   "progress; a v1 replay storing into this chunk would be lost (zero_proxy_inline.h)",
                                    where);
         }
     }

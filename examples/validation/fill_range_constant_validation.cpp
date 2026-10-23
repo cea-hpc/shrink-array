@@ -52,13 +52,13 @@
 #include <utility>     // std::as_const
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"           // zero::Array
-#include "chunk/array_chunk2.h"          // zero_one_value::Array
-#include "chunk/array_chunk2A.h"         // zero_any::Array
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h"          // zero_one_value::Array
+#include "chunk/zero_any_array.h"         // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range, fill_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // chunk_config::use_chunk2*
+#include "chunk/zero_chunk.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"                // chunk_config::use_zero_one_value*
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println
 
@@ -73,17 +73,17 @@ namespace
 {
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }
@@ -164,7 +164,7 @@ void expect_values(const char* scenario, const Array<double>& a, auto want)
 // (@p constant_fill: first_value, or Chunk2's second value).
 void expect_compressed(const char* scenario, const Array<double>& a, long c0, long c1, bool constant_fill = false)
 {
-    if (chunk_config::use_chunk2a || constant_fill)
+    if (chunk_config::use_zero_any || constant_fill)
     {
         const long m = materialised(a, c0, c1);
         if (m != 0)
@@ -198,7 +198,7 @@ int run(int /*argc*/, char** /*argv*/)
         const char*   name = w == 0.0 ? "first" : "second";
         Array<double> a(static_cast<int>(N));
         region(N, [&](long i) { a[static_cast<int>(i)] = 1.0; });
-        if constexpr (chunk_config::use_chunk2a)
+        if constexpr (chunk_config::use_zero_any)
         {
             a.make_block_compression();
         }
@@ -250,7 +250,7 @@ int run(int /*argc*/, char** /*argv*/)
 
     // second-value: Chunk2's second constant (Chunk2A: any value; v1: none).
     {
-        constexpr bool v1 = !chunk_config::use_chunk2a && !chunk_config::use_chunk2;
+        constexpr bool v1 = !chunk_config::use_zero_any && !chunk_config::use_zero_one_value;
         Array<double>  a(static_cast<int>(N));
         maybe_set_second_value(a, 1.0);
         region(N, [&](long i) { a[static_cast<int>(i)] = 0.5 * static_cast<double>(i % 7) + 1.0; });

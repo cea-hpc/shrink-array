@@ -21,7 +21,7 @@
 #include <type_traits> // std::has_unique_object_representations_v
 #include <utility>     // std::unreachable
 
-#include "chunk/chunk_def.h"             // ComplexType
+#include "chunk/zero_chunk_def.h"             // ComplexType
 #include "chunk/internal/complex_less.h" // ComplexLess
 #include "chunk/internal/in_t.h"         // InT<T>: the compared values
 

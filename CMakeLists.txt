@@ -32,7 +32,7 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 # -- would stay in RSS afterwards. This madvise()s those pages away while
 # keeping the slab mapped and reusable.
 #
-# ON by default since it was measured to be free. rechunk_validation_chunk_dyn
+# ON by default since it was measured to be free. rechunk_validation_zero_dyn
 # 200000 128 3, peak RSS, best of 3: 129.9 -> 88.3 MB at one thread and
 # 104.8 -> 87.9 MB at four, with the wall time unchanged (16.79 -> 16.60 s and
 # 16.22 -> 16.06 s). The syscall cost does not register: 99 madvise calls over
@@ -331,8 +331,8 @@ if(NOT DEFINED CHUNK_DEBUG)
 endif()
 
 # Debug information of the optimised builds (Release, RelWithDebInfo). Measured on
-# shrink_bench_chunk2a_256 (gcc, -O3): -g 157 s and 3.9 GB peak, -g1 116 s and
-# 2.5 GB; validation_chunk2a_256: 236 s / 5.1 GB against 192 s / 3.0 GB; and the
+# shrink_bench_zero_any_256 (gcc, -O3): -g 157 s and 3.9 GB peak, -g1 116 s and
+# 2.5 GB; validation_zero_any_256: 236 s / 5.1 GB against 192 s / 3.0 GB; and the
 # same machine code bit for bit (debug information does not change code
 # generation). -g1 keeps the function names and the line tables: perf, gdb
 # backtraces and crash reports, not the locals.
@@ -786,7 +786,7 @@ endif()
 
 # ── Intel libm for GNU / Clang builds on x86-64 ─────────────────────────────
 # RHEL 8's glibc libm is old and slow on cos/sin/atan/tan, which the benches'
-# compute phases live in: AMD Milan, GNU, shrink_bench_chunk2a_256, 64 threads,
+# compute phases live in: AMD Milan, GNU, shrink_bench_zero_any_256, 64 threads,
 # 15.70 s -> 12.41 s with libimf (same seed, same long_val_sum). icpx links
 # libimf itself; other compilers get it here when it is found. Every
 # executable of the build uses the same libm, so check-mode comparisons within
@@ -870,7 +870,7 @@ endif()
 # ── ArmPL's libamath for GNU / Clang builds on aarch64 ──────────────────────
 # Arm's optimised libm (armpl module, free), linked ahead of glibc's: the
 # benches' compute phases live in cos/sin/atan/tan (the x86-64 counterpart,
-# libimf, took shrink_bench_chunk2a_256 from 15.70 s to 12.41 s on AMD Milan,
+# libimf, took shrink_bench_zero_any_256 from 15.70 s to 12.41 s on AMD Milan,
 # GNU). NVHPC is left alone: it links its own optimised math library.
 # SHRINK_ARM_LIBM is OFF by default: measured on Grace (clang 22, 64 threads,
 # same seed, RHEL 9.6 glibc vs armpl 25.07), chunk2a_dyn 8.30 -> 8.12 s,

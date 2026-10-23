@@ -3,8 +3,8 @@
 # CMakeLists.txt for the shrink_bench bench component.
 #
 # NOTE: each executable links against its matching chunk variant target
-# (chunk_v1 / chunk_v2 / chunk_v2a / chunk_vector). The variant target sets
-# CHUNK_VARIANT_V1 / _V2 / _V2A as PUBLIC, so:
+# (chunk_zero / chunk_zero_one_value / chunk_zero_any / chunk_vector). The variant target sets
+# CHUNK_VARIANT_ZERO / _V2 / _V2A as PUBLIC, so:
 #   - it's baked into libchunk_v<x> itself (fixing is_shrink=0 in
 #     AllTypeChunk.cpp / manage_ompt.cpp)
 #   - it propagates to the executable's own TUs
@@ -68,7 +68,7 @@ set(SHRINK_BENCH_HEADERS
 #   _dyn              -> dynamic lib chunk_v<x>_dyn (runtime geometry), with the
 #                        runtime size baked via -DDYN_CHUNK_SIZE=<SHRINK_BENCH_DYN_SIZE>.
 # Naming: shrink_bench_<variant>_<mode>_<declination>, e.g.
-#   shrink_bench_chunk2_256, shrink_bench_chunk2a_dyn. The check / perf mode is
+#   shrink_bench_zero_one_value_256, shrink_bench_zero_any_dyn. The check / perf mode is
 #   chosen at run time with --mode.
 #
 # vector has no chunk geometry: it keeps its two plain targets (no declination).
@@ -103,7 +103,7 @@ endif()
 #
 # Unity build (SHRINK_BENCH_UNITY, ON): the 16 sources of a bench executable
 # compiled as one translation unit. Compiled apart, each re-instantiated the
-# whole header-only library for itself: shrink_bench_chunk2a_256 took 198 s
+# whole header-only library for itself: shrink_bench_zero_any_256 took 198 s
 # of compilation in Debug and 312 s at -O2 -g, against 49 s and 90 s as one
 # unit, for a peak of 2.9 / 3.4 GB instead of 2.3 / 2.8 (the checksums are the
 # same). The sources needed no change. Two costs: the compiler may now inline
@@ -138,7 +138,7 @@ endfunction()
 # check_size_limits().
 #
 # Naming: shrink_bench_<variant>_int64_<declination>, e.g.
-# shrink_bench_chunk_int64_1024, shrink_bench_chunk2a_int64_dyn, and the
+# shrink_bench_zero_int64_1024, shrink_bench_zero_any_int64_dyn, and the
 # baseline shrink_bench_vector_int64_perf.
 #
 # OFF by default: this directory is already the bulk of the build. Turn it on
@@ -169,15 +169,15 @@ function(sa2_add_int64_target name lib)
     sa2_setup_target(${name})
 endfunction()
 
-set(_sa2_variant_names   chunk       chunk2      chunk2a)
-set(_sa2_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
+set(_sa2_variant_names   zero       zero_one_value      zero_any)
+set(_sa2_variant_libbase chunk_zero    chunk_zero_one_value    chunk_zero_any)
 
 list(LENGTH _sa2_variant_names _sa2_nvar)
 math(EXPR _sa2_nvar_last "${_sa2_nvar} - 1")
 
 # One target per (variant, declination) -- no longer one per mode as well.
-# Naming: shrink_bench_<variant>_<declination>, e.g. shrink_bench_chunk2_256,
-# shrink_bench_chunk2a_dyn. Pick check or perf at run time with --mode.
+# Naming: shrink_bench_<variant>_<declination>, e.g. shrink_bench_zero_one_value_256,
+# shrink_bench_zero_any_dyn. Pick check or perf at run time with --mode.
 foreach(_vi RANGE ${_sa2_nvar_last})
   list(GET _sa2_variant_names   ${_vi} _vname)
   list(GET _sa2_variant_libbase ${_vi} _libbase)
@@ -237,7 +237,7 @@ if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
   endforeach()
 endif()
 
-# No chunk2bits targets: every shrink_bench_chunk2_* run carries tab_bool
+# No chunk2bits targets: every shrink_bench_zero_one_value_* run carries tab_bool
 # (zero_one_value::Array<bool>, one byte per bool) AND its twin tab_bool_bits
 # (ArrayChunkBits, 8 per byte) on the same workload -- see BenchBoolBitsArray
 # (bench_array.h). The chunk / chunk2a builds give the twin their own
@@ -280,17 +280,17 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # --- std_alloc (optional): mirror the declination scheme on the v2a path ---
-if (CHUNK_STD_ALLOC AND "chunk2a" IN_LIST CHUNK_VARIANTS)
+if (CHUNK_STD_ALLOC AND "zero_any" IN_LIST CHUNK_VARIANTS)
   foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
     set(_tgt shrink_bench_std_alloc_${_sz})
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
-    target_link_libraries(${_tgt} PRIVATE chunk_v2a_${_sz})
+    target_link_libraries(${_tgt} PRIVATE chunk_zero_any_${_sz})
     sa2_setup_target(${_tgt})
   endforeach()
   if (CHUNK_BUILD_DYN)
     set(_tgt shrink_bench_std_alloc_dyn)
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
-    target_link_libraries(${_tgt} PRIVATE chunk_v2a_dyn)
+    target_link_libraries(${_tgt} PRIVATE chunk_zero_any_dyn)
     target_compile_definitions(${_tgt} PRIVATE DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
     sa2_setup_target(${_tgt})
   endif()

@@ -26,8 +26,8 @@ own number of elements: the geometry lives in the array's size policy
 (`size_policy_`), which is why the lists of compression candidates carry the
 number of elements of each chunk (see `TChunk.h`).
 
-The library: `chunk::chunk_v1` (it defines `CHUNK_VARIANT_V1`). Code: `chunk/chunk_std.h`, `chunk/array_chunk.h`,
-`internal/chunk_std_inline.h`, `internal/array_chunk_inline.h`, `internal/proxy.h`.
+The library: `chunk::chunk_zero` (it defines `CHUNK_VARIANT_ZERO`). Code: `chunk/zero_chunk.h`, `chunk/zero_array.h`,
+`internal/zero_chunk_inline.h`, `internal/zero_array_inline.h`, `internal/zero_proxy.h`.
 
 ## 2. What a chunk costs
 

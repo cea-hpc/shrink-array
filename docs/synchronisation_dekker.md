@@ -476,5 +476,5 @@ together with the form of the protocol that ran.
 | the writer side | `internal/proxy_base_inline.h` (`write_with_optional_lock_impl`) |
 | the compressor side, the counters | `internal/compression_manager.h`, `internal/compression_manager_inline.h` (`start`, `finish`, `wait_out_compressor`) |
 | per-chunk marks | `internal/chunk_base.h` (`steal_mark_`) |
-| the compression pass | `internal/chunk2_std_inline.h`, `internal/chunk2A_std_inline.h`, `internal/chunk_std_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
+| the compression pass | `internal/zero_one_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
 | readers and reclamation | `internal/read_reclaim.h` |

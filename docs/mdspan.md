@@ -21,7 +21,7 @@ whole interface. The view is an `mdspan` whose accessor goes through the array's
 compression, the same rules.
 
 ```cpp
-#include "chunk/array_chunk2A.h"
+#include "chunk/zero_any_array.h"
 #include "chunk/mdspan.h"
 
 namespace sa = shrink_array;
@@ -55,7 +55,7 @@ count is the chunk size: 16 x 16 for 256, 32 x 32 for 1024, 8 x 8 x 4 for 256 in
 
 `examples/mdspan_tiles` writes the same field (uniform background, disks and narrow bands of one
 material each, and a noisy corner that compresses in neither layout) through both views of a
-`chunk::chunk_v2a_256` array, then counts the chunks left materialised after the compression
+`chunk::chunk_zero_any_256` array, then counts the chunks left materialised after the compression
 pass:
 
 | field 2048 x 2048 doubles (32 MiB) | chunks | materialised | values held |

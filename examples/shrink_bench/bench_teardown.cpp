@@ -22,7 +22,7 @@
 #include "bench_config.h"      // check_compression, and chunk_config:: through bench_prelude.h
 #include "bench_phases.h"      // bench_teardown (defined here), BenchArrays
 #include "bench_stl_checks.h"  // run_stl_self_checks
-#include "chunk/chunk_std.h"   // clear_all_list_block_free_thr, delete_chunk_allocator
+#include "chunk/zero_chunk.h"   // clear_all_list_block_free_thr, delete_chunk_allocator
 #include "chunk/param_chunk.h" // ParamChunk::chunk_stats
 
 // As in shrink_bench.cpp, where this body comes from.
@@ -106,13 +106,13 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // the per-array-invariant result would fix. Hundreds: the list grew.
     // Chunk2 only -- Chunk2A carries its second value in the pointer and has no
     // such map.
-    if constexpr (chunk_config::use_chunk2)
+    if constexpr (chunk_config::use_zero_one_value)
     {
         std::println("\n[share_info] entries still mapped after clear():  double {}  Int {}  float {}  short {}",
-                     shrink_array::Proxy2<double>::share_info_array->share_info_entries(),
-                     shrink_array::Proxy2<int>::share_info_array->share_info_entries(),
-                     shrink_array::Proxy2<float>::share_info_array->share_info_entries(),
-                     shrink_array::Proxy2<short>::share_info_array->share_info_entries());
+                     shrink_array::zero_one_value::Proxy<double>::share_info_array->share_info_entries(),
+                     shrink_array::zero_one_value::Proxy<int>::share_info_array->share_info_entries(),
+                     shrink_array::zero_one_value::Proxy<float>::share_info_array->share_info_entries(),
+                     shrink_array::zero_one_value::Proxy<short>::share_info_array->share_info_entries());
     }
 
     // bench_phase_compress_all() is declared in bench_phases.h and defined in
@@ -125,13 +125,13 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     }
 
     // No #ifdef: both names below are declared unguarded (all_type_chunk.h
-    // and chunk_std.h) and defined in EVERY variant library -- the symbols are
+    // and zero_chunk.h) and defined in EVERY variant library -- the symbols are
     // in libchunk_vector.a too -- so the discarded branch both type-checks and
     // links in the std::vector build.
     if constexpr (chunk_config::is_shrink_enabled)
     {
         // No #ifdef _OPENMP: since ChunkPoolParallelInterface
-        // (chunk_std.h) both verbs exist in every build, each a no-op in the
+        // (zero_chunk.h) both verbs exist in every build, each a no-op in the
         // model where it has nothing to do -- so this pair is EXACTLY what ran
         // before on either side. Deliberately not release_chunk_pools(): that
         // also calls delete_list_block_chunk_free_itself(), which this example

@@ -117,7 +117,7 @@ and how the shared options reach the headers, are in
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | test hook: a delay (200 µs) in one compression pass in N |
 
 And one macro specific to Chunk2A: `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 by default) selects the
-set of trigger thresholds for the compression passes (`chunk2A_def.h`). Only level 0 is built and
+set of trigger thresholds for the compression passes (`zero_any_chunk_def.h`). Only level 0 is built and
 tested. *Removal of levels 1 to 3 planned: 2026-12-31.*
 
 ## 6. CMake options
@@ -132,7 +132,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64: link ArmPL's `libamath` (no gain measured on Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | workaround for an icpx internal error on three files |
 | `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (debugging build) |
-| `CHUNK_LIB_UNITY` | `ON` | each variant archive (`chunk_v2a_256`, ...) compiled as a single unit (unity build, 4 to 6 times less compilation); a file that has its own compile options stays separate |
+| `CHUNK_LIB_UNITY` | `ON` | each variant archive (`chunk_zero_any_256`, ...) compiled as a single unit (unity build, 4 to 6 times less compilation); a file that has its own compile options stays separate |
 | `SHRINK_BENCH_UNITY` | `ON` | each `shrink_bench` executable compiled as a single unit (unity build, 3.5 to 4 times less compilation); `OFF` to compare timings with earlier campaigns, since inlining across benchmark files can change them; `SHRINK_BENCH_UNITY_BATCH` files per unit (0 = all) |
 | `CHUNK_DEBUG_INFO` | `auto` | debug information of the optimised builds: `full` (`-g`), `lines` (`-g1`: function names and line tables, enough for perf and gdb backtraces, not the locals), `none`; `auto`: `full` with `CHECK_OPTIM` or a sanitizer, `lines` otherwise. The machine code is the same; `lines` compiles 20 to 27 % faster with 40 % less peak memory. Debug builds always get `-g` |
 | `CHUNK_VALIDATION_UNITY` | `ON` | the validation harnesses grouped into one executable per variant and geometry (unity build); `OFF`: one executable per harness |
@@ -180,7 +180,7 @@ the common options. `--help` gives the full list.
 | `--with-ledger` | add `cmake-build-omp-gnu-debug-ledger` (OpenMP Debug with `CHUNK_FORCE_LEDGER=ON`), disabled by default; a `--target` that selects it also builds it |
 | `--with-token-sanitizer` | add `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`SANITIZER=token`), disabled by default; a `--target` that selects it also builds it; `--no-sanitizers` skips it |
 | `--target=<glob>` | only the configurations whose name matches (`omp-llvm`, or a quoted shell glob); a pattern that matches nothing is an error |
-| `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_chunk_64`, or a quoted shell glob) |
+| `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_zero_64`, or a quoted shell glob) |
 | `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them |
 | `--no-hardening` | without `CHUNK_GLIBCXX_ASSERTIONS` or `CHUNK_UBSAN` on the Debug and sanitizer builds |
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |

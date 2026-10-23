@@ -48,11 +48,11 @@
 #include <utility>     // std::pair (submdspan), std::as_const
 #include <vector>      // std::vector (the buffers, the reference, the deals)
 
-#include "chunk/array_chunk.h"     // zero::Array
-#include "chunk/array_chunk2.h"    // zero_one_value::Array
-#include "chunk/array_chunk2A.h"   // zero_any::Array
-#include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // chunk_config::use_chunk2*
+#include "chunk/zero_array.h"     // zero::Array
+#include "chunk/zero_one_value_array.h"    // zero_one_value::Array
+#include "chunk/zero_any_array.h"   // zero_any::Array
+#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"          // chunk_config::use_zero_one_value*
 #include "chunk/internal/print.h"  // shrink_array::println
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/mdspan_tile_ops.h" // md::copy_box_out(_mt), md::copy_box_in(_mt), SHRINK_ARRAY_HAS_MDSPAN
@@ -67,9 +67,9 @@ namespace
 {
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 using Box = std::array<long, 2>;
 
@@ -272,7 +272,7 @@ void compression()
                 mat += a.written(static_cast<int>((ti * per_row + tj) * S)) ? 1 : 0;
             }
         }
-        const bool want_compressed = v == 0.0 || chunk_config::use_chunk2a;
+        const bool want_compressed = v == 0.0 || chunk_config::use_zero_any;
         expect(!want_compressed || mat == 0, "copy_box_in of a uniform box: whole tiles compressed", mat,
                static_cast<long>(v * 10));
         double got = f[tile[0] + 1, tile[1] + 1];

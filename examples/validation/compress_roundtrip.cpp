@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Compression round-trip harness. Variant-agnostic: tests chunk / chunk2 /
-// chunk2a depending on the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like
+// chunk2a depending on the compile-time macro (CHUNK_VARIANT_ZERO / _V2 / _V2A), like
 // the other harnesses here.
 // ============================================================================
 //
@@ -71,12 +71,12 @@
 #include <type_traits> // std::conditional_t
 
 #include "chunk/chunk_traits.h"       // forward decls + default IntType = int
-#include "chunk/array_chunk.h"        // zero::Array
-#include "chunk/array_chunk2.h"       // zero_one_value::Array
-#include "chunk/array_chunk2A.h"      // zero_any::Array
+#include "chunk/zero_array.h"        // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"          // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"             // chunk_config::use_chunk*
+#include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"             // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
@@ -108,17 +108,17 @@ static void end_phase()
 
 template <typename T>
 using Array =
-    std::conditional_t<chunk_config::use_chunk2a,
+    std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }
@@ -293,7 +293,7 @@ int run(int argc, char** argv)
     // chunk still pointing at a parked buffer aborts here.
     // No #ifdef: release_chunk_pools() does whichever half this build needs --
     // the per-rank lists under OpenMP, the single allocator otherwise. See
-    // ChunkPoolParallelInterface in chunk_std.h.
+    // ChunkPoolParallelInterface in zero_chunk.h.
     release_chunk_pools();
     destroy_block_chunk();
 

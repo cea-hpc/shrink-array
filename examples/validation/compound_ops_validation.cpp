@@ -42,11 +42,11 @@
 #include <vector>      // the reference
 
 #include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/array_chunk.h"    // zero::Array
-#include "chunk/array_chunk2.h"   // zero_one_value::Array
-#include "chunk/array_chunk2A.h"  // zero_any::Array
+#include "chunk/zero_array.h"    // zero::Array
+#include "chunk/zero_one_value_array.h"   // zero_one_value::Array
+#include "chunk/zero_any_array.h"  // zero_any::Array
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_chunk*, build_config::any_check
+#include "chunk/config.h"         // chunk_config::use_zero*, build_config::any_check
 #include "chunk/internal/print.h" // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -60,17 +60,17 @@ namespace
 {
 
 template <typename T>
-using Arr = std::conditional_t<chunk_config::use_chunk2a,
+using Arr = std::conditional_t<chunk_config::use_zero_any,
                                zero_any::Array<T>,
-                               std::conditional_t<chunk_config::use_chunk2, zero_one_value::Array<T>, zero::Array<T>>>;
+                               std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
         return "chunk2a";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
         return "chunk2";
     }
@@ -157,7 +157,7 @@ int float_div_by_zero()
 template <typename A = Arr<double>>
 int second_value_zero()
 {
-    if constexpr (chunk_config::use_chunk2 && !chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_one_value && !chunk_config::use_zero_any)
     {
         const int           n = 20000;
         A                   a(n);

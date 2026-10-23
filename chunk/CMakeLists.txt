@@ -1,7 +1,7 @@
 # Copyright 2024-2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # ---------------------------------------------------------------------------
-# A variant library is compiled with one of CHUNK_VARIANT_V1 / _V2 / _V2A
+# A variant library is compiled with one of CHUNK_VARIANT_ZERO / _V2 / _V2A
 # defined (or none, for the vector-mode build), PUBLIC: the macros drive
 # `chunk_config::is_shrink_enabled` and friends in public/chunk/config.h, and
 # they are read *inside* library-side .cpp files (AllTypeChunk.cpp,
@@ -42,8 +42,8 @@ if(NOT DEFINED CHUNK_STATIC_SIZES OR CHUNK_STATIC_SIZES STREQUAL "auto")
 endif()
 option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per variant." ON)
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
-# The variants built: chunk (zero::Array, chunk_v1_*), chunk2 (zero_one_value::Array,
-# chunk_v2_*), chunk2a (zero_any::Array, chunk_v2a_*). The examples, benchmarks
+# The variants built: chunk (zero::Array, chunk_zero_*), chunk2 (zero_one_value::Array,
+# chunk_zero_one_value_*), chunk2a (zero_any::Array, chunk_zero_any_*). The examples, benchmarks
 # and harnesses of a variant left out are not built nor registered as tests. A
 # build that checks one variant's option (CHUNK_SECOND_VALUE_INDEXED is
 # Chunk2A's) needs only that one; trim it during development too.
@@ -346,33 +346,33 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/all_type_chunk_decl.h
         public/chunk/internal/all_type_chunk_inline.h
         public/chunk/internal/arithmetic_context.h
-        public/chunk/internal/array_chunk2A_inline.h
-        public/chunk/internal/array_chunk2A_parallel.h
-        public/chunk/internal/array_chunk2A_parallel_inline.h
-        public/chunk/internal/array_chunk2_base.h
-        public/chunk/internal/array_chunk2_inline.h
-        public/chunk/internal/array_chunk2_parallel.h
-        public/chunk/internal/array_chunk2_parallel_inline.h
-        public/chunk/internal/array_chunk2_rechunk_hooks.h
-        public/chunk/internal/array_chunk2_rechunk_hooks_inline.h
+        public/chunk/internal/zero_any_array_inline.h
+        public/chunk/internal/zero_any_array_parallel.h
+        public/chunk/internal/zero_any_array_parallel_inline.h
+        public/chunk/internal/second_value_array_base.h
+        public/chunk/internal/zero_one_value_array_inline.h
+        public/chunk/internal/zero_one_value_array_parallel.h
+        public/chunk/internal/zero_one_value_array_parallel_inline.h
+        public/chunk/internal/zero_one_value_array_rechunk_hooks.h
+        public/chunk/internal/zero_one_value_array_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk_base.h
         public/chunk/internal/array_chunk_base_inline.h
         public/chunk/internal/array_chunk_dirty_bitset.h
         public/chunk/internal/array_chunk_for.h
-        public/chunk/internal/array_chunk_inline.h
-        public/chunk/internal/array_chunk_parallel.h
+        public/chunk/internal/zero_array_inline.h
+        public/chunk/internal/zero_array_parallel.h
         public/chunk/internal/array_chunk_parallel_common.h
         public/chunk/internal/array_chunk_parallel_common_inline.h
-        public/chunk/internal/array_chunk_parallel_inline.h
+        public/chunk/internal/zero_array_parallel_inline.h
         public/chunk/internal/array_chunk_rechunk.h
         public/chunk/internal/array_chunk_rechunk_hooks.h
         public/chunk/internal/array_chunk_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk_rechunk_inline.h
         public/chunk/internal/bad_ptr_check.h
-        public/chunk/internal/chunk2A_std_inline.h
-        public/chunk/internal/chunk2_base.h
-        public/chunk/internal/chunk2_base_inline.h
-        public/chunk/internal/chunk2_std_inline.h
+        public/chunk/internal/zero_any_chunk_inline.h
+        public/chunk/internal/second_value_chunk_base.h
+        public/chunk/internal/second_value_chunk_base_inline.h
+        public/chunk/internal/zero_one_value_chunk_inline.h
         public/chunk/internal/chunk_base.h
         public/chunk/internal/chunk_base_inline.h
         public/chunk/internal/chunk_func.h
@@ -381,7 +381,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/chunk_size_predictor.h
         public/chunk/internal/chunk_stats.h
         public/chunk/internal/chunk_stats_printer.h
-        public/chunk/internal/chunk_std_inline.h
+        public/chunk/internal/zero_chunk_inline.h
         public/chunk/internal/complex_less.h
         public/chunk/internal/compression_manager.h
         public/chunk/internal/compression_manager_inline.h
@@ -410,19 +410,19 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/map_helper.h
         public/chunk/internal/nano_sleeper.h
         public/chunk/internal/phase_guard.h
-        public/chunk/internal/pointer_map_chunk2.h
+        public/chunk/internal/zero_one_value_pointer_map.h
         public/chunk/internal/pointer_map_linear.h
         public/chunk/internal/pool_ledger.h
-        public/chunk/internal/proxy.h
-        public/chunk/internal/proxy2.h
-        public/chunk/internal/proxy2A.h
-        public/chunk/internal/proxy2A_inline.h
-        public/chunk/internal/proxy2_base.h
-        public/chunk/internal/proxy2_base_inline.h
-        public/chunk/internal/proxy2_inline.h
+        public/chunk/internal/zero_proxy.h
+        public/chunk/internal/zero_one_value_proxy.h
+        public/chunk/internal/zero_any_proxy.h
+        public/chunk/internal/zero_any_proxy_inline.h
+        public/chunk/internal/second_value_proxy_base.h
+        public/chunk/internal/second_value_proxy_base_inline.h
+        public/chunk/internal/zero_one_value_proxy_inline.h
         public/chunk/internal/proxy_base.h
         public/chunk/internal/proxy_base_inline.h
-        public/chunk/internal/proxy_inline.h
+        public/chunk/internal/zero_proxy_inline.h
         public/chunk/internal/proxy_operators.h
         public/chunk/internal/rechunk_cost_model.h
         public/chunk/internal/rechunk_decider_inline.h
@@ -433,17 +433,17 @@ set(CHUNK_INTERNAL_HEADERS
 set(CHUNK_PUBLIC_HEADERS
         public/chunk/PMP_CHUNK.h
         public/chunk/all_type_chunk.h
-        public/chunk/array_chunk.h
-        public/chunk/array_chunk2.h
-        public/chunk/array_chunk2A.h
+        public/chunk/zero_array.h
+        public/chunk/zero_one_value_array.h
+        public/chunk/zero_any_array.h
         public/chunk/array_chunk_range_ops.h
-        public/chunk/chunk2A_def.h
-        public/chunk/chunk2A_std.h
-        public/chunk/chunk2_def.h
-        public/chunk/chunk2_std.h
-        public/chunk/chunk_def.h
+        public/chunk/zero_any_chunk_def.h
+        public/chunk/zero_any_chunk.h
+        public/chunk/zero_one_value_chunk_def.h
+        public/chunk/zero_one_value_chunk.h
+        public/chunk/zero_chunk_def.h
         public/chunk/chunk_size_advisor.h
-        public/chunk/chunk_std.h
+        public/chunk/zero_chunk.h
         public/chunk/chunk_traits.h
         public/chunk/config.h
         public/chunk/debug.h
@@ -461,9 +461,9 @@ set(CHUNK_PUBLIC_HEADERS
 )
 
 set(CHUNK_SOURCES
-        private/array_chunk.cpp
-        private/array_chunk2.cpp
-        private/array_chunk2A.cpp
+        private/zero_array.cpp
+        private/zero_one_value_array.cpp
+        private/zero_any_array.cpp
         private/manager_chunk.cpp
         private/all_type_chunk.cpp
         private/param_chunk.cpp
@@ -477,11 +477,11 @@ set(CHUNK_SOURCES
 # like every other target.
 # If the icpx EmitCtorList ICE comes back, CHUNK_ICPX_O0_WORKAROUND=ON builds
 # only the three TUs it hit at -O0, under icpx only.
-option(CHUNK_ICPX_O0_WORKAROUND "icpx only: compile array_chunk2A.cpp, array_chunk2.cpp and manager_chunk.cpp at -O0 (EmitCtorList ICE)" OFF)
+option(CHUNK_ICPX_O0_WORKAROUND "icpx only: compile zero_any_array.cpp, zero_one_value_array.cpp and manager_chunk.cpp at -O0 (EmitCtorList ICE)" OFF)
 if (CHUNK_ICPX_O0_WORKAROUND AND CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-  set_property(SOURCE private/array_chunk2A.cpp private/array_chunk2.cpp private/manager_chunk.cpp
+  set_property(SOURCE private/zero_any_array.cpp private/zero_one_value_array.cpp private/manager_chunk.cpp
                APPEND PROPERTY COMPILE_OPTIONS "-O0;-fno-use-init-array")
-  message(STATUS "CHUNK_ICPX_O0_WORKAROUND: array_chunk2A.cpp, array_chunk2.cpp, manager_chunk.cpp at -O0 (icpx)")
+  message(STATUS "CHUNK_ICPX_O0_WORKAROUND: zero_any_array.cpp, zero_one_value_array.cpp, manager_chunk.cpp at -O0 (icpx)")
 endif()
 
 # --- Variant factory -----------------------------------------------------
@@ -493,7 +493,7 @@ endif()
 #
 # CHUNK_LIB_UNITY (ON): each variant archive compiled as one unity translation
 # unit. Its nine sources each included the whole header-only engine:
-# chunk_v2a_256 took 19.4 s of compilation in Debug and 21.3 s at -O2 -g
+# chunk_zero_any_256 took 19.4 s of compilation in Debug and 21.3 s at -O2 -g
 # apart, 3.0 s and 5.0 s as one unit -- for twelve archives per configuration.
 # A source with options of its own (CHUNK_ICPX_O0_WORKAROUND's -O0,
 # alloc_token_rt.cpp's -fno-sanitize) is left out of the unit by CMake and
@@ -618,12 +618,12 @@ endfunction()
 chunk_add_variant(chunk_vector "" "" FALSE)
 
 # The three shrink variants, each in every static size + an optional dyn lib.
-# Naming: chunk_v1_64, chunk_v1_256, ..., chunk_v2a_dyn.
+# Naming: chunk_zero_64, chunk_zero_256, ..., chunk_zero_any_dyn.
 # Only those of CHUNK_VARIANTS.
 set(_chunk_variant_names   "")
 set(_chunk_variant_defines "")
-foreach(_pair "chunk:chunk_v1:CHUNK_VARIANT_V1=1" "chunk2:chunk_v2:CHUNK_VARIANT_V2=1"
-              "chunk2a:chunk_v2a:CHUNK_VARIANT_V2A=1")
+foreach(_pair "chunk:chunk_zero:CHUNK_VARIANT_ZERO=1" "chunk2:chunk_zero_one_value:CHUNK_VARIANT_ZERO_ONE_VALUE=1"
+              "chunk2a:chunk_zero_any:CHUNK_VARIANT_ZERO_ANY=1")
   string(REPLACE ":" ";" _f "${_pair}")
   list(GET _f 0 _short)
   if (_short IN_LIST CHUNK_VARIANTS)
@@ -653,7 +653,7 @@ foreach(_vi RANGE ${_nvar_last})
 endforeach()
 
 # --- Backwards-compatible bare-name targets ------------------------------
-# The examples link the bare names chunk_v1 / chunk_v2 / chunk_v2a; forward
+# The examples link the bare names chunk_zero / chunk_zero_one_value / chunk_zero_any; forward
 # them to the default static size. NOTE: a raw (unknown) name given to
 # target_link_libraries is silently treated by CMake as a system library
 # (-lchunk_v1), so no usage requirement (-I, PUBLIC defines) propagates and
@@ -681,8 +681,8 @@ endforeach()
 # "nothing forbids a build from selecting more than one"); what the second
 # define costs v1 is the raw fill of its range ops (raw_fillable_v). Without
 # the OMPT tool: the example carries its own (examples/multi-mat/manage_ompt.cpp).
-if ("chunk" IN_LIST CHUNK_VARIANTS AND "chunk2" IN_LIST CHUNK_VARIANTS)
-  chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1" ${CHUNK_DEFAULT_SIZE} FALSE
+if ("zero" IN_LIST CHUNK_VARIANTS AND "zero_one_value" IN_LIST CHUNK_VARIANTS)
+  chunk_add_variant(chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1" ${CHUNK_DEFAULT_SIZE} FALSE
                     NO_OMPT_TOOL)
 endif()
 
@@ -691,9 +691,9 @@ endif()
 chunk_add_variant(chunk "" "" FALSE)
 
 # --- Install: every variant library, under the chunk:: namespace ---------
-# chunk::chunk_v2a_256, chunk::chunk_v2a_dyn, ..., the bare chunk::chunk_v1 /
-# chunk::chunk_v2 / chunk::chunk_v2a (default static size), chunk::chunk_vector
-# (std::vector mode) and chunk::chunk. Not chunk_v1v2_*: built for
+# chunk::chunk_zero_any_256, chunk::chunk_zero_any_dyn, ..., the bare chunk::chunk_zero /
+# chunk::chunk_zero_one_value / chunk::chunk_zero_any (default static size), chunk::chunk_vector
+# (std::vector mode) and chunk::chunk. Not chunk_zero_and_zero_one_value_*: built for
 # examples/multi-mat, without the OMPT tool.
 include(GNUInstallDirs)
 set(_chunk_install_targets chunk chunk_vector)
@@ -708,7 +708,7 @@ foreach(_vname IN LISTS _chunk_variant_names)
 endforeach()
 
 # The installed names in the build tree too: a project that takes this one
-# through add_subdirectory() or FetchContent links chunk::chunk_v2a, as it
+# through add_subdirectory() or FetchContent links chunk::chunk_zero_any, as it
 # would after find_package(chunk).
 foreach(_t IN LISTS _chunk_install_targets)
   if (NOT TARGET chunk::${_t})

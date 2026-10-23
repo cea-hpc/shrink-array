@@ -34,7 +34,7 @@ void bench_init_library()
     {
         constexpr Int chunk_size = static_cast<Int>(static_chunk_size);
 
-        static_assert(chunk_size <= ChunkDef::size_max);
+        static_assert(chunk_size <= zero::ChunkDef::size_max);
 
         if constexpr (chunk_size == 0)
         {
