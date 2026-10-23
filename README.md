@@ -317,15 +317,23 @@ Every call, by task: [docs/api.md](docs/api.md).
 
 ## In progress
 
-One development branch, not in a release yet:
+Two development branches, not in a release yet:
 
 - **`cpp23` -- C++23 and `mdspan`.** A multidimensional view on any array: `f[i, j]` goes
   through the same write proxy, and a tiled layout (16 x 16 tiles for 256-element chunks) makes
   a uniform 2D or 3D region compress whatever its width. Needs GCC 14 or Clang 18.
   [docs/mdspan.md](https://github.com/cea-hpc/shrink-array/blob/cpp23/docs/mdspan.md).
 
-`develop` is merged into it as it moves; it is also a Spack version
-(`spack install shrink-array@cpp23`).
+- **`cpp26` -- trying out C++26.** Started from `cpp23`, to measure what the new standard
+  brings to the library: static reflection first, then contracts, perhaps modules. It compiles
+  with **GCC 16 only**: no other compiler has C++26 reflection yet (Clang 23 has none, and
+  oneAPI, AOCC and NVHPC follow Clang or lag behind it), and the branch uses nothing GCC 16
+  does not implement. `compile_all.sh` builds the gnu configurations only there
+  (`CHUNK_CXX_STANDARD=26`, or `--std=26`). An experiment: the codes the library is meant for
+  stay in C++20.
+
+`develop` is merged into `cpp23` as it moves, and `cpp23` into `cpp26`; `cpp23` is also a
+Spack version (`spack install shrink-array@cpp23`).
 
 ## Going further
 

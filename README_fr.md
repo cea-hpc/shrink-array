@@ -326,7 +326,7 @@ Chaque appel, par tâche : [docs/api_fr.md](docs/api_fr.md).
 
 ## En cours
 
-Une branche de développement, pas encore dans une version :
+Deux branches de développement, pas encore dans une version :
 
 - **`cpp23` -- C++23 et `mdspan`.** Une vue multidimensionnelle sur n'importe quel tableau :
   `f[i, j]` passe par le même proxy d'écriture, et une disposition en tuiles (tuiles de 16 x 16
@@ -334,8 +334,16 @@ Une branche de développement, pas encore dans une version :
   soit sa largeur. Demande GCC 14 ou Clang 18.
   [docs/mdspan_fr.md](https://github.com/cea-hpc/shrink-array/blob/cpp23/docs/mdspan_fr.md).
 
-`develop` y est fusionnée au fil de l'eau ; c'est aussi une version Spack
-(`spack install shrink-array@cpp23`).
+- **`cpp26` -- l'essai du C++26.** Partie de `cpp23`, pour mesurer ce que la nouvelle norme
+  apporte à la bibliothèque : la réflexion statique d'abord, puis les contrats, peut-être les
+  modules. Elle ne compile **qu'avec GCC 16** : aucun autre compilateur n'a encore la réflexion
+  du C++26 (Clang 23 n'en a pas, et oneAPI, AOCC et NVHPC suivent Clang ou sont en retard sur
+  lui), et la branche n'utilise rien que GCC 16 n'implémente pas. `compile_all.sh` n'y construit
+  que les configurations gnu (`CHUNK_CXX_STANDARD=26`, ou `--std=26`). C'est un essai : les codes
+  visés par la bibliothèque restent en C++20.
+
+`develop` est fusionnée dans `cpp23` au fil de l'eau, et `cpp23` dans `cpp26` ; `cpp23` est
+aussi une version Spack (`spack install shrink-array@cpp23`).
 
 ## Pour aller plus loin
 
