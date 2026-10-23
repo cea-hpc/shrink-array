@@ -67,9 +67,9 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"               // forward decls + default IntType = int
-#include "chunk/array_chunk.h"                // zero::Array
-#include "chunk/array_chunk2.h"               // zero_one_value::Array
-#include "chunk/array_chunk2A.h"              // zero_any::Array
+#include "chunk/zero_array.h"                 // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes, register_chunk_size
 #include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size

@@ -25,8 +25,8 @@
  *          re-points chunk storage (clear(), resize(), rechunk_to(), swap());
  *          it is the same for zero::Array, zero_one_value::Array and zero_any::Array, so it
  *          lives here once, under the per-variant mixins
- *          (array_chunk_parallel.h, array_chunk2_parallel.h,
- *          array_chunk2A_parallel.h). The serial counterpart is a no-op.
+ *          (zero_array_parallel.h, zero_one_value_array_parallel.h,
+ *          zero_any_array_parallel.h). The serial counterpart is a no-op.
  *
  * @see array_chunk_parallel_common_inline.h for the body
  */

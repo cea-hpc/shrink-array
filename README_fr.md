@@ -35,7 +35,7 @@ change :
 
 ```diff
 -#include <vector>
-+#include "chunk/array_chunk2A.h"
++#include "chunk/zero_any_array.h"
 
 -std::vector<double> a(n);
 +shrink_array::zero_any::Array<double> a(n);
@@ -58,7 +58,7 @@ temps d'accès, voir [En chiffres](#en-chiffres).*
 
 ```cpp
 #include <cstdio>
-#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes

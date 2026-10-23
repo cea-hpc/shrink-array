@@ -29,7 +29,7 @@
 #include <type_traits>      // std::is_same_v (reclaim_second_values: bool has no registry)
 
 #include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
-#include "chunk/internal/array_chunk2A_parallel.h"      // ParallelSupport2A — OpenMP-only mixin
+#include "chunk/internal/zero_any_array_parallel.h"     // ParallelSupport2A — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
@@ -79,8 +79,8 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
     using Base    = ArrayChunkBase<Array>;  ///< Base shared by every variant.
     using Hooks2A = RechunkHooks<Array>;    ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2;                        ///< The CRTP base reaches this class's private members.
-    friend ArrayChunkBase<Array>;        ///< For swap_identity().
+    friend Base2;                 ///< The CRTP base reaches this class's private members.
+    friend ArrayChunkBase<Array>; ///< For swap_identity().
 
     // Re-declared (not only inherited): the mixins declare them too, so an outside
     // `Arr::ChunkType` would be ambiguous between base subobjects (lookup precedes access).
@@ -640,9 +640,9 @@ class Array : public ArrayChunk2Base<Array<T, IntType>>,
 
 // Template method bodies, after the class definition.
 
-#include "chunk/internal/array_chunk2A_inline.h" // the template bodies
+#include "chunk/internal/zero_any_array_inline.h" // the template bodies
 
-// Bodies of the two mode-specific mixins. After array_chunk2A_inline.h, so their
+// Bodies of the two mode-specific mixins. After zero_any_array_inline.h, so their
 // CRTP self() sees a complete zero_any::Array.
-#include "chunk/internal/array_chunk2A_parallel_inline.h"    // ParallelSupport2A's bodies
+#include "chunk/internal/zero_any_array_parallel_inline.h"   // ParallelSupport2A's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

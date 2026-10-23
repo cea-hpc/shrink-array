@@ -53,9 +53,9 @@
 #include <type_traits> // std::conditional_t
 
 #include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/array_chunk.h"    // Chunk<T> complete (chunk_std.h): its operator new[]
-#include "chunk/array_chunk2.h"   // Chunk2<T> complete (chunk2_std.h): its operator new[]
-#include "chunk/array_chunk2A.h"  // Chunk2A<T> complete (chunk2A_std.h): its operator new[]
+#include "chunk/zero_array.h"     // Chunk<T> complete (chunk_std.h): its operator new[]
+#include "chunk/zero_one_value_array.h" // Chunk2<T> complete (chunk2_std.h): its operator new[]
+#include "chunk/zero_any_array.h"       // Chunk2A<T> complete (chunk2A_std.h): its operator new[]
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
 #include "chunk/config.h"         // chunk_config::use_chunk*
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS

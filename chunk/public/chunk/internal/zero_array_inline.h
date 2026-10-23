@@ -20,7 +20,7 @@
 #include <vector> // std::vector
 
 #include "chunk/all_type_chunk.h"                       // ensure_manager, from create
-#include "chunk/array_chunk.h"                          // zero::Array, the class these bodies belong to
+#include "chunk/zero_array.h"                           // zero::Array, the class these bodies belong to
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"               // per-size free lists, candidate filter
@@ -361,7 +361,7 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
 }
 
 // make_block_compression() is FastBlockSupport<zero::Array, true>'s
-// (array_chunk_parallel_inline.h); the false specialisation is a no-op.
+// (zero_array_parallel_inline.h); the false specialisation is a no-op.
 template <ArrayChunkElement T, typename IntType>
 void zero::Array<T, IntType>::release_chunk_range(int first, int last)
 {
@@ -488,8 +488,8 @@ void zero::Array<T, IntType>::resize(IntType newsz)
         // when old_size falls on a boundary, stale too. In long long:
         // old_nb_chunk * csz may pass IndType's range.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const IntType      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType      stale_end = newsz < old_cover ? newsz : old_cover;
+        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
+        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
         for (IntType i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

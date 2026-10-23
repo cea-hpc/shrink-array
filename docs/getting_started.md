@@ -103,9 +103,9 @@ defines (`examples/shrink_bench` and `examples/simple_array` do so):
 ```cpp
 #include <type_traits>
 #include <vector>
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
+#include "chunk/zero_array.h"
+#include "chunk/zero_one_value_array.h"
+#include "chunk/zero_any_array.h"
 #include "chunk/config.h"
 
 namespace sa = shrink_array;
@@ -132,7 +132,7 @@ well as inside the tree.
 #include <cstdio>
 #include <utility>                 // std::as_const
 
-#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
@@ -210,7 +210,7 @@ phase call. Linked as in §3, with `OpenMP::OpenMP_CXX` too:
 #include <utility>                 // std::as_const
 #include <vector>
 
-#include "chunk/array_chunk2A.h"   // shrink_array::zero_any::Array
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
 
 namespace sa = shrink_array;
 

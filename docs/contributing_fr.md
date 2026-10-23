@@ -91,7 +91,7 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   gardent leur graphie : les types membres de ses protocoles (`value_type`, `size_type`, ... ;
   nos propres types membres sont en PascalCase, `ChunkType`), les traits et les tags (`is_cplx`,
   `rebind`). Dans un nom en snake_case, la
-  variante s'écrit `chunk2a` ; les noms de fichiers (`array_chunk2A.h`) restent tels quels. Les
+  variante s'écrit `chunk2a` ; les noms de fichiers (`zero_any_array.h`) restent tels quels. Les
   globales prennent le préfixe `g_` ; aucun nom ne commence par `__` (réservé). Un nom public qui
   change garde son ancienne graphie en alias `[[deprecated]]` jusqu'à la 1.0. `check_naming`
   vérifie ce qu'une ligne montre ; le `readability-identifier-naming` de clang-tidy vérifie le

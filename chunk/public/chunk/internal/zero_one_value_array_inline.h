@@ -29,7 +29,7 @@
 #include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
 
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
-#include "chunk/array_chunk2.h"                         // zero_one_value::Array, the class these bodies belong to
+#include "chunk/zero_one_value_array.h"                 // zero_one_value::Array, the class these bodies belong to
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
 #include "chunk/internal/proxy2.h"                      // Proxy2<T>
@@ -49,7 +49,7 @@
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, cst_buffer_size
 
 /**
- * @file array_chunk2_inline.h
+ * @file zero_one_value_array_inline.h
  * @brief Out-of-line definitions of zero_one_value::Array.
  *
  * zero_one_value::Array is the array of Chunk2 blocks: every chunk compresses either to
@@ -79,7 +79,7 @@
  *    or parks buffers sets it from `size_policy_.size()` first; getting this
  *    wrong frees through the wrong size pool.
  *
- * @see array_chunk2.h for the declarations and each member's contract,
+ * @see zero_one_value_array.h for the declarations and each member's contract,
  *      array_chunk2_base.h for the parts shared with zero_any::Array.
  */
 
@@ -1097,7 +1097,8 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                 count             = static_cast<int>(second ? chunk.get_nb_second_value() : chunk.get_nb_first_value());
             }
             CHUNK_LOG(debug, compress, "residual zero_one_value::Array: chunk {} (element {}): is_inside={} count={}",
-                      ind, static_cast<IntType>(ind) * static_cast<IntType>(this->size_policy_.size()), is_inside, count);
+                      ind, static_cast<IntType>(ind) * static_cast<IntType>(this->size_policy_.size()), is_inside,
+                      count);
         }
     };
     report(tab_nb1, "first_value", false);
@@ -1203,7 +1204,7 @@ template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::resize(IntType newsz)
 {
     this->invalidate_proxies();
-    const int  old_nb_chunk = nb_chunk_;
+    const int     old_nb_chunk = nb_chunk_;
     const IntType old_size     = this->m_size_; // the stale-tail reset at the end
 
     Base2::resize_common(newsz);
@@ -1236,8 +1237,8 @@ void zero_one_value::Array<T, IntType>::resize(IntType newsz)
         // spare chunk keeps stale values too.
         // In long long: old_nb_chunk * csz may pass IndType's range near its top.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const IntType      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType      stale_end = newsz < old_cover ? newsz : old_cover;
+        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
+        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
         for (IntType i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

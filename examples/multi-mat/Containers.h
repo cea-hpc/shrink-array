@@ -24,8 +24,8 @@
 
 #include <vector> // std::vector
 
-#include "chunk/array_chunk.h"  // shrink_array::zero::Array
-#include "chunk/array_chunk2.h" // shrink_array::zero_one_value::Array
+#include "chunk/zero_array.h"           // shrink_array::zero::Array
+#include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array
 #include "Dispatch.h"           // Dispatch (extern dispatch)
 
 extern Dispatch dispatch;

@@ -24,9 +24,9 @@ All names are in namespace `shrink_array`, `build_config` and `chunk_config` inc
 
 | class | header | compresses chunks uniform at… |
 |---|---|---|
-| `zero::Array<T, IntType = int>` | `chunk/array_chunk.h` | `T{}` |
-| `zero_one_value::Array<T, IntType = int>` | `chunk/array_chunk2.h` | `T{}` or the array's second value |
-| `zero_any::Array<T, IntType = int>` | `chunk/array_chunk2A.h` | `T{}` or any value, per chunk |
+| `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
+| `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` or the array's second value |
+| `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` or any value, per chunk |
 | `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stored one bit per element (Chunk2 builds) |
 
 `IntType` is the index type: `long` for more than 2³¹ elements. The variant compiled in is the

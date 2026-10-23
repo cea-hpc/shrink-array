@@ -582,7 +582,7 @@ CMake options related to benchmark performance:
 
 | topic | files |
 |---|---|
-| the array | `array_chunk2.h`, `internal/array_chunk2_inline.h`, `internal/array_chunk2_base.h` |
+| the array | `zero_one_value_array.h`, `internal/zero_one_value_array_inline.h`, `internal/array_chunk2_base.h` |
 | common base, read, `operator[]` | `internal/array_chunk_base.h`, `internal/array_chunk_base_inline.h` |
 | the chunk, materialisation, compression | `chunk2_std.h`, `internal/chunk2_std_inline.h`, `internal/chunk_base.h` |
 | the write proxy | `internal/proxy2.h`, `internal/proxy2_inline.h`, `internal/proxy2_base.h` |

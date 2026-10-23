@@ -17,7 +17,7 @@
 #pragma once
 
 /**
- * @file array_chunk2_rechunk_hooks.h
+ * @file zero_one_value_array_rechunk_hooks.h
  * @brief zero_one_value::Array's re-chunk hooks — a CHUNK_DYNAMIC-only concern, isolated
  *        in its own mixin so they vanish from a static-geometry build.
  *
@@ -30,7 +30,7 @@
  *
  * @see array_chunk_rechunk.h for the algorithm that calls these
  * @see array_chunk_rechunk_hooks.h for v1's three
- * @see array_chunk2_rechunk_hooks_inline.h for the bodies
+ * @see zero_one_value_array_rechunk_hooks_inline.h for the bodies
  */
 
 #include "chunk/config.h"        // build_config::chunk_dynamic

@@ -24,9 +24,9 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 
 | classe | en-tête | compresse les chunks uniformes à… |
 |---|---|---|
-| `zero::Array<T, IntType = int>` | `chunk/array_chunk.h` | `T{}` |
-| `zero_one_value::Array<T, IntType = int>` | `chunk/array_chunk2.h` | `T{}` ou la seconde valeur du tableau |
-| `zero_any::Array<T, IntType = int>` | `chunk/array_chunk2A.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
+| `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
+| `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` ou la seconde valeur du tableau |
+| `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
 | `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds Chunk2) |
 
 `IntType` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est

@@ -585,7 +585,7 @@ Options CMake liées aux performances des bancs :
 
 | sujet | fichiers |
 |---|---|
-| le tableau | `array_chunk2.h`, `internal/array_chunk2_inline.h`, `internal/array_chunk2_base.h` |
+| le tableau | `zero_one_value_array.h`, `internal/zero_one_value_array_inline.h`, `internal/array_chunk2_base.h` |
 | base commune, lecture, `operator[]` | `internal/array_chunk_base.h`, `internal/array_chunk_base_inline.h` |
 | le chunk, matérialisation, compression | `chunk2_std.h`, `internal/chunk2_std_inline.h`, `internal/chunk_base.h` |
 | le proxy d'écriture | `internal/proxy2.h`, `internal/proxy2_inline.h`, `internal/proxy2_base.h` |

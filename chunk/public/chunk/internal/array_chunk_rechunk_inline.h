@@ -786,7 +786,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 {
                     set_thread_chunk_size(old_size);
                     // auto: SecondValueRef is not declared in every TU that
-                    // instantiates this file (array_chunk2.cpp), and the name
+                    // instantiates this file (zero_one_value_array.cpp), and the name
                     // would be looked up even in a discarded branch.
                     const T    v   = static_cast<T>(std::as_const(self())[base]);
                     auto&      nch = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];

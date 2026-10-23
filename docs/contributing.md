@@ -89,7 +89,7 @@ The source checks run with the others (`ctest -R check_`):
   UPPER_CASE is for macros only: a constant or an enumerator spelled like one reads as one, and
   may meet one. The standard library's shapes keep their spelling: the member types of its
   protocols (`value_type`, `size_type`, ...; our own member types are PascalCase, `ChunkType`),
-  the traits and tags (`is_cplx`, `rebind`). Inside a snake_case name the variant is `chunk2a`; file names (`array_chunk2A.h`)
+  the traits and tags (`is_cplx`, `rebind`). Inside a snake_case name the variant is `chunk2a`; file names (`zero_any_array.h`)
   stay as they are. Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
   that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`

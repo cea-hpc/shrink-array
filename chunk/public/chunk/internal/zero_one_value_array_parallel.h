@@ -17,7 +17,7 @@
 #pragma once
 
 /**
- * @file array_chunk2_parallel.h
+ * @file zero_one_value_array_parallel.h
  * @brief zero_one_value::Array's two mode-gated surfaces -- the OpenMP-only one (the
  *        deferred-op flush) and the fast-block-only one
  *        (make_block_compression) -- isolated in their own mixins so they
@@ -33,8 +33,8 @@
  *          which is STRICTER than threaded (it also needs embedded -- i.e. not
  *          manual -- compression).
  *
- * @see array_chunk2_parallel_inline.h for the body
- * @see array_chunk_parallel.h for v1's version of the same split
+ * @see zero_one_value_array_parallel_inline.h for the body
+ * @see zero_array_parallel.h for v1's version of the same split
  */
 
 #include "chunk/config.h"       // build_config::threaded, chunk_config::use_fast_block_compression

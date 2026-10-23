@@ -53,7 +53,7 @@
 
 | directory | contents |
 |---|---|
-| `chunk/public/chunk/` | the API: `array_chunk.h`, `array_chunk2.h`, `array_chunk2A.h`, `param_chunk.h`, `config.h` |
+| `chunk/public/chunk/` | the API: `zero_array.h`, `zero_one_value_array.h`, `zero_any_array.h`, `param_chunk.h`, `config.h` |
 | `chunk/public/chunk/internal/` | the implementation: chunks, proxies, write engine, compression, re-chunk |
 | `chunk/private/` | the compiled parts of the library (type registry, OMPT tool, statistics, traces) |
 | `fast_allocators/` | the buffer allocators (arenas, slabs, reuse lists) |

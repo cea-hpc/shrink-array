@@ -17,7 +17,7 @@
 #pragma once
 
 /**
- * @file array_chunk_parallel.h
+ * @file zero_array_parallel.h
  * @brief zero::Array's (v1) two mode-gated surfaces -- the OpenMP-only one (the
  *        deferred-op flush) and the fast-block-only one
  *        (make_block_compression) -- isolated in their own mixins so they
@@ -31,7 +31,7 @@
  *          use_fast_block_compression> carries the fast-block compression pass,
  *          whose gate is stricter than threaded.
  *
- * @see array_chunk_parallel_inline.h for the body
+ * @see zero_array_parallel_inline.h for the body
  * @see array_chunk_parallel_common.h for the shared part
  */
 
@@ -80,7 +80,7 @@ struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Deri
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *
- * @details v1's copy of FastBlockSupport2 (array_chunk2_parallel.h). The only
+ * @details v1's copy of FastBlockSupport2 (zero_one_value_array_parallel.h). The only
  *          call site (zero::Array::resize) guards with the same constexpr and
  *          so still names a declared member in every mode.
  */

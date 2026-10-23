@@ -14,11 +14,7 @@
  * limitations under the License.
  */
 
-#pragma once
+// The template bodies are in zero_one_value_array_inline.h, through zero_one_value_array.h. No
+// explicit instantiations: each zero_one_value::Array<T> is instantiated where it is used.
 
-// Out-of-line bodies of zero_any::Array's OpenMP-only surface (ParallelSupport2A).
-// Included at the end of array_chunk2A.h, after the class and its own inline
-// file, so the CRTP self() down-cast sees a complete Derived. The one body left,
-// flush_pending_deferred_ops(), is the shared one.
-#include "chunk/internal/array_chunk2A_parallel.h"             // ParallelSupport2A, the declarations completed here
-#include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
+#include "chunk/zero_one_value_array.h" // its own header: zero_one_value::Array<T>, bodies in zero_one_value_array_inline.h

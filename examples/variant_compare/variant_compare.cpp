@@ -79,8 +79,8 @@
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"       // the IntType = int default of zero_one_value::Array<T> / zero_any::Array<T>
-#include "chunk/array_chunk2.h"       // zero_one_value::Array
-#include "chunk/array_chunk2A.h"      // zero_any::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/config.h"             // chunk_config::use_chunk2a, build_config::use_openmp
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
