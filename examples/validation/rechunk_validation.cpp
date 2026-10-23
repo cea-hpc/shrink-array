@@ -65,9 +65,9 @@
 #include <utility>     // std::pair (try_set_active_chunk_size's cases)
 
 #include "chunk/chunk_traits.h"               // forward decls + default IntType = int
-#include "chunk/zero_array.h"                // zero::Array
-#include "chunk/zero_one_value_array.h"               // zero_one_value::Array
-#include "chunk/zero_any_array.h"              // zero_any::Array
+#include "chunk/zero_array.h"                 // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_chunk*

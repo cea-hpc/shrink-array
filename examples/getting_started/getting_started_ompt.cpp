@@ -29,7 +29,7 @@
 #include <utility> // std::as_const
 #include <vector>  // std::vector, the reference
 
-#include "chunk/zero_any_array.h"  // shrink_array::zero_any::Array
+#include "chunk/zero_any_array.h" // shrink_array::zero_any::Array
 #include "chunk/config.h"         // build_config::has_ompt
 #include "chunk/internal/print.h" // shrink_array::println
 

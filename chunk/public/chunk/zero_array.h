@@ -23,9 +23,9 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/chunk_std.h"                     // Chunk<T>
-#include "chunk/internal/read_reclaim.h"         // read_reclaim::PassScope (perform_compression / compress in a region)
-#include "chunk/internal/array_chunk_base.h"     // ArrayChunkBase
+#include "chunk/chunk_std.h"                    // Chunk<T>
+#include "chunk/internal/read_reclaim.h"        // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase
 #include "chunk/internal/zero_array_parallel.h" // ParallelSupport — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
@@ -341,5 +341,5 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
 // Bodies of the two mode-specific mixins. After zero_array_inline.h, so their
 // CRTP self() sees a complete zero::Array.
-#include "chunk/internal/zero_array_parallel_inline.h"      // ParallelSupport's bodies
+#include "chunk/internal/zero_array_parallel_inline.h"       // ParallelSupport's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

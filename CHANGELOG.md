@@ -254,8 +254,14 @@ the tag's checksum to the recipe.
 
 - The three array classes live in a namespace each, named after what they compress:
   `zero::Array` (was `ArrayChunk`), `zero_one_value::Array` (was `ArrayChunk2`),
-  `zero_any::Array` (was `ArrayChunk2A`). The chunk and proxy classes, the headers' names, the
-  CMake targets and the package keep their names for now.
+  `zero_any::Array` (was `ArrayChunk2A`). The chunk and proxy classes, the CMake targets and
+  the package keep their names for now.
+- The headers follow: `chunk/zero_array.h`, `chunk/zero_one_value_array.h` and
+  `chunk/zero_any_array.h` (were `chunk/array_chunk.h`, `array_chunk2.h`, `array_chunk2A.h`),
+  and so do the files of `chunk/internal/` and `chunk/private/` that belong to one of the three
+  classes (`zero_any_array_inline.h`, `zero_one_value_array_parallel.h`, `zero_array.cpp`, ...).
+  The files shared by several of them (`array_chunk_base.h`, `array_chunk_core.h`,
+  `array_chunk2_base.h`, ...) keep their names.
 - Types are PascalCase, with no `xxx_type` exception: the member aliases of the arrays
   (`chunk_type`, `manager_type`, `proxy_type`, `ind_type`, `chunk_list_type`) and the
   internal ones (`index_type`, `cst_val1_type`) become `ChunkType`, `ManagerType`, `ProxyType`,

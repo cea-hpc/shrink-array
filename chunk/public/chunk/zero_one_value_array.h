@@ -23,20 +23,20 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/bit.h"                                  // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
-#include "chunk/internal/second_value_info.h"           // SecondValueInfo (InfArrayT)
-#include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
-#include "chunk/internal/zero_one_value_array_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
-#include "chunk/internal/zero_one_value_array_rechunk_hooks.h"  // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
-#include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
-#include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
-#include "chunk/config.h"                               // for use_fast_block_compression, threaded
-#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_CAPACITY, pmp::Team
-#include "chunk/chunk2_std.h"                           // Chunk2<T>
-#include "chunk/internal/proxy2.h"                      // Proxy2<T> and its registry
+#include "chunk/bit.h"                                         // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/in_t.h"                               // InT<T>: the element snapshots
+#include "chunk/internal/second_value_info.h"                  // SecondValueInfo (InfArrayT)
+#include "chunk/internal/array_chunk2_base.h"                  // for ArrayChunk2Base
+#include "chunk/internal/zero_one_value_array_parallel.h"      // ParallelSupport2 — OpenMP-only mixin
+#include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
+#include "chunk/internal/array_chunk_base.h"                   // for ArrayChunkBase
+#include "chunk/internal/concept_array_chunk_element.h"        // for ArrayChunkElement
+#include "chunk/config.h"                                      // for use_fast_block_compression, threaded
+#include "chunk/internal/invariant_check.h"                    // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/write_compress_sync_policy.h"         // for WriteCompressSyncPolicy
+#include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_THREAD_CAPACITY, pmp::Team
+#include "chunk/chunk2_std.h"                                  // Chunk2<T>
+#include "chunk/internal/proxy2.h"                             // Proxy2<T> and its registry
 
 namespace shrink_array
 {

@@ -54,7 +54,7 @@
 
 
 #include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h"          // zero_one_value::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/config.h"                // OmptSuspendCounter, chunk_config::use_chunk / use_chunk2

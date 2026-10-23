@@ -27,7 +27,7 @@
 #include <utility>     // std::pair (the clear() summary)
 #include <vector>      // std::vector
 
-#include "chunk/zero_any_array.h"                        // zero_any::Array, the class these bodies belong to
+#include "chunk/zero_any_array.h"                       // zero_any::Array, the class these bodies belong to
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled (the size prediction's gate)
@@ -649,8 +649,8 @@ void zero_any::Array<T, IntType>::resize(IntType newsz)
     this->invalidate_proxies();
     const auto& sh_inf = *Proxy2A<T>::share_info_array;
 
-    const int  num_tab      = sh_inf.get_num_tab(this->registry_key());
-    const int  old_nb_chunk = nb_chunk_;
+    const int     num_tab      = sh_inf.get_num_tab(this->registry_key());
+    const int     old_nb_chunk = nb_chunk_;
     const IntType old_size     = this->m_size_; // the stale-tail reset at the end
 
     Base2::resize_common(newsz);
@@ -690,8 +690,8 @@ void zero_any::Array<T, IntType>::resize(IntType newsz)
         // spare chunk holds stale values too.
         // In long long: old_nb_chunk * csz may pass IndType's range near its top.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
-        const IntType      old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
-        const IntType      stale_end = newsz < old_cover ? newsz : old_cover;
+        const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
+        const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
         for (IntType i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

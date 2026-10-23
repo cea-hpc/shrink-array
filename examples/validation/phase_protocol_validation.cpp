@@ -50,8 +50,8 @@
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>   // getpid
 
-#include "chunk/zero_array.h"         // zero::Array
-#include "chunk/zero_one_value_array.h"        // zero_one_value::Array
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/chunk_std.h"           // release_chunk_pools
 #include "chunk/config.h"              // chunk_config::use_chunk*, build_config::has_not_ompt, any_check

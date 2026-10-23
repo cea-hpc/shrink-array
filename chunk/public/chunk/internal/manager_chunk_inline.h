@@ -45,7 +45,7 @@
 #include "chunk/chunk_def.h"                     // ChunkDef
 #include "chunk/chunk2_def.h"                    // Chunk2Def
 #include "chunk/chunk2A_def.h"                   // Chunk2ADef
-#include "chunk/zero_array.h"                   // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
+#include "chunk/zero_array.h"                    // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
 #include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"        // IsChunk, IsChunk2, IsChunk2A, IsChunk2Or2A
 #include "chunk/global_stats_chunk_list.h"       // GlobalStatsChunkList
