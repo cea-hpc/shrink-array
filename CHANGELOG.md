@@ -136,6 +136,8 @@ the tag's checksum to the recipe.
   new header and emit a `#warning`, until 1.0.
 - `Chunk`, `Chunk2`, `Chunk2A`, `Proxy`, `Proxy2` and `Proxy2A`: `[[deprecated]]` alias templates of
   the classes above, until 1.0.
+- `chunk/chunk_std.h`, `chunk2_std.h`, `chunk2A_std.h`, `chunk_def.h`, `chunk2_def.h` and
+  `chunk2A_def.h`: they include the new header and emit a `#warning`, until 1.0.
 
 ### Fixed
 

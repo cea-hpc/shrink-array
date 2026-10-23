@@ -385,6 +385,12 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/array_chunk.h   # deprecated: zero_array.h
         public/chunk/array_chunk2.h  # deprecated: zero_one_value_array.h
         public/chunk/array_chunk2A.h # deprecated: zero_any_array.h
+        public/chunk/chunk_std.h # deprecated: zero_chunk.h
+        public/chunk/chunk2_std.h # deprecated: zero_one_value_chunk.h
+        public/chunk/chunk2A_std.h # deprecated: zero_any_chunk.h
+        public/chunk/chunk_def.h # deprecated: zero_chunk_def.h
+        public/chunk/chunk2_def.h # deprecated: zero_one_value_chunk_def.h
+        public/chunk/chunk2A_def.h # deprecated: zero_any_chunk_def.h
         public/chunk/array_chunk_range_ops.h
         public/chunk/zero_any_chunk_def.h
         public/chunk/zero_any_chunk.h
