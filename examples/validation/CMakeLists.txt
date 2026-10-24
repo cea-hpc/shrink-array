@@ -437,6 +437,18 @@ foreach(_geom IN LISTS _rt_geometries)
         validation_add_test(zero_one_value_registry_growth_validation ${_exe} ${_h} "1;4")
       elseif (_h STREQUAL "zero_one_value_foreign_key_validation")
         validation_add_test(zero_one_value_foreign_key_validation ${_exe} ${_h} "8")
+      elseif (_h STREQUAL "tbb_validation")
+        validation_add_test(${_base} ${_exe} ${_h} "1;8")
+        # ThreadSanitizer: libtbb.so is not instrumented, and its partitioners'
+        # bookkeeping shows up as races (tsan_tbb.supp says why and what is
+        # left visible). Appended to TSAN_OPTIONS, so the CI's halt_on_error
+        # stays.
+        if (SANITIZER STREQUAL "thread")
+          foreach(_t ${_base}_1thr ${_base}_8thr)
+            set_property(TEST ${_t} APPEND PROPERTY ENVIRONMENT_MODIFICATION
+                         "TSAN_OPTIONS=string_append: suppressions=${PROJECT_SOURCE_DIR}/tsan_tbb.supp")
+          endforeach()
+        endif()
       elseif (_h STREQUAL "deferred_path_validation")
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
       elseif (_h STREQUAL "phase_protocol_validation")
