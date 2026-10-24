@@ -244,7 +244,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
             catch (const std::exception& e)
             {
                 CHUNK_INVARIANT_FAILED("flush_deferred: re-insert failed: {} (rank {}, chunk {})", e.what(), thr,
-                                       static_cast<const void*>(chunk));
+                                       chunk);
             }
         }
     }
@@ -273,8 +273,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
             const auto it = thread_map.find(c);
             if (it == thread_map.end() || !it->second || it->second->empty())
             {
-                CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr,
-                                       static_cast<const void*>(c));
+                CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr, c);
             }
         }
     }
@@ -385,14 +384,14 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
                     if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
-                                               static_cast<const void*>(raw), r);
+                                               raw, r);
                     }
                     const std::uintptr_t vptr = *reinterpret_cast<const std::uintptr_t*>(raw);
                     if (vptr < 0x1000)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
                                                "num={} op={} vptr={:#x} rank={}",
-                                               num, static_cast<const void*>(raw), vptr, r);
+                                               num, raw, vptr, r);
                     }
                 }
 
@@ -434,7 +433,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
             catch (const std::exception& e)
             {
                 CHUNK_INVARIANT_FAILED("flush_chunk_all_ranks: erase failed: {} (rank {}, chunk {})", e.what(), r,
-                                       static_cast<const void*>(chunk));
+                                       chunk);
             }
         }
     }
@@ -506,7 +505,7 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int t
     catch (const std::exception& e)
     {
         CHUNK_INVARIANT_FAILED("erase_own_rank_op: erase failed: {} (rank {}, chunk {}, offset {})", e.what(), thr,
-                               static_cast<const void*>(chunk), num);
+                               chunk, num);
     }
 
     // Same bookkeeping as the flush erase path.
@@ -526,7 +525,7 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int t
         catch (const std::exception& e)
         {
             CHUNK_INVARIANT_FAILED("erase_own_rank_op: chunk erase failed: {} (rank {}, chunk {})", e.what(), thr,
-                                   static_cast<const void*>(chunk));
+                                   chunk);
         }
         if (thread_map.empty())
         {

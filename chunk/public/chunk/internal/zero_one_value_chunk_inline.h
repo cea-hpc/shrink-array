@@ -751,7 +751,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
             {
                 CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
                                        "dedup flag -- two passes on one chunk",
-                                       static_cast<const void*>(marked));
+                                       marked);
             }
         }
         zero_one_value::Proxy<T>::reset_tab_is_inside_list_to_compress(num_tab, num_chunk);

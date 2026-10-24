@@ -227,7 +227,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
   private:
     static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;
-    static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
+    static constexpr bool is_chunk2_derived          = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
 
     /// @brief Clear chunk and reset to constant value
     /// @tparam IndexT Type of index parameter
@@ -275,8 +275,8 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
                 invariant_failed(loc,
                                  "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
                                  "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
-                                 type_name<T>(), static_cast<const void*>(this), static_cast<const void*>(target_ptr),
-                                 c1, c2, get_thr_rank_fast());
+                                 type_name<T>(), this, static_cast<const void*>(target_ptr), c1, c2,
+                                 get_thr_rank_fast());
             }
         }
     }

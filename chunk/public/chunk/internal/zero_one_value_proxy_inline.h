@@ -58,8 +58,7 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
                 CHUNK_INVARIANT_FAILED(
                     "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    inf_array_src_->ind, inf_array_src_->num_tab, reg.ind, reg.num_tab,
-                    static_cast<const void*>(get_ptr_on_array()));
+                    inf_array_src_->ind, inf_array_src_->num_tab, reg.ind, reg.num_tab, get_ptr_on_array());
             }
         }
     }
@@ -92,8 +91,7 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
                 CHUNK_INVARIANT_FAILED(
                     "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    inf_array_src_->ind, inf_array_src_->num_tab, reg.ind, reg.num_tab,
-                    static_cast<const void*>(get_ptr_on_array()));
+                    inf_array_src_->ind, inf_array_src_->num_tab, reg.ind, reg.num_tab, get_ptr_on_array());
             }
         }
     }
@@ -562,7 +560,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val1 after create_value "
                                                "(chunk={}, num={})",
-                                               static_cast<const void*>(&chunk), num);
+                                               &chunk, num);
                     }
 
                     const bool is_cst2_loc = proxy.is_cst_val2();
@@ -570,7 +568,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val2 after create_value "
                                                "(chunk={}, num={})",
-                                               static_cast<const void*>(&chunk), num);
+                                               &chunk, num);
                     }
                 }
 

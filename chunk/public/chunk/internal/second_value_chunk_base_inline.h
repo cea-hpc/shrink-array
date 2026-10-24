@@ -112,14 +112,13 @@ void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
             invariant_failed(
                 "Free List Corruption: Attempted to add 'cst_val1' (zero-constant) to the thread-local free pool. "
                 "Type: {} | Chunk Addr: {} | Ptr being freed: {} | Cst1 Ptr: {} | Thread Rank: {}",
-                type_name<T>(), static_cast<const void*>(this), current_ptr,
-                static_cast<const void*>(Base::get_cst_val1()), get_thr_rank_fast());
+                type_name<T>(), this, current_ptr, static_cast<const void*>(Base::get_cst_val1()), get_thr_rank_fast());
         }
 
         invariant_failed(
             "Free List Corruption: Attempted to add 'cst_val2' (secondary constant) to the thread-local free pool. "
             "Type: {} | Chunk Addr: {} | Ptr being freed: {} | Thread Rank: {}",
-            type_name<T>(), static_cast<const void*>(this), current_ptr, get_thr_rank_fast());
+            type_name<T>(), this, current_ptr, get_thr_rank_fast());
     }
 
     auto& ll_block_free_thr = derived().get_manager().get_list_block_free_thr(thr_rank);

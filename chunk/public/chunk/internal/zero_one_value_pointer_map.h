@@ -255,8 +255,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
             }
             CHUNK_LOG(error, general,
                       "share_info {}: KEY NOT FOUND: this={} rank={} searched_key={} vec.size={}; valid keys:{}{}",
-                      site, static_cast<const void*>(this), rank, key, count,
-                      std::string_view{keys.data(), n < keys.size() ? n : keys.size()},
+                      site, this, rank, key, count, std::string_view{keys.data(), n < keys.size() ? n : keys.size()},
                       count > lim ? " ...(truncated)" : "");
         }
     }
@@ -319,8 +318,8 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
             }
         }
         report_key_not_found(key, "replace_all_other_elm");
-        CHUNK_INVARIANT_FAILED("[share_info replace_all_other_elm] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
+        CHUNK_INVARIANT_FAILED("[share_info replace_all_other_elm] key NOT FOUND: this={} size={} key={}", this,
+                               vec_.size(), key);
     }
 
     /// @brief Record that second value @p key sits at index @p ind of the
@@ -378,8 +377,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
         }
 
         report_key_not_found(key, "replace");
-        CHUNK_INVARIANT_FAILED("[share_info replace] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
+        CHUNK_INVARIANT_FAILED("[share_info replace] key NOT FOUND: this={} size={} key={}", this, vec_.size(), key);
     }
 
     /// @brief The second value recorded for array @p key (true for bool).
@@ -401,8 +399,8 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
             return true;
         }
         report_key_not_found(key, "get_second_value");
-        CHUNK_INVARIANT_FAILED("[share_info get_second_value] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
+        CHUNK_INVARIANT_FAILED("[share_info get_second_value] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
+                               key);
     }
     /// @brief The num_tab recorded for array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
@@ -416,8 +414,8 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
             }
         }
         report_key_not_found(key, "get_num_tab");
-        CHUNK_INVARIANT_FAILED("[share_info get_num_tab] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
+        CHUNK_INVARIANT_FAILED("[share_info get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
+                               key);
     }
 
     /// @brief The whole (second value, index, num_tab) tuple recorded for
@@ -434,8 +432,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
 
                 if (count > (1U << 30U))
                 {
-                    CHUNK_INVARIANT_FAILED("[share_info get] corrupt vec: this={} size={} key={}",
-                                           static_cast<const void*>(this), count, key);
+                    CHUNK_INVARIANT_FAILED("[share_info get] corrupt vec: this={} size={} key={}", this, count, key);
                 }
 
                 for (size_t i = 0; i < count; ++i)
@@ -448,7 +445,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
                 CHUNK_INVARIANT_FAILED("[share_info get] key NOT FOUND: this={} size={} key={} "
                                        "(dangling ctx->ptr_on_array, or array destroyed while a deferred op "
                                        "still referenced it?)",
-                                       static_cast<const void*>(this), count, key);
+                                       this, count, key);
             }
             else
             {
@@ -462,8 +459,8 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
                     }
                 }
                 report_key_not_found(key, "get_info_second_value");
-                CHUNK_INVARIANT_FAILED("[share_info get_info_second_value] key NOT FOUND: this={} size={} key={}",
-                                       static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
+                CHUNK_INVARIANT_FAILED("[share_info get_info_second_value] key NOT FOUND: this={} size={} key={}", this,
+                                       vec_.size(), key);
             }
         }
         else

@@ -379,7 +379,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
             {
                 CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
                                        "dedup flag -- two passes on one chunk",
-                                       static_cast<const void*>(marked));
+                                       marked);
             }
         }
         zero::Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);
@@ -482,7 +482,7 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsi
         if (!derived().written())
         {
             invariant_failed(std::source_location::current(), "trying to clear a chunk that is not written (chunk={})",
-                             static_cast<const void*>(this));
+                             this);
         }
     }
 

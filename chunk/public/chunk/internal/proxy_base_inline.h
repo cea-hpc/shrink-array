@@ -179,7 +179,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
                                        "num_chunk={} num_tab={} "
                                        "ptr_is_inside_chunk_list_to_compress is null "
                                        "(set_info_on_chunk not called on this write path?)",
-                                       static_cast<const void*>(&chunk_), num_, num_chunk_, num_tab_);
+                                       &chunk_, num_, num_chunk_, num_tab_);
             }
         }
         // Test, then test-and-set. The flag is almost always 1, and a CAS takes
@@ -249,7 +249,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
                                        "num_chunk={} num_tab={} "
                                        "ptr_is_inside_chunk_list_to_compress is null "
                                        "(set_info_on_chunk not called on this write path?)",
-                                       static_cast<const void*>(&chunk_), num_, num_chunk_, num_tab_);
+                                       &chunk_, num_, num_chunk_, num_tab_);
             }
         }
         // CHUNK_STATS: see the vec_tuple overload for reading mark_refused / mark_ok.
@@ -973,14 +973,14 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& v, In
                     {
                         CHUNK_INVARIANT_FAILED(
                             "apply_atomic_op SYNC: chunk={} num={} is_cst_val1 BEFORE store_value (Dekker breach?)",
-                            static_cast<const void*>(&chunk_), num_);
+                            &chunk_, num_);
                     }
 
                     if (check_is_cst_val2(derived()))
                     {
                         CHUNK_INVARIANT_FAILED(
                             "apply_atomic_op SYNC: chunk={} num={} is_cst_val2 BEFORE store_value (Dekker breach?)",
-                            static_cast<const void*>(&chunk_), num_);
+                            &chunk_, num_);
                     }
                 }
 
@@ -997,7 +997,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& v, In
                         CHUNK_INVARIANT_FAILED(
                             "apply_atomic_op SYNC: chunk={} num={} values pointer CHANGED across store: "
                             "before={} after={} ; the store may have been LOST",
-                            static_cast<const void*>(&chunk_), num_, static_cast<const void*>(values_before),
+                            &chunk_, num_, static_cast<const void*>(values_before),
                             static_cast<const void*>(values_after));
                     }
                 }
@@ -1029,13 +1029,13 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& v, In
                                 {
                                     CHUNK_INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} is_cst_val1 "
                                                            "before read+store (decompression skipped?)",
-                                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                                           &ctx->chunk, ctx->num);
                                 }
                                 if (check_is_cst_val2(proxy))
                                 {
                                     CHUNK_INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} is_cst_val2 "
                                                            "before read+store (decompression skipped?)",
-                                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                                           &ctx->chunk, ctx->num);
                                 }
                             }
 
@@ -1058,8 +1058,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& v, In
                                         "apply_atomic_op ASYNC lambda: chunk={} num={} values pointer "
                                         "CHANGED across store_value_async: before={} after={} ; "
                                         "the store may have landed in a stale buffer (LOST)",
-                                        static_cast<const void*>(&ctx->chunk), ctx->num,
-                                        static_cast<const void*>(values_before),
+                                        &ctx->chunk, ctx->num, static_cast<const void*>(values_before),
                                         static_cast<const void*>(values_after));
                                 }
                                 // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
@@ -1070,7 +1069,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& v, In
                                     CHUNK_INVARIANT_FAILED(
                                         "apply_atomic_op ASYNC lambda: chunk={} num={} readback mismatch: "
                                         "wrote={} but readback={}",
-                                        static_cast<const void*>(&ctx->chunk), ctx->num, expected, readback);
+                                        &ctx->chunk, ctx->num, expected, readback);
                                 }
                             }
                         });
@@ -1158,15 +1157,15 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> v, Op operation) no
                                                      "Lambda async ARITH: STALE values pointer! "
                                                      "lambda_received={} chunk.values_load()={} chunk={} num={}",
                                                      static_cast<const void*>(values),
-                                                     static_cast<const void*>(current_chunk_ptr),
-                                                     static_cast<const void*>(&ctx->chunk), ctx->num);
+                                                     static_cast<const void*>(current_chunk_ptr), &ctx->chunk,
+                                                     ctx->num);
                                 }
                                 if (proxy.is_cst_val1())
                                 {
                                     invariant_failed(
                                         std::source_location::current(),
                                         "Lambda async ARITH: chunk={} num={} is_cst_val1 just before store!",
-                                        static_cast<const void*>(&ctx->chunk), ctx->num);
+                                        &ctx->chunk, ctx->num);
                                 }
                                 if constexpr (requires { proxy.is_cst_val2(); })
                                 {
@@ -1175,7 +1174,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> v, Op operation) no
                                         invariant_failed(
                                             std::source_location::current(),
                                             "Lambda async ARITH: chunk={} num={} is_cst_val2 just before store!",
-                                            static_cast<const void*>(&ctx->chunk), ctx->num);
+                                            &ctx->chunk, ctx->num);
                                     }
                                 }
                             }

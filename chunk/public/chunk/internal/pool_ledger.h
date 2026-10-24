@@ -413,8 +413,7 @@ inline void block_transition(const void* block,
 #endif
             if (bad_high || (up & 0x7U) != 0)
             {
-                CHUNK_INVARIANT_FAILED("[LEDGER_BADPTR] non-canonical block key {} op={} site={}",
-                                       static_cast<const void*>(block), op, site);
+                CHUNK_INVARIANT_FAILED("[LEDGER_BADPTR] non-canonical block key {} op={} site={}", block, op, site);
             }
         }
 

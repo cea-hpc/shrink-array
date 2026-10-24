@@ -145,11 +145,11 @@ void zero_any::ChunkImpl<T, Derived>::set_cst_val_to_cst_val(int num_compress_va
  */
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
-                                               VecTupleChunkA2pTint2& ll_compt2,
-                                               int                    num_chunk,
-                                               int                    num_tab,
-                                               ChunkElems             size,
-                                               [[maybe_unused]] bool  claimed)
+                                                            VecTupleChunkA2pTint2& ll_compt2,
+                                                            int                    num_chunk,
+                                                            int                    num_tab,
+                                                            ChunkElems             size,
+                                                            [[maybe_unused]] bool  claimed)
 {
     if (Base::is_not_cst_val1())
     {
@@ -300,8 +300,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 
         // Long form in both modes: thr is 0 with OpenMP off.
-        const SecondValueRef<T> ptr_second_value =
-            ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+        const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
         chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
         chunk_ptr->steal_unmark();
     }
@@ -342,8 +341,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
 
             char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 
-            const SecondValueRef<T> ptr_second_value =
-                ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
@@ -378,7 +376,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             {
                 CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
                                        "dedup flag -- two passes on one chunk",
-                                       static_cast<const void*>(marked));
+                                       marked);
             }
         }
         if (num_chunk >= 0)
@@ -428,10 +426,10 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
  */
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
-                                  int                   num_chunk,
-                                  int                   num_tab,
-                                  [[maybe_unused]] bool apply,
-                                  ChunkElems            size)
+                                               int                   num_chunk,
+                                               int                   num_tab,
+                                               [[maybe_unused]] bool apply,
+                                               ChunkElems            size)
 {
     // OpenMP without OMPT, apply = false (the lists' purge walks): the body would only scan
     // and register a cst_val2 that make_block_compression redoes -- a large cost for no
@@ -462,12 +460,11 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
         {
             // Against values[0], as fill_list_to_compress does, not the registered second
             // value: a chunk uniform at another value is compressed to THAT value.
-            const SecondValueRef<T> ptr_second_value =
-                ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            const InT<T> second_v = Base::read_value_scan(0);
-            const auto   scan     = Base::scan_constants(first_value, second_v, size.count());
-            compact1              = scan.first;
-            compact2              = scan.second;
+            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            const InT<T>            second_v         = Base::read_value_scan(0);
+            const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
+            compact1                                 = scan.first;
+            compact2                                 = scan.second;
             if (compact2)
             {
                 new_cst_val2_ptr = Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
@@ -489,9 +486,8 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
         // installed second-value slot (nullptr).
         if (apply)
         {
-            const SecondValueRef<T> ptr_second_value =
-                ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
+            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            char*                   ptr_type_cst     = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
             if (compact1)
             {
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
@@ -669,9 +665,9 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
  */
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int   thr,
-                                                            VecTupleChunkA2pInt2&  ll_compt1,
-                                                            VecTupleChunkA2pTint2& ll_compt2,
-                                                            [[maybe_unused]] bool  claimed)
+                                                                         VecTupleChunkA2pInt2&  ll_compt1,
+                                                                         VecTupleChunkA2pTint2& ll_compt2,
+                                                                         [[maybe_unused]] bool  claimed)
 {
     auto& vec_tup = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
 

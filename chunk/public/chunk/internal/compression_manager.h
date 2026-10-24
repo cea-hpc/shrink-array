@@ -189,8 +189,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
                 {
                     CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op magic corrupt/poisoned "
                                            "(op={}, magic={:#x}, executed={}, enqueue_rank={}, flusher_rank={})",
-                                           static_cast<const void*>(this), magic_, executed_, this->thread_rank_,
-                                           flusher_rank);
+                                           this, magic_, executed_, this->thread_rank_, flusher_rank);
                 }
 
                 // (2) This op must not have run before (double-flush guard).
@@ -198,7 +197,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
                 {
                     CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op executed twice "
                                            "(op={}, enqueue_rank={}, flusher_rank={})",
-                                           static_cast<const void*>(this), this->thread_rank_, flusher_rank);
+                                           this, this->thread_rank_, flusher_rank);
                 }
 
                 // (3) The captured ctx must still be alive. A poisoned or absent
@@ -208,15 +207,14 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
                 {
                     CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op has null ctx at write_body "
                                            "(op={}, enqueue_rank={}, flusher_rank={})",
-                                           static_cast<const void*>(this), this->thread_rank_, flusher_rank);
+                                           this, this->thread_rank_, flusher_rank);
                 }
 
                 if (ctx_->magic != deferred_lifecycle::ctx_alive_magic)
                 {
                     CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] ctx not alive at write_body "
                                            "(op={}, ctx={}, ctx_magic={:#x}, enqueue_rank={}, flusher_rank={})",
-                                           static_cast<const void*>(this), static_cast<const void*>(ctx_), ctx_->magic,
-                                           this->thread_rank_, flusher_rank);
+                                           this, ctx_, ctx_->magic, this->thread_rank_, flusher_rank);
                 }
 
                 executed_ = true;
@@ -485,7 +483,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
             if (FlushReplayState<T, ChunkT>::in_flush_replay) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
-                                       thr_rank, static_cast<const void*>(&chunk));
+                                       thr_rank, &chunk);
             }
         }
         enqueue_lock(thr_rank);
@@ -499,7 +497,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
         catch (const std::exception& e)
         {
             CHUNK_INVARIANT_FAILED("record_enqueue_deferred: insert failed: {} (rank {}, chunk {})", e.what(), thr_rank,
-                                   static_cast<const void*>(&chunk));
+                                   &chunk);
         }
         enqueue_unlock(thr_rank);
 

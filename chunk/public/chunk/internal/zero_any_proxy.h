@@ -100,16 +100,16 @@ class PointerMap
                     return tab;
                 }
             }
-            CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}",
-                                   static_cast<const void*>(this), small_.size(), key);
+            CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}", this,
+                                   small_.size(), key);
         }
 
         if (const auto it = big_.find(key); it != big_.end())
         {
             return it->second;
         }
-        CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), big_.size(), key);
+        CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}", this,
+                               big_.size(), key);
     }
 
     /**
@@ -143,8 +143,7 @@ class PointerMap
             }
             catch (const std::exception& e)
             {
-                CHUNK_INVARIANT_FAILED("[zero_any::PointerMap erase] failed: {} (this={} key={})", e.what(),
-                                       static_cast<const void*>(this), key);
+                CHUNK_INVARIANT_FAILED("[zero_any::PointerMap erase] failed: {} (this={} key={})", e.what(), this, key);
             }
         }
     }

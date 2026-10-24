@@ -84,8 +84,8 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void
             }
         }
 
-        CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
+        CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
+                               key);
     }
 
     /**

@@ -299,8 +299,7 @@ class DeferredReadGate<Derived, DeferReadGate::precise>
                         {
                             CHUNK_INVARIANT_FAILED("pending_retire: chunk {} pending count {} -> {} (retired {}): "
                                                    "more ops retired than published -- a double count",
-                                                   static_cast<const void*>(&static_cast<Derived&>(*this)), cnt, ncnt,
-                                                   count);
+                                                   &static_cast<Derived&>(*this), cnt, ncnt, count);
                         }
                     }
                     return;
