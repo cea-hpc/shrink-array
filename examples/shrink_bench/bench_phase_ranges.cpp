@@ -30,7 +30,7 @@
 
 #include "bench_phases.h" // bench_phase_range_* (defined here), BenchArrays
 
-void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
+void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int iter)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -50,11 +50,11 @@ void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
     auto& tab_ulong     = bench_arr.tab_ulong;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
-            t.for_static<Int>(
-                beg, i,
+            team.for_static<Int>(
+                beg, iter,
                 [&](const Int j) __attribute__((always_inline))
                 {
                     tab1[j] = 0;
@@ -84,7 +84,7 @@ void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i)
+void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int iter)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -104,11 +104,11 @@ void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i)
     auto& tab_ulong     = bench_arr.tab_ulong;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
-            t.for_static<Int>(
-                beg, i,
+            team.for_static<Int>(
+                beg, iter,
                 [&](const Int j) __attribute__((always_inline))
                 {
                     tab1[j] = second_value_d;
@@ -160,10 +160,10 @@ void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
     auto& tab_ulong     = bench_arr.tab_ulong;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
-            t.for_static<Int>(
+            team.for_static<Int>(
                 beg, seg_end,
                 [&](const Int j) __attribute__((always_inline))
                 {
@@ -215,10 +215,10 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
     auto& tab_ulong     = bench_arr.tab_ulong;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
-            t.for_static<Int>(
+            team.for_static<Int>(
                 beg, seg_end,
                 [&](const Int j) __attribute__((always_inline))
                 {
@@ -249,7 +249,7 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, Int end0)
+void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp). Only
     // tab1 is scanned here; the four range fills reach the rest through `a`,
@@ -260,51 +260,51 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
 
     std::println("interval : [{}, {}] size : {}", start0, end0, size);
 
-    Int i = start0;
+    Int pos = start0;
 
-    for (; i < sz; ++i)
+    for (; pos < sz; ++pos)
     {
-        if (tab1[i] != 0)
+        if (tab1[pos] != 0)
         {
             break;
         }
     }
 
-    const Int deb = i;
+    const Int deb = pos;
 
-    if (k % 4 == 0)
+    if (iter % 4 == 0)
     {
-        if (k % 8 == 0)
+        if (iter % 8 == 0)
         {
-            const Int beg = i;
-            while (i < sz && tab1[i] != 0 && tab1[i] != second_value_d)
+            const Int beg = pos;
+            while (pos < sz && tab1[pos] != 0 && tab1[pos] != second_value_d)
             {
-                i++;
+                pos++;
             }
 
-            bench_phase_range_a(bench_arrays, beg, i);
-            std::println("set : {} values to : 0", i - beg);
+            bench_phase_range_a(bench_arrays, beg, pos);
+            std::println("set : {} values to : 0", pos - beg);
         }
-        else if (k % 16 == 0)
+        else if (iter % 16 == 0)
         {
-            const Int beg = i;
-            while (i < sz && tab1[i] != 0 && tab1[i] != second_value_d)
+            const Int beg = pos;
+            while (pos < sz && tab1[pos] != 0 && tab1[pos] != second_value_d)
             {
-                i++;
+                pos++;
             }
 
-            bench_phase_range_b(bench_arrays, beg, i);
+            bench_phase_range_b(bench_arrays, beg, pos);
 
-            std::println("set : {} values to : {:g}", i - beg, second_value_d);
+            std::println("set : {} values to : {:g}", pos - beg, second_value_d);
         }
         else
         {
-            const Int beg = i;
-            while (i < sz && tab1[i] != 0 && tab1[i] != second_value_d0)
+            const Int beg = pos;
+            while (pos < sz && tab1[pos] != 0 && tab1[pos] != second_value_d0)
             {
-                i++;
+                pos++;
             }
-            const Int seg_end = i;
+            const Int seg_end = pos;
 
             bench_phase_range_c(bench_arrays, beg, seg_end);
 
@@ -313,13 +313,13 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
     }
     else
     {
-        const Int beg = i;
-        while (i < sz && tab1[i] != 0)
+        const Int beg = pos;
+        while (pos < sz && tab1[pos] != 0)
         {
-            i++;
+            pos++;
         }
 
-        const Int seg_end = i;
+        const Int seg_end = pos;
 
         bench_phase_range_d(bench_arrays, beg, seg_end);
 
@@ -327,7 +327,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
     }
 }
 
-void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
+void bench_phase_range_mt(BenchArrays& bench_arr, Int iter, Int beg_s, Int end_s)
 {
     auto& tab1          = bench_arr.tab1;
     auto& tab2          = bench_arr.tab2;
@@ -349,13 +349,13 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
     const Int     nblk = (end_s - beg_s + blk - 1) / blk;
     // Every other run swaps the constants, so the same chunks go from one
     // constant to the other (and back) across the run.
-    const bool swap = ((k / 5) & 1) != 0;
+    const bool swap = ((iter / 5) & 1) != 0;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
-            t.for_static_chunks<Int>(
+            team.for_static_chunks<Int>(
                 0, nblk, 1,
                 [&](const Int b) __attribute__((always_inline))
                 {

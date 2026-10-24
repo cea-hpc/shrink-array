@@ -47,15 +47,16 @@ namespace shrink_array
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void* zero::ChunkThreadPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
-    auto* v = static_cast<zero::Chunk<T>*>(::operator new(sz));
-    init_chunks_cst_val(v, sz / sizeof(zero::Chunk<T>));
-    return static_cast<void*>(v);
+    auto* chunks = static_cast<zero::Chunk<T>*>(::operator new(sz));
+    init_chunks_cst_val(chunks, sz / sizeof(zero::Chunk<T>));
+    return static_cast<void*>(chunks);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero::Chunk<T>* v, std::size_t count) noexcept
+void zero::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero::Chunk<T>* chunks,
+                                                                       std::size_t     count) noexcept
 {
-    chunk_array_new::init_chunks(v, count, [](zero::Chunk<T>& chunk) { chunk.init_values_cst_val(); });
+    chunk_array_new::init_chunks(chunks, count, [](zero::Chunk<T>& chunk) { chunk.init_values_cst_val(); });
 }
 
 // Out of line on purpose, as operator new[] above: avoids a false -Wmismatched-new-delete

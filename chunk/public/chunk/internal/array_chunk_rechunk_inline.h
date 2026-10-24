@@ -190,7 +190,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         const std::size_t      comma = spec.find(',');
         const std::string_view kv    = spec.substr(0, comma);
         int                    chunk = 0;
-        ChunkPmpSched          k     = ChunkPmpSched::sched_static;
+        ChunkPmpSched          sched = ChunkPmpSched::sched_static;
         bool                   ok    = true;
         if (comma != std::string_view::npos)
         {
@@ -202,19 +202,19 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         {
             if (kv == "static")
             {
-                k = ChunkPmpSched::sched_static;
+                sched = ChunkPmpSched::sched_static;
             }
             else if (kv == "dynamic")
             {
-                k = ChunkPmpSched::sched_dynamic;
+                sched = ChunkPmpSched::sched_dynamic;
             }
             else if (kv == "guided")
             {
-                k = ChunkPmpSched::sched_guided;
+                sched = ChunkPmpSched::sched_guided;
             }
             else if (kv == "auto")
             {
-                k = ChunkPmpSched::sched_auto;
+                sched = ChunkPmpSched::sched_auto;
             }
             else
             {
@@ -229,7 +229,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
                       env);
             return parsed;
         }
-        parsed.schedule    = {.kind = k, .chunk = chunk}; // chunk 0: the runtime's default for this kind
+        parsed.schedule    = {.kind = sched, .chunk = chunk}; // chunk 0: the runtime's default for this kind
         const auto written = std::format_to_n(parsed.text.data(), parsed.text.size() - 1, "{},{}", kv, chunk);
         *written.out       = '\0';
         return parsed;
@@ -808,11 +808,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     // auto: SecondValueRef is not declared in every TU that
                     // instantiates this file (zero_one_value_array.cpp), and the name
                     // would be looked up even in a discarded branch.
-                    const T    v   = static_cast<T>(std::as_const(self)[base]);
-                    auto&      nch = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
-                    const auto psv = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
-                    CstSlot*   ptc = &zero_any::Proxy<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
-                    (void)nch.find_or_set_ind_cst_val2(v, psv);
+                    const T    value = static_cast<T>(std::as_const(self)[base]);
+                    auto&      nch   = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
+                    const auto psv   = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
+                    CstSlot*   ptc   = &zero_any::Proxy<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
+                    (void)nch.find_or_set_ind_cst_val2(value, psv);
                     ChunkType::set_cst_val_to_cst_val2(ptc);
                     nch.init_values_cst_val(ptc, psv);
                     ++tally.folded;
@@ -846,7 +846,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // bool / Bit keep the per-element path (bit-packed storage).
             if constexpr (std::is_trivially_copyable_v<T> && !is_bool_like_v<T>)
             {
-                std::size_t k = 0;
+                std::size_t pos = 0;
                 for (int oc = old_first; oc <= old_last; ++oc)
                 {
                     const auto&    och     = self.chunk_list_[static_cast<std::size_t>(oc)];
@@ -854,22 +854,22 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     const IndType  lo      = base > oc_base ? base : oc_base;
                     const IndType  oc_end  = oc_base + static_cast<IndType>(old_size);
                     const IndType  hi      = end < oc_end ? end : oc_end;
-                    const auto     n       = static_cast<std::size_t>(hi - lo);
+                    const auto     len     = static_cast<std::size_t>(hi - lo);
                     const auto     off     = static_cast<std::size_t>(lo - oc_base);
                     const T* const vals    = och.values_load();
                     if constexpr (chunk_config::use_zero_any)
                     {
                         if (och.is_cst_val2_ptr_of(vals))
                         {
-                            std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(k), n,
+                            std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(pos), len,
                                         och.second_value_from_ptr(vals));
-                            k += n;
+                            pos += len;
                             continue;
                         }
                     }
                     // raw-read: refill bulk read -- quiescent source, see above
-                    std::memcpy(buf.data() + k, vals + off, n * sizeof(T));
-                    k += n;
+                    std::memcpy(buf.data() + pos, vals + off, len * sizeof(T));
+                    pos += len;
                 }
                 // Check builds: the bulk read must agree with the per-element
                 // path. Sampled (first, last, every 64th): this is a check, not
@@ -879,21 +879,21 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 if constexpr (build_config::any_check &&
                               (!std::is_class_v<T> || std::has_unique_object_representations_v<T>))
                 {
-                    if (k != static_cast<std::size_t>(len)) [[unlikely]]
+                    if (pos != static_cast<std::size_t>(len)) [[unlikely]]
                     {
                         CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} copied {} elements, span is {}",
-                                               new_chunk, k, static_cast<std::size_t>(len));
+                                               new_chunk, pos, static_cast<std::size_t>(len));
                     }
-                    const auto check_at = [&](IndType j)
+                    const auto check_at = [&](IndType index)
                     {
-                        const T ref = static_cast<T>(std::as_const(self)[base + j]);
-                        if (std::memcmp(&ref, &buf[static_cast<std::size_t>(j)], sizeof(T)) != 0) [[unlikely]]
+                        const T ref = static_cast<T>(std::as_const(self)[base + index]);
+                        if (std::memcmp(&ref, &buf[static_cast<std::size_t>(index)], sizeof(T)) != 0) [[unlikely]]
                         {
                             CHUNK_INVARIANT_FAILED(
                                 "rechunk refill bulk read: new chunk {} element {} (global {}) differs "
                                 "from the per-element read ({} -> {})",
-                                new_chunk, static_cast<long long>(j), static_cast<long long>(base + j), old_size,
-                                new_size);
+                                new_chunk, static_cast<long long>(index), static_cast<long long>(base + index),
+                                old_size, new_size);
                         }
                     };
                     for (IndType j = 0; j < len; j += 64)
@@ -1117,8 +1117,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         std::vector<unsigned char>      recycle_held;
         std::vector<std::vector<void*>> recycle_scratch;
         using SliceClock    = std::chrono::steady_clock;
-        const auto slice_ms = [](SliceClock::time_point a, SliceClock::time_point b)
-        { return std::chrono::duration<double, std::milli>(b - a).count(); };
+        const auto slice_ms = [](SliceClock::time_point from, SliceClock::time_point to)
+        { return std::chrono::duration<double, std::milli>(to - from).count(); };
         SliceClock::time_point slice_t0{}; // written by the master, read after barriers
         SliceClock::time_point slice_t1{}; // written in a single, read after its barrier
 
@@ -1161,12 +1161,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             std::atomic<long long> setup_max{0};
             std::atomic<int>       n{0};
         } sp;
-        const auto sp_ns = [](SliceClock::time_point a, SliceClock::time_point b) noexcept -> long long
-        { return std::chrono::duration_cast<std::chrono::nanoseconds>(b - a).count(); };
-        const auto sp_max = [](std::atomic<long long>& a, long long v) noexcept
+        const auto sp_ns = [](SliceClock::time_point from, SliceClock::time_point to) noexcept -> long long
+        { return std::chrono::duration_cast<std::chrono::nanoseconds>(to - from).count(); };
+        const auto sp_max = [](std::atomic<long long>& slot, long long value) noexcept
         {
-            long long cur = a.load(std::memory_order_relaxed);
-            while (v > cur && !a.compare_exchange_weak(cur, v, std::memory_order_relaxed))
+            long long cur = slot.load(std::memory_order_relaxed);
+            while (value > cur && !slot.compare_exchange_weak(cur, value, std::memory_order_relaxed))
             {
             }
         };

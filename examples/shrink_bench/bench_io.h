@@ -74,19 +74,19 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 template <typename Sink, typename T>
 static void log_values_compacted(Sink&& sink, const T* values, UInt count)
 {
-    UInt p = 0;
-    while (p < count)
+    UInt pos = 0;
+    while (pos < count)
     {
-        const T    current_val = values[p];
-        const UInt start_idx   = p;
+        const T    current_val = values[pos];
+        const UInt start_idx   = pos;
 
         // Count how many identical consecutive values follow
-        while (p < count && values[p] == current_val)
+        while (pos < count && values[pos] == current_val)
         {
-            ++p;
+            ++pos;
         }
 
-        const UInt        run_length = p - start_idx;
+        const UInt        run_length = pos - start_idx;
         const std::string val_str    = bench_text(current_val);
         if (run_length > 2)
         {
@@ -347,7 +347,7 @@ void read_check_binary_file(Int                ind,
     // discarded branch, and an explicit capture that the std::vector
     // instantiation never reads draws -Wunused-lambda-capture from clang.
     [[maybe_unused]]
-    const auto lbd_check_trace = [&](std::ifstream& trace_file, Int k, auto& value)
+    const auto lbd_check_trace = [&](std::ifstream& trace_file, Int index, auto& value)
     {
         // The body as a whole, not statement by statement: everything below
         // reads data_check, whose type is the DEPENDENT template parameter, so
@@ -384,8 +384,8 @@ void read_check_binary_file(Int                ind,
             std::getline(trace_file, line);
             std::getline(trace_file, line);
 
-            const Int num_chunk = k / static_cast<Int>(data_check.chunk_size());
-            const Int num       = k % static_cast<Int>(data_check.chunk_size());
+            const Int num_chunk = index / static_cast<Int>(data_check.chunk_size());
+            const Int num       = index % static_cast<Int>(data_check.chunk_size());
 
             bool                  is_values   = false;
             bool                  is_cst_val1 = false;
@@ -491,11 +491,11 @@ void read_check_binary_file(Int                ind,
                 {
                     std::println(stderr, "\nwas values it is");
                     lbd_print();
-                    constexpr T v{}; // T{}: the struct elements have no conversion from 0
+                    constexpr T value{}; // T{}: the struct elements have no conversion from 0
                     bool        te = true;
                     for (UInt p = 0; p < data_check.chunk_size(); ++p)
                     {
-                        if (chunk_t.values_[p] != v)
+                        if (chunk_t.values_[p] != value)
                         {
                             te = false;
                             break;
@@ -528,7 +528,7 @@ void read_check_binary_file(Int                ind,
                         {
                             std::println(stderr, "All values of chunk (compacted):");
                             const T* vals = chunk_t.values_; // atomic<T*> implicit load or plain ptr
-                            log_values_compacted([](const std::string& m) { std::print(stderr, "{}", m); }, vals,
+                            log_values_compacted([](const std::string& msg) { std::print(stderr, "{}", msg); }, vals,
                                                  data_check.chunk_size());
                         }
                     }
@@ -869,8 +869,7 @@ void read_check_binary_file(Int                ind,
                     {
                         log_message("\n[Debug] is_cst_val2 should be not !\n");
 
-                        constexpr T zero{};
-                        bool        test_zero = true;
+                        bool test_zero = true;
 
                         for (UInt p = 0; p < data_check.chunk_size(); p++)
                         {

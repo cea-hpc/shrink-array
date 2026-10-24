@@ -82,7 +82,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
         }
     };
 
-    const auto lbd_check_all = [&](Int ind)
+    const auto lbd_check_all = [&]
     {
         if (no_io)
         {
@@ -138,28 +138,28 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             std::println("");
 
             bench_par::region(
-                [&]([[maybe_unused]] bench_par::Team& t)
+                [&]([[maybe_unused]] bench_par::Team& team)
                 {
-                    calculate_checksum_0(t, vec1_ch.vec, vec1_ch.checksum_thr);
-                    calculate_checksum_0(t, vec2_ch.vec, vec2_ch.checksum_thr);
-                    calculate_checksum_0(t, vec3_ch.vec, vec3_ch.checksum_thr);
-                    calculate_checksum_0(t, vec4_ch.vec, vec4_ch.checksum_thr);
-                    calculate_checksum_0(t, vec5_ch.vec, vec5_ch.checksum_thr);
+                    calculate_checksum_0(team, vec1_ch.vec, vec1_ch.checksum_thr);
+                    calculate_checksum_0(team, vec2_ch.vec, vec2_ch.checksum_thr);
+                    calculate_checksum_0(team, vec3_ch.vec, vec3_ch.checksum_thr);
+                    calculate_checksum_0(team, vec4_ch.vec, vec4_ch.checksum_thr);
+                    calculate_checksum_0(team, vec5_ch.vec, vec5_ch.checksum_thr);
 
-                    calculate_checksum_0(t, vec_int_ch.vec, vec_int_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_bool_ch.vec, vec_bool_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_bool_bits_ch.vec, vec_bool_bits_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_complex_ch.vec, vec_complex_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_int_ch.vec, vec_int_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_bool_ch.vec, vec_bool_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_bool_bits_ch.vec, vec_bool_bits_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_complex_ch.vec, vec_complex_ch.checksum_thr);
 
-                    calculate_checksum_0(t, vec_short_ch.vec, vec_short_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_float_ch.vec, vec_float_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_char_ch.vec, vec_char_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_long_ch.vec, vec_long_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_ulong_ch.vec, vec_ulong_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_quant_ch.vec, vec_quant_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_point_ch.vec, vec_point_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_cell_ch.vec, vec_cell_ch.checksum_thr);
-                    calculate_checksum_0(t, vec_mask_ch.vec, vec_mask_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_short_ch.vec, vec_short_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_float_ch.vec, vec_float_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_char_ch.vec, vec_char_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_long_ch.vec, vec_long_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_ulong_ch.vec, vec_ulong_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_quant_ch.vec, vec_quant_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_point_ch.vec, vec_point_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_cell_ch.vec, vec_cell_ch.checksum_thr);
+                    calculate_checksum_0(team, vec_mask_ch.vec, vec_mask_ch.checksum_thr);
                 });
 
             for (Int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
@@ -210,16 +210,16 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             std::println("");
 
             bench_par::region(
-                [&]([[maybe_unused]] bench_par::Team& t)
+                [&]([[maybe_unused]] bench_par::Team& team)
                 {
-                    t.single([&] { lbd_check(ind, "tab1_0", tab1, tab1_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab2_0", tab2, tab2_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab3_0", tab3, tab3_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab4_0", tab4, tab4_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab5_0", tab5, tab5_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab1_0", tab1, tab1_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab2_0", tab2, tab2_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab3_0", tab3, tab3_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab4_0", tab4, tab4_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab5_0", tab5, tab5_ch); }, bench_par::nowait);
 
-                    t.single([&] { lbd_check(ind, "tab_int", tab_int, tab_int_ch); }, bench_par::nowait);
-                    t.single(
+                    team.single([&] { lbd_check(ind, "tab_int", tab_int, tab_int_ch); }, bench_par::nowait);
+                    team.single(
                         [&]
                         {
                             lbd_check(ind, "tab_bool", tab_bool, tab_bool_ch, true /* special writing for vector */);
@@ -237,14 +237,14 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                             }
                         },
                         bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab_complex", tab_complex, tab_complex_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab_short", tab_short, tab_short_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab_float", tab_float, tab_float_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab_char", tab_char, tab_char_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab_long", tab_long, tab_long_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab_ulong", tab_ulong, tab_ulong_ch); }, bench_par::nowait);
-                    t.single([&] { lbd_check(ind, "tab_quant", tab_quant, tab_quant_ch); }, bench_par::nowait);
-                    t.single(
+                    team.single([&] { lbd_check(ind, "tab_complex", tab_complex, tab_complex_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab_short", tab_short, tab_short_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab_float", tab_float, tab_float_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab_char", tab_char, tab_char_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab_long", tab_long, tab_long_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab_ulong", tab_ulong, tab_ulong_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "tab_quant", tab_quant, tab_quant_ch); }, bench_par::nowait);
+                    team.single(
                         [&]
                         {
                             if (bench_arr.with_struct) // --no_struct: no reference file either
@@ -253,7 +253,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                             }
                         },
                         bench_par::nowait);
-                    t.single(
+                    team.single(
                         [&]
                         {
                             if (bench_arr.with_struct)
@@ -262,7 +262,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                             }
                         },
                         bench_par::nowait);
-                    t.single(
+                    team.single(
                         [&]
                         {
                             if (bench_arr.with_mask) // --no_mask: no reference file either
@@ -275,5 +275,5 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
         }
     };
 
-    lbd_check_all(ind);
+    lbd_check_all();
 }

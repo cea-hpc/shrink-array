@@ -245,23 +245,23 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
         return *this;
     }
 
-    /// @brief Has the chunk holding element @p i been materialised?
-    [[nodiscard]] bool written(IntType i) const noexcept
+    /// @brief Has the chunk holding element @p index been materialised?
+    [[nodiscard]] bool written(IntType index) const noexcept
     {
-        return chunk_list_[this->chunk_index_of(i)].written();
+        return chunk_list_[this->chunk_index_of(index)].written();
     }
 
-    /// @brief Materialise the chunk holding element @p i if it is still
+    /// @brief Materialise the chunk holding element @p index if it is still
     ///        compressed; a no-op otherwise.
-    void alloc_chunk(IntType i) noexcept
+    void alloc_chunk(IntType index) noexcept
     {
-        chunk_list_[this->chunk_index_of(i)].alloc_chunk();
+        chunk_list_[this->chunk_index_of(index)].alloc_chunk();
     }
 
     /// @brief alloc_chunk(), taking the buffer from rank @p thr_rank's pool.
-    void alloc_chunk(IntType i, int thr_rank) noexcept
+    void alloc_chunk(IntType index, int thr_rank) noexcept
     {
-        chunk_list_[this->chunk_index_of(i)].alloc_chunk(thr_rank);
+        chunk_list_[this->chunk_index_of(index)].alloc_chunk(thr_rank);
     }
 
     /// @brief Resize to @p newsz elements; new elements read the first

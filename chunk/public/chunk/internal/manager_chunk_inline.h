@@ -262,8 +262,8 @@ void ManagerChunk<ChunkT, T>::sweep_prepare()
     {
         if constexpr (is_not_bool)
         {
-            const auto v = zero_one_value::Proxy<T>::share_info_array->get_all_inf_array();
-            sweep_inf_arrays_.assign(v.begin(), v.end());
+            const auto inf_arrays = zero_one_value::Proxy<T>::share_info_array->get_all_inf_array();
+            sweep_inf_arrays_.assign(inf_arrays.begin(), inf_arrays.end());
         }
     }
 }
@@ -624,7 +624,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]]
         // and register_alloc_key() needs the slab budget.
         Mgr::registered_block_size_ = block_size;
 
-        constexpr int v = std::max(static_cast<int>(8 / sizeof(T)), 1);
+        constexpr int per_word = std::max(static_cast<int>(8 / sizeof(T)), 1);
 
         for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
         {
@@ -633,7 +633,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]]
             // are long-lived, so the retained memory is modest.
             auto& allocator = ChunkT<T>::get_chunk_allocator(thr_rank);
             allocator.set_rank(thr_rank); // stamped into every slab as owner_rank
-            allocator.init(ChunkT<T>::storage_units(shrink_array::alloc_chunk_count()), block_size / v, -1);
+            allocator.init(ChunkT<T>::storage_units(shrink_array::alloc_chunk_count()), block_size / per_word, -1);
         }
     }
 }
@@ -972,8 +972,8 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
         CHUNK_LOG(warn, pool, "teardown dedup: slice {} of {} has no repeat list, skipped", slice, nslices);
         return;
     }
-    const std::size_t k = to_free.size();
-    if (k < 2)
+    const std::size_t nfree = to_free.size();
+    if (nfree < 2)
     {
         return; // a single bucket has no cross-bucket repeat, and sort already did it
     }
@@ -982,14 +982,15 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
     // nslices-th sample. Every call computes the same splitters from the same
     // (read-only) input, which beats a single + barrier to share them.
     std::vector<T*> samples;
-    samples.reserve(k * static_cast<std::size_t>(nslices));
-    for (const auto& b : to_free)
+    samples.reserve(nfree * static_cast<std::size_t>(nslices));
+    for (const auto& block : to_free)
     {
         for (int j = 1; j < nslices; ++j)
         {
-            if (!b.empty())
+            if (!block.empty())
             {
-                samples.push_back(b[b.size() * static_cast<std::size_t>(j) / static_cast<std::size_t>(nslices)]);
+                samples.push_back(
+                    block[block.size() * static_cast<std::size_t>(j) / static_cast<std::size_t>(nslices)]);
             }
         }
     }
@@ -1006,7 +1007,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
     T* const   lo     = has_lo ? splitter(slice) : nullptr;
     T* const   hi     = has_hi ? splitter(slice + 1) : nullptr;
 
-    // Heads of the k-way merge: (pointer, bucket, position), min-heap on
+    // Heads of the k-way merge (k = nfree): (pointer, bucket, position), min-heap on
     // (pointer, bucket) so that a pointer present in two buckets comes out
     // lower bucket first -- the repeat is then always the higher one.
     struct Head
@@ -1020,8 +1021,8 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
     { return less(rhs.p, lhs.p) || (lhs.p == rhs.p && lhs.bucket > rhs.bucket); };
 
     std::vector<Head> heap;
-    heap.reserve(k);
-    for (std::size_t bi = 0; bi < k; ++bi)
+    heap.reserve(nfree);
+    for (std::size_t bi = 0; bi < nfree; ++bi)
     {
         const auto& blocks = to_free[bi];
         const auto  first  = has_lo ? std::ranges::lower_bound(blocks, lo, less) : blocks.begin();

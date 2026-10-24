@@ -302,7 +302,10 @@ class DirtyBitsetSupport<Derived, false>
 {
   public:
     /// @brief No-op: no bitset in this mode.
-    static void mark_chunk_dirty(int /*chunk_idx*/) noexcept {}
+    static void mark_chunk_dirty(int /*chunk_idx*/) noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
     /// @brief Never dirty: no deferred write can exist in this mode.
     [[nodiscard]] static bool is_chunk_dirty(int /*chunk_idx*/) noexcept
     {
@@ -310,16 +313,31 @@ class DirtyBitsetSupport<Derived, false>
     }
 
     /// @brief No-op: no bitset in this mode.
-    static void clear_all_dirty_bitsets() noexcept {}
+    static void clear_all_dirty_bitsets() noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
 
   protected:
     /// @name No-op verbs (no bitset in this mode)
     /// @{
-    static void alloc_dirty_bitset(int /*nb_chunk*/) noexcept {}
-    static void reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept {}
-    static void clear_dirty_bitset() noexcept {}
+    static void alloc_dirty_bitset(int /*nb_chunk*/) noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
+    static void reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
+    static void clear_dirty_bitset() noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
 
-    static void swap_dirty_bitset(DirtyBitsetSupport& /*other*/) noexcept {}
+    static void swap_dirty_bitset(DirtyBitsetSupport& /*other*/) noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
 
     /// @}
 };

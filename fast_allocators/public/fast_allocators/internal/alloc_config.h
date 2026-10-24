@@ -108,15 +108,15 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
         {
             return 0;
         }
-        std::size_t v   = 0;
-        const char* end = env + std::strlen(env);
-        const auto  res = std::from_chars(env, end, v);
+        std::size_t value = 0;
+        const char* end   = env + std::strlen(env);
+        const auto  res   = std::from_chars(env, end, value);
         if (res.ec != std::errc{} || res.ptr != end)
         {
             CHUNK_LOG(warn, env, "CHUNK_RECLAIM_MIN_SLABS=\"{}\" is not a valid value: ignored, 0 kept", env);
             return 0;
         }
-        return v;
+        return value;
     }();
     return min_slabs;
 }
@@ -144,13 +144,13 @@ inline bool thp_advise() noexcept
             return false; // `never`: thp_never(), below
         }
         long pmd = -1;
-        if (std::FILE* f = std::fopen("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size", "r"))
+        if (std::FILE* file = std::fopen("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size", "r"))
         {
-            if (std::fscanf(f, "%ld", &pmd) != 1)
+            if (std::fscanf(file, "%ld", &pmd) != 1)
             {
                 pmd = -1;
             }
-            std::fclose(f);
+            std::fclose(file);
         }
         constexpr long slab_bytes = 2L << 20;
         if (pmd <= 0 || pmd > slab_bytes)

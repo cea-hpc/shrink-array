@@ -286,11 +286,11 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_c
 }
 
 template <typename T>
-void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> v) const noexcept
+void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexcept
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (v == static_cast<T>(zero_one_value::Chunk<T>::first_value))
+        if (value == static_cast<T>(zero_one_value::Chunk<T>::first_value))
         {
             if (Base::is_not_cst_val1() && Base2::is_not_cst_val2())
             {
@@ -321,7 +321,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> v) const noexcept
     T*         vals    = chunk_.values_load();
     const bool is_cst1 = Base::is_cst_val1(vals);
 
-    if (v == second_value_)
+    if (value == second_value_)
     {
         if (is_cst1)
         {
@@ -363,7 +363,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> v) const noexcept
 
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(v);
+        increm_chunk_write<ChunkType>(value);
     }
 
     const bool is_cst2 = !is_cst1 && is_cst_val2_at(vals);
@@ -387,12 +387,12 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> v) const noexcept
                 // count a first_value written here. Otherwise a chunk that went
                 // all-second then all-first stops at size - 1 and never
                 // compresses back (serial builds: the counters are the only path).
-                if (v == static_cast<T>(zero_one_value::Chunk<T>::first_value))
+                if (value == static_cast<T>(zero_one_value::Chunk<T>::first_value))
                 {
                     chunk_.inc_nb_val_eq_first_value();
                 }
             }
-            else if (v == second_value_)
+            else if (value == second_value_)
             {
                 chunk_.inc_nb_val_eq_second_value();
                 if (was_cst_val1)
@@ -404,33 +404,33 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> v) const noexcept
             {
                 chunk_.set_nb_val_eq_first_value(this->chunk_size() - 1);
             }
-            else if (v == zero_one_value::Chunk<T>::first_value)
+            else if (value == zero_one_value::Chunk<T>::first_value)
             {
                 chunk_.inc_nb_val_eq_first_value();
             }
         }
     }
 
-    Base::store_value_at(vals, v);
+    Base::store_value_at(vals, value);
 
     if constexpr (build_config::do_check)
     {
-        global_check_write_nan(v, num_);
+        global_check_write_nan(value, num_);
     }
 }
 
 template <typename T>
 template <typename U>
-T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
+T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
 {
     this->check_not_stale();
     // Only one read of values_loc
     const T* const values_loc = chunk_.values_load();
 
     // Fast exit: already first_value and assigning first_value
-    if (Base::is_cst_val1_and_v_equal_first_value(values_loc, v))
+    if (Base::is_cst_val1_and_v_equal_first_value(values_loc, value))
     {
-        return v;
+        return value;
     }
 
     // Initialize second_value / ind for this chunk/array
@@ -453,11 +453,11 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
     {
         if constexpr (is_not_bool)
         {
-            if (v == second_value_)
+            if (value == second_value_)
             {
                 if (values_loc == chunk_.get_cst_val2(BaseSpec::ind_))
                 {
-                    return v;
+                    return value;
                 }
                 const read_reclaim::ReadSection section;
                 const T* const                  live = chunk_.values_load();
@@ -465,13 +465,13 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
                 // raw-read: inside a read_reclaim::ReadSection
                 if (live == chunk_.get_cst_val2(BaseSpec::ind_) || live[num_] == second_value_)
                 {
-                    return v;
+                    return value;
                 }
             }
         }
         else
         {
-            if (v)
+            if (value)
             {
                 if (values_loc == chunk_.get_cst_val2())
                 {
@@ -491,15 +491,15 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
     }
 
     // Synchronous core path (fast path)
-    // By reference: v is this call's parameter, alive for the synchronous
+    // By reference: value is this call's parameter, alive for the synchronous
     // call (see zero_any::Proxy::assign_impl); the deferred path copies it.
-    const auto lbd_equal_core = [this, &v]
+    const auto lbd_equal_core = [this, &value]
     {
         if constexpr (chunk_config::use_compression_without_counter)
         {
-            this->mark_for_compression_if_needed(v);
+            this->mark_for_compression_if_needed(value);
         }
-        perform_core_assignment(v);
+        perform_core_assignment(value);
     };
 
     [[maybe_unused]] const bool need_async = Base2::write_with_optional_lock_with_set_ptr(lbd_equal_core);
@@ -513,7 +513,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
                 ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, zero_one_value::Proxy<T>>;
 
             // Capture only location + operand
-            auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array_);
+            auto* ctx = pool_new_ctx<CtxType>(*this, value, ptr_on_array_);
 
             auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
             {
@@ -575,7 +575,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
         }
     }
 
-    return static_cast<T>(v);
+    return static_cast<T>(value);
 }
 
 template <typename T>
@@ -1013,7 +1013,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_i
 
 template <typename T>
 template <typename U, typename Op>
-void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, InT<U> v) noexcept
+void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, InT<U> operand) noexcept
 {
     this->check_not_stale();
     // Cross-rank RMW materialisation: pull any foreign
@@ -1033,25 +1033,25 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
         {
             if constexpr (build_config::do_check)
             {
-                global_check_write_nan(v, num_);
+                global_check_write_nan(operand, num_);
             }
 
             const bool was_second_value  = (v_old_snapshot == second_value_);
             const bool was_second_value0 = was_second_value && Base2::is_not_cst_val2();
 
             execute_arithmetic_compound_operation(
-                op, v,
-                // v by reference (this call's parameter, alive for the call);
+                op, operand,
+                // operand by reference (this call's parameter, alive for the call);
                 // `current` InT: the right-hand side is evaluated in full
                 // before the store, so a reference into the slot is read once,
                 // before it is written.
-                [this, &v](auto op_func, T* val_ptr)
+                [this, &operand](auto op_func, T* val_ptr)
                 {
                     using LocalCalcType = std::common_type_t<T, BaseT<U>>;
                     const T current     = elem_get(val_ptr, static_cast<std::size_t>(num_));
-                    elem_set(
-                        val_ptr, static_cast<std::size_t>(num_),
-                        static_cast<T>(op_func(static_cast<LocalCalcType>(current), static_cast<LocalCalcType>(v))));
+                    elem_set(val_ptr, static_cast<std::size_t>(num_),
+                             static_cast<T>(
+                                 op_func(static_cast<LocalCalcType>(current), static_cast<LocalCalcType>(operand))));
                 });
 
             // Read after the operation, compared before each branch's action
@@ -1095,7 +1095,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
         const InT<T> v_old = Base::read_values_outside_session();
         if (v_old != zero_one_value::Chunk<T>::first_value)
         {
-            Base::apply_atomic_op(op, v, v_old);
+            Base::apply_atomic_op(op, operand, v_old);
         }
     }
 }

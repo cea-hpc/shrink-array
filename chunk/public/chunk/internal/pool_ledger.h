@@ -40,9 +40,10 @@
 #include <mutex>   // std::mutex, std::scoped_lock
 #include <utility> // std::cmp_equal
 
-#include "chunk/config.h"                   // build_config::any_check
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
-#include "chunk/log.h"                      // CHUNK_LOG_ALWAYS (the report, the transition trace)
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "chunk/config.h"                        // build_config::any_check
+#include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
+#include "chunk/log.h"                           // CHUNK_LOG_ALWAYS (the report, the transition trace)
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
@@ -404,7 +405,7 @@ inline void block_transition(const void* block,
         //    still catches a normal-magnitude double (exponent bits 52-62 set).
         //    If hwasan/MTE tagging is ever enabled, strip the top byte first.
         {
-            const auto up = reinterpret_cast<std::uintptr_t>(block);
+            const auto up = ::fast_alloc::address_bits(block);
 #ifdef __aarch64__
             const bool bad_high = (up >> 52U) != 0;
 #else

@@ -352,17 +352,17 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @details static_chunk_size is a compile-time constant. Warns when asked for a size
      *          the binary was not built with, rather than ignoring it silently.
      *
-     * @param v the chunk size the caller wanted; only compared, never applied
+     * @param value the chunk size the caller wanted; only compared, never applied
      * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=v`
      *          (a power of two or a multiple of 64).
      */
-    static void set_chunk_size(int v)
+    static void set_chunk_size(int value)
     {
-        if (std::cmp_not_equal(v, static_chunk_size))
+        if (std::cmp_not_equal(value, static_chunk_size))
         {
             CHUNK_LOG(warn, general,
-                      "set_chunk_size({}) ignored; built with CHUNK_SIZE={} (rebuild with -DCHUNK_SIZE={})", v,
-                      static_chunk_size, v);
+                      "set_chunk_size({}) ignored; built with CHUNK_SIZE={} (rebuild with -DCHUNK_SIZE={})", value,
+                      static_chunk_size, value);
         }
     }
 
@@ -384,15 +384,15 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @details Kept so existing call sites keep compiling; the value is
      *          log2(static_chunk_size), computed at compile time.
      *
-     * @param v the shift the caller wanted; only compared, never applied
+     * @param value the shift the caller wanted; only compared, never applied
      * @warning Warns when asked for a shift the binary was not built with, as
      *          set_chunk_size() does.
      */
-    static void set_decalage_chunk(unsigned int v)
+    static void set_decalage_chunk(unsigned int value)
     {
-        if (v != static_chunk_shift)
+        if (value != static_chunk_shift)
         {
-            CHUNK_LOG(warn, general, "set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", v,
+            CHUNK_LOG(warn, general, "set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", value,
                       static_chunk_size, static_chunk_shift);
         }
     }
@@ -410,14 +410,14 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     /**
      * @brief No-op compatibility shim: the mask is derived from CHUNK_SIZE.
      *
-     * @param v the mask the caller wanted; only compared, never applied
+     * @param value the mask the caller wanted; only compared, never applied
      * @warning Warns rather than ignoring silently. @see set_decalage_chunk
      */
-    static void set_modulo_chunk(int v)
+    static void set_modulo_chunk(int value)
     {
-        if (std::cmp_not_equal(v, static_chunk_mask))
+        if (std::cmp_not_equal(value, static_chunk_mask))
         {
-            CHUNK_LOG(warn, general, "set_modulo_chunk({}) ignored; built with CHUNK_SIZE={} (mask {})", v,
+            CHUNK_LOG(warn, general, "set_modulo_chunk({}) ignored; built with CHUNK_SIZE={} (mask {})", value,
                       static_chunk_size, static_chunk_mask);
         }
     }

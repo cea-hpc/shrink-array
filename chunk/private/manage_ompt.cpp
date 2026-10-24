@@ -138,14 +138,14 @@ OmptSyncSlot* ompt_my_slot() noexcept
 }
 
 /// Single-writer increment: the slot belongs to the calling thread.
-void ompt_bump(std::atomic<std::uint64_t>& counter, std::uint64_t v = 1) noexcept
+void ompt_bump(std::atomic<std::uint64_t>& counter, std::uint64_t delta = 1) noexcept
 {
-    counter.store(counter.load(std::memory_order_relaxed) + v, std::memory_order_relaxed);
+    counter.store(counter.load(std::memory_order_relaxed) + delta, std::memory_order_relaxed);
 }
 
-const char* ompt_kind_name(int k) noexcept
+const char* ompt_kind_name(int kind) noexcept
 {
-    switch (k)
+    switch (kind)
     {
         case 1:
             return "barrier";
@@ -406,17 +406,17 @@ void on_barrier_end(ompt_sync_region_t    kind,
         return;
     }
 
-    OmptSyncSlot* slot = nullptr;
-    int           k    = 0;
-    int           ep   = 0;
+    OmptSyncSlot* slot  = nullptr;
+    int           count = 0;
+    int           ep    = 0;
     if (g_ompt_stats) [[unlikely]]
     {
-        slot = ompt_my_slot();
-        k    = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < ompt_kinds) ? static_cast<int>(kind) : 0;
-        ep   = endpoint == ompt_scope_begin ? 0 : 1;
+        slot  = ompt_my_slot();
+        count = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < ompt_kinds) ? static_cast<int>(kind) : 0;
+        ep    = endpoint == ompt_scope_begin ? 0 : 1;
         if (slot)
         {
-            ompt_bump(slot->calls[k][ep]);
+            ompt_bump(slot->calls[count][ep]);
         }
     }
 
@@ -450,12 +450,12 @@ void on_barrier_end(ompt_sync_region_t    kind,
             const auto t0      = std::chrono::steady_clock::now();
             const bool flushed = shrink_array::finalize_barrier_phase();
             const auto dt      = std::chrono::steady_clock::now() - t0;
-            ompt_bump(slot->flush_calls[k][ep]);
+            ompt_bump(slot->flush_calls[count][ep]);
             if (flushed)
             {
-                ompt_bump(slot->flushed[k][ep]);
+                ompt_bump(slot->flushed[count][ep]);
             }
-            ompt_bump(slot->flush_ns[k][ep],
+            ompt_bump(slot->flush_ns[count][ep],
                       static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count()));
         }
         else
@@ -467,7 +467,7 @@ void on_barrier_end(ompt_sync_region_t    kind,
     {
         // Skipped because ANOTHER thread's flush_all_deferred() had cleared
         // the flag for the duration of its own pass.
-        ompt_bump(slot->skipped_flag[k][ep]);
+        ompt_bump(slot->skipped_flag[count][ep]);
     }
 }
 

@@ -63,17 +63,17 @@ void ArrayChunkBase<Derived>::create_common(this Derived& self)
 }
 
 template <typename Derived>
-bool ArrayChunkBase<Derived>::is_written_at(this const Derived& self, int j) noexcept
+bool ArrayChunkBase<Derived>::is_written_at(this const Derived& self, int num_chunk) noexcept
 {
     if constexpr (has_chunk_written_v<Derived>)
     {
         // zero_one_value::Array: zero_one_value::Chunk::written() needs the second-value index.
-        return self.chunk_written(j);
+        return self.chunk_written(num_chunk);
     }
     else
     {
         // zero::Array and zero_any::Array: the chunk knows by itself.
-        return self.chunk_list_[j].written();
+        return self.chunk_list_[num_chunk].written();
     }
 }
 
@@ -124,7 +124,7 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written(this const Derived& self)
 {
     int        nb_written = 0;
     const int  nb_chunk   = self.nb_chunk_;
-    const auto lbd        = [&](int j) { return static_cast<int>(self.is_written_at(j)); };
+    const auto lbd        = [&](int num_chunk) { return static_cast<int>(self.is_written_at(num_chunk)); };
 
     // Inside a region: the calling thread counts them all (an orphaned
     // `omp for` would give each caller a partial count).
@@ -177,9 +177,9 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(this Derived& self, IndType 
     const auto csz     = static_cast<long long>(self.chunk_size());
     const int  c_first = self.chunk_index_of(first);
     const int  c_last  = self.chunk_index_of(last - 1) + 1;
-    const auto span    = [&](int c)
+    const auto span    = [&](int num_chunk)
     {
-        const long long lo_ll = static_cast<long long>(c) * csz;
+        const long long lo_ll = static_cast<long long>(num_chunk) * csz;
         const long long hi_ll = lo_ll + csz;
         const IndType   lo    = lo_ll > static_cast<long long>(first) ? static_cast<IndType>(lo_ll) : first;
         const IndType   hi    = hi_ll < static_cast<long long>(last) ? static_cast<IndType>(hi_ll) : last;
@@ -215,11 +215,11 @@ template <typename Derived>
 template <std::forward_iterator It>
 void ArrayChunkBase<Derived>::assign(this Derived& self, It first, It last)
 {
-    const auto n = static_cast<IndType>(std::distance(first, last));
-    self.resize(n);
+    const auto count = static_cast<IndType>(std::distance(first, last));
+    self.resize(count);
     if constexpr (std::random_access_iterator<It>)
     {
-        self.write_range_by_chunks(0, n, [&first](IndType i) { return static_cast<T>(first[i]); });
+        self.write_range_by_chunks(0, count, [&first](IndType i) { return static_cast<T>(first[i]); });
     }
     else
     {
@@ -262,23 +262,23 @@ void ArrayChunkBase<Derived>::shrink_to_fit()
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(this const Derived& self, IndType i)
+ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(this const Derived& self, IndType index)
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size_)) [[unlikely]]
+    if (index < 0 || static_cast<size_type>(index) >= static_cast<size_type>(self.m_size_)) [[unlikely]]
     {
         throw std::out_of_range("zero::Array::at: index out of range");
     }
-    return self[i]; // const operator[] -> T (value)
+    return self[index]; // const operator[] -> T (value)
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(this Derived& self, IndType i)
+ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(this Derived& self, IndType index)
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size_)) [[unlikely]]
+    if (index < 0 || static_cast<size_type>(index) >= static_cast<size_type>(self.m_size_)) [[unlikely]]
     {
         throw std::out_of_range("zero::Array::at: index out of range");
     }
-    return self[i]; // non-const operator[] -> ProxyType (write entry)
+    return self[index]; // non-const operator[] -> ProxyType (write entry)
 }
 
 template <typename Derived>

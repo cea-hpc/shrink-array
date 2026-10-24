@@ -79,12 +79,12 @@ void ask(const char* prompt, const char* name, T& value, Parse parse, Valid vali
     }
     try
     {
-        const T v = parse(data);
-        if (!valid(v))
+        const T parsed = parse(data);
+        if (!valid(parsed))
         {
             throw std::out_of_range("The value is not in the specified range.");
         }
-        value = v;
+        value = parsed;
         std::println("You give : {} {}", shown(value), name);
     }
     catch (const std::invalid_argument&)
@@ -100,7 +100,7 @@ void ask(const char* prompt, const char* name, T& value, Parse parse, Valid vali
 /// @brief ask() for an int, any value.
 [[maybe_unused]] void ask_int(const char* prompt, const char* name, int& value)
 {
-    ask(prompt, name, value, [](const std::string& s) { return std::stoi(s); }, [](int) { return true; });
+    ask(prompt, name, value, [](const std::string& text) { return std::stoi(text); }, [](int) { return true; });
 }
 
 /// @brief ask() for a percentage, in ]0, 100[.
@@ -108,8 +108,8 @@ void ask(const char* prompt, const char* name, T& value, Parse parse, Valid vali
 {
     constexpr double eps = 1e-10;
     ask(
-        prompt, name, value, [](const std::string& s) { return std::stod(s); },
-        [](double v) { return v >= eps && v <= 100 - eps; });
+        prompt, name, value, [](const std::string& text) { return std::stod(text); },
+        [](double value) { return value >= eps && value <= 100 - eps; });
 }
 
 } // namespace
@@ -145,7 +145,7 @@ void Simu::input_data()
         std::println("   random vector / chunk (default)  : 3");
         std::println("   random vector / chunk with rate  : 4");
         ask(
-            "Option", "option", option_chunk, [](const std::string& s) { return std::stoi(s); },
+            "Option", "option", option_chunk, [](const std::string& text) { return std::stoi(text); },
             [](int v) { return v >= 1 && v <= 4; });
 
         if (option_chunk == 4)

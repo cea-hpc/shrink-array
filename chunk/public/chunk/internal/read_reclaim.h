@@ -106,10 +106,10 @@ inline ReaderSlot* claim_slot() noexcept
     {
         return nullptr;
     }
-    const int i = g_nslots.fetch_add(1, std::memory_order_acq_rel);
-    if (i < slot_count) [[likely]]
+    const int slot_idx = g_nslots.fetch_add(1, std::memory_order_acq_rel);
+    if (slot_idx < slot_count) [[likely]]
     {
-        t_slot = &g_slots[i];
+        t_slot = &g_slots[slot_idx];
         return t_slot;
     }
     t_overflow = true;
@@ -141,15 +141,15 @@ class ReadSection
     {
         if constexpr (enabled)
         {
-            ReaderSlot* s = t_slot;
-            if (s == nullptr) [[unlikely]]
+            ReaderSlot* slot = t_slot;
+            if (slot == nullptr) [[unlikely]]
             {
-                s = claim_slot();
+                slot = claim_slot();
             }
-            if (s != nullptr) [[likely]]
+            if (slot != nullptr) [[likely]]
             {
-                slot_ = s;
-                seq_  = s->seq.load(std::memory_order_relaxed) + 1; // odd
+                slot_ = slot;
+                seq_  = slot->seq.load(std::memory_order_relaxed) + 1; // odd
                 // RELEASE, not relaxed: the reclaimer, having seen this slot odd, waits
                 // for it to MOVE, and the value it then reads may be THIS store -- the
                 // next read's entry. Release orders the previous read's element load
@@ -159,7 +159,7 @@ class ReadSection
                 // stlr instead of an str: +1.9 % on access_cost's worst read case at 1
                 // thread on Grace, within its spread, nothing measurable at 64
                 // (formal/reader_reclaim.c, MUT_ENTER_RELAXED; docs/formal_models.md F3).
-                s->seq.store(seq_, std::memory_order_release);
+                slot->seq.store(seq_, std::memory_order_release);
                 light_fence();
             }
             else
@@ -208,20 +208,20 @@ class ReadSection
 inline void wait_for_readers() noexcept
 {
     dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
-    const int         n    = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
-    const ReaderSlot* mine = t_slot;
-    for (int i = 0; i < n; ++i)
+    const int         nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
+    const ReaderSlot* mine   = t_slot;
+    for (int i = 0; i < nslots; ++i)
     {
         if (&g_slots[i] == mine)
         {
             continue;
         }
-        const std::uint64_t v = g_slots[i].seq.load(std::memory_order_acquire);
-        if ((v & 1U) == 0U)
+        const std::uint64_t seq = g_slots[i].seq.load(std::memory_order_acquire);
+        if ((seq & 1U) == 0U)
         {
             continue;
         }
-        for (int spins = 0; g_slots[i].seq.load(std::memory_order_acquire) == v;)
+        for (int spins = 0; g_slots[i].seq.load(std::memory_order_acquire) == seq;)
         {
             CHUNK_CPU_PAUSE();
             if (++spins == 1000)
@@ -300,11 +300,11 @@ class PassScope
             wait_for_readers();
             const unsigned int saved_size = t_active_chunk_size;
             const unsigned int saved_key  = t_alloc_key;
-            for (const Deferred& d : batch)
+            for (const Deferred& deferred : batch)
             {
-                t_active_chunk_size = d.chunk_size;
-                t_alloc_key         = d.alloc_key;
-                d.release(d.chunk, d.thr, d.block);
+                t_active_chunk_size = deferred.chunk_size;
+                t_alloc_key         = deferred.alloc_key;
+                deferred.release(deferred.chunk, deferred.thr, deferred.block);
             }
             t_active_chunk_size = saved_size;
             t_alloc_key         = saved_key;
@@ -321,8 +321,8 @@ class PassScope
     /// @brief Per-thread, reused: a pass does not allocate its batch afresh.
     static std::vector<Deferred>& storage() noexcept
     {
-        thread_local std::vector<Deferred> v;
-        return v;
+        thread_local std::vector<Deferred> batch;
+        return batch;
     }
     bool owner_ = false;
 };
@@ -333,14 +333,14 @@ inline bool defer_release(void (*release)(void*, int, void*) noexcept, void* chu
 {
     if constexpr (enabled)
     {
-        if (std::vector<Deferred>* b = t_batch; b != nullptr) [[unlikely]]
+        if (std::vector<Deferred>* batch = t_batch; batch != nullptr) [[unlikely]]
         {
-            b->push_back(Deferred{.release    = release,
-                                  .chunk      = chunk,
-                                  .block      = block,
-                                  .thr        = thr,
-                                  .chunk_size = t_active_chunk_size,
-                                  .alloc_key  = t_alloc_key});
+            batch->push_back(Deferred{.release    = release,
+                                      .chunk      = chunk,
+                                      .block      = block,
+                                      .thr        = thr,
+                                      .chunk_size = t_active_chunk_size,
+                                      .alloc_key  = t_alloc_key});
             return true;
         }
     }

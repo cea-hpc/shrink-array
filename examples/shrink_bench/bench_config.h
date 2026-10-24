@@ -160,20 +160,20 @@ inline bool mode_perf  = false; ///< g_bench_mode == perf
 
 /**
  * @brief Select the bench mode. Call once, from argument parsing.
- * @param m the mode --mode asked for.
+ * @param mode the mode --mode asked for.
  * @warning Must run BEFORE the first get_ or have_ accessor call: their callers
  *          treat them as fixed for the whole run.
  */
-inline void set_bench_mode(BenchMode m)
+inline void set_bench_mode(BenchMode mode)
 {
     // An int64 build (BENCH_INT64) checks against the same data_tab* files as
     // the 32-bit one: they hold element values and a checksum, nothing sized by
     // Int, and the index type changes no value the bench computes. A mismatch
     // there is a real 32/64-bit divergence -- in the library's index path, or
     // an index expression of the bench that overflows at 32 bits.
-    g_bench_mode = m;
-    mode_check   = (m == BenchMode::check);
-    mode_perf    = (m == BenchMode::perf);
+    g_bench_mode = mode;
+    mode_check   = (mode == BenchMode::check);
+    mode_perf    = (mode == BenchMode::perf);
 }
 
 /// @brief I/O mode of the run.
@@ -293,10 +293,10 @@ inline void check_size_limits(double multiplier, double divisor, Int iter_max)
     }
 
     const long long margin = std::max({2LL * iter_max, 65536LL});
-    const auto      reach  = [&](double m)
+    const auto      reach  = [&](double target)
     {
-        const long long sz_m = scaled_size(base_data, m, divisor);
-        return std::max((2 * sz_m) + 65536LL, sz_m + std::max(scaled_size(base_itv, m, divisor), margin));
+        const long long sz_m = scaled_size(base_data, target, divisor);
+        return std::max((2 * sz_m) + 65536LL, sz_m + std::max(scaled_size(base_itv, target, divisor), margin));
     };
 
     constexpr long long int_max = std::numeric_limits<Int>::max();
@@ -309,11 +309,11 @@ inline void check_size_limits(double multiplier, double divisor, Int iter_max)
     //   2 * sz + 65536   <= int_max  ->  m <= (int_max - 65536) * d / (2 * base_data)
     //   sz + margin      <= int_max  ->  m <= (int_max - margin) * d / base_data
     //   sz + interval    <= int_max  ->  m <= int_max * d / (base_data + base_itv)
-    const double d     = divisor;
+    const double div   = divisor;
     const double top   = static_cast<double>(int_max); // 2^63 in the int64 build: the loop below re-checks exactly
-    double       m_max = std::min({(top - 65536.0) * d / (2.0 * static_cast<double>(base_data)),
-                                   (top - static_cast<double>(margin)) * d / static_cast<double>(base_data),
-                                   top * d / static_cast<double>(base_data + base_itv)});
+    double       m_max = std::min({(top - 65536.0) * div / (2.0 * static_cast<double>(base_data)),
+                                   (top - static_cast<double>(margin)) * div / static_cast<double>(base_data),
+                                   top * div / static_cast<double>(base_data + base_itv)});
     m_max              = std::floor(m_max * 1e6) / 1e6; // printed to 6 decimals: round DOWN
     while (m_max > 0.0 && reach(m_max) > int_max)
     {
@@ -386,9 +386,9 @@ inline Int get_freq_conso_mem()
     // whatever the mode. =1 turns the ten iterations before an advisor tick
     // from a blind spot into a curve, which is what locating a transient
     // peak needs. Decided once at startup, like every other CONSTEXPR site.
-    if (const Int n = shrink_array::env_number<Int>("CHUNK_BENCH_MEM_PERIOD", 0); n > 0)
+    if (const Int period = shrink_array::env_number<Int>("CHUNK_BENCH_MEM_PERIOD", 0); period > 0)
     {
-        return n;
+        return period;
     }
     if (mode_check)
     {

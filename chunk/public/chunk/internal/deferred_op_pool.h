@@ -29,11 +29,12 @@
 #include <sys/mman.h>  // msync / MS_ASYNC (the block probe)
 #include <unistd.h>    // sysconf (same)
 
+#include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
-#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, ev_op_alloc / ev_op_free
+#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EventCode::op_alloc / EventCode::op_free
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::backend (the pools of exited threads)
 #include "chunk/log.h"                            // CHUNK_LOG (recycle)
 
@@ -187,8 +188,8 @@ struct ExitedThreadPools
 /// @brief The process-wide list (immortal: threads add to it from their thread_local destructors).
 [[nodiscard]] inline ExitedThreadPools& exited_thread_pools()
 {
-    static auto* const p = new ExitedThreadPools; // NOLINT(cppcoreguidelines-owning-memory): immortal
-    return *p;
+    static auto* const pools = new ExitedThreadPools; // NOLINT(cppcoreguidelines-owning-memory): immortal
+    return *pools;
 }
 
 /// @brief In place of the inline allocator when it lives on the heap.
@@ -279,9 +280,9 @@ inline void retire_exited_thread_pools()
             const std::scoped_lock lock(ex.mutex);
             retired.swap(ex.list);
         }
-        for (auto* a : retired)
+        for (auto* alloc : retired)
         {
-            delete a; // NOLINT(cppcoreguidelines-owning-memory): owned by the list
+            delete alloc; // NOLINT(cppcoreguidelines-owning-memory): owned by the list
         }
     }
 }
@@ -313,9 +314,9 @@ struct DeferredFreeListSlot
     {
         if constexpr (!build_config::use_fast_alloc)
         {
-            for (T* p : fl)
+            for (T* block : fl)
             {
-                ::operator delete(static_cast<void*>(p));
+                ::operator delete(static_cast<void*>(block));
             }
         }
     }
@@ -533,7 +534,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
     {
         if constexpr (build_config::any_check)
         {
-            const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
+            const auto addr = ::fast_alloc::address_bits(ptr);
 
             if (ptr == nullptr)
             {
@@ -643,20 +644,20 @@ class AllocatorRegistry
     template <typename T>
     static FastAllocatorBase* find_or_create()
     {
-        auto&        v  = allocs();
-        const size_t sz = sizeof(T);
+        auto&        allocators = allocs();
+        const size_t sz         = sizeof(T);
 
-        for (auto& a : v)
+        for (auto& alloc : allocators)
         {
-            if (a->block_size == sz)
+            if (alloc->block_size == sz)
             {
-                return a.get();
+                return alloc.get();
             }
         }
 
         auto               ptr = std::make_unique<FastAllocatorConcrete<T, arena_of_tag<Tag>::value>>();
         FastAllocatorBase* raw = ptr.get();
-        v.push_back(std::move(ptr));
+        allocators.push_back(std::move(ptr));
         return raw;
     }
 
@@ -667,15 +668,15 @@ class AllocatorRegistry
     ///       rescan.
     static unsigned int& generation()
     {
-        thread_local unsigned int g = 0;
-        return g;
+        thread_local unsigned int gen = 0;
+        return gen;
     }
 
     /// @brief This thread's allocators (one per object size seen so far).
     static std::vector<std::unique_ptr<FastAllocatorBase>>& allocs()
     {
-        thread_local std::vector<std::unique_ptr<FastAllocatorBase>> v;
-        return v;
+        thread_local std::vector<std::unique_ptr<FastAllocatorBase>> allocators;
+        return allocators;
     }
 };
 
@@ -694,7 +695,7 @@ void chunk_align_probe([[maybe_unused]] const char* site, [[maybe_unused]] void*
 {
     if constexpr (build_config::align_check)
     {
-        if ((reinterpret_cast<std::uintptr_t>(mem) & (alignof(T) - 1)) != 0)
+        if ((::fast_alloc::address_bits(mem) & (alignof(T) - 1)) != 0)
         {
             CHUNK_INVARIANT_FAILED("[SLAB MISALIGN] {}: ptr={} alignof={} sizeof={} (block from slab is under-aligned "
                                    "for T)",
@@ -724,7 +725,7 @@ template <typename T, typename... Args>
     // (vptr written).
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), ev_op_alloc, 0, mem);
+        ring_log_op(get_tid(), EventCode::op_alloc, 0, mem);
     }
     return constructed;
 }
@@ -760,7 +761,7 @@ void free_op(T* op)
     // can show a free while the op was still referenced by op_map.
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), ev_op_free, 0, static_cast<const void*>(op));
+        ring_log_op(get_tid(), EventCode::op_free, 0, static_cast<const void*>(op));
     }
     pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();

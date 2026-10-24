@@ -259,10 +259,10 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 /// @brief The calling task's run-sched-var (omp_get_schedule).
 [[nodiscard]] inline ChunkPmpSchedule chunk_pmp_get_schedule() noexcept
 {
-    const auto s = ::fast_alloc::pmp::get_runtime_schedule();
+    const auto sched = ::fast_alloc::pmp::get_runtime_schedule();
     // As is, modifier bits included (omp_sched_monotonic): the enum's int
     // holds them, so a get / set round trip restores the caller's exactly.
-    return {.kind = static_cast<ChunkPmpSched>(s.kind), .chunk = s.chunk};
+    return {.kind = static_cast<ChunkPmpSched>(sched.kind), .chunk = sched.chunk};
 }
 
 /// @brief Set the calling task's run-sched-var (omp_set_schedule): the
@@ -281,9 +281,9 @@ inline void chunk_pmp_set_schedule(ChunkPmpSchedule schedule) noexcept
 }
 
 /// @brief The team size of the next parallel regions (omp_set_num_threads).
-inline void chunk_pmp_set_num_threads(int n) noexcept
+inline void chunk_pmp_set_num_threads(int nthreads) noexcept
 {
-    ::fast_alloc::pmp::set_num_threads(n);
+    ::fast_alloc::pmp::set_num_threads(nthreads);
 }
 
 /// @brief How many nested levels may be active (omp_set_max_active_levels).

@@ -567,7 +567,7 @@ function(chunk_add_variant target_name variant_define size is_dyn)
 
   if (CHUNK_STD_ALLOC)
     # No fast_allocators library here, but some of its headers -- svalloc.h,
-    # singleton.h, log_core.h, fatal.h and the threading backend (pmp_loops.h,
+    # singleton.h, log_core.h, fatal.h, raw_memory.h and the threading backend (pmp_loops.h,
     # pmp_runtime.h, pmp_std.h, pmp_std_state.h), standard library (and
     # <omp.h>) only -- are chunk's too (one copy, see them): their directory
     # stays on the include path. Installed below.
@@ -784,7 +784,7 @@ install(FILES ${CHUNK_GENERATED_INCLUDE_DIR}/chunk/build_options.h
         COMPONENT chunk-devel)
 
 # A std-alloc build installs no fast_allocators, yet chunk's headers include
-# its svalloc.h, singleton.h, log_core.h, fatal.h and the backend's pmp_*.h:
+# its svalloc.h, singleton.h, log_core.h, fatal.h, raw_memory.h and the backend's pmp_*.h:
 # install those with chunk then.
 if (CHUNK_STD_ALLOC)
   install(FILES ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/svalloc.h
@@ -795,6 +795,7 @@ if (CHUNK_STD_ALLOC)
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_runtime.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std_state.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/raw_memory.h
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fast_allocators/internal
           COMPONENT chunk-devel)
 endif()

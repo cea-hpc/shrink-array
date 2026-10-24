@@ -52,33 +52,33 @@ namespace
 int g_fails  = 0;
 int g_checks = 0;
 
-void check(bool ok, const char* what, const char* loop, int nt, long long first, long long n, int chunk)
+void check(bool ok, const char* what, const char* loop, int nt, long long first, long long count, int chunk)
 {
     ++g_checks;
     if (!ok)
     {
         ++g_fails;
-        std::println("FAIL {}: {}, team {}, [{}, {}), chunk {}", what, loop, nt, first, first + n, chunk);
+        std::println("FAIL {}: {}, team {}, [{}, {}), chunk {}", what, loop, nt, first, first + count, chunk);
     }
 }
 
-/// @brief The rank schedule(static) gives iteration @p k (offset from first) of @p n.
-int static_owner(long long k, long long n, int size)
+/// @brief The rank schedule(static) gives iteration @p index (offset from first) of @p count.
+int static_owner(long long index, long long count, int size)
 {
-    const long long q = n / size;
-    const long long m = n % size;
-    // ranks [0, m) have q + 1 iterations, [m, size) have q.
-    if (k < m * (q + 1))
+    const long long quot = count / size;
+    const long long rem  = count % size;
+    // ranks [0, rem) have quot + 1 iterations, [rem, size) have quot.
+    if (index < rem * (quot + 1))
     {
-        return static_cast<int>(k / (q + 1));
+        return static_cast<int>(index / (quot + 1));
     }
-    return static_cast<int>(m + ((k - (m * (q + 1))) / q));
+    return static_cast<int>(rem + ((index - (rem * (quot + 1))) / quot));
 }
 
-/// @brief The rank schedule(static, c) gives iteration @p k (offset from first).
-int chunks_owner(long long k, int c, int size)
+/// @brief The rank schedule(static, c) gives iteration @p index (offset from first).
+int chunks_owner(long long index, int chunk, int size)
 {
-    return static_cast<int>((k / c) % size);
+    return static_cast<int>((index / chunk) % size);
 }
 
 enum class LoopKind
@@ -89,9 +89,9 @@ enum class LoopKind
     static_chunks_simd,
 };
 
-const char* name_of(LoopKind k)
+const char* name_of(LoopKind kind)
 {
-    switch (k)
+    switch (kind)
     {
         case LoopKind::static_blocks:
             return "for_static";
@@ -105,28 +105,28 @@ const char* name_of(LoopKind k)
     return "?";
 }
 
-bool is_chunked(LoopKind k)
+bool is_chunked(LoopKind kind)
 {
-    return k == LoopKind::static_chunks || k == LoopKind::static_chunks_simd;
+    return kind == LoopKind::static_chunks || kind == LoopKind::static_chunks_simd;
 }
 
-/// @brief One loop of kind @p k on @p t, the body writing what @p body writes.
+/// @brief One loop of kind @p kind on @p team, the body writing what @p body writes.
 template <typename Index, typename Body>
-void run_loop(pmp::Team& t, LoopKind k, Index first, Index last, int chunk, pmp::WaitMode w, Body&& body)
+void run_loop(pmp::Team& team, LoopKind kind, Index first, Index last, int chunk, pmp::WaitMode wait_mode, Body&& body)
 {
-    switch (k)
+    switch (kind)
     {
         case LoopKind::static_blocks:
-            t.for_static(first, last, body, w);
+            team.for_static(first, last, body, wait_mode);
             return;
         case LoopKind::static_blocks_simd:
-            t.for_static_simd(first, last, body, w);
+            team.for_static_simd(first, last, body, wait_mode);
             return;
         case LoopKind::static_chunks:
-            t.for_static_chunks(first, last, chunk, body, w);
+            team.for_static_chunks(first, last, chunk, body, wait_mode);
             return;
         case LoopKind::static_chunks_simd:
-            t.for_static_chunks_simd(first, last, chunk, body, w);
+            team.for_static_chunks_simd(first, last, chunk, body, wait_mode);
             return;
     }
 }
@@ -140,10 +140,10 @@ void run_loop(pmp::Team& t, LoopKind k, Index first, Index last, int chunk, pmp:
  *          on the wrong rank in owner[].
  */
 template <typename Index>
-void check_one(LoopKind k, int nt, Index first, Index n, int chunk)
+void check_one(LoopKind kind, int nt, Index first, Index count, int chunk)
 {
-    const Index      last = static_cast<Index>(first + n);
-    const auto       un   = static_cast<std::size_t>(n);
+    const Index      last = static_cast<Index>(first + count);
+    const auto       un   = static_cast<std::size_t>(count);
     std::vector<int> owner_wait(un, -1);
     std::vector<int> owner_a(un, -1);
     std::vector<int> owner_b(un, -1);
@@ -152,43 +152,43 @@ void check_one(LoopKind k, int nt, Index first, Index n, int chunk)
     int              size = 0;
 
     pmp::team(pmp::Options{.num_threads = nt},
-              [&](pmp::Team& t)
+              [&](pmp::Team& team)
               {
-                  const int r  = t.rank();
-                  int*      ow = owner_wait.data();
-                  int*      oa = owner_a.data();
-                  int*      ob = owner_b.data();
-                  int*      hw = hits_wait.data();
-                  int*      ha = hits_a.data();
-                  t.single([&] { size = t.size(); }); // a barrier: size set for all
+                  const int rank = team.rank();
+                  int*      ow   = owner_wait.data();
+                  int*      oa   = owner_a.data();
+                  int*      ob   = owner_b.data();
+                  int*      hw   = hits_wait.data();
+                  int*      ha   = hits_a.data();
+                  team.single([&] { size = team.size(); }); // a barrier: size set for all
 
                   // 4: the wait form.
-                  run_loop(t, k, first, last, chunk, pmp::WaitMode::wait,
+                  run_loop(team, kind, first, last, chunk, pmp::WaitMode::wait,
                            [&](Index i)
                            {
-                               ow[i - first] = r;
+                               ow[i - first] = rank;
                                ++hw[i - first];
                            });
                   // 3: two nowait loops in a row, no barrier between.
-                  run_loop(t, k, first, last, chunk, pmp::nowait,
+                  run_loop(team, kind, first, last, chunk, pmp::nowait,
                            [&](Index i)
                            {
-                               oa[i - first] = r;
+                               oa[i - first] = rank;
                                ++ha[i - first];
                            });
-                  run_loop(t, k, first, last, chunk, pmp::nowait,
+                  run_loop(team, kind, first, last, chunk, pmp::nowait,
                            [&](Index i)
                            {
                                // Written by this rank in the loop above, if the
                                // shares agree: no barrier needed to read it.
-                               ob[i - first] = oa[i - first] == r ? r : -2;
+                               ob[i - first] = oa[i - first] == rank ? rank : -2;
                            });
-                  t.barrier();
+                  team.barrier();
               });
 
-    const char* loop = name_of(k);
+    const char* loop = name_of(kind);
     const auto  lf   = static_cast<long long>(first);
-    const auto  ln   = static_cast<long long>(n);
+    const auto  ln   = static_cast<long long>(count);
     check(size >= 1 && size <= nt, "team size in [1, asked]", loop, nt, lf, ln, chunk);
     if (size < 1)
     {
@@ -202,13 +202,14 @@ void check_one(LoopKind k, int nt, Index first, Index n, int chunk)
     bool same_share   = true;
     for (long long j = 0; j < ln; ++j)
     {
-        const auto uj       = static_cast<std::size_t>(j);
-        const int  expected = is_chunked(k) ? chunks_owner(j, chunk > 0 ? chunk : 1, size) : static_owner(j, ln, size);
-        once_wait           = once_wait && hits_wait[uj] == 1;
-        once_a              = once_a && hits_a[uj] == 1;
-        on_rank_wait        = on_rank_wait && owner_wait[uj] == expected;
-        on_rank_a           = on_rank_a && owner_a[uj] == expected;
-        same_share          = same_share && owner_b[uj] == expected;
+        const auto uj = static_cast<std::size_t>(j);
+        const int  expected =
+            is_chunked(kind) ? chunks_owner(j, chunk > 0 ? chunk : 1, size) : static_owner(j, ln, size);
+        once_wait    = once_wait && hits_wait[uj] == 1;
+        once_a       = once_a && hits_a[uj] == 1;
+        on_rank_wait = on_rank_wait && owner_wait[uj] == expected;
+        on_rank_a    = on_rank_a && owner_a[uj] == expected;
+        same_share   = same_share && owner_b[uj] == expected;
     }
     check(once_wait, "1: every iteration once (wait)", loop, nt, lf, ln, chunk);
     check(once_a, "1: every iteration once (nowait)", loop, nt, lf, ln, chunk);
@@ -229,20 +230,20 @@ void check_all()
                               LoopKind::static_chunks_simd};
     for (const int nt : {1, 2, 3, 8})
     {
-        for (const auto& [first, n] : ranges)
+        for (const auto& [first, count] : ranges)
         {
-            for (const LoopKind k : kinds)
+            for (const LoopKind kind : kinds)
             {
-                if (is_chunked(k))
+                if (is_chunked(kind))
                 {
-                    for (const int c : {0, 1, 3, 64})
+                    for (const int chunk : {0, 1, 3, 64})
                     {
-                        check_one<Index>(k, nt, static_cast<Index>(first), static_cast<Index>(n), c);
+                        check_one<Index>(kind, nt, static_cast<Index>(first), static_cast<Index>(count), chunk);
                     }
                 }
                 else
                 {
-                    check_one<Index>(k, nt, static_cast<Index>(first), static_cast<Index>(n), 0);
+                    check_one<Index>(kind, nt, static_cast<Index>(first), static_cast<Index>(count), 0);
                 }
             }
         }

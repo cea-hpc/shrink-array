@@ -196,25 +196,25 @@ fatal_report(std::string_view prefix, const std::source_location& loc, std::stri
     // 1. Location and message, in one write. A template's function name can
     //    run to kilobytes: the block is cut (with "...") past 8 KiB.
     char        block[8192];
-    std::size_t n = 0;
+    std::size_t len = 0;
     try
     {
         const auto res =
             std::format_to_n(block, sizeof(block) - 1, "{0}In file '{1}' at line {2}\nInside function: {3}\n{0}{4}",
                              prefix, loc.file_name(), loc.line(), loc.function_name(), msg);
-        n = static_cast<std::size_t>(res.size);
-        if (n > sizeof(block) - 1)
+        len = static_cast<std::size_t>(res.size);
+        if (len > sizeof(block) - 1)
         {
-            n = sizeof(block) - 1;
-            std::memcpy(block + n - 3, "...", 3);
+            len = sizeof(block) - 1;
+            std::memcpy(block + len - 3, "...", 3);
         }
     }
     catch (...)
     {
-        n = 0;
+        len = 0;
     }
-    block[n++] = '\n';
-    std::fwrite(block, 1, n, stderr);
+    block[len++] = '\n';
+    std::fwrite(block, 1, len, stderr);
 
     // 2. The execution backtrace, for the post-mortem.
     std::fputs("\n--- Execution Backtrace ---\n", stderr);

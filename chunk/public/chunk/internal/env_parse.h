@@ -88,8 +88,8 @@ template <typename T>
     if constexpr (std::is_integral_v<T>)
     {
         const char* const end = text + std::strlen(text);
-        T                 v{};
-        const auto [ptr, ec] = std::from_chars(text, end, v);
+        T                 value{};
+        const auto [ptr, ec] = std::from_chars(text, end, value);
         if (ec == std::errc::result_out_of_range)
         {
             return std::unexpected(ParseError::out_of_range);
@@ -102,13 +102,13 @@ template <typename T>
         {
             return std::unexpected(ParseError::trailing_chars);
         }
-        return v;
+        return value;
     }
     else
     {
-        char* end      = nullptr;
-        errno          = 0;
-        const double v = std::strtod(text, &end);
+        char* end           = nullptr;
+        errno               = 0;
+        const double parsed = std::strtod(text, &end);
         if (end == text)
         {
             return std::unexpected(ParseError::not_a_number);
@@ -121,7 +121,7 @@ template <typename T>
         {
             return std::unexpected(ParseError::out_of_range);
         }
-        return static_cast<T>(v);
+        return static_cast<T>(parsed);
     }
 }
 
@@ -174,13 +174,13 @@ template <typename T>
 template <typename T>
 [[nodiscard]] inline T arg_number(const char* text, T fallback, const char* what) noexcept
 {
-    const auto v = parse_number<T>(text);
-    if (v)
+    const auto value = parse_number<T>(text);
+    if (value)
     {
-        return *v;
+        return *value;
     }
     CHUNK_LOG(warn, general, "{} \"{}\" is not a valid value ({}): ignored, the default is kept", what,
-              text != nullptr ? text : "", to_string(v.error()));
+              text != nullptr ? text : "", to_string(value.error()));
     return fallback;
 }
 

@@ -155,15 +155,15 @@ inline constexpr bool simd_loops = true;
  *          discarded branch depends on @p Body, so it is not instantiated.
  */
 template <typename Body>
-void for_static_vec(Team& t, Int b, Int e, Body&& body)
+void for_static_vec(Team& team, Int first, Int last, Body&& body)
 {
     if constexpr (simd_loops)
     {
-        t.for_static_simd<Int>(b, e, std::forward<Body>(body), nowait);
+        team.for_static_simd<Int>(first, last, std::forward<Body>(body), nowait);
     }
     else
     {
-        t.for_static<Int>(b, e, std::forward<Body>(body), nowait);
+        team.for_static<Int>(first, last, std::forward<Body>(body), nowait);
     }
 }
 } // namespace bench_par
@@ -203,21 +203,21 @@ void for_static_vec(Team& t, Int b, Int e, Body&& body)
 ///        the contiguous slices. Default 64.
 inline Int bench_sched_block_env() noexcept
 {
-    static const Int v = []() -> Int
+    static const Int block = []() -> Int
     {
-        const long b = shrink_array::env_number<long>("BENCH_SCHED_BLOCK", 64L);
-        if (b <= 0)
+        const long requested = shrink_array::env_number<long>("BENCH_SCHED_BLOCK", 64L);
+        if (requested <= 0)
         {
             return 0;
         }
-        long p = 1;
-        while (p < b && p < (1L << 30))
+        long pow2 = 1;
+        while (pow2 < requested && pow2 < (1L << 30))
         {
-            p <<= 1;
+            pow2 <<= 1;
         }
-        return static_cast<Int>(p);
+        return static_cast<Int>(pow2);
     }();
-    return v;
+    return block;
 }
 
 /// @brief Block size and aligned start of a [start, end) worksharing loop.
@@ -231,13 +231,13 @@ struct BenchSched
 ///        region, so that every thread uses the same values.
 inline BenchSched bench_sched_for(Int start, Int end) noexcept
 {
-    const Int b = bench_sched_block_env();
-    if (b > 0)
+    const Int block = bench_sched_block_env();
+    if (block > 0)
     {
-        return {b, start - (start % b)};
+        return {block, start - (start % block)};
     }
-    const Int t = CHUNK_PMP_MAX_THREADS;
-    return {std::max<Int>(1, (end - start + t - 1) / t), start}; // contiguous slices
+    const Int nthreads = CHUNK_PMP_MAX_THREADS;
+    return {std::max<Int>(1, (end - start + nthreads - 1) / nthreads), start}; // contiguous slices
 }
 
 // Not gated on any mode macro: the mode is a runtime flag (--mode, see

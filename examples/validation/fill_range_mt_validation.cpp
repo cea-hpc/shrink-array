@@ -107,25 +107,25 @@ constexpr long blk = 64;
 
 // Value written by the element writers of round r at index i: mostly a
 // constant, so element-written chunks also come and go.
-static double elem_value(long i, int r)
+static double elem_value(long index, int round)
 {
-    const long m = ((i / 700) + r) % 4;
-    return m == 0 ? 0.0 : m == 1 ? 9.0 : 1.0 + static_cast<double>((i + r) % 1000);
+    const long mode = ((index / 700) + round) % 4;
+    return mode == 0 ? 0.0 : mode == 1 ? 9.0 : 1.0 + static_cast<double>((index + round) % 1000);
 }
 
 // Source value of the copy / transform rounds at index i: runs of the first
 // constant, of a repeated constant and of varying values, moving with r.
-static double src_value(long i, int r)
+static double src_value(long index, int round)
 {
-    const long m = ((i / 500) + r) % 3;
-    return m == 0 ? 0.0 : m == 1 ? 9.0 : 0.5 + static_cast<double>((i * 7 + r) % 991);
+    const long mode = ((index / 500) + round) % 3;
+    return mode == 0 ? 0.0 : mode == 1 ? 9.0 : 0.5 + static_cast<double>((index * 7 + round) % 991);
 }
 
 // The operation of the transform rounds: keeps 0 at 0, so first-constant runs
 // stay compressible.
-static double transform_op(double x)
+static double transform_op(double value)
 {
-    return 2.0 * x;
+    return 2.0 * value;
 }
 
 /// The bulk writer of round r: fill, copy, transform -- three rounds each.
@@ -135,23 +135,23 @@ enum class Mode
     copy,
     transform
 };
-static Mode mode_of(int r)
+static Mode mode_of(int round)
 {
-    const int m = (r / 3) % 3;
-    return m == 0 ? Mode::fill : m == 1 ? Mode::copy : Mode::transform;
+    const int mode_idx = (round / 3) % 3;
+    return mode_idx == 0 ? Mode::fill : mode_idx == 1 ? Mode::copy : Mode::transform;
 }
-static const char* mode_name(Mode m)
+static const char* mode_name(Mode mode)
 {
-    return m == Mode::fill ? "fill_range_mt" : m == Mode::copy ? "copy_range_mt" : "transform_range_mt";
+    return mode == Mode::fill ? "fill_range_mt" : mode == Mode::copy ? "copy_range_mt" : "transform_range_mt";
 }
 
-static int run_validation(long n, int rounds)
+static int run_validation(long count, int rounds)
 {
-    Array<double>       arr(n);
-    std::vector<double> ref(static_cast<std::size_t>(n), 0.0);
-    std::vector<double> src(static_cast<std::size_t>(n), 0.0); // copy rounds
-    Array<double>       src_arr(n);                            // transform rounds: a chunked source
-    const long          nblk = (n + blk - 1) / blk;
+    Array<double>       arr(count);
+    std::vector<double> ref(static_cast<std::size_t>(count), 0.0);
+    std::vector<double> src(static_cast<std::size_t>(count), 0.0); // copy rounds
+    Array<double>       src_arr(count);                            // transform rounds: a chunked source
+    const long          nblk = (count + blk - 1) / blk;
     long                bad  = 0;
 
     for (int r = 0; r < rounds && bad == 0; ++r)
@@ -163,14 +163,14 @@ static int run_validation(long n, int rounds)
         // src_arr during it: its iterator's contract).
         if (mode == Mode::copy)
         {
-            for (long i = 0; i < n; ++i)
+            for (long i = 0; i < count; ++i)
             {
                 src[static_cast<std::size_t>(i)] = src_value(i, r);
             }
         }
         else if (mode == Mode::transform)
         {
-            for (long i = 0; i < n; ++i)
+            for (long i = 0; i < count; ++i)
             {
                 src_arr[i] = src_value(i, r);
             }
@@ -178,7 +178,7 @@ static int run_validation(long n, int rounds)
         const Array<double>& csrc = src_arr;
         // Which blocks are filled this round: a pattern that moves with r, so a
         // block alternates between the two kinds of writer over the rounds.
-        const auto is_fill = [r](long b) { return (((b / 3) + r) % 2) == 0; };
+        const auto is_fill = [r](long block) { return (((block / 3) + r) % 2) == 0; };
 
 #pragma omp parallel
         {
@@ -191,7 +191,7 @@ static int run_validation(long n, int rounds)
                     continue;
                 }
                 const long lo  = b * blk;
-                const long hi  = lo + blk < n ? lo + blk : n;
+                const long hi  = lo + blk < count ? lo + blk : count;
                 const auto ulo = static_cast<std::size_t>(lo);
                 const auto uhi = static_cast<std::size_t>(hi);
                 if (mode == Mode::fill)
@@ -215,7 +215,7 @@ static int run_validation(long n, int rounds)
                     continue;
                 }
                 const long lo = b * blk;
-                const long hi = lo + blk < n ? lo + blk : n;
+                const long hi = lo + blk < count ? lo + blk : count;
                 for (long i = lo; i < hi; ++i)
                 {
                     arr[i] = elem_value(i, r);
@@ -227,7 +227,7 @@ static int run_validation(long n, int rounds)
         for (long b = 0; b < nblk; ++b)
         {
             const long lo = b * blk;
-            const long hi = lo + blk < n ? lo + blk : n;
+            const long hi = lo + blk < count ? lo + blk : count;
             for (long i = lo; i < hi; ++i)
             {
                 const double bulk                = mode == Mode::fill   ? fill_v
@@ -248,7 +248,7 @@ static int run_validation(long n, int rounds)
             end_phase();
         }
 
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
             const double got = arr[i];
             if (got != ref[static_cast<std::size_t>(i)])
@@ -272,7 +272,7 @@ static int run_validation(long n, int rounds)
     {
         println("[{}] OK: {} rounds, N={}, fill / copy / transform and element writes interleaved on shared "
                 "chunks",
-                variant_name(), rounds, n);
+                variant_name(), rounds, count);
     }
     return bad ? 1 : 0;
 }
@@ -283,33 +283,34 @@ static int run_validation(long n, int rounds)
 // measure compression churn instead of writes.
 constexpr long perf_blk = 32;
 
-static void run_perf(long n)
+static void run_perf(long count)
 {
-    Array<double>       arr(n);
-    const long          nblk = (n + perf_blk - 1) / perf_blk;
+    Array<double>       arr(count);
+    const long          nblk = (count + perf_blk - 1) / perf_blk;
     const auto          now  = [] { return std::chrono::steady_clock::now(); };
     double              t_el = 0;
     double              t_mt = 0;
     double              t_ce = 0; // copy: element loop
     double              t_cm = 0; // copy: copy_range_mt
-    std::vector<double> src(static_cast<std::size_t>(n));
+    std::vector<double> src(static_cast<std::size_t>(count));
     for (int rep = 0; rep < 6; ++rep)
     {
-        const double v  = 1.0 + rep;
-        const auto   vb = [v](long b) { return v + (0.25 * static_cast<double>(b & 1)); }; // neighbours differ
-        const auto   t0 = now();
+        const double value = 1.0 + rep;
+        const auto   vb    = [value](long block)
+        { return value + (0.25 * static_cast<double>(block & 1)); }; // neighbours differ
+        const auto t0 = now();
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
             for (long b = 0; b < nblk; ++b)
             {
-                const long   lo = b * perf_blk;
-                const long   hi = lo + perf_blk < n ? lo + perf_blk : n;
-                const double x  = vb(b);
+                const long   lo       = b * perf_blk;
+                const long   hi       = lo + perf_blk < count ? lo + perf_blk : count;
+                const double expected = vb(b);
                 for (long i = lo; i < hi; ++i)
                 {
-                    arr[i] = x;
+                    arr[i] = expected;
                 }
             }
         }
@@ -322,16 +323,16 @@ static void run_perf(long n)
             for (long b = 0; b < nblk; ++b)
             {
                 const long lo = b * perf_blk;
-                const long hi = lo + perf_blk < n ? lo + perf_blk : n;
+                const long hi = lo + perf_blk < count ? lo + perf_blk : count;
                 fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), vb(b) + 0.5);
             }
         }
         end_phase();
         const auto t2 = now();
         // Copy: neighbouring elements differ, so no chunk is ever uniform.
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
-            src[static_cast<std::size_t>(i)] = v + (0.125 * static_cast<double>(i % 7));
+            src[static_cast<std::size_t>(i)] = value + (0.125 * static_cast<double>(i % 7));
         }
         const auto t3 = now();
 #pragma omp parallel
@@ -341,7 +342,7 @@ static void run_perf(long n)
             for (long b = 0; b < nblk; ++b)
             {
                 const long lo = b * perf_blk;
-                const long hi = lo + perf_blk < n ? lo + perf_blk : n;
+                const long hi = lo + perf_blk < count ? lo + perf_blk : count;
                 for (long i = lo; i < hi; ++i)
                 {
                     arr[i] = src[static_cast<std::size_t>(i)];
@@ -357,7 +358,7 @@ static void run_perf(long n)
             for (long b = 0; b < nblk; ++b)
             {
                 const long lo = b * perf_blk;
-                const long hi = lo + perf_blk < n ? lo + perf_blk : n;
+                const long hi = lo + perf_blk < count ? lo + perf_blk : count;
                 copy_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), src.begin() + lo);
             }
         }
@@ -371,27 +372,27 @@ static void run_perf(long n)
             t_cm += std::chrono::duration<double>(t5 - t4).count();
         }
     }
-    println("[{}] perf N={} threads={}: element loop {:.3f} s, fill_range_mt {:.3f} s (x{:.2f})", variant_name(), n,
+    println("[{}] perf N={} threads={}: element loop {:.3f} s, fill_range_mt {:.3f} s (x{:.2f})", variant_name(), count,
             CHUNK_PMP_MAX_THREADS, t_el, t_mt, t_mt > 0 ? t_el / t_mt : 0.);
     println("[{}] perf N={} threads={}: copy element loop {:.3f} s, copy_range_mt {:.3f} s (x{:.2f})", variant_name(),
-            n, CHUNK_PMP_MAX_THREADS, t_ce, t_cm, t_cm > 0 ? t_ce / t_cm : 0.);
+            count, CHUNK_PMP_MAX_THREADS, t_ce, t_cm, t_cm > 0 ? t_ce / t_cm : 0.);
     arr.clear();
 }
 
 static int run_body(int argc, char** argv)
 {
-    const long n = argc > 1 ? shrink_array::arg_number<long>(argv[1], (1L << 20) + 777, "N") : (1L << 20) + 777;
+    const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], (1L << 20) + 777, "N") : (1L << 20) + 777;
     ParamChunk::init_indexes(true);
 
     if (argc > 2 && std::strcmp(argv[2], "perf") == 0)
     {
-        run_perf(n);
+        run_perf(count);
         return 0;
     }
     const int rounds = argc > 2 ? shrink_array::arg_number<int>(argv[2], 30, "rounds") : 30;
-    println("=== fill_range_mt_validation [variant = {}]  N={}  threads={} ===", variant_name(), n,
+    println("=== fill_range_mt_validation [variant = {}]  N={}  threads={} ===", variant_name(), count,
             CHUNK_PMP_MAX_THREADS);
-    const int fails = run_validation(n, rounds);
+    const int fails = run_validation(count, rounds);
     println("[{}] === {} ===", variant_name(), fails ? "FILL_RANGE_MT FAILED" : "FILL_RANGE_MT OK");
     return fails;
 }

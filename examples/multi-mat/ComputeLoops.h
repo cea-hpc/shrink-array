@@ -103,13 +103,13 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
 
             for (int k = start; k < end; k++)
             {
-                const int p = k - start;
+                const int pos = k - start;
                 // We avoid overflow: it can happen
                 if (k >= mesh_size)
                 {
                     break;
                 }
-                ll_ind[p] = k;
+                ll_ind[pos] = k;
             }
         }
 
@@ -169,10 +169,10 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
                                  {
                                      // Set the arrays to some values
 
-                                     const double v = static_cast<double>(nn) + static_cast<double>(it);
-                                     tab0_ind[nn]   = v;
-                                     tab1_ind[nn]   = static_cast<double>(2 * nn) + static_cast<double>(it);
-                                     tab2_ind[nn]   = static_cast<double>(3 * nn) + static_cast<double>(it);
+                                     const double value = static_cast<double>(nn) + static_cast<double>(it);
+                                     tab0_ind[nn]       = value;
+                                     tab1_ind[nn]       = static_cast<double>(2 * nn) + static_cast<double>(it);
+                                     tab2_ind[nn]       = static_cast<double>(3 * nn) + static_cast<double>(it);
                                      // 1 inside the material, a ramp at its two interfaces:
                                      // on a chunk array the interior writes hit chunks already
                                      // compressed to 1 and return without materialising them.

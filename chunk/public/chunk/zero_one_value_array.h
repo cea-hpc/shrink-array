@@ -287,31 +287,31 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     }
 
     /**
-     * @brief Has the chunk holding element @p i been materialised?
-     * @param i element index
+     * @brief Has the chunk holding element @p index been materialised?
+     * @param index element index
      * @return false while that chunk is still compressed to a constant
      */
-    [[nodiscard]] bool written(IntType i) const
+    [[nodiscard]] bool written(IntType index) const
     {
-        return chunk_written(this->chunk_index_of(i));
+        return chunk_written(this->chunk_index_of(index));
     }
 
     /**
-     * @brief Is chunk @p j materialised?
-     * @param j CHUNK index (not an element index -- see written(IndType))
+     * @brief Is chunk @p num_chunk materialised?
+     * @param num_chunk CHUNK index (not an element index -- see written(IndType))
      * @return false while that chunk is compressed to either constant
      * @note zero_one_value::Chunk::written() needs the array's second-value index: see
      *       has_chunk_written_v (array_chunk_base.h).
      */
-    [[nodiscard]] bool chunk_written(int j) const
+    [[nodiscard]] bool chunk_written(int num_chunk) const
     {
         if constexpr (is_not_bool)
         {
-            return chunk_list_[j].written(get_ind_second_value());
+            return chunk_list_[num_chunk].written(get_ind_second_value());
         }
         else
         {
-            return chunk_list_[j].written();
+            return chunk_list_[num_chunk].written();
         }
     }
 

@@ -123,7 +123,10 @@ class FastBlockSupport<Derived, false>
 {
   public:
     /** @brief No-op: this mode has no deferred candidate list. */
-    static void make_block_compression() noexcept {}
+    static void make_block_compression() noexcept
+    {
+        // no deferred candidate list in this mode: nothing to compress here
+    }
 };
 
 } // namespace zero_one_value

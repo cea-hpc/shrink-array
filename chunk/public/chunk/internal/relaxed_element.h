@@ -81,36 +81,36 @@ template <typename T>
     return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_relaxed);
 }
 
-/// @brief Store @p v to @p *ptr through a relaxed std::atomic_ref.
+/// @brief Store @p value to @p *ptr through a relaxed std::atomic_ref.
 /// @param ptr Element to write.
-/// @param v Value to store.
+/// @param value Value to store.
 template <typename T>
-void store_element_relaxed(T* ptr, T v) noexcept
+void store_element_relaxed(T* ptr, T value) noexcept
 {
     static_assert(relaxed_element_access_v<T>);
-    std::atomic_ref<T>(*ptr).store(v, std::memory_order_relaxed);
+    std::atomic_ref<T>(*ptr).store(value, std::memory_order_relaxed);
 }
 
 /**
  * @brief Run an in-place write body (++, --, the bitwise and compound
- *        operators) on element @p i of the buffer @p ptr.
+ *        operators) on element @p index of the buffer @p ptr.
  * @details The body takes the element by reference. Where the element stores
  *          must be relaxed atomics it works on a copy, stored back relaxed; the
  *          read of the copy stays plain -- the element is this writer's own,
  *          the other threads only read it.
  */
 template <typename ChunkT, typename T, typename Body>
-void modify_element(T* ptr, int i, Body&& body)
+void modify_element(T* ptr, int index, Body&& body)
 {
     if constexpr (relaxed_element_stores_v<ChunkT, T>)
     {
-        T elem = ptr[i];
+        T elem = ptr[index];
         body(elem);
-        store_element_relaxed(ptr + i, elem);
+        store_element_relaxed(ptr + index, elem);
     }
     else
     {
-        body(ptr[i]);
+        body(ptr[index]);
     }
 }
 

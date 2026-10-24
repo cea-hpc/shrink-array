@@ -24,6 +24,7 @@
 #include <type_traits>     // std::is_same_v (concurrent-ops base)
 #include <vector>          // std::vector
 
+#include "fast_allocators/internal/raw_memory.h"    // address_bits
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
 #include "chunk/chunk_traits.h"                     // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
@@ -92,7 +93,7 @@ class ChunkConcurrentOps
         {
             const uint32_t chunk_id = self.ring_chunk_id();
             const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), ev_compress_attempt, info);
+            ring_log(get_tid(), EventCode::compress_attempt, info);
         }
 
         if (!self.values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
@@ -118,7 +119,7 @@ class ChunkConcurrentOps
         {
             const uint32_t chunk_id = self.ring_chunk_id();
             const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), ev_cas_values_to_cst, info);
+            ring_log(get_tid(), EventCode::cas_values_to_cst, info);
         }
         return old;
     }
@@ -183,7 +184,7 @@ class ChunkConcurrentOps
             const uint32_t chunk_id = self.ring_chunk_id();
             const uint32_t info =
                 (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24U);
-            ring_log(get_tid(), failed ? ev_cas_values_fail : ev_cas_values_from_cst, info);
+            ring_log(get_tid(), failed ? EventCode::cas_values_fail : EventCode::cas_values_from_cst, info);
         }
         return failed;
     }
@@ -196,7 +197,7 @@ class ChunkConcurrentOps
     ///        the top byte.
     [[nodiscard]] uint32_t ring_chunk_id(this const auto& obj) noexcept
     {
-        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&obj) >> 4U);
+        return static_cast<uint32_t>(::fast_alloc::address_bits(&obj) >> 4U);
     }
 };
 
@@ -430,7 +431,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Shared by the three
     ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Derived* v, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Derived* chunks, std::size_t count) noexcept;
 };
 
 /**

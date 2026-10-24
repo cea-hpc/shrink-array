@@ -154,54 +154,54 @@ struct is_atomic_pointer<std::atomic<U*>> : public std::true_type
 namespace bench_checksum
 {
 /// @brief splitmix64's finaliser: a bijective 64-bit mix.
-constexpr std::uint64_t mix64(std::uint64_t x) noexcept
+constexpr std::uint64_t mix64(std::uint64_t value) noexcept
 {
-    x ^= x >> 30U;
-    x *= 0xbf58476d1ce4e5b9ULL;
-    x ^= x >> 27U;
-    x *= 0x94d049bb133111ebULL;
-    x ^= x >> 31U;
-    return x;
+    value ^= value >> 30U;
+    value *= 0xbf58476d1ce4e5b9ULL;
+    value ^= value >> 27U;
+    value *= 0x94d049bb133111ebULL;
+    value ^= value >> 31U;
+    return value;
 }
 
 /// @brief One element as a 64-bit word: its value for an integral type, its
 ///        bits for a floating one, its bytes folded (FNV-1a) otherwise.
 template <typename T>
-inline std::uint64_t checksum_word(const T& e) noexcept
+inline std::uint64_t checksum_word(const T& elem) noexcept
 {
     if constexpr (std::is_integral_v<T>)
     {
-        return static_cast<std::uint64_t>(e);
+        return static_cast<std::uint64_t>(elem);
     }
     else if constexpr (shrink_array::is_packed_bit_v<T>)
     {
-        return static_cast<std::uint64_t>(static_cast<bool>(e));
+        return static_cast<std::uint64_t>(static_cast<bool>(elem));
     }
     else if constexpr (std::is_same_v<T, double>)
     {
-        return std::bit_cast<std::uint64_t>(e);
+        return std::bit_cast<std::uint64_t>(elem);
     }
     else if constexpr (std::is_same_v<T, float>)
     {
-        return std::bit_cast<std::uint32_t>(e);
+        return std::bit_cast<std::uint32_t>(elem);
     }
     else
     {
-        const auto*   bytes = reinterpret_cast<const unsigned char*>(&e);
-        std::uint64_t h     = 0xcbf29ce484222325ULL;
+        const auto*   bytes = reinterpret_cast<const unsigned char*>(&elem);
+        std::uint64_t hash  = 0xcbf29ce484222325ULL;
         for (std::size_t i = 0; i < sizeof(T); ++i)
         {
-            h = (h ^ bytes[i]) * 0x100000001b3ULL;
+            hash = (hash ^ bytes[i]) * 0x100000001b3ULL;
         }
-        return h;
+        return hash;
     }
 }
 
-/// @brief The contribution of element @p e at index @p k.
+/// @brief The contribution of element @p elem at index @p index.
 template <typename T>
-inline std::uint64_t contribution(std::uint64_t k, const T& e) noexcept
+inline std::uint64_t contribution(std::uint64_t index, const T& elem) noexcept
 {
-    return mix64(checksum_word(e) ^ mix64(k + 0x9e3779b97f4a7c15ULL));
+    return mix64(checksum_word(elem) ^ mix64(index + 0x9e3779b97f4a7c15ULL));
 }
 } // namespace bench_checksum
 
@@ -253,14 +253,14 @@ uint64_t calculate_checksum(const V& vec)
 
 /// @brief Inside a parallel region (`omp for nowait`): add bench_checksum::contribution(k, element) of every
 ///        element of @p vec different from V::value_type{} to the calling thread's slot of @p checksum_thr.
-/// @param t The region's team (bench_par::region).
+/// @param team The region's team (bench_par::region).
 /// @param vec Container to sum.
 /// @param checksum_thr Per-thread accumulators, indexed by thread rank.
 template <typename V>
 #if defined(__GNUC__) && !defined(__NVCOMPILER) && !defined(__clang__)
 __attribute__((optimize("O2")))
 #endif
-void calculate_checksum_0(bench_par::Team& t, const V& vec, std::vector<Uint64Padding>& checksum_thr)
+void calculate_checksum_0(bench_par::Team& team, const V& vec, std::vector<Uint64Padding>& checksum_thr)
 {
     using T      = V::value_type;
     const Int nn = vec.size();
@@ -268,9 +268,9 @@ void calculate_checksum_0(bench_par::Team& t, const V& vec, std::vector<Uint64Pa
     constexpr T zero{};
 
     // The rank in the region's team (a TBB task's virtual rank): one slot per share.
-    auto& checksum = checksum_thr[static_cast<std::size_t>(t.rank())];
+    auto& checksum = checksum_thr[static_cast<std::size_t>(team.rank())];
 
-    t.for_static<Int>(
+    team.for_static<Int>(
         0, nn,
         [&](const Int k) __attribute__((always_inline))
         {
@@ -304,11 +304,11 @@ struct VectorChecksum
 // member (only zero_one_value::Array / zero_any::Array do; plain std::vector doesn't).
 // -----------------------------------------------------------------------------
 template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
+void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
+    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
@@ -317,11 +317,11 @@ void maybe_set_second_value(Arr& a, const Val& v)
 // end-of-life stats line, next to a table number that every re-chunk changes.
 // -----------------------------------------------------------------------------
 template <typename Arr>
-void maybe_set_debug_name(Arr& a, const char* name)
+void maybe_set_debug_name(Arr& arr, const char* name)
 {
-    if constexpr (requires(Arr& x) { x.set_debug_name(name); })
+    if constexpr (requires(Arr& probe) { probe.set_debug_name(name); })
     {
-        a.set_debug_name(name);
+        arr.set_debug_name(name);
     }
 }
 
@@ -354,19 +354,19 @@ double convert_memory(double memory_value);
 /// @param msg Label of the line.
 void memory_consumption(const std::string& msg);
 
-/// @brief Linear map of @p i from [0, sz] to [0, sz1].
+/// @brief Linear map of @p index from [0, sz] to [0, sz1].
 /// @return (sz1 / sz) * i, truncated to Int.
-Int linear_correlation(Int i, Int sz, Int sz1);
-/// @brief Power-law map of @p i from [0, sz] to [0, sz1].
+Int linear_correlation(Int index, Int sz, Int sz1);
+/// @brief Power-law map of @p index from [0, sz] to [0, sz1].
 /// @return sz1 * (i / sz)^p, truncated to Int.
-Int exponential_correlation(Int i, Int sz, Int sz1, double p);
-/// @brief Square-root map of @p i from [0, sz] to [0, sz1].
+Int exponential_correlation(Int index, Int sz, Int sz1, double rate);
+/// @brief Square-root map of @p index from [0, sz] to [0, sz1].
 /// @return sz1 * sqrt(i / sz), truncated to Int.
-Int interpolation(Int i, Int sz, Int sz1);
+Int interpolation(Int index, Int sz, Int sz1);
 
-/// @brief Edit distance between @p a and @p b (insertions, deletions, substitutions).
+/// @brief Edit distance between @p lhs and @p rhs (insertions, deletions, substitutions).
 /// @return The Levenshtein distance.
-Int levenshtein(const std::string& a, const std::string& b);
+Int levenshtein(const std::string& lhs, const std::string& rhs);
 /// @brief Print the valid command-line options (valid_args) on std::cout.
 void print_help();
 /// @brief The entry of valid_args closest to @p input by levenshtein() distance.

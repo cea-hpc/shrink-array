@@ -110,22 +110,22 @@ void end_phase()
 }
 
 template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
+void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
+    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
 template <typename Arr>
-void compress_in_region(Arr& a)
+void compress_in_region(Arr& arr)
 {
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp single
-        a.compress();
+        arr.compress();
     }
     end_phase();
 }
@@ -140,9 +140,9 @@ enum class Case
     copy
 };
 
-const char* case_name(Case c)
+const char* case_name(Case test_case)
 {
-    switch (c)
+    switch (test_case)
     {
         case Case::first:
             return "first";
@@ -155,48 +155,48 @@ const char* case_name(Case c)
 
 /// One chunk (chunk #1, so that chunk #0 stays at the first constant around
 /// it) through the raw path, one proxied constant, a compression pass.
-int run_case(Case c)
+int run_case(Case test_case)
 {
     const bool second_applies = chunk_config::use_zero_one_value || chunk_config::use_zero_any;
-    if (c == Case::second && !second_applies)
+    if (test_case == Case::second && !second_applies)
     {
         return 0;
     }
 
-    Array<double> a;
-    const long    s = static_cast<long>(a.chunk_size());
-    const long    n = 3 * s;
-    a.resize(static_cast<int>(n));
-    maybe_set_second_value(a, second_value);
+    Array<double> arr;
+    const long    chunk_sz = static_cast<long>(arr.chunk_size());
+    const long    count    = 3 * chunk_sz;
+    arr.resize(static_cast<int>(count));
+    maybe_set_second_value(arr, second_value);
 
-    const auto lo = static_cast<std::size_t>(s);
-    const auto hi = static_cast<std::size_t>(2 * s);
-    if (c == Case::copy)
+    const auto lo = static_cast<std::size_t>(chunk_sz);
+    const auto hi = static_cast<std::size_t>(2 * chunk_sz);
+    if (test_case == Case::copy)
     {
-        const std::vector<double> src(static_cast<std::size_t>(s), plain_value);
-        shrink_array::copy_range(a, lo, hi, src.begin());
+        const std::vector<double> src(static_cast<std::size_t>(chunk_sz), plain_value);
+        shrink_array::copy_range(arr, lo, hi, src.begin());
     }
     else
     {
-        shrink_array::fill_range(a, lo, hi, plain_value);
+        shrink_array::fill_range(arr, lo, hi, plain_value);
     }
 
     // The single proxied write of a constant: with a stale count, the one that
     // makes it reach chunk_size.
-    const double constant  = (c == Case::second) ? second_value : 0.0;
-    a[static_cast<int>(s)] = constant;
-    compress_in_region(a);
+    const double constant           = (test_case == Case::second) ? second_value : 0.0;
+    arr[static_cast<int>(chunk_sz)] = constant;
+    compress_in_region(arr);
 
     int bad = 0;
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
-        const double want = (i < s || i >= 2 * s) ? 0.0 : (i == s ? constant : plain_value);
-        const double got  = std::as_const(a)[static_cast<int>(i)];
+        const double want = (i < chunk_sz || i >= 2 * chunk_sz) ? 0.0 : (i == chunk_sz ? constant : plain_value);
+        const double got  = std::as_const(arr)[static_cast<int>(i)];
         if (got != want)
         {
             if (bad < 5)
             {
-                println("[{}/{}] FAIL [{}] = {:g}, expected {:g}", variant_name(), case_name(c), i, got, want);
+                println("[{}/{}] FAIL [{}] = {:g}, expected {:g}", variant_name(), case_name(test_case), i, got, want);
             }
             ++bad;
         }
@@ -204,7 +204,7 @@ int run_case(Case c)
     if (!bad)
     {
         println("[{}/{}] OK: raw span of {} plain values + one {} value, compressed, read back", variant_name(),
-                case_name(c), s, c == Case::second ? "second" : "first");
+                case_name(test_case), chunk_sz, test_case == Case::second ? "second" : "first");
     }
     return bad ? 1 : 0;
 }
@@ -221,26 +221,27 @@ int run_mul_zero_case()
     {
         return 0;
     }
-    Array<double> a;
-    const long    s = static_cast<long>(a.chunk_size());
-    const long    n = 3 * s;
-    a.resize(static_cast<int>(n));
-    maybe_set_second_value(a, second_value);
+    Array<double> arr;
+    const long    chunk_sz = static_cast<long>(arr.chunk_size());
+    const long    count    = 3 * chunk_sz;
+    arr.resize(static_cast<int>(count));
+    maybe_set_second_value(arr, second_value);
 
-    shrink_array::fill_range(a, static_cast<std::size_t>(s), static_cast<std::size_t>(2 * s), plain_value);
-    a[static_cast<int>(s)] = second_value;
-    a[static_cast<int>(s)] *= 0.0;
-    for (long i = s + 1; i < 2 * s; ++i)
+    shrink_array::fill_range(arr, static_cast<std::size_t>(chunk_sz), static_cast<std::size_t>(2 * chunk_sz),
+                             plain_value);
+    arr[static_cast<int>(chunk_sz)] = second_value;
+    arr[static_cast<int>(chunk_sz)] *= 0.0;
+    for (long i = chunk_sz + 1; i < 2 * chunk_sz; ++i)
     {
-        a[static_cast<int>(i)] = second_value;
+        arr[static_cast<int>(i)] = second_value;
     }
-    compress_in_region(a);
+    compress_in_region(arr);
 
     int bad = 0;
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
-        const double want = (i < s || i >= 2 * s || i == s) ? 0.0 : second_value;
-        const double got  = std::as_const(a)[static_cast<int>(i)];
+        const double want = (i < chunk_sz || i >= 2 * chunk_sz || i == chunk_sz) ? 0.0 : second_value;
+        const double got  = std::as_const(arr)[static_cast<int>(i)];
         if (got != want)
         {
             if (bad < 5)
@@ -277,9 +278,9 @@ enum class Op
     xor0
 };
 
-const char* op_name(Op o)
+const char* op_name(Op op)
 {
-    switch (o)
+    switch (op)
     {
         case Op::and_:
             return "&= 5";
@@ -298,65 +299,65 @@ const char* op_name(Op o)
     }
 }
 
-int run_compound_case(Op o)
+int run_compound_case(Op op)
 {
     using I = long long;
-    Array<I>   a;
-    const long s = static_cast<long>(a.chunk_size());
-    a.resize(static_cast<int>(3 * s));
-    maybe_set_second_value(a, I{7});
-    const int k = static_cast<int>(s) + 3;
-    switch (o)
+    Array<I>   arr;
+    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    arr.resize(static_cast<int>(3 * chunk_sz));
+    maybe_set_second_value(arr, I{7});
+    const int span = static_cast<int>(chunk_sz) + 3;
+    switch (op)
     {
         case Op::and_:
-            a[k] &= I{5};
+            arr[span] &= I{5};
             break;
         case Op::shl:
-            a[k] <<= 3;
+            arr[span] <<= 3;
             break;
         case Op::shr:
-            a[k] >>= 1;
+            arr[span] >>= 1;
             break;
         case Op::add0:
-            a[k] += I{0};
+            arr[span] += I{0};
             break;
         case Op::sub0:
-            a[k] -= I{0};
+            arr[span] -= I{0};
             break;
         case Op::or0:
-            a[k] |= I{0};
+            arr[span] |= I{0};
             break;
         case Op::xor0:
-            a[k] ^= I{0};
+            arr[span] ^= I{0};
             break;
     }
     int        bad    = 0;
     const bool check  = chunk_config::use_zero && chunk_config::use_compression_with_counter;
-    const bool after1 = std::as_const(a).written(k);
-    a[k]              = I{9};
-    a[k]              = I{0};
-    const bool after2 = std::as_const(a).written(k);
+    const bool after1 = std::as_const(arr).written(span);
+    arr[span]         = I{9};
+    arr[span]         = I{0};
+    const bool after2 = std::as_const(arr).written(span);
     if (check && (after1 || after2))
     {
-        println("[{}/0 {}] FAIL: chunk #1 still materialised {}", variant_name(), op_name(o),
+        println("[{}/0 {}] FAIL: chunk #1 still materialised {}", variant_name(), op_name(op),
                 after1 ? "after the operator (a zero result)" : "after 9 then 0 (the zero count drifted)");
         ++bad;
     }
-    for (long i = 0; i < 3 * s; ++i)
+    for (long i = 0; i < 3 * chunk_sz; ++i)
     {
-        if (std::as_const(a)[static_cast<int>(i)] != I{0})
+        if (std::as_const(arr)[static_cast<int>(i)] != I{0})
         {
             if (bad < 5)
             {
-                println("[{}/0 {}] FAIL [{}] = {}, expected 0", variant_name(), op_name(o), i,
-                        static_cast<long long>(std::as_const(a)[static_cast<int>(i)]));
+                println("[{}/0 {}] FAIL [{}] = {}, expected 0", variant_name(), op_name(op), i,
+                        static_cast<long long>(std::as_const(arr)[static_cast<int>(i)]));
             }
             ++bad;
         }
     }
     if (!bad)
     {
-        println("[{}/0 {}] OK{}", variant_name(), op_name(o),
+        println("[{}/0 {}] OK{}", variant_name(), op_name(op),
                 check ? ": chunk compressed after the operator and after 9 then 0" : " (values only)");
     }
     return bad ? 1 : 0;
@@ -376,9 +377,9 @@ int run(int /*argc*/, char** /*argv*/)
     fails += run_case(Case::second);
     fails += run_case(Case::copy);
     fails += run_mul_zero_case();
-    for (const Op o : {Op::and_, Op::shl, Op::shr, Op::add0, Op::sub0, Op::or0, Op::xor0})
+    for (const Op op : {Op::and_, Op::shl, Op::shr, Op::add0, Op::sub0, Op::or0, Op::xor0})
     {
-        fails += run_compound_case(o);
+        fails += run_compound_case(op);
     }
 
     release_chunk_pools();

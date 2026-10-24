@@ -100,18 +100,18 @@ void end_phase()
 // (4096 * 3: every power of two up to 4096, and 192, 384, 768...).
 constexpr long run_len = 12288;
 
-bool varied(long i)
+bool varied(long index)
 {
-    return (i % 3) == 0 || (i % 7) == 2;
+    return (index % 3) == 0 || (index % 7) == 2;
 }
 
-long compare(const ArrayChunkBits<>& a, const std::vector<bool>& ref, std::string_view step)
+long compare(const ArrayChunkBits<>& arr, const std::vector<bool>& ref, std::string_view step)
 {
     long bad   = 0;
     long first = -1;
     for (long i = 0; i < static_cast<long>(ref.size()); ++i)
     {
-        const bool got = a[i];
+        const bool got = arr[i];
         if (got != ref[static_cast<std::size_t>(i)])
         {
             if (first < 0)
@@ -124,53 +124,53 @@ long compare(const ArrayChunkBits<>& a, const std::vector<bool>& ref, std::strin
     if (bad)
     {
         println("[bits] FAIL {}: {} mismatches, first at {} (chunk {})", step, bad, first,
-                first / static_cast<long>(a.chunk_size()));
+                first / static_cast<long>(arr.chunk_size()));
     }
     return bad;
 }
 
-int round_trip(long n)
+int round_trip(long count)
 {
-    ArrayChunkBits<>  a(n);
-    std::vector<bool> ref(static_cast<std::size_t>(n), false);
+    ArrayChunkBits<>  arr(count);
+    std::vector<bool> ref(static_cast<std::size_t>(count), false);
     int               fails = 0;
 
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
-            a[i] = varied(i);
+            arr[i] = varied(i);
         }
     }
     end_phase();
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
         ref[static_cast<std::size_t>(i)] = varied(i);
     }
-    fails += compare(a, ref, "materialise") != 0;
+    fails += compare(arr, ref, "materialise") != 0;
 
     // Runs: 0 -> all false, 1 -> all true, 2 -> left mixed.
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
             const long run = (i / run_len) % 3;
             if (run == 0)
             {
-                a[i] = false;
+                arr[i] = false;
             }
             else if (run == 1)
             {
-                a[i] = true;
+                arr[i] = true;
             }
         }
     }
     end_phase();
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
         const long run = (i / run_len) % 3;
         if (run != 2)
@@ -178,21 +178,21 @@ int round_trip(long n)
             ref[static_cast<std::size_t>(i)] = (run == 1);
         }
     }
-    fails += compare(a, ref, "constant runs") != 0;
+    fails += compare(arr, ref, "constant runs") != 0;
 
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp single
-        a.compress();
+        arr.compress();
     }
     end_phase();
-    fails += compare(a, ref, "after compress") != 0;
+    fails += compare(arr, ref, "after compress") != 0;
 
     // Only the mixed runs (run % 3 == 2) stay materialised; runs are whole
     // chunks, so the share of written chunks is that of the mixed runs.
-    const double written = a.stats_seq();
-    const long   n_runs  = n / run_len;
+    const double written = arr.stats_seq();
+    const long   n_runs  = count / run_len;
     const double expect  = 100.0 * static_cast<double>(n_runs / 3) / static_cast<double>(n_runs);
     if (written > expect + 1.0 || written < expect - 1.0)
     {
@@ -205,39 +205,39 @@ int round_trip(long n)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n / 4; ++i)
+        for (long i = 0; i < count / 4; ++i)
         {
-            a[i] = (i % 5) == 1;
+            arr[i] = (i % 5) == 1;
         }
     }
     end_phase();
-    for (long i = 0; i < n / 4; ++i)
+    for (long i = 0; i < count / 4; ++i)
     {
         ref[static_cast<std::size_t>(i)] = (i % 5) == 1;
     }
-    fails += compare(a, ref, "after refill") != 0;
+    fails += compare(arr, ref, "after refill") != 0;
 
     if (fails == 0)
     {
-        println("[bits] OK round trip: {} elements, chunk_size={}, {:.1f}% of chunks written after the pass", n,
-                a.chunk_size(), written);
+        println("[bits] OK round trip: {} elements, chunk_size={}, {:.1f}% of chunks written after the pass", count,
+                arr.chunk_size(), written);
     }
-    a.clear();
+    arr.clear();
     return fails;
 }
 
-int neighbours(long n)
+int neighbours(long count)
 {
-    ArrayChunkBits<> a(n);
+    ArrayChunkBits<> arr(count);
     int              fails = 0;
     // Two passes, set then clear half: each word written by every thread in both.
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static, 1)
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
-            a[i] = true;
+            arr[i] = true;
         }
     }
     end_phase();
@@ -245,27 +245,27 @@ int neighbours(long n)
     {
         begin_phase();
 #pragma omp for schedule(static, 1)
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
             if ((i / 2) % 2 == 1)
             {
-                a[i] = false;
+                arr[i] = false;
             }
         }
     }
     end_phase();
 
-    std::vector<bool> ref(static_cast<std::size_t>(n));
-    for (long i = 0; i < n; ++i)
+    std::vector<bool> ref(static_cast<std::size_t>(count));
+    for (long i = 0; i < count; ++i)
     {
         ref[static_cast<std::size_t>(i)] = (i / 2) % 2 == 0;
     }
-    fails += compare(a, ref, "neighbouring writes") != 0;
+    fails += compare(arr, ref, "neighbouring writes") != 0;
     if (fails == 0)
     {
         println("[bits] OK neighbouring elements written by {} threads: none lost", CHUNK_PMP_MAX_THREADS);
     }
-    a.clear();
+    arr.clear();
     return fails;
 }
 
@@ -277,45 +277,45 @@ int birth_size()
     }
     const unsigned int          active = active_chunk_size();
     const unsigned int          expect = std::min(active * packed_bit_birth_factor, cst_buffer_size);
-    ArrayChunkBits<>            a(1L << 16);
-    zero_one_value::Array<bool> b(1L << 16);
+    ArrayChunkBits<>            arr(1L << 16);
+    zero_one_value::Array<bool> bools(1L << 16);
     int                         fails = 0;
-    if (a.chunk_size() != expect || active_chunk_size() != active || b.chunk_size() != active)
+    if (arr.chunk_size() != expect || active_chunk_size() != active || bools.chunk_size() != active)
     {
         println("[bits] FAIL birth size: bits {} (expected {}), then active {} and bool {} (expected {})",
-                a.chunk_size(), expect, active_chunk_size(), b.chunk_size(), active);
+                arr.chunk_size(), expect, active_chunk_size(), bools.chunk_size(), active);
         ++fails;
     }
     else
     {
-        println("[bits] OK birth size: bits at {}, the active size stays {}", a.chunk_size(), active);
+        println("[bits] OK birth size: bits at {}, the active size stays {}", arr.chunk_size(), active);
     }
-    a.clear();
-    b.clear();
+    arr.clear();
+    bools.clear();
     return fails;
 }
 
 int surface()
 {
-    ArrayChunkBits<> a(1000);
+    ArrayChunkBits<> arr(1000);
     int              fails = 0;
-    a[3]                   = true;
-    const bool b3          = a[3];
-    const bool b4          = a[4];
-    a[4]                   = !b4;
-    fails += !(b3 && !b4 && a[4] == true && a[3] == b3 && a[5] == false);
+    arr[3]                 = true;
+    const bool b3          = arr[3];
+    const bool b4          = arr[4];
+    arr[4]                 = !b4;
+    fails += !(b3 && !b4 && arr[4] == true && arr[3] == b3 && arr[5] == false);
     if (fails)
     {
         println("[bits] FAIL element surface");
     }
-    a.clear();
+    arr.clear();
     return fails;
 }
 
-int logical_ops(long n)
+int logical_ops(long count)
 {
-    ArrayChunkBits<>  a(n);
-    std::vector<bool> ref(static_cast<std::size_t>(n), false);
+    ArrayChunkBits<>  arr(count);
+    std::vector<bool> ref(static_cast<std::size_t>(count), false);
     const auto        opnd  = [](long i, int k) { return (((i * 7) + (k * 3)) % 5) < 2; };
     int               fails = 0;
 
@@ -324,13 +324,13 @@ int logical_ops(long n)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
-            a[i] = ((i / run_len) % 3 == 1) || ((i / run_len) % 3 == 2 && i % 2 == 0);
+            arr[i] = ((i / run_len) % 3 == 1) || ((i / run_len) % 3 == 2 && i % 2 == 0);
         }
     }
     end_phase();
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
         ref[static_cast<std::size_t>(i)] = ((i / run_len) % 3 == 1) || ((i / run_len) % 3 == 2 && i % 2 == 0);
     }
@@ -341,80 +341,80 @@ int logical_ops(long n)
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long i = 0; i < n; ++i)
+            for (long i = 0; i < count; ++i)
             {
-                const bool b = opnd(i, k);
+                const bool expect = opnd(i, k);
                 if (k == 0)
                 {
-                    a[i] |= b;
+                    arr[i] |= expect;
                 }
                 else if (k == 1)
                 {
-                    a[i] &= b;
+                    arr[i] &= expect;
                 }
                 else
                 {
-                    a[i] ^= b;
+                    arr[i] ^= expect;
                 }
             }
         }
         end_phase();
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
-            const auto j = static_cast<std::size_t>(i);
-            const bool b = opnd(i, k);
-            ref[j]       = k == 0 ? (ref[j] || b) : k == 1 ? (ref[j] && b) : (ref[j] != b);
+            const auto pos    = static_cast<std::size_t>(i);
+            const bool expect = opnd(i, k);
+            ref[pos]          = k == 0 ? (ref[pos] || expect) : k == 1 ? (ref[pos] && expect) : (ref[pos] != expect);
         }
         static const char* const names[] = {"|=", "&=", "^="};
-        fails += compare(a, ref, names[k]) != 0;
+        fails += compare(arr, ref, names[k]) != 0;
     }
 
     // A proxy of the same container as the operand.
-    ArrayChunkBits<> m(8);
-    m[0] = true;
-    a[0] = false;
-    a[0] |= m[0];
-    a[1] = true;
-    a[1] &= m[1];
-    fails += !(a[0] == true && a[1] == false);
+    ArrayChunkBits<> small(8);
+    small[0] = true;
+    arr[0]   = false;
+    arr[0] |= small[0];
+    arr[1] = true;
+    arr[1] &= small[1];
+    fails += !(arr[0] == true && arr[1] == false);
 
     if (fails == 0)
     {
         println("[bits] OK |= &= ^= against std::vector<bool>, neighbouring elements in parallel");
     }
-    m.clear();
-    a.clear();
+    small.clear();
+    arr.clear();
     return fails;
 }
 
-int advisor_and_rechunk(long n)
+int advisor_and_rechunk(long count)
 {
-    ArrayChunkBits<> a(n);
+    ArrayChunkBits<> arr(count);
     int              fails = 0;
     if constexpr (build_config::chunk_dynamic)
     {
-        a.rechunk_to(256); // room for a finer row (the advisor stops at 64)
+        arr.rechunk_to(256); // room for a finer row (the advisor stops at 64)
     }
-    const long s = static_cast<long>(a.chunk_size());
+    const long chunk_sz = static_cast<long>(arr.chunk_size());
 
     // Runs of whole chunks: all false, all true, and chunks whose first half
     // is all true and second half mixed.
-    const auto pattern = [s](long i)
+    const auto pattern = [chunk_sz](long i)
     {
         const long run = (i / run_len) % 3;
         if (run != 2)
         {
             return run == 1;
         }
-        return (i % s) < s / 2 ? true : varied(i);
+        return (i % chunk_sz) < chunk_sz / 2 ? true : varied(i);
     };
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
-            a[i] = pattern(i);
+            arr[i] = pattern(i);
         }
     }
     end_phase();
@@ -422,86 +422,87 @@ int advisor_and_rechunk(long n)
     {
         begin_phase();
 #pragma omp single
-        a.compress();
+        arr.compress();
     }
     end_phase();
-    std::vector<bool> ref(static_cast<std::size_t>(n));
-    for (long i = 0; i < n; ++i)
+    std::vector<bool> ref(static_cast<std::size_t>(count));
+    for (long i = 0; i < count; ++i)
     {
         ref[static_cast<std::size_t>(i)] = pattern(i);
     }
-    fails += compare(a, ref, "advisor setup") != 0;
+    fails += compare(arr, ref, "advisor setup") != 0;
 
-    const long mat_expected = (n / run_len) / 3 * (run_len / s);
+    const long mat_expected = (count / run_len) / 3 * (run_len / chunk_sz);
     // The advisor does not evaluate below Options::min_size (64): at S=64 the
     // S/2 row exists only if asked for, so ask -- the finer path is what this
     // check is about. No change for S >= 128.
     typename ChunkSizeAdvisor<Bit>::Options opt;
-    if (static_cast<long>(opt.min_size) > s / 2)
+    if (static_cast<long>(opt.min_size) > chunk_sz / 2)
     {
-        opt.min_size = static_cast<std::uint32_t>(s / 2);
+        opt.min_size = static_cast<std::uint32_t>(chunk_sz / 2);
     }
-    const auto rep = ChunkSizeAdvisor<Bit>::analyze(a, opt);
+    const auto rep = ChunkSizeAdvisor<Bit>::analyze(arr, opt);
     if (rep.cur < 0)
     {
-        println("[bits] FAIL advisor: no row for the current size {}", s);
+        println("[bits] FAIL advisor: no row for the current size {}", chunk_sz);
         return fails + 1;
     }
     const auto&  cur        = rep.table[static_cast<std::size_t>(rep.cur)];
     const double data_bytes = cur.mem_bytes - (static_cast<double>(cur.n_chunks) * rep.meta_bytes);
-    if (cur.mat != mat_expected || data_bytes != static_cast<double>(mat_expected) * static_cast<double>(s) / 8.)
+    if (cur.mat != mat_expected || data_bytes != static_cast<double>(mat_expected) * static_cast<double>(chunk_sz) / 8.)
     {
         println("[bits] FAIL advisor exact row: mat {} (expected {}), data {:.0f} B (expected {:.0f})",
                 static_cast<long long>(cur.mat), mat_expected, data_bytes,
-                static_cast<double>(mat_expected) * static_cast<double>(s) / 8.);
+                static_cast<double>(mat_expected) * static_cast<double>(chunk_sz) / 8.);
         ++fails;
     }
     // At S/2 each such chunk is one compressible half (all true) and one mixed.
     bool seen_half = false;
     for (const auto& row : rep.table)
     {
-        if (static_cast<long>(row.size) == s / 2)
+        if (static_cast<long>(row.size) == chunk_sz / 2)
         {
-            seen_half      = true;
-            const double r = static_cast<double>(row.mat) / static_cast<double>(mat_expected);
-            if (r < 0.98 || r > 1.02)
+            seen_half          = true;
+            const double ratio = static_cast<double>(row.mat) / static_cast<double>(mat_expected);
+            if (ratio < 0.98 || ratio > 1.02)
             {
-                println("[bits] FAIL advisor finer row S={}: mat {}, expected ~{}", s / 2,
+                println("[bits] FAIL advisor finer row S={}: mat {}, expected ~{}", chunk_sz / 2,
                         static_cast<long long>(row.mat), mat_expected);
                 ++fails;
             }
         }
     }
     // S / 2 is a candidate only when it is a chunk size (192 / 2 = 96 is not).
-    if (!seen_half && is_valid_chunk_size(static_cast<unsigned int>(s / 2)))
+    if (!seen_half && is_valid_chunk_size(static_cast<unsigned int>(chunk_sz / 2)))
     {
-        println("[bits] FAIL advisor: no finer row at S={}", s / 2);
+        println("[bits] FAIL advisor: no finer row at S={}", chunk_sz / 2);
         ++fails;
     }
 
     // bool (one byte per element): the advisor analyses it too.
     {
-        zero_one_value::Array<bool> b(n);
-        for (long i = 0; i < n; ++i)
+        zero_one_value::Array<bool> bools(count);
+        for (long i = 0; i < count; ++i)
         {
-            b[i] = pattern(i);
+            bools[i] = pattern(i);
         }
-        const auto rb = ChunkSizeAdvisor<bool>::analyze(b);
+        const auto rb = ChunkSizeAdvisor<bool>::analyze(bools);
         fails += rb.cur < 0;
-        b.clear();
+        bools.clear();
     }
 
     if constexpr (build_config::chunk_dynamic)
     {
-        for (const unsigned to : {static_cast<unsigned>(s / 2), static_cast<unsigned>(s * 2), static_cast<unsigned>(s)})
+        for (const unsigned to : {static_cast<unsigned>(chunk_sz / 2), static_cast<unsigned>(chunk_sz * 2),
+                                  static_cast<unsigned>(chunk_sz)})
         {
-            a.rechunk_to(to);
-            if (a.chunk_size() != to)
+            arr.rechunk_to(to);
+            if (arr.chunk_size() != to)
             {
-                println("[bits] FAIL rechunk: geometry {}, expected {}", a.chunk_size(), to);
+                println("[bits] FAIL rechunk: geometry {}, expected {}", arr.chunk_size(), to);
                 ++fails;
             }
-            fails += compare(a, ref, std::format("after rechunk_to({})", to)) != 0;
+            fails += compare(arr, ref, std::format("after rechunk_to({})", to)) != 0;
         }
     }
 
@@ -510,72 +511,72 @@ int advisor_and_rechunk(long n)
         println("[bits] OK advisor (exact row, S/8 bytes, finer row by word){}",
                 build_config::chunk_dynamic ? ", rechunk down and up" : "");
     }
-    a.clear();
+    arr.clear();
     return fails;
 }
 
-int bulk_ranges(long n)
+int bulk_ranges(long count)
 {
-    ArrayChunkBits<>  a(n);
-    std::vector<bool> ref(static_cast<std::size_t>(n), false);
-    const long        s     = static_cast<long>(a.chunk_size());
-    int               fails = 0;
+    ArrayChunkBits<>  arr(count);
+    std::vector<bool> ref(static_cast<std::size_t>(count), false);
+    const long        chunk_sz = static_cast<long>(arr.chunk_size());
+    int               fails    = 0;
 
     // A start with constant and mixed chunks.
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
-        const bool v                     = ((i / run_len) % 3 == 1) || ((i / run_len) % 3 == 2 && varied(i));
-        a[i]                             = v;
-        ref[static_cast<std::size_t>(i)] = v;
+        const bool value                 = ((i / run_len) % 3 == 1) || ((i / run_len) % 3 == 2 && varied(i));
+        arr[i]                           = value;
+        ref[static_cast<std::size_t>(i)] = value;
     }
 
     std::mt19937_64   rng(4242);
-    std::vector<bool> src(static_cast<std::size_t>(n));
-    for (long i = 0; i < n; ++i)
+    std::vector<bool> src(static_cast<std::size_t>(count));
+    for (long i = 0; i < count; ++i)
     {
         src[static_cast<std::size_t>(i)] = ((i * 2654435761L) >> 7) % 3 == 0;
     }
 
     for (int round = 0; round < 400; ++round)
     {
-        long first = static_cast<long>(rng() % static_cast<std::uint64_t>(n));
-        long len   = static_cast<long>(rng() % static_cast<std::uint64_t>(4 * s)) + 1;
+        long first = static_cast<long>(rng() % static_cast<std::uint64_t>(count));
+        long len   = static_cast<long>(rng() % static_cast<std::uint64_t>(4 * chunk_sz)) + 1;
         if (round % 5 == 0) // whole chunks
         {
-            first = first / s * s;
-            len   = s * (1 + static_cast<long>(rng() % 3));
+            first = first / chunk_sz * chunk_sz;
+            len   = chunk_sz * (1 + static_cast<long>(rng() % 3));
         }
-        const long last = std::min(n, first + len);
+        const long last = std::min(count, first + len);
         if (round % 2 == 0)
         {
-            const bool v = (rng() & 1) != 0;
-            fill_range(a, static_cast<std::size_t>(first), static_cast<std::size_t>(last), v);
+            const bool value = (rng() & 1) != 0;
+            fill_range(arr, static_cast<std::size_t>(first), static_cast<std::size_t>(last), value);
             for (long i = first; i < last; ++i)
             {
-                ref[static_cast<std::size_t>(i)] = v;
+                ref[static_cast<std::size_t>(i)] = value;
             }
         }
         else
         {
-            copy_range(a, static_cast<std::size_t>(first), static_cast<std::size_t>(last), src.begin() + first);
+            copy_range(arr, static_cast<std::size_t>(first), static_cast<std::size_t>(last), src.begin() + first);
             for (long i = first; i < last; ++i)
             {
                 ref[static_cast<std::size_t>(i)] = src[static_cast<std::size_t>(i)];
             }
         }
     }
-    fails += compare(a, ref, "fill_range / copy_range") != 0;
+    fails += compare(arr, ref, "fill_range / copy_range") != 0;
 
     // Whole chunks filled with each constant must compress in the next pass.
-    const long c0 = (n / s) / 4;
-    const long c1 = (n / s) / 2;
-    fill_range(a, static_cast<std::size_t>(c0 * s), static_cast<std::size_t>((c0 + 3) * s), false);
-    fill_range(a, static_cast<std::size_t>(c1 * s), static_cast<std::size_t>((c1 + 3) * s), true);
-    for (long i = c0 * s; i < (c0 + 3) * s; ++i)
+    const long c0 = (count / chunk_sz) / 4;
+    const long c1 = (count / chunk_sz) / 2;
+    fill_range(arr, static_cast<std::size_t>(c0 * chunk_sz), static_cast<std::size_t>((c0 + 3) * chunk_sz), false);
+    fill_range(arr, static_cast<std::size_t>(c1 * chunk_sz), static_cast<std::size_t>((c1 + 3) * chunk_sz), true);
+    for (long i = c0 * chunk_sz; i < (c0 + 3) * chunk_sz; ++i)
     {
         ref[static_cast<std::size_t>(i)] = false;
     }
-    for (long i = c1 * s; i < (c1 + 3) * s; ++i)
+    for (long i = c1 * chunk_sz; i < (c1 + 3) * chunk_sz; ++i)
     {
         ref[static_cast<std::size_t>(i)] = true;
     }
@@ -583,14 +584,14 @@ int bulk_ranges(long n)
     {
         begin_phase();
 #pragma omp single
-        a.compress();
+        arr.compress();
     }
     end_phase();
-    fails += compare(a, ref, "after the pass") != 0;
+    fails += compare(arr, ref, "after the pass") != 0;
     for (long c = 0; c < 3; ++c)
     {
-        if (a.get_chunk_list()[static_cast<std::size_t>(c0 + c)].written() ||
-            a.get_chunk_list()[static_cast<std::size_t>(c1 + c)].written())
+        if (arr.get_chunk_list()[static_cast<std::size_t>(c0 + c)].written() ||
+            arr.get_chunk_list()[static_cast<std::size_t>(c1 + c)].written())
         {
             println("[bits] FAIL fill_range: whole chunk {} / {} filled with a constant still materialised", c0 + c,
                     c1 + c);
@@ -603,20 +604,20 @@ int bulk_ranges(long n)
     {
         println("[bits] OK fill_range / copy_range (64 per word), constant chunks compressed after the pass");
     }
-    a.clear();
+    arr.clear();
     return fails;
 }
 
-int parallel_fill(long n)
+int parallel_fill(long count)
 {
-    ArrayChunkBits<>  a(n);
-    std::vector<bool> ref(static_cast<std::size_t>(n), false);
+    ArrayChunkBits<>  arr(count);
+    std::vector<bool> ref(static_cast<std::size_t>(count), false);
     int               fails = 0;
 
     std::vector<std::pair<long, long>> spans;
-    for (long lo = 0, len = 1; lo < n; lo += len, len = (len % 97) + 1)
+    for (long lo = 0, len = 1; lo < count; lo += len, len = (len % 97) + 1)
     {
-        spans.emplace_back(lo, std::min(n, lo + len));
+        spans.emplace_back(lo, std::min(count, lo + len));
     }
     const auto nspans = static_cast<long>(spans.size());
 
@@ -628,49 +629,49 @@ int parallel_fill(long n)
 #pragma omp for schedule(static, 1)
             for (long s = 0; s < nspans; ++s)
             {
-                const bool v = pass == 0 ? (s % 3 != 0) : (s % 2 == 0);
-                fill_range_mt(a, static_cast<std::size_t>(spans[static_cast<std::size_t>(s)].first),
-                              static_cast<std::size_t>(spans[static_cast<std::size_t>(s)].second), v);
+                const bool value = pass == 0 ? (s % 3 != 0) : (s % 2 == 0);
+                fill_range_mt(arr, static_cast<std::size_t>(spans[static_cast<std::size_t>(s)].first),
+                              static_cast<std::size_t>(spans[static_cast<std::size_t>(s)].second), value);
             }
         }
         end_phase();
         for (long s = 0; s < nspans; ++s)
         {
-            const bool v = pass == 0 ? (s % 3 != 0) : (s % 2 == 0);
+            const bool value = pass == 0 ? (s % 3 != 0) : (s % 2 == 0);
             for (long i = spans[static_cast<std::size_t>(s)].first; i < spans[static_cast<std::size_t>(s)].second; ++i)
             {
-                ref[static_cast<std::size_t>(i)] = v;
+                ref[static_cast<std::size_t>(i)] = value;
             }
         }
-        fails += compare(a, ref, pass == 0 ? "fill_range_mt pass 1" : "fill_range_mt pass 2") != 0;
+        fails += compare(arr, ref, pass == 0 ? "fill_range_mt pass 1" : "fill_range_mt pass 2") != 0;
     }
     if (fails == 0)
     {
         println("[bits] OK fill_range_mt from {} threads, neighbouring spans in one word", CHUNK_PMP_MAX_THREADS);
     }
-    a.clear();
+    arr.clear();
     return fails;
 }
 
-int parallel_copy_transform(long n)
+int parallel_copy_transform(long count)
 {
-    ArrayChunkBits<>  a(n);
-    std::vector<bool> ref(static_cast<std::size_t>(n), false);
+    ArrayChunkBits<>  arr(count);
+    std::vector<bool> ref(static_cast<std::size_t>(count), false);
     int               fails = 0;
 
     // Runs of ones and zeros, and a mixed stretch: spans copied whole uniform
     // and spans copied mixed.
-    std::vector<std::uint8_t> src(static_cast<std::size_t>(n));
-    for (long i = 0; i < n; ++i)
+    std::vector<std::uint8_t> src(static_cast<std::size_t>(count));
+    for (long i = 0; i < count; ++i)
     {
         src[static_cast<std::size_t>(i)] =
             (i / 300) % 3 == 2 ? static_cast<std::uint8_t>(i % 5 == 0) : static_cast<std::uint8_t>((i / 300) % 3 == 0);
     }
 
     std::vector<std::pair<long, long>> spans;
-    for (long lo = 0, len = 1; lo < n; lo += len, len = (len % 97) + 1)
+    for (long lo = 0, len = 1; lo < count; lo += len, len = (len % 97) + 1)
     {
-        spans.emplace_back(lo, std::min(n, lo + len));
+        spans.emplace_back(lo, std::min(count, lo + len));
     }
     const auto nspans = static_cast<long>(spans.size());
 
@@ -686,29 +687,29 @@ int parallel_copy_transform(long n)
                 const auto hi = static_cast<std::size_t>(spans[static_cast<std::size_t>(s)].second);
                 if (pass == 0)
                 {
-                    copy_range_mt(a, lo, hi, src.begin() + static_cast<std::ptrdiff_t>(lo));
+                    copy_range_mt(arr, lo, hi, src.begin() + static_cast<std::ptrdiff_t>(lo));
                 }
                 else
                 {
-                    transform_range_mt(a, lo, hi, src.begin() + static_cast<std::ptrdiff_t>(lo),
-                                       [](std::uint8_t x) { return x == 0; });
+                    transform_range_mt(arr, lo, hi, src.begin() + static_cast<std::ptrdiff_t>(lo),
+                                       [](std::uint8_t byte) { return byte == 0; });
                 }
             }
         }
         end_phase();
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
-            const bool v                     = src[static_cast<std::size_t>(i)] != 0;
-            ref[static_cast<std::size_t>(i)] = pass == 0 ? v : !v;
+            const bool value                 = src[static_cast<std::size_t>(i)] != 0;
+            ref[static_cast<std::size_t>(i)] = pass == 0 ? value : !value;
         }
-        fails += compare(a, ref, pass == 0 ? "copy_range_mt" : "transform_range_mt") != 0;
+        fails += compare(arr, ref, pass == 0 ? "copy_range_mt" : "transform_range_mt") != 0;
     }
     if (fails == 0)
     {
         println("[bits] OK copy_range_mt / transform_range_mt from {} threads, neighbouring spans in one word",
                 CHUNK_PMP_MAX_THREADS);
     }
-    a.clear();
+    arr.clear();
     return fails;
 }
 
@@ -718,20 +719,20 @@ int run(int argc, char** argv)
 {
     // 85 runs: whole runs and whole chunks at every size the harness is built at.
     constexpr long default_n = 85 * run_len;
-    const long     n         = argc > 1 ? shrink_array::arg_number<long>(argv[1], default_n, "N") : default_n;
+    const long     count     = argc > 1 ? shrink_array::arg_number<long>(argv[1], default_n, "N") : default_n;
     ParamChunk::init_indexes(true);
 
-    println("=== bits_container_validation  N={}  threads={} ===", n, CHUNK_PMP_MAX_THREADS);
+    println("=== bits_container_validation  N={}  threads={} ===", count, CHUNK_PMP_MAX_THREADS);
     int fails = 0;
     fails += birth_size();
     fails += surface();
-    fails += round_trip(n);
-    fails += neighbours(n);
-    fails += logical_ops(n);
-    fails += advisor_and_rechunk(n);
-    fails += bulk_ranges(n);
-    fails += parallel_fill(n);
-    fails += parallel_copy_transform(n);
+    fails += round_trip(count);
+    fails += neighbours(count);
+    fails += logical_ops(count);
+    fails += advisor_and_rechunk(count);
+    fails += bulk_ranges(count);
+    fails += parallel_fill(count);
+    fails += parallel_copy_transform(count);
 
     release_chunk_pools();
     destroy_block_chunk();

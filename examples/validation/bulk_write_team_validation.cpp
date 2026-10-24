@@ -88,16 +88,16 @@ constexpr const char* variant_name()
 
 /// @brief Runs of zero, runs of 7 and varied values, by blocks of 1000.
 template <typename T>
-T value_at(long i)
+T value_at(long index)
 {
-    switch ((i / 1000) % 3)
+    switch ((index / 1000) % 3)
     {
         case 0:
             return T{};
         case 1:
             return static_cast<T>(7);
         default:
-            return static_cast<T>((i % 97) + 1);
+            return static_cast<T>((index % 97) + 1);
     }
 }
 
@@ -140,47 +140,47 @@ int check(const char* type, const char* step, Array<T>& arr, const std::vector<T
 }
 
 template <typename T>
-int run_type(const char* type, long n)
+int run_type(const char* type, long count)
 {
     int            fails = 0;
-    std::vector<T> ref(static_cast<std::size_t>(n));
-    Array<T>       a(static_cast<int>(n));
-    for (long i = 0; i < n; ++i)
+    std::vector<T> ref(static_cast<std::size_t>(count));
+    Array<T>       arr(static_cast<int>(count));
+    for (long i = 0; i < count; ++i)
     {
         ref[static_cast<std::size_t>(i)] = value_at<T>(i);
-        a[static_cast<int>(i)]           = value_at<T>(i);
+        arr[static_cast<int>(i)]         = value_at<T>(i);
     }
-    fails += check(type, "source", a, ref);
+    fails += check(type, "source", arr, ref);
 
     // Copy constructor.
-    Array<T> b(a);
-    fails += check(type, "copy-construct", b, ref);
+    Array<T> copy(arr);
+    fails += check(type, "copy-construct", copy, ref);
 
     // Copy assignment into an array of another size and content.
-    Array<T> c(static_cast<int>(n / 3));
-    for (long i = 0; i < n / 3; ++i)
+    Array<T> small(static_cast<int>(count / 3));
+    for (long i = 0; i < count / 3; ++i)
     {
-        c[static_cast<int>(i)] = static_cast<T>(3);
+        small[static_cast<int>(i)] = static_cast<T>(3);
     }
-    c = a;
-    fails += check(type, "copy-assign", c, ref);
+    small = arr;
+    fails += check(type, "copy-assign", small, ref);
 
     if constexpr (chunk_config::use_zero_any)
     {
-        if (!(b == a) || !(c == a))
+        if (!(copy == arr) || !(small == arr))
         {
             println("[{}/{}] FAIL: operator== on equal arrays", variant_name(), type);
             ++fails;
         }
-        b[static_cast<int>(n - 2)] = static_cast<T>(55);
-        if (b == a)
+        copy[static_cast<int>(count - 2)] = static_cast<T>(55);
+        if (copy == arr)
         {
             println("[{}/{}] FAIL: operator== misses a difference near the end", variant_name(), type);
             ++fails;
         }
-        b[static_cast<int>(n - 2)] = ref[static_cast<std::size_t>(n - 2)];
-        c[1]                       = static_cast<T>(55);
-        if (c == a)
+        copy[static_cast<int>(count - 2)] = ref[static_cast<std::size_t>(count - 2)];
+        small[1]                          = static_cast<T>(55);
+        if (small == arr)
         {
             println("[{}/{}] FAIL: operator== misses a difference at the start", variant_name(), type);
             ++fails;
@@ -188,36 +188,37 @@ int run_type(const char* type, long n)
     }
 
     // assign(count, val): a value, then the first constant.
-    b.assign(static_cast<int>(n + n / 2), static_cast<T>(9));
-    fails += check(type, "assign-9", b, std::vector<T>(static_cast<std::size_t>(n + n / 2), static_cast<T>(9)));
-    b.assign(static_cast<int>(n), T{});
-    fails += check(type, "assign-0", b, std::vector<T>(static_cast<std::size_t>(n), T{}));
+    copy.assign(static_cast<int>(count + count / 2), static_cast<T>(9));
+    fails +=
+        check(type, "assign-9", copy, std::vector<T>(static_cast<std::size_t>(count + count / 2), static_cast<T>(9)));
+    copy.assign(static_cast<int>(count), T{});
+    fails += check(type, "assign-0", copy, std::vector<T>(static_cast<std::size_t>(count), T{}));
 
     // assign(first, last): random access (a team), forward (in order).
-    b.assign(ref.begin(), ref.end());
-    fails += check(type, "assign-random-access", b, ref);
+    copy.assign(ref.begin(), ref.end());
+    fails += check(type, "assign-random-access", copy, ref);
     std::forward_list<T> fl;
     for (long i = 999; i >= 0; --i)
     {
         fl.push_front(value_at<T>(i + 1000));
     }
     const std::vector<T> ref_fl(fl.begin(), fl.end());
-    b.assign(fl.begin(), fl.end());
-    fails += check(type, "assign-forward", b, ref_fl);
+    copy.assign(fl.begin(), fl.end());
+    fails += check(type, "assign-forward", copy, ref_fl);
 
-    // resize(n, val): the new elements only.
+    // resize(count, val): the new elements only.
     std::vector<T> ref_grow = ref;
-    ref_grow.resize(static_cast<std::size_t>(n + n / 2), static_cast<T>(5));
-    a.resize(static_cast<int>(n + n / 2), static_cast<T>(5));
-    fails += check(type, "resize-grow-val", a, ref_grow);
+    ref_grow.resize(static_cast<std::size_t>(count + count / 2), static_cast<T>(5));
+    arr.resize(static_cast<int>(count + count / 2), static_cast<T>(5));
+    fails += check(type, "resize-grow-val", arr, ref_grow);
 
     // A shrink large enough for its release to take a team, then a growth.
-    ref_grow.resize(static_cast<std::size_t>(n / 4));
-    a.resize(static_cast<int>(n / 4));
-    fails += check(type, "resize-shrink", a, ref_grow);
-    ref_grow.resize(static_cast<std::size_t>(n), T{});
-    a.resize(static_cast<int>(n));
-    fails += check(type, "resize-grow-again", a, ref_grow);
+    ref_grow.resize(static_cast<std::size_t>(count / 4));
+    arr.resize(static_cast<int>(count / 4));
+    fails += check(type, "resize-shrink", arr, ref_grow);
+    ref_grow.resize(static_cast<std::size_t>(count), T{});
+    arr.resize(static_cast<int>(count));
+    fails += check(type, "resize-grow-again", arr, ref_grow);
 
     // Inside a region: each thread its own small array, on the calling thread.
     // One thread at a time (a mutex, not `omp critical`: the region is a team
@@ -234,26 +235,26 @@ int run_type(const char* type, long n)
             {
                 const std::scoped_lock lock(one_at_a_time);
                 const int              n_region = 3000;
-                std::vector<T>         r(static_cast<std::size_t>(n_region));
-                Array<T>               s(n_region);
+                std::vector<T>         ref(static_cast<std::size_t>(n_region));
+                Array<T>               src(n_region);
                 for (int i = 0; i < n_region; ++i)
                 {
-                    r[static_cast<std::size_t>(i)] = value_at<T>(i);
-                    s[i]                           = value_at<T>(i);
+                    ref[static_cast<std::size_t>(i)] = value_at<T>(i);
+                    src[i]                           = value_at<T>(i);
                 }
-                Array<T> t(s);
-                int      f = compare(type, "in-region-copy", t, r);
-                t.assign(n_region, static_cast<T>(4));
-                f += compare(type, "in-region-assign", t,
-                             std::vector<T>(static_cast<std::size_t>(n_region), static_cast<T>(4)));
-                region_fails += f; // under the lock
+                Array<T> dst(src);
+                int      fails = compare(type, "in-region-copy", dst, ref);
+                dst.assign(n_region, static_cast<T>(4));
+                fails += compare(type, "in-region-assign", dst,
+                                 std::vector<T>(static_cast<std::size_t>(n_region), static_cast<T>(4)));
+                region_fails += fails; // under the lock
             }
         });
     fails += region_fails;
 
     if (fails == 0)
     {
-        println("[{}/{}] OK: N={} copy, assign, resize(n, val), shrink{}", variant_name(), type, n,
+        println("[{}/{}] OK: N={} copy, assign, resize(n, val), shrink{}", variant_name(), type, count,
                 chunk_config::use_zero_any ? ", operator==" : "");
     }
     return fails;
@@ -264,13 +265,13 @@ int run_type(const char* type, long n)
 int run(int argc, char** argv)
 {
     ParamChunk::init_indexes(true);
-    const long n = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
+    const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
     println("=== bulk_write_team_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
-    fails += run_type<double>("double", n);
-    fails += run_type<int>("int", n);
+    fails += run_type<double>("double", count);
+    fails += run_type<int>("int", count);
 
     release_chunk_pools();
     destroy_block_chunk();

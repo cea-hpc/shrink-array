@@ -26,7 +26,7 @@
 
 #include "chunk/zero_array.h"           // shrink_array::zero::Array
 #include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array
-#include "Dispatch.h"           // Dispatch (extern dispatch)
+#include "Dispatch.h"                   // Dispatch (extern dispatch)
 
 extern Dispatch dispatch;
 
@@ -43,9 +43,9 @@ class VectCom
     virtual ~VectCom() = default;
 
     /// @brief The material this array belongs to.
-    void set_ind(int i)
+    void set_ind(int index)
     {
-        ind_ = i;
+        ind_ = index;
     }
 
   private:
@@ -140,10 +140,10 @@ class MultiArray : public std::vector<VectCom<T>*>
     /// @brief Delete every array and empty the vector.
     void release() noexcept
     {
-        for (VectCom<T>*& p : *this)
+        for (VectCom<T>*& vec : *this)
         {
-            delete p;
-            p = nullptr;
+            delete vec;
+            vec = nullptr;
         }
         BaseClass::clear();
     }
@@ -159,17 +159,17 @@ void MultiArray<T, VecChunk>::create(int nbmat, int mesh_size)
     {
         if (dispatch.is_chunk(k))
         {
-            auto* v = new VecChunk;
-            v->set_ind(k);
-            v->create(mesh_size);
-            (*this)[k] = v;
+            auto* vec = new VecChunk;
+            vec->set_ind(k);
+            vec->create(mesh_size);
+            (*this)[k] = vec;
         }
         else
         {
-            auto* v = new VecDir;
-            v->set_ind(k);
-            v->create(mesh_size);
-            (*this)[k] = v;
+            auto* vec = new VecDir;
+            vec->set_ind(k);
+            vec->create(mesh_size);
+            (*this)[k] = vec;
         }
     }
 }

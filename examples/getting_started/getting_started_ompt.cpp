@@ -45,37 +45,37 @@ static_assert(sa::build_config::not_use_openmp || sa::build_config::has_ompt,
 // the rest of the first half one constant (those chunks compress), the second
 // half is never written (compressed from the start).
 template <typename Array>
-static void fill(Array& t, int n)
+static void fill(Array& arr, int count)
 {
 #pragma omp parallel for
-    for (int i = 0; i < n / 2; ++i)
+    for (int i = 0; i < count / 2; ++i)
     {
-        t[i] = i < n / 8 ? 1.0 + static_cast<double>(i % 7) : 3.5;
+        arr[i] = i < count / 8 ? 1.0 + static_cast<double>(i % 7) : 3.5;
     }
 }
 
 int main()
 {
-    const int                   n = 1 << 24; // 16 M doubles: 128 MiB as a std::vector
-    std::vector<double>         v(n);        // the reference: every element 0.0
-    sa::zero_any::Array<double> a(n);        // every element 0.0, no buffer allocated yet
+    const int                   count = 1 << 24; // 16 M doubles: 128 MiB as a std::vector
+    std::vector<double>         ref(count);      // the reference: every element 0.0
+    sa::zero_any::Array<double> arr(count);      // every element 0.0, no buffer allocated yet
 
-    fill(v, n);
-    fill(a, n); // the same parallel loop: no parallel_phase(), no begin/finalize calls
+    fill(ref, count);
+    fill(arr, count); // the same parallel loop: no parallel_phase(), no begin/finalize calls
 
     // Read back in parallel, through a const reference (operator[] then returns a double).
-    const auto& ca   = std::as_const(a);
+    const auto& ca   = std::as_const(arr);
     int         diff = 0;
 #pragma omp parallel for reduction(+ : diff)
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < count; ++i)
     {
-        if (ca[i] != v[i])
+        if (ca[i] != ref[i])
         {
             ++diff;
         }
     }
 
-    println("n = {} elements, {} different from the std::vector, chunks holding a buffer: {:.1f} %", n, diff,
-            a.stats());
+    println("n = {} elements, {} different from the std::vector, chunks holding a buffer: {:.1f} %", count, diff,
+            arr.stats());
     return diff == 0 ? 0 : 1;
 }

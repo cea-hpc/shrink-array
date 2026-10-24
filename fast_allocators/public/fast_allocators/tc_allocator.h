@@ -73,6 +73,7 @@
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
+#include "fast_allocators/internal/raw_memory.h"      // address_bits, load_from_bytes, store_to_bytes
 #include "fast_allocators/internal/alloc_config.h"    // alloc_config::use_std_alloc / is_debug / threaded
 #include "fast_allocators/internal/lifetime.h"        // fast_alloc::start_lifetime_as(_array)
 #include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
@@ -257,12 +258,12 @@ class alignas(64) TCSlab
     [[nodiscard]] inline void* alloc() noexcept;
 
     /**
-     * @brief Take element @p i back. Its bytes are left as they are, but for
+     * @brief Take element @p elem back. Its bytes are left as they are, but for
      *        the free-list link written over its head when the links are in
      *        the payload.
-     * @param i Index from num_block() / num_block_pow2().
+     * @param elem Index from num_block() / num_block_pow2().
      */
-    inline void free_block(int i) noexcept;
+    inline void free_block(int elem) noexcept;
 
     /// @brief Make an emptied slab fresh again: bump index back to the start,
     ///        free list empty. For a slab revived from a pool's reserve.
@@ -333,12 +334,8 @@ class alignas(64) TCSlab
     [[nodiscard]] static TCSlab* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
     {
         // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
-        const std::byte* base =
-            static_cast<const std::byte*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & (slab_bytes - 1));
-        // A read of the object the slab's constructor created there (its
-        // start_lifetime_as, tc_allocator_inline.h): launder reaches it;
-        // starting a lifetime again would end it, under concurrent readers.
-        return *std::launder(reinterpret_cast<TCSlab* const*>(base + slab_bytes - sizeof(void*)));
+        const std::byte* base = static_cast<const std::byte*>(ptr) - (fast_alloc::address_bits(ptr) & (slab_bytes - 1));
+        return fast_alloc::load_from_bytes<TCSlab*>(base + slab_bytes - sizeof(void*));
     }
 
 // Declaration-level switch, so it stays a directive: serial builds route slab
@@ -401,18 +398,30 @@ class alignas(64) TCSlab
     {
     };
 
-    /// @brief The free-list link of element @p i.
-    [[nodiscard]] IndexType& link(int i) noexcept
+    /// @brief The free-list link of element @p elem.
+    [[nodiscard]] IndexType link(int elem) const noexcept
     {
         if constexpr (side_links)
         {
-            return tab_first_free_[static_cast<std::size_t>(i)];
+            return tab_first_free_[static_cast<std::size_t>(elem)];
         }
         else
         {
-            // store the index in the first bytes of the element: a freed
-            // element becomes its link, until alloc() hands it out again
-            return *fast_alloc::start_lifetime_as<IndexType>(data + (static_cast<std::ptrdiff_t>(i) * element_size));
+            // the index sits in the first bytes of the free element
+            return fast_alloc::load_from_bytes<IndexType>(data + (static_cast<std::ptrdiff_t>(elem) * element_size));
+        }
+    }
+
+    /// @brief Set the free-list link of element @p elem to @p next_free.
+    void set_link(int elem, IndexType next_free) noexcept
+    {
+        if constexpr (side_links)
+        {
+            tab_first_free_[static_cast<std::size_t>(elem)] = next_free;
+        }
+        else
+        {
+            fast_alloc::store_to_bytes(data + (static_cast<std::ptrdiff_t>(elem) * element_size), next_free);
         }
     }
 
@@ -899,9 +908,9 @@ class TCSlabPool
         // Tested on the slab, not deduced from sizeof(ElementType): the element
         // COUNT need not be a power of two. One well-predicted branch.
         const auto size = static_cast<unsigned int>(slab->element_size);
-        const int  i    = std::has_single_bit(size) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
+        const int  elem = std::has_single_bit(size) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
 
-        slab->free_block(i);
+        slab->free_block(elem);
 
         manage_full_empty(slab);
     }
@@ -966,9 +975,9 @@ class TCSlabPool
      */
     std::size_t recycle_empty_slabs(std::vector<void*>& scratch) noexcept
     {
-        const std::size_t n = detach_empty_slabs(scratch);
+        const std::size_t detached = detach_empty_slabs(scratch);
         recycle_detached(scratch);
-        return n;
+        return detached;
     }
 
     /**
@@ -1053,15 +1062,15 @@ class TCSlabPool
 
     /**
      * @brief Choose which arena this pool's slabs are drawn from.
-     * @param k Op, Ctx or Value.
+     * @param kind Op, Ctx or Value.
      * @warning Must be set BEFORE the first slab is taken (copied into each
      *          slab at creation). fast_alloc::TCTypeAllocator defaults to Op: a pool that
      *          holds values must say so, or its slabs share the op pool's address
      *          space (the aliasing slab_arena.h prevents).
      */
-    void set_arena(fast_alloc::ArenaKind k) noexcept
+    void set_arena(fast_alloc::ArenaKind kind) noexcept
     {
-        arena_kind_ = k;
+        arena_kind_ = kind;
     }
 
     /// @brief Set the rank (thread) this instance serves, stamped into every
@@ -1075,9 +1084,9 @@ class TCSlabPool
     /// @brief Set the affinity key this instance serves (0, the default, is
     ///        the rank's shared pool), stamped into its slabs as owner_key;
     ///        before the first slab.
-    void set_key(unsigned k) noexcept
+    void set_key(unsigned key) noexcept
     {
-        key_ = k;
+        key_ = key;
     }
 
     /**
@@ -1090,9 +1099,10 @@ class TCSlabPool
 
         decltype(block_empty_)().swap(block_empty_); // releases the reserve's storage
 
-        element_size_ = 0;
-        block_full = block = nullptr;
-        nb_block_empty_    = 0;
+        element_size_   = 0;
+        block_full      = nullptr;
+        block           = nullptr;
+        nb_block_empty_ = 0;
     }
 
     Slab* block_full{nullptr}; ///< Slabs with no room left.
@@ -1460,18 +1470,20 @@ template <unsigned int ElementBytes, unsigned int BlockBytes>
 class TCAllocatorEB
 {
   public:
-    /// @brief The compile-time geometry: sizes in bytes, capacity in elements.
-    enum
-    {
-        element_size      = ElementBytes,
-        log2_element_size = std::bit_width(ElementBytes) - 1,
-        block_size        = BlockBytes,
-        block_size_pot    = static_cast<int>(std::bit_ceil(BlockBytes)), // int: the mask below must sign-extend
-        block_addr_mask   = ~(block_size_pot - 1),
-        get_size_of       = sizeof(TCAllocatorEB*),
-        used_block_size   = BlockBytes - get_size_of,
-        max_elements      = used_block_size / ElementBytes
-    };
+    /// @name The compile-time geometry: sizes in bytes, capacity in elements.
+    /// @details int, as the enumerators of the anonymous enum they were: the
+    ///          arithmetic below and at the use sites is unchanged, and
+    ///          block_addr_mask sign-extends into ~size_t(block_addr_mask).
+    /// @{
+    static constexpr int element_size      = static_cast<int>(ElementBytes);
+    static constexpr int log2_element_size = std::bit_width(ElementBytes) - 1;
+    static constexpr int block_size        = static_cast<int>(BlockBytes);
+    static constexpr int block_size_pot    = static_cast<int>(std::bit_ceil(BlockBytes));
+    static constexpr int block_addr_mask   = ~(block_size_pot - 1);
+    static constexpr int get_size_of       = static_cast<int>(sizeof(TCAllocatorEB*));
+    static constexpr int used_block_size   = block_size - get_size_of;
+    static constexpr int max_elements      = used_block_size / element_size;
+    /// @}
 
     /// @brief Free-list index type, as narrow as the element allows.
     using T = FreeIndexT<std::bit_floor(ElementBytes)>;
@@ -1554,22 +1566,22 @@ class TCAllocatorEB
     }
 
     /**
-     * @brief Take element @p i back.
-     * @param i Index from num_block() / num_block_pow2().
+     * @brief Take element @p elem back.
+     * @param elem Index from num_block() / num_block_pow2().
      * @details Freeing the element the bump pointer just handed out rewinds the
      *          bump instead of pushing onto the free list.
      */
-    void free_block(int i) noexcept
+    void free_block(int elem) noexcept
     {
-        if (i == (used_size - 1))
+        if (elem == (used_size - 1))
         {
-            *fast_alloc::start_lifetime_as<T>(data + (i * element_size)) = -1;
+            *fast_alloc::start_lifetime_as<T>(data + (elem * element_size)) = -1;
             --used_size;
         }
         else
         {
-            *fast_alloc::start_lifetime_as<T>(data + (i * element_size)) = static_cast<T>(first_free);
-            first_free                                                   = i;
+            *fast_alloc::start_lifetime_as<T>(data + (elem * element_size)) = static_cast<T>(first_free);
+            first_free                                                      = elem;
         }
         --nn_ref;
     }
@@ -1603,10 +1615,8 @@ class TCAllocatorEB
         // this pointer stored at the end of the block
         // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
         const std::byte* base =
-            static_cast<const std::byte*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & ~size_t(block_addr_mask));
-        // A read of the object the block's initialisation created there (its
-        // start_lifetime_as, below): launder reaches it, as in slab_from().
-        return *std::launder(reinterpret_cast<TCAllocatorEB* const*>(base + used_block_size));
+            static_cast<const std::byte*>(ptr) - (fast_alloc::address_bits(ptr) & ~size_t(block_addr_mask));
+        return fast_alloc::load_from_bytes<TCAllocatorEB*>(base + used_block_size);
     }
 
     std::byte* data = nullptr; ///< The block itself, aligned on #block_size_pot.
@@ -1639,8 +1649,7 @@ class TCAllocatorEB
      */
     int alloc_block()
     {
-        const long ps = fast_alloc::page_size();
-        if (ps > 0 && (2 * block_size) % ps == 0)
+        if (const long ps = fast_alloc::page_size(); ps > 0 && (2 * block_size) % ps == 0)
         {
             use_mmap_ = true;
 
@@ -1648,9 +1657,9 @@ class TCAllocatorEB
 
             std::byte* mapping = static_cast<std::byte*>(fast_alloc::map_anonymous(2 * block_size));
 
-            data = mapping + ((0 - reinterpret_cast<uintptr_t>(mapping)) & (block_bytes - 1)); // align up
+            data = mapping + ((0 - fast_alloc::address_bits(mapping)) & (block_bytes - 1)); // align up
 
-            const uintptr_t lng = reinterpret_cast<uintptr_t>(data) - reinterpret_cast<uintptr_t>(mapping);
+            const auto lng = static_cast<uintptr_t>(data - mapping);
             if (lng != 0 && munmap(mapping, lng) == -1)
             {
                 const int err = errno;
@@ -1667,9 +1676,7 @@ class TCAllocatorEB
             use_mmap_   = false;
             void* datal = nullptr;
 
-            const int result = posix_memalign(&datal, block_size_pot, block_size);
-
-            if (result != 0)
+            if (const int result = posix_memalign(&datal, block_size_pot, block_size); result != 0)
             {
                 CHUNK_LOG(error, alloc, "posix_memalign failed: error {} ({})", result, std::strerror(result));
                 return 1;
@@ -1677,7 +1684,7 @@ class TCAllocatorEB
             data = static_cast<std::byte*>(datal);
         }
 
-        *fast_alloc::start_lifetime_as<TCAllocatorEB*>(data + used_block_size) = this;
+        fast_alloc::store_to_bytes(data + used_block_size, this);
 
         first_free = -1;
 
@@ -1776,9 +1783,9 @@ class TCTypeAllocatorEBC
     {
         auto* slab = TCAllocatorEBT::addr_to_block(ptr);
 
-        const int i = slab->num_block(ptr);
+        const int elem = slab->num_block(ptr);
 
-        slab->free_block(i);
+        slab->free_block(elem);
 
         manage_full_empty(slab);
     }
@@ -1791,9 +1798,9 @@ class TCTypeAllocatorEBC
     {
         auto* slab = TCAllocatorEBT::addr_to_block(ptr);
 
-        const int i = slab->num_block_pow2(ptr);
+        const int elem = slab->num_block_pow2(ptr);
 
-        slab->free_block(i);
+        slab->free_block(elem);
 
         manage_full_empty(slab);
     }

@@ -57,14 +57,14 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
     const Int interval = bench_arr.interval;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
 
             Int begin_i = sz / 2;
             Int end_i   = sz - (sz / 3);
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -76,7 +76,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
             begin_i = end_i;
             end_i   = sz - (sz / 4);
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -88,7 +88,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
             begin_i = end_i;
             end_i   = std::min(begin_i + interval, sz);
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -110,7 +110,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
 // the window into point_sum, twice the reads of the writes, as the other
 // compute loops do.
 void bench_phase_struct_compute(BenchArrays&            bench_arr,
-                                Int                     k,
+                                Int                     iter,
                                 Int                     start0,
                                 Int                     end0,
                                 const std::vector<Int>& tab_nba1,
@@ -125,9 +125,9 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
     auto& tab_point = bench_arr.tab_point;
     auto& tab_cell  = bench_arr.tab_cell;
 
-    const Int  nba1 = tab_nba1[k];
-    const Int  nba2 = tab_nba2[k];
-    const auto dk   = static_cast<double>(k % 3);
+    const Int  nba1 = tab_nba1[iter];
+    const Int  nba2 = tab_nba2[iter];
+    const auto dk   = static_cast<double>(iter % 3);
 
     // Shared accumulator of the region, reduced by the loop (bench_prelude.h
     // on why not a `parallel reduction`).
@@ -141,11 +141,11 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
     const Int                  sched_base = sched.base;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
 
-            t.for_static_chunks<Int>(
+            team.for_static_chunks<Int>(
                 sched_base, end0, bench_par::block(sched_blk),
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -165,10 +165,10 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                     }
                     else
                     {
-                        const Point3& p = tab_point[i];
-                        const Cell&   c = tab_cell[i];
-                        tab_point[i]    = Point3{p.x + (0.5 * dk), (0.5 * p.y) + 1., p.z + p.x};
-                        tab_cell[i]     = Cell{(c.material + 1) & 7, (0.5f * c.fraction) + 0.25f};
+                        const Point3& point = tab_point[i];
+                        const Cell&   cell  = tab_cell[i];
+                        tab_point[i]        = Point3{point.x + (0.5 * dk), (0.5 * point.y) + 1., point.z + point.x};
+                        tab_cell[i]         = Cell{(cell.material + 1) & 7, (0.5f * cell.fraction) + 0.25f};
                     }
                 },
                 bench_par::nowait);
@@ -176,17 +176,17 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
             // No barrier between the two loops: same bounds, same schedule and block
             // size, so a thread reads back the elements it wrote itself (and a read
             // of its own deferred write goes through the read gate anyway).
-            bench_par::for_static_chunks_sum(t, sched_base, end0, bench_par::block(sched_blk), sum,
+            bench_par::for_static_chunks_sum(team, sched_base, end0, bench_par::block(sched_blk), sum,
                                              [&](const Int i, auto& sum_part) __attribute__((always_inline))
                                              {
                                                  if (i < start0)
                                                  {
                                                      return;
                                                  }
-                                                 const Point3& p = tab_point[i];
-                                                 const Cell&   c = tab_cell[i];
-                                                 sum_part += p.x + (p.y * static_cast<double>(c.fraction)) + p.z +
-                                                             static_cast<double>(c.material);
+                                                 const Point3& point = tab_point[i];
+                                                 const Cell&   cell  = tab_cell[i];
+                                                 sum_part += point.x + (point.y * static_cast<double>(cell.fraction)) +
+                                                             point.z + static_cast<double>(cell.material);
                                              });
 
             finalize_parallel_phase_only_flush_g();
@@ -210,11 +210,11 @@ void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0)
     auto& tab_cell  = bench_arr.tab_cell;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 start0, end0,
                 [&](const Int i) __attribute__((always_inline))
                 {

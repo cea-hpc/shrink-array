@@ -47,7 +47,8 @@
 #include <sys/mman.h>    // mmap, madvise
 #include <unistd.h>      // sysconf(_SC_PAGESIZE)
 #include <algorithm>     // std::max, the high-water mark
-#include <cstddef>       // std::size_t
+#include <bit>           // std::bit_cast (addr_ptr)
+#include <cstddef>       // std::size_t, std::byte (region_base_)
 #include <cstdint>       // std::uintptr_t, std::uint8_t
 #include <cstdlib>       // std::getenv
 #include <functional>    // std::less (the sweep orders slab pointers)
@@ -57,11 +58,13 @@
 #include <atomic>        // std::atomic, std::memory_order_relaxed
 #include <charconv>      // std::from_chars (CHUNK_RECLAIM_THREADS)
 #include <chrono>        // the sweep timer
-#include <cstring>       // std::strlen
+#include <cstring>       // std::strerror
+#include <string_view>   // std::string_view (reclaim_env_number)
 #include <unordered_map> // std::unordered_map
 #include <unordered_set> // std::unordered_set
 #include <system_error>  // std::errc (std::from_chars)
 
+#include "fast_allocators/internal/raw_memory.h"   // address_bits
 #include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
 #include "fast_allocators/internal/pmp_alloc.h"    // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
 #include "fast_allocators/internal/fatal.h"        // FAST_ALLOC_FATAL
@@ -113,23 +116,23 @@ inline std::atomic<std::size_t>& reclaim_sweeps() noexcept
 ///@{
 inline std::atomic<std::size_t>& reclaim_skip_live() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 inline std::atomic<std::size_t>& reclaim_skip_unaligned() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 inline std::atomic<std::size_t>& reclaim_skip_small() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 inline std::atomic<std::size_t>& reclaim_entered() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 ///@}
 
@@ -200,15 +203,16 @@ inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) no
     {
         return fallback;
     }
-    std::size_t v   = 0;
-    const char* end = env + std::strlen(env);
-    const auto  res = std::from_chars(env, end, v);
+    const std::string_view text{env};
+    const char* const      end   = text.data() + text.size();
+    std::size_t            value = 0;
+    const auto             res   = std::from_chars(text.data(), end, value);
     if (res.ec != std::errc{} || res.ptr != end)
     {
         CHUNK_LOG(warn, env, "{}=\"{}\" is not a valid value: ignored, {} kept", name, env, fallback);
         return fallback;
     }
-    return v;
+    return value;
 }
 
 /// @brief CHUNK_RECLAIM_THREADS (default 1 = serial): threads issuing the
@@ -216,16 +220,16 @@ inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) no
 ///        1 in a serial build).
 inline int reclaim_sweep_threads() noexcept
 {
-    static const int n = []
+    static const int threads = []
     {
-        const std::size_t v = reclaim_env_number("CHUNK_RECLAIM_THREADS", 1);
-        if (v == 0)
+        const std::size_t value = reclaim_env_number("CHUNK_RECLAIM_THREADS", 1);
+        if (value == 0)
         {
             return pmp::max_threads();
         }
-        return static_cast<int>(std::min<std::size_t>(v, 4096));
+        return static_cast<int>(std::min<std::size_t>(value, 4096));
     }();
-    return n;
+    return threads;
 }
 
 /// @brief The system page size, read once.
@@ -239,13 +243,14 @@ inline std::size_t reclaim_page_size() noexcept
     return page;
 }
 
-/// @brief The pointer at address @p addr. The arena keeps its addresses as
-///        integers (cursor, live set, runs) and only turns them back into
-///        pointers for the caller or a syscall (madvise, mincore), here.
+/// @brief Address @p addr as a syscall argument (madvise, mincore). The arena
+///        keeps its addresses as integers (cursor, live set, runs); the kernel
+///        takes them as such, nothing dereferences the result. A block handed
+///        to a caller is a pointer stepped from its region's base instead
+///        (SlabArena::allocate), which keeps its provenance.
 inline void* addr_ptr(std::uintptr_t addr) noexcept
 {
-    // NOLINTNEXTLINE(performance-no-int-to-ptr)
-    return reinterpret_cast<void*>(addr);
+    return std::bit_cast<void*>(addr);
 }
 
 /// @brief The checks before a slab is advised away, without the syscall: how
@@ -274,7 +279,7 @@ std::size_t reclaimable_bytes(const Slab* slab) noexcept
     {
         return 0;
     }
-    if ((reinterpret_cast<std::uintptr_t>(base) % up) != 0)
+    if ((fast_alloc::address_bits(base) % up) != 0)
     {
         reclaim_skip_unaligned().fetch_add(1, std::memory_order_relaxed);
         return 0;
@@ -441,13 +446,14 @@ class EmptySlabSweep
                     std::memory_order_relaxed);
                 reclaim_sweeps().fetch_add(1, std::memory_order_relaxed);
             }
-        } const timer;
+        };
+        const SweepTimer timer;
 
         std::sort(items_.begin(), items_.end(),
-                  [](const Item& a, const Item& b) { return std::less<Slab*>{}(a.slab, b.slab); });
-        items_.erase(
-            std::unique(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.slab == b.slab; }),
-            items_.end());
+                  [](const Item& lhs, const Item& rhs) { return std::less<Slab*>{}(lhs.slab, rhs.slab); });
+        items_.erase(std::unique(items_.begin(), items_.end(),
+                                 [](const Item& lhs, const Item& rhs) { return lhs.slab == rhs.slab; }),
+                     items_.end());
         // CHUNK_RECLAIM_MIN_SLABS: madvise syscalls against the pages they
         // return, decided by how many slabs this sweep empties at once.
         if (items_.size() < alloc_config::reclaim_min_empty_slabs())
@@ -458,11 +464,11 @@ class EmptySlabSweep
         for (Item& it : items_)
         {
             it.len   = detail::reclaimable_bytes(it.slab);
-            it.begin = reinterpret_cast<std::uintptr_t>(it.slab->data);
+            it.begin = fast_alloc::address_bits(it.slab->data);
         }
         items_.erase(std::remove_if(items_.begin(), items_.end(), [](const Item& it) { return it.len == 0; }),
                      items_.end());
-        std::sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
+        std::sort(items_.begin(), items_.end(), [](const Item& lhs, const Item& rhs) { return lhs.begin < rhs.begin; });
 
         std::size_t bytes        = 0;
         std::size_t inline_calls = 0; // runs advised at once because runs_ could not grow
@@ -599,12 +605,12 @@ class SlabArena
         // pages are resident, and were first touched by this rank.
         if (void* block = pop_recycled(size, rank); block != nullptr)
         {
-            if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
+            if (live_.contains(fast_alloc::address_bits(block)))
             {
                 FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC recycled slab {} (size={}): handed out while still live",
                                  name_, block, size);
             }
-            live_.insert(reinterpret_cast<std::uintptr_t>(block));
+            live_.insert(fast_alloc::address_bits(block));
             bytes_live_ += size;
             bytes_high_ = std::max(bytes_high_, bytes_live_);
             ++alloc_calls_;
@@ -618,13 +624,13 @@ class SlabArena
             void* block = it->second.back();
             it->second.pop_back();
             // Impossible by construction (a free-list slab was removed from live_).
-            if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
+            if (live_.contains(fast_alloc::address_bits(block)))
             {
                 FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC slab {} (size={}): handed out while still live -- a slab was "
                                  "recycled with live blocks still in it",
                                  name_, block, size);
             }
-            live_.insert(reinterpret_cast<std::uintptr_t>(block));
+            live_.insert(fast_alloc::address_bits(block));
             bytes_live_ += size;
             bytes_high_ = std::max(bytes_high_, bytes_live_);
             ++alloc_calls_;
@@ -643,7 +649,7 @@ class SlabArena
         bytes_live_ += size;
         bytes_high_ = std::max(bytes_high_, bytes_live_);
         ++alloc_calls_;
-        return detail::addr_ptr(aligned);
+        return region_base_ + (aligned - fast_alloc::address_bits(region_base_));
     }
 
     /**
@@ -664,7 +670,7 @@ class SlabArena
         }
         const std::scoped_lock lk(mtx_);
         // Not live: warn, do NOT abort (see @note).
-        if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
+        if (live_.erase(fast_alloc::address_bits(block)) == 0)
         {
             CHUNK_LOG(warn, arena, "{}: double-free/unknown slab {} (size={}) -- ignored", name_, block, size);
             return; // don't push an unknown slab onto the free-list
@@ -676,11 +682,11 @@ class SlabArena
     }
 
     /**
-     * @brief Take back @p n slabs a re-chunk has just emptied, for the next
+     * @brief Take back @p count slabs a re-chunk has just emptied, for the next
      *        allocate() of rank @p rank. One lock for the whole batch.
      * @param blocks The slabs, as returned by allocate(); their headers are
      *        gone (TCSlabPool::recycle_empty_slabs). Null entries are skipped.
-     * @param n Number of entries in @p blocks.
+     * @param count Number of entries in @p blocks.
      * @param size Their allocation size: the key allocate() looks them up by.
      * @param rank The rank that held them (-1 counts as 0): allocate(size, ..,
      *        rank) takes them back first, their pages having been first
@@ -692,28 +698,28 @@ class SlabArena
      * @note An unknown or already-freed slab warns and is dropped, as in
      *       deallocate().
      */
-    void recycle_batch(void* const* blocks, std::size_t n, std::size_t size, int rank) noexcept
+    void recycle_batch(void* const* blocks, std::size_t count, std::size_t size, int rank) noexcept
     {
-        if (n == 0)
+        if (count == 0)
         {
             return;
         }
         const std::scoped_lock lk(mtx_);
-        auto&                  lists = recycled_[size];
-        const auto             r     = static_cast<std::size_t>(rank < 0 ? 0 : rank);
-        if (lists.by_rank.size() <= r)
+        auto&                  lists    = recycled_[size];
+        const auto             rank_idx = static_cast<std::size_t>(rank < 0 ? 0 : rank);
+        if (lists.by_rank.size() <= rank_idx)
         {
-            lists.by_rank.resize(r + 1);
+            lists.by_rank.resize(rank_idx + 1);
         }
-        auto& mine = lists.by_rank[r];
-        for (std::size_t i = 0; i < n; ++i)
+        auto& mine = lists.by_rank[rank_idx];
+        for (std::size_t i = 0; i < count; ++i)
         {
             void* const block = blocks[i];
             if (block == nullptr)
             {
                 continue;
             }
-            if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
+            if (live_.erase(fast_alloc::address_bits(block)) == 0)
             {
                 CHUNK_LOG(warn, arena, "{}: recycle of an unknown/free slab {} (size={}) -- ignored", name_, block,
                           size);
@@ -778,7 +784,9 @@ class SlabArena
             }
             catch (...)
             {
-                // no room for the counters: advise them all, as with keep_bytes = 0
+                // No room for the counters: advise them all, as with keep_bytes = 0
+                // (the loop below keeps nothing while `kept` is empty).
+                kept.clear();
             }
         }
         for (auto& [size, lists] : recycled_)
@@ -786,13 +794,13 @@ class SlabArena
             const std::size_t adv = (size / page) * page;
             for (std::size_t r = 0; r < lists.by_rank.size(); ++r)
             {
-                auto& v = lists.by_rank[r];
+                auto& list = lists.by_rank[r];
                 // Newest last: pop_recycled() takes from the back, so a rank
                 // keeps from the back.
-                for (auto rit = v.rbegin(); rit != v.rend(); ++rit)
+                for (auto rit = list.rbegin(); rit != list.rend(); ++rit)
                 {
-                    Recycled& e = *rit;
-                    if (e.advised)
+                    Recycled& entry = *rit;
+                    if (entry.advised)
                     {
                         continue;
                     }
@@ -801,34 +809,35 @@ class SlabArena
                         kept[r] += size; // stays resident, for the next allocate()
                         continue;
                     }
-                    const auto b = reinterpret_cast<std::uintptr_t>(e.block);
-                    if (adv == 0 || b % page != 0)
+                    const auto begin = fast_alloc::address_bits(entry.block);
+                    if (adv == 0 || begin % page != 0)
                     {
-                        e.advised = true; // never advisable: do not look again
+                        entry.advised = true; // never advisable: do not look again
                         continue;
                     }
                     try
                     {
-                        spans.push_back(Span{.begin = b, .len = adv});
+                        spans.push_back(Span{.begin = begin, .len = adv});
                     }
                     catch (...)
                     {
-                        ::madvise(e.block, adv, MADV_DONTNEED); // no room for the batch: now
+                        ::madvise(entry.block, adv, MADV_DONTNEED); // no room for the batch: now
                         reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
                         reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
                     }
-                    e.advised = true;
+                    entry.advised = true;
                     ++slabs;
                 }
                 if (!kept.empty())
                 {
                     // Resident slabs behind the advised ones: pop_recycled()
                     // hands out the back first, pages already there.
-                    std::stable_partition(v.begin(), v.end(), [](const Recycled& e) { return e.advised; });
+                    std::stable_partition(list.begin(), list.end(),
+                                          [](const Recycled& entry) { return entry.advised; });
                 }
             }
         }
-        std::ranges::sort(spans, [](const Span& a, const Span& b) { return a.begin < b.begin; });
+        std::ranges::sort(spans, [](const Span& lhs, const Span& rhs) { return lhs.begin < rhs.begin; });
         // Coalesced in place: spans[0, runs) become the runs.
         std::size_t runs  = 0;
         std::size_t bytes = 0;
@@ -888,18 +897,18 @@ class SlabArena
         const auto                 psz = static_cast<std::size_t>(page);
         std::size_t                res = 0;
         std::vector<unsigned char> vec;
-        for (const auto& r : regions_)
+        for (const auto& region : regions_)
         {
-            const std::size_t len   = r.end - r.begin;
+            const std::size_t len   = region.end - region.begin;
             const std::size_t pages = (len + psz - 1) / psz;
             vec.resize(pages);
-            if (::mincore(detail::addr_ptr(r.begin), len, vec.data()) != 0)
+            if (::mincore(detail::addr_ptr(region.begin), len, vec.data()) != 0)
             {
                 continue;
             }
-            for (const unsigned char v : vec)
+            for (const unsigned char page_state : vec)
             {
-                res += (v & 1u) != 0u ? psz : 0;
+                res += (page_state & 1u) != 0u ? psz : 0;
             }
         }
         return res;
@@ -917,9 +926,9 @@ class SlabArena
     {
         const std::scoped_lock lk(mtx_);
         std::size_t            mapped = 0;
-        for (const auto& r : regions_)
+        for (const auto& region : regions_)
         {
-            mapped += (r.end - r.begin);
+            mapped += (region.end - region.begin);
         }
         return mapped;
     }
@@ -941,19 +950,19 @@ class SlabArena
     {
         const std::scoped_lock lk(mtx_);
         std::size_t            mapped = 0;
-        for (const auto& r : regions_)
+        for (const auto& region : regions_)
         {
-            mapped += (r.end - r.begin);
+            mapped += (region.end - region.begin);
         }
         std::size_t freelist = 0;
-        for (const auto& kv : free_lists_)
+        for (const auto& [block_size, blocks] : free_lists_)
         {
-            freelist += kv.first * kv.second.size();
+            freelist += block_size * blocks.size();
         }
         std::size_t recycled = 0;
-        for (const auto& kv : recycled_)
+        for (const auto& [block_size, lists] : recycled_)
         {
-            recycled += kv.first * kv.second.count;
+            recycled += block_size * lists.count;
         }
         // CHUNK_ARENA_REPORT asked for it: a report, written whatever CHUNK_LOG says.
         CHUNK_LOG_ALWAYS(arena,
@@ -984,17 +993,17 @@ class SlabArena
         {
             return nullptr;
         }
-        auto&             lists = it->second.by_rank;
-        const std::size_t n     = lists.size();
-        const bool        known = rank >= 0 && std::cmp_less(rank, n);
-        const std::size_t start = known ? static_cast<std::size_t>(rank) : 0;
-        for (std::size_t i = 0; i < n; ++i)
+        auto&             lists  = it->second.by_rank;
+        const std::size_t nlists = lists.size();
+        const bool        known  = rank >= 0 && std::cmp_less(rank, nlists);
+        const std::size_t start  = known ? static_cast<std::size_t>(rank) : 0;
+        for (std::size_t i = 0; i < nlists; ++i)
         {
-            auto& v = lists[(start + i) % n];
-            if (!v.empty())
+            auto& list = lists[(start + i) % nlists];
+            if (!list.empty())
             {
-                void* const block = v.back().block;
-                v.pop_back();
+                void* const block = list.back().block;
+                list.pop_back();
                 --it->second.count;
                 ++recycled_out_;
                 if (i != 0 || !known)
@@ -1029,23 +1038,25 @@ class SlabArena
         // on it, a huge page each), `never` forbids them, unset leaves the
         // kernel's mode. Advice only: a failure is ignored.
         alloc_config::advise_thp_region(base, want);
-        auto region_begin = reinterpret_cast<std::uintptr_t>(base);
+        auto region_begin = fast_alloc::address_bits(base);
         regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
-        cursor_     = region_begin;
-        region_end_ = region_begin + want;
+        region_base_ = static_cast<std::byte*>(base);
+        cursor_      = region_begin;
+        region_end_  = region_begin + want;
     }
 
-    /// @brief Round @p v up to a multiple of @p alignment. @p alignment must be a power of two.
-    static std::uintptr_t align_up(std::uintptr_t v, std::size_t alignment) noexcept
+    /// @brief Round @p value up to a multiple of @p align. @p align must be a power of two.
+    static std::uintptr_t align_up(std::uintptr_t value, std::size_t align) noexcept
     {
-        return (v + (alignment - 1)) & ~(static_cast<std::uintptr_t>(alignment) - 1);
+        return (value + (align - 1)) & ~(static_cast<std::uintptr_t>(align) - 1);
     }
 
-    const char*         name_;              ///< Diagnostic label only.
-    std::size_t         reservation_chunk_; ///< Size of each new mmap region.
-    std::uintptr_t      cursor_     = 0;    ///< Bump pointer inside the current region.
-    std::uintptr_t      region_end_ = 0;    ///< End of the current region.
-    std::vector<Region> regions_;           ///< Every reservation, for the reports.
+    const char*         name_;                  ///< Diagnostic label only.
+    std::size_t         reservation_chunk_;     ///< Size of each new mmap region.
+    std::byte*          region_base_ = nullptr; ///< The current region's start: allocate() steps from it.
+    std::uintptr_t      cursor_      = 0;       ///< Bump pointer inside the current region.
+    std::uintptr_t      region_end_  = 0;       ///< End of the current region.
+    std::vector<Region> regions_;               ///< Every reservation, for the reports.
 
     /// @brief Recycled slabs, keyed by their exact allocation size.
     std::unordered_map<std::size_t, std::vector<void*>> free_lists_;
@@ -1131,10 +1142,10 @@ enum class ArenaKind : std::uint8_t
     value ///< Chunk value buffers.
 };
 
-/// @brief The arena for @p k.
-inline SlabArena& arena_for(ArenaKind k)
+/// @brief The arena for @p kind.
+inline SlabArena& arena_for(ArenaKind kind)
 {
-    switch (k)
+    switch (kind)
     {
         case ArenaKind::ctx:
             return ctx_arena();

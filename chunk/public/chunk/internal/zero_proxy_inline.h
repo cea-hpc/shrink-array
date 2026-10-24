@@ -43,24 +43,24 @@ const zero::Proxy<T>& zero::Proxy<T>::operator=(const zero::Proxy<T>& from) noex
     {
         // Read through operator T() (the dirty-bit gated read), complete before
         // the write starts: no reader/writer nesting even in the same chunk.
-        const InT<T> v = static_cast<T>(from);
+        const InT<T> value = static_cast<T>(from);
 
         // Write through the engine (handshake / deferred path, WAW-erase,
         // compression marking, zero counter). Do not store inline: it could
         // land in a CAS-swapped buffer, be overwritten by an older deferred
         // replay, or drift the zero counter.
-        assign_impl<T>(v);
+        assign_impl<T>(value);
     }
 
     return *this;
 }
 
 template <typename T>
-T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
+T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (v == static_cast<T>(zero::Chunk<T>::first_value))
+        if (value == static_cast<T>(zero::Chunk<T>::first_value))
         {
             if (is_not_cst_val())
             {
@@ -86,7 +86,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
 
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(v);
+        increm_chunk_write<ChunkType>(value);
     }
 
     const bool need_alloc = this->is_cst_val1(vals);
@@ -127,7 +127,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
 
         create_value();
 
-        state.apply(this, v);
+        state.apply(this, value);
 
         // The one reload: a concurrent writer may have won create_value()'s CAS
         // (ours went back to the pool). Materialised now, so stable until the
@@ -135,11 +135,11 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const noexcept
         vals = chunk_.values_load();
     }
 
-    Base::store_value_at(vals, v);
+    Base::store_value_at(vals, value);
 
     if constexpr (build_config::do_check)
     {
-        global_check_write_nan(v, num_);
+        global_check_write_nan(value, num_);
     }
     return vals;
 }
@@ -178,7 +178,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(t
 
 template <typename T>
 template <typename Op, typename Body, typename U>
-void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& v, Body lbd)
+void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& operand, Body lbd)
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -201,7 +201,7 @@ void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused
         // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
         const T v_old = values_[num_];
 
-        const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(v));
+        const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
 
         const auto v_new = static_cast<T>(v_new_precise);
 
@@ -275,7 +275,7 @@ template <typename Op, typename Lambda, typename U>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(
     auto*                     ctx,
     Op                        op,
-    [[maybe_unused]] const U& v,
+    [[maybe_unused]] const U& operand,
     Lambda                    lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
@@ -302,7 +302,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound
 
         const T old_value = values_ptr[num];
 
-        const CalcType res = op(static_cast<CalcType>(old_value), static_cast<CalcType>(v));
+        const CalcType res = op(static_cast<CalcType>(old_value), static_cast<CalcType>(operand));
 
         const auto final_val = static_cast<T>(res);
 
@@ -315,19 +315,19 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound
 
 template <typename T>
 template <typename U>
-T zero::Proxy<T>::assign_impl(InT<U> v) noexcept
+T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
 {
     this->check_not_stale();
-    if (is_cst_val_and_v_equal_zero(v))
+    if (is_cst_val_and_v_equal_zero(value))
     {
-        return v;
+        return value;
     }
 
     // Do not hoist `need_alloc = is_cst_val()` here: an acquire load paid by
-    // every write for a test only the `v == zero` branch makes.
+    // every write for a test only the `value == zero` branch makes.
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (v == zero)
+        if (value == zero)
         {
             if (is_cst_val())
             {
@@ -356,9 +356,9 @@ T zero::Proxy<T>::assign_impl(InT<U> v) noexcept
     // is_cst_val_and_v_equal_zero() above, and only it. It must not apply over a
     // pending deferred op (the `= 0` would be skipped, then the replay lands).
 
-    // By reference: v is this call's parameter, alive for the synchronous
+    // By reference: value is this call's parameter, alive for the synchronous
     // call (see zero_any::Proxy::assign_impl); the deferred path copies it.
-    [[maybe_unused]] const auto lbd_equal_core = [this, &v]
+    [[maybe_unused]] const auto lbd_equal_core = [this, &value]
     {
         // ONE load of the values pointer for the whole body, inside the session
         // (or a flush replay): no compressor can change it until end_write. A
@@ -387,11 +387,11 @@ T zero::Proxy<T>::assign_impl(InT<U> v) noexcept
             }
         }();
 
-        vals = perform_core_assignment(vals, v);
+        vals = perform_core_assignment(vals, value);
 
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            this->mark_for_compression_if_needed_with_value(old_value, v, vals);
+            this->mark_for_compression_if_needed_with_value(old_value, value, vals);
         }
     };
 
@@ -402,7 +402,7 @@ T zero::Proxy<T>::assign_impl(InT<U> v) noexcept
         {
             using CtxType = ArithmeticAffectationProxyContext<T, std::remove_cvref_t<U>>;
 
-            auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array_);
+            auto* ctx = pool_new_ctx<CtxType>(*this, value, ptr_on_array_);
 
             auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
             {
@@ -466,15 +466,15 @@ T zero::Proxy<T>::assign_impl(InT<U> v) noexcept
                 chunk_.set_nb_val_eq_zero(this->chunk_size() - 1);
             }
         }
-        Base::store_value(v);
+        Base::store_value(value);
     }
 
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(v);
+        increm_chunk_write<ChunkType>(value);
     }
 
-    return v;
+    return value;
 }
 
 template <typename T>
@@ -671,7 +671,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_a
 
 template <typename T>
 template <typename U, typename BinaryOp>
-void zero::Proxy<T>::apply_compound_operation(InT<U> v, BinaryOp op)
+void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
 {
     this->check_not_stale();
     // Cross-rank RMW materialisation: pull any foreign deferred write first.
@@ -686,17 +686,17 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> v, BinaryOp op)
             {
                 if constexpr (build_config::do_check)
                 {
-                    global_check_write_nan(v, num_);
+                    global_check_write_nan(operand, num_);
                 }
 
                 execute_arithmetic_compound_operation(
-                    op, static_cast<T>(v),
-                    [this, &v](auto op_func) // v: this call's parameter, alive for the call
+                    op, static_cast<T>(operand),
+                    [this, &operand](auto op_func) // operand: this call's parameter, alive for the call
                     {
                         using LocalCalcType = std::common_type_t<T, BaseT<U>>;
 
-                        const InT<T> result = static_cast<T>(
-                            op_func(static_cast<LocalCalcType>(Base::load_value()), static_cast<LocalCalcType>(v)));
+                        const InT<T> result = static_cast<T>(op_func(static_cast<LocalCalcType>(Base::load_value()),
+                                                                     static_cast<LocalCalcType>(operand)));
 
                         Base::store_value(result);
                     });
@@ -723,7 +723,7 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> v, BinaryOp op)
             // A zero v_old is not enough to skip: a queued deferred op may change it.
             if (v_old != zero || CompressionManagerType::have_deferred_queue())
             {
-                Base::apply_atomic_op(op, static_cast<T>(v), v_old);
+                Base::apply_atomic_op(op, static_cast<T>(operand), v_old);
 
                 // Do NOT read values[num] back here: apply_atomic_op may have
                 // DEFERRED the op, and a foreign thread draining this chunk
