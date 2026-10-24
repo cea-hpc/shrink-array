@@ -53,11 +53,11 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
     const Int interval = bench_arr.interval;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 0, 256,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -90,13 +90,13 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 },
                 bench_par::nowait);
 
-            bench_par::for_static_vec(t, 256, sz / 4,
+            bench_par::for_static_vec(team, 256, sz / 4,
                                       [&](const Int i) __attribute__((always_inline)) { tab_short[i] = 0; });
 
-            bench_par::for_static_vec(t, sz / 4, sz / 2, [&](const Int i) __attribute__((always_inline))
+            bench_par::for_static_vec(team, sz / 4, sz / 2, [&](const Int i) __attribute__((always_inline))
                                       { tab_short[i] = second_value_s0; });
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 256, sz / 2,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -120,7 +120,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             Int begin_i = sz / 2;
             Int end_i   = sz - (sz / 3);
 
-            t.single(
+            team.single(
                 [&]
                 {
                     end             = std::chrono::steady_clock::now();
@@ -130,7 +130,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 },
                 bench_par::nowait);
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -169,7 +169,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             begin_i = end_i;
             end_i   = sz - (sz / 4);
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -191,7 +191,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 },
                 bench_par::nowait);
 
-            t.single(
+            team.single(
                 [&]
                 {
                     end             = std::chrono::steady_clock::now();
@@ -204,7 +204,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             begin_i = end_i;
             end_i   = std::min(begin_i + interval, sz);
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -233,7 +233,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             begin_i = end_i;
             end_i   = std::min(begin_i + interval, sz);
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -252,7 +252,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 },
                 bench_par::nowait);
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 end_i, sz,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -272,7 +272,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             // Scalar: LLVM reports this one "uncountable" under `simd`, with the
             // char store alone as well (the short fills above vectorise). A
             // zeroing loop the idiom pass turns into memset anyway.
-            t.for_static<Int>(
+            team.for_static<Int>(
                 end_i, 2 * sz,
                 [&](const Int i) __attribute__((always_inline))
                 {
@@ -281,7 +281,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 },
                 bench_par::nowait);
 
-            t.single(
+            team.single(
                 [&]
                 {
                     end             = std::chrono::steady_clock::now();

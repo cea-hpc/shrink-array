@@ -149,18 +149,18 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             else if (arg == "--mode")
             {
                 // check / perf: one binary, the mode chosen here.
-                const std::string m = next_value();
-                if (m == "perf")
+                const std::string mode = next_value();
+                if (mode == "perf")
                 {
                     set_bench_mode(BenchMode::perf);
                 }
-                else if (m == "check")
+                else if (mode == "check")
                 {
                     set_bench_mode(BenchMode::check);
                 }
                 else
                 {
-                    std::cerr << "error: unknown --mode '" << m << "' (expected check or perf)\n";
+                    std::cerr << "error: unknown --mode '" << mode << "' (expected check or perf)\n";
                     // exit, not return: this function returns a BenchArgs,
                     // and the other error paths of this loop already leave
                     // this way.

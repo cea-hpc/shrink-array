@@ -143,10 +143,10 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         if constexpr (bench_par::team_regions)
         {
             bench_par::region(
-                [&]([[maybe_unused]] bench_par::Team& t)
+                [&]([[maybe_unused]] bench_par::Team& team)
                 {
                     all([&](const char* name)
-                        { t.single([&] { std::cout << name << std::endl; }, bench_par::nowait); });
+                        { team.single([&] { std::cout << name << std::endl; }, bench_par::nowait); });
                 });
         }
         else

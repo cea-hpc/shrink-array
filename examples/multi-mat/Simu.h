@@ -80,13 +80,13 @@ struct Simu
         return frac;
     }
 
-    /// @brief The presence fraction at position @p p of an interval of
+    /// @brief The presence fraction at position @p pos of an interval of
     ///        @p size cells: a ramp over the first and last interface_width
     ///        cells, 1 in between.
-    [[nodiscard]] double presence_fraction(int p, int size) const
+    [[nodiscard]] double presence_fraction(int pos, int size) const
     {
-        const int d = std::min(p, size - 1 - p); // distance to the nearest end
-        return d >= interface_width ? 1. : static_cast<double>(d + 1) / static_cast<double>(interface_width + 1);
+        const int dist = std::min(pos, size - 1 - pos); // distance to the nearest end
+        return dist >= interface_width ? 1. : static_cast<double>(dist + 1) / static_cast<double>(interface_width + 1);
     }
 
     /// @brief Storage of the materials (option_chunk): 1 all chunk, 2 all vector, 3 random 50/50,

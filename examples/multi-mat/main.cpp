@@ -90,9 +90,9 @@ Dispatch dispatch;
 
 void Simu::create_tabs()
 {
-    for (auto& t : tabs)
+    for (auto& tab : tabs)
     {
-        t.create(nbmat, mesh_size);
+        tab.create(nbmat, mesh_size);
     }
     frac.create(nbmat, mesh_size);
 }
@@ -239,14 +239,14 @@ int main()
 
                          if (!only_first_chunk)
                          {
-                             int s = 0;
-#pragma omp parallel for reduction(+ : s)
+                             int sum = 0;
+#pragma omp parallel for reduction(+ : sum)
                              for (int k = 0; k < mesh_size; ++k)
                              {
                                  if (tab0_ind[k] != 0)
-                                     s++;
+                                     sum++;
                              }
-                             const double sz = static_cast<double>(s) / static_cast<double>(mesh_size) * 100.;
+                             const double sz = static_cast<double>(sum) / static_cast<double>(mesh_size) * 100.;
 
                              std::cout << "  Real filling rate : " << std::fixed << std::setprecision(2) << sz << "%"
                                        << '\n';

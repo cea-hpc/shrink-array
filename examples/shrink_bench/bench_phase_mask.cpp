@@ -38,11 +38,12 @@
 namespace
 {
 
-/// @brief Is tab_mask[i] flipped at iteration @p k? ~1 element in 61 of the
+/// @brief Is tab_mask[i] flipped at iteration @p iter? ~1 element in 61 of the
 ///        mixed segments, a different set each iteration.
-constexpr bool mask_flips(Int i, Int k) noexcept
+constexpr bool mask_flips(Int index, Int iter) noexcept
 {
-    return bench_mask_hash((static_cast<std::uint64_t>(i) * 131u) + (static_cast<std::uint64_t>(k) * 0x9E37u)) % 61 ==
+    return bench_mask_hash((static_cast<std::uint64_t>(index) * 131u) + (static_cast<std::uint64_t>(iter) * 0x9E37u)) %
+               61 ==
            0;
 }
 
@@ -58,20 +59,20 @@ void bench_phase_mask_fill(BenchArrays& bench_arr)
     }
 
     auto&     tab_mask = bench_arr.tab_mask;
-    const Int n        = static_cast<Int>(tab_mask.size());
-    const Int n_blocks = (n + bench_mask_block - 1) / bench_mask_block;
+    const Int count    = static_cast<Int>(tab_mask.size());
+    const Int n_blocks = (count + bench_mask_block - 1) / bench_mask_block;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 0, n_blocks,
                 [&](const Int b) __attribute__((always_inline))
                 {
                     const Int lo = b * bench_mask_block;
-                    const Int hi = lo + bench_mask_block < n ? lo + bench_mask_block : n;
+                    const Int hi = lo + bench_mask_block < count ? lo + bench_mask_block : count;
                     for (Int i = lo; i < hi; ++i)
                     {
                         // A fresh array is all false: only the true elements are written,
@@ -101,24 +102,24 @@ void bench_phase_mask_fill(BenchArrays& bench_arr)
 // compute phases read what they wrote.
 namespace
 {
-/// @brief Does iteration @p k write block @p b of tab_mask?
-bool mask_block_written(Int b, Int k) noexcept
+/// @brief Does iteration @p iter write block @p block of tab_mask?
+bool mask_block_written(Int block, Int iter) noexcept
 {
-    const Int seg = b * bench_mask_block / bench_mask_segment;
+    const Int seg = block * bench_mask_block / bench_mask_segment;
     switch (bench_mask_kind(seg))
     {
         case BenchMaskKind::all_false:
         case BenchMaskKind::all_true:
-            return (seg + k) % 32 == 0;
+            return (seg + iter) % 32 == 0;
         case BenchMaskKind::random:
         case BenchMaskKind::scattered:
-            return b % 16 == k % 16;
+            return block % 16 == iter % 16;
     }
     return false;
 }
 } // namespace
 
-void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count)
+void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count)
 {
     if (!bench_arr.with_mask) // --no_mask
     {
@@ -126,26 +127,26 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count)
     }
 
     auto&     tab_mask = bench_arr.tab_mask;
-    const Int n        = static_cast<Int>(tab_mask.size());
-    const Int n_blocks = (n + bench_mask_block - 1) / bench_mask_block;
+    const Int nmask    = static_cast<Int>(tab_mask.size());
+    const Int n_blocks = (nmask + bench_mask_block - 1) / bench_mask_block;
 
     long count = 0;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 0, n_blocks,
                 [&](const Int b) __attribute__((always_inline))
                 {
-                    if (!mask_block_written(b, k))
+                    if (!mask_block_written(b, iter))
                     {
                         return;
                     }
                     const Int  lo       = b * bench_mask_block;
-                    const Int  hi       = lo + bench_mask_block < n ? lo + bench_mask_block : n;
+                    const Int  hi       = lo + bench_mask_block < nmask ? lo + bench_mask_block : nmask;
                     const auto kind     = bench_mask_kind(lo / bench_mask_segment);
                     const bool constant = kind == BenchMaskKind::all_false || kind == BenchMaskKind::all_true;
                     if (constant)
@@ -160,7 +161,7 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count)
                     {
                         for (Int i = lo; i < hi; ++i)
                         {
-                            if (mask_flips(i, k))
+                            if (mask_flips(i, iter))
                             {
                                 const bool now = tab_mask[i];
                                 tab_mask[i]    = !now;
@@ -171,21 +172,20 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count)
                 bench_par::nowait);
 
             // Same schedule and bounds: a thread reads back its own blocks.
-            bench_par::for_static_sum(
-                t, 0, n_blocks, count,
-                [&](const Int b, auto& count_part) __attribute__((always_inline))
-                {
-                    if (!mask_block_written(b, k))
-                    {
-                        return;
-                    }
-                    const Int lo = b * bench_mask_block;
-                    const Int hi = lo + bench_mask_block < n ? lo + bench_mask_block : n;
-                    for (Int i = lo; i < hi; ++i)
-                    {
-                        count_part += tab_mask[i] ? 1 : 0;
-                    }
-                });
+            bench_par::for_static_sum(team, 0, n_blocks, count,
+                                      [&](const Int b, auto& count_part) __attribute__((always_inline))
+                                      {
+                                          if (!mask_block_written(b, iter))
+                                          {
+                                              return;
+                                          }
+                                          const Int lo = b * bench_mask_block;
+                                          const Int hi = lo + bench_mask_block < nmask ? lo + bench_mask_block : nmask;
+                                          for (Int i = lo; i < hi; ++i)
+                                          {
+                                              count_part += tab_mask[i] ? 1 : 0;
+                                          }
+                                      });
 
             finalize_parallel_phase_only_flush_g();
         });

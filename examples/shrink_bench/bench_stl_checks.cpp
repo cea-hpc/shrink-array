@@ -38,10 +38,6 @@ using shrink_array::tc;
 
 void run_stl_self_checks([[maybe_unused]] bool test_stl)
 {
-    // Was a constexpr local of main(); the read-idempotence block below is its
-    // only user here.
-    [[maybe_unused]] constexpr double second_value_d1 = 2;
-
     // ─────────────────────────────────────────────────────────────────────────
     // STL-interface self-checks (--test_stl). Exercises the vector-like surface
     // added to zero::Array (typedefs, at/front/back, iterators, rbegin/rend,
@@ -70,10 +66,10 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // Fresh, deterministic array so the checks don't depend on the compute
         // loop's final state. Size spans several chunks to exercise boundaries.
         constexpr Int n_stl = 1000;
-        Array<double> v(n_stl);
+        Array<double> vec(n_stl);
         for (Int i = 0; i < n_stl; ++i)
         {
-            v[i] = static_cast<double>(i);
+            vec[i] = static_cast<double>(i);
         }
 
         // Independent oracle.
@@ -86,37 +82,37 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // --- member typedefs are present and sane -----------------------------
         static_assert(std::is_same_v<Array<double>::value_type, double>);
         static_assert(std::is_same_v<Array<double>::size_type, std::size_t>);
-        expect(v.size() == static_cast<std::size_t>(n_stl), "size()");
-        expect(!v.empty(), "empty() == false on non-empty");
+        expect(vec.size() == static_cast<std::size_t>(n_stl), "size()");
+        expect(!vec.empty(), "empty() == false on non-empty");
 
         // --- forward const iteration (range-for) matches operator[] -----------
         {
             double it_sum = 0.0;
-            Int    n      = 0;
-            for (const double x : std::as_const(v))
+            Int    count  = 0;
+            for (const double value : std::as_const(vec))
             {
-                it_sum += x;
-                ++n;
+                it_sum += value;
+                ++count;
             }
-            expect(n == n_stl, "range-for visits every element");
+            expect(count == n_stl, "range-for visits every element");
             expect(it_sum == oracle_sum, "range-for sum == oracle");
         }
 
         // --- std::accumulate / std::find over const_iterator ------------------
         {
-            const double acc = std::accumulate(v.begin(), v.end(), 0.0);
+            const double acc = std::accumulate(vec.begin(), vec.end(), 0.0);
             expect(acc == oracle_sum, "std::accumulate == oracle");
-            const auto it = std::find(v.begin(), v.end(), 512.0);
-            expect(it != v.end() && *it == 512.0, "std::find locates value across a chunk boundary");
+            const auto it = std::find(vec.begin(), vec.end(), 512.0);
+            expect(it != vec.end() && *it == 512.0, "std::find locates value across a chunk boundary");
         }
 
         // --- reverse iteration visits elements in reverse ---------------------
         {
             double rev_sum       = 0.0;
-            Int    n             = 0;
+            Int    count         = 0;
             double prev          = 1e300;
             bool   monotone_down = true;
-            for (auto r = v.rbegin(); r != v.rend(); ++r)
+            for (auto r = vec.rbegin(); r != vec.rend(); ++r)
             {
                 if (*r > prev)
                 {
@@ -124,25 +120,25 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                 }
                 prev = *r;
                 rev_sum += *r;
-                ++n;
+                ++count;
             }
-            expect(n == n_stl, "rbegin/rend visit every element");
+            expect(count == n_stl, "rbegin/rend visit every element");
             expect(rev_sum == oracle_sum, "reverse sum == forward sum");
             expect(monotone_down, "reverse order is strictly descending");
         }
 
         // --- at() / front() / back() ------------------------------------------
-        expect(v.at(0) == 0.0, "at(0)");
-        expect(v.at(n_stl - 1) == double(n_stl - 1), "at(last)");
-        expect(v.front() == 0.0, "front()");
-        expect(v.back() == double(n_stl - 1), "back()");
+        expect(vec.at(0) == 0.0, "at(0)");
+        expect(vec.at(n_stl - 1) == double(n_stl - 1), "at(last)");
+        expect(vec.front() == 0.0, "front()");
+        expect(vec.back() == double(n_stl - 1), "back()");
 
         // at() out-of-range throws (conforming); front/back on empty throw.
         {
             bool threw = false;
             try
             {
-                (void)v.at(n_stl);
+                (void)vec.at(n_stl);
             }
             catch (const std::out_of_range&)
             {
@@ -168,37 +164,37 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         }
 
         // --- non-const at() returns a write proxy (assignment goes through it) -
-        v.at(3) = -7.0;
-        expect(v.at(3) == -7.0, "non-const at() assigns via proxy");
-        v.at(3) = 3.0; // restore
+        vec.at(3) = -7.0;
+        expect(vec.at(3) == -7.0, "non-const at() assigns via proxy");
+        vec.at(3) = 3.0; // restore
 
         // --- assign(count, val) ----------------------------------------------
         {
-            Array<double> a(5);
-            a.assign(n_stl, 2.5);
-            const std::size_t asz = a.size();
+            Array<double> arr(5);
+            arr.assign(n_stl, 2.5);
+            const std::size_t asz = arr.size();
             bool              all = (asz == static_cast<std::size_t>(n_stl));
             for (std::size_t i = 0; all && i < asz; ++i)
             {
-                all = (a[i] == 2.5);
+                all = (arr[i] == 2.5);
             }
             expect(all, "assign(count,val) sizes and fills");
         }
 
         // --- swap() exchanges contents ----------------------------------------
         {
-            Array<double> a(n_stl);
-            Array<double> b(n_stl);
+            Array<double> arr(n_stl);
+            Array<double> other(n_stl);
             for (Int i = 0; i < n_stl; ++i)
             {
-                a[i] = 1.0;
-                b[i] = 9.0;
+                arr[i]   = 1.0;
+                other[i] = 9.0;
             }
-            a.swap(b);
+            arr.swap(other);
             bool ok = true;
             for (Int i = 0; ok && i < n_stl; ++i)
             {
-                ok = (a[i] == 9.0 && b[i] == 1.0);
+                ok = (arr[i] == 9.0 && other[i] == 1.0);
             }
             expect(ok, "swap() exchanges element contents");
         }
@@ -208,37 +204,38 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // increment and one write; reserve() moves the chunk allocation up
         // front. std::vector has the same words, so the baseline runs this too.
         {
-            Array<double> g(1);
-            g.reserve(n_stl);
-            const std::size_t cap = g.capacity();
+            Array<double> single(1);
+            single.reserve(n_stl);
+            const std::size_t cap = single.capacity();
             expect(cap >= static_cast<std::size_t>(n_stl), "reserve(n): capacity() >= n");
-            expect(g.size() == 1, "reserve() leaves size() alone");
+            expect(single.size() == 1, "reserve() leaves size() alone");
             for (Int i = 1; i < n_stl; ++i)
             {
-                g.push_back(static_cast<double>(i));
+                single.push_back(static_cast<double>(i));
             }
-            expect(g.size() == static_cast<std::size_t>(n_stl), "push_back grows size() by one each");
-            expect(g.capacity() == cap, "push_back within the capacity does not change it");
-            g.emplace_back(2.5);
-            expect(g.size() == static_cast<std::size_t>(n_stl) + 1 && g.back() == 2.5, "emplace_back(args)");
-            g.pop_back();
-            expect(g.size() == static_cast<std::size_t>(n_stl) && g.back() == double(n_stl - 1), "pop_back");
+            expect(single.size() == static_cast<std::size_t>(n_stl), "push_back grows size() by one each");
+            expect(single.capacity() == cap, "push_back within the capacity does not change it");
+            single.emplace_back(2.5);
+            expect(single.size() == static_cast<std::size_t>(n_stl) + 1 && single.back() == 2.5, "emplace_back(args)");
+            single.pop_back();
+            expect(single.size() == static_cast<std::size_t>(n_stl) && single.back() == double(n_stl - 1), "pop_back");
             bool ok = true;
             for (Int i = 1; i < n_stl; ++i)
             {
-                ok = ok && (std::as_const(g)[i] == static_cast<double>(i));
+                ok = ok && (std::as_const(single)[i] == static_cast<double>(i));
             }
             expect(ok, "push_back'd elements read back");
             // Past the capacity: the push_back that needs a new chunk.
-            const std::size_t before = g.size();
-            for (std::size_t i = g.size(); i < cap + 3; ++i)
+            const std::size_t before = single.size();
+            for (std::size_t i = single.size(); i < cap + 3; ++i)
             {
-                g.push_back(-1.0);
+                single.push_back(-1.0);
             }
-            expect(static_cast<std::size_t>(g.size()) == cap + 3 && g.capacity() > cap && g.back() == -1.0 &&
-                       std::as_const(g)[static_cast<Int>(before) - 1] == double(n_stl - 1),
+            expect(static_cast<std::size_t>(single.size()) == cap + 3 && single.capacity() > cap &&
+                       single.back() == -1.0 &&
+                       std::as_const(single)[static_cast<Int>(before) - 1] == double(n_stl - 1),
                    "push_back past the capacity grows the storage and keeps the contents");
-            g.clear();
+            single.clear();
         }
 
         // --- (first, last) and {…} constructors, assign(first, last) ---------
@@ -248,11 +245,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             {
                 src[static_cast<std::size_t>(i)] = 0.5 * static_cast<double>(i);
             }
-            Array<double> r(src.begin(), src.end());
-            bool          ok = static_cast<std::size_t>(r.size()) == src.size();
+            Array<double> ranged(src.begin(), src.end());
+            bool          ok = static_cast<std::size_t>(ranged.size()) == src.size();
             for (Int i = 0; ok && i < n_stl; ++i)
             {
-                ok = std::as_const(r)[i] == src[static_cast<std::size_t>(i)];
+                ok = std::as_const(ranged)[i] == src[static_cast<std::size_t>(i)];
             }
             expect(ok, "(first, last) constructor copies the range");
 
@@ -263,7 +260,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             il.assign(src.begin() + 10, src.begin() + 20);
             expect(il.size() == 10 && std::as_const(il)[0] == 5.0 && std::as_const(il)[9] == 9.5,
                    "assign(first, last)");
-            r.clear();
+            ranged.clear();
             il.clear();
         }
 
@@ -272,41 +269,41 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // a write in the copy leaves the source alone (no aliasing of the
         // chunks), and a destination that held data is overwritten whole.
         {
-            Array<double> c(v);
-            bool          same = c.size() == v.size();
+            Array<double> copy(vec);
+            bool          same = copy.size() == vec.size();
             for (Int i = 0; same && i < n_stl; ++i)
             {
-                same = std::as_const(c)[i] == std::as_const(v)[i];
+                same = std::as_const(copy)[i] == std::as_const(vec)[i];
             }
             expect(same, "copy constructor: every element equal");
-            c[5] = -99.0;
-            expect(std::as_const(v)[5] == 5.0 && std::as_const(c)[5] == -99.0,
+            copy[5] = -99.0;
+            expect(std::as_const(vec)[5] == 5.0 && std::as_const(copy)[5] == -99.0,
                    "a write in the copy leaves the source alone (deep, not an alias)");
 
-            Array<double> d(3 * n_stl);
+            Array<double> dst(3 * n_stl);
             for (Int i = 0; i < 3 * n_stl; ++i)
             {
-                d[i] = 7.0;
+                dst[i] = 7.0;
             }
-            d    = v;
-            same = d.size() == v.size();
+            dst  = vec;
+            same = dst.size() == vec.size();
             for (Int i = 0; same && i < n_stl; ++i)
             {
-                same = std::as_const(d)[i] == std::as_const(v)[i];
+                same = std::as_const(dst)[i] == std::as_const(vec)[i];
             }
             expect(same, "copy-assignment over a larger array: sized and equal");
-            const auto& d_alias = d;       // through an alias: clang flags a literal `d = d`
-            d                   = d_alias; // self-assignment: a no-op
-            expect(std::as_const(d)[7] == 7.0, "self-assignment is a no-op");
-            c.clear();
-            d.clear();
+            const auto& d_alias = dst;     // through an alias: clang flags a literal `dst = dst`
+            dst                 = d_alias; // self-assignment: a no-op
+            expect(std::as_const(dst)[7] == 7.0, "self-assignment is a no-op");
+            copy.clear();
+            dst.clear();
 
             // zero_one_value: the array-level second value travels with the copy. A
             // generic lambda, so that the `if constexpr` really discards the
             // body on the arrays that have no get_second_value().
             [&]<typename A>(A*)
             {
-                if constexpr (requires(A x) { x.get_second_value(); })
+                if constexpr (requires(A probe) { probe.get_second_value(); })
                 {
                     A s2(n_stl);
                     maybe_set_second_value(s2, second_value_d1);
@@ -330,19 +327,19 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // --- shrink_to_fit(): folds the candidates, returns the parked buffers.
         // Observable here as: it returns, and the contents are unchanged.
         {
-            Array<double> z(n_stl);
+            Array<double> zeros(n_stl);
             for (Int i = 0; i < n_stl; ++i)
             {
-                z[i] = (i < n_stl / 2) ? 0.0 : static_cast<double>(i);
+                zeros[i] = (i < n_stl / 2) ? 0.0 : static_cast<double>(i);
             }
-            z.shrink_to_fit();
-            bool ok = z.size() == static_cast<std::size_t>(n_stl);
+            zeros.shrink_to_fit();
+            bool ok = zeros.size() == static_cast<std::size_t>(n_stl);
             for (Int i = 0; ok && i < n_stl; ++i)
             {
-                ok = std::as_const(z)[i] == ((i < n_stl / 2) ? 0.0 : static_cast<double>(i));
+                ok = std::as_const(zeros)[i] == ((i < n_stl / 2) ? 0.0 : static_cast<double>(i));
             }
             expect(ok, "shrink_to_fit keeps size and contents");
-            z.clear();
+            zeros.clear();
         }
 
         if (failures == 0)
@@ -378,11 +375,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // actually reach the cst2 read path this check is about (no-op on
         // zero / vector mode, per-chunk on zero_any).
         const long    nr = 100000;
-        Array<double> r(nr);
-        maybe_set_second_value(r, second_value_d1); // second_value = 2.0
+        Array<double> reads(nr);
+        maybe_set_second_value(reads, second_value_d1); // second_value = 2.0
         for (long i = 0; i < nr; ++i)
         {
-            r[i] = (i % 7 == 0) ? second_value_d1 : static_cast<double>(i);
+            reads[i] = (i % 7 == 0) ? second_value_d1 : static_cast<double>(i);
         }
 
         long idem_bad = 0; // two consecutive reads disagree (read has a side effect)
@@ -390,9 +387,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         long first_i  = -1;
         for (long i = 0; i < nr; ++i)
         {
-            const double a = r[i]; // operator T() -> read_pure (live)
-            const double b = r[i]; // re-read: must equal a
-            if (a != b)
+            const double first_read  = reads[i]; // operator T() -> read_pure (live)
+            const double second_read = reads[i]; // re-read: must equal first_read
+            if (first_read != second_read)
             {
                 if (first_i < 0)
                 {
@@ -402,8 +399,8 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             }
 
             const double exp   = (i % 7 == 0) ? second_value_d1 : static_cast<double>(i);
-            const bool   ne_op = (r[i] != exp); // operator!= path (was stale)
-            const bool   ne_t  = (a != exp);    // T-based comparison (correct)
+            const bool   ne_op = (reads[i] != exp);   // operator!= path (was stale)
+            const bool   ne_t  = (first_read != exp); // T-based comparison (correct)
             if (ne_op != ne_t)
             {
                 if (first_i < 0)
@@ -426,6 +423,6 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                       << tc.reset;
         }
 
-        r.clear();
+        reads.clear();
     }
 }

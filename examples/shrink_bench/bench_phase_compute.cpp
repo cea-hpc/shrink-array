@@ -61,7 +61,7 @@ static const unsigned long bench_ulong_mask = []
 }();
 
 void bench_phase_compute(BenchArrays&            bench_arr,
-                         Int                     k,
+                         Int                     iter,
                          Int                     start0,
                          Int                     end0,
                          const std::vector<Int>& tab_nba1,
@@ -112,11 +112,11 @@ void bench_phase_compute(BenchArrays&            bench_arr,
     const Int        sched_base = sched.base;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
 
-            const Int dec = k % 16;
+            const Int dec = iter % 16;
             const Int deb = std::max<Int>(start0 - 512, 0);
 
             // nowait on this loop and the next: they write DISJOINT ranges
@@ -137,25 +137,25 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             // Scalar (this loop and the next): a few hundred elements, and libm
             // calls inside index-selected branches -- "control flow cannot be
             // substituted for a select", the calls may not be speculated.
-            t.for_static<Int>(
+            team.for_static<Int>(
                 deb, start0,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    const Int j = i - deb;
+                    const Int offset = i - deb;
 
-                    if (j < 60 + dec)
+                    if (offset < 60 + dec)
                     {
-                        tab_complex[i] = ComplexDouble(std::sin(i + k), std::cos(i + k));
+                        tab_complex[i] = ComplexDouble(std::sin(i + iter), std::cos(i + iter));
                     }
-                    else if (j < 120 + dec)
+                    else if (offset < 120 + dec)
                     {
                         tab_complex[i] = zero_complex;
                     }
-                    else if (j < 240 + dec)
+                    else if (offset < 240 + dec)
                     {
                         tab_complex[i] = second_value_c;
                     }
-                    else if (j < 360 + dec)
+                    else if (offset < 360 + dec)
                     {
                         tab_complex[i] = zero_complex;
                     }
@@ -166,72 +166,72 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 },
                 bench_par::nowait);
 
-            t.for_static<Int>(
+            team.for_static<Int>(
                 deb, start0,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    const Int j = i - deb;
+                    const Int offset = i - deb;
 
-                    if (j < 60 + dec)
+                    if (offset < 60 + dec)
                     {
                         tab1[i]    = 0;
                         tab2[i]    = second_value_d;
-                        tab3[i]    = std::tan(i + k);
+                        tab3[i]    = std::tan(i + iter);
                         tab4[i]    = 0;
-                        tab5[i]    = std::sin(i + k);
+                        tab5[i]    = std::sin(i + iter);
                         tab_int[i] = 0;
 
-                        tab_float[j] = static_cast<float>(std::cos(i - k));
-                        tab_short[j] = 0;
-                        tab_char[i]  = 0;
+                        tab_float[offset] = static_cast<float>(std::cos(i - iter));
+                        tab_short[offset] = 0;
+                        tab_char[i]       = 0;
                     }
-                    else if (j < 120 + dec)
+                    else if (offset < 120 + dec)
                     {
-                        tab1[i]      = second_value_d;
-                        tab2[i]      = 0;
-                        tab3[i]      = 0;
-                        tab4[i]      = second_value_d1;
-                        tab5[i]      = 0;
-                        tab_int[i]   = 1;
-                        tab_float[j] = 0;
-                        tab_short[j] = 1;
-                        tab_char[i]  = 0;
+                        tab1[i]           = second_value_d;
+                        tab2[i]           = 0;
+                        tab3[i]           = 0;
+                        tab4[i]           = second_value_d1;
+                        tab5[i]           = 0;
+                        tab_int[i]        = 1;
+                        tab_float[offset] = 0;
+                        tab_short[offset] = 1;
+                        tab_char[i]       = 0;
                     }
-                    else if (j < 240 + dec)
+                    else if (offset < 240 + dec)
                     {
-                        tab1[i]      = 0;
-                        tab2[i]      = std::sin(i + k);
-                        tab3[i]      = second_value_d;
-                        tab4[i]      = 0;
-                        tab5[i]      = second_value_d2;
-                        tab_int[i]   = static_cast<int>(j);
-                        tab_float[j] = second_value_f0;
-                        tab_short[j] = second_value_s0;
-                        tab_char[i]  = second_value_c0;
+                        tab1[i]           = 0;
+                        tab2[i]           = std::sin(i + iter);
+                        tab3[i]           = second_value_d;
+                        tab4[i]           = 0;
+                        tab5[i]           = second_value_d2;
+                        tab_int[i]        = static_cast<int>(offset);
+                        tab_float[offset] = second_value_f0;
+                        tab_short[offset] = second_value_s0;
+                        tab_char[i]       = second_value_c0;
                     }
-                    else if (j < 360 + dec)
+                    else if (offset < 360 + dec)
                     {
-                        tab1[i]      = std::cos(i + k);
-                        tab2[i]      = 0;
-                        tab3[i]      = 0;
-                        tab4[i]      = 0;
-                        tab5[i]      = 0;
-                        tab_int[i]   = static_cast<int>(j + 1);
-                        tab_float[j] = 0;
-                        tab_short[j] = 0;
-                        tab_char[i]  = 0;
+                        tab1[i]           = std::cos(i + iter);
+                        tab2[i]           = 0;
+                        tab3[i]           = 0;
+                        tab4[i]           = 0;
+                        tab5[i]           = 0;
+                        tab_int[i]        = static_cast<int>(offset + 1);
+                        tab_float[offset] = 0;
+                        tab_short[offset] = 0;
+                        tab_char[i]       = 0;
                     }
                     else
                     {
-                        tab1[i]      = 0;
-                        tab2[i]      = second_value_d;
-                        tab3[i]      = second_value_d;
-                        tab4[i]      = second_value_d1;
-                        tab5[i]      = second_value_d2;
-                        tab_float[j] = second_value_f1;
-                        tab_short[j] = second_value_s2;
-                        tab_char[i]  = 0;
-                        tab_int[i]   = 0;
+                        tab1[i]           = 0;
+                        tab2[i]           = second_value_d;
+                        tab3[i]           = second_value_d;
+                        tab4[i]           = second_value_d1;
+                        tab5[i]           = second_value_d2;
+                        tab_float[offset] = second_value_f1;
+                        tab_short[offset] = second_value_s2;
+                        tab_char[i]       = 0;
+                        tab_int[i]        = 0;
                     }
                 },
                 bench_par::nowait);
@@ -244,17 +244,17 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             //
             // Scalar: 256 elements, and interpolation() carries early exits
             // ("cannot vectorize early exit loop with more than one early exit").
-            t.for_static<Int>(
+            team.for_static<Int>(
                 end0, std::min(end0 + 256, sz),
                 [&](const Int i) __attribute__((always_inline))
                 {
                     if (i % 3 == 0)
                     {
                         tab1[i] = second_value_d;
-                        tab2[i] = std::sin(i + k);
+                        tab2[i] = std::sin(i + iter);
                         tab3[i] = 0;
                         tab4[i] = second_value_d1;
-                        tab5[i] = std::cos(i - k);
+                        tab5[i] = std::cos(i - iter);
 
                         tab_complex[i] = zero_complex;
                         tab_int[i]     = 0;
@@ -267,11 +267,11 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     {
                         tab1[i]        = 0;
                         tab2[i]        = 0;
-                        tab3[i]        = std::sin(i + k);
+                        tab3[i]        = std::sin(i + iter);
                         tab4[i]        = 0;
-                        tab5[i]        = std::cos(i + (2 * k));
-                        tab_complex[i] = ComplexDouble(std::tan(i + (2 * k)), std::cos(i - k));
-                        tab_int[i]     = static_cast<int>(i - k);
+                        tab5[i]        = std::cos(i + (2 * iter));
+                        tab_complex[i] = ComplexDouble(std::tan(i + (2 * iter)), std::cos(i - iter));
+                        tab_int[i]     = static_cast<int>(i - iter);
                         tab_float[i]   = 0;
                         tab_short[i]   = static_cast<short>(interpolation(i, sz, std::numeric_limits<short>::max()));
                         tab_char[i]    = 0;
@@ -291,11 +291,11 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             // gate resolves (DeferredReadGate: a read of a chunk with pending ops
             // drains them first). No cross-thread dependency, no barrier, and no
             // flush after it -- same reasoning as the two nowait loops above.
-            if (k % 4 != 0)
+            if (iter % 4 != 0)
             {
                 // To simulate behavior of a code where we read more than we write
 
-                t.for_static_chunks<Int>(
+                team.for_static_chunks<Int>(
                     sched_base, end0, bench_par::block(sched_blk),
                     [&](const Int i) __attribute__((always_inline))
                     {
@@ -309,7 +309,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                         tab_complex[i] = ComplexDouble(std::sqrt(double(i + 1)), std::sqrt(double(i - 1)));
 
-                        if (i > tab_nba1[k])
+                        if (i > tab_nba1[iter])
                         {
                             tab2[i]     = std::cos(double(2 * i));
                             tab_char[i] = static_cast<unsigned char>(
@@ -318,7 +318,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                                 exponential_correlation(i, sz, std::numeric_limits<short>::max(), 2));
                         }
 
-                        if (i > tab_nba2[k])
+                        if (i > tab_nba2[iter])
                         {
                             tab3[i] = std::sin(tab1[i] + tab2[i]);
                             tab4[i] *= tab5[i] + 1;
@@ -377,7 +377,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             }
             else
             {
-                t.for_static_chunks<Int>(
+                team.for_static_chunks<Int>(
                     sched_base, end0, bench_par::block(sched_blk),
                     [&](const Int i) __attribute__((always_inline))
                     {
@@ -443,7 +443,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 double    p_v_real       = 0;
                 double    p_v_im         = 0;
                 const Int n_blocks       = (end0 - sched_base + sched_blk - 1) / sched_blk;
-                t.for_static_chunks<Int>(
+                team.for_static_chunks<Int>(
                     0, n_blocks, 1,
                     [&](const Int blk) __attribute__((always_inline))
                     {
@@ -458,14 +458,14 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                             const double t5 = tab5[i];
 
                             const ComplexDouble valc = tab_complex[i];
-                            const bool          b    = tab_bool[i];
+                            const bool          flag = tab_bool[i];
                             const Int           ti   = tab_int[i];
 
                             const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
-                            const double arm    = b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) -
-                                                          (std::tan(t3) + std::cos(t5))
-                                                    : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) -
-                                                          (std::sin(t3) + std::atan(t5));
+                            const double arm    = flag ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) -
+                                                             (std::tan(t3) + std::cos(t5))
+                                                       : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) -
+                                                             (std::sin(t3) + std::atan(t5));
 
                             p_val_sum += common + arm;
                             p_v_real += std::cos(valc.real()) - tab_float[i];
@@ -492,7 +492,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 const auto val = static_cast<double>(p);
 
                 bench_par::for_static_chunks_sum(
-                    t, sched_base, end0, bench_par::block(sched_blk), val_sum,
+                    team, sched_base, end0, bench_par::block(sched_blk), val_sum,
                     [&](const Int i, auto& val_sum_part) __attribute__((always_inline))
                     {
                         if (i < start0) // alignment head: same trip count in every loop
@@ -597,8 +597,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                                     tab_bool_bits[i] = true;
                                 }
 
-                                const bool b = tab_bool[i];
-                                if (!b)
+                                const bool flag = tab_bool[i];
+                                if (!flag)
                                 {
                                     tab_int[i]++;
                                 }

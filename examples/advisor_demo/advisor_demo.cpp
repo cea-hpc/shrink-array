@@ -41,22 +41,22 @@ static constexpr int n_elems = 1 << 22; // 4M elements
 //  [87.5,100%): pseudo-random                 -> MAT at every size
 //  plus: one exceptional value every 4096 elements inside the zero region
 //        -> pollutes 1 chunk in 64 at S=64, 1 in 4 at S=1024...
-static double value_at(int i)
+static double value_at(int index)
 {
-    const double f = static_cast<double>(i) / n_elems;
-    if (f < 0.5)
+    const double frac = static_cast<double>(index) / n_elems;
+    if (frac < 0.5)
     {
-        return (i % 4096 == 2048) ? 42.0 : 0.0;
+        return (index % 4096 == 2048) ? 42.0 : 0.0;
     }
-    if (f < 0.75)
+    if (frac < 0.75)
     {
         return 3.5;
     }
-    if (f < 0.875)
+    if (frac < 0.875)
     {
-        return ((i / 256) % 2) ? 7.25 : -1.5;
+        return ((index / 256) % 2) ? 7.25 : -1.5;
     }
-    return 0.001 * ((i * 2654435761u) % 1000);
+    return 0.001 * ((index * 2654435761u) % 1000);
 }
 
 template <typename Tab>
@@ -77,17 +77,17 @@ struct Truth
 
 static Truth ground_truth(const zero_any::Array<double>& tab, double meta)
 {
-    Truth t{tab.nb_chunk_, 0, 0.};
-    for (long long j = 0; j < t.chunks; ++j)
+    Truth truth{tab.nb_chunk_, 0, 0.};
+    for (long long j = 0; j < truth.chunks; ++j)
     {
-        const auto& c = tab.chunk_list_[j];
-        if (!c.is_cst_val1() && !c.is_cst_val2())
+        const auto& chunk = tab.chunk_list_[j];
+        if (!chunk.is_cst_val1() && !chunk.is_cst_val2())
         {
-            ++t.mat;
+            ++truth.mat;
         }
     }
-    t.mem = (static_cast<double>(t.chunks) * meta) + (double(t.mat) * tab.chunk_size() * sizeof(double));
-    return t;
+    truth.mem = (static_cast<double>(truth.chunks) * meta) + (double(truth.mat) * tab.chunk_size() * sizeof(double));
+    return truth;
 }
 
 int main()
@@ -110,13 +110,13 @@ int main()
     {
         set_thread_chunk_size(cs);
         zero_any::Array<double> tab(1); // proven pattern (test_multisize):
-        tab.set_chunk_size(cs);      // register per-array size FIRST,
-        tab.resize(n_elems);         // THEN size the geometry
+        tab.set_chunk_size(cs);         // register per-array size FIRST,
+        tab.resize(n_elems);            // THEN size the geometry
         fill_and_compress(tab);
         if (meta == 0.)
         {
-            const ChunkSizeAdvisor<double>::Options o;
-            meta = sizeof(zero_any::Chunk<double>) + o.meta_extra_bytes;
+            const ChunkSizeAdvisor<double>::Options opts;
+            meta = sizeof(zero_any::Chunk<double>) + opts.meta_extra_bytes;
         }
         truths.push_back(ground_truth(tab, meta));
     }
@@ -156,24 +156,26 @@ int main()
         ChunkSizeAdvisor<double>::print(rep, title);
 
         println("\n── prediction (from S={}) vs ground truth ──", ref_size);
-        for (const auto& e : rep.table)
+        for (const auto& entry : rep.table)
         {
             // find matching real size
             for (size_t k = 0; k < std::size(sizes); ++k)
             {
-                if (sizes[k] != e.size)
+                if (sizes[k] != entry.size)
                 {
                     continue;
                 }
-                const auto&  t  = truths[k];
-                const double dm = t.mat ? 100. * double(e.mat - t.mat) / double(t.mat) : (e.mat ? 100. : 0.);
-                const bool   ok = e.exact ? (e.mat == t.mat && e.n_chunks == t.chunks) : (dm > -10. && dm < 10.);
+                const auto&  truth = truths[k];
+                const double dm =
+                    truth.mat ? 100. * double(entry.mat - truth.mat) / double(truth.mat) : (entry.mat ? 100. : 0.);
+                const bool ok =
+                    entry.exact ? (entry.mat == truth.mat && entry.n_chunks == truth.chunks) : (dm > -10. && dm < 10.);
                 println(
                     "   S={:5} : pred mat={:9} {} | real mat={:9} | d={:+6.2f}%  mem pred={:8.2f} real={:8.2f} Mo  {}",
-                    e.size, (long long)e.mat, e.exact ? "(exact)" : "(sampl)", t.mat, dm, e.mem_bytes / 1048576.,
-                    t.mem / 1048576., ok ? "OK" : "FAIL");
+                    entry.size, (long long)entry.mat, entry.exact ? "(exact)" : "(sampl)", truth.mat, dm,
+                    entry.mem_bytes / 1048576., truth.mem / 1048576., ok ? "OK" : "FAIL");
                 fail += !ok;
-                grid_rows += (e.size & (e.size - 1)) != 0 ? 1 : 0;
+                grid_rows += (entry.size & (entry.size - 1)) != 0 ? 1 : 0;
             }
         }
         ref.clear();

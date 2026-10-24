@@ -349,43 +349,43 @@ void region(int num_threads, Body&& body)
 
 #endif
 
-/// @brief The calling thread's share [lo, hi) of [@p b, @p e) under
+/// @brief The calling thread's share [lo, hi) of [@p first, @p last) under
 ///        `schedule(static)`: libgomp's split, the first (e - b) % size ranks
 ///        one iteration more.
-[[nodiscard]] inline Int static_lo(const Team& t, Int b, Int e) noexcept
+[[nodiscard]] inline Int static_lo(const Team& team, Int first, Int last) noexcept
 {
-    const Int n = e - b;
-    if (n <= 0)
+    const Int count = last - first;
+    if (count <= 0)
     {
-        return b;
+        return first;
     }
-    const Int nt = t.size();
-    const Int r  = t.rank();
-    const Int q  = n / nt;
-    const Int m  = n % nt;
-    return b + (r < m ? r * (q + 1) : (m * (q + 1)) + ((r - m) * q));
+    const Int nt   = team.size();
+    const Int rank = team.rank();
+    const Int quot = count / nt;
+    const Int rem  = count % nt;
+    return first + (rank < rem ? rank * (quot + 1) : (rem * (quot + 1)) + ((rank - rem) * quot));
 }
 
 /// @brief One past the end of static_lo()'s share.
-[[nodiscard]] inline Int static_hi(const Team& t, Int b, Int e) noexcept
+[[nodiscard]] inline Int static_hi(const Team& team, Int first, Int last) noexcept
 {
-    const Int n = e - b;
-    if (n <= 0)
+    const Int count = last - first;
+    if (count <= 0)
     {
-        return b;
+        return first;
     }
-    const Int nt = t.size();
-    const Int r  = t.rank();
-    return static_lo(t, b, e) + (n / nt) + (r < n % nt ? 1 : 0);
+    const Int nt   = team.size();
+    const Int rank = team.rank();
+    return static_lo(team, first, last) + (count / nt) + (rank < count % nt ? 1 : 0);
 }
 
 /// @brief v += x, atomically, whatever the backend: std::atomic_ref is atomic
 ///        against OpenMP's threads as against the std backend's (it compiles
 ///        to the same instruction as `omp atomic`).
 template <typename T>
-inline void atomic_add(T& v, T x) noexcept
+inline void atomic_add(T& target, T delta) noexcept
 {
-    std::atomic_ref<T>(v).fetch_add(x, std::memory_order_relaxed);
+    std::atomic_ref<T>(target).fetch_add(delta, std::memory_order_relaxed);
 }
 
 /// @brief A block size for Team::for_static_chunks (an int): the bench's
@@ -403,47 +403,48 @@ inline void atomic_add(T& v, T x) noexcept
 
 /**
  * @brief A reduction inside a region: @p body(i, part) adds into the calling
- *        thread's partial for its share of [@p b, @p e) under `schedule(static)`,
- *        then the partial goes into @p v atomically. No barrier: @p v is whole
+ *        thread's partial for its share of [@p first, @p last) under `schedule(static)`,
+ *        then the partial goes into @p sum atomically. No barrier: @p sum is whole
  *        after the next barrier or the end of the region.
  * @details Not a `reduction(+ : v)` clause (an orphaned `omp for reduction` on
  *          a lambda's capture is refused by clang), not pmp::team_sum (a region
  *          of its own, where the bench's phases are one barrier-free region).
  */
 template <typename T, typename Body>
-void for_static_sum(Team& t, Int b, Int e, T& v, Body&& body)
+void for_static_sum(Team& team, Int first, Int last, T& sum, Body&& body)
 {
     T part{};
-    t.for_static<Int>(
-        b, e, [&](const Int i) __attribute__((always_inline)) { body(i, part); }, shrink_array::pmp::nowait);
-    atomic_add(v, part);
+    team.for_static<Int>(
+        first, last, [&](const Int i) __attribute__((always_inline)) { body(i, part); }, shrink_array::pmp::nowait);
+    atomic_add(sum, part);
 }
 
 /// @brief for_static_sum() over round-robin blocks of @p chunk iterations
 ///        (`schedule(static, chunk)`).
 template <typename T, typename Body>
-void for_static_chunks_sum(Team& t, Int b, Int e, int chunk, T& v, Body&& body)
+void for_static_chunks_sum(Team& team, Int first, Int last, int chunk, T& sum, Body&& body)
 {
     T part{};
-    t.for_static_chunks<Int>(
-        b, e, chunk, [&](const Int i) __attribute__((always_inline)) { body(i, part); }, shrink_array::pmp::nowait);
-    atomic_add(v, part);
+    team.for_static_chunks<Int>(
+        first, last, chunk, [&](const Int i) __attribute__((always_inline)) { body(i, part); },
+        shrink_array::pmp::nowait);
+    atomic_add(sum, part);
 }
 
 /// @brief The lock of critical(): one for the whole bench, as an unnamed
 ///        `omp critical`.
 [[nodiscard]] inline std::mutex& critical_mutex() noexcept
 {
-    static std::mutex m;
-    return m;
+    static std::mutex mtx;
+    return mtx;
 }
 
-/// @brief Run @p f under the bench's one lock (an unnamed `omp critical`).
+/// @brief Run @p func under the bench's one lock (an unnamed `omp critical`).
 template <typename F>
-void critical(F&& f)
+void critical(F&& func)
 {
     const std::scoped_lock lock(critical_mutex());
-    f();
+    func();
 }
 
 /// @brief A thread's partial of a reduction (every build, see the file
