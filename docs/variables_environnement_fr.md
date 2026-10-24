@@ -35,7 +35,7 @@
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi une bibliothèque à géométrie dynamique (`_dyn`) par variante |
 | `CHUNK_STD_ALLOC` | `OFF` | allocateur standard pour les tampons de chunks au lieu de `fast_allocators` (utile sous ASan : chaque tampon est un vrai `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any` : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
-| `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `print_chunk_stats()` |
+| `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `ParamChunk::chunk_stats()` |
 | `CHECK_OPTIM` | `OFF` | vérifications d'invariants en build optimisé |
 | `SANITIZER` | `none` | `thread`, `address` ou `token` (AllocToken, Clang ≥ 22), pour tous les types de build |
 

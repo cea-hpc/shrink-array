@@ -21,7 +21,7 @@
  * @brief The linear-scan core shared by the array→metadata registries.
  *
  * @details zero::PointerMap (zero_proxy.h) and zero_one_value::PointerMap (zero_one_value_pointer_map.h)
- *          map an array's address to its metadata by walking flat (key, payload)
+ *          map an array (its ArrayKey) to its metadata by walking flat (key, payload)
  *          pairs; the plain scans live here once. Payload: a table number (zero),
  *          a (second_value, ind, num_tab) record (zero_one_value).
  *
@@ -51,6 +51,9 @@ template <typename Payload, typename Storage>
 class PointerMapLinear
 {
   public:
+    /// @brief The key: an ArrayKey, the first member of Storage's pairs.
+    using Key = typename Storage::value_type::first_type;
+
     /**
      * @brief Remove the entry for @p key, if present.
      *
@@ -60,7 +63,7 @@ class PointerMapLinear
      *
      * @param key the array address to drop.
      */
-    void erase(const void* key)
+    void erase(Key key)
     {
         for (auto it = vec_.begin(); it != vec_.end(); ++it)
         {
@@ -84,7 +87,7 @@ class PointerMapLinear
      * @return true when both keys were present and their payloads swapped;
      *         false, with nothing changed, when either is missing.
      */
-    bool swap_entries(const void* key_a, const void* key_b) noexcept
+    bool swap_entries(Key key_a, Key key_b) noexcept
     {
         Payload* pa = nullptr;
         Payload* pb = nullptr;
@@ -111,7 +114,7 @@ class PointerMapLinear
      * @brief Whether @p key is currently registered.
      * @param key the array address to test.
      */
-    [[nodiscard]] bool exists(const void* key) const noexcept
+    [[nodiscard]] bool exists(Key key) const noexcept
     {
         return find_payload(key) != nullptr;
     }
@@ -141,7 +144,7 @@ class PointerMapLinear
      *
      * @details FIRST match only, like every lookup here (see erase()).
      */
-    [[nodiscard]] const Payload* find_payload(const void* key) const noexcept
+    [[nodiscard]] const Payload* find_payload(Key key) const noexcept
     {
         for (const auto& item : vec_)
         {

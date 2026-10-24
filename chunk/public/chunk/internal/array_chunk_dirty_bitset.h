@@ -47,6 +47,7 @@
 #include <vector>    // std::vector
 
 #include "chunk/config.h"                         // build_config::threaded
+#include "chunk/internal/array_chunk_for.h"       // ArrayKey (clear_all_dirty_bitsets)
 #include "chunk/internal/parallel_storage_init.h" // NoInitVector, make_filled: the words built by a team
 
 namespace shrink_array
@@ -150,12 +151,13 @@ class DirtyBitsetSupport<Derived, true>
     {
         using ProxyType = Derived::ProxyType;
         ProxyType::share_info_array->for_each_key(
-            [](const void* key)
+            [](ArrayKey<typename Derived::ChunkType> key)
             {
-                if (key)
+                if (key != nullptr)
                 {
-                    auto* arr = static_cast<Derived*>(const_cast<void*>(key));
-                    arr->clear_dirty_bitset();
+                    // The registry hands out const keys; clearing the bitset is
+                    // the quiescent point's own write.
+                    const_cast<Derived*>(key)->clear_dirty_bitset();
                 }
             });
     }

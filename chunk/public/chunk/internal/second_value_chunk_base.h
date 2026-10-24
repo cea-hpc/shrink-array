@@ -25,6 +25,7 @@
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast (the constant-buffer write check)
 #include "chunk/internal/chunk_base.h"          // ChunkBase
+#include "chunk/internal/cst_slot.h"            // CstSlot (clear_impl's type-of-constant slot)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef, the zero_any second-value slot handle
 #include "chunk/type_name.h"                    // type_name<T>
 
@@ -117,7 +118,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
                             int                  num_compress_value,
                             IndexT               index_opt,
                             [[maybe_unused]] int thr_rank,
-                            char*                ptr_type_cst     = nullptr,
+                            CstSlot*             ptr_type_cst     = nullptr,
                             SecondValueRef<T>    ptr_second_value = {},
                             T*                   cst2_ptr         = nullptr);
 
@@ -197,11 +198,11 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
             }
             else
             {
-                // Path for zero_any or Bool (Non-indexed)
-                if constexpr (is_bool || is_chunk2a_derived)
+                // Path for the zero_any family or Bool (Non-indexed)
+                if constexpr (is_bool || is_zero_any_family_derived)
                 {
                     is_violating = self.is_cst_val2();
-                    if constexpr (is_chunk2a_derived)
+                    if constexpr (is_zero_any_family_derived)
                     {
                         // A chunk compressed to a second constant reads from it
                         // through its values pointer; there is no other handle.
@@ -228,8 +229,8 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     }
 
   private:
-    static constexpr bool is_chunk2a_derived = std::is_same_v<Derived, zero_any::Chunk<T>>;
-    static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
+    static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;
+    static constexpr bool is_chunk2_derived          = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
 
     /// @brief Clear chunk and reset to constant value
     /// @tparam IndexT Type of index parameter
@@ -241,7 +242,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     void clear_impl(this Derived&     self,
                     IndexT            index_opt,
                     int               thr_rank,
-                    char*             ptr_type_cst     = nullptr,
+                    CstSlot*          ptr_type_cst     = nullptr,
                     SecondValueRef<T> ptr_second_value = {});
 
     /**
@@ -278,13 +279,11 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
             if (target_ptr == c1 || (c2 != nullptr && target_ptr == c2)) [[unlikely]]
             {
-                invariant_failed(
-                    loc,
-                    "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
-                    "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
-                    type_name<T>(),
-                    static_cast<const void*>(static_cast<const SecondValueChunkBase*>(std::addressof(self))),
-                    static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
+                invariant_failed(loc,
+                                 "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
+                                 "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
+                                 type_name<T>(), static_cast<const SecondValueChunkBase*>(std::addressof(self)),
+                                 static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
             }
         }
     }

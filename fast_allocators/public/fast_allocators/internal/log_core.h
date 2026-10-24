@@ -49,8 +49,9 @@
  *   (channel, level letter, kernel thread id), so lines from many threads
  *   do not interleave.
  * - Arguments: anything std::format spells, plus std::complex, "(re+imi)",
- *   and any other type as its bytes in hex (fmt_arg): a message can print
- *   an element value of any type.
+ *   a pointer to any object as its address (no static_cast<const void*> at
+ *   the call), and any other type as its bytes in hex (fmt_arg): a message
+ *   can print an element value of any type. A char pointer stays a string.
  * - Traces and reports: a trace is a flow CHUNK_LOG switches on (CHUNK_LOG);
  *   a report is a summary the program asked for explicitly -- a print_*
  *   function it called, a report switch it set (CHUNK_LEDGER_REPORT,
@@ -86,11 +87,11 @@
 #include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock
 #include <source_location> // std::source_location
 #include <string_view>     // std::string_view
-#include <type_traits>     // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v
-#include <utility>         // std::forward, std::declval
-#include <sched.h>         // sched_yield (emit_fatal)
-#include <sys/syscall.h>   // SYS_gettid
-#include <unistd.h>        // getpid, syscall
+#include <type_traits> // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v, std::is_pointer_v, std::is_object_v
+#include <utility>       // std::forward, std::declval
+#include <sched.h>       // sched_yield (emit_fatal)
+#include <sys/syscall.h> // SYS_gettid
+#include <unistd.h>      // getpid, syscall
 
 #ifndef CHUNK_LOG_MAX_LEVEL
     #define CHUNK_LOG_MAX_LEVEL 5 // trace: every message compiled in, CHUNK_LOG filters at run time
@@ -243,6 +244,12 @@ struct BytesArg
     const V* v;
 };
 
+/// @brief True for a pointer to an object std::format does not spell -- any
+///        but void* and the character pointers (a string): printed as an address.
+template <typename V>
+inline constexpr bool is_address =
+    std::is_pointer_v<V> && std::is_object_v<std::remove_pointer_t<V>> && !Formattable<V>;
+
 /// @brief The argument std::format sees for @p arg: itself when its type is Formattable.
 template <typename A>
     requires(Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
@@ -259,9 +266,18 @@ constexpr auto fmt_arg(A&& z) noexcept
     return ComplexArg<typename std::remove_cvref_t<A>::value_type>{z};
 }
 
+/// @brief Overload for a pointer to an object: its address, as std::format spells a void*.
+template <typename A>
+    requires is_address<std::remove_cvref_t<A>>
+constexpr const void* fmt_arg(A&& p) noexcept
+{
+    return p;
+}
+
 /// @brief Overload for a type with no formatter: its bytes.
 template <typename A>
-    requires(!Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
+    requires(!Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>> &&
+             !is_address<std::remove_cvref_t<A>>)
 constexpr auto fmt_arg(A&& arg) noexcept
 {
     return BytesArg<std::remove_cvref_t<A>>{&arg};
@@ -712,8 +728,8 @@ void write(Level                                l,
 ///        One relaxed load and a compare once the configuration is read.
 [[nodiscard]] inline bool enabled(Channel c, Level l) noexcept
 {
-    auto&    t = detail::thresholds[static_cast<std::size_t>(c)];
-    unsigned s = t.load(std::memory_order_relaxed);
+    const auto& t = detail::thresholds[static_cast<std::size_t>(c)];
+    unsigned    s = t.load(std::memory_order_relaxed);
     if (s == 0U) [[unlikely]]
     {
         detail::ensure_configured();

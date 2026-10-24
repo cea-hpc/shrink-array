@@ -112,6 +112,9 @@ endif()
 # recompiles the whole unit (SHRINK_BENCH_UNITY_BATCH sources per unit, 0 =
 # all, trades that back).
 option(SHRINK_BENCH_UNITY "Compile each shrink_bench executable as one unity translation unit" ON)
+# The memory lines of a run (bench_config.h's print_mem): OFF to time a run
+# without the RSS reads that print them.
+option(SHRINK_BENCH_PRINT_MEM "shrink_bench prints its memory lines (after init, every freq_conso_mem iterations, after a compression)" ON)
 set(SHRINK_BENCH_UNITY_BATCH "0" CACHE STRING "Bench sources per unity translation unit (0: all)")
 function(sa2_setup_target tgt)
     if (OMP)
@@ -119,6 +122,7 @@ function(sa2_setup_target tgt)
     endif ()
     chunk_require_cxx_std(${tgt} PRIVATE)
     target_link_libraries(${tgt} PRIVATE BZip2::BZip2)
+    target_compile_definitions(${tgt} PRIVATE BENCH_PRINT_MEM=$<BOOL:${SHRINK_BENCH_PRINT_MEM}>)
     if (SHRINK_BENCH_UNITY)
         set_target_properties(${tgt} PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE ${SHRINK_BENCH_UNITY_BATCH})
         if (CHUNK_HEAVY_JOB_POOL)

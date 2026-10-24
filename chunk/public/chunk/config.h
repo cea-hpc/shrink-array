@@ -399,7 +399,7 @@ inline constexpr bool tsan_build = false;
  *          feedback loop, an order of magnitude slower. Symmetric only on non-Linux (the
  *          syscall) and under ThreadSanitizer (which does not model membarrier). An
  *          asymmetric build falls back to symmetric AT RUN TIME if membarrier registration
- *          fails (kernel < 4.14, seccomp); print_chunk_stats() says which one ran.
+ *          fails (kernel < 4.14, seccomp); ParamChunk::chunk_stats() says which one ran.
  */
 #if defined(__linux__) && !defined(CHUNK_TSAN_BUILD)
 inline constexpr bool asymmetric_dekker = true;

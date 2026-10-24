@@ -193,7 +193,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     catch (const std::exception& e)
     {
         CHUNK_INVARIANT_FAILED("deferred enqueue failed: {} (rank {}, chunk {}, offset {})", e.what(), thr_rank,
-                               static_cast<const void*>(chunk_ptr), num);
+                               chunk_ptr, num);
     }
 
     Policy::end_write(thr_rank);

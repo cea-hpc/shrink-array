@@ -20,7 +20,7 @@
 // file at its end.
 
 #include <bit>     // std::bit_width, the element-size shift
-#include <cstddef> // std::ptrdiff_t, the element offsets
+#include <cstddef> // std::ptrdiff_t, the element offsets; std::byte (the blocks)
 #include <cstdint> // std::uintptr_t
 #include <utility> // std::cmp_less (the element-size check)
 #include <vector>  // std::vector
@@ -64,7 +64,8 @@ inline void TCSlab<Links>::alloc_block()
     // and the op, ctx and value arenas are disjoint, so a freed op slab's address can never
     // be reobtained by the value pool. owner_rank (set before init()): a slab the rank
     // recycled comes back to it first (SlabArena::allocate).
-    data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(block_allocator, block_allocator, owner_rank));
+    data = static_cast<std::byte*>(
+        fast_alloc::arena_for(arena_kind).allocate(block_allocator, block_allocator, owner_rank));
 
     if (data == nullptr) [[unlikely]]
     {
@@ -148,7 +149,7 @@ inline void* TCSlab<Links>::alloc() noexcept
     }
 
     ++nn_ref;
-    char* elem_ptr = nullptr;
+    std::byte* elem_ptr = nullptr;
 
     if (first_free != free_list_end)
     {

@@ -47,7 +47,7 @@
 #include "chunk/zero_any_chunk_def.h"            // zero_any::ChunkDef
 #include "chunk/zero_array.h"                    // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
 #include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
-#include "chunk/internal/concept_chunk.h"        // IsChunk, IsChunk2, IsChunk2A, IsChunk2Or2A
+#include "chunk/internal/concept_chunk.h"        // IsChunk, IsChunk2, IsZeroAnyFamily, IsChunk2OrZeroAnyFamily
 #include "chunk/global_stats_chunk_list.h"       // GlobalStatsChunkList
 #include "chunk/type_name.h"                     // type_name<T>
 #include "chunk/internal/chunk_func.h"           // load_balance_list_block_free_thr
@@ -124,7 +124,7 @@ void ManagerChunk<ChunkT, T>::force_chunk_to_compress() const
         ChunkT<T>::make_block_compression(thr, nullptr);
     }
 
-    if constexpr (IsChunk2A<ChunkT, T>)
+    if constexpr (IsZeroAnyFamily<ChunkT, T>)
     {
         ChunkT<T>::make_block_compression(thr, nullptr);
     }
@@ -165,7 +165,7 @@ void ManagerChunk<ChunkT, T>::resize_chunk_to_compress_potentially() const
         }
 
         // Specific to zero_any: Per-chunk secondary value compression
-        if constexpr (IsChunk2A<ChunkT, T>)
+        if constexpr (IsZeroAnyFamily<ChunkT, T>)
         {
             chunk2a_to_compress_potentially_thr.resize(nthr);
         }
@@ -288,7 +288,7 @@ void ManagerChunk<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unuse
                 ChunkT<T>::compress_sweep_rank_bool(thr, apply);
             }
         }
-        else if constexpr (IsChunk2A<ChunkT, T>)
+        else if constexpr (IsZeroAnyFamily<ChunkT, T>)
         {
             ChunkT<T>::compress_sweep_rank(thr, apply);
         }
@@ -310,7 +310,7 @@ bool ManagerChunk<ChunkT, T>::sweep_mops_up([[maybe_unused]] bool apply) const
         {
             return true;
         }
-        else if constexpr (IsChunk2A<ChunkT, T>)
+        else if constexpr (IsZeroAnyFamily<ChunkT, T>)
         {
             return ChunkT<T>::compress_sweep_mops_up(apply);
         }
@@ -1140,7 +1140,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::delete_list_block_chunk_free_its
 {
     using Mgr = ManagerChunk<ChunkT, T>;
 
-    if constexpr (IsChunk2Or2A<ChunkT, T>)
+    if constexpr (IsChunk2OrZeroAnyFamily<ChunkT, T>)
     {
         Mgr::list_block_free_thr.clear();
     }
@@ -1222,7 +1222,7 @@ void ManagerChunk<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress
     // rank's list almost never reaches it: compression almost never runs during execution and
     // every materialisation allocates afresh.
     using VariantDef =
-        std::conditional_t<IsChunk2A<ChunkT, T>, zero_any::ChunkDef,
+        std::conditional_t<IsZeroAnyFamily<ChunkT, T>, zero_any::ChunkDef,
                            std::conditional_t<IsChunk2<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
     int threshold = somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);

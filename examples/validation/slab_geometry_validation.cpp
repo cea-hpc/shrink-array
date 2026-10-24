@@ -53,7 +53,7 @@ namespace
 {
 
 /// What printf's %p printed (glibc): "(nil)" for a null pointer, 0x... otherwise.
-static std::string ptr_text(const void* p)
+std::string ptr_text(const void* p)
 {
     return p ? std::format("{}", p) : std::string("(nil)");
 }

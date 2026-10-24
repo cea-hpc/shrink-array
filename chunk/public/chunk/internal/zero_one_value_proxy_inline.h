@@ -60,7 +60,7 @@ zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
                     "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
-                    static_cast<const void*>(self.get_ptr_on_array()));
+                    self.get_ptr_on_array());
             }
         }
     }
@@ -96,7 +96,7 @@ zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
                     "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
-                    static_cast<const void*>(self.get_ptr_on_array()));
+                    self.get_ptr_on_array());
             }
         }
     }
@@ -164,7 +164,7 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind(this Deriv
 }
 
 template <typename T, typename Derived>
-void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind_from_key(const void* key)
+void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind_from_key(ArrayKey<Chunk<T>> key)
 {
     inf_array_    = Derived::get_info_second_value(key);
     second_value_ = inf_array_.second_value;
@@ -550,7 +550,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val1 after create_value "
                                                "(chunk={}, num={})",
-                                               static_cast<const void*>(&chunk), num);
+                                               &chunk, num);
                     }
 
                     const bool is_cst2_loc = proxy.is_cst_val2();
@@ -558,7 +558,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> v) noexcept
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val2 after create_value "
                                                "(chunk={}, num={})",
-                                               static_cast<const void*>(&chunk), num);
+                                               &chunk, num);
                     }
                 }
 
@@ -771,7 +771,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
 
     if (will_be_not_second_value)
     {
-        self.Base::chunk_.create_value(true, self.zero_one_value::ProxySpec<T, Derived>::inf_array_);
+        self.Base::chunk_.create_value(true, self.get_inf_array());
         operation(op);
     }
     else if (self.Base2::is_not_cst_val2())
@@ -845,7 +845,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_ari
 
         if (will_be_not_second_value)
         {
-            self.Base::chunk_.create_value(true, self.zero_one_value::ProxySpec<T, Derived>::inf_array_);
+            self.Base::chunk_.create_value(true, self.get_inf_array());
             if constexpr (chunk_config::use_compression_with_counter)
             {
                 self.Base::chunk_.set_nb_val_eq_second_value(self.chunk_size() - 1);

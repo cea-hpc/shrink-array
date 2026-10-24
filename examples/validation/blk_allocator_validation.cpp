@@ -206,7 +206,6 @@ void check_parallel()
     long bad = 0;
 #pragma omp parallel reduction(+ : bad)
     {
-        std::vector<void*> live;
         for (int it = 0; it < 2000; ++it)
         {
             const std::size_t n  = test_sizes[static_cast<std::size_t>(it) % 20];

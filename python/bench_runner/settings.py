@@ -67,6 +67,7 @@ DEFAULT_CONFIGS = [
     # step drops it with one note. AOCC is not built by default any more
     # (AOCC 5 has no working C++23 with libstdc++ 15; compile_all.sh --with-aocc).
     "cmake-build-omp-oneapi",                          # release oneAPI (icpx)
+    "cmake-build-std-oneapi",                          # oneAPI, std backend (+ TBB bench)
     # Non-OpenMP builds — cover the `if constexpr(!use_openmp)` code paths so a
     # serial-path regression is caught. Build them with -DOMP:BOOL=OFF; if the
     # directory is absent it is skipped with a single note (see

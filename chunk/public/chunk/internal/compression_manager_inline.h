@@ -35,14 +35,14 @@
 namespace shrink_array
 {
 
-// No build guard: everything below belongs to the PRIMARY CompressionManagerOmpPolicy
-// template, instantiated only with Enabled=true (OpenMP builds).
+// No build guard: everything below belongs to the PRIMARY CompressionManagerThreadPolicy
+// template, instantiated only with Enabled=true (threaded builds).
 
 // ── Per-rank flush lock (sharded xflush_lock) ─────────────────────────────
 // Spin-acquire the flush lock for rank r (CHUNK_CPU_PAUSE, yield after 1000 spins).
 // Guards the per-rank op-map arr[r] against structural mutation by another flusher.
 template <typename T, typename ChunkT, bool Enabled>
-void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::rank_flush_acquire(int rank) noexcept
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::rank_flush_acquire(int rank) noexcept
 {
     const int my = get_thr_rank_fast();
     auto&     lk = xflush_lock_rank[rank];
@@ -73,7 +73,7 @@ void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::rank_flush_acquire(int ran
 }
 
 template <typename T, typename ChunkT, bool Enabled>
-void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::rank_flush_release(int rank) noexcept
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::rank_flush_release(int rank) noexcept
 {
     auto& lk = xflush_lock_rank[rank];
     if (--lk.depth > 0)
@@ -84,7 +84,7 @@ void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::rank_flush_release(int ran
 }
 
 template <typename T, typename ChunkT, bool Enabled>
-bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::flush_deferred(int thr) noexcept
+bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr) noexcept
 {
     if (deferred_chunk_per_thread.empty())
     {
@@ -245,7 +245,7 @@ bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::flush_deferred(int thr) no
             catch (const std::exception& e)
             {
                 CHUNK_INVARIANT_FAILED("flush_deferred: re-insert failed: {} (rank {}, chunk {})", e.what(), thr,
-                                       static_cast<const void*>(chunk));
+                                       chunk);
             }
         }
     }
@@ -274,8 +274,7 @@ bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::flush_deferred(int thr) no
             const auto it = thread_map.find(c);
             if (it == thread_map.end() || !it->second || it->second->empty())
             {
-                CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr,
-                                       static_cast<const void*>(c));
+                CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr, c);
             }
         }
     }
@@ -285,7 +284,7 @@ bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::flush_deferred(int thr) no
 
 // ── Cross-thread targeted flush ───────────────────────────────────────────
 template <typename T, typename ChunkT, bool Enabled>
-bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(ChunkT* chunk, bool self_only) noexcept
+bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(ChunkT* chunk, bool self_only) noexcept
 {
     auto* arr = ChunkT::get_deferred_ops();
     if (arr == nullptr)
@@ -386,14 +385,14 @@ bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(Chun
                     if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
-                                               static_cast<const void*>(raw), r);
+                                               raw, r);
                     }
                     const std::uintptr_t vptr = *reinterpret_cast<const std::uintptr_t*>(raw);
                     if (vptr < 0x1000)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
                                                "num={} op={} vptr={:#x} rank={}",
-                                               num, static_cast<const void*>(raw), vptr, r);
+                                               num, raw, vptr, r);
                     }
                 }
 
@@ -435,7 +434,7 @@ bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(Chun
             catch (const std::exception& e)
             {
                 CHUNK_INVARIANT_FAILED("flush_chunk_all_ranks: erase failed: {} (rank {}, chunk {})", e.what(), r,
-                                       static_cast<const void*>(chunk));
+                                       chunk);
             }
         }
     }
@@ -456,7 +455,7 @@ bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(Chun
 
 // ── WAW guard: discard a superseded same-offset op on the own rank ───────────
 template <typename T, typename ChunkT, bool Enabled>
-void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int thr, ChunkT* chunk, int num) noexcept
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int thr, ChunkT* chunk, int num) noexcept
 {
     auto* arr = ChunkT::get_deferred_ops();
     if (arr == nullptr)
@@ -507,7 +506,7 @@ void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int thr,
     catch (const std::exception& e)
     {
         CHUNK_INVARIANT_FAILED("erase_own_rank_op: erase failed: {} (rank {}, chunk {}, offset {})", e.what(), thr,
-                               static_cast<const void*>(chunk), num);
+                               chunk, num);
     }
 
     // Same bookkeeping as the flush erase path.
@@ -527,7 +526,7 @@ void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int thr,
         catch (const std::exception& e)
         {
             CHUNK_INVARIANT_FAILED("erase_own_rank_op: chunk erase failed: {} (rank {}, chunk {})", e.what(), thr,
-                                   static_cast<const void*>(chunk));
+                                   chunk);
         }
         if (thread_map.empty())
         {
@@ -538,7 +537,7 @@ void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int thr,
 
 template <typename T, typename ChunkT, bool Enabled>
 template <typename ProxyT>
-bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::start()
+bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
 {
     if constexpr (chunk_config::ring_log_debug)
     {
@@ -678,7 +677,7 @@ bool CompressionManagerOmpPolicy<T, ChunkT, Enabled>::start()
 #endif
 
 template <typename T, typename ChunkT, bool Enabled>
-void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::wait_out_compressor(const ChunkT& chunk) noexcept
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::wait_out_compressor(const ChunkT& chunk) noexcept
 {
     constexpr int max_yields = CHUNK_WRITE_WAIT_MAX_YIELDS;
 
@@ -709,7 +708,7 @@ void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::wait_out_compressor(const 
 
 template <typename T, typename ChunkT, bool Enabled>
 template <typename ProxyT>
-void CompressionManagerOmpPolicy<T, ChunkT, Enabled>::finish()
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::finish()
 {
     // Undo Parked -> Stealing FIRST: waiters on stealing_inflight_ (create_value, flush
     // drains) may proceed as soon as we can no longer steal; hard follows. finish() only

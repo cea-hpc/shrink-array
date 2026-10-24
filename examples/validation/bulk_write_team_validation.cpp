@@ -39,17 +39,17 @@
 #include <utility>      // std::as_const
 #include <vector>       // std::vector
 
-#include "chunk/chunk_traits.h"       // forward decls + default IntType = int
-#include "chunk/zero_array.h"         // zero::Array
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"         // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"             // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"        // parallel_phase
-#include "chunk/internal/env_parse.h" // shrink_array::arg_number
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero*
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"          // parallel_phase
+#include "chunk/internal/env_parse.h"   // shrink_array::arg_number
+#include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -201,7 +201,7 @@ int run_type(const char* type, long n)
     {
         fl.push_front(value_at<T>(i + 1000));
     }
-    std::vector<T> ref_fl(fl.begin(), fl.end());
+    const std::vector<T> ref_fl(fl.begin(), fl.end());
     b.assign(fl.begin(), fl.end());
     fails += check(type, "assign-forward", b, ref_fl);
 

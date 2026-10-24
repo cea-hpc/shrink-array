@@ -63,29 +63,29 @@ namespace zero_one_value
  */
 template <ArrayChunkElement T, typename IntType>
 class Array : public SecondValueArrayBase<Array<T, IntType>>,
-              public zero_one_value::ParallelSupport<Array<T, IntType>>,
-              public zero_one_value::FastBlockSupport<Array<T, IntType>>,
-              public zero_one_value::RechunkHooks<Array<T, IntType>>
+              public ParallelSupport<Array<T, IntType>>,
+              public FastBlockSupport<Array<T, IntType>>,
+              public RechunkHooks<Array<T, IntType>>
 {
   public:
     using Base2      = SecondValueArrayBase<Array>; ///< Second-value common base (dirty bitset, second-value plumbing).
-    using Base       = ArrayChunkBase<Array>;    ///< Base shared by every variant.
-    using FastBlock2 = zero_one_value::FastBlockSupport<Array>; ///< Fast-block compression pass.
-    using Hooks2     = zero_one_value::RechunkHooks<Array>;     ///< Re-chunk hooks (dynamic geometry).
+    using Base       = ArrayChunkBase<Array>;       ///< Base shared by every variant.
+    using FastBlock2 = FastBlockSupport<Array>;     ///< Fast-block compression pass.
+    using Hooks2     = RechunkHooks<Array>;         ///< Re-chunk hooks (dynamic geometry).
 
     friend Base2;                 ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<Array>; ///< For swap_identity().
 
-    // zero_one_value::RechunkHooks::rechunk_reown_after_swap copies the private ind_cst_val2.
+    // RechunkHooks::rechunk_reown_after_swap copies the private ind_cst_val2.
     template <typename, bool>
     friend class shrink_array::zero_one_value::RechunkHooks;
 
     // Re-declared, not only inherited: the mixins declare them too, and an
     // outside `Arr::ChunkType` would be ambiguous between base subobjects.
-    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<zero_one_value::Array>.
-    using ChunkType   = Base2::ChunkType;   ///< zero_one_value::Chunk<T>, the chunk type held in chunk_list.
-    using ManagerType = Base2::ManagerType; ///< ManagerChunk<zero_one_value::Chunk, T>, the per-type manager.
-    using ProxyType   = Base2::ProxyType;   ///< zero_one_value::Proxy<T>, the write proxy of the non-const accessors.
+    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<Array>.
+    using ChunkType   = Base2::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list.
+    using ManagerType = Base2::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
+    using ProxyType   = Base2::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
     using value_type  = T;                  ///< Stored element type.
 
     // The former snake_case spellings, kept until 1.0 (types are PascalCase).
@@ -106,7 +106,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
     using InfArrayT = SecondValueInfo<T>;
 
-    using ManagerChunk2 = ManagerChunk<zero_one_value::Chunk, T>; ///< Same type as ManagerType.
+    using ManagerChunk2 = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
 
     // Required, not decoration: ArrayChunkBase re-exports RechunkSupport's hook
     // DEFAULTS under these names, so a hook call through self() would be
@@ -131,7 +131,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     {
         if constexpr (build_config::threaded)
         {
-            WriteCompressSyncPolicy<zero_one_value::Proxy<T>>::ensure_initialized();
+            WriteCompressSyncPolicy<Proxy<T>>::ensure_initialized();
         }
 
         create(sz);
@@ -187,7 +187,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @warning Neither erase is optional:
      *          - share_info_array->erase(registry_key()): otherwise a later array
      *            at this address inherits our num_tab and second value
-     *            (zero_one_value::PointerMap's first-match lookup); rechunk_to()'s @c tmp
+     *            (PointerMap's first-match lookup); rechunk_to()'s @c tmp
      *            makes address reuse routine.
      *          - erase_inf_array_by_ptr(&inf_array): map_inf_array entries
      *            pointing at our inf_array MEMBER would be dereferenced by the
@@ -198,11 +198,11 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     ~Array()
     {
         clear();
-        zero_one_value::Proxy<T>::share_info_array->erase(this->registry_key());
+        Proxy<T>::share_info_array->erase(this->registry_key());
 
         if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
         {
-            zero_one_value::Proxy<T>::share_info_array->erase_inf_array_by_ptr(&inf_array_);
+            Proxy<T>::share_info_array->erase_inf_array_by_ptr(&inf_array_);
         }
     }
 
@@ -257,7 +257,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     {
         if constexpr (!is_bool_like_v<T>)
         {
-            return zero_one_value::Proxy<T>::share_info_array->get_second_value(this->registry_key());
+            return Proxy<T>::share_info_array->get_second_value(this->registry_key());
         }
         else
         {
@@ -268,7 +268,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
     [[nodiscard]] InfArrayT get_info_second_value() const noexcept
     {
-        return zero_one_value::Proxy<T>::share_info_array->get_info_second_value(this->registry_key());
+        return Proxy<T>::share_info_array->get_info_second_value(this->registry_key());
     }
 
     /// @brief Index of this array's second value in the shared value table.
@@ -463,7 +463,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     {
         if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
         {
-            auto& sh_inf = *zero_one_value::Proxy<T>::share_info_array;
+            auto& sh_inf = *Proxy<T>::share_info_array;
             if (sh_inf.find_inf_array(T{}) == nullptr)
             {
                 sh_inf.insert(T{}, &inf_array_none);
@@ -496,7 +496,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      */
     void swap_identity(Array& other)
     {
-        auto& sh_inf = *zero_one_value::Proxy<T>::share_info_array;
+        auto& sh_inf = *Proxy<T>::share_info_array;
         sh_inf.swap_entries(this->registry_key(), other.registry_key());
         std::swap(ind_cst_val2_, other.ind_cst_val2_);
         sync_registry_mirror();

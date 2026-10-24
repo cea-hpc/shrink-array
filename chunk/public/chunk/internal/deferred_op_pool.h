@@ -157,19 +157,6 @@ struct FastAllocatorBase
 // ============================================================================
 
 /**
- * @brief Per-element-type storage slot for the byte allocator of allocator().
- *
- * Do not hold a plain `thread_local TCTypeAllocator<std::byte>` in allocator():
- * that type does not depend on T, so for two same-sized types (a 56-byte ctx and
- * a 56-byte op) the allocator() bodies are byte-identical and GCC's -fipa-icf (on
- * at -O2, target-dependent) folds them into ONE function sharing ONE pool: the
- * ctx and op pools alias and hand out a live ctx's block to a new op.
- *
- * Wrapping the thread_local in a T-parameterised type gives each element type
- * disjoint storage and makes the bodies non-identical, so ICF cannot fold them,
- * without relying on -fno-ipa-icf in the build.
- */
-/**
  * @brief Std backend: the op / ctx pools of a thread outlive it, until the
  *        next phase end.
  * @details An application thread under the std backend (a std::thread, docs/
@@ -210,6 +197,19 @@ struct NoInlineAlloc
 };
 } // namespace detail
 
+/**
+ * @brief Per-element-type storage slot for the byte allocator of allocator().
+ *
+ * Do not hold a plain `thread_local TCTypeAllocator<std::byte>` in allocator():
+ * that type does not depend on T, so for two same-sized types (a 56-byte ctx and
+ * a 56-byte op) the allocator() bodies are byte-identical and GCC's -fipa-icf (on
+ * at -O2, target-dependent) folds them into ONE function sharing ONE pool: the
+ * ctx and op pools alias and hand out a live ctx's block to a new op.
+ *
+ * Wrapping the thread_local in a T-parameterised type gives each element type
+ * disjoint storage and makes the bodies non-identical, so ICF cannot fold them,
+ * without relying on -fno-ipa-icf in the build.
+ */
 template <typename T>
 struct DeferredByteAllocSlot
 {
@@ -542,8 +542,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
 
             if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
             {
-                CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
-                                       static_cast<const void*>(ptr), sizeof(T));
+                CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path, ptr, sizeof(T));
             }
 
             // msync(MS_ASYNC) only reads the VMA table: 0 = mapped, -1/ENOMEM = not.
@@ -558,8 +557,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
             if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
             {
                 CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
-                                       static_cast<const void*>(ptr), sizeof(T),
-                                       build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
+                                       ptr, sizeof(T), build_config::use_fast_alloc ? &allocator() : nullptr);
             }
         }
     }

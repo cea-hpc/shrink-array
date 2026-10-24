@@ -113,7 +113,7 @@ void check_registered_rank()
 {
     constexpr int cap = 4;
     expect(pmp::configure_thread_rank_registry(cap), "configure before first use");
-    auto& reg = pmp::thread_rank_registry();
+    const auto& reg = pmp::thread_rank_registry();
     expect(reg.capacity() == cap, "the configured capacity");
     expect(!pmp::configure_thread_rank_registry(8), "configure after first use refused");
 
