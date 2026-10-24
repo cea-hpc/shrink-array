@@ -158,7 +158,7 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind()
 }
 
 template <typename T, typename Derived>
-void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind_from_key(const void* key)
+void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind_from_key(ArrayKey<Chunk<T>> key)
 {
     inf_array_    = Derived::get_info_second_value(key);
     second_value_ = inf_array_.second_value;

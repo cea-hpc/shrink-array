@@ -29,7 +29,7 @@
 #include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h" // ArithmeticAffectationContext
-#include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
+#include "chunk/internal/array_chunk_for.h"    // ArrayKey (ptr_on_array_ reads the array)
 #include "chunk/internal/concept_is_clean_assignement.h" // BaseT
 #include "chunk/internal/deferred_op_pool.h"             // pool_new_ctx
 #include "chunk/internal/bad_ptr_check.h"                // CHUNK_CHECK_VALUES_PTR (check builds)
@@ -337,10 +337,8 @@ void zero_any::Proxy<T>::ensure_writable_storage()
         if constexpr (build_config::any_check)
         {
             const unsigned int frozen = this->chunk_size_frozen_;
-            const unsigned int live =
-                this->ptr_on_array_ ? static_cast<const ArrayChunkForT<ChunkType>*>(this->ptr_on_array_)->chunk_size()
-                                    : 0;
-            const unsigned int used = this->chunk_size();
+            const unsigned int live   = this->ptr_on_array_ != nullptr ? this->ptr_on_array_->chunk_size() : 0;
+            const unsigned int used   = this->chunk_size();
             if (used != live || frozen != 0U)
             {
                 CHUNK_LOG(debug, rechunk, "ensure_writable_storage: used={} live={} frozen={}", used, live, frozen);

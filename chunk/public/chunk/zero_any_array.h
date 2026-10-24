@@ -434,15 +434,14 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
             // Chunks compressed to a second value.
             Proxy<T>::share_info_array->for_each_key(
-                [&referenced](const void* key)
+                [&referenced](ArrayKey<zero_any::Chunk<T>> arr)
                 {
-                    if (key == nullptr)
+                    if (arr == nullptr)
                     {
                         return;
                     }
                     // The key is the array's core, whatever its index type.
-                    const auto* arr = static_cast<const ArrayChunkCore<zero_any::Chunk<T>>*>(key);
-                    const int   nc  = arr->chunk_count();
+                    const int nc = arr->chunk_count();
                     for (int j = 0; j < nc; ++j)
                     {
                         const T* vals = arr->chunk_ref(static_cast<std::size_t>(j)).values_load();
@@ -613,11 +612,10 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     static void gc_collect_live(std::unordered_set<const void*>& live)
     {
         Proxy<T>::share_info_array->for_each_key(
-            [&](const void* key)
+            [&](ArrayKey<zero_any::Chunk<T>> arr)
             {
                 // The key is the array's core, whatever its index type.
-                auto*     arr = static_cast<const ArrayChunkCore<zero_any::Chunk<T>>*>(key);
-                const int nc  = arr->chunk_count();
+                const int nc = arr->chunk_count();
                 for (int j = 0; j < nc; ++j)
                 {
                     const auto& ch = arr->chunk_ref(static_cast<std::size_t>(j));

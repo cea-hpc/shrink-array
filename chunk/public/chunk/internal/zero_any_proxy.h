@@ -69,13 +69,16 @@ class Chunk;
  * @brief Registry mapping array keys (pointers) to their table number, for
  *        zero_any: a linear-scan vector while small, switching once and for all
  *        to a hash map past SmallN entries.
- * @tparam T Element type (unused; symmetry with zero::PointerMap).
+ * @tparam T Element type: the keys are arrays of zero_any::Chunk<T>.
  * @tparam SmallN Entry count past which the hash map is used.
  */
 template <typename T, size_t SmallN = 16>
 class PointerMap
 {
   public:
+    /// @brief The key: the array's identity.
+    using Key = ArrayKey<Chunk<T>>;
+
     PointerMap()                                 = default;
     ~PointerMap()                                = default;
     PointerMap(const PointerMap&)                = default;
@@ -89,7 +92,7 @@ class PointerMap
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    [[nodiscard]] int get_num_tab(const void* key) const noexcept
+    [[nodiscard]] int get_num_tab(Key key) const noexcept
     {
         if (!using_big_)
         {
@@ -120,7 +123,7 @@ class PointerMap
      *        tab's metadata.
      * @param key Key to remove.
      */
-    void erase(const void* key) noexcept
+    void erase(Key key) noexcept
     {
         if (!using_big_)
         {
@@ -154,7 +157,7 @@ class PointerMap
      * @param key Key to register.
      * @param num_tab Table number to associate with `key`.
      */
-    void insert(const void* key, int num_tab)
+    void insert(Key key, int num_tab)
     {
         if (!using_big_)
         {
@@ -185,7 +188,7 @@ class PointerMap
      * @param new_num_tab New table number.
      * @return false if the key was not present (caller error); true otherwise.
      */
-    bool set_num_tab(const void* key, int new_num_tab) noexcept
+    bool set_num_tab(Key key, int new_num_tab) noexcept
     {
         if (!using_big_)
         {
@@ -216,7 +219,7 @@ class PointerMap
      * @param key_b Second key.
      * @return true if both keys were found (and swapped); false otherwise.
      */
-    bool swap_keys(const void* key_a, const void* key_b) noexcept
+    bool swap_keys(Key key_a, Key key_b) noexcept
     {
         int  na = 0;
         int  nb = 0;
@@ -267,7 +270,7 @@ class PointerMap
 
     /**
      * @brief Call `func` with each registered key.
-     * @tparam F Callable invoked with a `const void*` key.
+     * @tparam F Callable invoked with a Key.
      * @param func Callback to invoke for every key.
      */
     template <typename F>
@@ -290,9 +293,9 @@ class PointerMap
     }
 
   private:
-    std::vector<std::pair<const void*, int>>       small_;
-    ankerl::unordered_dense::map<const void*, int> big_;
-    bool                                           using_big_ = false;
+    std::vector<std::pair<Key, int>>       small_;
+    ankerl::unordered_dense::map<Key, int> big_;
+    bool                                   using_big_ = false;
 };
 
 } // namespace zero_any

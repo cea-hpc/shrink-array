@@ -451,26 +451,26 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
 
     if constexpr (is_not_bool)
     {
-        const int  ind    = get_ind_second_value();
-        const auto counts = pmp::parallel_sum<int, 2>(0, nb_chunk_, team_opt,
-                                                      [&](int j, auto& acc)
-                                                      {
-                                                          const auto& ck = chunk_list_[j];
-                                                          if (ck.written(ind))
-                                                          {
-                                                              const auto v0 = ck.constant_value(csz_audit);
-                                                              if (!v0)
-                                                              {
-                                                                  return;
-                                                              }
-                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0
-                                                                                                                 : 1];
-                                                              return;
-                                                          }
-                                                          ++acc[ck.is_cst_val1() ? 0 : 1];
-                                                      });
-        n_t0              = counts[0];
-        n_t1              = counts[1];
+        const int  ind = get_ind_second_value();
+        const auto counts =
+            pmp::parallel_sum<int, 2>(0, nb_chunk_, team_opt,
+                                      [&](int j, auto& acc)
+                                      {
+                                          const auto& ck = chunk_list_[j];
+                                          if (ck.written(ind))
+                                          {
+                                              const auto v0 = ck.constant_value(csz_audit);
+                                              if (!v0)
+                                              {
+                                                  return;
+                                              }
+                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0 : 1];
+                                              return;
+                                          }
+                                          ++acc[ck.is_cst_val1() ? 0 : 1];
+                                      });
+        n_t0 = counts[0];
+        n_t1 = counts[1];
     }
     else
     {
@@ -478,25 +478,25 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
         // for the type -- an all-true chunk is type-2. Do not count it as
         // type-1: the verdict would say "plain zero would suffice" for arrays
         // whose true chunks zero cannot compress.
-        const auto counts = pmp::parallel_sum<int, 2>(0, nb_chunk_, team_opt,
-                                                      [&](int j, auto& acc)
-                                                      {
-                                                          const auto& ck = chunk_list_[j];
-                                                          if (ck.written())
-                                                          {
-                                                              const auto v0 = ck.constant_value(csz_audit);
-                                                              if (!v0)
-                                                              {
-                                                                  return;
-                                                              }
-                                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0
-                                                                                                                 : 1];
-                                                              return;
-                                                          }
-                                                          ++acc[ck.is_cst_val1() ? 0 : 1];
-                                                      });
-        n_t0              = counts[0];
-        n_t1              = counts[1];
+        const auto counts =
+            pmp::parallel_sum<int, 2>(0, nb_chunk_, team_opt,
+                                      [&](int j, auto& acc)
+                                      {
+                                          const auto& ck = chunk_list_[j];
+                                          if (ck.written())
+                                          {
+                                              const auto v0 = ck.constant_value(csz_audit);
+                                              if (!v0)
+                                              {
+                                                  return;
+                                              }
+                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0 : 1];
+                                              return;
+                                          }
+                                          ++acc[ck.is_cst_val1() ? 0 : 1];
+                                      });
+        n_t0 = counts[0];
+        n_t1 = counts[1];
     }
     const int n_compressed = n_t0 + n_t1;
 
@@ -928,7 +928,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         if constexpr (chunk_config::use_fast_block_compression)
         {
             flags = &zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(
-                zero_one_value::Proxy<T>::share_info_array->get_num_tab(const_cast<void*>(this->registry_key())));
+                zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()));
         }
         const auto heal = [&](int jj, auto&& clear)
         {

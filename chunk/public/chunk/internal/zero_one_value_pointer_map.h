@@ -43,6 +43,7 @@
 #include <vector>      // std::vector
 
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/array_chunk_for.h"    // ArrayKey, zero_one_value::Chunk (the keys)
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"         // ValueLess
@@ -200,18 +201,24 @@ namespace zero_one_value
  * @tparam T Element type.
  */
 template <typename T>
-class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<const void*, SecondValueInfo<T>>>>,
-                   public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
+class PointerMap
+    : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<ArrayKey<Chunk<T>>, SecondValueInfo<T>>>>,
+      public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
 {
   private:
     /// Internal alias for tuple representing a value with index and table number.
     using InfArrayT = SecondValueInfo<T>;
 
-    using Linear = PointerMapLinear<InfArrayT, std::deque<std::pair<const void*, InfArrayT>>>;
+    using Linear = PointerMapLinear<InfArrayT, std::deque<std::pair<ArrayKey<Chunk<T>>, InfArrayT>>>;
     /// @brief Bring the base's storage into this class's scope.
     /// @details Avoids `this->vec` everywhere (dependent base).
     using Linear::vec_;
 
+  public:
+    /// @brief The key: the array's identity.
+    using Key = typename Linear::Key;
+
+  private:
     /// @brief Policy carrying the fast-block-compression-only inf_array map.
     using InfArrayPolicy = PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>;
 
@@ -232,7 +239,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
     /// @brief Check-only: write the searched @p key and every stored
     ///        (key, num_tab) on the log (an error) before a lookup from @p
     ///        site fails.
-    void report_key_not_found(const void* key, const char* site) const noexcept
+    void report_key_not_found(Key key, const char* site) const noexcept
     {
         if constexpr (build_config::any_check)
         {
@@ -275,7 +282,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
      * @param key Pointer used as a key in the vector.
      * @param num_tab Table number associated with the key.
      */
-    void insert_only_num_tab(void* key, int num_tab)
+    void insert_only_num_tab(Key key, int num_tab)
     {
         // No second value yet: the sentinel index, not 0 (which is the slot
         // of whichever second value was registered first, by any array).
@@ -305,7 +312,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
      * @param ind New index to assign.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    void replace_all_other_elm(void* key, InT<T> val, int ind) noexcept
+    void replace_all_other_elm(Key key, InT<T> val, int ind) noexcept
     {
         for (auto& item : vec_)
         {
@@ -364,7 +371,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
     /// @brief Change the second value and its table index recorded for
     ///        array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    void replace(void* key, InT<T> val, int ind) noexcept
+    void replace(Key key, InT<T> val, int ind) noexcept
     {
         for (auto& item : vec_)
         {
@@ -382,7 +389,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
 
     /// @brief The second value recorded for array @p key (true for bool).
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    [[nodiscard]] T get_second_value(const void* key) const noexcept
+    [[nodiscard]] T get_second_value(Key key) const noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -404,7 +411,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
     }
     /// @brief The num_tab recorded for array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    [[nodiscard]] int get_num_tab(const void* key) const noexcept
+    [[nodiscard]] int get_num_tab(Key key) const noexcept
     {
         for (const auto& item : vec_)
         {
@@ -420,7 +427,7 @@ class PointerMap : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::p
 
     /// @brief The whole (second value, index, num_tab) tuple recorded for
     ///        array @p key.
-    [[nodiscard]] InfArrayT get_info_second_value(const void* key) const noexcept
+    [[nodiscard]] InfArrayT get_info_second_value(Key key) const noexcept
     {
         if constexpr (is_not_bool)
         {

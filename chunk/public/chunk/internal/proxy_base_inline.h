@@ -120,7 +120,7 @@ void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab,
  *       overload exists for it).
  */
 template <typename ProxyT>
-constexpr int get_num_tab_async_helper(auto* ctx, const ProxyT& proxy, const void* ptr) noexcept
+constexpr int get_num_tab_async_helper(auto* ctx, const ProxyT& proxy, auto ptr) noexcept
 {
     if constexpr (requires { proxy.get_num_tab(ptr); })
     {
@@ -817,8 +817,7 @@ unsigned int ProxyBase<Derived, T, ChunkT>::chunk_size() const noexcept
         return chunk_size_frozen_;
     }
 
-    using ArrayType = ArrayChunkForT<ChunkT>;
-    return static_cast<const ArrayType*>(ptr_on_array_)->chunk_size();
+    return ptr_on_array_->chunk_size();
 }
 
 template <typename Derived, typename T, typename ChunkT>
@@ -828,8 +827,7 @@ unsigned int ProxyBase<Derived, T, ChunkT>::alloc_key() const noexcept
     {
         return alloc_key_frozen_;
     }
-    using ArrayType = ArrayChunkForT<ChunkT>;
-    return static_cast<const ArrayType*>(ptr_on_array_)->alloc_key();
+    return ptr_on_array_->alloc_key();
 }
 
 /**
@@ -847,10 +845,9 @@ template <typename Derived, typename T, typename ChunkT>
 template <typename CtxType, typename LambdaBody>
 void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaBody&& body) const
 {
-    using ArrayType = ArrayChunkForT<ChunkT>;
     // This const guards the proxy, not the array: enqueueing marks the array's
     // dirty bitset now, the write itself replays at the phase end.
-    auto* arr = static_cast<ArrayType*>(const_cast<void*>(ptr_on_array_));
+    auto* arr = const_cast<ArrayChunkForT<ChunkT>*>(ptr_on_array_);
     arr->mark_chunk_dirty(ctx->num_chunk);
     increm_chunk_gate_deferred<ChunkT>();
 

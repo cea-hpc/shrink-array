@@ -34,6 +34,7 @@
 #include "chunk/config.h"                  // chunk_config::use_fast_block_compression, build_config::any_check
 #include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE: the write engine and its wrappers
+#include "chunk/internal/array_chunk_for.h"              // ArrayKey (ptr_on_array_)
 #include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"              // ProxyOperators
@@ -741,9 +742,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     const int num_;   ///< Offset of this element WITHIN its chunk.
     ChunkT&   chunk_; ///< The chunk that owns the element.
 
-    mutable const void* ptr_on_array_; ///< The array the chunk belongs to.
-    mutable int         num_chunk_;    ///< Index of the chunk within that array.
-    mutable int         num_tab_ = -1; ///< Index of the array in the registry; -1 until armed.
+    mutable ArrayKey<ChunkT> ptr_on_array_; ///< The array the chunk belongs to.
+    mutable int              num_chunk_;    ///< Index of the chunk within that array.
+    mutable int              num_tab_ = -1; ///< Index of the array in the registry; -1 until armed.
 
     // Frozen chunk geometry for the deferred-replay path.
     // 0 means "not armed" -> chunk_size() falls back to the live ptr_on_array
@@ -898,7 +899,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        is left unresolved (set_num_tab() looks it up).
     /// @param array_ptr The owning array (its registry key).
     /// @param num_chunk Chunk index within that array.
-    void set_this_and_num_chunk(const void* array_ptr, int num_chunk) const noexcept
+    void set_this_and_num_chunk(ArrayKey<ChunkT> array_ptr, int num_chunk) const noexcept
     {
         ptr_on_array_ = array_ptr;
         num_chunk_    = num_chunk;
@@ -907,7 +908,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /// @brief Same, with the array's own table number, so the write path
     ///        needs no registry lookup.
-    /// @param array_ptr  pointer to the array
+    /// @param array_ptr  the owning array (its registry key)
     /// @param num_chunk chunk index
     /// @param num_tab   the array's num_tab (ArrayChunkBase::num_tab), the
     ///                   value it registered under its address
@@ -915,7 +916,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///       linear scan or hash probe) on every write, a measurable cost. The
     ///       value is checked against the registry under any_check
     ///       (zero_any::Proxy::set_num_tab).
-    void set_this_and_num_chunk(const void* array_ptr, int num_chunk, int num_tab) const noexcept
+    void set_this_and_num_chunk(ArrayKey<ChunkT> array_ptr, int num_chunk, int num_tab) const noexcept
     {
         ptr_on_array_ = array_ptr;
         num_chunk_    = num_chunk;

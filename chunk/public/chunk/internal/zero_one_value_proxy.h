@@ -80,7 +80,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @brief Async-context counterpart of get_ptr_on_array().
      * @param ctx Async write context.
      */
-    [[nodiscard]] const T* get_ptr_on_array_async(auto* ctx) const noexcept
+    [[nodiscard]] ArrayKey<Chunk<T>> get_ptr_on_array_async(auto* ctx) const noexcept
     {
         return derived().get_ptr_on_array_async(ctx);
     }
@@ -108,7 +108,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @param key Array pointer to resolve metadata for.
      * @post second_value and ind are valid; num_tab unchanged.
      */
-    void set_info_second_value_ind_from_key(const void* key);
+    void set_info_second_value_ind_from_key(ArrayKey<Chunk<T>> key);
 
     /**
      * @brief Load all compression metadata from global map
@@ -211,10 +211,9 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
   private:
     /**
-     * @brief Pointer to the owning array (used as the compression-metadata
-     *        map key).
+     * @brief The owning array (the compression-metadata map key).
      */
-    [[nodiscard]] const T* get_ptr_on_array() const noexcept
+    [[nodiscard]] ArrayKey<Chunk<T>> get_ptr_on_array() const noexcept
     {
         return derived().get_ptr_on_array();
     }
@@ -264,7 +263,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @brief Async-context counterpart of get_ptr_on_array().
      * @param ctx Async write context.
      */
-    const T* get_ptr_on_array_async(auto* ctx) const noexcept
+    ArrayKey<Chunk<T>> get_ptr_on_array_async(auto* ctx) const noexcept
     {
         return derived().get_ptr_on_array_async(ctx);
     }
@@ -289,7 +288,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
      *        ptr_on_array.
      * @param key Array pointer to resolve num_tab for.
      */
-    void set_info_second_value_ind_from_key(const void* key)
+    void set_info_second_value_ind_from_key(ArrayKey<Chunk<T>> key)
     {
         inf_array_ = derived().get_info_second_value(key);
     }
@@ -342,10 +341,9 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
   private:
     /**
-     * @brief Pointer to the owning array (used as the compression-metadata
-     *        map key).
+     * @brief The owning array (the compression-metadata map key).
      */
-    [[nodiscard]] const T* get_ptr_on_array() const noexcept
+    [[nodiscard]] ArrayKey<Chunk<T>> get_ptr_on_array() const noexcept
     {
         return derived().get_ptr_on_array();
     }
@@ -549,13 +547,13 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     }
 
     /**
-     * @brief Real (non-stub) async-context array pointer lookup: the ctx
-     *        already carries ptr_on_array directly, so this is a plain cast.
+     * @brief Real (non-stub) async-context array lookup: the ctx already
+     *        carries ptr_on_array.
      * @param ctx Async write context.
      */
-    static const T* get_ptr_on_array_async(auto* ctx) noexcept
+    static ArrayKey<Chunk<T>> get_ptr_on_array_async(auto* ctx) noexcept
     {
-        return static_cast<const T*>(ctx->ptr_on_array);
+        return ctx->ptr_on_array;
     }
 
     // ------------------------------------------------------------------
@@ -1039,12 +1037,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     const T* operator&() const = delete;
 
     /**
-     * @brief Pointer to the owning array (used as the compression-metadata
-     *        map key).
+     * @brief The owning array (the compression-metadata map key).
      */
-    [[nodiscard]] const T* get_ptr_on_array() const noexcept
+    [[nodiscard]] ArrayKey<Chunk<T>> get_ptr_on_array() const noexcept
     {
-        return static_cast<const T*>(ptr_on_array_);
+        return ptr_on_array_;
     }
 
     // ========================================================================
@@ -1184,7 +1181,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @param ptr Array pointer to look up.
      * @return The registered metadata tuple.
      */
-    [[nodiscard]] static InfArrayT get_info_second_value(const void* ptr) noexcept
+    [[nodiscard]] static InfArrayT get_info_second_value(ArrayKey<Chunk<T>> ptr) noexcept
     {
         return share_info_array->get_info_second_value(ptr);
     }
