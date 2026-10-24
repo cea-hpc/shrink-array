@@ -53,7 +53,8 @@
 #include <mutex>   // std::mutex (ladder_mutex)
 #include <tuple>   // std::tuple, std::get, std::apply (the ladder)
 
-#include "fast_allocators/internal/svalloc.h" // fast_alloc::alignment
+#include "fast_allocators/internal/raw_memory.h" // load_from_bytes, store_to_bytes
+#include "fast_allocators/internal/svalloc.h"    // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // FAST_ALLOC_PMP_MAX_THREADS / FAST_ALLOC_PMP_THREAD_RANK / FAST_ALLOC_PMP_IN_PARALLEL_REGION
 
 #include "fast_allocators/internal/int_alloc.h"    // int_alloc, int_free, int_alloc_align, int_free_align
@@ -391,17 +392,17 @@ struct BlkAllocator : public StaticConstArray
         }
         const std::size_t total = size + fast_alloc::alignment;
 
-        auto* ptr = static_cast<std::size_t*>(
+        auto* ptr = static_cast<std::byte*>(
             total <= max_const_block_size ? get_block_alloc(static_cast<unsigned int>(total)) : nullptr);
 
         if (ptr == nullptr)
         {
-            ptr = static_cast<std::size_t*>(int_alloc_align(total));
+            ptr = static_cast<std::byte*>(int_alloc_align(total));
         }
 
-        ptr[0] = size;
+        fast_alloc::store_to_bytes(ptr, size); // the header: the requested size
 
-        return reinterpret_cast<std::byte*>(ptr) + fast_alloc::alignment;
+        return ptr + fast_alloc::alignment;
     }
 
     /// @brief Give back an alloc_tab() block, reading its size from its header.
@@ -412,9 +413,9 @@ struct BlkAllocator : public StaticConstArray
             return;
         }
 
-        auto* m_ptr = reinterpret_cast<std::size_t*>(static_cast<std::byte*>(user_ptr) - fast_alloc::alignment);
+        std::byte* const m_ptr = static_cast<std::byte*>(user_ptr) - fast_alloc::alignment;
 
-        const std::size_t total = m_ptr[0] + fast_alloc::alignment;
+        const std::size_t total = fast_alloc::load_from_bytes<std::size_t>(m_ptr) + fast_alloc::alignment;
 
         // Same routing as alloc_tab(), decided in size_t.
         if (total > max_const_block_size || !try_free_block(static_cast<int>(total), m_ptr))

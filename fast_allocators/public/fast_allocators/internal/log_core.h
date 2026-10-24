@@ -74,6 +74,7 @@
 #include <cstring>         // std::memcpy
 #include <format>          // std::format_to_n, std::format_string
 #include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock
+#include <span>            // std::span, std::as_bytes (BytesArg)
 #include <source_location> // std::source_location
 #include <string_view>     // std::string_view
 #include <type_traits> // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v, std::is_pointer_v, std::is_object_v
@@ -767,7 +768,7 @@ struct std::formatter<fast_alloc::logging::detail::BytesArg<V>, char>
         auto                       it  = ctx.out();
         *it++                          = '0';
         *it++                          = 'x';
-        const auto* bytes              = reinterpret_cast<const unsigned char*>(a.v);
+        const auto bytes               = std::as_bytes(std::span<const V, 1>(a.v, 1));
         for (std::size_t i = 0; i < sizeof(V); ++i)
         {
             *it++ = hex[static_cast<unsigned>(bytes[i]) >> 4U];

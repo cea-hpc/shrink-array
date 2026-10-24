@@ -24,6 +24,7 @@
 #include <type_traits>     // std::is_same_v (concurrent-ops base)
 #include <vector>          // std::vector
 
+#include "fast_allocators/internal/raw_memory.h"    // address_bits
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
 #include "chunk/chunk_traits.h"                     // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
@@ -214,7 +215,7 @@ class ChunkConcurrentOps
     ///        the top byte.
     [[nodiscard]] uint32_t ring_chunk_id() const noexcept
     {
-        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self()) >> 4U);
+        return static_cast<uint32_t>(::fast_alloc::address_bits(self()) >> 4U);
     }
 };
 

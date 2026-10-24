@@ -73,13 +73,14 @@
 // <iostream> directly: param_chunk.h would be a circular include (it reaches this header).
 #include <iostream> // std::cout
 
-#include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
-#include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
-#include "chunk/internal/in_t.h"              // InT<T>: the value parameters
-#include "chunk/config.h"                     // build_config::use_mm_protect
-#include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/log.h"                        // CHUNK_LOG (the identifier and index warnings)
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "chunk/internal/chunk_size_policy.h"    // cst_buffer_size
+#include "chunk/internal/env_parse.h"            // env_number (CHUNK_CST_VAL2_ID_LIMIT)
+#include "chunk/internal/in_t.h"                 // InT<T>: the value parameters
+#include "chunk/config.h"                        // build_config::use_mm_protect
+#include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/immortal.h"             // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/log.h"                           // CHUNK_LOG (the identifier and index warnings)
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
 #endif
@@ -449,7 +450,9 @@ class GlobalVecHolder
     [[nodiscard]] static std::uint32_t slot_id(const T* ptr) noexcept
     {
         const std::byte* base = region_begin.load(std::memory_order_relaxed);
-        return static_cast<std::uint32_t>((reinterpret_cast<const std::byte*>(ptr) - base) / region_stride) + 1u;
+        return static_cast<std::uint32_t>((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) /
+                                          region_stride) +
+               1u;
     }
 
     // ── Reclaim contract, checked in check builds ──────────────────────────
@@ -719,7 +722,7 @@ class GlobalVecHolder
     [[nodiscard]] static T value_of_ptr(const T* ptr) noexcept
     {
         const std::byte* base = region_begin.load(std::memory_order_relaxed);
-        const auto       id   = ((reinterpret_cast<const std::byte*>(ptr) - base) / region_stride) + 1u;
+        const auto id = ((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) / region_stride) + 1u;
         return value_by_id[id];
     }
 
@@ -1311,7 +1314,8 @@ class TabCstVal2Holder
     [[nodiscard]] static std::uint32_t id_of_ptr(const T* ptr) noexcept
     {
         const std::byte* base = VecHolder::region_begin.load(std::memory_order_relaxed);
-        return static_cast<std::uint32_t>((reinterpret_cast<const std::byte*>(ptr) - base) / VecHolder::region_stride) +
+        return static_cast<std::uint32_t>((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) /
+                                          VecHolder::region_stride) +
                1u;
     }
     /**

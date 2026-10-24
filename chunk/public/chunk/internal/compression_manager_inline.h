@@ -22,6 +22,7 @@
 #include <thread>      // std::this_thread — used HERE, not by our includers
 #include <type_traits> // std::remove_reference_t (the swap-drain batch type)
 
+#include "fast_allocators/internal/raw_memory.h"       // address_bits, load_from_bytes
 #include "chunk/internal/compression_manager.h"        // the declarations these bodies belong to
 #include "chunk/config.h"                              // build_config::any_check, chunk_config::ring_log_debug
 #include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast, CHUNK_PMP_RANK_BOUND
@@ -184,7 +185,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
 
         auto* op_map = ops_map_ptr.get();
 
-        const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
+        const uint32_t payload = static_cast<uint32_t>(::fast_alloc::address_bits(chunk) >> 4U) & 0x00FFFFFFU;
         // ─── Dekker held — execute deferred ops ───────────────────────────
 
         using FlushLog = ScopedRingLogManualEnd<ev_flush_begin, ev_flush_end>;
@@ -296,7 +297,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
     const int self_rank = get_thr_rank_fast();
     const int max_thr   = CHUNK_PMP_RANK_BOUND;
 
-    const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
+    const uint32_t payload = static_cast<uint32_t>(::fast_alloc::address_bits(chunk) >> 4U) & 0x00FFFFFFU;
 
     // ─── Cross-flush mutual exclusion is PER RANK ─────────────────────────
     // Preventing two flushers from draining the same arr[r][chunk] (double destroy())
@@ -380,13 +381,13 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
                 if constexpr (build_config::any_check)
                 {
                     DeferredOperationBase* raw  = op_ptr.get();
-                    const auto             addr = reinterpret_cast<std::uintptr_t>(raw);
+                    const auto             addr = ::fast_alloc::address_bits(raw);
                     if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
                                                raw, r);
                     }
-                    const std::uintptr_t vptr = *reinterpret_cast<const std::uintptr_t*>(raw);
+                    const auto vptr = ::fast_alloc::load_from_bytes<std::uintptr_t>(raw); // its first word
                     if (vptr < 0x1000)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "

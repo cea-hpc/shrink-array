@@ -25,9 +25,10 @@
 #include <utility> // std::cmp_less (the element-size check)
 #include <vector>  // std::vector
 
-#include "fast_allocators/tc_allocator.h"   // the declarations these bodies belong to
-#include "fast_allocators/slab_arena.h"     // disjoint op/ctx/value slab arenas
-#include "fast_allocators/internal/fatal.h" // FAST_ALLOC_FATAL
+#include "fast_allocators/internal/raw_memory.h" // store_to_bytes
+#include "fast_allocators/tc_allocator.h"        // the declarations these bodies belong to
+#include "fast_allocators/slab_arena.h"          // disjoint op/ctx/value slab arenas
+#include "fast_allocators/internal/fatal.h"      // FAST_ALLOC_FATAL
 
 namespace fast_alloc
 {
@@ -78,7 +79,7 @@ inline void TCSlab<Links>::alloc_block()
     // the op pool still considers live, and it makes the whole slab resident at once instead
     // of page by page as elements are handed out.
 
-    *reinterpret_cast<TCSlab**>(data + block_allocator - sizeof(void*)) = this;
+    fast_alloc::store_to_bytes(data + block_allocator - sizeof(void*), this);
 
     first_free = free_list_end;
 }
@@ -143,8 +144,8 @@ inline void* TCSlab<Links>::alloc() noexcept
         // slab's own rank: no atomic needed.
         if (backptr_dropped) [[unlikely]]
         {
-            *reinterpret_cast<TCSlab**>(data + block_allocator - sizeof(void*)) = this;
-            backptr_dropped                                                     = false;
+            fast_alloc::store_to_bytes(data + block_allocator - sizeof(void*), this);
+            backptr_dropped = false;
         }
     }
 
@@ -170,12 +171,12 @@ inline void TCSlab<Links>::free_block(int i) noexcept
 {
     if (i == (used_size - 1))
     {
-        link(i) = free_list_end;
+        set_link(i, free_list_end);
         --used_size;
     }
     else
     {
-        link(i)    = first_free;
+        set_link(i, first_free);
         first_free = static_cast<IndexType>(i);
     }
 

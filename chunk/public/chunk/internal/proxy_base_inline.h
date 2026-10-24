@@ -48,7 +48,8 @@
 #include <tuple>           // std::tuple_size_v, std::ignore
 #include <type_traits>     // std::remove_cvref_t, std::common_type_t, std::conditional_t
 
-#include "chunk/internal/in_t.h"       // InT<T>: the element snapshots
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "chunk/internal/in_t.h"                 // InT<T>: the element snapshots
 #include "chunk/internal/proxy_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/chunk_size_policy.h"  // ChunkElems — used HERE, not via includers
 #include "chunk/internal/phase_guard.h"        // check-build guard of the phase protocol
@@ -1180,7 +1181,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> v, Op operation) no
                             {
                                 auto&      chunk_ref = ctx->chunk;
                                 const auto chunk_id =
-                                    static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&chunk_ref) >> 4);
+                                    static_cast<uint32_t>(::fast_alloc::address_bits(&chunk_ref) >> 4);
                                 const uint32_t info =
                                     (chunk_id & 0x00FFFFFFU) | (static_cast<uint32_t>(ctx->num & 0xFF) << 24);
 

@@ -41,6 +41,7 @@ set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/pmp_std.h
   public/fast_allocators/internal/pmp_std_state.h
   public/fast_allocators/internal/pmp_runtime.h
+  public/fast_allocators/internal/raw_memory.h
   public/fast_allocators/internal/singleton.h
   public/fast_allocators/internal/static_const_array.h
   public/fast_allocators/internal/static_const_array_inline.h

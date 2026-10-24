@@ -72,6 +72,7 @@
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
+#include "fast_allocators/internal/raw_memory.h"      // address_bits, load_from_bytes, store_to_bytes
 #include "fast_allocators/internal/alloc_config.h"    // alloc_config::use_std_alloc / is_debug / threaded
 #include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/fatal.h"           // FAST_ALLOC_FATAL
@@ -331,9 +332,8 @@ class alignas(64) TCSlab
     [[nodiscard]] static TCSlab* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
     {
         // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
-        const std::byte* base =
-            static_cast<const std::byte*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & (slab_bytes - 1));
-        return *reinterpret_cast<TCSlab* const*>(base + slab_bytes - sizeof(void*));
+        const std::byte* base = static_cast<const std::byte*>(ptr) - (fast_alloc::address_bits(ptr) & (slab_bytes - 1));
+        return fast_alloc::load_from_bytes<TCSlab*>(base + slab_bytes - sizeof(void*));
     }
 
 // Declaration-level switch, so it stays a directive: serial builds route slab
@@ -397,7 +397,7 @@ class alignas(64) TCSlab
     };
 
     /// @brief The free-list link of element @p i.
-    [[nodiscard]] IndexType& link(int i) noexcept
+    [[nodiscard]] IndexType link(int i) const noexcept
     {
         if constexpr (side_links)
         {
@@ -405,8 +405,21 @@ class alignas(64) TCSlab
         }
         else
         {
-            // store the index in the first bytes of the element
-            return *reinterpret_cast<int*>(data + (static_cast<std::ptrdiff_t>(i) * element_size));
+            // the index sits in the first bytes of the free element
+            return fast_alloc::load_from_bytes<IndexType>(data + (static_cast<std::ptrdiff_t>(i) * element_size));
+        }
+    }
+
+    /// @brief Set the free-list link of element @p i to @p next.
+    void set_link(int i, IndexType next) noexcept
+    {
+        if constexpr (side_links)
+        {
+            tab_first_free_[static_cast<std::size_t>(i)] = next;
+        }
+        else
+        {
+            fast_alloc::store_to_bytes(data + (static_cast<std::ptrdiff_t>(i) * element_size), next);
         }
     }
 
@@ -1589,8 +1602,8 @@ class TCAllocatorEB
         // this pointer stored at the end of the block
         // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
         const std::byte* base =
-            static_cast<const std::byte*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & ~size_t(block_addr_mask));
-        return *reinterpret_cast<TCAllocatorEB* const*>(base + used_block_size);
+            static_cast<const std::byte*>(ptr) - (fast_alloc::address_bits(ptr) & ~size_t(block_addr_mask));
+        return fast_alloc::load_from_bytes<TCAllocatorEB*>(base + used_block_size);
     }
 
     std::byte* data = nullptr; ///< The block itself, aligned on #block_size_pot.
@@ -1632,9 +1645,9 @@ class TCAllocatorEB
 
             std::byte* mapping = static_cast<std::byte*>(fast_alloc::map_anonymous(2 * block_size));
 
-            data = mapping + ((0 - reinterpret_cast<uintptr_t>(mapping)) & (block_bytes - 1)); // align up
+            data = mapping + ((0 - fast_alloc::address_bits(mapping)) & (block_bytes - 1)); // align up
 
-            const uintptr_t lng = reinterpret_cast<uintptr_t>(data) - reinterpret_cast<uintptr_t>(mapping);
+            const auto lng = static_cast<uintptr_t>(data - mapping);
             if (lng != 0 && munmap(mapping, lng) == -1)
             {
                 const int err = errno;
@@ -1661,7 +1674,7 @@ class TCAllocatorEB
             data = static_cast<std::byte*>(datal);
         }
 
-        *reinterpret_cast<TCAllocatorEB**>(data + used_block_size) = this;
+        fast_alloc::store_to_bytes(data + used_block_size, this);
 
         first_free = -1;
 

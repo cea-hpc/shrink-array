@@ -29,6 +29,7 @@
 #include <sys/mman.h>  // msync / MS_ASYNC (the block probe)
 #include <unistd.h>    // sysconf (same)
 
+#include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
@@ -533,7 +534,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
     {
         if constexpr (build_config::any_check)
         {
-            const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
+            const auto addr = ::fast_alloc::address_bits(ptr);
 
             if (ptr == nullptr)
             {
@@ -694,7 +695,7 @@ void chunk_align_probe([[maybe_unused]] const char* site, [[maybe_unused]] void*
 {
     if constexpr (build_config::align_check)
     {
-        if ((reinterpret_cast<std::uintptr_t>(mem) & (alignof(T) - 1)) != 0)
+        if ((::fast_alloc::address_bits(mem) & (alignof(T) - 1)) != 0)
         {
             CHUNK_INVARIANT_FAILED("[SLAB MISALIGN] {}: ptr={} alignof={} sizeof={} (block from slab is under-aligned "
                                    "for T)",

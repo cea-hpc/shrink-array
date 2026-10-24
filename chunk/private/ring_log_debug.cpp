@@ -31,10 +31,11 @@
 #include <stdio.h>  // fileno (POSIX)
 #include <unistd.h> // isatty
 
-#include "chunk/config.h"         // build_config::threaded (get_tid)
-#include "chunk/PMP_CHUNK.h"      // chunk_pmp_team_rank (get_tid)
-#include "chunk/ring_log_debug.h" // the declarations defined here
-#include "chunk/log.h"            // CHUNK_LOG
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "chunk/config.h"                        // build_config::threaded (get_tid)
+#include "chunk/PMP_CHUNK.h"                     // chunk_pmp_team_rank (get_tid)
+#include "chunk/ring_log_debug.h"                // the declarations defined here
+#include "chunk/log.h"                           // CHUNK_LOG
 
 #ifdef CHUNK_RING_LOG_ANY
 
@@ -127,7 +128,7 @@ void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr)
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
     ring_buf[idx].info = num;
-    ring_buf[idx].addr = reinterpret_cast<uint64_t>(addr);
+    ring_buf[idx].addr = static_cast<uint64_t>(::fast_alloc::address_bits(addr));
 }
 
 void ring_log_start(uint32_t tid, EventCode ev, uint32_t info)
@@ -253,7 +254,7 @@ void dump_ring()
 // block mask alone would merge with the slab's other ops.
 void dump_ring_for_addr(const void* target)
 {
-    const uint64_t target_addr = reinterpret_cast<uint64_t>(target);
+    const uint64_t target_addr = static_cast<uint64_t>(::fast_alloc::address_bits(target));
     const uint64_t bmask       = ~static_cast<uint64_t>(0xffffULL);
     const uint32_t head        = ring_head.load(std::memory_order_relaxed);
     const uint32_t start       = (head > ring_size) ? (head - ring_size) : 0;

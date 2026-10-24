@@ -47,7 +47,8 @@
 #include <sys/mman.h>    // mmap, madvise
 #include <unistd.h>      // sysconf(_SC_PAGESIZE)
 #include <algorithm>     // std::max, the high-water mark
-#include <cstddef>       // std::size_t
+#include <bit>           // std::bit_cast (addr_ptr)
+#include <cstddef>       // std::size_t, std::byte (region_base_)
 #include <cstdint>       // std::uintptr_t, std::uint8_t
 #include <cstdlib>       // std::getenv
 #include <functional>    // std::less (the sweep orders slab pointers)
@@ -62,6 +63,7 @@
 #include <unordered_set> // std::unordered_set
 #include <system_error>  // std::errc (std::from_chars)
 
+#include "fast_allocators/internal/raw_memory.h"   // address_bits
 #include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
 #include "fast_allocators/internal/pmp_alloc.h"    // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
 #include "fast_allocators/internal/fatal.h"        // FAST_ALLOC_FATAL
@@ -239,13 +241,14 @@ inline std::size_t reclaim_page_size() noexcept
     return page;
 }
 
-/// @brief The pointer at address @p addr. The arena keeps its addresses as
-///        integers (cursor, live set, runs) and only turns them back into
-///        pointers for the caller or a syscall (madvise, mincore), here.
+/// @brief Address @p addr as a syscall argument (madvise, mincore). The arena
+///        keeps its addresses as integers (cursor, live set, runs); the kernel
+///        takes them as such, nothing dereferences the result. A block handed
+///        to a caller is a pointer stepped from its region's base instead
+///        (SlabArena::allocate), which keeps its provenance.
 inline void* addr_ptr(std::uintptr_t addr) noexcept
 {
-    // NOLINTNEXTLINE(performance-no-int-to-ptr)
-    return reinterpret_cast<void*>(addr);
+    return std::bit_cast<void*>(addr);
 }
 
 /// @brief The checks before a slab is advised away, without the syscall: how
@@ -274,7 +277,7 @@ std::size_t reclaimable_bytes(const Slab* slab) noexcept
     {
         return 0;
     }
-    if ((reinterpret_cast<std::uintptr_t>(base) % up) != 0)
+    if ((fast_alloc::address_bits(base) % up) != 0)
     {
         reclaim_skip_unaligned().fetch_add(1, std::memory_order_relaxed);
         return 0;
@@ -458,7 +461,7 @@ class EmptySlabSweep
         for (Item& it : items_)
         {
             it.len   = detail::reclaimable_bytes(it.slab);
-            it.begin = reinterpret_cast<std::uintptr_t>(it.slab->data);
+            it.begin = fast_alloc::address_bits(it.slab->data);
         }
         items_.erase(std::remove_if(items_.begin(), items_.end(), [](const Item& it) { return it.len == 0; }),
                      items_.end());
@@ -599,12 +602,12 @@ class SlabArena
         // pages are resident, and were first touched by this rank.
         if (void* block = pop_recycled(size, rank); block != nullptr)
         {
-            if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
+            if (live_.contains(fast_alloc::address_bits(block)))
             {
                 FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC recycled slab {} (size={}): handed out while still live",
                                  name_, block, size);
             }
-            live_.insert(reinterpret_cast<std::uintptr_t>(block));
+            live_.insert(fast_alloc::address_bits(block));
             bytes_live_ += size;
             bytes_high_ = std::max(bytes_high_, bytes_live_);
             ++alloc_calls_;
@@ -618,13 +621,13 @@ class SlabArena
             void* block = it->second.back();
             it->second.pop_back();
             // Impossible by construction (a free-list slab was removed from live_).
-            if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
+            if (live_.contains(fast_alloc::address_bits(block)))
             {
                 FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC slab {} (size={}): handed out while still live -- a slab was "
                                  "recycled with live blocks still in it",
                                  name_, block, size);
             }
-            live_.insert(reinterpret_cast<std::uintptr_t>(block));
+            live_.insert(fast_alloc::address_bits(block));
             bytes_live_ += size;
             bytes_high_ = std::max(bytes_high_, bytes_live_);
             ++alloc_calls_;
@@ -643,7 +646,7 @@ class SlabArena
         bytes_live_ += size;
         bytes_high_ = std::max(bytes_high_, bytes_live_);
         ++alloc_calls_;
-        return detail::addr_ptr(aligned);
+        return region_base_ + (aligned - fast_alloc::address_bits(region_base_));
     }
 
     /**
@@ -664,7 +667,7 @@ class SlabArena
         }
         const std::scoped_lock lk(mtx_);
         // Not live: warn, do NOT abort (see @note).
-        if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
+        if (live_.erase(fast_alloc::address_bits(block)) == 0)
         {
             CHUNK_LOG(warn, arena, "{}: double-free/unknown slab {} (size={}) -- ignored", name_, block, size);
             return; // don't push an unknown slab onto the free-list
@@ -713,7 +716,7 @@ class SlabArena
             {
                 continue;
             }
-            if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
+            if (live_.erase(fast_alloc::address_bits(block)) == 0)
             {
                 CHUNK_LOG(warn, arena, "{}: recycle of an unknown/free slab {} (size={}) -- ignored", name_, block,
                           size);
@@ -801,7 +804,7 @@ class SlabArena
                         kept[r] += size; // stays resident, for the next allocate()
                         continue;
                     }
-                    const auto b = reinterpret_cast<std::uintptr_t>(e.block);
+                    const auto b = fast_alloc::address_bits(e.block);
                     if (adv == 0 || b % page != 0)
                     {
                         e.advised = true; // never advisable: do not look again
@@ -1029,10 +1032,11 @@ class SlabArena
         // on it, a huge page each), `never` forbids them, unset leaves the
         // kernel's mode. Advice only: a failure is ignored.
         alloc_config::advise_thp_region(base, want);
-        auto region_begin = reinterpret_cast<std::uintptr_t>(base);
+        auto region_begin = fast_alloc::address_bits(base);
         regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
-        cursor_     = region_begin;
-        region_end_ = region_begin + want;
+        region_base_ = static_cast<std::byte*>(base);
+        cursor_      = region_begin;
+        region_end_  = region_begin + want;
     }
 
     /// @brief Round @p v up to a multiple of @p alignment. @p alignment must be a power of two.
@@ -1041,11 +1045,12 @@ class SlabArena
         return (v + (alignment - 1)) & ~(static_cast<std::uintptr_t>(alignment) - 1);
     }
 
-    const char*         name_;              ///< Diagnostic label only.
-    std::size_t         reservation_chunk_; ///< Size of each new mmap region.
-    std::uintptr_t      cursor_     = 0;    ///< Bump pointer inside the current region.
-    std::uintptr_t      region_end_ = 0;    ///< End of the current region.
-    std::vector<Region> regions_;           ///< Every reservation, for the reports.
+    const char*         name_;                  ///< Diagnostic label only.
+    std::size_t         reservation_chunk_;     ///< Size of each new mmap region.
+    std::byte*          region_base_ = nullptr; ///< The current region's start: allocate() steps from it.
+    std::uintptr_t      cursor_      = 0;       ///< Bump pointer inside the current region.
+    std::uintptr_t      region_end_  = 0;       ///< End of the current region.
+    std::vector<Region> regions_;               ///< Every reservation, for the reports.
 
     /// @brief Recycled slabs, keyed by their exact allocation size.
     std::unordered_map<std::size_t, std::vector<void*>> free_lists_;
