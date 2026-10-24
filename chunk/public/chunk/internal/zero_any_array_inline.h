@@ -88,7 +88,7 @@ void zero_any::Array<T, IntType>::rebuild_storage(IntType sz)
             const auto init_chunk = [&](int i)
             {
                 Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab_, i, 0);
-                Proxy<T>::tab_type_cst_val[num_tab_][i] = is_val1;
+                Proxy<T>::tab_type_cst_val[num_tab_][i] = CstSlot::first;
                 Proxy<T>::BaseSpec::set(num_tab_, i, T{});
                 this->construct_chunk(i).init_after_constructor();
             };
@@ -149,8 +149,8 @@ void zero_any::Array<T, IntType>::print_compression_stats(std::ostream& os) cons
                 ++acc[*v0 == Chunk<T>::first_value ? 0 : 1];
                 return;
             }
-            const char ct = Proxy<T>::tab_type_cst_val[num_tab_][j];
-            ++acc[ct == 0 ? 0 : 1];
+            const CstSlot ct = Proxy<T>::tab_type_cst_val[num_tab_][j];
+            ++acc[ct == CstSlot::first ? 0 : 1];
         });
     const int n_t1         = counts[1];
     const int n_compressed = counts[0] + n_t1;
@@ -420,8 +420,8 @@ void zero_any::Array<T, IntType>::clear_core()
                             {
                                 increm_chunk_teardown_clear<Chunk<T>>();
                                 // Released below without a compression: out of the live figures.
-                                add_chunk_released<Chunk<T>>(
-                                    1, static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
+                                add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
+                                                                    static_cast<long>(this->size_policy_.size()));
                             }
                             ll_chunk_loc.push_back(&chunk_list_[j]);
                         }
@@ -642,7 +642,7 @@ void zero_any::Array<T, IntType>::release_chunk_range(int first, int last)
                         increm_chunk_teardown_clear<Chunk<T>>();
                         // The size read here, not captured: stats builds only use it.
                         add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                      static_cast<long>(this->size_policy_.size()));
+                                                            static_cast<long>(this->size_policy_.size()));
                     }
                     T* values_loc = chunk_list_[j].values_;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
@@ -682,9 +682,8 @@ void zero_any::Array<T, IntType>::resize(IntType newsz)
                                           {
                                               const int i = old_nb_chunk + k;
                                               this->construct_chunk(i).init_after_constructor();
-                                              Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(
-                                                  num_tab, i, 0);
-                                              Proxy<T>::tab_type_cst_val[num_tab][i] = is_val1;
+                                              Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
+                                              Proxy<T>::tab_type_cst_val[num_tab][i] = CstSlot::first;
                                               // T{}: the struct elements have no conversion from 0
                                               Proxy<T>::BaseSpec::set(num_tab, i, T{});
                                           });

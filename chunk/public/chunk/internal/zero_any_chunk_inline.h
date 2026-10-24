@@ -110,16 +110,9 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(Deriv
  * @param ptr_type_cst Slot of the per-chunk type table to write.
  */
 template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_cst) noexcept
+void zero_any::ChunkImpl<T, Derived>::set_cst_val_to_cst_val(int num_compress_value, CstSlot* ptr_type_cst) noexcept
 {
-    if (num_compress_value == 0)
-    {
-        set_cst_val_to_cst_val1(ptr_type_cst);
-    }
-    else
-    {
-        set_cst_val_to_cst_val2(ptr_type_cst);
-    }
+    *ptr_type_cst = cst_slot_of(num_compress_value);
 }
 
 /**
@@ -297,7 +290,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
         }
 
-        char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
+        CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 
         // Long form in both modes: thr is 0 with OpenMP off.
         const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
@@ -319,7 +312,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         {
             if (second_v != T{})
             {
-                char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
+                CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 
                 // find_or_set records the second value in the chunk's slot and returns the
                 // shared array; clear_int_st installs it as `values` (the CAS).
@@ -339,7 +332,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
                 chunk_ptr->Holder::find_or_set_ind_cst_val2();
             }
 
-            char* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
+            CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 
             const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
@@ -487,7 +480,7 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
         if (apply)
         {
             const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            char*                   ptr_type_cst     = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
+            CstSlot*                ptr_type_cst     = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
             if (compact1)
             {
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
@@ -907,7 +900,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value_bool(bool need
  * @param thr_rank         Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear(char*             ptr_type_cst,
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear(CstSlot*          ptr_type_cst,
                                                              SecondValueRef<T> ptr_second_value,
                                                              int               thr_rank)
 {
@@ -924,7 +917,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear(char*             p
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
-void zero_any::ChunkThreadPolicy<T, Derived, false>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+void zero_any::ChunkThreadPolicy<T, Derived, false>::clear(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value)
 {
     if (this->written())
     {
@@ -946,7 +939,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear(char* ptr_type_cst, S
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
-void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_st(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value)
 {
     Base::debug_check_written();
 
@@ -965,7 +958,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_st(char* ptr_type_cst
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
-                                                                   char*                ptr_type_cst,
+                                                                   CstSlot*             ptr_type_cst,
                                                                    SecondValueRef<T>    ptr_second_value,
                                                                    [[maybe_unused]] int thr_rank,
                                                                    T*                   cst2_ptr)
@@ -985,7 +978,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int          
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int               num_compress_value,
-                                                                    char*             ptr_type_cst,
+                                                                    CstSlot*          ptr_type_cst,
                                                                     SecondValueRef<T> ptr_second_value,
                                                                     int               thr_rank,
                                                                     T*                new_cst_val2_ptr)
@@ -1010,7 +1003,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int         
 /// @note The rank argument is unused: there is no rank pool serially.
 template <typename T, typename Derived>
 void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(int               num_compress_value,
-                                                                 char*             ptr_type_cst,
+                                                                 CstSlot*          ptr_type_cst,
                                                                  SecondValueRef<T> ptr_second_value,
                                                                  int /*thr_rank*/,
                                                                  T* cst2_ptr)
@@ -1045,7 +1038,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(int            
  */
 template <typename T, typename Derived>
 void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int               num_compress_value,
-                                                                  char*             ptr_type_cst,
+                                                                  CstSlot*          ptr_type_cst,
                                                                   SecondValueRef<T> ptr_second_value,
                                                                   int               thr_rank,
                                                                   T*                new_cst_val2_ptr)

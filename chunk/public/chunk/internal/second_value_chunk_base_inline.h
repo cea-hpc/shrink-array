@@ -31,7 +31,7 @@ template <typename IndexT>
 void SecondValueChunkBase<T, Derived>::block_clear_common(int                  num_compress_value,
                                                           IndexT               index_opt,
                                                           [[maybe_unused]] int thr_rank,
-                                                          char*                ptr_type_cst,
+                                                          CstSlot*             ptr_type_cst,
                                                           SecondValueRef<T>    ptr_second_value,
                                                           [[maybe_unused]] T*  cst2_ptr)
 {
@@ -86,7 +86,7 @@ template <typename T, typename Derived>
 template <typename IndexT>
 void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
                                                   int               thr_rank,
-                                                  char*             ptr_type_cst,
+                                                  CstSlot*          ptr_type_cst,
                                                   SecondValueRef<T> ptr_second_value)
 {
     bool is_written = false;

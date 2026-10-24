@@ -517,8 +517,6 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
         }
     }
 
-    static constexpr char is_val1 = 0; ///< Tag of tab_type_cst_val: chunk compressed to the first constant
-
     /**
      * @brief Claim this array's identity before its storage is built.
      * @details Called by create() through ArrayChunkBase: registers the address and takes

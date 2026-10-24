@@ -43,6 +43,7 @@
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport, the class these bodies belong to
 #include "chunk/array_chunk_range_ops.h"        // copy_range -- the public bulk fill
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_rechunk* (CHUNK_STATS)
+#include "chunk/internal/cst_slot.h"            // CstSlot (zero_any's type-of-constant slot)
 #include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast, pmp::team
 #include "chunk/internal/env_parse.h"           // env_number / env_flag (checked, not atoi)
@@ -791,7 +792,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     const T    v   = static_cast<T>(std::as_const(self())[base]);
                     auto&      nch = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
                     const auto psv = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
-                    char*      ptc = &zero_any::Proxy<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
+                    CstSlot*   ptc = &zero_any::Proxy<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
                     (void)nch.find_or_set_ind_cst_val2(v, psv);
                     ChunkType::set_cst_val_to_cst_val2(ptc);
                     nch.init_values_cst_val(ptc, psv);

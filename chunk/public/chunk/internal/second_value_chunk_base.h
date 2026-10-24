@@ -25,6 +25,7 @@
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast (the constant-buffer write check)
 #include "chunk/internal/chunk_base.h"          // ChunkBase
+#include "chunk/internal/cst_slot.h"            // CstSlot (clear_impl's type-of-constant slot)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef, the zero_any second-value slot handle
 #include "chunk/type_name.h"                    // type_name<T>
 
@@ -117,7 +118,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     void block_clear_common(int                  num_compress_value,
                             IndexT               index_opt,
                             [[maybe_unused]] int thr_rank,
-                            char*                ptr_type_cst     = nullptr,
+                            CstSlot*             ptr_type_cst     = nullptr,
                             SecondValueRef<T>    ptr_second_value = {},
                             T*                   cst2_ptr         = nullptr);
 
@@ -236,8 +237,10 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     /// @param ptr_type_cst Constant type pointer (zero_any only)
     /// @param ptr_second_value Second value pointer (zero_any only)
     template <typename IndexT>
-    void
-    clear_impl(IndexT index_opt, int thr_rank, char* ptr_type_cst = nullptr, SecondValueRef<T> ptr_second_value = {});
+    void clear_impl(IndexT            index_opt,
+                    int               thr_rank,
+                    CstSlot*          ptr_type_cst     = nullptr,
+                    SecondValueRef<T> ptr_second_value = {});
 
     /**
      * @brief Ensures the provided pointer does not target shared constant memory.

@@ -236,11 +236,11 @@ void zero_any::Proxy<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb
             }
         }
     }
-    // Every flag 0; the new type-of-constant entries 0. Both constructed by a
-    // team for a large array (parallel_storage_init).
+    // Every flag 0; the new type-of-constant entries CstSlot::first. Both
+    // constructed by a team for a large array (parallel_storage_init).
     Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
         parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(nb_chunk), char{0});
-    parallel_storage_init::resize_filled(tab_type_cst_val[num_tab], static_cast<std::size_t>(nb_chunk), char{0});
+    parallel_storage_init::resize_filled(tab_type_cst_val[num_tab], static_cast<std::size_t>(nb_chunk), CstSlot::first);
 }
 
 /**

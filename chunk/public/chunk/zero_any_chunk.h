@@ -31,6 +31,7 @@
 #include "chunk/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_RANK
 #include "chunk/ring_log_debug.h"                   // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
+#include "chunk/internal/cst_slot.h"                // CstSlot, cst_slot_of
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
 #include "chunk/internal/chunk_stats.h"             // increm_chunk_write
 
@@ -409,7 +410,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
      * \param ptr_second_value The chunk's second-value slot.
      * \param thr_rank         Rank whose pool receives the released buffer.
      */
-    void clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
+    void clear(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
 
     /*!
      * \brief Release this chunk's buffer and point it back at a constant --
@@ -421,7 +422,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
      * \param cst2_ptr           Shared array of the second constant (type 2).
      */
     void block_clear(int               num_compress_value,
-                     char*             ptr_type_cst,
+                     CstSlot*          ptr_type_cst,
                      SecondValueRef<T> ptr_second_value,
                      int               thr_rank,
                      T*                cst2_ptr);
@@ -436,7 +437,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
      *                           required when @p num_compress_value is 1.
      */
     void clear_int_st(int               num_compress_value,
-                      char*             ptr_type_cst,
+                      CstSlot*          ptr_type_cst,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
                       T*                new_cst_val2_ptr = nullptr);
@@ -447,7 +448,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
      * \param ptr_type_cst       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      */
-    void clear_st(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+    void clear_st(int num_compress_value, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value)
     {
         clear_int_st(num_compress_value, ptr_type_cst, ptr_second_value, CHUNK_PMP_THREAD_RANK);
     }
@@ -502,21 +503,21 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
      *        thr_rank is 0 with OpenMP off.
      */
     void clear_int_st(int               num_compress_value,
-                      char*             ptr_type_cst,
+                      CstSlot*          ptr_type_cst,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
                       T*                new_cst_val2_ptr = nullptr);
 
 
     /// @brief Compress to the FIRST constant and forget the second value, if materialised.
-    void clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
     /// @brief Unconditional twin of clear(char*, T*): no written() test.
-    void clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear_st(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
     /// @brief Release the buffer outright (no rank pool) and point at a constant.
     void block_clear(int               num_compress_value,
-                     char*             ptr_type_cst,
+                     CstSlot*          ptr_type_cst,
                      SecondValueRef<T> ptr_second_value,
                      int /*thr_rank*/,
                      T* cst2_ptr);
@@ -604,20 +605,20 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
      * @brief Set constant type to val1
      * @param ptr_type_cst Pointer to type indicator
      */
-    static void set_cst_val_to_cst_val1(char* ptr_type_cst) noexcept
+    static void set_cst_val_to_cst_val1(CstSlot* ptr_type_cst) noexcept
     {
-        *ptr_type_cst = is_val1;
+        *ptr_type_cst = CstSlot::first;
     }
     /**
      * @brief Set constant type to val2
      * @param ptr_type_cst Pointer to type indicator
      */
-    static void set_cst_val_to_cst_val2(char* ptr_type_cst) noexcept
+    static void set_cst_val_to_cst_val2(CstSlot* ptr_type_cst) noexcept
     {
-        *ptr_type_cst = is_val2;
+        *ptr_type_cst = CstSlot::second;
     }
 
-    static void set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_cst) noexcept;
+    static void set_cst_val_to_cst_val(int num_compress_value, CstSlot* ptr_type_cst) noexcept;
 
     /**
      * @brief Initialize values depending on constant type
@@ -627,9 +628,9 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     ///        point at when the type says cst_val2 is found by value in the
     ///        registry (there is no per-chunk copy of it). May be null when
     ///        the type is cst_val1.
-    void init_values_cst_val(const char* ptr_type_cst, SecondValueRef<T> ptr_second_value) noexcept
+    void init_values_cst_val(const CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value) noexcept
     {
-        if (*ptr_type_cst == is_val1)
+        if (*ptr_type_cst == CstSlot::first)
         {
             Base::values_ = Base::get_cst_val1();
             return;
@@ -752,9 +753,6 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
   private:
     using ChunkType              = Derived;
     using CompressionManagerType = CompressionManager<T, ChunkType>;
-
-    static constexpr char is_val1 = 0;
-    static constexpr char is_val2 = 1;
 
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;

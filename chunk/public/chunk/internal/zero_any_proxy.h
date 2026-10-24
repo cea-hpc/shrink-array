@@ -33,6 +33,7 @@
 
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
+#include "chunk/internal/cst_slot.h"          // CstSlot (tab_type_cst_val)
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/crp_helper.h"                   // CRTPSupport
 #include "chunk/internal/in_t.h"                         // InT<T>
@@ -790,7 +791,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
         BaseSpec::clear(num_tab);
         // Released, not just emptied (clear() keeps the capacity): every re-chunk would
         // leave one byte per old chunk behind.
-        parallel_storage_init::NoInitVector<char>().swap(tab_type_cst_val[num_tab]);
+        parallel_storage_init::NoInitVector<CstSlot>().swap(tab_type_cst_val[num_tab]);
         // Same for the candidate flags.
         Base::release_tab_is_int(num_tab);
     }
@@ -798,9 +799,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /**
      * @brief Per-tab array of flags indicating the type of constant value used.
      */
-    static inline constinit internal::Immortal<std::vector<parallel_storage_init::NoInitVector<char>>>
+    static inline constinit internal::Immortal<std::vector<parallel_storage_init::NoInitVector<CstSlot>>>
         tab_type_cst_val_storage_{}; ///< type-of-constant flags
-    static inline std::vector<parallel_storage_init::NoInitVector<char>>& tab_type_cst_val =
+    static inline std::vector<parallel_storage_init::NoInitVector<CstSlot>>& tab_type_cst_val =
         tab_type_cst_val_storage_.value;
 
     /**
@@ -1058,7 +1059,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     template <typename U, typename Op>
     void apply_compound_operation(Op op, InT<U> v) noexcept; // InT: see assign_impl
 
-    char* ptr_type_cst_ = nullptr; ///< pointer into tab_type_cst_val[num_tab]
+    CstSlot* ptr_type_cst_ = nullptr; ///< pointer into tab_type_cst_val[num_tab]
 };
 
 } // namespace zero_any
