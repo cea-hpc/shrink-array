@@ -771,7 +771,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
 
     if (will_be_not_second_value)
     {
-        self.Base::chunk_.create_value(true, self.zero_one_value::ProxySpec<T, Derived>::inf_array_);
+        self.Base::chunk_.create_value(true, self.get_inf_array());
         operation(op);
     }
     else if (self.Base2::is_not_cst_val2())
@@ -845,7 +845,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_ari
 
         if (will_be_not_second_value)
         {
-            self.Base::chunk_.create_value(true, self.zero_one_value::ProxySpec<T, Derived>::inf_array_);
+            self.Base::chunk_.create_value(true, self.get_inf_array());
             if constexpr (chunk_config::use_compression_with_counter)
             {
                 self.Base::chunk_.set_nb_val_eq_second_value(self.chunk_size() - 1);
