@@ -649,7 +649,7 @@ void zero_any::Array<T, IntType>::release_chunk_range(int first, int last)
 }
 
 template <ArrayChunkElement T, typename IntType>
-void zero_any::Array<T, IntType>::resize(IntType newsz)
+void zero_any::Array<T, IntType>::resize(const IntType newsz)
 {
     this->invalidate_proxies();
     const auto& sh_inf = *Proxy<T>::share_info_array;

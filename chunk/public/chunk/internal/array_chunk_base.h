@@ -53,9 +53,8 @@
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/chunk_size_policy.h"   // ChunkSizeError (try_set_chunk_size)
-#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (swap check)
+#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (bulk read, iteration checks)
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
-#include "chunk/internal/contracts.h"           // CHUNK_PRE (operator[], element_proxy)
 #include "chunk/internal/element_ref.h"         // ElementRef: what operator[] returns
 #include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
 
@@ -234,7 +233,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         /** @brief Two iterators are equal when they sit on the same absolute index. */
         [[nodiscard]] friend bool operator==(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
-            check_same_owner(lhs, rhs);
+            contract_assert(lhs.owner_ == rhs.owner_); // iterators of one array (or both singular)
             return lhs.lin_ == rhs.lin_;
         }
 
@@ -278,7 +277,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         /** @brief Signed distance from @p rhs to @p lhs, in elements. */
         [[nodiscard]] friend difference_type operator-(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
-            check_same_owner(lhs, rhs);
+            contract_assert(lhs.owner_ == rhs.owner_); // iterators of one array (or both singular)
             return static_cast<difference_type>(lhs.lin_) - static_cast<difference_type>(rhs.lin_);
         }
 
@@ -299,7 +298,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         [[nodiscard]] friend std::strong_ordering operator<=>(const const_iterator& lhs,
                                                               const const_iterator& rhs) noexcept
         {
-            check_same_owner(lhs, rhs);
+            contract_assert(lhs.owner_ == rhs.owner_); // iterators of one array (or both singular)
             return lhs.lin_ <=> rhs.lin_;
         }
 
@@ -439,22 +438,6 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             enter_chunk();
         }
 
-        /// @brief Check builds: @p lhs and @p rhs walk the same array (or are
-        ///        both singular, which C++14 allows to compare).
-        static void check_same_owner([[maybe_unused]] const const_iterator& lhs,
-                                     [[maybe_unused]] const const_iterator& rhs) noexcept
-        {
-            if constexpr (build_config::any_check)
-            {
-                if (lhs.owner_ != rhs.owner_) [[unlikely]]
-                {
-                    CHUNK_INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
-                                           "or subtracted ({} vs {})",
-                                           lhs.owner_, rhs.owner_);
-                }
-            }
-        }
-
         const Derived*   owner_     = nullptr; ///< Array being traversed.
         const ChunkType* chunk_     = nullptr; ///< Current chunk, already sync'd; null at end/rend.
         IndType          lin_       = 0;       // absolute linear index (identity/compare)
@@ -563,7 +546,8 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          storage of a resize() to @p new_capacity, with the size left where it is.
      *          The new chunks are at the first constant, like any fresh chunk.
      */
-    void reserve(this Derived& self, IndType new_capacity);
+    void reserve(this Derived& self, const IndType new_capacity) pre(new_capacity >= 0)
+        post(self.capacity() >= static_cast<size_type>(new_capacity));
 
     /**
      * @brief resize(), then @p val written to the NEW elements only
@@ -571,7 +555,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @details The derived arrays' resize(newsz) does the resizing (they name
      *          this overload back with a using-declaration).
      */
-    void resize(this Derived& self, IndType newsz, InT<T> val)
+    void resize(this Derived& self, const IndType newsz, InT<T> val) pre(newsz >= 0) post(self.size() == newsz)
     {
         const IndType old_size = self.m_size_;
         self.resize(newsz);
@@ -589,7 +573,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *       resize(), a sequential point (see capacity()). Invalidates all
      *       iterators.
      */
-    void push_back(this Derived& self, InT<T> val)
+    void push_back(this Derived& self, InT<T> val) post(!self.empty())
     {
         if (static_cast<size_type>(self.m_size_) < self.capacity()) [[likely]]
         {
@@ -608,7 +592,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          that an aggregate builds from its members.
      */
     template <typename... Args>
-    void emplace_back(this Derived& self, Args&&... args)
+    void emplace_back(this Derived& self, Args&&... args) post(!self.empty())
     {
         self.push_back(T{std::forward<Args>(args)...});
     }
@@ -924,7 +908,8 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(this Derived& self, IndType count, T val); // T, not InT<T>: val may be a(i) -- resize() can free it
+    // T, not InT<T>: val may be a(i) -- resize() can free it.
+    void assign(this Derived& self, const IndType count, T val) pre(count >= 0) post(self.size() == count);
 
     /**
      * @brief assign(): the elements of [first, last), in order.
@@ -950,19 +935,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param other the container to exchange state with
      * @note noexcept: the drain and registry update only fail on memory
      *       exhaustion or a corrupt registry, which terminates.
-     * @pre Both operands must share chunk geometry (enforced under check; with
-     *      StaticChunkSize this is always true).
+     * @pre Both operands share chunk geometry (with StaticChunkSize always true).
      */
-    void swap(this Derived& self, Derived& other) noexcept
+    void swap(this Derived& self, Derived& other) noexcept pre(self.size_policy_.size() == other.size_policy_.size())
     {
-        if constexpr (build_config::any_check)
-        {
-            if (self.size_policy_.size() != other.size_policy_.size())
-            {
-                CHUNK_INVARIANT_FAILED("zero::Array::swap: mismatched chunk geometry ({} vs {})",
-                                       self.size_policy_.size(), other.size_policy_.size());
-            }
-        }
         self.swap_storage_and_identity(other);
     }
 
@@ -1013,7 +989,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](this const Derived& self, IndType index) noexcept
-        CHUNK_PRE(index >= 0 && index < self.m_size_)
+        pre(index >= 0 && index < self.m_size_)
     {
         const int num_chunk = self.chunk_index_of(index);
         const int num       = self.offset_in_chunk(index);
@@ -1048,7 +1024,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          `auto v = a[i];` fail to compile (internal/element_ref.h).
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](this Derived& self, IndType index) noexcept
-        CHUNK_PRE(index >= 0 && index < self.m_size_)
+        pre(index >= 0 && index < self.m_size_)
     {
         if constexpr (build_config::strict_element_ref)
         {
@@ -1068,7 +1044,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @return the write proxy for that element, armed as operator[]'s
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(this Derived& self, IndType index) noexcept
-        CHUNK_PRE(index >= 0 && index < self.m_size_)
+        pre(index >= 0 && index < self.m_size_)
     {
         const int        num_chunk = self.chunk_index_of(index);
         auto&            chunk_t   = self.chunk_list_[num_chunk];

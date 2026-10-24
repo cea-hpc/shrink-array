@@ -1024,8 +1024,6 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_st(this Derived&     
                                                               CstSlot*          ptr_type_cst,
                                                               SecondValueRef<T> ptr_second_value)
 {
-    self.SecondValueChunkBase<T, Derived>::debug_check_written();
-
     self.SecondValueChunkBase<T, Derived>::free_values(self.values_);
 
     ptr_second_value.reset();

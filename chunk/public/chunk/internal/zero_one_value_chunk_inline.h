@@ -1121,13 +1121,11 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear(this Derived&
  * @brief Compresses this chunk to first_value without testing `written()` (serial build).
  *
  * For callers that have already established the chunk is materialised; the test
- * survives as a debug-only assertion.
+ * survives as the precondition.
  */
 template <typename T, typename Derived>
 void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_st(this Derived& self, int ind)
 {
-    self.Base::debug_check_written(ind);
-
     self.Base::free_values(self.values_);
     self.init_values_cst_val1();
 
@@ -1218,24 +1216,13 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st_bool(t
  * copies of the statistics and, unlike the parallel path, resets the per-chunk
  * element counter of the constant being adopted.
  *
- * @pre The chunk is materialised (debug-only assertion).
+ * @pre The chunk is materialised (the declaration's precondition).
  */
 template <typename T, typename Derived>
 void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(this Derived& self,
                                                                         int           num_compress_value,
                                                                         int           ind)
 {
-    // Debug-only check. Bool chunks share a single second value with no index:
-    // no-arg written check and the bool-specific reinit; non-bool is indexed.
-    if constexpr (is_bool)
-    {
-        self.Base::debug_check_written();
-    }
-    else
-    {
-        self.Base::debug_check_written(ind);
-    }
-
     // CHUNK_STATS: counted here, since this path (compress_int's sweep via
     // clear_st(num_compress_value, ind)) bypasses block_clear. No if constexpr
     // needed: both are no-op overloads when CHUNK_STATS is off (chunk_stats.h).

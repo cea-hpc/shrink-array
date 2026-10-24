@@ -705,56 +705,64 @@ else()
 endif()
 
 # ── Contracts (C++26, P2900) ─────────────────────────────────────────────────
-# chunk/internal/contracts.h: CHUNK_PRE (pre) and CHUNK_CONTRACT_ASSERT
-# (contract_assert) where the compiler has contracts -- GCC 16, on with C++26;
-# Clang 23 has none, the macros then fall back (contracts.h). CHUNK_CONTRACTS
-# is their evaluation semantic, passed PUBLIC on the libraries
-# (-fcontract-evaluation-semantic=): a precondition of an inline function is
-# checked in the consumer's translation unit. AUTO (default): enforce in a
-# check build (Debug, CHECK_OPTIM), ignore otherwise; or ignore, observe,
-# enforce, quick_enforce.
+# The library states its preconditions and postconditions with pre / post /
+# contract_assert, written as such: this branch needs a compiler with
+# contracts -- GCC 16 (on with C++26). Clang 23 has none: refused here.
+#
+# CHUNK_CONTRACTS is the evaluation semantic, PUBLIC on the libraries
+# (-fcontract-evaluation-semantic=): a contract of an inline function
+# (operator[]) is checked with the semantic of the consumer's translation
+# unit. AUTO (default): enforce in a check build (Debug, CHECK_OPTIM), ignore
+# otherwise; or ignore, observe, enforce, quick_enforce. Measured on
+# operator[]'s precondition (-O3, a serial loop over 16 M doubles): ignore
+# costs nothing, enforce +35 % on a read and +4 % on a write, quick_enforce
+# five times the read (GCC 16.2 calls a terminate wrapper, it does not trap).
+#
+# A violation goes to the program's ::handle_contract_violation, or to the
+# default one, libstdc++exp's (a weak symbol; chunk_stacktrace links that
+# archive): the function, file:line and predicate, then std::terminate under
+# enforce. The library defines none.
+#
+# GCC 16.2 stops with an internal compiler error on two forms: a pre or post
+# reading a parameter of a function template whose return type is deduced
+# (auto, decltype(auto)) -- spell the return type -- and a pre or post on a
+# hidden friend of a class template (the iterators' operators) -- use
+# contract_assert in the body.
 set(CHUNK_CONTRACTS "AUTO" CACHE STRING "Evaluation semantic of the contracts: AUTO, ignore, observe, enforce, quick_enforce")
 set_property(CACHE CHUNK_CONTRACTS PROPERTY STRINGS AUTO ignore observe enforce quick_enforce)
-set(CHUNK_CONTRACTS_FLAG "")
-set(CHUNK_HAVE_CONTRACTS OFF)
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  include(CheckCXXSourceCompiles)
-  set(_chunk_contracts_std "${CHUNK_CXX_STD_FLAG}")
-  if (NOT _chunk_contracts_std)
-    set(_chunk_contracts_std "-std=gnu++26")
-  endif()
-  # Compiled, not linked: the default violation handler lives in libstdc++exp.
-  set(CMAKE_REQUIRED_QUIET ON)
-  set(CMAKE_REQUIRED_FLAGS "${_chunk_contracts_std}")
-  set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-  check_cxx_source_compiles([=[
+include(CheckCXXSourceCompiles)
+set(_chunk_contracts_std "${CHUNK_CXX_STD_FLAG}")
+if (NOT _chunk_contracts_std)
+  set(_chunk_contracts_std "-std=gnu++26")
+endif()
+# Compiled, not linked: the default violation handler lives in libstdc++exp.
+set(CMAKE_REQUIRED_QUIET ON)
+set(CMAKE_REQUIRED_FLAGS "${_chunk_contracts_std}")
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+check_cxx_source_compiles([=[
 #if !defined(__cpp_contracts)
 #error no contracts
 #endif
 int f(const int x) pre(x > 0) post(r : r == x);
 int g(const int x) { contract_assert(x != 0); return x; }
 ]=] CHUNK_CONTRACTS_COMPILE)
-  unset(CMAKE_TRY_COMPILE_TARGET_TYPE)
-  unset(CMAKE_REQUIRED_FLAGS)
-  unset(CMAKE_REQUIRED_QUIET)
-  if (CHUNK_CONTRACTS_COMPILE)
-    set(CHUNK_HAVE_CONTRACTS ON)
+unset(CMAKE_TRY_COMPILE_TARGET_TYPE)
+unset(CMAKE_REQUIRED_FLAGS)
+unset(CMAKE_REQUIRED_QUIET)
+if (NOT CHUNK_CONTRACTS_COMPILE)
+  message(FATAL_ERROR "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} has no C++26 contracts (pre, post, "
+                      "contract_assert), which this branch uses: GCC 16 or later")
+endif()
+set(_chunk_contracts_semantic "${CHUNK_CONTRACTS}")
+if (_chunk_contracts_semantic STREQUAL "AUTO")
+  if (CHUNK_DEBUG OR CHECK_OPTIM)
+    set(_chunk_contracts_semantic "enforce")
+  else()
+    set(_chunk_contracts_semantic "ignore")
   endif()
 endif()
-if (CHUNK_HAVE_CONTRACTS)
-  set(_chunk_contracts_semantic "${CHUNK_CONTRACTS}")
-  if (_chunk_contracts_semantic STREQUAL "AUTO")
-    if (CHUNK_DEBUG OR CHECK_OPTIM)
-      set(_chunk_contracts_semantic "enforce")
-    else()
-      set(_chunk_contracts_semantic "ignore")
-    endif()
-  endif()
-  set(CHUNK_CONTRACTS_FLAG "-fcontract-evaluation-semantic=${_chunk_contracts_semantic}")
-  message(STATUS "C++26 contracts: on, ${_chunk_contracts_semantic} (CHUNK_CONTRACTS=${CHUNK_CONTRACTS})")
-else()
-  message(STATUS "C++26 contracts: off (${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} has none)")
-endif()
+set(CHUNK_CONTRACTS_FLAG "-fcontract-evaluation-semantic=${_chunk_contracts_semantic}")
+message(STATUS "C++26 contracts: ${_chunk_contracts_semantic} (CHUNK_CONTRACTS=${CHUNK_CONTRACTS})")
 
 function(chunk_require_cxx_std target scope)
   if (CHUNK_CXX_STD_FLAG)

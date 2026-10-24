@@ -555,15 +555,17 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
      * \brief Compress this chunk to a constant (serial/counter algorithm: eager, no queue).
      * \param num_compress_value 0 for the first constant, non-zero for the second at `ind`.
      * \param ind Index of the second constant (unused when num_compress_value == 0, and for bool).
+     * \pre The chunk is materialised (bool: one second value, no index).
      */
-    void clear_int_st(this Derived& self, int num_compress_value, int ind);
+    void clear_int_st(this Derived& self, int num_compress_value, int ind)
+        pre(is_bool_like_v<T> ? self.written() : self.is_written_at(ind));
 
     /*!
      * \brief Compress this chunk to its first constant (serial/counter algorithm).
-     * \param ind Only for the debug_check_written(ind) sanity check; the target is
-     *            always the first constant.
+     * \param ind Only for the precondition; the target is always the first constant.
+     * \pre The chunk is materialised at @p ind.
      */
-    void clear_st(this Derived& self, int ind);
+    void clear_st(this Derived& self, int ind) pre(self.is_written_at(ind));
 
     /*!
      * \brief Compress this chunk to a constant (serial twin of the OpenMP

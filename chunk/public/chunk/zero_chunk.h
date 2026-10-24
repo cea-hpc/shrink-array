@@ -343,7 +343,9 @@ class ChunkThreadPolicy<T, Derived, false> : public ChunkBase<T, Derived>
     ///        the teardown, counted as teardown_clear (clear_st = count +
     ///        release_st).
     /// @param count_release as in the threaded policy's release_st
-    void release_st(this Derived& self, bool count_release = true);
+    /// @pre The chunk is materialised: releasing an unwritten one would free the
+    ///      shared zero sentinel as a buffer.
+    void release_st(this Derived& self, bool count_release = true) pre(self.written());
 };
 
 /**

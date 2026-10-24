@@ -252,7 +252,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list keeps its capacity.
      */
-    void resize(IntType newsz);
+    void resize(const IntType newsz) pre(newsz >= 0) post(this->size() == newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) (a shrinking resize()). Same
@@ -324,7 +324,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *          size predictor).
      * @see clear_core
      */
-    void clear();
+    void clear() post(this->empty());
 
     /// @brief Run a compression pass over this array's chunks, shared over
     ///        @p team (the one compress() opens, or the caller's region).

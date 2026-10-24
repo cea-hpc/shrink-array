@@ -124,8 +124,6 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::compress(this Derived& self, 
         return;
     }
 
-    self.Base::debug_check_written();
-
     // CHUNK_STATS: counted here so the scan yield reflects what actually runs.
     if constexpr (chunk_config::stats)
     {
@@ -529,16 +527,6 @@ void zero::ChunkThreadPolicy<T, Derived, false>::release_st(this Derived& self, 
         {
             add_chunk_released<zero::Chunk<T>>(1, static_cast<long>(sizeof(T)) *
                                                       static_cast<long>(shrink_array::alloc_chunk_count()));
-        }
-    }
-
-    if constexpr (build_config::is_debug)
-    {
-        if (!self.written())
-        {
-            // As ChunkBase::debug_check_written: clearing an unwritten chunk frees the shared
-            // sentinel as a buffer.
-            CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written");
         }
     }
 

@@ -423,7 +423,7 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
 }
 
 template <ArrayChunkElement T, typename IntType>
-void zero::Array<T, IntType>::resize(IntType newsz)
+void zero::Array<T, IntType>::resize(const IntType newsz)
 {
     this->invalidate_proxies();
 

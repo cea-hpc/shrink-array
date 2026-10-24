@@ -205,7 +205,7 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(this Derived& self, IndType 
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::assign(this Derived& self, IndType count, T val)
+void ArrayChunkBase<Derived>::assign(this Derived& self, const IndType count, T val)
 {
     self.resize(count);
     self.write_range_by_chunks(0, count, [&val](IndType) { return val; });
@@ -232,7 +232,7 @@ void ArrayChunkBase<Derived>::assign(this Derived& self, It first, It last)
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::reserve(this Derived& self, IndType new_capacity)
+void ArrayChunkBase<Derived>::reserve(this Derived& self, const IndType new_capacity)
 {
     if (static_cast<size_type>(new_capacity) <= self.capacity())
     {

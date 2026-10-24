@@ -326,12 +326,13 @@ Two development branches, not in a release yet:
   [docs/mdspan.md](https://github.com/cea-hpc/shrink-array/blob/cpp23/docs/mdspan.md).
 
 - **`cpp26` -- trying out C++26.** Started from `cpp23`, to measure what the new standard
-  brings to the library: static reflection first, then contracts, perhaps modules. It compiles
-  with **GCC 16 only**: no other compiler has C++26 reflection yet (Clang 23 has none, and
-  oneAPI, AOCC and NVHPC follow Clang or lag behind it), and the branch uses nothing GCC 16
-  does not implement. `compile_all.sh` builds the gnu configurations only there
-  (`CHUNK_CXX_STANDARD=26`, or `--std=26`). An experiment: the codes the library is meant for
-  stay in C++20.
+  brings to the library: static reflection, contracts (`pre` / `post` / `contract_assert` on
+  the containers' operations, their semantic set by `CHUNK_CONTRACTS`), perhaps modules. It
+  compiles with **GCC 16 only**: no other compiler has C++26 reflection or contracts yet
+  (Clang 23 has neither, and oneAPI, AOCC and NVHPC follow Clang or lag behind it); CMake
+  refuses a compiler without contracts. `compile_all.sh` builds the gnu configurations only
+  there (`CHUNK_CXX_STANDARD=26`, the branch's default). An experiment: the codes the library
+  is meant for stay in C++20.
 
 `develop` is merged into `cpp23` as it moves, and `cpp23` into `cpp26`; `cpp23` is also a
 Spack version (`spack install shrink-array@cpp23`).

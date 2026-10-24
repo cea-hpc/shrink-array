@@ -324,7 +324,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list keeps its capacity.
      */
-    void resize(IntType newsz);
+    void resize(const IntType newsz) pre(newsz >= 0) post(this->size() == newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
@@ -340,7 +340,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @details clear_core() plus the pre-drain compression stats.
      * @see clear_core
      */
-    void clear();
+    void clear() post(this->empty());
 
     /**
      * @brief Audit pass: report the constant chunks the incremental compression missed.

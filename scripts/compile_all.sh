@@ -150,7 +150,8 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    CHUNK_CXX_STANDARD (functions_for_compile.sh; 26 on the cpp26
                    branch), else each configuration's own. At 26 only the gnu
                    builds are made (GCC 16: the only compiler with C++26
-                   reflection for now); --only=<other> is then an error.
+                   reflection and contracts for now); --only=<other> is then
+                   an error.
   --target=<glob>  Build only the config(s) whose name matches <glob>
                    (e.g. omp-llvm, 'omp-llvm*', '*sanitizer*', '*check*'), or
                    any glob of a comma-separated list (omp-llvm,omp-gnu-debug).
@@ -355,7 +356,7 @@ if chunk_cxx26; then
         echo "ERROR: --only=$only with C++$CHUNK_CXX_STANDARD: only the gnu builds compile C++26 for now (GCC 16)" >&2
         exit 2
     fi
-    echo "[INFO] C++$CHUNK_CXX_STANDARD: gnu builds only -- oneapi, nvhpc, llvm and aocc skipped (no C++26 reflection there yet)"
+    echo "[INFO] C++$CHUNK_CXX_STANDARD: gnu builds only -- oneapi, nvhpc, llvm and aocc skipped (no C++26 reflection nor contracts there yet)"
     enable_oneapi=false
     enable_nvhpc=false
     enable_llvm=false

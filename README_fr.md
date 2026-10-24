@@ -336,11 +336,13 @@ Deux branches de développement, pas encore dans une version :
   [docs/mdspan_fr.md](https://github.com/cea-hpc/shrink-array/blob/cpp23/docs/mdspan_fr.md).
 
 - **`cpp26` -- l'essai du C++26.** Partie de `cpp23`, pour mesurer ce que la nouvelle norme
-  apporte à la bibliothèque : la réflexion statique d'abord, puis les contrats, peut-être les
-  modules. Elle ne compile **qu'avec GCC 16** : aucun autre compilateur n'a encore la réflexion
-  du C++26 (Clang 23 n'en a pas, et oneAPI, AOCC et NVHPC suivent Clang ou sont en retard sur
-  lui), et la branche n'utilise rien que GCC 16 n'implémente pas. `compile_all.sh` n'y construit
-  que les configurations gnu (`CHUNK_CXX_STANDARD=26`, ou `--std=26`). C'est un essai : les codes
+  apporte à la bibliothèque : la réflexion statique, les contrats (`pre` / `post` /
+  `contract_assert` sur les opérations des conteneurs, leur sémantique fixée par
+  `CHUNK_CONTRACTS`), peut-être les modules. Elle ne compile **qu'avec GCC 16** : aucun autre
+  compilateur n'a encore la réflexion ni les contrats du C++26 (Clang 23 n'a ni l'une ni
+  les autres, et oneAPI, AOCC et NVHPC suivent Clang ou sont en retard sur lui) ; CMake refuse
+  un compilateur sans contrats. `compile_all.sh` n'y construit que les configurations gnu
+  (`CHUNK_CXX_STANDARD=26`, la valeur par défaut de la branche). C'est un essai : les codes
   visés par la bibliothèque restent en C++20.
 
 `develop` est fusionnée dans `cpp23` au fil de l'eau, et `cpp23` dans `cpp26` ; `cpp23` est

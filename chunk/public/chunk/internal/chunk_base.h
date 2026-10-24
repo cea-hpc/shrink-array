@@ -1592,35 +1592,6 @@ class ChunkBase : public DeferredReadGate<Derived>,
 
     constexpr static T zero{};
 
-    /// @brief Debug-only assertion: abort if offset j is not currently
-    ///        written (a clear on an unwritten offset is a bug). Compiled
-    ///        out entirely when build_config::any_check is off.
-    /// @param offset Element offset expected to be written.
-    void debug_check_written(this const Derived& self, int offset) noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            if (!self.is_written_at(offset))
-            {
-                CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written (offset {})", offset);
-            }
-        }
-    }
-
-    /// @brief Debug-only assertion: abort if this chunk is not currently
-    ///        written. Compiled out entirely when build_config::any_check is
-    ///        off.
-    void debug_check_written(this const Derived& self) noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            if (!self.written())
-            {
-                CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written");
-            }
-        }
-    }
-
     /// @brief Check if chunk does not point to the first constant value
     /// @return true if chunk is not compressed to first constant value
     [[nodiscard]] bool is_not_cst_val1() const noexcept

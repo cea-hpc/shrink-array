@@ -484,7 +484,8 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
     void clear(this Derived& self, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
     /// @brief Unconditional twin of clear(char*, T*): no written() test.
-    void clear_st(this Derived& self, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    /// @pre The chunk is materialised.
+    void clear_st(this Derived& self, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value) pre(self.written());
 
     /// @brief Release the buffer outright (no rank pool) and point at a constant.
     void block_clear(this Derived&     self,

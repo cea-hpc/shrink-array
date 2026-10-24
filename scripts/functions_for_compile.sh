@@ -33,11 +33,13 @@ INT64_OPT=${INT64_OPT--DSHRINK_BENCH_INT64=ON}
 # chunk_require_cxx20; C++23 for the gnu builds on aarch64, compile_all_gnu.sh).
 # 20, 23 or 26: every gnu configuration is configured with
 # -DCMAKE_CXX_STANDARD=<N>. At 26, compile_all.sh builds the gnu family only:
-# GCC 16 is, for now, the only compiler with C++26 static reflection (Clang 23
-# has none; oneAPI, AOCC and nvc++ follow Clang or lag behind it).
-# The cpp26 branch sets the default below to 26. The environment
-# (CHUNK_CXX_STANDARD=23 ./compile_all.sh) or compile_all.sh --std=N overrides it.
-: "${CHUNK_CXX_STANDARD:=}"
+# GCC 16 is, for now, the only compiler with C++26 static reflection and
+# contracts (Clang 23 has neither; oneAPI, AOCC and nvc++ follow Clang or lag
+# behind it).
+# The cpp26 branch sets the default below to 26: its CMakeLists refuses a
+# compiler without contracts. The environment (CHUNK_CXX_STANDARD=23
+# ./compile_all.sh) or compile_all.sh --std=N overrides it.
+: "${CHUNK_CXX_STANDARD:=26}"
 case "$CHUNK_CXX_STANDARD" in
     ''|20|23|26) ;;
     *) echo "ERROR: CHUNK_CXX_STANDARD=$CHUNK_CXX_STANDARD (expected 20, 23 or 26, or empty)" >&2; exit 2 ;;
