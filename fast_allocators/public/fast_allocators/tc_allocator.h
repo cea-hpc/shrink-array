@@ -60,7 +60,7 @@
 #include <array>       // std::array
 #include <bit>         // std::has_single_bit, bit_width, bit_ceil, bit_floor
 #include <cerrno>      // errno, after a failed mmap
-#include <cstddef>     // std::size_t
+#include <cstddef>     // std::size_t, std::byte (the slab blocks)
 #include <cstring>     // std::strerror
 #include <cstdint>     // uintptr_t
 #include <limits>      // std::numeric_limits: TCAllocatorEB's index range
@@ -278,7 +278,7 @@ class alignas(64) TCSlab
     /// @pre #element_size >= 2 -- a power of two goes through num_block_pow2().
     [[nodiscard]] int num_block(const void* ptr) const noexcept
     {
-        const auto off = static_cast<std::uint64_t>(static_cast<const char*>(ptr) - data);
+        const auto off = static_cast<std::uint64_t>(static_cast<const std::byte*>(ptr) - data);
         FAST_ALLOC_DBG_ASSERT(element_size >= 2 && off <= UINT32_MAX);
         FAST_ALLOC_DBG_ASSERT(static_cast<int>((static_cast<unsigned __int128>(element_magic_) * off) >> 64) ==
                               static_cast<int>(off / static_cast<std::uint64_t>(element_size)));
@@ -288,7 +288,7 @@ class alignas(64) TCSlab
     /// @brief num_block() by shift. Valid only if #element_size is a power of two.
     [[nodiscard]] int num_block_pow2(const void* ptr) const noexcept
     {
-        return static_cast<int>((static_cast<const char*>(ptr) - data) >> log2_element_size_);
+        return static_cast<int>((static_cast<const std::byte*>(ptr) - data) >> log2_element_size_);
     }
 
     /// @brief No element of this slab is out. Only then may it be released.
@@ -331,7 +331,8 @@ class alignas(64) TCSlab
     [[nodiscard]] static TCSlab* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
     {
         // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
-        const char* base = static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & (slab_bytes - 1));
+        const std::byte* base =
+            static_cast<const std::byte*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & (slab_bytes - 1));
         return *reinterpret_cast<TCSlab* const*>(base + slab_bytes - sizeof(void*));
     }
 
@@ -348,7 +349,7 @@ class alignas(64) TCSlab
     // owning pool before init(); default Value for side links, Op otherwise.
     fast_alloc::ArenaKind arena_kind = side_links ? fast_alloc::ArenaKind::value : fast_alloc::ArenaKind::op;
 
-    char* data = nullptr; ///< The block itself, aligned on #block_allocator.
+    std::byte* data = nullptr; ///< The block itself, aligned on #block_allocator.
 
     uintptr_t block_allocator = 0; ///< Block size in bytes; a power of two.
 
@@ -1511,7 +1512,7 @@ class TCAllocatorEB
     void* alloc() noexcept
     {
         ++nn_ref;
-        char* elem_ptr = nullptr;
+        std::byte* elem_ptr = nullptr;
 
         if (first_free != -1)
         {
@@ -1529,13 +1530,13 @@ class TCAllocatorEB
     /// @brief Index of the element at @p ptr within this slab (division).
     int num_block(const void* ptr) const noexcept
     {
-        return static_cast<int>((static_cast<const char*>(ptr) - data) / element_size);
+        return static_cast<int>((static_cast<const std::byte*>(ptr) - data) / element_size);
     }
 
     /// @brief num_block() by shift. Valid only if #element_size_ is a power of two.
     int num_block_pow2(const void* ptr) const noexcept
     {
-        return static_cast<int>((static_cast<const char*>(ptr) - data) >> log2_element_size);
+        return static_cast<int>((static_cast<const std::byte*>(ptr) - data) >> log2_element_size);
     }
 
     /**
@@ -1587,13 +1588,13 @@ class TCAllocatorEB
     {
         // this pointer stored at the end of the block
         // Step back from ptr itself (not an int-to-pointer cast): keeps its provenance.
-        const char* base =
-            static_cast<const char*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & ~size_t(block_addr_mask));
+        const std::byte* base =
+            static_cast<const std::byte*>(ptr) - (reinterpret_cast<uintptr_t>(ptr) & ~size_t(block_addr_mask));
         return *reinterpret_cast<TCAllocatorEB* const*>(base + used_block_size);
     }
 
-    char* data = nullptr; ///< The block itself, aligned on #block_size_pot.
-    int   first_free{-1}; ///< Head of the free list, an element index; -1 if empty.
+    std::byte* data = nullptr; ///< The block itself, aligned on #block_size_pot.
+    int        first_free{-1}; ///< Head of the free list, an element index; -1 if empty.
 
     int nn_ref{0};    ///< Elements currently out. 0 == deletable.
     int used_size{0}; ///< Bump index: how far the linear carve has reached.
@@ -1629,7 +1630,7 @@ class TCAllocatorEB
 
             const uintptr_t block_bytes = block_size;
 
-            char* mapping = static_cast<char*>(fast_alloc::map_anonymous(2 * block_size));
+            std::byte* mapping = static_cast<std::byte*>(fast_alloc::map_anonymous(2 * block_size));
 
             data = mapping + ((0 - reinterpret_cast<uintptr_t>(mapping)) & (block_bytes - 1)); // align up
 
@@ -1657,7 +1658,7 @@ class TCAllocatorEB
                 CHUNK_LOG(error, alloc, "posix_memalign failed: error {} ({})", result, std::strerror(result));
                 return 1;
             }
-            data = static_cast<char*>(datal);
+            data = static_cast<std::byte*>(datal);
         }
 
         *reinterpret_cast<TCAllocatorEB**>(data + used_block_size) = this;

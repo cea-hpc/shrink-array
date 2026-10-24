@@ -62,6 +62,7 @@
 #include <sys/mman.h>  // mmap, mprotect, madvise
 #include <cerrno>      // errno (the region's mmap)
 #include <cstring>     // std::memcpy, std::strerror
+#include <cstddef>     // std::byte (the region)
 #include <cstdint>     // std::uint32_t, uint64_t
 #include <atomic>      // std::atomic, std::memory_order
 #include <array>       // std::array
@@ -447,8 +448,8 @@ class GlobalVecHolder
     /// @pre region_contains(ptr).
     [[nodiscard]] static std::uint32_t slot_id(const T* ptr) noexcept
     {
-        const char* base = region_begin.load(std::memory_order_relaxed);
-        return static_cast<std::uint32_t>((reinterpret_cast<const char*>(ptr) - base) / region_stride) + 1u;
+        const std::byte* base = region_begin.load(std::memory_order_relaxed);
+        return static_cast<std::uint32_t>((reinterpret_cast<const std::byte*>(ptr) - base) / region_stride) + 1u;
     }
 
     // ── Reclaim contract, checked in check builds ──────────────────────────
@@ -657,14 +658,15 @@ class GlobalVecHolder
     ///       written once, before any chunk exists.
     [[nodiscard]] static bool region_contains(const void* ptr) noexcept
     {
-        const char* base = region_begin.load(std::memory_order_relaxed);
-        return base != nullptr && static_cast<const char*>(ptr) >= base && static_cast<const char*>(ptr) < region_end;
+        const std::byte* base = region_begin.load(std::memory_order_relaxed);
+        return base != nullptr && static_cast<const std::byte*>(ptr) >= base &&
+               static_cast<const std::byte*>(ptr) < region_end;
     }
 
     /// @brief Carve @p bytes from the region.
     /// @pre init() ran. Called under #insert_mutex (single appender); the
     ///      fetch_add is belt and braces.
-    static char* region_alloc(std::size_t bytes)
+    static std::byte* region_alloc(std::size_t bytes)
     {
         const std::size_t off = region_used.fetch_add(bytes, std::memory_order_relaxed);
         // ONE capacity: what value_by_id can hold (region_usable, lowered by
@@ -716,8 +718,8 @@ class GlobalVecHolder
      */
     [[nodiscard]] static T value_of_ptr(const T* ptr) noexcept
     {
-        const char* base = region_begin.load(std::memory_order_relaxed);
-        const auto  id   = ((reinterpret_cast<const char*>(ptr) - base) / region_stride) + 1u;
+        const std::byte* base = region_begin.load(std::memory_order_relaxed);
+        const auto       id   = ((reinterpret_cast<const std::byte*>(ptr) - base) / region_stride) + 1u;
         return value_by_id[id];
     }
 
@@ -987,7 +989,7 @@ class GlobalVecHolder
      */
     static inline std::atomic<bool> index_degraded{false};
 
-    static inline std::atomic<char*> region_begin{nullptr}; ///< Reservation start; null before init().
+    static inline std::atomic<std::byte*> region_begin{nullptr}; ///< Reservation start; null before init().
     /// @brief Bytes per slot: every slot is carved at a multiple of it.
     /// @note constexpr, not set by region_init(): a pointer <-> identifier
     ///       conversion (id_of_ptr, slot_id, on zero_any's constant-2 reads)
@@ -1049,10 +1051,10 @@ class GlobalVecHolder
         // (TabCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
         // in the region, so a slot only has to give each identifier a distinct
         // address: one cache line does, and no page is ever backed.
-        if (char* expected = nullptr;
-            region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
+        if (std::byte* expected = nullptr;
+            region_begin.compare_exchange_strong(expected, static_cast<std::byte*>(raw), std::memory_order_acq_rel))
         {
-            region_end     = static_cast<char*>(raw) + region_usable;
+            region_end     = static_cast<std::byte*>(raw) + region_usable;
             const auto lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", max_ids);
             id_limit       = (lim >= 1 && lim < max_ids) ? lim : max_ids; // lowers only
         }
@@ -1067,7 +1069,7 @@ class GlobalVecHolder
     {
         free_ids.clear(); // the identifiers it lists go with the pages
         free_ids_count.store(0, std::memory_order_relaxed);
-        char* base = region_begin.load(std::memory_order_relaxed);
+        std::byte* base = region_begin.load(std::memory_order_relaxed);
         if (base == nullptr)
         {
             return;
@@ -1165,7 +1167,7 @@ class GlobalVecHolder
     ///        reaches zero, not before. @see clear_if_last
     static inline std::atomic<int> ref_count{0};
 
-    static inline char*                    region_end = nullptr; ///< One past the reservation.
+    static inline std::byte*               region_end = nullptr; ///< One past the reservation.
     static inline std::atomic<std::size_t> region_used{0};       ///< Bump offset, in bytes.
 
     /// @brief The identifiers region_alloc() hands out: max_ids, or fewer
@@ -1308,8 +1310,9 @@ class TabCstVal2Holder
     /// @brief Identifier of the slot @p ptr (must lie in the region).
     [[nodiscard]] static std::uint32_t id_of_ptr(const T* ptr) noexcept
     {
-        const char* base = VecHolder::region_begin.load(std::memory_order_relaxed);
-        return static_cast<std::uint32_t>((reinterpret_cast<const char*>(ptr) - base) / VecHolder::region_stride) + 1u;
+        const std::byte* base = VecHolder::region_begin.load(std::memory_order_relaxed);
+        return static_cast<std::uint32_t>((reinterpret_cast<const std::byte*>(ptr) - base) / VecHolder::region_stride) +
+               1u;
     }
     /**
      * @brief value_of_ptr() with the identifier range checked.
