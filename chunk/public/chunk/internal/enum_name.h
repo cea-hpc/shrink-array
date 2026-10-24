@@ -28,17 +28,17 @@
  *          - upper_name_of(value, unknown): the same, upper-cased ("STORE_VALUE");
  *          - upper_enum_name(en, prefix): the name of the enumerator @p en
  *            without @p prefix, upper-cased (consteval);
- *          - names_match<E>(names, prefix, first): true when @p names, an
- *            array of strings, lists E's enumerators in order, as spelled
- *            (lower case, without @p prefix), enumerator k of value
- *            first + k -- for a table that a parser walks (string to enum).
+ *          - enum_from_name<E>(text, prefix): the enumerator named @p text
+ *            once @p prefix is removed, for a parser (string to enum);
+ *          - enum_names_joined<E>(prefix, separator): every name, for the
+ *            message that lists what a parser accepts.
  *
  *          All return strings with static storage, usable at run time.
  */
 
 #include <meta> // std::meta (reflection)
 
-#include <cstddef>     // std::size_t
+#include <optional>    // std::optional (enum_from_name)
 #include <string>      // std::string (consteval only: the name being built)
 #include <string_view> // std::string_view
 #include <type_traits> // std::is_enum_v
@@ -108,33 +108,49 @@ template <typename E>
 }
 
 /**
- * @brief True when @p names lists the enumerators of E, in declaration
- *        order: names[k] is the identifier of enumerator k without the
- *        leading @p prefix, and its value is @p first + k; E has exactly
- *        names.size() enumerators.
+ * @brief The enumerator of E whose identifier, without the leading
+ *        @p prefix, is @p text ("guided" for sched_guided with prefix
+ *        "sched_"); std::nullopt when none is.
  */
-template <typename E, typename Names>
-consteval bool names_match(const Names& names, std::string_view prefix, long long first = 0)
+template <typename E>
+    requires std::is_enum_v<E>
+[[nodiscard]] constexpr std::optional<E> enum_from_name(std::string_view text, std::string_view prefix) noexcept
 {
-    const auto ens = std::meta::enumerators_of(^^E);
-    if (ens.size() != names.size())
+    template for (constexpr std::meta::info en : std::define_static_array(std::meta::enumerators_of(^^E)))
     {
-        return false;
+        constexpr std::string_view id = std::define_static_string(std::meta::identifier_of(en));
+        if (id.starts_with(prefix) && id.substr(prefix.size()) == text)
+        {
+            return [:en:];
+        }
     }
-    for (std::size_t k = 0; k < ens.size(); ++k)
+    return std::nullopt;
+}
+
+/**
+ * @brief The identifiers of E's enumerators without the leading @p prefix,
+ *        in declaration order, joined by @p separator ("static|dynamic|...").
+ * @return A null-terminated string with static storage.
+ */
+template <typename E>
+    requires std::is_enum_v<E>
+consteval const char* enum_names_joined(std::string_view prefix, std::string_view separator)
+{
+    std::string joined;
+    for (std::meta::info en : std::meta::enumerators_of(^^E))
     {
-        std::string_view id = std::meta::identifier_of(ens[k]);
+        std::string_view id = std::meta::identifier_of(en);
         if (id.starts_with(prefix))
         {
             id.remove_prefix(prefix.size());
         }
-        if (id != std::string_view(names[k]) ||
-            static_cast<long long>(std::meta::extract<E>(ens[k])) != first + static_cast<long long>(k))
+        if (!joined.empty())
         {
-            return false;
+            joined += separator;
         }
+        joined += id;
     }
-    return true;
+    return std::define_static_string(joined);
 }
 
 } // namespace shrink_array

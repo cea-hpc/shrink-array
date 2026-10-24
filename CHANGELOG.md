@@ -136,6 +136,10 @@ the tag's checksum to the recipe.
   checks that kept them in step (`table_matches`, `field_count`).
   `enum_name.h` gains `name_of()` and `upper_name_of()`, an enumerator's
   name from its value.
+- `CHUNK_RECHUNK_SCHEDULE` reads its kind with `enum_from_name()` and lists
+  the kinds it accepts with `enum_names_joined()` (`enum_name.h`, by
+  reflection): `sched_names` and `names_match()` are gone. Tests
+  `rechunk_schedule_env_<geometry>` and `rechunk_schedule_env_unknown_<geometry>`.
 - The atomic maxima (the thread-rank high-water mark, the re-chunk slice
   timings, the RSS peak) use `std::atomic::fetch_max` (C++26) instead of a
   compare-exchange loop; the rank's is still written only when it grows.
