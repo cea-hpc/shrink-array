@@ -240,8 +240,8 @@ class StaticConstArray
             return 0;
         }
         // (2^(k-1), 2^k] -> bucket k - 2, the one of 2^k bytes.
-        const auto k = static_cast<std::size_t>(std::bit_width(sz - 1));
-        return k - 2 < n_buckets ? k - 2 : n_buckets - 1;
+        const auto bucket = static_cast<std::size_t>(std::bit_width(sz - 1));
+        return bucket - 2 < n_buckets ? bucket - 2 : n_buckets - 1;
     }
 
   protected:
@@ -275,10 +275,10 @@ class StaticConstArray
     /// @pre @p ptr came from the bucket that @p sz selects.
     static void free_block_with_int(int sz, void* ptr);
 
-    /// @brief Run @p f on bucket @p i of the ladder; its result, if any.
-    /// @pre @p i < n_buckets.
+    /// @brief Run @p func on bucket @p bucket of the ladder; its result, if any.
+    /// @pre @p bucket < n_buckets.
     template <class F>
-    static decltype(auto) with_bucket(std::size_t i, F&& f);
+    static decltype(auto) with_bucket(std::size_t bucket, F&& func);
 
     /// @brief The per-thread batches. IMMORTAL and built at first use, like the
     ///        ladder: a global array frees through them before main and after

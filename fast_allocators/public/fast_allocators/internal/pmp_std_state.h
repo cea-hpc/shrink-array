@@ -79,21 +79,21 @@ class FrameGuard
   public:
     FrameGuard(TeamCtx* ctx, int rank, int size) noexcept
     {
-        auto& s = tls();
-        if (s.level < max_frames)
+        auto& state = tls();
+        if (state.level < max_frames)
         {
-            s.frames[s.level] = Frame{.ctx = ctx, .rank = rank, .size = size};
+            state.frames[state.level] = Frame{.ctx = ctx, .rank = rank, .size = size};
         }
-        ++s.level;
+        ++state.level;
         active_     = size > 1;
-        prev_rank_  = s.active_rank;
-        prev_cache_ = s.rank_cache;
+        prev_rank_  = state.active_rank;
+        prev_cache_ = state.rank_cache;
         if (active_)
         {
-            ++s.active_level;
-            s.active_rank = rank;
+            ++state.active_level;
+            state.active_rank = rank;
         }
-        s.rank_cache = -1;
+        state.rank_cache = -1;
     }
     FrameGuard(const FrameGuard&)            = delete;
     FrameGuard& operator=(const FrameGuard&) = delete;
@@ -101,14 +101,14 @@ class FrameGuard
     FrameGuard& operator=(FrameGuard&&)      = delete;
     ~FrameGuard()
     {
-        auto& s = tls();
-        --s.level;
+        auto& state = tls();
+        --state.level;
         if (active_)
         {
-            --s.active_level;
+            --state.active_level;
         }
-        s.active_rank = prev_rank_;
-        s.rank_cache  = prev_cache_;
+        state.active_rank = prev_rank_;
+        state.rank_cache  = prev_cache_;
     }
 
   private:
@@ -137,47 +137,47 @@ struct Settings
 /// @brief The settings (one instance per process, never destroyed).
 [[nodiscard]] inline Settings& settings() noexcept
 {
-    static Settings* const s = new Settings; // NOLINT(cppcoreguidelines-owning-memory): immortal
-    return *s;
+    static Settings* const instance = new Settings; // NOLINT(cppcoreguidelines-owning-memory): immortal
+    return *instance;
 }
 
 /// @brief The leading number of environment variable @p name, 0 when unset or not a number.
 [[nodiscard]] inline int env_threads(const char* name) noexcept
 {
-    const char* v = std::getenv(name); // NOLINT(concurrency-mt-unsafe): read once, at start-up
-    if (v == nullptr)
+    const char* value = std::getenv(name); // NOLINT(concurrency-mt-unsafe): read once, at start-up
+    if (value == nullptr)
     {
         return 0;
     }
-    char*      end = nullptr;
-    const long n   = std::strtol(v, &end, 10);
-    return (end != v && n > 0 && n < 65536) ? static_cast<int>(n) : 0;
+    char*      end    = nullptr;
+    const long parsed = std::strtol(value, &end, 10);
+    return (end != value && parsed > 0 && parsed < 65536) ? static_cast<int>(parsed) : 0;
 }
 
 /// @brief The default team size: CHUNK_NUM_THREADS, else OMP_NUM_THREADS (its
 ///        first level), else the hardware threads.
 [[nodiscard]] inline int default_threads() noexcept
 {
-    static const int n = []
+    static const int threads = []
     {
-        int k = env_threads("CHUNK_NUM_THREADS");
-        if (k == 0)
+        int requested = env_threads("CHUNK_NUM_THREADS");
+        if (requested == 0)
         {
-            k = env_threads("OMP_NUM_THREADS");
+            requested = env_threads("OMP_NUM_THREADS");
         }
-        if (k == 0)
+        if (requested == 0)
         {
-            k = static_cast<int>(std::thread::hardware_concurrency());
+            requested = static_cast<int>(std::thread::hardware_concurrency());
         }
-        return k > 0 ? k : 1;
+        return requested > 0 ? requested : 1;
     }();
-    return n;
+    return threads;
 }
 
 /// @brief The size of the next team opened without a size (omp_get_max_threads).
 [[nodiscard]] inline int nthreads_var() noexcept
 {
-    const int n = settings().nthreads.load(std::memory_order_relaxed);
-    return n > 0 ? n : default_threads();
+    const int nthreads = settings().nthreads.load(std::memory_order_relaxed);
+    return nthreads > 0 ? nthreads : default_threads();
 }
 } // namespace fast_alloc::pmp::std_backend

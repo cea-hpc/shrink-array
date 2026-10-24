@@ -116,23 +116,23 @@ inline std::atomic<std::size_t>& reclaim_sweeps() noexcept
 ///@{
 inline std::atomic<std::size_t>& reclaim_skip_live() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 inline std::atomic<std::size_t>& reclaim_skip_unaligned() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 inline std::atomic<std::size_t>& reclaim_skip_small() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 inline std::atomic<std::size_t>& reclaim_entered() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 ///@}
 
@@ -220,16 +220,16 @@ inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) no
 ///        1 in a serial build).
 inline int reclaim_sweep_threads() noexcept
 {
-    static const int n = []
+    static const int threads = []
     {
-        const std::size_t v = reclaim_env_number("CHUNK_RECLAIM_THREADS", 1);
-        if (v == 0)
+        const std::size_t value = reclaim_env_number("CHUNK_RECLAIM_THREADS", 1);
+        if (value == 0)
         {
             return pmp::max_threads();
         }
-        return static_cast<int>(std::min<std::size_t>(v, 4096));
+        return static_cast<int>(std::min<std::size_t>(value, 4096));
     }();
-    return n;
+    return threads;
 }
 
 /// @brief The system page size, read once.
@@ -450,10 +450,10 @@ class EmptySlabSweep
         const SweepTimer timer;
 
         std::sort(items_.begin(), items_.end(),
-                  [](const Item& a, const Item& b) { return std::less<Slab*>{}(a.slab, b.slab); });
-        items_.erase(
-            std::unique(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.slab == b.slab; }),
-            items_.end());
+                  [](const Item& lhs, const Item& rhs) { return std::less<Slab*>{}(lhs.slab, rhs.slab); });
+        items_.erase(std::unique(items_.begin(), items_.end(),
+                                 [](const Item& lhs, const Item& rhs) { return lhs.slab == rhs.slab; }),
+                     items_.end());
         // CHUNK_RECLAIM_MIN_SLABS: madvise syscalls against the pages they
         // return, decided by how many slabs this sweep empties at once.
         if (items_.size() < alloc_config::reclaim_min_empty_slabs())
@@ -468,7 +468,7 @@ class EmptySlabSweep
         }
         items_.erase(std::remove_if(items_.begin(), items_.end(), [](const Item& it) { return it.len == 0; }),
                      items_.end());
-        std::sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
+        std::sort(items_.begin(), items_.end(), [](const Item& lhs, const Item& rhs) { return lhs.begin < rhs.begin; });
 
         std::size_t bytes        = 0;
         std::size_t inline_calls = 0; // runs advised at once because runs_ could not grow
@@ -682,11 +682,11 @@ class SlabArena
     }
 
     /**
-     * @brief Take back @p n slabs a re-chunk has just emptied, for the next
+     * @brief Take back @p count slabs a re-chunk has just emptied, for the next
      *        allocate() of rank @p rank. One lock for the whole batch.
      * @param blocks The slabs, as returned by allocate(); their headers are
      *        gone (TCSlabPool::recycle_empty_slabs). Null entries are skipped.
-     * @param n Number of entries in @p blocks.
+     * @param count Number of entries in @p blocks.
      * @param size Their allocation size: the key allocate() looks them up by.
      * @param rank The rank that held them (-1 counts as 0): allocate(size, ..,
      *        rank) takes them back first, their pages having been first
@@ -698,21 +698,21 @@ class SlabArena
      * @note An unknown or already-freed slab warns and is dropped, as in
      *       deallocate().
      */
-    void recycle_batch(void* const* blocks, std::size_t n, std::size_t size, int rank) noexcept
+    void recycle_batch(void* const* blocks, std::size_t count, std::size_t size, int rank) noexcept
     {
-        if (n == 0)
+        if (count == 0)
         {
             return;
         }
         const std::scoped_lock lk(mtx_);
-        auto&                  lists = recycled_[size];
-        const auto             r     = static_cast<std::size_t>(rank < 0 ? 0 : rank);
-        if (lists.by_rank.size() <= r)
+        auto&                  lists    = recycled_[size];
+        const auto             rank_idx = static_cast<std::size_t>(rank < 0 ? 0 : rank);
+        if (lists.by_rank.size() <= rank_idx)
         {
-            lists.by_rank.resize(r + 1);
+            lists.by_rank.resize(rank_idx + 1);
         }
-        auto& mine = lists.by_rank[r];
-        for (std::size_t i = 0; i < n; ++i)
+        auto& mine = lists.by_rank[rank_idx];
+        for (std::size_t i = 0; i < count; ++i)
         {
             void* const block = blocks[i];
             if (block == nullptr)
@@ -794,13 +794,13 @@ class SlabArena
             const std::size_t adv = (size / page) * page;
             for (std::size_t r = 0; r < lists.by_rank.size(); ++r)
             {
-                auto& v = lists.by_rank[r];
+                auto& list = lists.by_rank[r];
                 // Newest last: pop_recycled() takes from the back, so a rank
                 // keeps from the back.
-                for (auto rit = v.rbegin(); rit != v.rend(); ++rit)
+                for (auto rit = list.rbegin(); rit != list.rend(); ++rit)
                 {
-                    Recycled& e = *rit;
-                    if (e.advised)
+                    Recycled& entry = *rit;
+                    if (entry.advised)
                     {
                         continue;
                     }
@@ -809,34 +809,35 @@ class SlabArena
                         kept[r] += size; // stays resident, for the next allocate()
                         continue;
                     }
-                    const auto b = fast_alloc::address_bits(e.block);
-                    if (adv == 0 || b % page != 0)
+                    const auto begin = fast_alloc::address_bits(entry.block);
+                    if (adv == 0 || begin % page != 0)
                     {
-                        e.advised = true; // never advisable: do not look again
+                        entry.advised = true; // never advisable: do not look again
                         continue;
                     }
                     try
                     {
-                        spans.push_back(Span{.begin = b, .len = adv});
+                        spans.push_back(Span{.begin = begin, .len = adv});
                     }
                     catch (...)
                     {
-                        ::madvise(e.block, adv, MADV_DONTNEED); // no room for the batch: now
+                        ::madvise(entry.block, adv, MADV_DONTNEED); // no room for the batch: now
                         reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
                         reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
                     }
-                    e.advised = true;
+                    entry.advised = true;
                     ++slabs;
                 }
                 if (!kept.empty())
                 {
                     // Resident slabs behind the advised ones: pop_recycled()
                     // hands out the back first, pages already there.
-                    std::stable_partition(v.begin(), v.end(), [](const Recycled& e) { return e.advised; });
+                    std::stable_partition(list.begin(), list.end(),
+                                          [](const Recycled& entry) { return entry.advised; });
                 }
             }
         }
-        std::ranges::sort(spans, [](const Span& a, const Span& b) { return a.begin < b.begin; });
+        std::ranges::sort(spans, [](const Span& lhs, const Span& rhs) { return lhs.begin < rhs.begin; });
         // Coalesced in place: spans[0, runs) become the runs.
         std::size_t runs  = 0;
         std::size_t bytes = 0;
@@ -896,18 +897,18 @@ class SlabArena
         const auto                 psz = static_cast<std::size_t>(page);
         std::size_t                res = 0;
         std::vector<unsigned char> vec;
-        for (const auto& r : regions_)
+        for (const auto& region : regions_)
         {
-            const std::size_t len   = r.end - r.begin;
+            const std::size_t len   = region.end - region.begin;
             const std::size_t pages = (len + psz - 1) / psz;
             vec.resize(pages);
-            if (::mincore(detail::addr_ptr(r.begin), len, vec.data()) != 0)
+            if (::mincore(detail::addr_ptr(region.begin), len, vec.data()) != 0)
             {
                 continue;
             }
-            for (const unsigned char v : vec)
+            for (const unsigned char page_state : vec)
             {
-                res += (v & 1u) != 0u ? psz : 0;
+                res += (page_state & 1u) != 0u ? psz : 0;
             }
         }
         return res;
@@ -925,9 +926,9 @@ class SlabArena
     {
         const std::scoped_lock lk(mtx_);
         std::size_t            mapped = 0;
-        for (const auto& r : regions_)
+        for (const auto& region : regions_)
         {
-            mapped += (r.end - r.begin);
+            mapped += (region.end - region.begin);
         }
         return mapped;
     }
@@ -949,9 +950,9 @@ class SlabArena
     {
         const std::scoped_lock lk(mtx_);
         std::size_t            mapped = 0;
-        for (const auto& r : regions_)
+        for (const auto& region : regions_)
         {
-            mapped += (r.end - r.begin);
+            mapped += (region.end - region.begin);
         }
         std::size_t freelist = 0;
         for (const auto& [block_size, blocks] : free_lists_)
@@ -992,17 +993,17 @@ class SlabArena
         {
             return nullptr;
         }
-        auto&             lists = it->second.by_rank;
-        const std::size_t n     = lists.size();
-        const bool        known = rank >= 0 && std::cmp_less(rank, n);
-        const std::size_t start = known ? static_cast<std::size_t>(rank) : 0;
-        for (std::size_t i = 0; i < n; ++i)
+        auto&             lists  = it->second.by_rank;
+        const std::size_t nlists = lists.size();
+        const bool        known  = rank >= 0 && std::cmp_less(rank, nlists);
+        const std::size_t start  = known ? static_cast<std::size_t>(rank) : 0;
+        for (std::size_t i = 0; i < nlists; ++i)
         {
-            auto& v = lists[(start + i) % n];
-            if (!v.empty())
+            auto& list = lists[(start + i) % nlists];
+            if (!list.empty())
             {
-                void* const block = v.back().block;
-                v.pop_back();
+                void* const block = list.back().block;
+                list.pop_back();
                 --it->second.count;
                 ++recycled_out_;
                 if (i != 0 || !known)
@@ -1044,10 +1045,10 @@ class SlabArena
         region_end_  = region_begin + want;
     }
 
-    /// @brief Round @p v up to a multiple of @p alignment. @p alignment must be a power of two.
-    static std::uintptr_t align_up(std::uintptr_t v, std::size_t alignment) noexcept
+    /// @brief Round @p value up to a multiple of @p align. @p align must be a power of two.
+    static std::uintptr_t align_up(std::uintptr_t value, std::size_t align) noexcept
     {
-        return (v + (alignment - 1)) & ~(static_cast<std::uintptr_t>(alignment) - 1);
+        return (value + (align - 1)) & ~(static_cast<std::uintptr_t>(align) - 1);
     }
 
     const char*         name_;                  ///< Diagnostic label only.
@@ -1141,10 +1142,10 @@ enum class ArenaKind : std::uint8_t
     value ///< Chunk value buffers.
 };
 
-/// @brief The arena for @p k.
-inline SlabArena& arena_for(ArenaKind k)
+/// @brief The arena for @p kind.
+inline SlabArena& arena_for(ArenaKind kind)
 {
-    switch (k)
+    switch (kind)
     {
         case ArenaKind::ctx:
             return ctx_arena();

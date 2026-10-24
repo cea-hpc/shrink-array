@@ -256,12 +256,12 @@ class alignas(64) TCSlab
     [[nodiscard]] inline void* alloc() noexcept;
 
     /**
-     * @brief Take element @p i back. Its bytes are left as they are, but for
+     * @brief Take element @p elem back. Its bytes are left as they are, but for
      *        the free-list link written over its head when the links are in
      *        the payload.
-     * @param i Index from num_block() / num_block_pow2().
+     * @param elem Index from num_block() / num_block_pow2().
      */
-    inline void free_block(int i) noexcept;
+    inline void free_block(int elem) noexcept;
 
     /// @brief Make an emptied slab fresh again: bump index back to the start,
     ///        free list empty. For a slab revived from a pool's reserve.
@@ -396,30 +396,30 @@ class alignas(64) TCSlab
     {
     };
 
-    /// @brief The free-list link of element @p i.
-    [[nodiscard]] IndexType link(int i) const noexcept
+    /// @brief The free-list link of element @p elem.
+    [[nodiscard]] IndexType link(int elem) const noexcept
     {
         if constexpr (side_links)
         {
-            return tab_first_free_[static_cast<std::size_t>(i)];
+            return tab_first_free_[static_cast<std::size_t>(elem)];
         }
         else
         {
             // the index sits in the first bytes of the free element
-            return fast_alloc::load_from_bytes<IndexType>(data + (static_cast<std::ptrdiff_t>(i) * element_size));
+            return fast_alloc::load_from_bytes<IndexType>(data + (static_cast<std::ptrdiff_t>(elem) * element_size));
         }
     }
 
-    /// @brief Set the free-list link of element @p i to @p next_free.
-    void set_link(int i, IndexType next_free) noexcept
+    /// @brief Set the free-list link of element @p elem to @p next_free.
+    void set_link(int elem, IndexType next_free) noexcept
     {
         if constexpr (side_links)
         {
-            tab_first_free_[static_cast<std::size_t>(i)] = next_free;
+            tab_first_free_[static_cast<std::size_t>(elem)] = next_free;
         }
         else
         {
-            fast_alloc::store_to_bytes(data + (static_cast<std::ptrdiff_t>(i) * element_size), next_free);
+            fast_alloc::store_to_bytes(data + (static_cast<std::ptrdiff_t>(elem) * element_size), next_free);
         }
     }
 
@@ -906,9 +906,9 @@ class TCSlabPool
         // Tested on the slab, not deduced from sizeof(ElementType): the element
         // COUNT need not be a power of two. One well-predicted branch.
         const auto size = static_cast<unsigned int>(slab->element_size);
-        const int  i    = std::has_single_bit(size) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
+        const int  elem = std::has_single_bit(size) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
 
-        slab->free_block(i);
+        slab->free_block(elem);
 
         manage_full_empty(slab);
     }
@@ -973,9 +973,9 @@ class TCSlabPool
      */
     std::size_t recycle_empty_slabs(std::vector<void*>& scratch) noexcept
     {
-        const std::size_t n = detach_empty_slabs(scratch);
+        const std::size_t detached = detach_empty_slabs(scratch);
         recycle_detached(scratch);
-        return n;
+        return detached;
     }
 
     /**
@@ -1060,15 +1060,15 @@ class TCSlabPool
 
     /**
      * @brief Choose which arena this pool's slabs are drawn from.
-     * @param k Op, Ctx or Value.
+     * @param kind Op, Ctx or Value.
      * @warning Must be set BEFORE the first slab is taken (copied into each
      *          slab at creation). fast_alloc::TCTypeAllocator defaults to Op: a pool that
      *          holds values must say so, or its slabs share the op pool's address
      *          space (the aliasing slab_arena.h prevents).
      */
-    void set_arena(fast_alloc::ArenaKind k) noexcept
+    void set_arena(fast_alloc::ArenaKind kind) noexcept
     {
-        arena_kind_ = k;
+        arena_kind_ = kind;
     }
 
     /// @brief Set the rank (thread) this instance serves, stamped into every
@@ -1082,9 +1082,9 @@ class TCSlabPool
     /// @brief Set the affinity key this instance serves (0, the default, is
     ///        the rank's shared pool), stamped into its slabs as owner_key;
     ///        before the first slab.
-    void set_key(unsigned k) noexcept
+    void set_key(unsigned key) noexcept
     {
-        key_ = k;
+        key_ = key;
     }
 
     /**
@@ -1556,22 +1556,22 @@ class TCAllocatorEB
     }
 
     /**
-     * @brief Take element @p i back.
-     * @param i Index from num_block() / num_block_pow2().
+     * @brief Take element @p elem back.
+     * @param elem Index from num_block() / num_block_pow2().
      * @details Freeing the element the bump pointer just handed out rewinds the
      *          bump instead of pushing onto the free list.
      */
-    void free_block(int i) noexcept
+    void free_block(int elem) noexcept
     {
-        if (i == (used_size - 1))
+        if (elem == (used_size - 1))
         {
-            *(T*)(data + (i * element_size)) = -1;
+            *(T*)(data + (elem * element_size)) = -1;
             --used_size;
         }
         else
         {
-            *(T*)(data + (i * element_size)) = first_free;
-            first_free                       = i;
+            *(T*)(data + (elem * element_size)) = first_free;
+            first_free                          = elem;
         }
         --nn_ref;
     }
@@ -1773,9 +1773,9 @@ class TCTypeAllocatorEBC
     {
         auto* slab = TCAllocatorEBT::addr_to_block(ptr);
 
-        const int i = slab->num_block(ptr);
+        const int elem = slab->num_block(ptr);
 
-        slab->free_block(i);
+        slab->free_block(elem);
 
         manage_full_empty(slab);
     }
@@ -1788,9 +1788,9 @@ class TCTypeAllocatorEBC
     {
         auto* slab = TCAllocatorEBT::addr_to_block(ptr);
 
-        const int i = slab->num_block_pow2(ptr);
+        const int elem = slab->num_block_pow2(ptr);
 
-        slab->free_block(i);
+        slab->free_block(elem);
 
         manage_full_empty(slab);
     }

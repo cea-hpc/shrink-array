@@ -43,28 +43,28 @@
 namespace fast_alloc
 {
 
-/// @brief The address of @p p as an integer (see the file comment).
-[[nodiscard]] inline std::uintptr_t address_bits(const void* p) noexcept
+/// @brief The address of @p ptr as an integer (see the file comment).
+[[nodiscard]] inline std::uintptr_t address_bits(const void* ptr) noexcept
 {
-    return std::bit_cast<std::uintptr_t>(p);
+    return std::bit_cast<std::uintptr_t>(ptr);
 }
 
-/// @brief The T stored in the bytes at @p p (see the file comment).
+/// @brief The T stored in the bytes at @p ptr (see the file comment).
 template <typename T>
     requires std::is_trivially_copyable_v<T>
-[[nodiscard]] inline T load_from_bytes(const void* p) noexcept
+[[nodiscard]] inline T load_from_bytes(const void* ptr) noexcept
 {
     T value;
-    std::memcpy(&value, p, sizeof(T));
+    std::memcpy(&value, ptr, sizeof(T));
     return value;
 }
 
-/// @brief Store @p value in the bytes at @p p (see the file comment).
+/// @brief Store @p value in the bytes at @p ptr (see the file comment).
 template <typename T>
     requires std::is_trivially_copyable_v<T>
-inline void store_to_bytes(void* p, const T& value) noexcept
+inline void store_to_bytes(void* ptr, const T& value) noexcept
 {
-    std::memcpy(p, &value, sizeof(T));
+    std::memcpy(ptr, &value, sizeof(T));
 }
 
 } // namespace fast_alloc

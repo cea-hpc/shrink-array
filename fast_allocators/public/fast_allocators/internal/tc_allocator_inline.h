@@ -167,17 +167,17 @@ inline void* TCSlab<Links>::alloc() noexcept
 }
 
 template <FreeLinks Links>
-inline void TCSlab<Links>::free_block(int i) noexcept
+inline void TCSlab<Links>::free_block(int elem) noexcept
 {
-    if (i == (used_size - 1))
+    if (elem == (used_size - 1))
     {
-        set_link(i, free_list_end);
+        set_link(elem, free_list_end);
         --used_size;
     }
     else
     {
-        set_link(i, first_free);
-        first_free = static_cast<IndexType>(i);
+        set_link(elem, first_free);
+        first_free = static_cast<IndexType>(elem);
     }
 
     --nn_ref;
