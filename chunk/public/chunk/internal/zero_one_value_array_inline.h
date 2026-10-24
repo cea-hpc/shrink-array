@@ -1084,24 +1084,24 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         const std::size_t shown = tab.size() < 10 ? tab.size() : 10;
         for (std::size_t k = 0; k < shown; ++k)
         {
-            const int ind       = tab[k];
+            const int num_chunk = tab[k];
             int       is_inside = -1; // the candidate-list flag exists in fast-block builds only
             if constexpr (chunk_config::use_fast_block_compression)
             {
                 is_inside = static_cast<int>(shrink_array::zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(
                                                  shrink_array::zero_one_value::Proxy<T>::share_info_array->get_num_tab(
-                                                     this->registry_key()))[ind]
+                                                     this->registry_key()))[num_chunk]
                                                  .load(std::memory_order_acquire));
             }
             int count = -1; // the counters exist in counter builds only
             if constexpr (chunk_config::use_compression_with_counter)
             {
-                const auto& chunk = chunk_list_[ind];
+                const auto& chunk = chunk_list_[num_chunk];
                 count             = static_cast<int>(second ? chunk.get_nb_second_value() : chunk.get_nb_first_value());
             }
             CHUNK_LOG(debug, compress, "residual zero_one_value::Array: chunk {} (element {}): is_inside={} count={}",
-                      ind, static_cast<IntType>(ind) * static_cast<IntType>(this->size_policy_.size()), is_inside,
-                      count);
+                      num_chunk, static_cast<IntType>(num_chunk) * static_cast<IntType>(this->size_policy_.size()),
+                      is_inside, count);
         }
     };
     report(tab_nb1, "first_value", false);

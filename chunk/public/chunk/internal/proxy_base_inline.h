@@ -351,10 +351,10 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
     // number (its second-value slot is found through it), a false probe is a build
     // error, not a proxy left at num_tab -1 (a null second-value slot at replay).
     static_assert(
-        !is_zero_any_family_v<ChunkT> || requires(ProxyT proxy) { proxy.set_num_tab(0); },
+        !is_zero_any_family_v<ChunkT> || requires(ProxyT probe) { probe.set_num_tab(0); },
         "make_proxy_with_info: a zero_any proxy's set_num_tab(int) must be reachable from here "
         "(it is private: the proxy befriends ::shrink_array::ProxyBaseFastCompPolicy)");
-    if constexpr (requires(ProxyT proxy) { proxy.set_num_tab(0); })
+    if constexpr (requires(ProxyT probe) { probe.set_num_tab(0); })
     {
         proxy.set_num_tab(ctx->num_tab);
     }
