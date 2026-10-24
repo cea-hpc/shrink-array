@@ -127,6 +127,15 @@ the tag's checksum to the recipe.
   kokkos/mdspan fallback, `SHRINK_ARRAY_HAS_MDSPAN`,
   `SHRINK_ARRAY_HAS_SUBMDSPAN` and `md::mdspan_source` are gone, and the
   mdspan harnesses no longer skip (exit 77).
+- C++26 static reflection is required: the `CHUNK_REFLECTION` option,
+  `CHUNK_OPT_REFLECTION`, `build_config::has_reflection` and the
+  `SHRINK_ARRAY_HAS_*` macros of `enum_name.h`, `reflect_fields.h`,
+  `soa_array.h` and `value_hash.h` are gone, with what the builds without
+  reflection used: the hand-written name tables (`event_name_table`, the
+  switch of `bstate_name`), the two lists of `ChunkStatsThr` counters, and the
+  checks that kept them in step (`table_matches`, `field_count`).
+  `enum_name.h` gains `name_of()` and `upper_name_of()`, an enumerator's
+  name from its value.
 
 ### Fixed (cpp26)
 

@@ -31,10 +31,8 @@
 //  zero_sign {double x, y, z}: y = -0.0 in one chunk, +0.0 in the other.
 //            Equal, so one identifier; a hash of the bytes splits them.
 //
-// The first two must hold in every build (a hash over all the bytes is
-// enough). The last two need the member-wise hash, so C++26 reflection
-// (build_config::has_reflection): without it they may hand out 2 identifiers,
-// a memory cost, not a wrong value.
+// The first two only need a hash over all the bytes; the last two need the
+// member-wise hash (C++26 reflection, value_hash.h).
 //
 // Exit status 0 when every check holds.
 
@@ -43,7 +41,6 @@
 
 #include "chunk/zero_any_array.h" // shrink_array::zero_any::Array, SecondValueStats
 #include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"         // build_config::has_reflection
 #include "chunk/manage_ompt.h"    // parallel_phase
 #include "chunk/internal/print.h" // shrink_array::println
 
@@ -136,9 +133,6 @@ static int run_case(const char* name, int n_chunks, F f, std::size_t expected, b
 
 int main()
 {
-    constexpr bool refl = sa::build_config::has_reflection;
-    sa::println("member-wise hash (C++26 reflection): {}", refl ? "yes" : "no");
-
     int       bad = 0;
     const int k   = 2000; // distinct values: far past the index's probe budget (64)
 
@@ -151,13 +145,12 @@ int main()
 
     // One value, two padding contents: chunks 0, 2, 4... and 1, 3, 5...
     bad += run_case<Padded>(
-        "padded", 2,
-        [](int j) { return with_padding<Padded>(j % 2 == 0 ? 0xAA : 0x55, [](Padded& v) { v.c = 1, v.i = 7; }); },
-        refl ? 1 : 2, refl);
+        "padded", 2, [](int j)
+        { return with_padding<Padded>(j % 2 == 0 ? 0xAA : 0x55, [](Padded& v) { v.c = 1, v.i = 7; }); }, 1, true);
 
     // One value, the signed zero of y alternating.
-    bad += run_case<ZeroSign>(
-        "zero_sign", 2, [](int j) { return ZeroSign{1.0, j % 2 == 0 ? -0.0 : 0.0, 3.0}; }, refl ? 1 : 2, refl);
+    bad +=
+        run_case<ZeroSign>("zero_sign", 2, [](int j) { return ZeroSign{1.0, j % 2 == 0 ? -0.0 : 0.0, 3.0}; }, 1, true);
 
     sa::release_chunk_pools();
     sa::destroy_block_chunk();

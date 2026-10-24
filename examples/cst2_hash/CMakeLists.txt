@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # examples/cst2_hash: the second-value registry of zero_any::Array on struct
 # element types -- one identifier per distinct value, no degraded index
-# (chunk/internal/value_hash.h). Every build; the padding and signed-zero cases
-# are exact only with C++26 reflection (CHUNK_HAVE_REFLECTION).
+# (chunk/internal/value_hash.h), the padding and signed-zero cases included
+# (the member-wise hash, by C++26 reflection).
 
 add_executable(cst2_hash_validation cst2_hash_validation.cpp)
 target_link_libraries(cst2_hash_validation PRIVATE chunk_zero_any)

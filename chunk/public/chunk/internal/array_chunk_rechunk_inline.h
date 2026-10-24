@@ -175,10 +175,8 @@ struct RebuildSchedule
 /// @brief The kinds CHUNK_RECHUNK_SCHEDULE names, in ChunkPmpSched's order
 ///        (sched_static = 1 first): the enumerators without "sched_".
 inline constexpr std::array<std::string_view, 4> sched_names{"static", "dynamic", "guided", "auto"};
-#if SHRINK_ARRAY_HAS_ENUM_NAME
 static_assert(names_match<ChunkPmpSched>(sched_names, "sched_", 1),
               "sched_names must list ChunkPmpSched's enumerators, in order, without \"sched_\"");
-#endif
 
 /// @brief The rebuild loop's schedule, parsed once from CHUNK_RECHUNK_SCHEDULE ("kind[,chunk]").
 /// @return The parsed schedule, or the default guided,16 when the variable is unset or not understood.

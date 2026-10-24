@@ -19,42 +19,29 @@
 /**
  * @file enum_name.h
  * @brief The name of an enumerator, by C++26 static reflection: its
- *        identifier without a prefix, upper-cased (`ev_store_value` with
- *        prefix "ev_" gives "STORE_VALUE").
+ *        identifier, or without a prefix and upper-cased (`ev_store_value`
+ *        with prefix "ev_" gives "STORE_VALUE"). A hand-written table (a
+ *        switch from enumerator to string) drifts from its enum; these do not.
  *
- * @details A hand-written name table (a switch from enumerator to string)
- *          drifts from its enum: a case forgotten, a name misspelled. Here:
- *
- *          - upper_enum_name(en, prefix): the name of the enumerator @p en,
- *            a string with static storage, usable at run time;
- *          - table_matches<E>(table, prefix): true when @p table gives, for
- *            every enumerator of E, that same name;
+ * @details - name_of(value, unknown): the identifier of @p value's
+ *            enumerator ("store_value"), @p unknown for a value that names none;
+ *          - upper_name_of(value, unknown): the same, upper-cased ("STORE_VALUE");
+ *          - upper_enum_name(en, prefix): the name of the enumerator @p en
+ *            without @p prefix, upper-cased (consteval);
  *          - names_match<E>(names, prefix, first): true when @p names, an
  *            array of strings, lists E's enumerators in order, as spelled
  *            (lower case, without @p prefix), enumerator k of value
  *            first + k -- for a table that a parser walks (string to enum).
  *
- *          Only where the compiler has reflection (GCC 16, -freflection):
- *          SHRINK_ARRAY_HAS_ENUM_NAME says so. A caller keeps its switch for
- *          the other builds and, in the reflection builds, static_asserts
- *          table_matches() so the switch stays complete and spelled alike.
+ *          All return strings with static storage, usable at run time.
  */
 
-#if defined(__cpp_impl_reflection)
-    #include <meta> // std::meta (reflection)
-#endif
+#include <meta> // std::meta (reflection)
 
-#if defined(__cpp_impl_reflection) && defined(__cpp_lib_reflection)
-    #define SHRINK_ARRAY_HAS_ENUM_NAME 1
-#else
-    #define SHRINK_ARRAY_HAS_ENUM_NAME 0
-#endif
-
-#if SHRINK_ARRAY_HAS_ENUM_NAME
-
-    #include <cstddef>     // std::size_t
-    #include <string>      // std::string (consteval only: the name being built)
-    #include <string_view> // std::string_view
+#include <cstddef>     // std::size_t
+#include <string>      // std::string (consteval only: the name being built)
+#include <string_view> // std::string_view
+#include <type_traits> // std::is_enum_v
 
 namespace shrink_array
 {
@@ -83,20 +70,41 @@ consteval const char* upper_enum_name(std::meta::info en, std::string_view prefi
 }
 
 /**
- * @brief True when @p table (a constexpr function from E to its name) gives,
- *        for every enumerator of E, upper_enum_name(enumerator, @p prefix).
+ * @brief The identifier of the enumerator of E whose value is @p value
+ *        ("store_value"), or @p unknown when none has it.
  */
-template <typename E, typename Table>
-consteval bool table_matches(Table table, std::string_view prefix)
+template <typename E>
+    requires std::is_enum_v<E>
+[[nodiscard]] constexpr const char* name_of(E value, const char* unknown) noexcept
 {
-    for (std::meta::info en : std::meta::enumerators_of(^^E))
+    template for (constexpr std::meta::info en : std::define_static_array(std::meta::enumerators_of(^^E)))
     {
-        if (std::string_view(table(std::meta::extract<E>(en))) != upper_enum_name(en, prefix))
+        if (value == [:en:])
         {
-            return false;
+            constexpr const char* name = std::define_static_string(std::meta::identifier_of(en));
+            return name;
         }
     }
-    return true;
+    return unknown;
+}
+
+/**
+ * @brief name_of(), upper-cased ("STORE_VALUE"), or @p unknown when no
+ *        enumerator of E has @p value.
+ */
+template <typename E>
+    requires std::is_enum_v<E>
+[[nodiscard]] constexpr const char* upper_name_of(E value, const char* unknown) noexcept
+{
+    template for (constexpr std::meta::info en : std::define_static_array(std::meta::enumerators_of(^^E)))
+    {
+        if (value == [:en:])
+        {
+            constexpr const char* name = upper_enum_name(en, "");
+            return name;
+        }
+    }
+    return unknown;
 }
 
 /**
@@ -130,5 +138,3 @@ consteval bool names_match(const Names& names, std::string_view prefix, long lon
 }
 
 } // namespace shrink_array
-
-#endif // SHRINK_ARRAY_HAS_ENUM_NAME

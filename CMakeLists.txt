@@ -651,24 +651,17 @@ else()
 endif()
 
 # ── Static reflection (C++26, P2996) ─────────────────────────────────────────
-# CHUNK_REFLECTION: AUTO (default) turns it on when the compiler has it, ON
-# requires it, OFF leaves it out. Today only GCC 16 has it (-freflection,
-# experimental); Clang 23 has none, so Clang and oneAPI builds -- the OMPT
-# ones -- go without. The flag is PUBLIC on the libraries (a consumer must
-# parse the same headers), and recorded in chunk/build_options.h
-# (CHUNK_OPT_REFLECTION, build_config::has_reflection), which refuses a
-# consumer compiled without it.
-set(CHUNK_REFLECTION "AUTO" CACHE STRING "C++26 static reflection: AUTO, ON or OFF")
-set_property(CACHE CHUNK_REFLECTION PROPERTY STRINGS AUTO ON OFF)
-set(CHUNK_REFLECTION_FLAG "")
-set(CHUNK_HAVE_REFLECTION OFF)
-if (NOT CHUNK_REFLECTION STREQUAL "OFF")
-  include(CheckCXXSourceCompiles)
-  set(_chunk_refl_std "${CHUNK_CXX_STD_FLAG}")
-  if (NOT _chunk_refl_std)
-    set(_chunk_refl_std "-std=gnu++26")
-  endif()
-  set(_chunk_refl_src [=[
+# The library uses it (enum names, SoaArray, the member-wise value hash, the
+# stats counters): required. Today only GCC 16 has it (-freflection,
+# experimental). The flag is PUBLIC on the libraries (a consumer must parse
+# the same headers); chunk/build_options.h refuses a consumer compiled
+# without it.
+include(CheckCXXSourceCompiles)
+set(_chunk_refl_std "${CHUNK_CXX_STD_FLAG}")
+if (NOT _chunk_refl_std)
+  set(_chunk_refl_std "-std=gnu++26")
+endif()
+set(_chunk_refl_src [=[
 #include <meta>
 struct S { int a; double b; };
 static_assert(std::meta::nonstatic_data_members_of(^^S, std::meta::access_context::unchecked()).size() == 2);
@@ -677,32 +670,24 @@ static_assert(std::meta::nonstatic_data_members_of(^^S, std::meta::access_contex
 #endif
 int main() { return 0; }
 ]=])
-  set(CMAKE_REQUIRED_QUIET ON)
-  set(CMAKE_REQUIRED_FLAGS "${_chunk_refl_std} -freflection")
-  check_cxx_source_compiles("${_chunk_refl_src}" CHUNK_REFLECTION_WITH_FLAG)
-  if (CHUNK_REFLECTION_WITH_FLAG)
-    set(CHUNK_REFLECTION_FLAG "-freflection")
-    set(CHUNK_HAVE_REFLECTION ON)
-  else()
-    # A compiler that turns it on with C++26 alone.
-    set(CMAKE_REQUIRED_FLAGS "${_chunk_refl_std}")
-    check_cxx_source_compiles("${_chunk_refl_src}" CHUNK_REFLECTION_BUILTIN)
-    if (CHUNK_REFLECTION_BUILTIN)
-      set(CHUNK_HAVE_REFLECTION ON)
-    endif()
-  endif()
-  unset(CMAKE_REQUIRED_FLAGS)
-  unset(CMAKE_REQUIRED_QUIET)
-  if (CHUNK_REFLECTION STREQUAL "ON" AND NOT CHUNK_HAVE_REFLECTION)
-    message(FATAL_ERROR "CHUNK_REFLECTION=ON, but ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} has no "
-                        "C++26 static reflection (GCC 16 or later: -freflection)")
-  endif()
-endif()
-if (CHUNK_HAVE_REFLECTION)
-  message(STATUS "C++26 static reflection: on ${CHUNK_REFLECTION_FLAG}")
+set(CHUNK_REFLECTION_FLAG "")
+set(CMAKE_REQUIRED_QUIET ON)
+set(CMAKE_REQUIRED_FLAGS "${_chunk_refl_std} -freflection")
+check_cxx_source_compiles("${_chunk_refl_src}" CHUNK_REFLECTION_WITH_FLAG)
+if (CHUNK_REFLECTION_WITH_FLAG)
+  set(CHUNK_REFLECTION_FLAG "-freflection")
 else()
-  message(STATUS "C++26 static reflection: off (CHUNK_REFLECTION=${CHUNK_REFLECTION})")
+  # A compiler that turns it on with C++26 alone.
+  set(CMAKE_REQUIRED_FLAGS "${_chunk_refl_std}")
+  check_cxx_source_compiles("${_chunk_refl_src}" CHUNK_REFLECTION_BUILTIN)
+  if (NOT CHUNK_REFLECTION_BUILTIN)
+    message(FATAL_ERROR "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} has no C++26 static reflection, "
+                        "which this branch uses: GCC 16 or later (-freflection)")
+  endif()
 endif()
+unset(CMAKE_REQUIRED_FLAGS)
+unset(CMAKE_REQUIRED_QUIET)
+message(STATUS "C++26 static reflection: ${CHUNK_REFLECTION_FLAG}")
 
 # ── Contracts (C++26, P2900) ─────────────────────────────────────────────────
 # The library states its preconditions and postconditions with pre / post /

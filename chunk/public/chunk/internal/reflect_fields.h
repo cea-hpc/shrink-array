@@ -26,39 +26,21 @@
  *          the struct and forgotten in one of those lists is silently 0
  *          there. Here the lists come from the struct itself:
  *
- *          - field_count<T>(): the number of non-static data members;
  *          - add_fields(acc, x): acc.f += x.f for every field f;
  *          - append_json(out, obj): `"f": value` for every field, an
  *            arithmetic or bool one, as one JSON object -- what a script
  *            reads without a regular expression per line.
- *
- *          Only where the compiler has reflection (GCC 16, -freflection):
- *          SHRINK_ARRAY_HAS_REFLECT_FIELDS says so. A caller keeps its
- *          hand-written list for the other builds and, in the reflection
- *          builds, static_asserts field_count<T>() against the number of
- *          fields that list names, so a field added later fails the build
- *          until the list has it too.
  */
 
-#if defined(__cpp_impl_reflection)
-    #include <meta> // std::meta (reflection)
-#endif
+#include <meta> // std::meta (reflection)
 
-#if defined(__cpp_impl_reflection) && defined(__cpp_lib_reflection)
-    #define SHRINK_ARRAY_HAS_REFLECT_FIELDS 1
-#else
-    #define SHRINK_ARRAY_HAS_REFLECT_FIELDS 0
-#endif
-
-#if SHRINK_ARRAY_HAS_REFLECT_FIELDS
-
-    #include <cstddef>     // std::size_t
-    #include <format>      // std::format_to
-    #include <iterator>    // std::back_inserter
-    #include <string>      // std::string
-    #include <string_view> // std::string_view
-    #include <type_traits> // std::is_arithmetic_v, std::is_same_v
-    #include <vector>      // std::vector (consteval only: the field lists)
+#include <cstddef>     // std::size_t
+#include <format>      // std::format_to
+#include <iterator>    // std::back_inserter
+#include <string>      // std::string
+#include <string_view> // std::string_view
+#include <type_traits> // std::is_arithmetic_v, std::is_same_v
+#include <vector>      // std::vector (consteval only: the field lists)
 
 namespace shrink_array
 {
@@ -71,13 +53,6 @@ consteval std::vector<std::meta::info> fields_of(std::meta::info type)
     return std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked());
 }
 } // namespace reflect_fields_detail
-
-/// @brief The number of non-static data members of T.
-template <typename T>
-[[nodiscard]] consteval std::size_t field_count()
-{
-    return reflect_fields_detail::fields_of(^^T).size();
-}
 
 /// @brief acc.f += x.f for every field f of T.
 template <typename T>
@@ -124,5 +99,3 @@ void append_json(std::string& out, const T& obj, std::string_view prefix = {})
 }
 
 } // namespace shrink_array
-
-#endif // SHRINK_ARRAY_HAS_REFLECT_FIELDS

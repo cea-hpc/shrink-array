@@ -57,6 +57,7 @@
 #include "chunk/config.h"                // chunk_config::use_zero_one_value*, use_compression_with_counter
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/internal/enum_name.h"    // shrink_array::name_of (case_name)
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -142,15 +143,7 @@ enum class Case
 
 const char* case_name(Case test_case)
 {
-    switch (test_case)
-    {
-        case Case::first:
-            return "first";
-        case Case::second:
-            return "second";
-        default:
-            return "copy";
-    }
+    return shrink_array::name_of(test_case, "?");
 }
 
 /// One chunk (chunk #1, so that chunk #0 stays at the first constant around

@@ -40,12 +40,12 @@
 #include <map>         // std::map
 #include <mutex>       // std::mutex, std::scoped_lock
 #include <concepts>    // ChunkStatsZeroComparable
-#include <cstddef>     // std::size_t (chunk_stats_listed_fields)
+#include <cstddef>     // std::size_t
 #include <string_view> // chunk_variant_name
 
 #include "chunk/PMP_CHUNK.h"               // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
 #include "chunk/config.h"                  // build_config::chunk_dynamic
-#include "chunk/internal/reflect_fields.h" // add_fields, field_count (the counters, by reflection)
+#include "chunk/internal/reflect_fields.h" // add_fields (the counters, by reflection)
 
 namespace shrink_array
 {
@@ -122,18 +122,6 @@ struct alignas(64) ChunkStatsThr
     /// Every counter equal: `stats == ChunkStatsThr{}` is "no activity at all".
     bool operator==(const ChunkStatsThr&) const = default;
 };
-
-/// @brief The counters the hand-written lists name: reduce_chunk_stats() and
-///        the totals of ParamChunk::chunk_stats(), in the builds without
-///        reflection. A reflection build sums every field by itself, and fails
-///        here when a counter was added to ChunkStatsThr: add it to those two
-///        lists, then raise this number.
-inline constexpr std::size_t chunk_stats_listed_fields = 35;
-    #if SHRINK_ARRAY_HAS_REFLECT_FIELDS
-static_assert(field_count<ChunkStatsThr>() == chunk_stats_listed_fields,
-              "ChunkStatsThr gained or lost a counter: update reduce_chunk_stats() and ParamChunk::chunk_stats() "
-              "(the builds without reflection), then chunk_stats_listed_fields");
-    #endif
 
 /// @brief Program start, for the per-second rates ParamChunk::chunk_stats() shows
 ///        next to the gate counters. Static init: as early as the counters.
@@ -481,45 +469,7 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
     for (int t = 0; t < nthr; ++t)
     {
         const ChunkStatsThr& slot = g_chunk_stats[variant][t];
-    #if SHRINK_ARRAY_HAS_REFLECT_FIELDS
         add_fields(acc, slot); // every counter, named by the struct itself
-    #else
-        acc.alloc += slot.alloc;
-        acc.write += slot.write;
-        acc.read += slot.read;
-        acc.read_cst += slot.read_cst;
-        acc.read_sync += slot.read_sync;
-        acc.read_sync_cross += slot.read_sync_cross;
-        acc.create += slot.create;
-        acc.list += slot.list;
-        acc.bytes_alloc += slot.bytes_alloc;
-        acc.bytes_reused += slot.bytes_reused;
-        acc.bytes_freed += slot.bytes_freed;
-        acc.teardown_clear += slot.teardown_clear;
-        acc.released += slot.released;
-        acc.still_compressed_at_exit += slot.still_compressed_at_exit;
-        acc.compress += slot.compress;
-        acc.release_park += slot.release_park;
-        acc.release_pool += slot.release_pool;
-        acc.release_free += slot.release_free;
-        acc.compress_attempt += slot.compress_attempt;
-        acc.mark_ok += slot.mark_ok;
-        acc.mark_refused += slot.mark_refused;
-        acc.scan_read += slot.scan_read;
-        acc.rechunk += slot.rechunk;
-        acc.rechunk_rebuilt += slot.rechunk_rebuilt;
-        acc.rechunk_skipped += slot.rechunk_skipped;
-        acc.gate_start += slot.gate_start;
-        acc.gate_start_flush_yield += slot.gate_start_flush_yield;
-        acc.gate_start_yield_late += slot.gate_start_yield_late;
-        acc.gate_start_deferred += slot.gate_start_deferred;
-        acc.gate_flush += slot.gate_flush;
-        acc.gate_driver += slot.gate_driver;
-        acc.gate_deferred += slot.gate_deferred;
-        acc.gate_wait += slot.gate_wait;
-        acc.gate_wait_yields += slot.gate_wait_yields;
-        acc.gate_mark_hit += slot.gate_mark_hit;
-    #endif
     }
     return acc;
 }

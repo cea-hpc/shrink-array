@@ -109,42 +109,27 @@
  *       storage annotation (soa::plain, soa::column<C>) per member. T itself
  *       need not be equality-comparable.
  *
- * @warning Experimental (until 1.0), and only where the compiler has C++26
- *          static reflection (GCC 16 -freflection; build_config::has_reflection,
- *          CMake CHUNK_REFLECTION). Without it this header defines nothing but
- *          SHRINK_ARRAY_HAS_SOA_ARRAY = 0.
+ * @warning Experimental (until 1.0). C++26 static reflection (GCC 16 -freflection).
  */
 
-// __cpp_lib_reflection comes with <meta>: include it first wherever the
-// language has reflection.
-#if defined(__cpp_impl_reflection)
-    #include <meta> // std::meta (reflection)
-#endif
+#include <meta> // std::meta (reflection)
 
-#if defined(__cpp_impl_reflection) && defined(__cpp_lib_reflection)
-    #define SHRINK_ARRAY_HAS_SOA_ARRAY 1
-#else
-    #define SHRINK_ARRAY_HAS_SOA_ARRAY 0
-#endif
+#include <array>       // std::array (a column's path)
+#include <cstddef>     // std::size_t, std::ptrdiff_t
+#include <iterator>    // std::random_access_iterator (the range operations)
+#include <ranges>      // std::views::iota, std::views::transform, std::ranges::subrange
+#include <span>        // std::span (read_range's visitor)
+#include <string>      // std::string (the column names, consteval)
+#include <string_view> // std::string_view (the member names)
+#include <tuple>       // std::tuple, std::get (a structured binding pack over the columns)
+#include <type_traits> // std::is_class_v
+#include <utility>     // std::index_sequence, std::declval, std::as_const
+#include <vector>      // std::vector (the member lists, consteval; a soa::plain column)
 
-#if SHRINK_ARRAY_HAS_SOA_ARRAY
-
-    #include <array>       // std::array (a column's path)
-    #include <cstddef>     // std::size_t, std::ptrdiff_t
-    #include <iterator>    // std::random_access_iterator (the range operations)
-    #include <ranges>      // std::views::iota, std::views::transform, std::ranges::subrange
-    #include <span>        // std::span (read_range's visitor)
-    #include <string>      // std::string (the column names, consteval)
-    #include <string_view> // std::string_view (the member names)
-    #include <tuple>       // std::tuple, std::get (a structured binding pack over the columns)
-    #include <type_traits> // std::is_class_v
-    #include <utility>     // std::index_sequence, std::declval, std::as_const
-    #include <vector>      // std::vector (the member lists, consteval; a soa::plain column)
-
-    #include "chunk/zero_any_array.h"        // zero_any::Array, the default column
-    #include "chunk/array_chunk_range_ops.h" // fill_range(_mt), copy_range(_mt), for_each_span (chunked columns)
-    #include "chunk/vector_range_ops.h"      // the same on a soa::plain column (std::vector)
-    #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
+#include "chunk/zero_any_array.h"        // zero_any::Array, the default column
+#include "chunk/array_chunk_range_ops.h" // fill_range(_mt), copy_range(_mt), for_each_span (chunked columns)
+#include "chunk/vector_range_ops.h"      // the same on a soa::plain column (std::vector)
+#include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 
 namespace shrink_array
 {
@@ -566,10 +551,9 @@ class SoaArray
     /// @p n elements, every value T{}'s (no buffer allocated; a soa::plain
     /// column is a std::vector of n V{}).
     explicit SoaArray(size_type n)
-        : columns_(
-              [n]<std::size_t... K>(std::index_sequence<K...>) {
-                  return Columns{std::tuple_element_t<K, Columns>(static_cast<int>(n))...};
-              }(std::make_index_sequence<n_columns_>{}))
+        : columns_([n]<std::size_t... K>(std::index_sequence<K...>)
+                   { return Columns{std::tuple_element_t<K, Columns>(static_cast<int>(n))...}; }(
+                       std::make_index_sequence<n_columns_>{}))
     {
     }
 
@@ -826,5 +810,3 @@ OutIt read_range(const SoaArray<T, Column>& a, std::size_t first, std::size_t la
 }
 
 } // namespace shrink_array
-
-#endif // SHRINK_ARRAY_HAS_SOA_ARRAY

@@ -166,45 +166,7 @@ void ParamChunk::chunk_stats()
     for (int v = 0; v < chunk_stats_n_variant; ++v)
     {
         const ChunkStatsThr stats = reduce_chunk_stats(v);
-    #if SHRINK_ARRAY_HAS_REFLECT_FIELDS
-        add_fields(all, stats); // every counter (the list below is the other builds')
-    #else
-        all.alloc += stats.alloc;
-        all.write += stats.write;
-        all.read += stats.read;
-        all.read_cst += stats.read_cst;
-        all.read_sync += stats.read_sync;
-        all.read_sync_cross += stats.read_sync_cross;
-        all.create += stats.create;
-        all.list += stats.list;
-        all.bytes_alloc += stats.bytes_alloc;
-        all.bytes_reused += stats.bytes_reused;
-        all.bytes_freed += stats.bytes_freed;
-        all.teardown_clear += stats.teardown_clear;
-        all.released += stats.released;
-        all.compress += stats.compress;
-        all.still_compressed_at_exit += stats.still_compressed_at_exit;
-        all.release_park += stats.release_park;
-        all.release_pool += stats.release_pool;
-        all.release_free += stats.release_free;
-        all.compress_attempt += stats.compress_attempt;
-        all.mark_ok += stats.mark_ok;
-        all.mark_refused += stats.mark_refused;
-        all.scan_read += stats.scan_read;
-        all.rechunk += stats.rechunk;
-        all.gate_start += stats.gate_start;
-        all.gate_start_flush_yield += stats.gate_start_flush_yield;
-        all.gate_start_yield_late += stats.gate_start_yield_late;
-        all.gate_start_deferred += stats.gate_start_deferred;
-        all.gate_flush += stats.gate_flush;
-        all.gate_driver += stats.gate_driver;
-        all.gate_deferred += stats.gate_deferred;
-        all.gate_wait += stats.gate_wait;
-        all.gate_wait_yields += stats.gate_wait_yields;
-        all.gate_mark_hit += stats.gate_mark_hit;
-        all.rechunk_rebuilt += stats.rechunk_rebuilt;
-        all.rechunk_skipped += stats.rechunk_skipped;
-    #endif
+        add_fields(all, stats); // every counter, named by the struct itself
     }
 
     std::print("\n===== CHUNK_STATS (instrumentation counters, -DCHUNK_STATS) =====\n");
@@ -443,7 +405,6 @@ void ParamChunk::chunk_stats()
             }
         }
         std::println("-------------------------------------");
-    #if SHRINK_ARRAY_HAS_REFLECT_FIELDS
         // The same counters, every one of them, as one JSON line for scripts
         // (python/bench_runner/parsing.py): no regular expression per field,
         // and a counter added to ChunkStatsThr appears here by itself.
@@ -452,7 +413,6 @@ void ParamChunk::chunk_stats()
             append_json(json, stats, std::format("\"variant\": \"{}\", ", chunk_variant_name[v]));
             std::println("CHUNK_STATS_JSON {}", json);
         }
-    #endif
     }
 
     // ── Retention, not counted by any of the above ───────────────────────────

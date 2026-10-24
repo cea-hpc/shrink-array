@@ -62,9 +62,6 @@
 #include "chunk/soa_array.h"      // shrink_array::SoaArray, shrink_array::soa::plain, soa::column
 #include "chunk/internal/print.h" // shrink_array::println
 
-#if !SHRINK_ARRAY_HAS_SOA_ARRAY
-    #error "soa_array_validation needs C++26 static reflection (GCC 16, -freflection): CMake builds it only then"
-#endif
 
 namespace sa = shrink_array;
 

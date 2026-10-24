@@ -25,9 +25,8 @@
  * @details - A scalar of at most 8 bytes: a 64-bit finaliser over its bits
  *            (the former index_hash formula), a floating zero normalised so
  *            -0.0 and +0.0 hash alike.
- *          - A class whose operator== is the defaulted member one, with
- *            C++26 reflection (SHRINK_ARRAY_HAS_VALUE_HASH_MEMBERWISE): member
- *            by member, each by value_hash -- the padding is not read, and a
+ *          - A class whose operator== is the defaulted member one (C++26
+ *            reflection): member by member, each by value_hash -- the padding is not read, and a
  *            signed zero in a member hashes like the other.
  *          - Anything else: every byte of the object, 8 at a time through the
  *            finaliser. Equal values with different padding or zero signs may
@@ -41,15 +40,7 @@
 #include <memory>      // std::addressof
 #include <type_traits> // std::is_floating_point_v, std::is_class_v
 
-#if defined(__cpp_impl_reflection)
-    #include <meta> // std::meta (reflection)
-#endif
-
-#if defined(__cpp_impl_reflection) && defined(__cpp_lib_reflection)
-    #define SHRINK_ARRAY_HAS_VALUE_HASH_MEMBERWISE 1
-#else
-    #define SHRINK_ARRAY_HAS_VALUE_HASH_MEMBERWISE 0
-#endif
+#include <meta> // std::meta (reflection)
 
 namespace shrink_array
 {
@@ -83,7 +74,6 @@ inline std::uint64_t bytes_hash(const void* p, std::size_t size) noexcept
     return h;
 }
 
-#if SHRINK_ARRAY_HAS_VALUE_HASH_MEMBERWISE
 /// True when @p type is a class without base whose operator== is the
 /// defaulted member one: then equality is member by member.
 consteval bool has_memberwise_equality(std::meta::info type)
@@ -102,7 +92,6 @@ consteval bool has_memberwise_equality(std::meta::info type)
     }
     return false;
 }
-#endif
 } // namespace value_hash_detail
 
 /// @brief Hash of the value @p v, over the whole value (see the file comment).
@@ -116,7 +105,6 @@ template <typename T>
         const T normalised = v == T{0} ? T{0} : v; // -0.0 hashes like +0.0
         return bytes_hash(std::addressof(normalised), sizeof(T));
     }
-#if SHRINK_ARRAY_HAS_VALUE_HASH_MEMBERWISE
     else if constexpr (std::is_class_v<T> && value_hash_detail::has_memberwise_equality(^^T))
     {
         std::uint64_t h = 0;
@@ -138,7 +126,6 @@ template <typename T>
         }
         return h;
     }
-#endif
     else
     {
         return bytes_hash(std::addressof(v), sizeof(T));

@@ -164,7 +164,7 @@ if ("zero_any" IN_LIST CHUNK_VARIANTS)
 endif()
 
 # SoaArray<T> (chunk/soa_array.h): a struct stored one compressed array per
-# member, by C++26 static reflection -- only where the compiler has it.
-if ("zero_any" IN_LIST CHUNK_VARIANTS AND CHUNK_HAVE_REFLECTION)
+# member, by C++26 static reflection.
+if ("zero_any" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(soa_array)
 endif()

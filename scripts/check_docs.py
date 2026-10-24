@@ -74,6 +74,10 @@ ALLOWED = {
     "EV_END_SLOW_PATH",
     # removed on cpp26 (std::mdspan only), which CHANGELOG.md records
     "md::mdspan_source", "SHRINK_ARRAY_HAS_MDSPAN", "SHRINK_ARRAY_HAS_SUBMDSPAN",
+    # removed on cpp26 (reflection required), which CHANGELOG.md records
+    "CHUNK_REFLECTION", "CHUNK_OPT_REFLECTION", "build_config::has_reflection", "SHRINK_ARRAY_HAS_ENUM_NAME",
+    "SHRINK_ARRAY_HAS_REFLECT_FIELDS", "SHRINK_ARRAY_HAS_SOA_ARRAY", "SHRINK_ARRAY_HAS_VALUE_HASH_MEMBERWISE",
+    "event_name_table", "table_matches", "field_count",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh",
     # C++ standard library, compiler, language

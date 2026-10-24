@@ -42,7 +42,7 @@
 
 #include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/config.h"                        // build_config::any_check
-#include "chunk/internal/enum_name.h"            // table_matches (the bstate_name check)
+#include "chunk/internal/enum_name.h"            // upper_name_of (bstate_name)
 #include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
 #include "chunk/log.h"                           // CHUNK_LOG_ALWAYS (the report, the transition trace)
 
@@ -255,25 +255,10 @@ enum class BState : std::uint8_t
 
 /// @brief Name of a block state: its enumerator upper-cased.
 /// @return "FREE", "LIVE", "PARKED", or "??" for any other value.
-/// @note No `default:`, so -Wswitch reports a state added without its case;
-///       with reflection the static_assert below also checks the spelling.
 constexpr const char* bstate_name(BState state) noexcept
 {
-    switch (state)
-    {
-        case BState::free:
-            return "FREE";
-        case BState::live:
-            return "LIVE";
-        case BState::parked:
-            return "PARKED";
-    }
-    return "??";
+    return upper_name_of(state, "??");
 }
-
-#if SHRINK_ARRAY_HAS_ENUM_NAME
-static_assert(table_matches<BState>(bstate_name, ""), "bstate_name() disagrees with the BState enumerators");
-#endif
 
 /// @brief Block ledger record: current state and the rank and site of the last transition.
 struct BRec
