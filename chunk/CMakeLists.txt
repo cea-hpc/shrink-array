@@ -707,6 +707,22 @@ if ("zero" IN_LIST CHUNK_VARIANTS AND "zero_one_value" IN_LIST CHUNK_VARIANTS)
                     NO_OMPT_TOOL)
 endif()
 
+# --- The shrink_array module (prototype) ---------------------------------
+# modules/shrink_array.cppm: the headers in the global module fragment, the
+# getting_started names exported. One BMI per variant library (it carries the
+# variant's defines): chunk_zero_any_module, over chunk_zero_any. Needs CMake
+# 3.28 and the Ninja generator (module dependency scanning); not installed yet.
+option(SHRINK_ARRAY_MODULES "Build the shrink_array C++ module (prototype, Ninja + CMake 3.28)" OFF)
+if (SHRINK_ARRAY_MODULES AND "zero_any" IN_LIST CHUNK_VARIANTS)
+  if (CMAKE_VERSION VERSION_LESS 3.28 OR NOT CMAKE_GENERATOR MATCHES "Ninja")
+    message(FATAL_ERROR "SHRINK_ARRAY_MODULES: needs CMake >= 3.28 and a Ninja generator")
+  endif()
+  add_library(chunk_zero_any_module)
+  target_sources(chunk_zero_any_module PUBLIC FILE_SET CXX_MODULES BASE_DIRS modules FILES modules/shrink_array.cppm)
+  target_link_libraries(chunk_zero_any_module PUBLIC chunk_zero_any)
+  message(STATUS "SHRINK_ARRAY_MODULES: chunk_zero_any_module (import shrink_array;)")
+endif()
+
 # A REAL default library (not just an ALIAS), so the include directories reach the executables.
 # Default library: no variant define, default compile-time size (static_chunk_size=64), static.
 chunk_add_variant(chunk "" "" FALSE)

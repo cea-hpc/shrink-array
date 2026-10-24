@@ -10,7 +10,7 @@ the root of `include/`: a user's own copy of either library is left alone, and a
 |---|---|---|---|---|
 | `chunk/vendor/ankerl/unordered_dense.h` | [martinus/unordered_dense](https://github.com/martinus/unordered_dense) | v5.3.1 (commit `c164976d`) | MIT, [licenses/unordered_dense-MIT.txt](licenses/unordered_dense-MIT.txt) | 2 |
 | `chunk/vendor/ankerl/stl.h` | martinus/unordered_dense | v5.3.1 (commit `c164976d`) | MIT | none |
-| `chunk/vendor/flat_hash_map.hpp` | [skarupke/flat_hash_map](https://github.com/skarupke/flat_hash_map) | master, commit `2c468743` (2018-07-15, the last one: unmaintained) | Boost Software License 1.0, [licenses/flat_hash_map-BSL-1.0.txt](licenses/flat_hash_map-BSL-1.0.txt) | 1 |
+| `chunk/vendor/flat_hash_map.hpp` | [skarupke/flat_hash_map](https://github.com/skarupke/flat_hash_map) | master, commit `2c468743` (2018-07-15, the last one: unmaintained) | Boost Software License 1.0, [licenses/flat_hash_map-BSL-1.0.txt](licenses/flat_hash_map-BSL-1.0.txt) | 2 |
 
 Each file opens with the SPDX line of its upstream license (`// SPDX-License-Identifier: MIT`,
 `BSL-1.0`; ctest `check_headers` checks it), then a banner stating the above. Each local patch is marked
@@ -35,6 +35,9 @@ installed under `share/doc/chunk/`.
   and nvc++ it is a template disabled when the iterator is already const (a self-conversion),
   and clang's `-Wclass-conversion`, emitted at the definition before SFINAE applies, is
   silenced around it.
+- `flat_hash_map.hpp`, `min_lookups`: `inline constexpr` instead of `static constexpr`, so that
+  the templates reading it expose no TU-local entity from a module's global fragment (GCC's
+  `-Wexpose-global-module-tu-local`, `chunk/modules/shrink_array.cppm`).
 
 ## Things to know
 
