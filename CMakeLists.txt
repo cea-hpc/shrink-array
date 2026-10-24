@@ -704,6 +704,58 @@ else()
   message(STATUS "C++26 static reflection: off (CHUNK_REFLECTION=${CHUNK_REFLECTION})")
 endif()
 
+# ── Contracts (C++26, P2900) ─────────────────────────────────────────────────
+# chunk/internal/contracts.h: CHUNK_PRE (pre) and CHUNK_CONTRACT_ASSERT
+# (contract_assert) where the compiler has contracts -- GCC 16, on with C++26;
+# Clang 23 has none, the macros then fall back (contracts.h). CHUNK_CONTRACTS
+# is their evaluation semantic, passed PUBLIC on the libraries
+# (-fcontract-evaluation-semantic=): a precondition of an inline function is
+# checked in the consumer's translation unit. AUTO (default): enforce in a
+# check build (Debug, CHECK_OPTIM), ignore otherwise; or ignore, observe,
+# enforce, quick_enforce.
+set(CHUNK_CONTRACTS "AUTO" CACHE STRING "Evaluation semantic of the contracts: AUTO, ignore, observe, enforce, quick_enforce")
+set_property(CACHE CHUNK_CONTRACTS PROPERTY STRINGS AUTO ignore observe enforce quick_enforce)
+set(CHUNK_CONTRACTS_FLAG "")
+set(CHUNK_HAVE_CONTRACTS OFF)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  include(CheckCXXSourceCompiles)
+  set(_chunk_contracts_std "${CHUNK_CXX_STD_FLAG}")
+  if (NOT _chunk_contracts_std)
+    set(_chunk_contracts_std "-std=gnu++26")
+  endif()
+  # Compiled, not linked: the default violation handler lives in libstdc++exp.
+  set(CMAKE_REQUIRED_QUIET ON)
+  set(CMAKE_REQUIRED_FLAGS "${_chunk_contracts_std}")
+  set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+  check_cxx_source_compiles([=[
+#if !defined(__cpp_contracts)
+#error no contracts
+#endif
+int f(const int x) pre(x > 0) post(r : r == x);
+int g(const int x) { contract_assert(x != 0); return x; }
+]=] CHUNK_CONTRACTS_COMPILE)
+  unset(CMAKE_TRY_COMPILE_TARGET_TYPE)
+  unset(CMAKE_REQUIRED_FLAGS)
+  unset(CMAKE_REQUIRED_QUIET)
+  if (CHUNK_CONTRACTS_COMPILE)
+    set(CHUNK_HAVE_CONTRACTS ON)
+  endif()
+endif()
+if (CHUNK_HAVE_CONTRACTS)
+  set(_chunk_contracts_semantic "${CHUNK_CONTRACTS}")
+  if (_chunk_contracts_semantic STREQUAL "AUTO")
+    if (CHUNK_DEBUG OR CHECK_OPTIM)
+      set(_chunk_contracts_semantic "enforce")
+    else()
+      set(_chunk_contracts_semantic "ignore")
+    endif()
+  endif()
+  set(CHUNK_CONTRACTS_FLAG "-fcontract-evaluation-semantic=${_chunk_contracts_semantic}")
+  message(STATUS "C++26 contracts: on, ${_chunk_contracts_semantic} (CHUNK_CONTRACTS=${CHUNK_CONTRACTS})")
+else()
+  message(STATUS "C++26 contracts: off (${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} has none)")
+endif()
+
 function(chunk_require_cxx_std target scope)
   if (CHUNK_CXX_STD_FLAG)
     target_compile_options(${target} ${scope} ${CHUNK_CXX_STD_FLAG})
@@ -712,6 +764,9 @@ function(chunk_require_cxx_std target scope)
   endif()
   if (CHUNK_REFLECTION_FLAG)
     target_compile_options(${target} ${scope} ${CHUNK_REFLECTION_FLAG})
+  endif()
+  if (CHUNK_CONTRACTS_FLAG)
+    target_compile_options(${target} ${scope} ${CHUNK_CONTRACTS_FLAG})
   endif()
 endfunction()
 

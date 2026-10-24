@@ -55,6 +55,7 @@
 #include "chunk/internal/chunk_size_policy.h"   // ChunkSizeError (try_set_chunk_size)
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
+#include "chunk/internal/contracts.h"           // CHUNK_PRE (operator[], element_proxy)
 #include "chunk/internal/element_ref.h"         // ElementRef: what operator[] returns
 #include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
 
@@ -1008,9 +1009,11 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          -DSHRINK_AGGRESSIVE_INLINE, never nvc++) pulls the whole read path in.
      *
      * @param index global element index; the caller guarantees 0 <= i < size()
+     *              (the precondition, checked where contracts are enforced)
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](this const Derived& self, IndType index) noexcept
+        CHUNK_PRE(index >= 0 && index < self.m_size_)
     {
         const int num_chunk = self.chunk_index_of(index);
         const int num       = self.offset_in_chunk(index);
@@ -1045,6 +1048,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          `auto v = a[i];` fail to compile (internal/element_ref.h).
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](this Derived& self, IndType index) noexcept
+        CHUNK_PRE(index >= 0 && index < self.m_size_)
     {
         if constexpr (build_config::strict_element_ref)
         {
@@ -1064,6 +1068,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @return the write proxy for that element, armed as operator[]'s
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(this Derived& self, IndType index) noexcept
+        CHUNK_PRE(index >= 0 && index < self.m_size_)
     {
         const int        num_chunk = self.chunk_index_of(index);
         auto&            chunk_t   = self.chunk_list_[num_chunk];

@@ -554,6 +554,23 @@ if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
   endif()
 endif()
 
+# --- contracts_validation: the preconditions of operator[] and element_proxy
+# (CHUNK_PRE) reach the program's violation handler. Only where the compiler
+# has contracts; enforce for this source whatever CHUNK_CONTRACTS is (a
+# source's options come after the libraries' PUBLIC ones).
+if (CHUNK_HAVE_CONTRACTS AND TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+  set(_tgt contracts_validation)
+  add_executable(${_tgt} contracts_validation.cpp)
+  target_link_libraries(${_tgt} PRIVATE chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+  validation_variant_defs(${_tgt} CHUNK_VARIANT_ZERO_ANY ${CHUNK_DEFAULT_SIZE})
+  validation_setup_target(${_tgt})
+  set_source_files_properties(contracts_validation.cpp PROPERTIES COMPILE_OPTIONS -fcontract-evaluation-semantic=enforce)
+  foreach(_case in_bounds read write negative proxy)
+    add_test(NAME ${_tgt}_${_case} COMMAND ${_tgt} ${_case})
+    set_property(TEST ${_tgt}_${_case} PROPERTY LABELS validation)
+  endforeach()
+endif()
+
 # --- fill_range_mt_zero_and_zero_one_value_validation: the two-variant library (CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes
 # the phase calls, as multi-mat does), zero::Array and zero_one_value::Array in one

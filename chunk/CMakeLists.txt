@@ -404,6 +404,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/concept_composite_arithmetic.h
         public/chunk/internal/concept_is_clean_assignement.h
         public/chunk/internal/conditional_counter.h
+        public/chunk/internal/contracts.h
         public/chunk/internal/cpu_pause.h
         public/chunk/internal/cst_slot.h
         public/chunk/internal/def_force_inline.h
