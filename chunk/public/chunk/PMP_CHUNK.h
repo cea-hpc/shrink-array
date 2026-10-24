@@ -67,11 +67,14 @@ inline thread_local int g_fast_omp_rank = -1;
 ///        thread's rank, as the OMPT implicit-task callback clears g_fast_omp_rank).
 [[nodiscard]] inline int& chunk_rank_cache() noexcept
 {
-#if FAST_ALLOC_PMP_BACKEND_STD
-    return ::fast_alloc::pmp::rank_cache();
-#else
-    return ::shrink_array::g_fast_omp_rank;
-#endif
+    if constexpr (::fast_alloc::pmp::backend == ::fast_alloc::pmp::BackendKind::std_threads)
+    {
+        return ::fast_alloc::pmp::rank_cache();
+    }
+    else
+    {
+        return ::shrink_array::g_fast_omp_rank;
+    }
 }
 
 /// @brief The loop schedules a `schedule(runtime)` loop can be given -- the

@@ -24,3 +24,4 @@ std-gnu-check
 std-llvm
 std-llvm-check
 omp-oneapi
+std-oneapi

@@ -44,7 +44,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
     if constexpr (chunk_config::use_fast_block_compression)
     {
         int num_tab = 0;
-        if constexpr (is_chunk2a)
+        if constexpr (is_zero_any_family)
         {
             num_tab = self.num_tab_; // 2A keys its candidates by the num_tab MEMBER
         }
@@ -64,7 +64,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
             {
                 if (std::get<2>(tup) == num_tab)
                 {
-                    if constexpr (is_chunk2a)
+                    if constexpr (is_zero_any_family)
                     {
                         std::get<0>(tup)->compress(thr, std::get<1>(tup), num_tab, /*apply=*/true, std::get<3>(tup));
                     }

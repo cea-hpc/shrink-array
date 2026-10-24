@@ -29,7 +29,7 @@
 #include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h" // ArithmeticAffectationContext
-#include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
+#include "chunk/internal/array_chunk_for.h"    // ArrayKey (ptr_on_array_ reads the array)
 #include "chunk/internal/concept_is_clean_assignement.h" // BaseT
 #include "chunk/internal/deferred_op_pool.h"             // pool_new_ctx
 #include "chunk/internal/bad_ptr_check.h"                // CHUNK_CHECK_VALUES_PTR (check builds)
@@ -119,7 +119,7 @@ inline void replay_retry(int&                        retry_count,
                 CHUNK_LOG(warn, drain,
                           "{}: deferred replay retried more than {} times on chunk={} num={} (still retrying; reported "
                           "once per process)",
-                          where, replay_retry_cap, static_cast<const void*>(chunk), num);
+                          where, replay_retry_cap, chunk, num);
             }
         }
     }
@@ -236,11 +236,11 @@ void zero_any::Proxy<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb
             }
         }
     }
-    // Every flag 0; the new type-of-constant entries 0. Both constructed by a
-    // team for a large array (parallel_storage_init).
+    // Every flag 0; the new type-of-constant entries CstSlot::first. Both
+    // constructed by a team for a large array (parallel_storage_init).
     Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
         parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(nb_chunk), char{0});
-    parallel_storage_init::resize_filled(tab_type_cst_val[num_tab], static_cast<std::size_t>(nb_chunk), char{0});
+    parallel_storage_init::resize_filled(tab_type_cst_val[num_tab], static_cast<std::size_t>(nb_chunk), CstSlot::first);
 }
 
 /**
@@ -302,7 +302,7 @@ void zero_any::Proxy<T>::perform_compression() noexcept
     if (sz_before > sz_threshold)
     {
         // Serial builds defer nothing, and flush_deferred exists only in the
-        // OpenMP policy specialisation.
+        // threaded policy specialisation.
         if constexpr (build_config::threaded)
         {
             static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
@@ -337,10 +337,8 @@ void zero_any::Proxy<T>::ensure_writable_storage()
         if constexpr (build_config::any_check)
         {
             const unsigned int frozen = this->chunk_size_frozen_;
-            const unsigned int live =
-                this->ptr_on_array_ ? static_cast<const ArrayChunkForT<ChunkType>*>(this->ptr_on_array_)->chunk_size()
-                                    : 0;
-            const unsigned int used = this->chunk_size();
+            const unsigned int live   = this->ptr_on_array_ != nullptr ? this->ptr_on_array_->chunk_size() : 0;
+            const unsigned int used   = this->chunk_size();
             if (used != live || frozen != 0U)
             {
                 CHUNK_LOG(debug, rechunk, "ensure_writable_storage: used={} live={} frozen={}", used, live, frozen);
@@ -706,7 +704,7 @@ T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
                         {
                             CHUNK_INVARIANT_FAILED("[deferred2A write] num OUT OF RANGE "
                                                    "(num={}, chunk_size={}, chunk={})",
-                                                   num, csz_guard, static_cast<const void*>(&chunk));
+                                                   num, csz_guard, &chunk);
                         }
 
                         CHUNK_CHECK_VALUES_PTR_C(values_before, "deferred2A.pre_store", &chunk);
@@ -721,8 +719,7 @@ T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
                                 CHUNK_INVARIANT_FAILED("[deferred2A write] chunk keeps reverting to cst before "
                                                        "store (chunk={}, num={}, values_before={}, cur_cst_val1={}, "
                                                        "cur_values={})",
-                                                       static_cast<const void*>(&chunk), num,
-                                                       static_cast<const void*>(values_before),
+                                                       &chunk, num, static_cast<const void*>(values_before),
                                                        static_cast<const void*>(chunk.get_cst_val1()),
                                                        static_cast<const void*>(chunk.values_load()));
                             }
@@ -760,16 +757,14 @@ T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_cst_val1 TRUE after successful store! "
                                                    "chunk={} num={} values_before={} values_after={}",
-                                                   static_cast<const void*>(&chunk), num,
-                                                   static_cast<const void*>(values_before),
+                                                   &chunk, num, static_cast<const void*>(values_before),
                                                    static_cast<const void*>(values_after));
                         }
                         if (proxy.is_cst_val2())
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_cst_val2 TRUE after successful store! "
                                                    "chunk={} num={} values_before={} values_after={}",
-                                                   static_cast<const void*>(&chunk), num,
-                                                   static_cast<const void*>(values_before),
+                                                   &chunk, num, static_cast<const void*>(values_before),
                                                    static_cast<const void*>(values_after));
                         }
                         // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
@@ -779,7 +774,7 @@ T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: readback mismatch after store! "
                                                    "chunk={} num={} expected={} readback={}",
-                                                   static_cast<const void*>(&chunk), num, expected, readback);
+                                                   &chunk, num, expected, readback);
                         }
                     }
 
@@ -1193,13 +1188,13 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace
             {
                 CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val1 TRUE after store! "
                                        "chunk={} num={}",
-                                       static_cast<const void*>(&ctx->chunk), ctx->num);
+                                       &ctx->chunk, ctx->num);
             }
             if (proxy.is_cst_val2())
             {
                 CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val2 TRUE after store! "
                                        "chunk={} num={}",
-                                       static_cast<const void*>(&ctx->chunk), ctx->num);
+                                       &ctx->chunk, ctx->num);
             }
         }
 

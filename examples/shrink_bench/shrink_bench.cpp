@@ -323,7 +323,7 @@ int main(int argc, char* argv[])
                 io_res = std::stoi(data); // Convert string to integer
                 std::println("You give : {}", io_res);
             }
-            catch (const std::invalid_argument& e)
+            catch (const std::invalid_argument&)
             {
                 std::println(stderr, "Error: Conversion failed. The string is not a valid number");
             }

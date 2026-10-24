@@ -489,10 +489,9 @@ bool set_max_malloc_arenas(int max_arenas);
 /**
  * @brief Print every manager's reuse pools, broken down by geometry.
  *
- * @details Free function so a caller can reach it without pulling AllTypeChunk's
- *          full definition -- array_chunk_rechunk_inline.h cannot include that
- *          header without closing an include cycle through zero_any_array.h.
- *          Defined in all_type_chunk.cpp.
+ * @details A free function: the caller needs neither AllTypeChunk's singleton
+ *          nor its full definition (docs/api.md, the reports a program asks
+ *          for). Defined in all_type_chunk.cpp.
  *
  * @param label prefix for the printed lines, e.g. "before drain"
  */

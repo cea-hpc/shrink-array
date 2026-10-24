@@ -34,7 +34,7 @@
 | `CHUNK_BUILD_DYN` | `ON` | also build a dynamic-geometry library (`_dyn`) per variant |
 | `CHUNK_STD_ALLOC` | `OFF` | standard allocator for the chunk buffers instead of `fast_allocators` (useful under ASan: each buffer is a real `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any`: the second-value slot holds a 4-byte identifier instead of the value (less memory, +3% write time) |
-| `CHUNK_STATS` | `OFF` | instrumentation counters and the `print_chunk_stats()` report |
+| `CHUNK_STATS` | `OFF` | instrumentation counters and the `ParamChunk::chunk_stats()` report |
 | `CHECK_OPTIM` | `OFF` | invariant checks in an optimised build |
 | `SANITIZER` | `none` | `thread`, `address` or `token` (AllocToken, Clang ≥ 22), for all build types |
 

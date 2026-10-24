@@ -18,6 +18,7 @@
 
 #include <cstdint> // std::uint64_t (the liveness sentinel)
 
+#include "chunk/internal/array_chunk_for.h"          // ArrayKey (ptr_on_array)
 #include "chunk/internal/in_t.h"                     // InT<T>: the operands
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
 
@@ -37,8 +38,8 @@ class Proxy;
 /// @brief The proxy's num_tab: its armed value where the proxy keeps one
 ///        (get_num_tab_cached, zero), get_num_tab(array_ptr) where the proxy
 ///        takes the array, get_num_tab() otherwise.
-template <typename ProxyT>
-constexpr int get_num_tab_helper(const ProxyT& proxy, const void* array_ptr) noexcept
+template <typename ProxyT, typename Key>
+constexpr int get_num_tab_helper(const ProxyT& proxy, Key array_ptr) noexcept
 {
     if constexpr (requires { proxy.get_num_tab_cached(array_ptr); })
     {
@@ -70,7 +71,7 @@ struct BaseArithmeticContext
     /// @brief Capture the proxy's position, chunk, geometry and allocation key.
     /// @param prox Proxy the context is built from.
     /// @param array_ptr Owning array, stored in ptr_on_array and used to compute num_tab.
-    BaseArithmeticContext(const ProxyT& prox, const void* array_ptr)
+    BaseArithmeticContext(const ProxyT& prox, ArrayKey<ChunkT> array_ptr)
         : num(prox.get_num())
         , chunk(prox.get_chunk())
         , num_chunk(prox.get_num_chunk())
@@ -94,11 +95,11 @@ struct BaseArithmeticContext
     BaseArithmeticContext(BaseArithmeticContext&&)                 = delete;
     BaseArithmeticContext& operator=(BaseArithmeticContext&&)      = delete;
 
-    int         num;          ///< index of the element in its chunk
-    ChunkT&     chunk;        ///< the chunk written
-    int         num_chunk;    ///< index of the chunk in its array
-    int         num_tab;      ///< logical array index
-    const void* ptr_on_array; ///< the owning array
+    int              num;          ///< index of the element in its chunk
+    ChunkT&          chunk;        ///< the chunk written
+    int              num_chunk;    ///< index of the chunk in its array
+    int              num_tab;      ///< logical array index
+    ArrayKey<ChunkT> ptr_on_array; ///< the owning array
 
     /// @brief Chunk geometry resolved AT ENQUEUE, while the source array is
     ///        guaranteed alive.
@@ -130,7 +131,7 @@ struct ArithmeticProxyContext : public BaseArithmeticContext<T, zero::Proxy<T>>
     /// @brief Build the context from @p proxy.
     /// @param proxy Proxy the context is built from.
     /// @param array_ptr Owning array.
-    ArithmeticProxyContext(const zero::Proxy<T>& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
+    ArithmeticProxyContext(const zero::Proxy<T>& proxy, ArrayKey<zero::Chunk<T>> array_ptr) : Base(proxy, array_ptr) {}
 };
 
 /// @brief Context of a deferred Proxy<T> assignment: the assigned value.
@@ -143,7 +144,7 @@ struct ArithmeticAffectationProxyContext : public BaseArithmeticContext<T, zero:
     /// @param proxy Proxy the context is built from.
     /// @param op_value Assigned value, stored in operand.
     /// @param array_ptr Owning array.
-    ArithmeticAffectationProxyContext(const zero::Proxy<T>& proxy, InT<U> op_value, const void* array_ptr)
+    ArithmeticAffectationProxyContext(const zero::Proxy<T>& proxy, InT<U> op_value, ArrayKey<zero::Chunk<T>> array_ptr)
         : Base(proxy, array_ptr), operand(op_value)
     {
     }
@@ -163,7 +164,10 @@ struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, zero::P
     /// @param op_value Right-hand operand.
     /// @param op Functor implementing the operation.
     /// @param array_ptr Owning array.
-    ArithmeticOperationProxyContext(const zero::Proxy<T>& proxy, InT<T> op_value, Op op, const void* array_ptr)
+    ArithmeticOperationProxyContext(const zero::Proxy<T>&    proxy,
+                                    InT<T>                   op_value,
+                                    Op                       op,
+                                    ArrayKey<zero::Chunk<T>> array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }
@@ -181,7 +185,7 @@ struct ArithmeticContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
     /// @brief Build the context from @p proxy.
     /// @param proxy Proxy the context is built from.
     /// @param array_ptr Owning array.
-    ArithmeticContext(const ProxyT& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
+    ArithmeticContext(const ProxyT& proxy, ArrayKey<ChunkT> array_ptr) : Base(proxy, array_ptr) {}
 };
 
 /// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy compound operation: the
@@ -196,7 +200,7 @@ struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyT, Chun
     /// @param op_value Right-hand operand.
     /// @param op Functor implementing the operation.
     /// @param array_ptr Owning array.
-    ArithmeticOperationContext(const ProxyT& proxy, InT<T> op_value, Op op, const void* array_ptr)
+    ArithmeticOperationContext(const ProxyT& proxy, InT<T> op_value, Op op, ArrayKey<ChunkT> array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }
@@ -215,7 +219,7 @@ struct ArithmeticAffectationContext : public BaseArithmeticContext<T, ProxyT, Ch
     /// @param proxy Proxy the context is built from.
     /// @param op_value Assigned value, stored in operand.
     /// @param array_ptr Owning array.
-    ArithmeticAffectationContext(const ProxyT& proxy, InT<U> op_value, const void* array_ptr)
+    ArithmeticAffectationContext(const ProxyT& proxy, InT<U> op_value, ArrayKey<ChunkT> array_ptr)
         : Base(proxy, array_ptr), operand(op_value)
     {
     }

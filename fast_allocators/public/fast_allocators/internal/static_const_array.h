@@ -49,7 +49,7 @@
 #include <array>   // std::array
 #include <bit>     // std::bit_width (bucket_index)
 #include <cassert> // TypeAllocator::alloc: the size its free will route by
-#include <cstddef> // std::size_t
+#include <cstddef> // std::size_t, std::byte (the header offset)
 #include <mutex>   // std::mutex (ladder_mutex)
 #include <tuple>   // std::tuple, std::get, std::apply (the ladder)
 
@@ -401,7 +401,7 @@ struct BlkAllocator : public StaticConstArray
 
         ptr[0] = size;
 
-        return reinterpret_cast<char*>(ptr) + fast_alloc::alignment;
+        return reinterpret_cast<std::byte*>(ptr) + fast_alloc::alignment;
     }
 
     /// @brief Give back an alloc_tab() block, reading its size from its header.
@@ -412,7 +412,7 @@ struct BlkAllocator : public StaticConstArray
             return;
         }
 
-        auto* m_ptr = reinterpret_cast<std::size_t*>(static_cast<char*>(user_ptr) - fast_alloc::alignment);
+        auto* m_ptr = reinterpret_cast<std::size_t*>(static_cast<std::byte*>(user_ptr) - fast_alloc::alignment);
 
         const std::size_t total = m_ptr[0] + fast_alloc::alignment;
 

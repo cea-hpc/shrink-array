@@ -43,7 +43,7 @@
 #include "chunk/internal/chunk_size_policy.h" // ChunkSizeError, static_chunk_size (try_rechunk_to)
 #include "chunk/chunk_traits.h"               // ArrayChunkTraits
 #include "chunk/internal/in_t.h"              // InT<T>: the captured state
-#include "chunk/internal/array_chunk_for.h"   // ArrayChunkCore -- rechunk_all_to's registry keys
+#include "chunk/internal/array_chunk_for.h"   // ArrayKey, ArrayChunkCore -- rechunk_all_to's registry keys
 
 namespace shrink_array
 {
@@ -204,15 +204,15 @@ class RechunkSupport<Derived, true>
     static void rechunk_all_to(unsigned int new_size)
     {
         ProxyType::share_info_array->for_each_key(
-            [new_size](const void* key)
+            [new_size](ArrayKey<ChunkType> key)
             {
-                if (key)
+                if (key != nullptr)
                 {
                     // The key is an array's core, and the arrays of this
                     // element type may differ in index type: reach each one's
-                    // own rechunk_to() through the core.
-                    auto* arr = static_cast<ArrayChunkCore<ChunkType>*>(const_cast<void*>(key));
-                    arr->rechunk_erased(new_size);
+                    // own rechunk_to() through the core (the registry hands out
+                    // const keys; a re-chunk rebuilds the array).
+                    const_cast<ArrayChunkCore<ChunkType>*>(key)->rechunk_erased(new_size);
                 }
             });
     }

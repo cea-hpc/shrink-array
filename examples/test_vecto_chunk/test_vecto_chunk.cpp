@@ -187,9 +187,6 @@ void calculate1(double                     val,
     for (int i = start0; i < end0; ++i)
     {
         const int k = index[i - start0];
-        //  assert(k >= start0);
-        //  assert(k <= end0);
-
         tab1[k] += tab_vec[k] + (tab2[k] * tab3[i]) - tab2[i] + val;
     }
 }

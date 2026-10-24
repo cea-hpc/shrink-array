@@ -396,7 +396,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                         "ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
                         "during the iteration (offset {}); the iterator would not see it -- no other "
                         "thread may write an array that is being iterated",
-                        num_chunk_, static_cast<const void*>(owner_), num_);
+                        num_chunk_, owner_, num_);
                 }
             }
         }
@@ -449,7 +449,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                 {
                     CHUNK_INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
                                            "or subtracted ({} vs {})",
-                                           static_cast<const void*>(lhs.owner_), static_cast<const void*>(rhs.owner_));
+                                           lhs.owner_, rhs.owner_);
                 }
             }
         }
@@ -1313,7 +1313,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                 CHUNK_INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
                                        "during the read (offset {}); it would not be seen -- no other thread may "
                                        "write an array that is being read in bulk",
-                                       num_chunk, static_cast<const void*>(this), offset);
+                                       num_chunk, this, offset);
             }
         }
     }

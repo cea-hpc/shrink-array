@@ -54,6 +54,7 @@
 #include <cstdlib>     // std::malloc, std::free, setenv
 #include <cstring>     // std::memcpy
 #include <filesystem>  // std::filesystem::temp_directory_path
+#include <format>      // std::format (the expected address, check 7)
 #include <fstream>     // std::ifstream
 #include <new>         // std::bad_alloc
 #include <string>      // std::string, std::getline
@@ -377,14 +378,22 @@ void check_no_allocation()
     const double v = 2.5;
     g_news.store(0);
     g_counting = true;
-    CHUNK_LOG(warn, general, "no allocation: {} {:.3f} {} {}", 123456789L, v, std::string_view{"view"},
-              static_cast<const void*>(&v));
+    CHUNK_LOG(warn, general, "no allocation: {} {:.3f} {} {}", 123456789L, v, std::string_view{"view"}, &v);
     CHUNK_LOG(debug, general, "filtered out {}", 1);
     CHUNK_LOG_POW2(warn, general, "pow2 no allocation {}", 1);
     g_counting = false;
     check(g_news.load() == 0, "no allocation on the path of a message");
     check(std::string_view(g_last.data(), g_last_len) == "pow2 no allocation 1", "no allocation: the messages arrived");
     logging::set_sink(nullptr);
+
+    // A pointer to an object is spelled as its address, with no cast at the
+    // call; a char pointer stays a string.
+    std::array<char, logging::line_max> buf{};
+    const int                           i   = 3;
+    const char* const                   str = "text";
+    const std::size_t                   len = logging::detail::format_message(buf.data(), "{} {}", &i, str);
+    check(std::string_view(buf.data(), len) == std::format("{} text", static_cast<const void*>(&i)),
+          "a pointer is spelled as its address, a char pointer as a string");
 }
 
 // --- 8 ----------------------------------------------------------------------
@@ -412,7 +421,7 @@ void check_threads()
         }
     }
     std::array<int, n_threads> seen{};
-    int                       broken = 0;
+    int                        broken = 0;
     for (const auto& l : read_lines(g_log_path))
     {
         if (!l.starts_with("[shrink_array][general][I]["))
@@ -566,7 +575,8 @@ void check_fatal(const char* self)
     }
 
     r = run_child(self, 1);
-    check(r.status == abort_status && count(r.out, "In file '") == 1 && count(r.out, "--- Execution Backtrace ---") == 1,
+    check(r.status == abort_status && count(r.out, "In file '") == 1 &&
+              count(r.out, "--- Execution Backtrace ---") == 1,
           "fatal: 8 threads failing at once give one report");
 
     r = run_child(self, 2);

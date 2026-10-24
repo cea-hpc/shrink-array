@@ -404,11 +404,11 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/concept_is_clean_assignement.h
         public/chunk/internal/conditional_counter.h
         public/chunk/internal/cpu_pause.h
+        public/chunk/internal/cst_slot.h
         public/chunk/internal/def_force_inline.h
         public/chunk/internal/deferred_lifecycle_check.h
         public/chunk/internal/deferred_op_pool.h
         public/chunk/internal/deferred_ops_storage.h
-        public/chunk/internal/diag_mutex.h
         public/chunk/internal/for_each_type.h
         public/chunk/internal/freepath_counters.h
         public/chunk/internal/func_p2.h
@@ -421,7 +421,6 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/manager_chunk.h
         public/chunk/internal/manager_chunk_inline.h
         public/chunk/internal/map_helper.h
-        public/chunk/internal/nano_sleeper.h
         public/chunk/internal/phase_guard.h
         public/chunk/internal/zero_one_value_pointer_map.h
         public/chunk/internal/pointer_map_linear.h

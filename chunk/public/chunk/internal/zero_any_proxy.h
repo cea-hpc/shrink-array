@@ -33,6 +33,7 @@
 
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
+#include "chunk/internal/cst_slot.h"          // CstSlot (tab_type_cst_val)
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
@@ -56,14 +57,10 @@ class ManagerChunk;
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
-/**
- * @brief Forward declaration of zero_any::Chunk used by zero_any::Proxy/zero_any::PointerMap.
- * @tparam T element type
- */
-
 namespace zero_any
 {
 
+// Used by zero_any::Proxy and zero_any::PointerMap.
 template <typename T>
 class Chunk;
 
@@ -71,13 +68,16 @@ class Chunk;
  * @brief Registry mapping array keys (pointers) to their table number, for
  *        zero_any: a linear-scan vector while small, switching once and for all
  *        to a hash map past SmallN entries.
- * @tparam T Element type (unused; symmetry with zero::PointerMap).
+ * @tparam T Element type: the keys are arrays of zero_any::Chunk<T>.
  * @tparam SmallN Entry count past which the hash map is used.
  */
 template <typename T, size_t SmallN = 16>
 class PointerMap
 {
   public:
+    /// @brief The key: the array's identity.
+    using Key = ArrayKey<Chunk<T>>;
+
     PointerMap()                                 = default;
     ~PointerMap()                                = default;
     PointerMap(const PointerMap&)                = default;
@@ -91,7 +91,7 @@ class PointerMap
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    [[nodiscard]] int get_num_tab(const void* key) const noexcept
+    [[nodiscard]] int get_num_tab(Key key) const noexcept
     {
         if (!using_big_)
         {
@@ -102,16 +102,16 @@ class PointerMap
                     return tab;
                 }
             }
-            CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}",
-                                   static_cast<const void*>(this), small_.size(), key);
+            CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}", this,
+                                   small_.size(), key);
         }
 
         if (const auto it = big_.find(key); it != big_.end())
         {
             return it->second;
         }
-        CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), big_.size(), key);
+        CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}", this,
+                               big_.size(), key);
     }
 
     /**
@@ -122,7 +122,7 @@ class PointerMap
      *        tab's metadata.
      * @param key Key to remove.
      */
-    void erase(const void* key) noexcept
+    void erase(Key key) noexcept
     {
         if (!using_big_)
         {
@@ -145,8 +145,7 @@ class PointerMap
             }
             catch (const std::exception& e)
             {
-                CHUNK_INVARIANT_FAILED("[zero_any::PointerMap erase] failed: {} (this={} key={})", e.what(),
-                                       static_cast<const void*>(this), key);
+                CHUNK_INVARIANT_FAILED("[zero_any::PointerMap erase] failed: {} (this={} key={})", e.what(), this, key);
             }
         }
     }
@@ -157,7 +156,7 @@ class PointerMap
      * @param key Key to register.
      * @param num_tab Table number to associate with `key`.
      */
-    void insert(const void* key, int num_tab)
+    void insert(Key key, int num_tab)
     {
         if (!using_big_)
         {
@@ -188,7 +187,7 @@ class PointerMap
      * @param new_num_tab New table number.
      * @return false if the key was not present (caller error); true otherwise.
      */
-    bool set_num_tab(const void* key, int new_num_tab) noexcept
+    bool set_num_tab(Key key, int new_num_tab) noexcept
     {
         if (!using_big_)
         {
@@ -219,7 +218,7 @@ class PointerMap
      * @param key_b Second key.
      * @return true if both keys were found (and swapped); false otherwise.
      */
-    bool swap_keys(const void* key_a, const void* key_b) noexcept
+    bool swap_keys(Key key_a, Key key_b) noexcept
     {
         int  na = 0;
         int  nb = 0;
@@ -270,7 +269,7 @@ class PointerMap
 
     /**
      * @brief Call `func` with each registered key.
-     * @tparam F Callable invoked with a `const void*` key.
+     * @tparam F Callable invoked with a Key.
      * @param func Callback to invoke for every key.
      */
     template <typename F>
@@ -293,9 +292,9 @@ class PointerMap
     }
 
   private:
-    std::vector<std::pair<const void*, int>>       small_;
-    ankerl::unordered_dense::map<const void*, int> big_;
-    bool                                           using_big_ = false;
+    std::vector<std::pair<Key, int>>       small_;
+    ankerl::unordered_dense::map<Key, int> big_;
+    bool                                   using_big_ = false;
 };
 
 } // namespace zero_any
@@ -624,7 +623,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
 
     using BaseSpec::BaseSpec;
 
-    /// @brief The single candidate list of a serial build (zero_any::ChunkOmpPolicy<false>).
+    /// @brief The single candidate list of a serial build (zero_any::ChunkThreadPolicy<false>).
     TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially() const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially();
@@ -632,21 +631,19 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
 };
 
 } // namespace zero_any
+
+namespace zero_any
+{
+
 /**
- * @brief zero_any::Proxy class providing element access to a chunked sparse array representation.
+ * @brief Proxy to one element of a zero_any::Chunk<T> chunk.
  *
  * Reads/writes one slot of a zero_any::Chunk<T>, with fast-path/slow-path locking around
  * compression, and manages the per-chunk metadata (second values, type-of-constant
  * flags, compression bookkeeping).
  *
- * @tparam T stored element type
+ * @tparam T Element type.
  */
-
-namespace zero_any
-{
-
-/// @brief Proxy to one element of a zero_any::Chunk<T> chunk (see the class description above).
-/// @tparam T Element type.
 template <typename T>
 // no move assignment on purpose -- assigning a proxy
 // WRITES the element (see its operator=); a defaulted move would rebind it instead.
@@ -668,8 +665,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     friend Base2;
     friend BaseFastCompPolicy;
 
+    // Qualified: an unqualified friend template would declare a new
+    // zero_any::ProxyBaseFastCompPolicy, and make_proxy_with_info's requires
+    // checks on the private setters would then fail silently.
     template <typename, typename, typename, bool>
-    friend class ProxyBaseFastCompPolicy;
+    friend class shrink_array::ProxyBaseFastCompPolicy;
 
     /**
      * @brief Construct a zero_any::Proxy for OpenMP build (atomic reference to values).
@@ -787,7 +787,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
         BaseSpec::clear(num_tab);
         // Released, not just emptied (clear() keeps the capacity): every re-chunk would
         // leave one byte per old chunk behind.
-        parallel_storage_init::NoInitVector<char>().swap(tab_type_cst_val[num_tab]);
+        parallel_storage_init::NoInitVector<CstSlot>().swap(tab_type_cst_val[num_tab]);
         // Same for the candidate flags.
         Base::release_tab_is_int(num_tab);
     }
@@ -795,9 +795,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /**
      * @brief Per-tab array of flags indicating the type of constant value used.
      */
-    static inline constinit internal::Immortal<std::vector<parallel_storage_init::NoInitVector<char>>>
+    static inline constinit internal::Immortal<std::vector<parallel_storage_init::NoInitVector<CstSlot>>>
         tab_type_cst_val_storage_{}; ///< type-of-constant flags
-    static inline std::vector<parallel_storage_init::NoInitVector<char>>& tab_type_cst_val =
+    static inline std::vector<parallel_storage_init::NoInitVector<CstSlot>>& tab_type_cst_val =
         tab_type_cst_val_storage_.value;
 
     /**
@@ -1055,7 +1055,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     template <typename U, typename Op>
     void apply_compound_operation(Op op, InT<U> v) noexcept; // InT: see assign_impl
 
-    char* ptr_type_cst_ = nullptr; ///< pointer into tab_type_cst_val[num_tab]
+    CstSlot* ptr_type_cst_ = nullptr; ///< pointer into tab_type_cst_val[num_tab]
 };
 
 } // namespace zero_any

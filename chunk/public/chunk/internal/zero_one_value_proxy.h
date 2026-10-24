@@ -21,7 +21,6 @@
 #include <cstddef>  // std::size_t
 #include <memory>   // std::addressof (operator=: operator& is deleted)
 #include <ostream>  // std::ostream
-#include <vector>   // std::vector
 
 #include "chunk/bit.h"                      // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"            // InT<T>
@@ -56,16 +55,6 @@ class Chunk;
 
 } // namespace zero_one_value
 
-/**
- * @brief zero_one_value::Proxy class for managing operations on a zero_one_value::Chunk<T>.
- *
- * This class encapsulates read/write operations, compression logic,
- * and constant value handling within a chunk. It is optimized for
- * multithreaded environments and supports optional OpenMP integration.
- *
- * @tparam T The data type managed by the chunk.
- */
-
 namespace zero_one_value
 {
 
@@ -98,7 +87,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @param key Array pointer to resolve metadata for.
      * @post second_value and ind are valid; num_tab unchanged.
      */
-    void set_info_second_value_ind_from_key(const void* key);
+    void set_info_second_value_ind_from_key(ArrayKey<Chunk<T>> key);
 
     /**
      * @brief Load all compression metadata from global map
@@ -259,7 +248,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
      *        ptr_on_array.
      * @param key Array pointer to resolve num_tab for.
      */
-    void set_info_second_value_ind_from_key(this Derived& self, const void* key)
+    void set_info_second_value_ind_from_key(this Derived& self, ArrayKey<Chunk<T>> key)
     {
         static_cast<ProxySpec&>(self).inf_array_ = self.get_info_second_value(key);
     }
@@ -506,13 +495,13 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     }
 
     /**
-     * @brief Real (non-stub) async-context array pointer lookup: the ctx
-     *        already carries ptr_on_array directly, so this is a plain cast.
+     * @brief Real (non-stub) async-context array lookup: the ctx already
+     *        carries ptr_on_array.
      * @param ctx Async write context.
      */
-    static const T* get_ptr_on_array_async(auto* ctx) noexcept
+    static ArrayKey<Chunk<T>> get_ptr_on_array_async(auto* ctx) noexcept
     {
-        return static_cast<const T*>(ctx->ptr_on_array);
+        return ctx->ptr_on_array;
     }
 
     // ------------------------------------------------------------------
@@ -716,8 +705,15 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
     static constexpr bool is_not_bool = !is_bool;
 };
 
-/// @brief Proxy to one element of a zero_one_value::Chunk<T> chunk: reads, assignments and compound operators on it.
-/// @tparam T Element type.
+/**
+ * @brief Proxy to one element of a zero_one_value::Chunk<T> chunk: reads, assignments and compound
+ *        operators on it.
+ *
+ * Encapsulates the read/write operations, the compression logic and the constant-value handling
+ * of one element of a chunk, for serial and threaded builds.
+ *
+ * @tparam T Element type.
+ */
 template <typename T>
 // no move assignment on purpose -- assigning a proxy
 // WRITES the element (see its operator=); a defaulted move would rebind it instead.
@@ -988,12 +984,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     const T* operator&() const = delete;
 
     /**
-     * @brief Pointer to the owning array (used as the compression-metadata
-     *        map key).
+     * @brief The owning array (the compression-metadata map key).
      */
-    [[nodiscard]] const T* get_ptr_on_array() const noexcept
+    [[nodiscard]] ArrayKey<Chunk<T>> get_ptr_on_array() const noexcept
     {
-        return static_cast<const T*>(ptr_on_array_);
+        return ptr_on_array_;
     }
 
     // ========================================================================
@@ -1132,7 +1127,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @param ptr Array pointer to look up.
      * @return The registered metadata tuple.
      */
-    [[nodiscard]] static InfArrayT get_info_second_value(const void* ptr) noexcept
+    [[nodiscard]] static InfArrayT get_info_second_value(ArrayKey<Chunk<T>> ptr) noexcept
     {
         return share_info_array->get_info_second_value(ptr);
     }

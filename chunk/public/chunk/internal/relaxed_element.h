@@ -41,7 +41,7 @@
 #include <atomic>      // std::atomic_ref, std::memory_order_relaxed
 #include <type_traits> // std::is_same_v, std::is_trivially_copyable_v
 
-#include "chunk/chunk_traits.h" // zero_any::Chunk fwd decl
+#include "chunk/chunk_traits.h" // is_zero_any_family_v
 
 namespace shrink_array::internal
 {
@@ -67,10 +67,9 @@ template <typename T>
 inline constexpr bool relaxed_element_access_v = relaxed_element_access<T>();
 
 /// @brief The element stores of this chunk type must be relaxed atomics: some
-///        reader looks at elements it does not own (zero_any only, see above).
+///        reader looks at elements it does not own (the zero_any family, see above).
 template <typename ChunkT, typename T>
-inline constexpr bool relaxed_element_stores_v =
-    std::is_same_v<ChunkT, zero_any::Chunk<T>> && relaxed_element_access_v<T>;
+inline constexpr bool relaxed_element_stores_v = is_zero_any_family_v<ChunkT> && relaxed_element_access_v<T>;
 
 /// @brief Load @p *ptr through a relaxed std::atomic_ref.
 /// @param ptr Element to read.

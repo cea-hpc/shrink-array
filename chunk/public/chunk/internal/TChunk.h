@@ -53,6 +53,12 @@ using TChunk2Comp = std::vector<VectorTuple4ChunkInt2<ChunkTemplate, T>>;
 template <template <typename> class ChunkTemplate, typename T>
 using TChunk2AComp = VectorTuple4ChunkInt2<ChunkTemplate, T>;
 
+/// @brief TChunk2AComp named by the chunk type rather than by its template:
+///        the same type, for the zero_any family's CRTP bases, which know
+///        Derived and not its template.
+template <typename ChunkType>
+using TChunk2ACompOf = std::vector<std::tuple<ChunkType*, int, int, ChunkElems>>;
+
 /// @brief Chunk's candidate list (tuples: see VectorTuple4ChunkInt2).
 template <template <typename> class ChunkTemplate, typename T>
 using TChunkComp = VectorTuple4ChunkInt2<ChunkTemplate, T>;

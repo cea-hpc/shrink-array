@@ -25,15 +25,17 @@
 #include <vector>          // std::vector
 
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
+#include "chunk/chunk_traits.h"                     // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
 #include "chunk/internal/tab_cst_val2_holder.h"     // TabCstVal2Holder, SecondValueRef
 #include "chunk/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_RANK
 #include "chunk/ring_log_debug.h"                   // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
+#include "chunk/internal/cst_slot.h"                // CstSlot, cst_slot_of
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
 #include "chunk/internal/chunk_stats.h"             // increm_chunk_write
 
-#include "chunk/internal/TChunk.h"   // TChunk2AComp, VectorTuple4ChunkInt2
+#include "chunk/internal/TChunk.h"   // TChunk2ACompOf, VectorTuple4ChunkInt2
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 
@@ -55,21 +57,13 @@ class Proxy;
 template <template <typename> typename ChunkT, typename T>
 class ManagerChunk;
 
-/*!
- * \brief Block compression class (power of 2) 2 values automatic detection
- * This class manages a chunk of values that can either be constant (val1 or val2)
- * or dynamically allocated. It supports compression by identifying and optimizing
- * for repeated values.
- *
- * \tparam T Type of the values stored in the chunk
- */
 
 namespace zero_any
 {
 
 // ─── Concurrent (OMP) chunk operations extracted from zero_any ──────────────
 // CRTP policy base with the lock-free CAS operations of OpenMP builds only: zero_any inherits it
-// through the OpenMP specialisation of zero_any::ChunkOmpPolicy, so in a serial build the methods do not
+// through the OpenMP specialisation of zero_any::ChunkThreadPolicy, so in a serial build the methods do not
 // exist. Reaches zero_any's bases via self() (Base = SecondValueChunkBase, Holder = TabCstVal2Holder).
 /// @brief zero_any's lock-free CAS operations on `values` (OpenMP builds only).
 template <typename T, typename Derived>
@@ -325,7 +319,7 @@ class ChunkStateQueries
  * @details A serial build has no thread ranks, no CAS window and no in-flight
  *          compression to wait out, so it materialises and clears a chunk
  *          differently; each specialisation below declares exactly the verbs
- *          its mode has -- the technique of ChunkOmpPolicy / zero_one_value::ChunkOmpPolicy.
+ *          its mode has -- the technique of ChunkThreadPolicy / zero_one_value::ChunkThreadPolicy.
  *          The OpenMP specialisation also carries the CAS operations
  *          (zero_any::ChunkConcurrentOps).
  *
@@ -336,11 +330,11 @@ class ChunkStateQueries
  * @tparam Enabled build_config::threaded
  */
 template <typename T, typename Derived, bool Enabled = build_config::threaded>
-class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConcurrentOps<T, Derived>
+class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConcurrentOps<T, Derived>
 {
   public:
     using Base                   = SecondValueChunkBase<T, Derived>;
-    using ManagerChunk2A         = ManagerChunk<Chunk, T>;
+    using ManagerChunk2A         = typename ChunkTraits<Derived>::ManagerType;
     using CompressionManagerType = CompressionManager<T, Derived>;
 
     using Base::is_bool;
@@ -384,7 +378,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConc
      * \param ptr_second_value The chunk's second-value slot.
      * \param thr_rank         Rank whose pool receives the released buffer.
      */
-    void clear(this Derived& self, char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
+    void clear(this Derived& self, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
 
     /*!
      * \brief Release this chunk's buffer and point it back at a constant --
@@ -397,7 +391,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConc
      */
     void block_clear(this Derived&     self,
                      int               num_compress_value,
-                     char*             ptr_type_cst,
+                     CstSlot*          ptr_type_cst,
                      SecondValueRef<T> ptr_second_value,
                      int               thr_rank,
                      T*                cst2_ptr);
@@ -413,7 +407,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConc
      */
     void clear_int_st(this Derived&     self,
                       int               num_compress_value,
-                      char*             ptr_type_cst,
+                      CstSlot*          ptr_type_cst,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
                       T*                new_cst_val2_ptr = nullptr);
@@ -424,7 +418,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConc
      * \param ptr_type_cst       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      */
-    void clear_st(this Derived& self, int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+    void clear_st(this Derived& self, int num_compress_value, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value)
     {
         self.clear_int_st(num_compress_value, ptr_type_cst, ptr_second_value, CHUNK_PMP_THREAD_RANK);
     }
@@ -436,7 +430,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConc
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Shared by the three
     ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Derived* v, std::size_t count) noexcept;
 };
 
 /**
@@ -446,18 +440,18 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>, public ChunkConc
  * @tparam Derived CRTP derived chunk type (zero_any::Chunk<T>)
  */
 template <typename T, typename Derived>
-class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
+class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
 {
   public:
     using Base           = SecondValueChunkBase<T, Derived>;
-    using ManagerChunk2A = ManagerChunk<Chunk, T>;
+    using ManagerChunk2A = typename ChunkTraits<Derived>::ManagerType;
 
     using Base::is_bool;
     using Base::is_not_bool;
     using Base::values_;
 
     /// @brief The single candidate list of a serial build.
-    static TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially() noexcept
+    static TChunk2ACompOf<Derived>& get_vec_tuple_to_compress_potentially() noexcept
     {
         return ManagerChunk2A::chunk2a_to_compress_potentially;
     }
@@ -479,47 +473,57 @@ class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived
      */
     void clear_int_st(this Derived&     self,
                       int               num_compress_value,
-                      char*             ptr_type_cst,
+                      CstSlot*          ptr_type_cst,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
                       T*                new_cst_val2_ptr = nullptr);
 
 
     /// @brief Compress to the FIRST constant and forget the second value, if materialised.
-    void clear(this Derived& self, char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear(this Derived& self, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
     /// @brief Unconditional twin of clear(char*, T*): no written() test.
-    void clear_st(this Derived& self, char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear_st(this Derived& self, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
     /// @brief Release the buffer outright (no rank pool) and point at a constant.
     void block_clear(this Derived&     self,
                      int               num_compress_value,
-                     char*             ptr_type_cst,
+                     CstSlot*          ptr_type_cst,
                      SecondValueRef<T> ptr_second_value,
                      int /*thr_rank*/,
                      T* cst2_ptr);
 };
 
-/// @brief Chunk of values compressible to the first constant or to a second constant shared through the
-///        TabCstVal2Holder registry (see the class description above zero_any::ChunkConcurrentOps).
-/// @tparam T Element type.
-template <typename T>
+/**
+ * @brief The body of zero_any::Chunk, shared by the zero_any family
+ *        (chunk_traits.h): a member's chunk class derives from
+ *        ChunkImpl<T, itself>.
+ * @details Everything that names the chunk type names Derived: the candidate
+ *          lists, the manager (ChunkTraits<Derived>::ManagerType) and the proxy
+ *          (Base::ProxyType) are per chunk type, so a member gets its own.
+ *          zero_any::Chunk<T> derives from ChunkImpl<T, Chunk<T>> and adds
+ *          nothing.
+ * @tparam T       Element type.
+ * @tparam Derived The member's chunk class.
+ */
+template <typename T, typename Derived>
 // no move operations on purpose -- a move falls back to
 // the copy, which carries the per-chunk state the way the copy constructor documents.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, public ChunkStateQueries<T, Chunk<T>>
+class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<T>, public ChunkStateQueries<T, Derived>
 {
   public:
-    friend class SecondValueChunkBase<T, Chunk>;
-    friend class Proxy<T>;
+    using Base         = SecondValueChunkBase<T, Derived>;                      ///< The CRTP chunk base.
+    using ThreadPolicy = ChunkThreadPolicy<T, Derived, build_config::threaded>; ///< This build's thread-model policy.
+    using ProxyType    = typename Base::ProxyType;                              ///< The member's write proxy.
 
-    using Base      = SecondValueChunkBase<T, Chunk>;                   ///< The CRTP chunk base.
-    using OmpPolicy = ChunkOmpPolicy<T, Chunk, build_config::threaded>; ///< This build's thread-model policy.
+    friend class SecondValueChunkBase<T, Derived>;
+    friend ProxyType;
 
-    using ManagerChunk2A = ManagerChunk<Chunk, T>;
+    using ManagerChunk2A = typename ChunkTraits<Derived>::ManagerType;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
-    using VecTupleChunkA2pInt2  = std::vector<std::tuple<Chunk*, int, int, ChunkElems>>;
-    using VecTupleChunkA2pTint2 = std::vector<std::tuple<Chunk*, T, int, int, ChunkElems>>;
+    using VecTupleChunkA2pInt2  = std::vector<std::tuple<Derived*, int, int, ChunkElems>>;
+    using VecTupleChunkA2pTint2 = std::vector<std::tuple<Derived*, T, int, int, ChunkElems>>;
 
     using Base::allocator_data;
     using Base::first_value;
@@ -528,30 +532,30 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
     using Holder = TabCstVal2Holder<T>;
 
     // block_clear / clear_st / clear / clear_int_st / create_value* live on
-    // zero_any::ChunkOmpPolicy, one specialisation per mode (see above). Both declare
+    // zero_any::ChunkThreadPolicy, one specialisation per mode (see above). Both declare
     // these names; the in-class bodies below call them unqualified.
-    using OmpPolicy::block_clear;
-    using OmpPolicy::clear;
-    using OmpPolicy::clear_int_st;
-    using OmpPolicy::clear_st;
-    using OmpPolicy::create_value;
-    using OmpPolicy::create_value_bool;
+    using ThreadPolicy::block_clear;
+    using ThreadPolicy::clear;
+    using ThreadPolicy::clear_int_st;
+    using ThreadPolicy::clear_st;
+    using ThreadPolicy::create_value;
+    using ThreadPolicy::create_value_bool;
 
     // Statistics variant tag (CHUNK_STATS): 2 = zero_any.
     static constexpr int stat_variant = 2;
 
-    Chunk()  = default;
-    ~Chunk() = default;
+    ChunkImpl()  = default;
+    ~ChunkImpl() = default;
 
     /// @brief Copy the per-chunk state of @p other (Base::values_store(other.values_load())).
-    Chunk(const Chunk& other)
+    ChunkImpl(const ChunkImpl& other)
     {
         Base::values_store(other.values_load()); // the whole per-chunk state
     }
 
     /// @brief Copy the per-chunk state of @p other unless it is this chunk.
     /// @return *this.
-    Chunk& operator=(const Chunk& other)
+    ChunkImpl& operator=(const ChunkImpl& other)
     {
         if (this != &other)
         {
@@ -572,20 +576,20 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
      * @brief Set constant type to val1
      * @param ptr_type_cst Pointer to type indicator
      */
-    static void set_cst_val_to_cst_val1(char* ptr_type_cst) noexcept
+    static void set_cst_val_to_cst_val1(CstSlot* ptr_type_cst) noexcept
     {
-        *ptr_type_cst = is_val1;
+        *ptr_type_cst = CstSlot::first;
     }
     /**
      * @brief Set constant type to val2
      * @param ptr_type_cst Pointer to type indicator
      */
-    static void set_cst_val_to_cst_val2(char* ptr_type_cst) noexcept
+    static void set_cst_val_to_cst_val2(CstSlot* ptr_type_cst) noexcept
     {
-        *ptr_type_cst = is_val2;
+        *ptr_type_cst = CstSlot::second;
     }
 
-    static void set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_cst) noexcept;
+    static void set_cst_val_to_cst_val(int num_compress_value, CstSlot* ptr_type_cst) noexcept;
 
     /**
      * @brief Initialize values depending on constant type
@@ -595,9 +599,9 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
     ///        point at when the type says cst_val2 is found by value in the
     ///        registry (there is no per-chunk copy of it). May be null when
     ///        the type is cst_val1.
-    void init_values_cst_val(const char* ptr_type_cst, SecondValueRef<T> ptr_second_value) noexcept
+    void init_values_cst_val(const CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value) noexcept
     {
-        if (*ptr_type_cst == is_val1)
+        if (*ptr_type_cst == CstSlot::first)
         {
             Base::values_ = Base::get_cst_val1();
             return;
@@ -634,7 +638,7 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
     }
 
     /// @brief Rank @p thr's candidate list.
-    static TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
+    static TChunk2ACompOf<Derived>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
     {
         return ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
     }
@@ -643,18 +647,18 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
     ///        constant; a no-op otherwise (already materialised).
     /// @param ptr_second_value The second value to fill from, when that is
     ///        the constant it holds.
-    void alloc_chunk(SecondValueRef<T> ptr_second_value)
+    void alloc_chunk(this Derived& self, SecondValueRef<T> ptr_second_value)
     {
-        if (this->is_cst_val())
+        if (self.is_cst_val())
         {
             // bool has its own materialiser (the second value is the flag).
             if constexpr (is_not_bool)
             {
-                create_value(false, ptr_second_value);
+                self.create_value(false, ptr_second_value);
             }
             else
             {
-                create_value_bool(false);
+                self.create_value_bool(false);
             }
         }
     }
@@ -663,9 +667,9 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
     /// @param ptr_second_value The second value to fill from.
     /// @param thr_rank Calling thread's rank (OpenMP builds; ignored in serial
     ///        builds).
-    void alloc_chunk(SecondValueRef<T> ptr_second_value, [[maybe_unused]] int thr_rank)
+    void alloc_chunk(this Derived& self, SecondValueRef<T> ptr_second_value, [[maybe_unused]] int thr_rank)
     {
-        if (this->is_cst_val())
+        if (self.is_cst_val())
         {
             if constexpr (chunk_config::stats)
             {
@@ -676,35 +680,35 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
             {
                 if constexpr (is_not_bool)
                 {
-                    create_value(false, ptr_second_value, thr_rank);
+                    self.create_value(false, ptr_second_value, thr_rank);
                 }
                 else
                 {
-                    create_value_bool(false, thr_rank);
+                    self.create_value_bool(false, thr_rank);
                 }
             }
             else
             {
                 if constexpr (is_not_bool)
                 {
-                    create_value(false, ptr_second_value);
+                    self.create_value(false, ptr_second_value);
                 }
                 else
                 {
-                    create_value_bool(false);
+                    self.create_value_bool(false);
                 }
             }
         }
     }
 
-    void compress(int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
+    void compress(this Derived& self, int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
 
     /// @brief Sets every element of this chunk to @p v by its state alone,
     ///        with no buffer touched: a whole-chunk fill (fill_range, a
     ///        uniform copy_range span). Non-bool T only.
     /// @pre   Serial contract (no concurrent writer, reader or pass on the
     ///        array); the array's deferred writes drained.
-    void fill_constant_st(int thr_rank, int num_chunk, int num_tab, InT<T> v);
+    void fill_constant_st(this Derived& self, int thr_rank, int num_chunk, int num_tab, InT<T> v);
 
     static void compress_chunk_to_compress(bool apply);
 
@@ -722,14 +726,11 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
     }
     static bool have_chunk_to_compress(int max_thr);
 
-    static void make_block_compression(int thr, Proxy<T>* proxy2a);
+    static void make_block_compression(int thr, ProxyType* proxy2a);
 
   private:
-    using ChunkType              = Chunk;
+    using ChunkType              = Derived;
     using CompressionManagerType = CompressionManager<T, ChunkType>;
-
-    static constexpr char is_val1 = 0;
-    static constexpr char is_val2 = 1;
 
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
@@ -759,7 +760,8 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
                                                    VecTupleChunkA2pTint2& ll_compt2,
                                                    bool                   claimed = false);
 
-    void fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
+    void fill_list_to_compress(this Derived&          self,
+                               VecTupleChunkA2pInt2&  ll_compt1,
                                VecTupleChunkA2pTint2& ll_compt2,
                                int                    num_chunk,
                                int                    num_tab,
@@ -767,6 +769,15 @@ class Chunk : public ChunkOmpPolicy<T, Chunk<T>>, public TabCstVal2Holder<T>, pu
                                bool                   claimed = false);
 
     static inline constinit internal::LazyImmortal<ManagerChunk2A> s_manager_;
+};
+
+/// @brief Chunk of values compressible to the first constant or to a second constant shared through the
+///        TabCstVal2Holder registry, detected automatically. All of it is ChunkImpl's, shared by the
+///        zero_any family.
+/// @tparam T Element type.
+template <typename T>
+class Chunk : public ChunkImpl<T, Chunk<T>>
+{
 };
 
 } // namespace zero_any

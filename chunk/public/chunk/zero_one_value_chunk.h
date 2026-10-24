@@ -370,7 +370,7 @@ class ChunkCounterPolicy
  * @details A serial build has no thread ranks, no CAS window and no per-thread
  *          free-lists, and maintains per-chunk element counters that the parallel
  *          path does not; each specialisation declares exactly the verbs its mode
- *          has (as ChunkOmpPolicy does for zero). Sits between
+ *          has (as ChunkThreadPolicy does for zero). Sits between
  *          zero_one_value::ChunkFastCompPolicy and SecondValueChunkBase, so zero_one_value inherits both through one
  * path.
  *
@@ -379,7 +379,7 @@ class ChunkCounterPolicy
  * @tparam Enabled build_config::threaded
  */
 template <typename T, typename Derived, bool Enabled = build_config::threaded>
-class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>
+class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
 {
   public:
     using Base          = SecondValueChunkBase<T, Derived>;
@@ -525,7 +525,7 @@ class ChunkOmpPolicy : public SecondValueChunkBase<T, Derived>
  * @tparam Derived CRTP derived chunk type (zero_one_value::Chunk<T>)
  */
 template <typename T, typename Derived>
-class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
+class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
 {
   public:
     using Base      = SecondValueChunkBase<T, Derived>;
@@ -596,7 +596,7 @@ class ChunkOmpPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived
 
 /// @brief zero_one_value's batched candidate queue and block compression (fast-block builds).
 template <typename T, typename Derived, bool Enabled>
-class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derived>
+class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Derived>
 {
   public:
     using ManagerChunk2 = ManagerChunk<Chunk, T>;
@@ -950,7 +950,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkOmpPolicy<T, Derive
 ///        no candidate list, so every query answers "empty" and every pass
 ///        is a no-op.
 template <typename T, typename Derived>
-class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>, public ChunkSpec<T>
+class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Derived>, public ChunkSpec<T>
 {
   public:
     /// (chunk, num_chunk, num_tab, n_elems); see the true specialisation.
@@ -1028,15 +1028,15 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
         ChunkCounterPolicy; ///< The counter base, zero_one_value::ChunkCounterPolicy<use_compression_with_counter>.
 
     using FastCompPolicy = ChunkFastCompPolicy<T, Chunk, chunk_config::use_fast_block_compression>;
-    using OmpPolicy      = ChunkOmpPolicy<T, Chunk, build_config::threaded>;
+    using ThreadPolicy   = ChunkThreadPolicy<T, Chunk, build_config::threaded>;
 
-    // Both OmpPolicy specialisations declare these (with mode-specific
+    // Both ThreadPolicy specialisations declare these (with mode-specific
     // signatures); the in-class bodies below call them unqualified.
-    using OmpPolicy::block_clear;
-    using OmpPolicy::clear_int_st;
-    using OmpPolicy::clear_st;
-    using OmpPolicy::create_value;
-    using OmpPolicy::create_value_bool;
+    using ThreadPolicy::block_clear;
+    using ThreadPolicy::clear_int_st;
+    using ThreadPolicy::clear_st;
+    using ThreadPolicy::create_value;
+    using ThreadPolicy::create_value_bool;
 
     using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk*, int, int>>;
 
@@ -1060,7 +1060,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /// @brief Get reference to the chunk manager (static access)
     /// @return Reference to the ManagerChunk2 static instance
-    /// @details On the class, not on the OpenMP policy: ChunkBase::release_to_owner()
+    /// @details On the class, not on the threaded policy: ChunkBase::release_to_owner()
     ///          names self.get_manager() in every build (unreachable serially but
     ///          must compile).
     ///
@@ -1393,7 +1393,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     // --- where the rest of zero_one_value lives ----------------------------------
     // Materialisation and clearing (create_value*, clear*, block_clear) are on
-    // zero_one_value::ChunkOmpPolicy, one specialisation per mode; the queue-driven compression
+    // zero_one_value::ChunkThreadPolicy, one specialisation per mode; the queue-driven compression
     // (compress*, fill_list*, compress_chunk_to_compress*) is on
     // zero_one_value::ChunkFastCompPolicy<T, zero_one_value::Chunk, true>, next to make_block_compression.
 

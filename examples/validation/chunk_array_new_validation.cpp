@@ -52,18 +52,19 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/zero_array.h"     // zero::Chunk<T> complete (zero_chunk.h): its operator new[]
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Chunk<T> complete (zero_chunk.h): its operator new[]
 #include "chunk/zero_one_value_array.h" // zero_one_value::Chunk<T> complete: its operator new[]
 #include "chunk/zero_any_array.h"       // zero_any::Chunk<T> complete (zero_any_chunk.h): its operator new[]
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero*
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/print.h"       // shrink_array::println
 
-// The *OmpPolicy serial specialisations declare no array-new, so there is
-// nothing to test without OpenMP; CMake builds this target under OMP alone.
-static_assert(shrink_array::build_config::use_openmp, "OpenMP builds only: the array-new is the *OmpPolicy's");
+// The array-new is the threaded *ThreadPolicy's (the serial specialisations declare
+// none), and the "region" cases call it from an `omp single`: CMake builds this
+// target under OMP alone, so the std backend's array-new is not covered here.
+static_assert(shrink_array::build_config::use_openmp, "OpenMP builds only: the region cases use omp single");
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp

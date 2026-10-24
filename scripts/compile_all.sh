@@ -196,12 +196,14 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
   --llvm-cs=<N>    Also build an llvm RelWithDebInfo variant with CHUNK_SIZE=N (power of two).
   -h, --help    Show this help.
 
-The std threading backend (CHUNK_THREADS=std) is built next to the OpenMP one:
-std-llvm and std-llvm-check here, std-gnu, std-gnu-check and the TSan build in
-compile_all_gnu.sh. They lengthen the build; --target='omp-*' leaves them out.
+The std threading backend (CHUNK_THREADS=std) is built next to the OpenMP one,
+with every compiler: std-llvm, std-llvm-check, std-oneapi, std-aocc (std-nvhpc
+with nvhpc) here, std-gnu, std-gnu-check and the TSan build in
+compile_all_gnu.sh. They lengthen the build; --target='omp-*' leaves them out,
+--target='std-*' makes them alone.
 Their TBB bench (shrink_bench_tbb_*) and tbb_validation need oneTBB: made when
-TBBROOT is set (oneAPI vars.sh, spack load intel-oneapi-tbb) or CHUNK_WITH_TBB=1,
-left out with CHUNK_WITH_TBB=0 (the script says which at the start). The std
+one is found (site_env.sh: TBBROOT, CHUNK_TBB_DIR, \$CCCWORKDIR/tbb-<arch>) or
+CHUNK_WITH_TBB=1, left out with CHUNK_WITH_TBB=0 (the script says which at the start). The std
 TSan build gets TBB from CHUNK_TBB_TSAN_DIR only (a oneTBB built with TSan).
 EOF
 }
@@ -496,6 +498,14 @@ else
         run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-oneapi/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
     launch_build "$build_rep/cmake-build-oneapi/$arch" $BUILD_FLAGS
+
+    # The std backend under icpx, with the TBB bench when oneTBB is found
+    # (TBB_CMAKE_OPT, set_tbb_options): TBB's threads against OpenMP's, same compiler.
+    set_build_header 'Compiling oneapi std backend (no openmp):'
+    if [ "$BUILD_ONLY" = false ]; then
+        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-oneapi/$arch $ONEAPI_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+    fi
+    launch_build "$build_rep/cmake-build-std-oneapi/$arch" $BUILD_FLAGS
 fi
 
 set_build_header 'Compiling oneapi debug openmp:'
@@ -532,6 +542,12 @@ if [ -n "$latest_nvhpc" ]; then
                     run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc release configure failed'"
                 fi
                 launch_build "$build_rep/cmake-build-omp-nvhpc/$arch" $BUILD_FLAGS
+
+                set_build_header 'Compiling nvhpc std backend (no openmp):'
+                if [ "$BUILD_ONLY" = false ]; then
+                    run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc std configure failed'"
+                fi
+                launch_build "$build_rep/cmake-build-std-nvhpc/$arch" $BUILD_FLAGS
             fi
 
             set_build_header 'Compiling nvhpc debug openmp:'
@@ -894,6 +910,12 @@ else
             run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
         fi
         launch_build "$build_rep/cmake-build-omp-aocc/$arch" $BUILD_FLAGS
+
+        set_build_header 'Compiling aocc std backend (no openmp):'
+        if [ "$BUILD_ONLY" = false ]; then
+            run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        fi
+        launch_build "$build_rep/cmake-build-std-aocc/$arch" $BUILD_FLAGS
     fi
 
     set_build_header 'Compiling aocc debug openmp:'

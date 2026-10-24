@@ -259,7 +259,7 @@ template <std::integral Index, typename Function, typename... Extra>
     requires std::invocable<const Function&, Index>
 void parallel_for(Index first, Index last, const Function& f, Extra&&... extra)
 {
-    shrink_array::tbb::parallel_for(first, last, Index(1), f, std::forward<Extra>(extra)...);
+    tbb::parallel_for(first, last, Index(1), f, std::forward<Extra>(extra)...);
 }
 
 #undef SHRINK_TBB_ADAPTOR_OPENMP_REFUSED

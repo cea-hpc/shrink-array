@@ -24,7 +24,7 @@
 
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with zero_one_value::PointerMap
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
-#include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
+#include "chunk/internal/array_chunk_for.h"    // ArrayKey (the registry keys)
 #include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, ElementAddable, ElementModulable
 #include "chunk/internal/in_t.h"                         // InT<T>
@@ -55,15 +55,18 @@ namespace zero
  * @tparam T Element type this registry is keyed on.
  */
 template <typename T>
-class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void*, int>>>
+class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<Chunk<T>>, int>>>
 {
   public:
+    /// @brief The key: the array's identity.
+    using Key = ArrayKey<Chunk<T>>;
+
     /**
      * @brief Register @p key with table number @p num_tab.
      * @param key Array address used as the key.
      * @param num_tab Table number associated with the key.
      */
-    void insert(void* key, int num_tab)
+    void insert(Key key, int num_tab)
     {
         vec_.emplace_back(key, num_tab);
     }
@@ -74,7 +77,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    [[nodiscard]] int get_num_tab(const void* key) const noexcept
+    [[nodiscard]] int get_num_tab(Key key) const noexcept
     {
         for (const auto& [k, v] : vec_)
         {
@@ -84,8 +87,8 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void
             }
         }
 
-        CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}",
-                               static_cast<const void*>(this), vec_.size(), static_cast<const void*>(key));
+        CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
+                               key);
     }
 
     /**
@@ -96,7 +99,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void
      * @param key_b Second key.
      * @return false if either key is absent (nothing is changed).
      */
-    bool swap_keys(const void* key_a, const void* key_b) noexcept
+    bool swap_keys(Key key_a, Key key_b) noexcept
     {
         return this->swap_entries(key_a, key_b);
     }
@@ -109,7 +112,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<const void
     using InfArrayT = int;
 
     // Storage: a std::vector (zero_one_value::PointerMap uses a std::deque, see there).
-    using Linear = PointerMapLinear<InfArrayT, std::vector<std::pair<const void*, InfArrayT>>>;
+    using Linear = PointerMapLinear<InfArrayT, std::vector<std::pair<Key, InfArrayT>>>;
     /// Brings the base's storage back into this class's scope (dependent base).
     using Linear::vec_;
 };
@@ -233,10 +236,10 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @brief Async-context version of the table-number lookup: resolves
      *        which array a given chunk pointer belongs to.
      * @param ctx The async context, which holds the table number captured at enqueue.
-     * @param ptr Chunk pointer to look up.
+     * @param ptr The array the context was enqueued from.
      * @return The table number @p ptr belongs to.
      */
-    [[nodiscard]] static int get_num_tab_async(auto* ctx, [[maybe_unused]] const void* ptr) noexcept
+    [[nodiscard]] static int get_num_tab_async(auto* ctx, [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept
     {
         // The context's num_tab, captured at enqueue: the one the replay proxy
         // is armed with (make_proxy_with_info), without a registry scan per
@@ -843,8 +846,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
             // it runs inside a flush, so go straight to the gated read.
             if (chunk_size_frozen_ == 0U && ptr_on_array_ != nullptr) [[likely]]
             {
-                using ArrayType = ArrayChunkForT<ChunkType>;
-                if (!static_cast<const ArrayType*>(ptr_on_array_)->is_chunk_dirty(num_chunk_)) [[likely]]
+                if (!ptr_on_array_->is_chunk_dirty(num_chunk_)) [[likely]]
                 {
                     // A pure read, like element_at: inside a ReadSection, or a
                     // pass in the region may release the buffer between the
@@ -867,11 +869,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     const T* operator&() const = delete;
 
     /**
-     * @brief Resolve which array (table) a given pointer belongs to.
-     * @param ptr Pointer to look up.
-     * @return The table number @p ptr belongs to.
+     * @brief The table number of array @p ptr.
+     * @param ptr The array to look up.
+     * @return The table number registered for @p ptr.
      */
-    [[nodiscard]] static int get_num_tab(const void* ptr) noexcept
+    [[nodiscard]] static int get_num_tab(ArrayKey<Chunk<T>> ptr) noexcept
     {
         return share_info_array->get_num_tab(ptr);
     }
@@ -882,7 +884,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @param array_ptr This proxy's array (ptr_on_array).
      * @return The table number of @p array_ptr.
      */
-    [[nodiscard]] int get_num_tab_cached(const void* array_ptr) const noexcept
+    [[nodiscard]] int get_num_tab_cached(ArrayKey<Chunk<T>> array_ptr) const noexcept
     {
         return this->num_tab_ >= 0 ? this->num_tab_ : get_num_tab(array_ptr);
     }

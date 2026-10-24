@@ -69,8 +69,9 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
 1. **This plan** and the inventory (this file).
 2. **D**: `omp critical` -> `std::mutex`, `omp atomic` -> `std::atomic`. No
    backend involved; the OpenMP build behaves the same. *Done*: the six
-   unnamed criticals (reports) hold `internal::diag_print_mutex()`
-   (`diag_mutex.h`), the three `fast_alloc_ladder` ones
+   unnamed criticals (reports) held `internal::diag_print_mutex()`
+   (`diag_mutex.h`, since removed: the reports are now `CHUNK_LOG` lines, one
+   write each), the three `fast_alloc_ladder` ones
    `StaticConstArray::ladder_mutex()`, the advisor's two `omp atomic` are
    relaxed `std::atomic_ref::fetch_add`. Left for step 5: the ladder takes its
    lock only when `FAST_ALLOC_PMP_IN_PARALLEL_REGION`, an OpenMP query.
@@ -176,7 +177,8 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    except the three shapes of the phase contract only OpenMP has
    (`finalize_parallel_phase_only_flush`, `finalize_parallel_phase_after_flush`,
    `finalize_barrier_phase`), which keep `use_openmp`. The `*OmpPolicy`
-   class names stay. The examples and harnesses, OpenMP programs, are left
+   class names stayed then; they became `*ThreadPolicy` later, since the
+   policies follow `threaded`. The examples and harnesses, OpenMP programs, are left
    as they are.
    *7b done*: `CHUNK_THREADS=std` (OMP off, `FAST_ALLOC_PMP_STD=1` PUBLIC on
    the targets, checked by both generated build options against `CHUNK_OPT_STD_THREADS` /

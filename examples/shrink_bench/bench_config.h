@@ -34,19 +34,17 @@
 #include "bench_prelude.h"            // Int, build_config::, CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
-// PRINT_MEM is enabled by default.
-#ifndef PRINT_MEM
-    #define PRINT_MEM
-#endif
-
 // Bench-level compile-time flags, exposed as `inline constexpr bool` so
 // that `if constexpr (...)` can be used in shrink_bench.cpp instead of
 // `#ifdef` around runtime code.
-#ifdef PRINT_MEM
-inline constexpr bool print_mem = true;
-#else
-inline constexpr bool print_mem = false;
+
+// BENCH_PRINT_MEM: the memory lines of a run ("after init", every
+// freq_conso_mem iterations, "after compress"). Set by the CMake option SHRINK_BENCH_PRINT_MEM (ON by
+// default) as 1 or 0; 1 when a build sets nothing.
+#ifndef BENCH_PRINT_MEM
+    #define BENCH_PRINT_MEM 1
 #endif
+inline constexpr bool print_mem = BENCH_PRINT_MEM != 0;
 
 #ifdef TEST_CAPTUR_BUG
 inline constexpr bool test_captur_bug = true;

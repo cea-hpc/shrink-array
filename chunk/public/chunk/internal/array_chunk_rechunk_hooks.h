@@ -51,7 +51,7 @@
 #include <type_traits> // std::is_same_v (zero or zero_any)
 
 #include "chunk/config.h"       // build_config::chunk_dynamic
-#include "chunk/chunk_traits.h" // ArrayChunkTraits
+#include "chunk/chunk_traits.h" // ArrayChunkTraits, is_zero_any_family_v
 
 namespace shrink_array
 {
@@ -81,8 +81,9 @@ class RechunkHooks<Derived, true>
     using ProxyType   = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
     using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the candidate store.
 
-    /// @brief zero_any::Array (otherwise zero::Array): selects the candidate lists and the compress() call.
-    static constexpr bool is_chunk2a = std::is_same_v<typename Traits::ChunkType, zero_any::Chunk<value_type>>;
+    /// @brief An array of the zero_any family (otherwise zero::Array): selects the candidate lists and the
+    ///        compress() call.
+    static constexpr bool is_zero_any_family = is_zero_any_family_v<typename Traits::ChunkType>;
 
     /**
      * @brief Compress, then drop, this array's queued compression candidates, by num_tab.
@@ -113,7 +114,7 @@ class RechunkHooks<Derived, true>
     /// @brief The manager's per-rank candidate lists of this variant (OpenMP builds).
     [[nodiscard]] static auto& candidate_lists_thr() noexcept
     {
-        if constexpr (is_chunk2a)
+        if constexpr (is_zero_any_family)
         {
             return ManagerType::chunk2a_to_compress_potentially_thr;
         }
@@ -125,7 +126,7 @@ class RechunkHooks<Derived, true>
     /// @brief The manager's single candidate list of this variant (serial builds).
     [[nodiscard]] static auto& candidate_list() noexcept
     {
-        if constexpr (is_chunk2a)
+        if constexpr (is_zero_any_family)
         {
             return ManagerType::chunk2a_to_compress_potentially;
         }
@@ -137,7 +138,7 @@ class RechunkHooks<Derived, true>
     /// @brief Remove every candidate of the array @p num_tab from this variant's lists.
     static void remove_candidates_of_tab(int num_tab) noexcept
     {
-        if constexpr (is_chunk2a)
+        if constexpr (is_zero_any_family)
         {
             ManagerType::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
         }

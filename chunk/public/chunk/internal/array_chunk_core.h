@@ -55,6 +55,7 @@
 #include "chunk/chunk_traits.h"                      // ChunkTraits (ProxyType, ManagerType)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
+#include "chunk/internal/array_chunk_for.h"          // ArrayKey (registry_key)
 #include "chunk/internal/parallel_storage_init.h"    // NoInitAllocator (chunk_list)
 
 namespace shrink_array
@@ -199,18 +200,13 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
 
   protected:
     /**
-     * @brief The address under which this array is known outside its own type:
-     *        the proxies' ptr_on_array and every <tt>Proxy*\<T\>\::share_info_array</tt> key.
-     * @details Always this subobject, never the derived array: the readers cast
-     *          it back to ArrayChunkCore, which is only defined from a pointer
-     *          that was an ArrayChunkCore* in the first place.
+     * @brief The identity under which this array is known outside its own type
+     *        (ArrayKey): the proxies' ptr_on_array_ and every
+     *        <tt>Proxy*\<T\>\::share_info_array</tt> key.
+     * @details Always this subobject, never the derived array: the same core
+     *          for every index type of the array.
      */
-    [[nodiscard]] void* registry_key() noexcept
-    {
-        return this;
-    }
-    /// @brief Const overload of registry_key(): the same address.
-    [[nodiscard]] const void* registry_key() const noexcept
+    [[nodiscard]] ArrayKey<ChunkT> registry_key() const noexcept
     {
         return this;
     }
