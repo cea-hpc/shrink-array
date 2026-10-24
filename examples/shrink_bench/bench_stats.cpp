@@ -18,11 +18,13 @@
 /// @brief The value census and filling-rate report. See bench_phases.h.
 
 #include <algorithm>   // std::max (name_padding)
-#include <array>       // std::array (the checksums' names)
 #include <complex>     // operator== on ComplexDouble
 #include <cstddef>     // std::size_t
+#include <meta>        // std::meta (the arrays of BenchArrays, print_checksums)
 #include <string>      // std::string
+#include <string_view> // std::string_view (the arrays' names)
 #include <type_traits> // std::is_same_v
+#include <vector>      // std::vector (consteval only: the array members)
 #include <cstdio>      // std::fflush
 #include <print>       // std::println, std::print
 
@@ -275,11 +277,43 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 namespace
 {
 
-template <typename... Tabs>
-void print_checksums(const char* const* names, const Tabs&... tabs)
+/// The array members of BenchArrays (its references), in declaration order.
+consteval std::vector<std::meta::info> bench_array_members()
 {
-    std::size_t index = 0;
-    (std::print("\n{} check_sum = {:x}", names[index++], calculate_checksum(tabs)), ...);
+    std::vector<std::meta::info> members;
+    for (std::meta::info member :
+         std::meta::nonstatic_data_members_of(^^BenchArrays, std::meta::access_context::unchecked()))
+    {
+        if (std::meta::is_reference_type(std::meta::type_of(member)))
+        {
+            members.push_back(member);
+        }
+    }
+    return members;
+}
+
+/// tab_point and tab_cell: the arrays of an aggregate element (--no_struct leaves them out).
+constexpr bool is_struct_array(std::string_view name)
+{
+    return name == "tab_point" || name == "tab_cell";
+}
+
+/// `name check_sum = <hex>` for every array member of @p bench_arr, under its
+/// identifier, of the aggregate elements (@p structs) or of the others; then a
+/// newline. tab_mask is not summed.
+void print_checksums(const BenchArrays& bench_arr, bool structs)
+{
+    template for (constexpr std::meta::info member : std::define_static_array(bench_array_members()))
+    {
+        constexpr std::string_view name = std::define_static_string(std::meta::identifier_of(member));
+        if constexpr (name != "tab_mask")
+        {
+            if (is_struct_array(name) == structs)
+            {
+                std::print("\n{} check_sum = {:x}", name, calculate_checksum(bench_arr.[:member:]));
+            }
+        }
+    }
     std::println("");
 }
 
@@ -287,44 +321,17 @@ void print_checksums(const char* const* names, const Tabs&... tabs)
 
 void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
-
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
-    auto& tab_quant     = bench_arr.tab_quant;
-    auto& tab_point     = bench_arr.tab_point;
-    auto& tab_cell      = bench_arr.tab_cell;
-
-    const auto lbd_check_sum = [&]
+    if CONSTEXPR (check_sum)
     {
-        if CONSTEXPR (check_sum)
+        // Every array of BenchArrays under its member's name, in declaration
+        // order (reflection: an array added there is summed here); tab_point
+        // and tab_cell after the others, and only with the structs.
+        // tab_bool_bits' checksum equals tab_bool's: a Bit is one byte
+        // holding 0 or 1, as a bool.
+        print_checksums(bench_arr, /*structs=*/false);
+        if (bench_arr.with_struct) // --no_struct
         {
-            static constexpr std::array<const char*, 17> names{
-                "tab1",     "tab2",          "tab3",        "tab4",      "tab5",      "tab_int",
-                "tab_bool", "tab_bool_bits", "tab_complex", "tab_float", "tab_short", "tab_char",
-                "tab_long", "tab_ulong",     "tab_quant",   "tab_point", "tab_cell"};
-            // tab_bool_bits' checksum equals tab_bool's: a Bit is one byte
-            // holding 0 or 1, as a bool.
-            print_checksums(names.data(), tab1, tab2, tab3, tab4, tab5, tab_int, tab_bool, tab_bool_bits, tab_complex,
-                            tab_float, tab_short, tab_char, tab_long, tab_ulong, tab_quant);
-            if (bench_arr.with_struct) // --no_struct
-            {
-                print_checksums(names.data() + 15, tab_point, tab_cell);
-            }
+            print_checksums(bench_arr, /*structs=*/true);
         }
-    };
-
-    lbd_check_sum();
+    }
 }
