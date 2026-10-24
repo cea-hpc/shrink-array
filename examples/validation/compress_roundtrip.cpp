@@ -70,17 +70,17 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"       // forward decls + default IntType = int
-#include "chunk/zero_array.h"         // zero::Array
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"         // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"             // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero*
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/env_parse.h"   // env_number / arg_number (checked, not atoi)
+#include "chunk/internal/print.h"       // shrink_array::println
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -130,11 +130,11 @@ constexpr const char* variant_name()
 
 // set_second_value only exists on zero_one_value / zero_any; no-op elsewhere.
 template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
+void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
+    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
@@ -148,7 +148,7 @@ struct Scenario
 {
     T second; // the second constant written in run 1
     T refill; // the value the first quarter is rewritten with after the pass
-    T (*varied)(long i);
+    T (*varied)(long index);
 };
 
 /**
@@ -156,9 +156,9 @@ struct Scenario
  * @return 0 if every element reads back as expected, 1 otherwise.
  */
 template <typename T>
-static int round_trip(const char* label, long n, const Scenario<T>& sc, bool declare_second)
+static int round_trip(const char* label, long count, const Scenario<T>& sc, bool declare_second)
 {
-    Array<T> arr(n);
+    Array<T> arr(count);
     if (declare_second)
     {
         maybe_set_second_value(arr, sc.second);
@@ -170,7 +170,7 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc, bool dec
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
             arr[i] = sc.varied(i);
         }
@@ -181,7 +181,7 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc, bool dec
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
             const long run = (i / run_len) % 3;
             if (run == 0)
@@ -210,7 +210,7 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc, bool dec
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n / 4; ++i)
+        for (long i = 0; i < count / 4; ++i)
         {
             arr[i] = sc.refill;
         }
@@ -221,7 +221,7 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc, bool dec
     long first = -1;
     T    got_first{};
     T    exp_first{};
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
         const long run      = (i / run_len) % 3;
         T          expected = sc.varied(i);
@@ -233,7 +233,7 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc, bool dec
         {
             expected = sc.second;
         }
-        if (i < n / 4)
+        if (i < count / 4)
         {
             expected = sc.refill;
         }
@@ -256,12 +256,12 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc, bool dec
     {
         println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {}) "
                 "got={:g} expected={:g}",
-                variant_name(), label, bad, n, first, first / csz, first % csz, (first / run_len) % 3,
+                variant_name(), label, bad, count, first, first / csz, first % csz, (first / run_len) % 3,
                 (double)got_first, (double)exp_first);
     }
     else
     {
-        println("[{}/{}] OK: {} elements round-trip through compress() at chunk_size={}", variant_name(), label, n,
+        println("[{}/{}] OK: {} elements round-trip through compress() at chunk_size={}", variant_name(), label, count,
                 csz);
     }
 
@@ -271,11 +271,12 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc, bool dec
 
 int run(int argc, char** argv)
 {
-    const long n = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
+    const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
     ParamChunk::init_indexes(true);
 
-    println("=== compress_roundtrip [variant = {}]  N={}  threads={} ===", variant_name(), n, CHUNK_PMP_MAX_THREADS);
+    println("=== compress_roundtrip [variant = {}]  N={}  threads={} ===", variant_name(), count,
+            CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -283,10 +284,10 @@ int run(int argc, char** argv)
     const Scenario<int>    si{7, 11, [](long i) { return static_cast<int>(i); }};
     const Scenario<bool>   sb{true, true, [](long i) { return (i % 3) == 0; }};
 
-    fails += round_trip<double>("double", n, sd, /*declare_second=*/true);
-    fails += round_trip<double>("double/no-second-value", n, sd, /*declare_second=*/false);
-    fails += round_trip<int>("int", n, si, /*declare_second=*/true);
-    fails += round_trip<bool>("bool", n, sb, /*declare_second=*/true);
+    fails += round_trip<double>("double", count, sd, /*declare_second=*/true);
+    fails += round_trip<double>("double/no-second-value", count, sd, /*declare_second=*/false);
+    fails += round_trip<int>("int", count, si, /*declare_second=*/true);
+    fails += round_trip<bool>("bool", count, sb, /*declare_second=*/true);
 
     // The library's own teardown: releases the reuse lists (one region, the
     // frees shared out over the team) and the allocators. A double free or a

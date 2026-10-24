@@ -50,15 +50,15 @@
 #include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
-#include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/zero_array.h"     // zero::Array
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"      // chunk_pmp_set_num_threads, CHUNK_PMP_THREAD_CAPACITY
-#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"            // chunk_pmp_set_num_threads, CHUNK_PMP_THREAD_CAPACITY
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"       // shrink_array::println
 
 #include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -105,48 +105,48 @@ constexpr const char* variant_name()
     }
 }
 
-static void set_team(int n)
+static void set_team(int nthreads)
 {
-    chunk_pmp_set_num_threads(n);
+    chunk_pmp_set_num_threads(nthreads);
 }
 
 /// Runs of 2048 elements alternate zero / varied, so each region leaves
 /// constant chunks for the passes and materialised ones for the writes.
-static bool zero_run(long i, int round)
+static bool zero_run(long index, int round)
 {
-    return ((i / 2048) + round) % 3 == 0;
+    return ((index / 2048) + round) % 3 == 0;
 }
 
 /// Regions under the current team: writes, compound operations, zero runs and
 /// cross-thread reads (element i reads element N-1-i, written by another
 /// thread under the static schedule), on the array and on the reference.
-static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, std::vector<double>& rd, int rounds)
+static long run_regions(Array<int>& arr, std::vector<int>& ra, Array<double>& darr, std::vector<double>& rd, int rounds)
 {
-    const long n = static_cast<long>(ra.size());
+    const long count = static_cast<long>(ra.size());
     for (int round = 0; round < rounds; ++round)
     {
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (long i = 0; i < n; ++i)
+            for (long i = 0; i < count; ++i)
             {
                 if (zero_run(i, round))
                 {
-                    a[i] = 0;
-                    d[i] = 0.0;
+                    arr[i]  = 0;
+                    darr[i] = 0.0;
                     continue;
                 }
-                a[i] = static_cast<int>(((i * 7) + round) % 97) + 1;
-                a[i] += 3;
-                a[i] *= 2;
-                a[i] %= 101;
-                d[i] = static_cast<double>(i % 53) + (0.5 * round);
-                d[i] *= 1.5;
+                arr[i] = static_cast<int>(((i * 7) + round) % 97) + 1;
+                arr[i] += 3;
+                arr[i] *= 2;
+                arr[i] %= 101;
+                darr[i] = static_cast<double>(i % 53) + (0.5 * round);
+                darr[i] *= 1.5;
             }
         }
         end_phase();
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
             if (zero_run(i, round))
             {
@@ -169,23 +169,23 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (long i = 0; i < n / 2; ++i)
+            for (long i = 0; i < count / 2; ++i)
             {
-                a[i] += static_cast<int>(a[n - 1 - i]);
+                arr[i] += static_cast<int>(arr[count - 1 - i]);
             }
         }
         end_phase();
-        for (long i = 0; i < n / 2; ++i)
+        for (long i = 0; i < count / 2; ++i)
         {
-            ra[i] += snap[n - 1 - i];
+            ra[i] += snap[count - 1 - i];
         }
     }
 
     long fails = 0;
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
-        const int    ai = a[i];
-        const double di = d[i];
+        const int    ai = arr[i];
+        const double di = darr[i];
         if (ai != ra[i] || di != rd[i])
         {
             if (fails < 5)
@@ -206,14 +206,14 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
     const std::string cmd    = validation::self_command(self) + " --beyond > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;
-    if (FILE* f = std::fopen(log.c_str(), "r"))
+    if (FILE* file = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];
-        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, file)) > 0;)
         {
             out.append(buf, n);
         }
-        std::fclose(f);
+        std::fclose(file);
     }
     std::remove(log.c_str());
 
@@ -237,13 +237,13 @@ static int run_body(int argc, char** argv)
     set_team(2);
     ParamChunk::init_indexes(true);
 
-    const long          n = 1L << 16;
-    Array<int>          a(n);
-    Array<double>       d(n);
-    std::vector<int>    ra(n, 0);
-    std::vector<double> rd(n, 0.0);
+    const long          count = 1L << 16;
+    Array<int>          arr(count);
+    Array<double>       darr(count);
+    std::vector<int>    ra(count, 0);
+    std::vector<double> rd(count, 0.0);
 
-    long fails = run_regions(a, ra, d, rd, 1);
+    long fails = run_regions(arr, ra, darr, rd, 1);
 
     // 2. The team grows: to the capacity, or past it with --beyond.
     const int capacity = CHUNK_PMP_THREAD_CAPACITY;
@@ -253,7 +253,7 @@ static int run_body(int argc, char** argv)
             variant_name(), grown, capacity, beyond ? "  --beyond" : "");
     std::fflush(stdout);
 
-    fails += run_regions(a, ra, d, rd, 4);
+    fails += run_regions(arr, ra, darr, rd, 4);
 
     if (beyond)
     {

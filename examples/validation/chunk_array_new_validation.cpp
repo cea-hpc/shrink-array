@@ -52,14 +52,14 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"   // forward decls + default IntType = int
-#include "chunk/zero_array.h"     // zero::Chunk<T> complete (zero_chunk.h): its operator new[]
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Chunk<T> complete (zero_chunk.h): its operator new[]
 #include "chunk/zero_one_value_array.h" // zero_one_value::Chunk<T> complete: its operator new[]
 #include "chunk/zero_any_array.h"       // zero_any::Chunk<T> complete (zero_any_chunk.h): its operator new[]
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero*
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/print.h"       // shrink_array::println
 
 // The array-new is the threaded *ThreadPolicy's (the serial specialisations declare
 // none), and the "region" cases call it from an `omp single`: CMake builds this
@@ -99,70 +99,70 @@ constexpr const char* variant_name()
     }
 }
 
-/// @brief How many of the @p n chunks hold a buffer (none should).
+/// @brief How many of the @p count chunks hold a buffer (none should).
 /// @note A TEMPLATE, so that the branch `if constexpr` discards is not
 ///       type-checked: zero_one_value's written() takes the second-value index (0 --
 ///       nothing else is registered here), zero's and zero_any's take none, and
 ///       in a plain function both spellings would have to compile.
 template <typename C>
-int materialised(const C* v, std::size_t n)
+int materialised(const C* chunks, std::size_t count)
 {
     int bad = 0;
-    for (std::size_t k = 0; k < n; ++k)
+    for (std::size_t k = 0; k < count; ++k)
     {
-        if constexpr (requires { v[k].written(0); })
+        if constexpr (requires { chunks[k].written(0); })
         {
-            bad += v[k].written(0);
+            bad += chunks[k].written(0);
         }
         else
         {
-            bad += v[k].written();
+            bad += chunks[k].written();
         }
     }
     return bad;
 }
 
-/// @brief One case: allocate @p n chunks, serially or from an `omp single`
+/// @brief One case: allocate @p count chunks, serially or from an `omp single`
 ///        inside a region, and check every one of them.
-int one_case(std::size_t n, bool in_region)
+int one_case(std::size_t count, bool in_region)
 {
-    void* p = nullptr;
+    void* raw = nullptr;
     if (in_region)
     {
 #pragma omp parallel
         {
 #pragma omp single
-            p = Ch::operator new[](n * sizeof(Ch));
+            raw = Ch::operator new[](count * sizeof(Ch));
         }
     }
     else
     {
-        p = Ch::operator new[](n * sizeof(Ch));
+        raw = Ch::operator new[](count * sizeof(Ch));
     }
 
-    const auto* v   = static_cast<Ch*>(p);
-    const int   bad = materialised(v, n);
-    println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", n,
+    const auto* chunks = static_cast<Ch*>(raw);
+    const int   bad    = materialised(chunks, count);
+    println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", count,
             bad ? "FAIL" : "ok, every chunk at the first constant");
     if (bad)
     {
-        println("  {} of {} chunk(s) not initialised", bad, n);
+        println("  {} of {} chunk(s) not initialised", bad, count);
     }
-    Ch::operator delete[](p);
+    Ch::operator delete[](raw);
     return bad ? 1 : 0;
 }
 
 /// @brief The operator's real use: an array built by placement new, where no
 ///        constructor runs to overwrite the initialisation.
-int placement_case(std::size_t n)
+int placement_case(std::size_t count)
 {
-    void*       p = Ch::operator new[](n * sizeof(Ch));
-    const auto* v = static_cast<Ch*>(p);
+    void*       raw    = Ch::operator new[](count * sizeof(Ch));
+    const auto* chunks = static_cast<Ch*>(raw);
 
-    const int bad = materialised(v, n);
-    println("[{}/array-new] placement n={:5} : {}", variant_name(), n,
+    const int bad = materialised(chunks, count);
+    println("[{}/array-new] placement n={:5} : {}", variant_name(), count,
             bad ? "FAIL" : "ok, every chunk at the first constant");
-    Ch::operator delete[](p);
+    Ch::operator delete[](raw);
     return bad ? 1 : 0;
 }
 
@@ -176,11 +176,11 @@ int run(int /*argc*/, char** /*argv*/)
 
     int fails = 0;
     // 1 and 5000 are the plain cases; 499 / 500 / 501 bracket the threshold.
-    for (const std::size_t n :
+    for (const std::size_t count :
          {std::size_t(1), std::size_t(499), std::size_t(500), std::size_t(501), std::size_t(5000)})
     {
-        fails += one_case(n, /*in_region=*/false);
-        fails += one_case(n, /*in_region=*/true);
+        fails += one_case(count, /*in_region=*/false);
+        fails += one_case(count, /*in_region=*/true);
     }
     fails += placement_case(1000);
 

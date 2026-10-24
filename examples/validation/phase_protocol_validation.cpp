@@ -55,10 +55,10 @@
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/zero_chunk.h"           // release_chunk_pools
 #include "chunk/config.h"               // chunk_config::use_zero*, build_config::has_not_ompt, any_check
-#include "chunk/internal/test_hooks.h" // test_hooks::force_defer_every
-#include "chunk/manage_ompt.h"         // begin_parallel_phase, finalize_parallel_phase, parallel_phase
-#include "chunk/param_chunk.h"         // ParamChunk::init_indexes
-#include "chunk/internal/print.h"      // shrink_array::println
+#include "chunk/internal/test_hooks.h"  // test_hooks::force_defer_every
+#include "chunk/manage_ompt.h"          // begin_parallel_phase, finalize_parallel_phase, parallel_phase
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -100,22 +100,22 @@ constexpr int n_regions = 6;
 
 /// Region r's value of element i: a third of the chunks constant (they
 /// compress between regions), the rest varied.
-int value(int r, int i)
+int value(int round, int index)
 {
-    return ((i >> 8) % 3 == 0) ? r : (i % 5) + r;
+    return ((index >> 8) % 3 == 0) ? round : (index % 5) + round;
 }
 
 /// Region r's team: 2 to 8 threads, a different size from one region to the
 /// next -- what makes a forgotten call spring.
-int team(int r)
+int team(int round)
 {
-    return 2 + (r * 5) % 7;
+    return 2 + (round * 5) % 7;
 }
 
 /// Region r's schedule chunk: the owner of an element changes too.
-int sched(int r)
+int sched(int round)
 {
-    return 1 << (4 + r % 5);
+    return 1 << (4 + round % 5);
 }
 
 /// How a case brackets its regions.
@@ -139,7 +139,7 @@ long helper_sum = 0;
 /// std::vector does.
 long regions(Bracket how)
 {
-    Array<int>       a(n_items);
+    Array<int>       arr(n_items);
     std::vector<int> ref(n_items, 0);
     helper_sum = 0;
     for (int r = 0; r < n_regions; ++r)
@@ -153,10 +153,10 @@ long regions(Bracket how)
 #pragma omp for schedule(static, cs) reduction(+ : helper_sum)
             for (int i = 0; i < n_items; ++i)
             {
-                const int v = value(r, i);
-                a[i]        = v;
-                ref[i]      = v;
-                helper_sum += v;
+                const int expected = value(r, i);
+                arr[i]             = expected;
+                ref[i]             = expected;
+                helper_sum += expected;
             }
         };
         if (how == Bracket::helper)
@@ -197,7 +197,7 @@ long regions(Bracket how)
         }
     }
     long        bad = 0;
-    const auto& ca  = std::as_const(a);
+    const auto& ca  = std::as_const(arr);
     for (int i = 0; i < n_items; ++i)
     {
         bad += (ca[i] != ref[i]) ? 1 : 0;
@@ -247,17 +247,17 @@ const Case case_table[] = {
 };
 constexpr int nb_cases = static_cast<int>(sizeof case_table / sizeof case_table[0]);
 
-/// The child: run case @p k; 0 when every element read back right.
-int child(int k)
+/// The child: run case @p case_idx; 0 when every element read back right.
+int child(int case_idx)
 {
-    const Case& c = case_table[k];
-    if (c.teardown_in_region)
+    const Case& test_case = case_table[case_idx];
+    if (test_case.teardown_in_region)
     {
 #pragma omp parallel
         release_chunk_pools();
         return 0;
     }
-    const long bad = regions(c.how);
+    const long bad = regions(test_case.how);
     if (bad != 0)
     {
         println("  {} wrong element(s)", bad);
@@ -265,30 +265,31 @@ int child(int k)
     return bad == 0 ? 0 : 1;
 }
 
-/// The parent: run case @p k in a child, check what happened.
-int check_case(const char* self, int k)
+/// The parent: run case @p case_idx in a child, check what happened.
+int check_case(const char* self, int case_idx)
 {
-    const Case&       c   = case_table[k];
-    const std::string log = "/tmp/phase_protocol_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
-    const std::string cmd = validation::self_command(self) + " --case " + std::to_string(k) + " > \"" + log + "\" 2>&1";
-    const int         status = std::system(cmd.c_str());
-    std::string       out;
-    if (FILE* f = std::fopen(log.c_str(), "r"))
+    const Case&       test_case = case_table[case_idx];
+    const std::string log = "/tmp/phase_protocol_" + std::to_string(getpid()) + "_" + std::to_string(case_idx) + ".log";
+    const std::string cmd =
+        validation::self_command(self) + " --case " + std::to_string(case_idx) + " > \"" + log + "\" 2>&1";
+    const int   status = std::system(cmd.c_str());
+    std::string out;
+    if (FILE* file = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];
-        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, file)) > 0;)
         {
             out.append(buf, n);
         }
-        std::fclose(f);
+        std::fclose(file);
     }
     std::remove(log.c_str());
 
     const bool ran_ok   = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
-    const bool must_run = c.must_print == nullptr;
+    const bool must_run = test_case.must_print == nullptr;
     const bool pass     = must_run ? (ran_ok && out.find("[PHASE PROTOCOL]") == std::string::npos)
-                                   : (!ran_ok && out.find(c.must_print) != std::string::npos);
-    println("[{}/phase-protocol] {:<36} {}{}", variant_name(), c.name,
+                                   : (!ran_ok && out.find(test_case.must_print) != std::string::npos);
+    println("[{}/phase-protocol] {:<36} {}{}", variant_name(), test_case.name,
             must_run ? (ran_ok ? "ran" : "STOPPED") : (ran_ok ? "RAN ON" : "stopped"), pass ? "" : "   <-- FAIL");
     if (!pass)
     {
