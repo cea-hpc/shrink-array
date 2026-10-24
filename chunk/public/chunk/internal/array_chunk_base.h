@@ -1256,9 +1256,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         {
             return;
         }
-        const int c_first = chunk_index_of(first);
-        const int c_last  = chunk_index_of(last - 1);
-        const int full    = static_cast<int>(size_policy_.size());
+        const int  c_first = chunk_index_of(first);
+        const int  c_last  = chunk_index_of(last - 1);
+        const auto full    = static_cast<int>(size_policy_.size());
         for (int c = c_first; c <= c_last; ++c)
         {
             const int        lo = c == c_first ? offset_in_chunk(first) : 0;

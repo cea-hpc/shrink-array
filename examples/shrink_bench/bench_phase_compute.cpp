@@ -42,7 +42,7 @@
 // the index. CHUNK_BENCH_ULONG_BANDS sets the count (default 4096, the order a
 // real workload reaches); 0 means no bound, i.e. one value per 256-index band
 // for the whole array, which is what the registry stress runs want.
-static const unsigned long bench_ulong_mask = []() -> unsigned long
+static const unsigned long bench_ulong_mask = []
 {
     const long bands = shrink_array::env_number<long>("CHUNK_BENCH_ULONG_BANDS", 4096);
     if (bands <= 0)
@@ -52,12 +52,12 @@ static const unsigned long bench_ulong_mask = []() -> unsigned long
     // Bands are 256 indices wide (the |0xFF, &~0x0F arithmetic below), so the
     // mask has to cover bands * 256 indices, rounded up to a power of two.
     const unsigned long span = static_cast<unsigned long>(bands) * 256UL;
-    unsigned long       m    = 1;
-    while (m < span)
+    unsigned long       mask = 1;
+    while (mask < span)
     {
-        m <<= 1U;
+        mask <<= 1U;
     }
-    return m - 1UL;
+    return mask - 1UL;
 }();
 
 void bench_phase_compute(BenchArrays&            bench_arr,
@@ -414,7 +414,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             const Int beg_loc = start0 + (4 * interval10);
             const Int end_loc = start0 + (5 * interval10);
 
-            const Int beg_loc0 =
+            const auto beg_loc0 =
                 static_cast<Int>(static_cast<double>(start0) + (4.8 * static_cast<double>(interval10)));
 
             for (Int p = 0; p < 20; ++p)

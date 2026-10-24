@@ -58,7 +58,8 @@
 #include <atomic>        // std::atomic, std::memory_order_relaxed
 #include <charconv>      // std::from_chars (CHUNK_RECLAIM_THREADS)
 #include <chrono>        // the sweep timer
-#include <cstring>       // std::strlen
+#include <cstring>       // std::strerror
+#include <string_view>   // std::string_view (reclaim_env_number)
 #include <unordered_map> // std::unordered_map
 #include <unordered_set> // std::unordered_set
 #include <system_error>  // std::errc (std::from_chars)
@@ -202,15 +203,16 @@ inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) no
     {
         return fallback;
     }
-    std::size_t v   = 0;
-    const char* end = env + std::strlen(env);
-    const auto  res = std::from_chars(env, end, v);
+    const std::string_view text{env};
+    const char* const      end   = text.data() + text.size();
+    std::size_t            value = 0;
+    const auto             res   = std::from_chars(text.data(), end, value);
     if (res.ec != std::errc{} || res.ptr != end)
     {
         CHUNK_LOG(warn, env, "{}=\"{}\" is not a valid value: ignored, {} kept", name, env, fallback);
         return fallback;
     }
-    return v;
+    return value;
 }
 
 /// @brief CHUNK_RECLAIM_THREADS (default 1 = serial): threads issuing the
@@ -444,7 +446,8 @@ class EmptySlabSweep
                     std::memory_order_relaxed);
                 reclaim_sweeps().fetch_add(1, std::memory_order_relaxed);
             }
-        } const timer;
+        };
+        const SweepTimer timer;
 
         std::sort(items_.begin(), items_.end(),
                   [](const Item& a, const Item& b) { return std::less<Slab*>{}(a.slab, b.slab); });
@@ -781,7 +784,9 @@ class SlabArena
             }
             catch (...)
             {
-                // no room for the counters: advise them all, as with keep_bytes = 0
+                // No room for the counters: advise them all, as with keep_bytes = 0
+                // (the loop below keeps nothing while `kept` is empty).
+                kept.clear();
             }
         }
         for (auto& [size, lists] : recycled_)
@@ -949,14 +954,14 @@ class SlabArena
             mapped += (r.end - r.begin);
         }
         std::size_t freelist = 0;
-        for (const auto& kv : free_lists_)
+        for (const auto& [block_size, blocks] : free_lists_)
         {
-            freelist += kv.first * kv.second.size();
+            freelist += block_size * blocks.size();
         }
         std::size_t recycled = 0;
-        for (const auto& kv : recycled_)
+        for (const auto& [block_size, lists] : recycled_)
         {
-            recycled += kv.first * kv.second.count;
+            recycled += block_size * lists.count;
         }
         // CHUNK_ARENA_REPORT asked for it: a report, written whatever CHUNK_LOG says.
         CHUNK_LOG_ALWAYS(arena,

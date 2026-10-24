@@ -410,16 +410,16 @@ class alignas(64) TCSlab
         }
     }
 
-    /// @brief Set the free-list link of element @p i to @p next.
-    void set_link(int i, IndexType next) noexcept
+    /// @brief Set the free-list link of element @p i to @p next_free.
+    void set_link(int i, IndexType next_free) noexcept
     {
         if constexpr (side_links)
         {
-            tab_first_free_[static_cast<std::size_t>(i)] = next;
+            tab_first_free_[static_cast<std::size_t>(i)] = next_free;
         }
         else
         {
-            fast_alloc::store_to_bytes(data + (static_cast<std::ptrdiff_t>(i) * element_size), next);
+            fast_alloc::store_to_bytes(data + (static_cast<std::ptrdiff_t>(i) * element_size), next_free);
         }
     }
 
@@ -1097,9 +1097,10 @@ class TCSlabPool
 
         decltype(block_empty_)().swap(block_empty_); // releases the reserve's storage
 
-        element_size_ = 0;
-        block_full = block = nullptr;
-        nb_block_empty_    = 0;
+        element_size_   = 0;
+        block_full      = nullptr;
+        block           = nullptr;
+        nb_block_empty_ = 0;
     }
 
     Slab* block_full{nullptr}; ///< Slabs with no room left.
@@ -1638,8 +1639,7 @@ class TCAllocatorEB
      */
     int alloc_block()
     {
-        const long ps = fast_alloc::page_size();
-        if (ps > 0 && (2 * block_size) % ps == 0)
+        if (const long ps = fast_alloc::page_size(); ps > 0 && (2 * block_size) % ps == 0)
         {
             use_mmap_ = true;
 
@@ -1666,9 +1666,7 @@ class TCAllocatorEB
             use_mmap_   = false;
             void* datal = nullptr;
 
-            const int result = posix_memalign(&datal, block_size_pot, block_size);
-
-            if (result != 0)
+            if (const int result = posix_memalign(&datal, block_size_pot, block_size); result != 0)
             {
                 CHUNK_LOG(error, alloc, "posix_memalign failed: error {} ({})", result, std::strerror(result));
                 return 1;
