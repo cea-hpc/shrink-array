@@ -136,6 +136,9 @@ the tag's checksum to the recipe.
   checks that kept them in step (`table_matches`, `field_count`).
   `enum_name.h` gains `name_of()` and `upper_name_of()`, an enumerator's
   name from its value.
+- The atomic maxima (the thread-rank high-water mark, the re-chunk slice
+  timings, the RSS peak) use `std::atomic::fetch_max` (C++26) instead of a
+  compare-exchange loop; the rank's is still written only when it grows.
 
 ### Fixed (cpp26)
 

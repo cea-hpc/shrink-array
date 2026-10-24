@@ -1156,12 +1156,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         const auto sp_ns = [](SliceClock::time_point from, SliceClock::time_point to) noexcept -> long long
         { return std::chrono::duration_cast<std::chrono::nanoseconds>(to - from).count(); };
         const auto sp_max = [](std::atomic<long long>& slot, long long value) noexcept
-        {
-            long long cur = slot.load(std::memory_order_relaxed);
-            while (value > cur && !slot.compare_exchange_weak(cur, value, std::memory_order_relaxed))
-            {
-            }
-        };
+        { slot.fetch_max(value, std::memory_order_relaxed); };
         SliceClock::time_point sp_a{};
         SliceClock::time_point sp_b{}; // master, past the closing barrier
         SliceClock::time_point sp_d{}; // master, past the boundary

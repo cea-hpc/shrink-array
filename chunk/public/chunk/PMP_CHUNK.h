@@ -160,8 +160,8 @@ inline std::atomic<int> g_rank_high_water{0};
  * @brief Validate a rank against the capacity and record it; returns it.
  * @details Called where a rank is obtained or cached (begin_parallel_phase,
  *          the fallback of get_thr_rank_fast, chunk_pmp_thread_rank), not on
- *          every access. The high-water update is a CAS only when a rank grows
- *          past every rank seen so far.
+ *          every access. The high-water mark is written (fetch_max) only when
+ *          a rank grows past every rank seen so far: a load otherwise.
  */
 inline int chunk_pmp_checked_rank(int rank) noexcept
 {
@@ -174,10 +174,9 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
             "CHUNK_THREAD_CAPACITY.",
             rank, chunk_thread_capacity());
     }
-    int seen = internal::g_rank_high_water.load(std::memory_order_relaxed);
-    while (rank >= seen &&
-           !internal::g_rank_high_water.compare_exchange_weak(seen, rank + 1, std::memory_order_seq_cst))
+    if (rank >= internal::g_rank_high_water.load(std::memory_order_relaxed))
     {
+        internal::g_rank_high_water.fetch_max(rank + 1, std::memory_order_seq_cst);
     }
     return rank;
 }

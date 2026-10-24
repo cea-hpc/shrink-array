@@ -128,10 +128,7 @@ class RssPeakSampler
     /// @brief Fold in a sample taken elsewhere.
     void note(long kib) noexcept
     {
-        long cur = peak_.load(std::memory_order_relaxed);
-        while (kib > cur && !peak_.compare_exchange_weak(cur, kib, std::memory_order_relaxed))
-        {
-        }
+        peak_.fetch_max(kib, std::memory_order_relaxed);
     }
     /// @brief Largest sample so far, in KiB (0 before the first one).
     [[nodiscard]] long peak_kib() const noexcept
