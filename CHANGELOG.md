@@ -140,6 +140,10 @@ the tag's checksum to the recipe.
   the kinds it accepts with `enum_names_joined()` (`enum_name.h`, by
   reflection): `sched_names` and `names_match()` are gone. Tests
   `rechunk_schedule_env_<geometry>` and `rechunk_schedule_env_unknown_<geometry>`.
+- `for_each_type<TypeList>()` walks the template arguments of `TypeList` by
+  reflection (`ForEachTypeImpl` is gone); a tiled `submdspan`'s slices go
+  through `template for` and pack indexing (`slices...[k]`) instead of an
+  `index_sequence` lambda.
 - The atomic maxima (the thread-rank high-water mark, the re-chunk slice
   timings, the RSS peak) use `std::atomic::fetch_max` (C++26) instead of a
   compare-exchange loop; the rank's is still written only when it grows.

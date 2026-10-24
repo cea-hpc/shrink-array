@@ -16,10 +16,10 @@
 
 #pragma once
 
-#include <tuple>   // std::tuple
-#include <utility> // std::forward
+#include <meta> // std::meta::template_arguments_of
 
-// Compile-time iteration over a std::tuple<Ts...> of types. Used by consumer
+// Compile-time iteration over a list of types: the template arguments of a
+// class template specialization, std::tuple<Ts...> typically. Used by consumer
 // TUs to drive per-type instantiation from a type list they own (e.g. a
 // std::tuple passed to ParamChunk::init_indexes<Types>()).
 //
@@ -29,29 +29,20 @@
 namespace shrink_array
 {
 
-/// @brief Iteration over the types of @p Tuple; only std::tuple is supported.
-template <typename Tuple>
-struct ForEachTypeImpl;
-
-/// @brief Specialisation for std::tuple<Ts...>: iterates over Ts.
-template <typename... Ts>
-struct ForEachTypeImpl<std::tuple<Ts...>>
-{
-    /// @brief Call `fn.template operator()<T>()` for each T of the tuple, in order.
-    template <typename F>
-    static void apply(F&& fn)
-    {
-        (fn.template operator()<Ts>(), ...);
-    }
-};
-
-/// @brief Call `fn.template operator()<T>()` for each type T of @p TypeList (a std::tuple), in order.
-/// @tparam TypeList std::tuple of the types to iterate over.
+/// @brief Call `fn.template operator()<T>()` for each type T of @p TypeList, in order.
+/// @tparam TypeList A specialization whose template arguments are the types,
+///         std::tuple<Ts...> typically (C++26 reflection walks them).
 /// @param fn Callable with a templated call operator.
 template <typename TypeList, typename F>
 void for_each_type(F&& fn)
 {
-    ForEachTypeImpl<TypeList>::apply(std::forward<F>(fn));
+    static_assert(std::meta::has_template_arguments(^^TypeList),
+                  "for_each_type: TypeList must be a specialization of types, std::tuple<Ts...> typically");
+    template for (constexpr std::meta::info type :
+                  std::define_static_array(std::meta::template_arguments_of(^^TypeList)))
+    {
+        fn.template operator()<typename[:type:]>();
+    }
 }
 
 } // namespace shrink_array

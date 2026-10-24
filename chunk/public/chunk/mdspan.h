@@ -82,7 +82,8 @@
 #include <concepts> // std::same_as (as_const)
 #include <cstddef>  // std::size_t
 #include <type_traits> // std::remove_const_t, std::is_const_v, std::conditional_t, std::make_unsigned_t, std::is_convertible_v
-#include <utility> // std::declval, std::index_sequence, std::pair
+#include <ranges>  // std::views::iota (the slices, one per dimension)
+#include <utility> // std::declval, std::pair
 
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (a tiled submdspan off the tiles)
 
@@ -366,10 +367,10 @@ class TiledMappingBase
         grid_type             first{};
         grid_type             size{};
         grid_type             stride{};
-        [&]<std::size_t... K>(std::index_sequence<K...>)
+        template for (constexpr std::size_t k : std::views::iota(std::size_t{0}, rank))
         {
-            (detail::tiled_slice<index_type>(slices, self.ext_.extent(K), first[K], size[K], stride[K]), ...);
-        }(std::index_sequence_for<Slices...>{});
+            detail::tiled_slice<index_type>(slices...[k], self.ext_.extent(k), first[k], size[k], stride[k]);
+        }
 
         index_type which = 0; // the sub-view's first tile, in storage order
         for (std::size_t r = 0; r < rank; ++r)
