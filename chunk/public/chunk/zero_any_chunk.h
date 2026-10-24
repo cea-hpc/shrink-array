@@ -93,7 +93,7 @@ class ChunkConcurrentOps
         {
             const uint32_t chunk_id = ring_chunk_id();
             const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), ev_compress_attempt, info);
+            ring_log(get_tid(), EventCode::compress_attempt, info);
         }
 
         if (!self()->values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
@@ -119,7 +119,7 @@ class ChunkConcurrentOps
         {
             const uint32_t chunk_id = ring_chunk_id();
             const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), ev_cas_values_to_cst, info);
+            ring_log(get_tid(), EventCode::cas_values_to_cst, info);
         }
         return old;
     }
@@ -182,7 +182,7 @@ class ChunkConcurrentOps
             const uint32_t chunk_id = ring_chunk_id();
             const uint32_t info =
                 (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24U);
-            ring_log(get_tid(), failed ? ev_cas_values_fail : ev_cas_values_from_cst, info);
+            ring_log(get_tid(), failed ? EventCode::cas_values_fail : EventCode::cas_values_from_cst, info);
         }
         return failed;
     }

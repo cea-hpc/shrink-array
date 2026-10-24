@@ -803,7 +803,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_mark_thread_has_ops, static_cast<uint32_t>(thr_rank));
+            ring_log(get_tid(), EventCode::mark_thread_has_ops, static_cast<uint32_t>(thr_rank));
         }
         get_thread_ops_flag_tls().v = true;
     }
@@ -814,7 +814,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_clear_thread_has_ops, static_cast<uint32_t>(thr_rank));
+            ring_log(get_tid(), EventCode::clear_thread_has_ops, static_cast<uint32_t>(thr_rank));
         }
         get_thread_ops_flag_tls().v = false;
     }

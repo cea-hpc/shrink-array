@@ -41,7 +41,7 @@
 #include "fast_allocators/internal/svalloc.h"           // svcalloc_align, svfree
 #include "chunk/config.h"                               // build_config::threaded, chunk_config::stats
 #include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
-#include "chunk/ring_log_debug.h"            // ev_value_alloc/FREE (debug ring log)
+#include "chunk/ring_log_debug.h"            // EventCode::value_alloc/FREE (debug ring log)
 #include "chunk/internal/global_check.h"     // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
 #include "chunk/internal/invariant_check.h"  // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h" // DeferredOpPtr
@@ -477,7 +477,7 @@ struct ChunkAllocPolicy<T, Derived, true>
         // can tell an op block from a value block at the same address.
         if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
         {
-            ring_log_op(get_tid(), ev_value_alloc, 0, static_cast<const void*>(values_loc));
+            ring_log_op(get_tid(), EventCode::value_alloc, 0, static_cast<const void*>(values_loc));
         }
 
         return values_loc;
@@ -1361,7 +1361,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         // Debug ring log: value-buffer frees.
         if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
         {
-            ring_log_op(get_tid(), ev_value_free, 0, static_cast<const void*>(ptr));
+            ring_log_op(get_tid(), EventCode::value_free, 0, static_cast<const void*>(ptr));
         }
         // Ledger: LIVE -> FREE, before the actual free, while the pointer is
         // still ours. Without it, std-alloc's malloc may hand the same address

@@ -34,7 +34,7 @@
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
-#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, ev_op_alloc / ev_op_free
+#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EventCode::op_alloc / EventCode::op_free
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::backend (the pools of exited threads)
 #include "chunk/log.h"                            // CHUNK_LOG (recycle)
 
@@ -725,7 +725,7 @@ template <typename T, typename... Args>
     // (vptr written).
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), ev_op_alloc, 0, mem);
+        ring_log_op(get_tid(), EventCode::op_alloc, 0, mem);
     }
     return constructed;
 }
@@ -761,7 +761,7 @@ void free_op(T* op)
     // can show a free while the op was still referenced by op_map.
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), ev_op_free, 0, static_cast<const void*>(op));
+        ring_log_op(get_tid(), EventCode::op_free, 0, static_cast<const void*>(op));
     }
     pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();

@@ -658,7 +658,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
                 // end_write. Concurrent writers on the same chunk are handled by
                 // the is_cst_val re-checks in handle_{bool,no_bool}_assignment.
 
-                const ScopedRingLog<ev_begin_fast_path, ev_end_fast_path> fast_log;
+                const ScopedRingLog<EventCode::begin_fast_path, EventCode::end_fast_path> fast_log;
 
                 // ─── Pre-write invariant: our flag still holds
                 if constexpr (build_config::any_check)
@@ -737,7 +737,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
                 return false;
             }
 
-            const ScopedRingLog<ev_begin_slow_path, ev_end_slow_path> slow_log;
+            const ScopedRingLog<EventCode::begin_slow_path, EventCode::end_slow_path> slow_log;
 
             // Check #2 failed: a compressor slipped in between check #1 and
             // begin_write. Release our flag, then defer the write.
@@ -1197,10 +1197,10 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> v, Op operation) no
 
                                 if (values == cst1 || is_cst2)
                                 {
-                                    ring_log(get_tid(), ev_values_load_is_cst, info);
+                                    ring_log(get_tid(), EventCode::values_load_is_cst, info);
                                     return; // skip the write: keep cst_val clean
                                 }
-                                ring_log(get_tid(), ev_lambda_async_arith, info);
+                                ring_log(get_tid(), EventCode::lambda_async_arith, info);
                             }
 
                             if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)

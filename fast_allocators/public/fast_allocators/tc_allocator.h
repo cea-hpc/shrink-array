@@ -1459,18 +1459,20 @@ template <unsigned int ElementBytes, unsigned int BlockBytes>
 class TCAllocatorEB
 {
   public:
-    /// @brief The compile-time geometry: sizes in bytes, capacity in elements.
-    enum
-    {
-        element_size      = ElementBytes,
-        log2_element_size = std::bit_width(ElementBytes) - 1,
-        block_size        = BlockBytes,
-        block_size_pot    = static_cast<int>(std::bit_ceil(BlockBytes)), // int: the mask below must sign-extend
-        block_addr_mask   = ~(block_size_pot - 1),
-        get_size_of       = sizeof(TCAllocatorEB*),
-        used_block_size   = BlockBytes - get_size_of,
-        max_elements      = used_block_size / ElementBytes
-    };
+    /// @name The compile-time geometry: sizes in bytes, capacity in elements.
+    /// @details int, as the enumerators of the anonymous enum they were: the
+    ///          arithmetic below and at the use sites is unchanged, and
+    ///          block_addr_mask sign-extends into ~size_t(block_addr_mask).
+    /// @{
+    static constexpr int element_size      = static_cast<int>(ElementBytes);
+    static constexpr int log2_element_size = std::bit_width(ElementBytes) - 1;
+    static constexpr int block_size        = static_cast<int>(BlockBytes);
+    static constexpr int block_size_pot    = static_cast<int>(std::bit_ceil(BlockBytes));
+    static constexpr int block_addr_mask   = ~(block_size_pot - 1);
+    static constexpr int get_size_of       = static_cast<int>(sizeof(TCAllocatorEB*));
+    static constexpr int used_block_size   = block_size - get_size_of;
+    static constexpr int max_elements      = used_block_size / element_size;
+    /// @}
 
     /// @brief Free-list index type, as narrow as the element allows.
     using T = FreeIndexT<std::bit_floor(ElementBytes)>;
