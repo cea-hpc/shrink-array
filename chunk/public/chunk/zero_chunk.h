@@ -178,10 +178,10 @@ class ChunkCounterPolicy
     }
 
     /// @brief Set the zero count outright.
-    /// @param v new count
-    void set_nb_val_eq_zero(CounterValueT v) noexcept
+    /// @param count new count
+    void set_nb_val_eq_zero(CounterValueT count) noexcept
     {
-        nb_val_eq_zero_ = v;
+        nb_val_eq_zero_ = count;
     }
 
     /// @brief Is every element of the chunk zero?
@@ -312,7 +312,7 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
     ///          region (inside one, an orphaned `omp for` would hang waiting for
     ///          the other threads). An application that placement-news an array
     ///          of chunks initialises it here.
-    static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept;
 
     /**
      * @brief Zero-fill a buffer that allocate_chunk_internal has just created.

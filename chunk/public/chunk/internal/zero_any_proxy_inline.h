@@ -457,12 +457,12 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable
  *
  * @param vals The chunk's values pointer, loaded by the caller inside the write
  *        session; every state test reads it instead of reloading `values`.
- * @param v Value to store.
+ * @param value Value to store.
  * @pre The metadata pointers this reads are armed (see the handle_*_assignment
  *      callers, which arm exactly what their branch needs).
  */
 template <typename T>
-void zero_any::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const
+void zero_any::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const
 {
     // The one reload, after a materialisation: a concurrent writer may have won
     // the CAS (ours went back to the pool). Stable until the session ends.
@@ -483,7 +483,7 @@ void zero_any::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const
 
     if constexpr (is_not_bool)
     {
-        if (v == static_cast<T>(BaseSpec::ptr_second_value_.get()))
+        if (value == static_cast<T>(BaseSpec::ptr_second_value_.get()))
         {
             if (is_cst2 || Base::read_values_at(vals) == BaseSpec::ptr_second_value_.get())
             {
@@ -499,7 +499,7 @@ void zero_any::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const
             }
         }
     }
-    else if (v)
+    else if (value)
     {
         if (is_cst2 || Base::read_values_at(vals))
         {
@@ -517,7 +517,7 @@ void zero_any::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const
 
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(v);
+        increm_chunk_write<ChunkType>(value);
     }
 
     if (is_cst2 || Base::is_cst_val1(vals))
@@ -525,11 +525,11 @@ void zero_any::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const
         materialise();
     }
 
-    Base::store_value_at(vals, v);
+    Base::store_value_at(vals, value);
 
     if constexpr (build_config::do_check)
     {
-        global_check_write_nan(v, num_);
+        global_check_write_nan(value, num_);
     }
 }
 // ========================================================================
@@ -542,10 +542,10 @@ void zero_any::Proxy<T>::perform_core_assignment(T* vals, InT<T> v) const
  * Arms the metadata the write engine has not, marks for compression, stores.
  * The second value is resolved first, for the cst_val2 early-out.
  *
- * @param v Value to assign.
+ * @param value Value to assign.
  */
 template <typename T>
-void zero_any::Proxy<T>::handle_no_bool_assignment(InT<T> v)
+void zero_any::Proxy<T>::handle_no_bool_assignment(InT<T> value)
 {
     if constexpr (is_not_bool)
     {
@@ -565,16 +565,16 @@ void zero_any::Proxy<T>::handle_no_bool_assignment(InT<T> v)
         set_ptr_second_value();
 
         // Second value onto a cst_val2 chunk: nothing to do.
-        if (chunk_.is_cst_val2_ptr_of(vals) && v == static_cast<T>(BaseSpec::ptr_second_value_.get()))
+        if (chunk_.is_cst_val2_ptr_of(vals) && value == static_cast<T>(BaseSpec::ptr_second_value_.get()))
         {
             return;
         }
 
         ptr_type_cst_ = &tab_type_cst_val[num_tab_][num_chunk_];
 
-        mark_for_compression_if_needed(v, vals);
+        mark_for_compression_if_needed(value, vals);
 
-        perform_core_assignment(vals, v);
+        perform_core_assignment(vals, value);
     }
 }
 
@@ -583,10 +583,10 @@ void zero_any::Proxy<T>::handle_no_bool_assignment(InT<T> v)
  *
  * As handle_no_bool_assignment(); for bool, cst_val2 means "all true".
  *
- * @param v Value to assign.
+ * @param value Value to assign.
  */
 template <typename T>
-void zero_any::Proxy<T>::handle_bool_assignment(InT<T> v)
+void zero_any::Proxy<T>::handle_bool_assignment(InT<T> value)
 {
     if constexpr (is_bool)
     {
@@ -601,16 +601,16 @@ void zero_any::Proxy<T>::handle_bool_assignment(InT<T> v)
             Base::set_ptr_is_inside_chunk_list_to_compress();
         }
 
-        if (chunk_.is_cst_val2_ptr_of(vals) && v)
+        if (chunk_.is_cst_val2_ptr_of(vals) && value)
         {
             return;
         }
 
         ptr_type_cst_ = &tab_type_cst_val[num_tab_][num_chunk_];
 
-        mark_for_compression_if_needed(v, vals);
+        mark_for_compression_if_needed(value, vals);
 
-        perform_core_assignment(vals, v);
+        perform_core_assignment(vals, value);
     }
 }
 
@@ -620,26 +620,26 @@ void zero_any::Proxy<T>::handle_bool_assignment(InT<T> v)
 // cached metadata, so it works off a fresh values pointer under the retry protocol.
 template <typename T>
 template <typename U>
-T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
+T zero_any::Proxy<T>::assign_impl(InT<U> value) noexcept
 {
     this->check_not_stale();
-    if (Base::is_cst_val1_and_v_equal_first_value(v))
+    if (Base::is_cst_val1_and_v_equal_first_value(value))
     {
-        return v;
+        return value;
     }
 
     [[maybe_unused]] bool need_async = false;
 
     if constexpr (is_not_bool)
     {
-        // By reference: v outlives the synchronous call; the deferred path copies it.
-        const auto assignment_body = [this, &v] { handle_no_bool_assignment(v); };
+        // By reference: value outlives the synchronous call; the deferred path copies it.
+        const auto assignment_body = [this, &value] { handle_no_bool_assignment(value); };
 
         need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body);
     }
     else
     {
-        const auto assignment_body_bool = [this, &v] { handle_bool_assignment(v); };
+        const auto assignment_body_bool = [this, &value] { handle_bool_assignment(value); };
 
         need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body_bool);
     }
@@ -652,7 +652,7 @@ T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
             // behind the large-operand operator='s `const U&`.
             using CtxType = ArithmeticAffectationContext<T, std::remove_cvref_t<U>, ChunkType, zero_any::Proxy<T>>;
 
-            auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array_);
+            auto* ctx = pool_new_ctx<CtxType>(*this, value, ptr_on_array_);
 
             auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
             {
@@ -785,7 +785,7 @@ T zero_any::Proxy<T>::assign_impl(InT<U> v) noexcept
         }
     }
 
-    return v;
+    return value;
 }
 
 /**
@@ -882,12 +882,12 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_
  * @tparam ModifyFn Callable storing the result on the materialised path.
  * @tparam U        Operand type.
  * @param op        Operation to apply.
- * @param v         Operand.
+ * @param operand         Operand.
  * @param modify_fn Store body, invoked as `modify_fn(op)`.
  */
 template <typename T>
 template <typename Op, typename ModifyFn, typename U>
-void zero_any::Proxy<T>::execute_arithmetic_compound_operation(Op op, const U& v, ModifyFn modify_fn)
+void zero_any::Proxy<T>::execute_arithmetic_compound_operation(Op op, const U& operand, ModifyFn modify_fn)
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
@@ -899,7 +899,7 @@ void zero_any::Proxy<T>::execute_arithmetic_compound_operation(Op op, const U& v
 
     const InT<T> v_old = read_values();
 
-    const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(v));
+    const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
     const auto     v_new_truncated = static_cast<T>(v_new_precise);
 
     const bool cst_val2 = is_cst_val2();
@@ -952,7 +952,7 @@ void zero_any::Proxy<T>::execute_arithmetic_compound_operation(Op op, const U& v
  * @tparam U   Operand type.
  * @param ctx Deferred-operation context being replayed.
  * @param op  Operation to apply.
- * @param v   Operand.
+ * @param operand   Operand.
  * @param lbd Store body, invoked as `lbd(op)`.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
@@ -960,7 +960,7 @@ template <typename Op, typename Body, typename U>
 void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithmetic_compound_operation_async(
     auto*    ctx,
     Op       op,
-    const U& v,
+    const U& operand,
     Body     lbd) const
 {
     using CalcType = std::common_type_t<T, BaseT<U>>;
@@ -982,7 +982,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
         }
 
         const InT<T>   v_old           = Base::read_values_async(ctx);
-        const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(v));
+        const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
         const auto     v_new_truncated = static_cast<T>(v_new_precise);
 
         const bool cst_val2 = proxy.is_cst_val2();
@@ -1210,11 +1210,11 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace
  * @tparam U  Operand type.
  * @tparam Op Binary operation type.
  * @param op Operation to apply.
- * @param v  Operand.
+ * @param operand  Operand.
  */
 template <typename T>
 template <typename U, typename Op>
-void zero_any::Proxy<T>::apply_compound_operation(Op op, InT<U> v) noexcept
+void zero_any::Proxy<T>::apply_compound_operation(Op op, InT<U> operand) noexcept
 {
     this->check_not_stale();
     // No set_info_on_chunk() here: nothing before apply_atomic_op() reads the
@@ -1231,7 +1231,7 @@ void zero_any::Proxy<T>::apply_compound_operation(Op op, InT<U> v) noexcept
     // (read_reclaim_validation, mode `compound`).
     const InT<T> v_old = Base::read_values_outside_session();
 
-    // first_value absorbs (0 * v == 0). Racy but safe: a concurrent writer
+    // first_value absorbs (0 * operand == 0). Racy but safe: a concurrent writer
     // cannot make the "was first_value" branch wrong, provided v_old is a value
     // the element really held (hence the ReadSection).
     if (v_old != zero_any::Chunk<T>::first_value)
@@ -1242,7 +1242,7 @@ void zero_any::Proxy<T>::apply_compound_operation(Op op, InT<U> v) noexcept
         {
             set_info_on_chunk();
         }
-        Base::apply_atomic_op(op, v, v_old);
+        Base::apply_atomic_op(op, operand, v_old);
     }
 }
 

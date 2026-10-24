@@ -83,9 +83,9 @@ namespace shrink_array
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void* zero_any::ChunkThreadPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
-    auto* v = static_cast<Derived*>(::operator new(sz));
-    init_chunks_cst_val(v, sz / sizeof(Derived));
-    return static_cast<void*>(v);
+    auto* chunks = static_cast<Derived*>(::operator new(sz));
+    init_chunks_cst_val(chunks, sz / sizeof(Derived));
+    return static_cast<void*>(chunks);
 }
 
 // Out of line on purpose, as operator new[] above: inlined, either one shows gcc's
@@ -98,9 +98,9 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(Derived* v, std::size_t count) noexcept
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(Derived* chunks, std::size_t count) noexcept
 {
-    chunk_array_new::init_chunks(v, count, [](Derived& chunk) { chunk.init_after_constructor(); });
+    chunk_array_new::init_chunks(chunks, count, [](Derived& chunk) { chunk.init_after_constructor(); });
 }
 
 /**

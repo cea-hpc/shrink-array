@@ -153,12 +153,12 @@ class ChunkSpec
      * \param v Pointer to test.
      * \return True if v matches the second constant at some index.
      */
-    [[nodiscard]] static bool is_cst_val2_any(const T* v) noexcept
+    [[nodiscard]] static bool is_cst_val2_any(const T* vals) noexcept
     {
         const int nb_cst_val2 = static_cast<int>(tab_m_ptr_cst_val2->size());
         for (int i = 0; i < nb_cst_val2; ++i)
         {
-            if (v == get_cst_val2(i))
+            if (vals == get_cst_val2(i))
             {
                 return true;
             }
@@ -271,10 +271,10 @@ class ChunkCounterPolicy
     }
 
     /// @brief Set the second-value counter to an explicit value.
-    /// @param v New counter value.
-    void set_nb_val_eq_second_value(CounterValueT v) noexcept
+    /// @param count New counter value.
+    void set_nb_val_eq_second_value(CounterValueT count) noexcept
     {
-        nb_val_eq_second_value_ = v;
+        nb_val_eq_second_value_ = count;
     }
 
     /// @brief Whether every element in the chunk currently equals the second
@@ -322,10 +322,10 @@ class ChunkCounterPolicy
     }
 
     /// @brief Set the first-value counter to an explicit value.
-    /// @param v New counter value.
-    void set_nb_val_eq_first_value(CounterValueT v) noexcept
+    /// @param count New counter value.
+    void set_nb_val_eq_first_value(CounterValueT count) noexcept
     {
-        nb_val_eq_first_value_ = v;
+        nb_val_eq_first_value_ = count;
     }
 
     /// @brief Whether every element in the chunk currently equals the first
@@ -496,7 +496,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
     ///          one it stays on the calling thread: only that thread allocates, and an
     ///          orphaned `omp for` would hang waiting for the others. Shared by the
     ///          variants (chunk_array_new::init_chunks).
-    static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept;
 
     /**
      * \brief Shared body of create_value() and create_value_bool().
@@ -1213,18 +1213,18 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      */
     [[nodiscard]] bool owns_live_buffer() const noexcept
     {
-        const T* v = Base::values_load();
-        if (v == Base::get_cst_val1())
+        const T* vals = Base::values_load();
+        if (vals == Base::get_cst_val1())
         {
             return false;
         }
         if constexpr (is_bool)
         {
-            return !BaseSpec::is_cst_val2(v);
+            return !BaseSpec::is_cst_val2(vals);
         }
         else
         {
-            return !BaseSpec::is_cst_val2_any(v);
+            return !BaseSpec::is_cst_val2_any(vals);
         }
     }
 

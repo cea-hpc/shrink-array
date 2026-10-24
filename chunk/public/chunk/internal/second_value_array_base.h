@@ -57,24 +57,24 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
      * @brief Allocates storage for a specific chunk if it's currently constant.
      * Uses the metadata provided by the derived class.
      */
-    void alloc_chunk(IndType i)
+    void alloc_chunk(IndType index)
     {
-        const int num_chunk = this->chunk_index_of(i);
+        const int num_chunk = this->chunk_index_of(index);
 
         // Deliberately NO dirty-marking: the dirty bit is for the DEFERRED path only, which
         // marks at enqueue (see DeferredReadGate, chunk_base.h). Marking here would enable the
         // read gate for preallocated chunks. Exercised by shrink_bench --test_prealloc.
-        chunk_list_[num_chunk].alloc_chunk(derived().get_metadata(i));
+        chunk_list_[num_chunk].alloc_chunk(derived().get_metadata(index));
     }
 
     /**
      * @brief Thread-aware allocation for a specific chunk.
      */
-    void alloc_chunk(IndType i, int thr_rank)
+    void alloc_chunk(IndType index, int thr_rank)
     {
-        const int num_chunk = this->chunk_index_of(i);
-        // See alloc_chunk(i) above: deliberately no dirty-marking.
-        chunk_list_[num_chunk].alloc_chunk(derived().get_metadata(i), thr_rank);
+        const int num_chunk = this->chunk_index_of(index);
+        // See alloc_chunk(index) above: deliberately no dirty-marking.
+        chunk_list_[num_chunk].alloc_chunk(derived().get_metadata(index), thr_rank);
     }
 
     // flush_pending_deferred_ops() lives in ParallelSupportCommon / ...Serial

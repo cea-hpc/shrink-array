@@ -96,7 +96,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     /**
      * @brief Multiply this element by `v` in place.
      * @tparam U Type of the operand.
-     * @param v Multiplier.
+     * @param operand Multiplier.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.
@@ -104,7 +104,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *         element unchanged.*/
     template <typename U>
         requires ElementMultipliable<T>
-    Derived operator*=(const U& v) noexcept
+    Derived operator*=(const U& operand) noexcept
     {
         if constexpr (is_bool)
         {
@@ -117,12 +117,12 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
             // reading the returned proxy goes through operator T() -> read_pure()
             // and its read-side gate. BaseT<U> is the arithmetic type even if U
             // is a Proxy.
-            if (v == static_cast<BaseT<U>>(1))
+            if (operand == static_cast<BaseT<U>>(1))
             {
                 return derived();
             }
 
-            derived().template apply_compound_operation<U>(std::multiplies<>{}, v);
+            derived().template apply_compound_operation<U>(std::multiplies<>{}, operand);
             return derived();
         }
     }
@@ -130,7 +130,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     /**
      * @brief Divide this element by `v` in place.
      * @tparam U Type of the operand.
-     * @param v Divisor. Integer element: check builds stop on v == 0
+     * @param operand Divisor. Integer element: check builds stop on v == 0
      *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
@@ -139,7 +139,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *         element unchanged.*/
     template <typename U>
         requires ElementDivisible<T>
-    Derived operator/=(const U& v) noexcept
+    Derived operator/=(const U& operand) noexcept
     {
         if constexpr (is_bool)
         {
@@ -148,16 +148,16 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
         }
         else
         {
-            internal::check_integer_divisor<T>(v, "/=");
+            internal::check_integer_divisor<T>(operand, "/=");
 
             // Early-out: dividing by 1 changes nothing -- nothing to write, and
             // nothing to read: reading the returned proxy goes through
             // operator T() -> read_pure() (see operator*=).
-            if (v == static_cast<BaseT<U>>(1))
+            if (operand == static_cast<BaseT<U>>(1))
             {
                 return derived();
             }
-            derived().template apply_compound_operation<U>(std::divides<>{}, v);
+            derived().template apply_compound_operation<U>(std::divides<>{}, operand);
             return derived();
         }
     }
@@ -165,7 +165,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     /**
      * @brief Compute this element modulo `v` in place.
      * @tparam U Type of the operand.
-     * @param v Modulus. Check builds stop on v == 0
+     * @param operand Modulus. Check builds stop on v == 0
      *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
@@ -174,15 +174,15 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *         element unchanged.*/
     template <typename U>
         requires ElementModulable<T> || is_bool_like_v<T>
-    Derived operator%=(const U& v) noexcept
+    Derived operator%=(const U& operand) noexcept
     {
         if constexpr (std::is_integral_v<T> && is_not_bool)
         {
-            internal::check_integer_divisor<T>(v, "%=");
+            internal::check_integer_divisor<T>(operand, "%=");
             // A non-zero slot can land on zero (4 % 2): apply_compound_operation
             // counts a result equal to the first value, so the chunk can reach
             // "full first value" and fold.
-            derived().template apply_compound_operation<U>(typename Base::modulo{}, v);
+            derived().template apply_compound_operation<U>(typename Base::modulo{}, operand);
             return derived();
         }
         else

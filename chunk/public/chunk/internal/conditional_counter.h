@@ -65,11 +65,11 @@ class ConditionalCounter
             --value_;
         }
     }
-    void operator=(CounterValueT v) noexcept
+    void operator=(CounterValueT value) noexcept
     {
         if constexpr (Enabled)
         {
-            value_ = v;
+            value_ = value;
         }
     }
 

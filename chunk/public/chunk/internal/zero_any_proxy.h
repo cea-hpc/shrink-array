@@ -97,9 +97,9 @@ class PointerMap
     {
         if (!using_big_)
         {
-            for (const auto& [k, tab] : small_)
+            for (const auto& [entry_key, tab] : small_)
             {
-                if (k == key)
+                if (entry_key == key)
                 {
                     return tab;
                 }
@@ -168,9 +168,9 @@ class PointerMap
             {
                 using_big_ = true;
                 big_.reserve(small_.size());
-                for (const auto& [k, tab] : small_)
+                for (const auto& [key, tab] : small_)
                 {
-                    big_[k] = tab;
+                    big_[key] = tab;
                 }
                 small_.clear();
             }
@@ -228,14 +228,14 @@ class PointerMap
         bool fb = false;
         if (!using_big_)
         {
-            for (const auto& [k, tab] : small_)
+            for (const auto& [key, tab] : small_)
             {
-                if (k == key_a)
+                if (key == key_a)
                 {
                     na = tab;
                     fa = true;
                 }
-                if (k == key_b)
+                if (key == key_b)
                 {
                     nb = tab;
                     fb = true;
@@ -245,13 +245,13 @@ class PointerMap
             {
                 return false;
             }
-            for (auto& [k, tab] : small_)
+            for (auto& [key, tab] : small_)
             {
-                if (k == key_a)
+                if (key == key_a)
                 {
                     tab = nb;
                 }
-                else if (k == key_b)
+                else if (key == key_b)
                 {
                     tab = na;
                 }
@@ -279,16 +279,16 @@ class PointerMap
     {
         if (!using_big_)
         {
-            for (const auto& [k, tab] : small_)
+            for (const auto& [key, tab] : small_)
             {
-                func(k);
+                func(key);
             }
         }
         else
         {
-            for (const auto& [k, tab] : big_)
+            for (const auto& [key, tab] : big_)
             {
-                func(k);
+                func(key);
             }
         }
     }
@@ -383,9 +383,9 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * \param i Index of the chunk within the tab.
      * \param v Value to assign.
      */
-    static void set(int num_tab, int i, InT<T> v)
+    static void set(int num_tab, int num_chunk, InT<T> value)
     {
-        get_tab_second_value(num_tab, i).set(v);
+        get_tab_second_value(num_tab, num_chunk).set(value);
     }
 
   protected:
@@ -465,10 +465,10 @@ class ProxySpec<bool, Derived> : public SecondValueProxyBase<Derived, bool, Chun
     using ValuesTypeRef = SecondValueProxyBase<Derived, bool, ChunkType>::ValuesTypeRef;
 
     /// @brief Forward the element reference, index and chunk to SecondValueProxyBase.
-    /// @param v Reference to the chunk's values.
+    /// @param values Reference to the chunk's values.
     /// @param num Index of the element in the chunk.
     /// @param chunk Owning chunk.
-    explicit ProxySpec(ValuesTypeRef v, int num, ChunkType& chunk) noexcept : Base2(v, num, chunk) {}
+    explicit ProxySpec(ValuesTypeRef values, int num, ChunkType& chunk) noexcept : Base2(values, num, chunk) {}
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
@@ -497,9 +497,9 @@ class ProxySpec<bool, Derived> : public SecondValueProxyBase<Derived, bool, Chun
      * \param i Index of the chunk within the tab.
      * \param v Value to assign.
      */
-    static void set(int num_tab, int i, bool v) noexcept
+    static void set(int num_tab, int num_chunk, bool value) noexcept
     {
-        tab_second_value[num_tab][i] = v;
+        tab_second_value[num_tab][num_chunk] = value;
     }
 
   protected:
@@ -589,7 +589,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     void execute_inplace_operation_async(auto* ctx, Lambda operation) const;
 
     template <typename Op, typename Body, typename U>
-    void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& v, Body lbd) const;
+    void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& operand, Body lbd) const;
 
     /// @brief Rank @p thr's zero_any candidate list.
     TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
@@ -689,18 +689,18 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /** @brief Clean path for safe assignments (small operand, by value). */
     template <typename U>
         requires IsCleanAssignment<T, U>
-    T operator=(const U& v) noexcept
+    T operator=(const U& operand) noexcept
     {
-        return assign_impl<U>(v);
+        return assign_impl<U>(operand);
     }
 
     /** @brief Trap path for risky assignments (e.g., float = 1.01). */
     template <typename U>
         requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
     [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
-    T operator=(const U& v) noexcept
+    T operator=(const U& operand) noexcept
     {
-        return assign_impl<T>(static_cast<T>(v));
+        return assign_impl<T>(static_cast<T>(operand));
     }
 
     /**
@@ -714,8 +714,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     {
         if (std::addressof(from) != this) // operator& is deleted
         {
-            const InT<T> v = static_cast<T>(from); // complete before the write starts
-            assign_impl<T>(v);
+            const InT<T> value = static_cast<T>(from); // complete before the write starts
+            assign_impl<T>(value);
         }
         return *this;
     }
@@ -907,7 +907,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     inline void perform_compression() noexcept;
 
-    inline void perform_core_assignment(T* vals, InT<T> v) const;
+    inline void perform_core_assignment(T* vals, InT<T> value) const;
 
     /**
      * @brief Checks if a value change should trigger compression consideration
@@ -960,10 +960,10 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
         return may_become_uniform(new_value);
     }
 
-    /// @brief Could the chunk be uniform at @p v once this write lands?
+    /// @brief Could the chunk be uniform at @p value once this write lands?
     /// @details NECESSARY condition: two other elements of the chunk (the first
     ///          and the last, or their neighbours when one is the element being
-    ///          written) already hold @p v, so the write completing a uniform
+    ///          written) already hold @p value, so the write completing a uniform
     ///          chunk always passes. Read with the scan accessor (counted as
     ///          internal in CHUNK_STATS). Two concurrent final writes landing on the
     ///          two reference elements may both read the other's old value and
@@ -973,7 +973,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     ///          elements belong to other writers, so both sides are relaxed atomics
     ///          (relaxed_element.h; the stores in store_value()). A type that cannot
     ///          take them (the aggregates) skips the filter and always queues.
-    [[nodiscard]] bool may_become_uniform(InT<T> v) const noexcept
+    [[nodiscard]] bool may_become_uniform(InT<T> value) const noexcept
     {
         if constexpr (!internal::relaxed_element_access_v<T>)
         {
@@ -981,15 +981,16 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
         }
         else
         {
-            const int s = static_cast<int>(this->chunk_size());
-            if (s < 3) [[unlikely]]
+            const int chunk_sz = static_cast<int>(this->chunk_size());
+            if (chunk_sz < 3) [[unlikely]]
             {
                 return true;
             }
-            const int i  = this->num_;
-            const int r0 = (i == 0) ? 1 : 0;
-            const int r1 = (i == s - 1) ? s - 2 : s - 1;
-            return this->chunk_.read_value_scan_relaxed(r0) == v && this->chunk_.read_value_scan_relaxed(r1) == v;
+            const int offset = this->num_;
+            const int r0     = (offset == 0) ? 1 : 0;
+            const int r1     = (offset == chunk_sz - 1) ? chunk_sz - 2 : chunk_sz - 1;
+            return this->chunk_.read_value_scan_relaxed(r0) == value &&
+                   this->chunk_.read_value_scan_relaxed(r1) == value;
         }
     }
 
@@ -1034,30 +1035,30 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     void execute_simple_operation(ModifyFn modify_fn);
 
     template <typename Op, typename ModifyFn, typename U>
-    void execute_arithmetic_compound_operation(Op op, const U& v, ModifyFn modify_fn);
+    void execute_arithmetic_compound_operation(Op op, const U& operand, ModifyFn modify_fn);
 
     template <typename ModifyFn>
     void execute_inplace_operation(ModifyFn modify_fn);
 
-    inline void handle_bool_assignment(InT<T> v);
+    inline void handle_bool_assignment(InT<T> value);
 
-    inline void handle_no_bool_assignment(InT<T> v);
+    inline void handle_no_bool_assignment(InT<T> value);
 
     /**
      * @brief Assigns a value to the proxy element.
-     * @param v Value to assign.
+     * @param value Value to assign.
      * @return Assigned value.
      */
     template <typename U>
     // InT<U>, not const U&: the write engine is the one frame not inlined into the caller,
     // so a small type crosses the call in a register. Non-deducible: call assign_impl<U>(v).
-    T assign_impl(InT<U> v) noexcept;
+    T assign_impl(InT<U> value) noexcept;
 
     // ========================================================================
     // COMPOUND ARITHMETIC OPERATORS
     // ========================================================================
     template <typename U, typename Op>
-    void apply_compound_operation(Op op, InT<U> v) noexcept; // InT: see assign_impl
+    void apply_compound_operation(Op op, InT<U> operand) noexcept; // InT: see assign_impl
 
     CstSlot* ptr_type_cst_ = nullptr; ///< pointer into tab_type_cst_val[num_tab]
 };

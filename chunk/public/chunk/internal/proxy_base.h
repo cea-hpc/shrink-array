@@ -87,7 +87,7 @@ struct is_simple_proxy<zero::Proxy<T>> : public std::true_type
 };
 namespace internal
 {
-/// @brief Element @p n behind a values pointer the caller has loaded -- the
+/// @brief Element @p index behind a values pointer the caller has loaded -- the
 ///        raw read of ProxyBase::read_values() and read_values_async().
 /// @details NOT raw for a zero_any second constant: its pointer names an
 ///          identifier in a region that is never written, so indexing it reads
@@ -97,7 +97,7 @@ namespace internal
 ///          and the pointer can disagree, and converting a pointer outside the
 ///          region indexes value_by_id[] out of bounds.
 template <typename T>
-[[nodiscard]] T element_of(const T* vals, std::size_t n) noexcept
+[[nodiscard]] T element_of(const T* vals, std::size_t index) noexcept
 {
     if constexpr (requires(const T* ptr) {
                       TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
@@ -109,10 +109,10 @@ template <typename T>
             return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
         }
     }
-    // elem_get, not vals[n]: for Bit, vals[n] indexes BYTES past the
+    // elem_get, not vals[index]: for Bit, vals[index] indexes BYTES past the
     // chunk_size / 8 byte buffer.
     // raw-read: element_of -- callers hold the write session, a ReadSection, or replay after materialisation
-    return elem_get(vals, n);
+    return elem_get(vals, index);
 }
 
 /// @brief Check builds: stop on an integer `/=` or `%=` by zero.
@@ -122,14 +122,15 @@ template <typename T>
 ///          IEEE (inf, NaN) and the result is defined. Compiled out of release
 ///          builds. Shared by zero::Proxy and SecondValueProxyBase (zero_one_value, zero_any).
 /// @tparam T Element type.
-/// @param v Divisor (a value or a proxy).
+/// @param divisor Divisor (a value or a proxy).
 /// @param op "/=" or "%=", for the message.
 template <typename T, typename U>
-CHUNK_FORCE_INLINE void check_integer_divisor([[maybe_unused]] const U& v, [[maybe_unused]] const char* op) noexcept
+CHUNK_FORCE_INLINE void check_integer_divisor([[maybe_unused]] const U&    divisor,
+                                              [[maybe_unused]] const char* op) noexcept
 {
     if constexpr (build_config::any_check && std::is_integral_v<T> && !std::is_same_v<T, bool>)
     {
-        if (static_cast<BaseT<U>>(v) == BaseT<U>{}) [[unlikely]]
+        if (static_cast<BaseT<U>>(divisor) == BaseT<U>{}) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("integer element {} by zero (undefined behaviour)", op);
         }
@@ -238,13 +239,13 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
         }
     }
 
-    /// @brief Write @p v at the offset @p ctx recorded, on the replay path.
+    /// @brief Write @p value at the offset @p ctx recorded, on the replay path.
     /// @warning Reloads the chunk's value pointer from @p ctx: the one captured
     ///          when the write was enqueued may since have been reallocated.
-    static void store_value_async(auto* ctx, InT<T> v) noexcept
+    static void store_value_async(auto* ctx, InT<T> value) noexcept
     {
         T* const values_loc = ctx->chunk.values_load();
-        elem_set(values_loc, static_cast<std::size_t>(ctx->num), static_cast<T>(v));
+        elem_set(values_loc, static_cast<std::size_t>(ctx->num), static_cast<T>(value));
     }
 
     /// @brief Read at the offset @p ctx recorded, on the replay path.
@@ -493,9 +494,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return !chunk_.is_cst_val1();
     }
 
-    /// @brief Would writing @p v leave the chunk compressed exactly as it is?
+    /// @brief Would writing @p value leave the chunk compressed exactly as it is?
     /// @details The write fast path's early-out: the chunk holds only its first
-    ///          value and @p v IS that value, so there is nothing to do and no
+    ///          value and @p value IS that value, so there is nothing to do and no
     ///          reason to materialise the chunk.
     ///
     ///          Never while the chunk has a deferred op pending
@@ -504,15 +505,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          engine, whose WAW guard retires the op before the store;
     ///          otherwise the write is silently lost. pending_any() is one
     ///          acquire load of the chunk header, constant-false in a serial build.
-    [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(InT<T> v) const noexcept
+    [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(InT<T> value) const noexcept
     {
-        return v == static_cast<T>(ChunkT::first_value) && is_cst_val1() && !chunk_.pending_any();
+        return value == static_cast<T>(ChunkT::first_value) && is_cst_val1() && !chunk_.pending_any();
     }
 
     /// @brief is_cst_val1_and_v_equal_first_value() from a loaded value pointer.
-    [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(const T* values_loc, InT<T> v) const noexcept
+    [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(const T* values_loc, InT<T> value) const noexcept
     {
-        return v == static_cast<T>(ChunkT::first_value) && is_cst_val1(values_loc) && !chunk_.pending_any();
+        return value == static_cast<T>(ChunkT::first_value) && is_cst_val1(values_loc) && !chunk_.pending_any();
     }
 
     /// @brief Point this proxy at an already-known candidate flag.
@@ -553,24 +554,24 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /// @brief This element, written raw: `values[num] = v`, or an atomic RMW
     ///        of its word for Bit. No sync, no check.
-    void raw_elem_set(InT<T> v) const noexcept
+    void raw_elem_set(InT<T> value) const noexcept
     {
-        elem_set(static_cast<T*>(values_), static_cast<std::size_t>(num_), static_cast<T>(v));
+        elem_set(static_cast<T*>(values_), static_cast<std::size_t>(num_), static_cast<T>(value));
     }
 
-    /// @brief Write @p v straight through #values, with no synchronisation.
+    /// @brief Write @p value straight through #values, with no synchronisation.
     /// @pre The chunk is materialised and the caller holds the write path.
-    void store_value(InT<T> v) const noexcept
+    void store_value(InT<T> value) const noexcept
     {
-        store_value_at(values_, v);
+        store_value_at(values_, value);
     }
 
     /// @brief store_value() through a pointer the caller has already loaded.
     /// @param vals The chunk's values pointer, loaded inside the write session
     ///        (after the materialisation, if there was one); saves a reload.
-    /// @param v The value to store.
+    /// @param value The value to store.
     /// @pre As store_value().
-    void store_value_at(T* const vals, InT<T> v) const noexcept
+    void store_value_at(T* const vals, InT<T> value) const noexcept
     {
         // The chunk must not be COMMITTED to a compressor here: a writer on a
         // marked chunk is sent to the slow path by must_defer_write(), and a
@@ -592,12 +593,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // element -- relaxed atomic store, see relaxed_element.h.
         if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
         {
-            internal::store_element_relaxed(vals + num_, static_cast<T>(v));
+            internal::store_element_relaxed(vals + num_, static_cast<T>(value));
         }
         else
         {
             // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
-            elem_set(vals, static_cast<std::size_t>(num_), static_cast<T>(v));
+            elem_set(vals, static_cast<std::size_t>(num_), static_cast<T>(value));
         }
     }
 
@@ -686,13 +687,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *        compare-exchange loop, and two threads updating the same element
      *        race as they would on a plain T.
      * @param operation Operation to apply.
-     * @param v         Operand.
+     * @param operand         Operand.
      * @param v_old     Unused by the body (kept for the callers' signature; the
      *                  bodies reload the current value themselves).
      */
     template <typename U, typename Op>
         requires std::is_invocable_r_v<T, Op, T, U>
-    void apply_atomic_op(Op operation, const U& v, InT<T> v_old);
+    void apply_atomic_op(Op operation, const U& operand, InT<T> v_old);
 
     /**
      * @brief Generic helper for compound arithmetic operations
@@ -702,7 +703,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * @tparam U Type of the value to apply
      * @tparam Op Operation type (callable: T(T, U))
-     * @param v Value to use in the operation
+     * @param operand Value to use in the operation
      * @param operation Binary function applying the operation (e.g., a + b)
      * @note Returns nothing: the operators return the proxy, whose conversion
      *       to T reads the resulting value (synchronised). On the deferred
@@ -712,7 +713,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note Increments CHUNK_STATS statistics if enabled
      */
     template <typename U, typename Op>
-    void arithmetic_assign(InT<U> v, Op operation) noexcept; // InT: see assign_impl in the proxies
+    void arithmetic_assign(InT<U> operand, Op operation) noexcept; // InT: see assign_impl in the proxies
 
     /**
      * @brief Has a thread's candidate list grown past the point where it must be drained?
@@ -923,18 +924,18 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         num_tab_      = num_tab;
     }
 
-    /// @brief Compare the element's value with @p v. Reads through read_pure().
+    /// @brief Compare the element's value with @p operand. Reads through read_pure().
     template <typename U>
-    [[nodiscard]] bool operator==(const U& v) const noexcept
+    [[nodiscard]] bool operator==(const U& operand) const noexcept
     {
-        return read_pure() == v;
+        return read_pure() == operand;
     }
 
-    /// @brief Compare with a @p v already of the element type. Also serves
+    /// @brief Compare with a @p operand already of the element type. Also serves
     ///        `!=` (C++20 rewrites it as `!(p == v)`).
-    [[nodiscard]] bool operator==(T v) const noexcept
+    [[nodiscard]] bool operator==(T operand) const noexcept
     {
-        return read_pure() == v;
+        return read_pure() == operand;
     }
 
     /// @brief Is the element's value falsy?
@@ -949,12 +950,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return -read_pure();
     }
 
-    /// @brief The element's value divided by @p v. Does not modify it.
+    /// @brief The element's value divided by @p operand. Does not modify it.
     template <typename U>
-    [[nodiscard]] T operator/(const U& v) const noexcept
+    [[nodiscard]] T operator/(const U& operand) const noexcept
         requires(!std::is_same_v<U, std::complex<T>>)
     {
-        return read_pure() / static_cast<T>(v);
+        return read_pure() / static_cast<T>(operand);
     }
 
     /// @brief Read the element. This is what makes a proxy behave like a value.
@@ -977,15 +978,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Compound addition assignment -- clean types (e.g. float += float,
      *        float += int).
      * @tparam U Type of operand (implicit conversion to T)
-     * @param v Value to add
+     * @param operand Value to add
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires IsCleanCompoundOp<T, U> && ElementAddable<T>
-    Derived operator+=(const U& v) noexcept
+    Derived operator+=(const U& operand) noexcept
     {
-        arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
+        arithmetic_assign<T>(static_cast<T>(operand), std::plus<T>{});
         return derived();
     }
 
@@ -993,9 +994,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename U>
         requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementAddable<T>
     [[deprecated("HPC WARNING: Type mismatch in +=. Possible precision loss. Use 'f' suffix for floats.")]]
-    Derived operator+=(const U& v) noexcept
+    Derived operator+=(const U& operand) noexcept
     {
-        arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
+        arithmetic_assign<T>(static_cast<T>(operand), std::plus<T>{});
         return derived();
     }
 
@@ -1003,7 +1004,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Compound subtraction operator -- clean types.
      *
      * @tparam U Type of the value to subtract (must be compatible with T)
-     * @param v Value to subtract
+     * @param operand Value to subtract
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.
@@ -1012,9 +1013,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
     template <typename U>
         requires IsCleanCompoundOp<T, U> && ElementSubtractable<T>
-    Derived operator-=(const U& v) noexcept
+    Derived operator-=(const U& operand) noexcept
     {
-        arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
+        arithmetic_assign<T>(static_cast<T>(operand), std::minus<T>{});
         return derived();
     }
 
@@ -1023,9 +1024,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename U>
         requires(!IsCleanCompoundOp<T, U>) && std::is_constructible_v<T, U> && ElementSubtractable<T>
     [[deprecated("HPC WARNING: Precision mismatch.")]]
-    Derived operator-=(const U& v) noexcept
+    Derived operator-=(const U& operand) noexcept
     {
-        arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
+        arithmetic_assign<T>(static_cast<T>(operand), std::minus<T>{});
         return derived();
     }
 
@@ -1040,10 +1041,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
 
     template <typename U>
-    Derived operator&=(const U& v) noexcept
+    Derived operator&=(const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs & rhs; });
+        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs & rhs; });
         return derived();
     }
 
@@ -1058,10 +1059,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
 
     template <typename U>
-    Derived operator|=(const U& v) noexcept
+    Derived operator|=(const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs | rhs; });
+        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs | rhs; });
         return derived();
     }
 
@@ -1076,10 +1077,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
 
     template <typename U>
-    Derived operator^=(const U& v) noexcept
+    Derived operator^=(const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs ^ rhs; });
+        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs ^ rhs; });
         return derived();
     }
 
@@ -1096,36 +1097,36 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // SAME element race; different elements of one word do not.
     // ------------------------------------------------------------------------
 
-    /// @brief `a[i] |= b` for ArrayChunkBits: sets the element when @p v is true.
+    /// @brief `a[i] |= b` for ArrayChunkBits: sets the element when @p operand is true.
     template <typename U>
-    Derived operator|=(const U& v) noexcept
+    Derived operator|=(const U& operand) noexcept
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
-        if (static_cast<bool>(v))
+        if (static_cast<bool>(operand))
         {
             derived() = true;
         }
         return derived();
     }
 
-    /// @brief `a[i] &= b` for ArrayChunkBits: clears the element when @p v is false.
+    /// @brief `a[i] &= b` for ArrayChunkBits: clears the element when @p operand is false.
     template <typename U>
-    Derived operator&=(const U& v) noexcept
+    Derived operator&=(const U& operand) noexcept
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
-        if (!static_cast<bool>(v))
+        if (!static_cast<bool>(operand))
         {
             derived() = false;
         }
         return derived();
     }
 
-    /// @brief `a[i] ^= b` for ArrayChunkBits: flips the element when @p v is true.
+    /// @brief `a[i] ^= b` for ArrayChunkBits: flips the element when @p operand is true.
     template <typename U>
-    Derived operator^=(const U& v) noexcept
+    Derived operator^=(const U& operand) noexcept
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
-        if (static_cast<bool>(v))
+        if (static_cast<bool>(operand))
         {
             const bool cur = static_cast<bool>(read_pure()); // synchronised read, as operator bool()
             derived()      = !cur;
@@ -1146,9 +1147,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /** @brief Bitwise shift left — clean types (Integral <<= Integral). */
     template <typename U>
         requires IsCleanShiftOp<T, U>
-    Derived operator<<=(const U& v) noexcept
+    Derived operator<<=(const U& operand) noexcept
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs << rhs; });
+        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs << rhs; });
         return derived();
     }
 
@@ -1156,9 +1157,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename U>
         requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer to avoid precision issues.")]]
-    Derived operator<<=(const U& v) noexcept
+    Derived operator<<=(const U& operand) noexcept
     {
-        bitwise_assign<int>(static_cast<int>(v), [](auto lhs, auto rhs) { return lhs << rhs; });
+        bitwise_assign<int>(static_cast<int>(operand), [](auto lhs, auto rhs) { return lhs << rhs; });
         return derived();
     }
 
@@ -1166,7 +1167,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Compound right shift operator
      *
      * @tparam U Type of the shift amount (must be integral)
-     * @param v Number of positions to shift
+     * @param operand Number of positions to shift
      * @return This proxy (see operator+=).
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
@@ -1174,9 +1175,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
     template <typename U>
         requires IsCleanShiftOp<T, U>
-    Derived operator>>=(const U& v) noexcept
+    Derived operator>>=(const U& operand) noexcept
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs >> rhs; });
+        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs >> rhs; });
         return derived();
     }
 
@@ -1184,9 +1185,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename U>
         requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer.")]]
-    Derived operator>>=(const U& v) noexcept
+    Derived operator>>=(const U& operand) noexcept
     {
-        bitwise_assign<int>(static_cast<int>(v), [](auto lhs, auto rhs) { return lhs >> rhs; });
+        bitwise_assign<int>(static_cast<int>(operand), [](auto lhs, auto rhs) { return lhs >> rhs; });
         return derived();
     }
 
@@ -1287,11 +1288,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Set the candidate-list flag of chunk @p num_chunkl of array @p num_tabl.
      * @param num_tabl Array (table) number.
      * @param num_chunkl Chunk index within that array.
-     * @param v New flag value (0: not queued).
+     * @param flag New flag value (0: not queued).
      */
-    static void set_tab_is_inside_chunk_list_to_compress(int num_tabl, int num_chunkl, char v) noexcept
+    static void set_tab_is_inside_chunk_list_to_compress(int num_tabl, int num_chunkl, char flag) noexcept
     {
-        FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tabl][num_chunkl] = v;
+        FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tabl][num_chunkl] = flag;
     }
 
     /// @brief The whole candidate-flag row for array @p num_tab.
@@ -1368,9 +1369,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief enqueue_deferred_write() for a compound arithmetic operation,
-    ///        carrying @p v and @p operation into the context.
+    ///        carrying @p operand and @p operation into the context.
     template <typename U, typename Op, typename AsyncBody>
-    void enqueue_async_arithmetic(const U& v, Op operation, AsyncBody&& async_body);
+    void enqueue_async_arithmetic(const U& operand, Op operation, AsyncBody&& async_body);
 
     /// @brief Run @p lambda as a simple write, through the derived proxy.
     template <typename Lambda>
@@ -1391,7 +1392,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * @tparam U Type of the value to apply (must be integral)
      * @tparam Op Operation type (callable: T(T, T))
-     * @param v Value to use in the operation
+     * @param operand Value to use in the operation
      * @param operation Function applying the operation
      * @note Returns nothing: the operators return the proxy, whose conversion
      *       to T reads the resulting value (synchronised). On the deferred
@@ -1402,7 +1403,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note Requires T and U to be integral types
      */
     template <typename U, typename Op>
-    void bitwise_assign(InT<U> v, Op operation) noexcept
+    void bitwise_assign(InT<U> operand, Op operation) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<U>;
 
     /**

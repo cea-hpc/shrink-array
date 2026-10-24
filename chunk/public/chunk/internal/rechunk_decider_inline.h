@@ -46,12 +46,12 @@ namespace shrink_array
 ///        cost on the same binary.
 inline bool rechunk_env_dry_run() noexcept
 {
-    static const bool v = []
+    static const bool dry_run = []
     {
-        const char* e = std::getenv("CHUNK_RECHUNK_DRY_RUN");
-        return e != nullptr && e[0] != '\0' && e[0] != '0';
+        const char* env = std::getenv("CHUNK_RECHUNK_DRY_RUN");
+        return env != nullptr && env[0] != '\0' && env[0] != '0';
     }();
-    return v;
+    return dry_run;
 }
 
 // Cap a coarsening move to at most pol_.max_coarsen_factor x cur_size per
@@ -72,13 +72,13 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
         {
             return 0u; // unset: keep the policy
         }
-        unsigned n = 0;
-        if (!shrink_array::parse_number(env, n) || n == 0)
+        unsigned count = 0;
+        if (!shrink_array::parse_number(env, count) || count == 0)
         {
             shrink_array::warn_invalid_env("CHUNK_RECHUNK_MAX_COARSEN", env);
             return 0u; // invalid: keep the policy
         }
-        return n;
+        return count;
     }();
     const unsigned max_factor = env_factor != 0 ? env_factor : pol_.max_coarsen_factor;
 
@@ -345,8 +345,8 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         if (logging::enabled(logging::Channel::rechunk, logging::Level::debug))
         {
             char       next[48] = "";
-            const auto w        = std::format_to_n(next, sizeof(next) - 1, ", next look in {} ticks", hist.backoff);
-            *w.out              = '\0';
+            const auto res      = std::format_to_n(next, sizeof(next) - 1, ", next look in {} ticks", hist.backoff);
+            *res.out            = '\0';
             CHUNK_LOG(
                 debug, rechunk,
                 "decide {}: wait ({}) S={} best={} gain {:.1f} MB (meta {:.1f} + data {:.1f}; cur {:.1f} MB, data "
@@ -365,8 +365,8 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
 ///        template would print once per element type).
 inline int& rechunk_memtrace_last_tick() noexcept
 {
-    static int t = -1000000000;
-    return t;
+    static int last_tick = -1000000000;
+    return last_tick;
 }
 
 // One-call convenience: analyse `arr`, apply the memory + hysteresis policy,
@@ -450,8 +450,8 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         // verdict was a settled "no move" is not analysed again before its
         // next_look_tick -- the analysis scans the array. Never while a
         // re-chunk of it still awaits its "after" measurement.
-        if (const auto h = hist_.find(&arr);
-            h != hist_.end() && tick < h->second.next_look_tick && !pending_after_.contains(&arr))
+        if (const auto hist = hist_.find(&arr);
+            hist != hist_.end() && tick < hist->second.next_look_tick && !pending_after_.contains(&arr))
         {
             return false;
         }
@@ -465,36 +465,36 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             if (churn_env != nullptr && churn_env[0] != '\0' && churn_env[0] != '0' &&
                 (std::strcmp(churn_env, "1") == 0 || std::strcmp(churn_env, name) == 0) && rep.cur >= 0)
             {
-                Hist&          h       = hist_[&arr];
-                const unsigned key     = arr.alloc_key();
-                const long     creates = churn::Materialisations<T>::total(key);
-                const long     phases  = churn::phase_ends();
-                const long     mat_now = static_cast<long>(rep.table[static_cast<std::size_t>(rep.cur)].mat);
-                const unsigned s       = rep.current_size;
-                if (key != 0 && h.churn_creates >= 0 && key == h.churn_key)
+                Hist&          hist     = hist_[&arr];
+                const unsigned key      = arr.alloc_key();
+                const long     creates  = churn::Materialisations<T>::total(key);
+                const long     phases   = churn::phase_ends();
+                const long     mat_now  = static_cast<long>(rep.table[static_cast<std::size_t>(rep.cur)].mat);
+                const unsigned cur_size = rep.current_size;
+                if (key != 0 && hist.churn_creates >= 0 && key == hist.churn_key)
                 {
-                    const long   d_creates = creates - h.churn_creates;
-                    const long   d_phases  = (phases - h.churn_phases) > 0 ? (phases - h.churn_phases) : 1;
-                    const long   growth    = mat_now - h.churn_mat;
+                    const long   d_creates = creates - hist.churn_creates;
+                    const long   d_phases  = (phases - hist.churn_phases) > 0 ? (phases - hist.churn_phases) : 1;
+                    const long   growth    = mat_now - hist.churn_mat;
                     const double transient =
                         static_cast<double>(d_creates - (growth > 0 ? growth : 0)) / static_cast<double>(d_phases);
-                    const double mb_s   = transient * s * sizeof(T) / 1e6;
+                    const double mb_s   = transient * cur_size * sizeof(T) / 1e6;
                     const double mb_64s = transient * 64. * sizeof(T) / 1e6; // same chunk count at 64
                     CHUNK_LOG(info, rechunk,
                               "churn {} S={}: {} materialisations over {} phases since the last tick ({:.0f}/phase), "
                               "resident materialised {} -> {}: transient ~{:.0f} chunks/phase = {:.1f} MB at S={}; at "
                               "S=64: {:.1f} MB if scattered, {:.1f} MB if grouped",
-                              name, s, d_creates, d_phases, static_cast<double>(d_creates) / d_phases, h.churn_mat,
-                              mat_now, transient, mb_s, s, mb_64s, mb_s);
+                              name, cur_size, d_creates, d_phases, static_cast<double>(d_creates) / d_phases,
+                              hist.churn_mat, mat_now, transient, mb_s, cur_size, mb_64s, mb_s);
                 }
                 else
                 {
-                    CHUNK_LOG(info, rechunk, "churn {} S={}: baseline (key {})", name, s, key);
+                    CHUNK_LOG(info, rechunk, "churn {} S={}: baseline (key {})", name, cur_size, key);
                 }
-                h.churn_key     = key;
-                h.churn_creates = creates;
-                h.churn_phases  = phases;
-                h.churn_mat     = mat_now;
+                hist.churn_key     = key;
+                hist.churn_creates = creates;
+                hist.churn_phases  = phases;
+                hist.churn_mat     = mat_now;
             }
         }
 
@@ -587,24 +587,25 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
 inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
 {
     std::fprintf(out, "Re-chunks performed: %zu\n", log_.size());
-    for (const RechunkEvent& e : log_)
+    for (const RechunkEvent& event : log_)
     {
-        const double d_meas = e.mem_before - e.mem_after;
-        if (e.mem_after_old >= 0.)
+        const double d_meas = event.mem_before - event.mem_after;
+        if (event.mem_after_old >= 0.)
         {
             std::fprintf(out,
                          "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
                          "(freed %6.1f MB, %6.1f at unchanged data; advisor predicted %6.1f)\n",
-                         e.iter, e.name.c_str(), e.old_size, e.new_size, e.mem_before / 1e6, e.mem_after / 1e6,
-                         d_meas / 1e6, (e.mem_after_old - e.mem_after) / 1e6, (e.mem_before - e.mem_pred) / 1e6);
+                         event.iter, event.name.c_str(), event.old_size, event.new_size, event.mem_before / 1e6,
+                         event.mem_after / 1e6, d_meas / 1e6, (event.mem_after_old - event.mem_after) / 1e6,
+                         (event.mem_before - event.mem_pred) / 1e6);
         }
         else
         {
             std::fprintf(out,
                          "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
                          "(freed %6.1f MB; advisor predicted %6.1f)\n",
-                         e.iter, e.name.c_str(), e.old_size, e.new_size, e.mem_before / 1e6, e.mem_after / 1e6,
-                         d_meas / 1e6, (e.mem_before - e.mem_pred) / 1e6);
+                         event.iter, event.name.c_str(), event.old_size, event.new_size, event.mem_before / 1e6,
+                         event.mem_after / 1e6, d_meas / 1e6, (event.mem_before - event.mem_pred) / 1e6);
         }
     }
 }

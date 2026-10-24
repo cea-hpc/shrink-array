@@ -652,10 +652,10 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
      */
     static void mark_list_dangerous_for_thread(int thr_rank) noexcept
     {
-        auto& v = dangerous_lists_per_thread[thr_rank].value;
-        if (v.load(std::memory_order_relaxed) == 0)
+        auto& lists = dangerous_lists_per_thread[thr_rank].value;
+        if (lists.load(std::memory_order_relaxed) == 0)
         {
-            v.store(1, std::memory_order_release);
+            lists.store(1, std::memory_order_release);
         }
     }
 

@@ -86,9 +86,9 @@ struct NoInitAllocator : std::allocator<T>
 
     /// @brief Any other construction (copy, move): as std::allocator.
     template <typename U, typename A0, typename... Args>
-    void construct(U* p, A0&& a0, Args&&... args)
+    void construct(U* ptr, A0&& a0, Args&&... args)
     {
-        std::construct_at(p, std::forward<A0>(a0), std::forward<Args>(args)...);
+        std::construct_at(ptr, std::forward<A0>(a0), std::forward<Args>(args)...);
     }
 };
 } // namespace shrink_array
@@ -122,31 +122,31 @@ inline bool can_open_team() noexcept
     return false;
 }
 
-/// @brief Does a loop over @p n chunks take a team of its own? At least
+/// @brief Does a loop over @p count chunks take a team of its own? At least
 ///        parallel_init_min_chunks of them, and can_open_team().
-inline bool use_own_team(long n) noexcept
+inline bool use_own_team(long count) noexcept
 {
-    return n >= parallel_init_min_chunks && can_open_team();
+    return count >= parallel_init_min_chunks && can_open_team();
 }
 
 /**
- * @brief Run @p init(i) for every chunk index i in [0, @p n): on a team of its
- *        own when use_own_team(@p n), on the calling thread otherwise.
- * @param n    chunk count
+ * @brief Run @p init(i) for every chunk index i in [0, @p count): on a team of its
+ *        own when use_own_team(@p count), on the calling thread otherwise.
+ * @param count    chunk count
  * @param init callable `void(int)`; iterations must be independent
  */
 template <typename Init>
-void for_each_chunk(int n, Init&& init)
+void for_each_chunk(int count, Init&& init)
 {
     if constexpr (build_config::threaded)
     {
-        if (use_own_team(n))
+        if (use_own_team(count))
         {
-            pmp::parallel_for(0, n, pmp::Options{}, init);
+            pmp::parallel_for(0, count, pmp::Options{}, init);
             return;
         }
     }
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < count; ++i)
     {
         init(i);
     }
@@ -212,36 +212,36 @@ void construct_range(T* base, std::size_t first, std::size_t last, Make&& make)
 }
 
 /**
- * @brief A vector of @p n elements, each constructed from @p args (none: value-
+ * @brief A vector of @p count elements, each constructed from @p args (none: value-
  *        initialised), by a team when it is large (construct_range).
  * @details For the atomic rows too: an atomic is constructed in place, never
  *          moved (the returned vector is moved whole, its buffer kept).
  */
 template <typename T, typename... Args>
-[[nodiscard]] NoInitVector<T> make_filled(std::size_t n, const Args&... args)
+[[nodiscard]] NoInitVector<T> make_filled(std::size_t count, const Args&... args)
 {
     static_assert(std::is_trivially_destructible_v<T>, "an unconstructed element must be safe to destroy");
-    NoInitVector<T> v(n); // allocates only (NoInitAllocator)
-    construct_range(v.data(), 0, n, [&](T* p) { std::construct_at(p, args...); });
-    return v;
+    NoInitVector<T> vec(count); // allocates only (NoInitAllocator)
+    construct_range(vec.data(), 0, count, [&](T* ptr) { std::construct_at(ptr, args...); });
+    return vec;
 }
 
 /**
- * @brief Resize @p v to @p n; the elements it gains are copies of @p value,
+ * @brief Resize @p vec to @p count; the elements it gains are copies of @p value,
  *        constructed by a team when there are many (construct_range).
  * @details Keeps [0, min(old size, n)), as std::vector::resize(n, value). A
  *          reallocation copies the kept elements on the calling thread; a row
  *          filled from empty (every storage build) has none.
  */
 template <typename T>
-void resize_filled(NoInitVector<T>& v, std::size_t n, const T& value)
+void resize_filled(NoInitVector<T>& vec, std::size_t count, const T& value)
 {
     static_assert(std::is_trivially_destructible_v<T>, "an unconstructed element must be safe to destroy");
-    const std::size_t held = v.size();
-    v.resize(n); // the new tail is allocated, not constructed (NoInitAllocator)
-    if (n > held)
+    const std::size_t held = vec.size();
+    vec.resize(count); // the new tail is allocated, not constructed (NoInitAllocator)
+    if (count > held)
     {
-        construct_range(v.data(), held, n, [&](T* p) { std::construct_at(p, value); });
+        construct_range(vec.data(), held, count, [&](T* ptr) { std::construct_at(ptr, value); });
     }
 }
 

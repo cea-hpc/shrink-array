@@ -269,12 +269,13 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
     {
         // What is left in the set must be exactly the chunks with ops still
         // queued (put back above): anything else is a stale entry.
-        for (ChunkT* c : deferred_chunk_loc)
+        for (ChunkT* chunk : deferred_chunk_loc)
         {
-            const auto it = thread_map.find(c);
+            const auto it = thread_map.find(chunk);
             if (it == thread_map.end() || !it->second || it->second->empty())
             {
-                CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr, c);
+                CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr,
+                                       chunk);
             }
         }
     }

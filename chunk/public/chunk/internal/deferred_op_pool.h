@@ -188,8 +188,8 @@ struct ExitedThreadPools
 /// @brief The process-wide list (immortal: threads add to it from their thread_local destructors).
 [[nodiscard]] inline ExitedThreadPools& exited_thread_pools()
 {
-    static auto* const p = new ExitedThreadPools; // NOLINT(cppcoreguidelines-owning-memory): immortal
-    return *p;
+    static auto* const pools = new ExitedThreadPools; // NOLINT(cppcoreguidelines-owning-memory): immortal
+    return *pools;
 }
 
 /// @brief In place of the inline allocator when it lives on the heap.
@@ -280,9 +280,9 @@ inline void retire_exited_thread_pools()
             const std::scoped_lock lock(ex.mutex);
             retired.swap(ex.list);
         }
-        for (auto* a : retired)
+        for (auto* alloc : retired)
         {
-            delete a; // NOLINT(cppcoreguidelines-owning-memory): owned by the list
+            delete alloc; // NOLINT(cppcoreguidelines-owning-memory): owned by the list
         }
     }
 }
@@ -314,9 +314,9 @@ struct DeferredFreeListSlot
     {
         if constexpr (!build_config::use_fast_alloc)
         {
-            for (T* p : fl)
+            for (T* block : fl)
             {
-                ::operator delete(static_cast<void*>(p));
+                ::operator delete(static_cast<void*>(block));
             }
         }
     }
@@ -644,20 +644,20 @@ class AllocatorRegistry
     template <typename T>
     static FastAllocatorBase* find_or_create()
     {
-        auto&        v  = allocs();
-        const size_t sz = sizeof(T);
+        auto&        allocators = allocs();
+        const size_t sz         = sizeof(T);
 
-        for (auto& a : v)
+        for (auto& alloc : allocators)
         {
-            if (a->block_size == sz)
+            if (alloc->block_size == sz)
             {
-                return a.get();
+                return alloc.get();
             }
         }
 
         auto               ptr = std::make_unique<FastAllocatorConcrete<T, arena_of_tag<Tag>::value>>();
         FastAllocatorBase* raw = ptr.get();
-        v.push_back(std::move(ptr));
+        allocators.push_back(std::move(ptr));
         return raw;
     }
 
@@ -668,15 +668,15 @@ class AllocatorRegistry
     ///       rescan.
     static unsigned int& generation()
     {
-        thread_local unsigned int g = 0;
-        return g;
+        thread_local unsigned int gen = 0;
+        return gen;
     }
 
     /// @brief This thread's allocators (one per object size seen so far).
     static std::vector<std::unique_ptr<FastAllocatorBase>>& allocs()
     {
-        thread_local std::vector<std::unique_ptr<FastAllocatorBase>> v;
-        return v;
+        thread_local std::vector<std::unique_ptr<FastAllocatorBase>> allocators;
+        return allocators;
     }
 };
 

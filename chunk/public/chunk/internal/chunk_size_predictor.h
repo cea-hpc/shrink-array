@@ -64,20 +64,22 @@ struct PredictorPoint
 
 // Pure aggregation — unit-testable without any array.
 template <typename T>
-[[nodiscard]] PredictorPoint
-predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned s, unsigned k, std::size_t meta_per_block)
+[[nodiscard]] PredictorPoint predict_at_multiple(const std::vector<std::pair<bool, T>>& summary,
+                                                 unsigned                               chunk_sz,
+                                                 unsigned                               multiple,
+                                                 std::size_t                            meta_per_block)
 {
-    const unsigned sp       = s * k;
+    const unsigned sp       = chunk_sz * multiple;
     const int      nchunks  = static_cast<int>(summary.size());
     int            n_blocks = 0;
     int            n_const  = 0;
 
-    for (int base = 0; base < nchunks; base += static_cast<int>(k))
+    for (int base = 0; base < nchunks; base += static_cast<int>(multiple))
     {
         ++n_blocks;
         bool             all_const = true;
         std::optional<T> ref;
-        for (unsigned j = 0; j < k; ++j)
+        for (unsigned j = 0; j < multiple; ++j)
         {
             const int idx = base + static_cast<int>(j);
             if (idx >= nchunks)
@@ -114,7 +116,7 @@ predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned s, 
 // and log current vs predicted-optimal. Log only — no re-chunk.
 template <typename T>
 void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
-                            unsigned                               s,
+                            unsigned                               chunk_sz,
                             int                                    num_tab,
                             const char*                            variant,
                             std::size_t                            meta_per_block,
@@ -126,7 +128,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
         return;
     }
 
-    PredictorPoint best{.s_prime = s, .mem_bytes = ~std::size_t{0}, .n_const_blocks = 0, .n_blocks = 0};
+    PredictorPoint best{.s_prime = chunk_sz, .mem_bytes = ~std::size_t{0}, .n_const_blocks = 0, .n_blocks = 0};
     PredictorPoint current{};
     bool           have_current = false;
 
@@ -136,7 +138,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
         {
             break;
         }
-        const PredictorPoint point = predict_at_multiple<T>(summary, s, k, meta_per_block);
+        const PredictorPoint point = predict_at_multiple<T>(summary, chunk_sz, k, meta_per_block);
         if (k == 1)
         {
             current      = point;
@@ -162,7 +164,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
             CHUNK_LOG(info, advisor,
                       "size prediction {} tab={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
                       "blocks constant)",
-                      variant, num_tab, s, current.mem_bytes, best.s_prime, best.mem_bytes, gain_pct,
+                      variant, num_tab, chunk_sz, current.mem_bytes, best.s_prime, best.mem_bytes, gain_pct,
                       best.n_const_blocks, best.n_blocks);
         }
     }

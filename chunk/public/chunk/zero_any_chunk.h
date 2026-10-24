@@ -461,7 +461,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Shared by the three
     ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Derived* v, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Derived* chunks, std::size_t count) noexcept;
 };
 
 /**

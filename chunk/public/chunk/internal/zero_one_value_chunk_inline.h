@@ -83,9 +83,9 @@ namespace shrink_array
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void* zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
-    auto* v = static_cast<zero_one_value::Chunk<T>*>(::operator new(sz));
-    init_chunks_cst_val(v, sz / sizeof(zero_one_value::Chunk<T>));
-    return static_cast<void*>(v);
+    auto* chunks = static_cast<zero_one_value::Chunk<T>*>(::operator new(sz));
+    init_chunks_cst_val(chunks, sz / sizeof(zero_one_value::Chunk<T>));
+    return static_cast<void*>(chunks);
 }
 
 // Out of line on purpose, as operator new[] above: inlined, either one shows
@@ -99,10 +99,11 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_one_value::Chunk<T>* v,
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_one_value::Chunk<T>* chunks,
                                                                                  std::size_t count) noexcept
 {
-    chunk_array_new::init_chunks(v, count, [](zero_one_value::Chunk<T>& chunk) { chunk.init_after_constructor(); });
+    chunk_array_new::init_chunks(chunks, count,
+                                 [](zero_one_value::Chunk<T>& chunk) { chunk.init_after_constructor(); });
 }
 
 

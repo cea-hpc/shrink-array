@@ -54,88 +54,89 @@ inline constexpr std::size_t word_bits  = 64;            ///< bits per word
 inline constexpr WordT       word_ones  = ~WordT{0};     ///< a word of 1 bits
 inline constexpr std::size_t word_bytes = sizeof(WordT); ///< bytes per word
 
-/// @brief Words holding @p n bits.
-[[nodiscard]] constexpr std::size_t words_for(std::size_t n) noexcept
+/// @brief Words holding @p nbits bits.
+[[nodiscard]] constexpr std::size_t words_for(std::size_t nbits) noexcept
 {
-    return (n + word_bits - 1) / word_bits;
+    return (nbits + word_bits - 1) / word_bits;
 }
 
-/// @brief Bytes of storage for @p n bits: whole words, at least one.
-[[nodiscard]] constexpr std::size_t bytes_for(std::size_t n) noexcept
+/// @brief Bytes of storage for @p nbits bits: whole words, at least one.
+[[nodiscard]] constexpr std::size_t bytes_for(std::size_t nbits) noexcept
 {
-    const std::size_t w = words_for(n);
-    return (w > 0 ? w : 1) * word_bytes;
+    const std::size_t nwords = words_for(nbits);
+    return (nwords > 0 ? nwords : 1) * word_bytes;
 }
 
-/// @brief Mask of bit @p i inside its word.
-[[nodiscard]] constexpr WordT bit_mask(std::size_t i) noexcept
+/// @brief Mask of bit @p bit inside its word.
+[[nodiscard]] constexpr WordT bit_mask(std::size_t bit) noexcept
 {
-    return WordT{1} << (i % word_bits);
+    return WordT{1} << (bit % word_bits);
 }
 
-/// @brief Mask of the valid bits of the last word of an @p n-bit buffer
+/// @brief Mask of the valid bits of the last word of an @p nbits-bit buffer
 ///        (all ones when n is a multiple of 64).
-[[nodiscard]] constexpr WordT tail_mask(std::size_t n) noexcept
+[[nodiscard]] constexpr WordT tail_mask(std::size_t nbits) noexcept
 {
-    const std::size_t r = n % word_bits;
-    return r == 0 ? word_ones : (WordT{1} << r) - 1;
+    const std::size_t rem = nbits % word_bits;
+    return rem == 0 ? word_ones : (WordT{1} << rem) - 1;
 }
 
-/// @brief Read bit @p i. The buffer must not be written concurrently.
-[[nodiscard]] inline bool get_bit(const WordT* w, std::size_t i) noexcept
+/// @brief Read bit @p bit. The buffer must not be written concurrently.
+[[nodiscard]] inline bool get_bit(const WordT* words, std::size_t bit) noexcept
 {
-    return (w[i / word_bits] & bit_mask(i)) != 0;
+    return (words[bit / word_bits] & bit_mask(bit)) != 0;
 }
 
-/// @brief Read bit @p i while other bits of its word may be written.
-[[nodiscard]] inline bool get_bit_relaxed(const WordT* w, std::size_t i) noexcept
+/// @brief Read bit @p bit while other bits of its word may be written.
+[[nodiscard]] inline bool get_bit_relaxed(const WordT* words, std::size_t bit) noexcept
 {
     // atomic_ref needs a non-const object; the load does not write.
-    auto& word = const_cast<WordT&>(w[i / word_bits]);
-    return (std::atomic_ref<WordT>(word).load(std::memory_order_relaxed) & bit_mask(i)) != 0;
+    auto& word = const_cast<WordT&>(words[bit / word_bits]);
+    return (std::atomic_ref<WordT>(word).load(std::memory_order_relaxed) & bit_mask(bit)) != 0;
 }
 
-/// @brief Write bit @p i. The buffer must not be reached by another thread.
-inline void set_bit(WordT* w, std::size_t i, bool v) noexcept
+/// @brief Write bit @p bit. The buffer must not be reached by another thread.
+inline void set_bit(WordT* words, std::size_t bit, bool value) noexcept
 {
-    if (v)
+    if (value)
     {
-        w[i / word_bits] |= bit_mask(i);
+        words[bit / word_bits] |= bit_mask(bit);
     }
     else
     {
-        w[i / word_bits] &= ~bit_mask(i);
+        words[bit / word_bits] &= ~bit_mask(bit);
     }
 }
 
 /**
- * @brief Write bit @p i with an atomic read-modify-write of its word.
+ * @brief Write bit @p bit with an atomic read-modify-write of its word.
  * @details Relaxed: it only has to keep the other 63 bits of the word, which
  *          another thread may be writing. Ordering against the compressor
  *          belongs to the write protocol around it (the Dekker handshake of
  *          the proxy), as for any element store.
  * @return the previous value of the bit.
  */
-inline bool set_bit_atomic(WordT* w, std::size_t i, bool v) noexcept
+inline bool set_bit_atomic(WordT* words, std::size_t bit, bool value) noexcept
 {
-    const std::atomic_ref<WordT> word(w[i / word_bits]);
-    const WordT                  m = bit_mask(i);
-    const WordT old = v ? word.fetch_or(m, std::memory_order_relaxed) : word.fetch_and(~m, std::memory_order_relaxed);
-    return (old & m) != 0;
+    const std::atomic_ref<WordT> word(words[bit / word_bits]);
+    const WordT                  mask = bit_mask(bit);
+    const WordT                  old =
+        value ? word.fetch_or(mask, std::memory_order_relaxed) : word.fetch_and(~mask, std::memory_order_relaxed);
+    return (old & mask) != 0;
 }
 
-/// @brief Set the @p n bits to @p v and the tail of the last word to 0.
-inline void fill_bits(WordT* w, std::size_t n, bool v) noexcept
+/// @brief Set the @p nbits bits to @p value and the tail of the last word to 0.
+inline void fill_bits(WordT* words, std::size_t nbits, bool value) noexcept
 {
-    const std::size_t nw = words_for(n);
+    const std::size_t nw = words_for(nbits);
     if (nw == 0)
     {
         return;
     }
-    std::memset(w, v ? 0xFF : 0x00, nw * word_bytes);
-    if (v)
+    std::memset(words, value ? 0xFF : 0x00, nw * word_bytes);
+    if (value)
     {
-        w[nw - 1] &= tail_mask(n);
+        words[nw - 1] &= tail_mask(nbits);
     }
 }
 
@@ -147,21 +148,21 @@ inline void fill_bits(WordT* w, std::size_t n, bool v) noexcept
 }
 
 /**
- * @brief Set bits [@p lo, @p hi) to @p v: whole words stored, the two edge
+ * @brief Set bits [@p lo, @p hi) to @p value: whole words stored, the two edge
  *        words masked. The buffer must not be written concurrently (the
  *        edge words are a plain read-modify-write).
  */
-inline void fill_bit_range(WordT* w, std::size_t lo, std::size_t hi, bool v) noexcept
+inline void fill_bit_range(WordT* words, std::size_t lo, std::size_t hi, bool value) noexcept
 {
     std::size_t i = lo;
     while (i < hi)
     {
-        const std::size_t k   = i / word_bits;
-        const std::size_t off = i % word_bits;
-        const std::size_t end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
-        const WordT       m   = span_mask(off, end);
-        w[k]                  = v ? (w[k] | m) : (w[k] & ~m);
-        i                     = (k * word_bits) + end;
+        const std::size_t word_idx = i / word_bits;
+        const std::size_t off      = i % word_bits;
+        const std::size_t end  = (hi - (word_idx * word_bits)) < word_bits ? hi - (word_idx * word_bits) : word_bits;
+        const WordT       mask = span_mask(off, end);
+        words[word_idx]        = value ? (words[word_idx] | mask) : (words[word_idx] & ~mask);
+        i                      = (word_idx * word_bits) + end;
     }
 }
 
@@ -175,29 +176,29 @@ inline void fill_bit_range(WordT* w, std::size_t lo, std::size_t hi, bool v) noe
  *          so the readers' relaxed word loads (get_bit_relaxed) race with
  *          nothing.
  */
-inline void fill_bit_range_atomic(WordT* w, std::size_t lo, std::size_t hi, bool v) noexcept
+inline void fill_bit_range_atomic(WordT* words, std::size_t lo, std::size_t hi, bool value) noexcept
 {
     std::size_t i = lo;
     while (i < hi)
     {
-        const std::size_t            k   = i / word_bits;
-        const std::size_t            off = i % word_bits;
-        const std::size_t            end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
-        const WordT                  m   = span_mask(off, end);
-        const std::atomic_ref<WordT> word(w[k]);
-        if (m == word_ones)
+        const std::size_t word_idx = i / word_bits;
+        const std::size_t off      = i % word_bits;
+        const std::size_t end  = (hi - (word_idx * word_bits)) < word_bits ? hi - (word_idx * word_bits) : word_bits;
+        const WordT       mask = span_mask(off, end);
+        const std::atomic_ref<WordT> word(words[word_idx]);
+        if (mask == word_ones)
         {
-            word.store(v ? word_ones : 0, std::memory_order_relaxed);
+            word.store(value ? word_ones : 0, std::memory_order_relaxed);
         }
-        else if (v)
+        else if (value)
         {
-            word.fetch_or(m, std::memory_order_relaxed);
+            word.fetch_or(mask, std::memory_order_relaxed);
         }
         else
         {
-            word.fetch_and(~m, std::memory_order_relaxed);
+            word.fetch_and(~mask, std::memory_order_relaxed);
         }
-        i = (k * word_bits) + end;
+        i = (word_idx * word_bits) + end;
     }
 }
 
@@ -207,22 +208,22 @@ inline void fill_bit_range_atomic(WordT* w, std::size_t lo, std::size_t hi, bool
  *        concurrency contract as fill_bit_range().
  */
 template <typename Get>
-inline void store_bit_range(WordT* w, std::size_t lo, std::size_t hi, Get&& get)
+inline void store_bit_range(WordT* words, std::size_t lo, std::size_t hi, Get&& get)
 {
     std::size_t i = lo;
     while (i < hi)
     {
-        const std::size_t k   = i / word_bits;
-        const std::size_t off = i % word_bits;
-        const std::size_t end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
-        WordT             x   = 0;
+        const std::size_t word_idx = i / word_bits;
+        const std::size_t off      = i % word_bits;
+        const std::size_t end  = (hi - (word_idx * word_bits)) < word_bits ? hi - (word_idx * word_bits) : word_bits;
+        WordT             bits = 0;
         for (std::size_t b = off; b < end; ++b)
         {
-            x |= static_cast<WordT>(static_cast<bool>(get((k * word_bits) + b))) << b;
+            bits |= static_cast<WordT>(static_cast<bool>(get((word_idx * word_bits) + b))) << b;
         }
-        const WordT m = span_mask(off, end);
-        w[k]          = (w[k] & ~m) | x;
-        i             = (k * word_bits) + end;
+        const WordT mask = span_mask(off, end);
+        words[word_idx]  = (words[word_idx] & ~mask) | bits;
+        i                = (word_idx * word_bits) + end;
     }
 }
 
@@ -236,31 +237,31 @@ inline void store_bit_range(WordT* w, std::size_t lo, std::size_t hi, Get&& get)
  *          bits of the other writers, who write other bits.
  */
 template <typename Get>
-inline void store_bit_range_atomic(WordT* w, std::size_t lo, std::size_t hi, Get&& get)
+inline void store_bit_range_atomic(WordT* words, std::size_t lo, std::size_t hi, Get&& get)
 {
     std::size_t i = lo;
     while (i < hi)
     {
-        const std::size_t k   = i / word_bits;
-        const std::size_t off = i % word_bits;
-        const std::size_t end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
-        WordT             x   = 0;
+        const std::size_t word_idx = i / word_bits;
+        const std::size_t off      = i % word_bits;
+        const std::size_t end  = (hi - (word_idx * word_bits)) < word_bits ? hi - (word_idx * word_bits) : word_bits;
+        WordT             bits = 0;
         for (std::size_t b = off; b < end; ++b)
         {
-            x |= static_cast<WordT>(static_cast<bool>(get((k * word_bits) + b))) << b;
+            bits |= static_cast<WordT>(static_cast<bool>(get((word_idx * word_bits) + b))) << b;
         }
-        const WordT                  m = span_mask(off, end);
-        const std::atomic_ref<WordT> word(w[k]);
-        if (m == word_ones)
+        const WordT                  mask = span_mask(off, end);
+        const std::atomic_ref<WordT> word(words[word_idx]);
+        if (mask == word_ones)
         {
-            word.store(x, std::memory_order_relaxed);
+            word.store(bits, std::memory_order_relaxed);
         }
         else
         {
-            word.fetch_or(x, std::memory_order_relaxed);
-            word.fetch_and(~(m & ~x), std::memory_order_relaxed);
+            word.fetch_or(bits, std::memory_order_relaxed);
+            word.fetch_and(~(mask & ~bits), std::memory_order_relaxed);
         }
-        i = (k * word_bits) + end;
+        i = (word_idx * word_bits) + end;
     }
 }
 
@@ -273,25 +274,25 @@ enum class Uniform : std::uint8_t
 };
 
 /**
- * @brief Classify the @p n bits of a buffer, one word at a time.
+ * @brief Classify the @p nbits bits of a buffer, one word at a time.
  * @details A chunk of 256 bools is 4 words: 4 compares where the byte layout
- *          makes 256. The tail of the last word is masked out. @p n = 0 is
+ *          makes 256. The tail of the last word is masked out. @p nbits = 0 is
  *          all_false, like an empty chunk.
  */
-[[nodiscard]] inline Uniform scan_words(const WordT* w, std::size_t n) noexcept
+[[nodiscard]] inline Uniform scan_words(const WordT* words, std::size_t nbits) noexcept
 {
-    const std::size_t nw = words_for(n);
+    const std::size_t nw = words_for(nbits);
     if (nw == 0)
     {
         return Uniform::all_false;
     }
-    const WordT last = w[nw - 1] & tail_mask(n);
-    WordT       any  = last;                 // OR: some 1 bit
-    WordT       all  = last | ~tail_mask(n); // AND: every bit 1 (tail forced to 1)
+    const WordT last = words[nw - 1] & tail_mask(nbits);
+    WordT       any  = last;                     // OR: some 1 bit
+    WordT       all  = last | ~tail_mask(nbits); // AND: every bit 1 (tail forced to 1)
     for (std::size_t k = 0; k + 1 < nw; ++k)
     {
-        any |= w[k];
-        all &= w[k];
+        any |= words[k];
+        all &= words[k];
     }
     if (any == 0)
     {
@@ -305,25 +306,25 @@ enum class Uniform : std::uint8_t
 }
 
 /**
- * @brief Classify the @p n bits starting at bit @p first -- any alignment:
+ * @brief Classify the @p nbits bits starting at bit @p first -- any alignment:
  *        whole words where the range covers them, masked words at its ends.
  * @details The sub-block scan of the chunk-size advisor (a finer geometry's
- *          sub-chunk inside a materialised chunk). @p n = 0 is all_false.
+ *          sub-chunk inside a materialised chunk). @p nbits = 0 is all_false.
  */
-[[nodiscard]] inline Uniform scan_range(const WordT* w, std::size_t first, std::size_t n) noexcept
+[[nodiscard]] inline Uniform scan_range(const WordT* words, std::size_t first, std::size_t nbits) noexcept
 {
     bool              any_one  = false;
     bool              all_ones = true;
     std::size_t       i        = first;
-    const std::size_t end      = first + n;
+    const std::size_t end      = first + nbits;
     while (i < end)
     {
         const std::size_t off  = i % word_bits;
         const std::size_t take = (end - i < word_bits - off) ? end - i : word_bits - off;
-        const WordT       m    = (take == word_bits ? word_ones : ((WordT{1} << take) - 1)) << off;
-        const WordT       x    = w[i / word_bits] & m;
-        any_one                = any_one || x != 0;
-        all_ones               = all_ones && x == m;
+        const WordT       mask = (take == word_bits ? word_ones : ((WordT{1} << take) - 1)) << off;
+        const WordT       bits = words[i / word_bits] & mask;
+        any_one                = any_one || bits != 0;
+        all_ones               = all_ones && bits == mask;
         if (any_one && !all_ones)
         {
             return Uniform::mixed;
@@ -337,20 +338,20 @@ enum class Uniform : std::uint8_t
     return Uniform::all_true;
 }
 
-/// @brief Number of 1 bits among the @p n bits (tail masked).
-[[nodiscard]] inline std::size_t count_ones(const WordT* w, std::size_t n) noexcept
+/// @brief Number of 1 bits among the @p nbits bits (tail masked).
+[[nodiscard]] inline std::size_t count_ones(const WordT* words, std::size_t nbits) noexcept
 {
-    const std::size_t nw = words_for(n);
+    const std::size_t nw = words_for(nbits);
     if (nw == 0)
     {
         return 0;
     }
-    auto c = static_cast<std::size_t>(std::popcount(w[nw - 1] & tail_mask(n)));
+    auto ones = static_cast<std::size_t>(std::popcount(words[nw - 1] & tail_mask(nbits)));
     for (std::size_t k = 0; k + 1 < nw; ++k)
     {
-        c += static_cast<std::size_t>(std::popcount(w[k]));
+        ones += static_cast<std::size_t>(std::popcount(words[k]));
     }
-    return c;
+    return ones;
 }
 
 } // namespace shrink_array::bits

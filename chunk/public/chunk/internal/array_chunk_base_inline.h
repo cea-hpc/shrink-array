@@ -63,17 +63,17 @@ void ArrayChunkBase<Derived>::create_common()
 }
 
 template <typename Derived>
-bool ArrayChunkBase<Derived>::is_written_at(int j) const noexcept
+bool ArrayChunkBase<Derived>::is_written_at(int num_chunk) const noexcept
 {
     if constexpr (has_chunk_written_v<Derived>)
     {
         // zero_one_value::Array: zero_one_value::Chunk::written() needs the second-value index.
-        return derived().chunk_written(j);
+        return derived().chunk_written(num_chunk);
     }
     else
     {
         // zero::Array and zero_any::Array: the chunk knows by itself.
-        return chunk_list_[j].written();
+        return chunk_list_[num_chunk].written();
     }
 }
 
@@ -86,9 +86,9 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
     // of bounds. Refused, geometry kept.
     if constexpr (build_config::chunk_dynamic)
     {
-        if (const auto e = chunk_size_error(new_chunk_size)) [[unlikely]]
+        if (const auto err = chunk_size_error(new_chunk_size)) [[unlikely]]
         {
-            warn_chunk_size_refused("set_chunk_size", new_chunk_size, *e);
+            warn_chunk_size_refused("set_chunk_size", new_chunk_size, *err);
             return;
         }
     }
@@ -106,7 +106,7 @@ template <typename Derived>
 int ArrayChunkBase<Derived>::get_nb_chunk_written() const
 {
     int        nb_written = 0;
-    const auto lbd        = [&](int j) { return static_cast<int>(is_written_at(j)); };
+    const auto lbd        = [&](int num_chunk) { return static_cast<int>(is_written_at(num_chunk)); };
 
     // Inside a region: the calling thread counts them all (an orphaned
     // `omp for` would give each caller a partial count).
@@ -159,9 +159,9 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(IndType first, IndType last,
     const auto csz     = static_cast<long long>(chunk_size());
     const int  c_first = chunk_index_of(first);
     const int  c_last  = chunk_index_of(last - 1) + 1;
-    const auto span    = [&](int c)
+    const auto span    = [&](int num_chunk)
     {
-        const long long lo_ll = static_cast<long long>(c) * csz;
+        const long long lo_ll = static_cast<long long>(num_chunk) * csz;
         const long long hi_ll = lo_ll + csz;
         const IndType   lo    = lo_ll > static_cast<long long>(first) ? static_cast<IndType>(lo_ll) : first;
         const IndType   hi    = hi_ll < static_cast<long long>(last) ? static_cast<IndType>(hi_ll) : last;
@@ -197,11 +197,11 @@ template <typename Derived>
 template <std::forward_iterator It>
 void ArrayChunkBase<Derived>::assign(It first, It last)
 {
-    const auto n = static_cast<IndType>(std::distance(first, last));
-    derived().resize(n);
+    const auto count = static_cast<IndType>(std::distance(first, last));
+    derived().resize(count);
     if constexpr (std::random_access_iterator<It>)
     {
-        write_range_by_chunks(0, n, [&first](IndType i) { return static_cast<T>(first[i]); });
+        write_range_by_chunks(0, count, [&first](IndType i) { return static_cast<T>(first[i]); });
     }
     else
     {
@@ -244,23 +244,23 @@ void ArrayChunkBase<Derived>::shrink_to_fit()
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndType i) const
+ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndType index) const
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size_)) [[unlikely]]
+    if (index < 0 || static_cast<size_type>(index) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
         throw std::out_of_range("zero::Array::at: index out of range");
     }
-    return (*this)[i]; // const operator[] -> T (value)
+    return (*this)[index]; // const operator[] -> T (value)
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(IndType i)
+ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(IndType index)
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size_)) [[unlikely]]
+    if (index < 0 || static_cast<size_type>(index) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
         throw std::out_of_range("zero::Array::at: index out of range");
     }
-    return (*this)[i]; // non-const operator[] -> ProxyType (write entry)
+    return (*this)[index]; // non-const operator[] -> ProxyType (write entry)
 }
 
 template <typename Derived>

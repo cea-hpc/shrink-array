@@ -212,13 +212,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     }
 
     /**
-     * @brief Has the chunk holding element @p i been materialised?
-     * @param i element index
+     * @brief Has the chunk holding element @p index been materialised?
+     * @param index element index
      * @return false while that chunk is still compressed to a constant
      */
-    [[nodiscard]] bool written(IntType i) const noexcept
+    [[nodiscard]] bool written(IntType index) const noexcept
     {
-        return chunk_list_[this->chunk_index_of(i)].written();
+        return chunk_list_[this->chunk_index_of(index)].written();
     }
 
     /**
@@ -544,13 +544,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     void rebuild_storage(IntType sz);
 
     /**
-     * @brief Second value registered for the chunk holding element @p i.
-     * @param i element index
+     * @brief Second value registered for the chunk holding element @p index.
+     * @param index element index
      * @return this chunk's own second value (zero_any registers one per chunk)
      */
-    auto get_metadata(IntType i) const noexcept
+    auto get_metadata(IntType index) const noexcept
     {
-        return zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(i));
+        return zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(index));
     }
 
     /// @brief Storage teardown shared by clear() and rechunk_to().

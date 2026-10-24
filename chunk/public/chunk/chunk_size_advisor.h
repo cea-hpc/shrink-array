@@ -157,11 +157,12 @@ struct ChunkSizeAdvisor
     {
         ChunkSizeReport rep;
 
-        const uint32_t s  = tab.chunk_size();
-        const int64_t  nc = tab.nb_chunk_;
-        rep.current_size  = s;
-        rep.meta_bytes    = static_cast<double>(sizeof(typename Arr::ChunkType)) + opt.meta_extra_bytes;
-        rep.elem_bytes    = s != 0 ? static_cast<double>(Arr::ChunkType::storage_units(s)) * sizeof(T) / s : 0.;
+        const uint32_t chunk_sz = tab.chunk_size();
+        const int64_t  nc       = tab.nb_chunk_;
+        rep.current_size        = chunk_sz;
+        rep.meta_bytes          = static_cast<double>(sizeof(typename Arr::ChunkType)) + opt.meta_extra_bytes;
+        rep.elem_bytes =
+            chunk_sz != 0 ? static_cast<double>(Arr::ChunkType::storage_units(chunk_sz)) * sizeof(T) / chunk_sz : 0.;
 
         if (nc <= 0)
         {
@@ -268,22 +269,23 @@ struct ChunkSizeAdvisor
         std::vector<uint32_t> cand;
         {
             const auto     cap = static_cast<uint64_t>(shrink_array::cst_buffer_size);
-            const uint32_t lo  = opt.finer_levels > 0 && opt.finer_levels < 32 ? s >> opt.finer_levels : s;
-            const uint64_t hi_wanted =
-                opt.coarser_levels > 0 && opt.coarser_levels < 32 ? uint64_t{s} << opt.coarser_levels : uint64_t{s};
-            const uint64_t hi = hi_wanted < cap ? hi_wanted : (s < cap ? cap : uint64_t{s});
-            cand.push_back(s);
+            const uint32_t lo = opt.finer_levels > 0 && opt.finer_levels < 32 ? chunk_sz >> opt.finer_levels : chunk_sz;
+            const uint64_t hi_wanted = opt.coarser_levels > 0 && opt.coarser_levels < 32
+                                           ? uint64_t{chunk_sz} << opt.coarser_levels
+                                           : uint64_t{chunk_sz};
+            const uint64_t hi        = hi_wanted < cap ? hi_wanted : (chunk_sz < cap ? cap : uint64_t{chunk_sz});
+            cand.push_back(chunk_sz);
             for (int k = 1; k <= opt.finer_levels && k < 32; ++k)
             {
-                const uint32_t sub = s >> k;
-                if (sub >= opt.min_size && is_valid_chunk_size(sub) && s % sub == 0)
+                const uint32_t sub = chunk_sz >> k;
+                if (sub >= opt.min_size && is_valid_chunk_size(sub) && chunk_sz % sub == 0)
                 {
                     cand.push_back(sub);
                 }
             }
-            for (int l = 1; l <= opt.coarser_levels && l < 32 && (uint64_t{s} << l) <= cap; ++l)
+            for (int l = 1; l <= opt.coarser_levels && l < 32 && (uint64_t{chunk_sz} << l) <= cap; ++l)
             {
-                cand.push_back(s << l);
+                cand.push_back(chunk_sz << l);
             }
             if (opt.grid_bits > 0)
             {
@@ -317,15 +319,15 @@ struct ChunkSizeAdvisor
         // An ambiguous window is attributed to ONE owner, its first chunk
         // materialised and overlapped in part, so sampling counts it once; the
         // count is scaled by mat0 / scanned.
-        const int64_t l    = nc * static_cast<int64_t>(s);
-        const auto    nwin = [&](uint32_t c) { return (l + c - 1) / c; };
+        const int64_t len  = nc * static_cast<int64_t>(chunk_sz);
+        const auto    nwin = [&](uint32_t cand_sz) { return (len + cand_sz - 1) / cand_sz; };
 
         // Windows of size C inside the constant run of chunks [r0, r1).
-        const auto windows_inside = [&](int64_t r0, int64_t r1, uint32_t c) -> int64_t
+        const auto windows_inside = [&](int64_t r0, int64_t r1, uint32_t cand_sz) -> int64_t
         {
-            const int64_t a    = r0 * s;
-            const int64_t wmin = (a + c - 1) / c;
-            const int64_t wmax = r1 == nc ? nwin(c) - 1 : (r1 * s) / c - 1;
+            const int64_t begin = r0 * chunk_sz;
+            const int64_t wmin  = (begin + cand_sz - 1) / cand_sz;
+            const int64_t wmax  = r1 == nc ? nwin(cand_sz) - 1 : (r1 * chunk_sz) / cand_sz - 1;
             return wmax >= wmin ? wmax - wmin + 1 : 0;
         };
 
@@ -369,9 +371,9 @@ struct ChunkSizeAdvisor
         std::vector<int64_t> inside(static_cast<std::size_t>(n_cand), 0); // windows inside constant runs
         std::vector<int64_t> found(static_cast<std::size_t>(n_cand), 0);  // compressible ambiguous windows
         bool                 any_sampled = false;                         // a candidate that S does not divide
-        for (const uint32_t c : cand)
+        for (const uint32_t cand_sz : cand)
         {
-            any_sampled = any_sampled || c % s != 0;
+            any_sampled = any_sampled || cand_sz % chunk_sz != 0;
         }
         int64_t              scanned = 0;
         std::vector<int64_t> picks; // chunks whose data the sampling reads
@@ -386,10 +388,10 @@ struct ChunkSizeAdvisor
         std::vector<std::vector<int64_t>> part_picks;  // the chunks each part selected
 
         // Chunks [j0, j1) of part p.
-        const auto part_range = [&](int64_t p, int64_t& j0, int64_t& j1)
+        const auto part_range = [&](int64_t part, int64_t& j0, int64_t& j1)
         {
-            j0 = nc * p / n_parts;
-            j1 = nc * (p + 1) / n_parts;
+            j0 = nc * part / n_parts;
+            j1 = nc * (part + 1) / n_parts;
         };
 
         pmp::team(
@@ -417,12 +419,12 @@ struct ChunkSizeAdvisor
                     std::vector<int64_t> inside_loc(static_cast<std::size_t>(n_cand), 0);
                     team.for_dynamic<int64_t>(
                         0, n_parts, 1,
-                        [&](int64_t p)
+                        [&](int64_t part)
                         {
                             int64_t j0 = 0;
                             int64_t j1 = 0;
-                            part_range(p, j0, j1);
-                            int64_t m          = 0;
+                            part_range(part, j0, j1);
+                            int64_t n_mat      = 0;
                             Seg     cur        = {j0, j0, -1, nullptr};
                             bool    first_done = false;
                             for (int64_t j = j0; j < j1; ++j)
@@ -431,7 +433,7 @@ struct ChunkSizeAdvisor
                                 const int   kind = classify(tab.chunk_list_[j], key);
                                 if (kind == 2)
                                 {
-                                    ++m;
+                                    ++n_mat;
                                 }
                                 if (kind == cur.kind && key == cur.key)
                                 {
@@ -446,22 +448,22 @@ struct ChunkSizeAdvisor
                                     }
                                     else
                                     {
-                                        part_first[static_cast<std::size_t>(p)] = cur;
-                                        first_done                              = true;
+                                        part_first[static_cast<std::size_t>(part)] = cur;
+                                        first_done                                 = true;
                                     }
                                 }
                                 cur = {j, j + 1, kind, key};
                             }
                             if (first_done)
                             {
-                                part_last[static_cast<std::size_t>(p)] = cur;
+                                part_last[static_cast<std::size_t>(part)] = cur;
                             }
                             else
                             {
-                                part_first[static_cast<std::size_t>(p)]  = cur;
-                                part_single[static_cast<std::size_t>(p)] = 1;
+                                part_first[static_cast<std::size_t>(part)]  = cur;
+                                part_single[static_cast<std::size_t>(part)] = 1;
                             }
-                            part_mat[static_cast<std::size_t>(p)] = m;
+                            part_mat[static_cast<std::size_t>(part)] = n_mat;
                         },
                         pmp::nowait);
                     for (int ci = 0; ci < n_cand; ++ci)
@@ -507,9 +509,9 @@ struct ChunkSizeAdvisor
                         int64_t run_count = 0;
                         for (int64_t p = 0; p < n_parts; ++p)
                         {
-                            const int64_t m                       = part_mat[static_cast<std::size_t>(p)];
+                            const int64_t n_mat                   = part_mat[static_cast<std::size_t>(p)];
                             part_mat[static_cast<std::size_t>(p)] = run_count;
-                            run_count += m;
+                            run_count += n_mat;
                         }
                         mat0     = run_count;
                         sampling = any_sampled && mat0 > 0;
@@ -527,13 +529,13 @@ struct ChunkSizeAdvisor
                 if (sampling)
                 {
                     team.for_dynamic<int64_t>(0, n_parts, 1,
-                                              [&](int64_t p)
+                                              [&](int64_t part)
                                               {
                                                   int64_t j0 = 0;
                                                   int64_t j1 = 0;
-                                                  part_range(p, j0, j1);
-                                                  int64_t seen = part_mat[static_cast<std::size_t>(p)];
-                                                  auto&   mine = part_picks[static_cast<std::size_t>(p)];
+                                                  part_range(part, j0, j1);
+                                                  int64_t seen = part_mat[static_cast<std::size_t>(part)];
+                                                  auto&   mine = part_picks[static_cast<std::size_t>(part)];
                                                   for (int64_t j = j0; j < j1; ++j)
                                                   {
                                                       const void* key = nullptr;
@@ -567,38 +569,40 @@ struct ChunkSizeAdvisor
                     std::vector<uint32_t> seg_start; // the picked chunk's runs of equal values ...
                     std::vector<T>        seg_val;   // ... and their values
 
-                    // Element i of a materialised buffer, and whether [b, e) of it
-                    // is uniform (its value in `val`).
-                    const auto value_of = [](const T* v, std::size_t i) -> T
+                    // Element index of a materialised buffer, and whether [first, last)
+                    // of it is uniform (its value in `val`).
+                    const auto value_of = [](const T* vals, std::size_t index) -> T
                     {
                         if constexpr (is_packed_bit_v<T>)
                         {
-                            const auto* w = internal::as_words(v);
-                            return T{((w[i / bits::word_bits] >> (i % bits::word_bits)) & 1u) != 0};
+                            const auto* words = internal::as_words(vals);
+                            return T{((words[index / bits::word_bits] >> (index % bits::word_bits)) & 1u) != 0};
                         }
                         else
                         {
-                            return v[i];
+                            return vals[index]; // raw-read: the advisor runs at a quiescent point (see analyze)
                         }
                     };
-                    const auto uniform_range = [&](const T* v, std::size_t b, std::size_t e, T& val) -> bool
+                    const auto uniform_range = [&](const T* vals, std::size_t first, std::size_t last, T& val) -> bool
                     {
                         if constexpr (is_packed_bit_v<T>)
                         {
-                            const bits::Uniform u = bits::scan_range(internal::as_words(v), b, e - b);
-                            val                   = T{u == bits::Uniform::all_true};
-                            return u != bits::Uniform::mixed;
+                            const bits::Uniform scan = bits::scan_range(internal::as_words(vals), first, last - first);
+                            val                      = T{scan == bits::Uniform::all_true};
+                            return scan != bits::Uniform::mixed;
                         }
                         else
                         {
-                            for (std::size_t i = b + 1; i < e; ++i)
+                            // raw-read: the advisor runs at a quiescent point (see analyze)
+                            for (std::size_t i = first + 1; i < last; ++i)
                             {
-                                if (!(v[i] == v[b]))
+                                // raw-read: as above
+                                if (!(vals[i] == vals[first]))
                                 {
                                     return false;
                                 }
                             }
-                            val = v[b];
+                            val = vals[first]; // raw-read: as above
                             return true;
                         }
                     };
@@ -606,12 +610,12 @@ struct ChunkSizeAdvisor
                     const auto n_picks = static_cast<int64_t>(picks.size());
                     team.for_dynamic<int64_t>(
                         0, n_picks, 64,
-                        [&](int64_t p)
+                        [&](int64_t pick)
                         {
-                            const int64_t j  = picks[static_cast<std::size_t>(p)];
-                            const T*      vj = tab.chunk_list_[j].values_load();
+                            const int64_t chunk_idx = picks[static_cast<std::size_t>(pick)];
+                            const T*      vj        = tab.chunk_list_[chunk_idx].values_load();
 
-                            // Chunk j's runs of equal values: [b, e) of it is uniform iff
+                            // Chunk chunk_idx's runs of equal values: [b, e) of it is uniform iff
                             // b and e - 1 fall in the same run.
                             seg_start.clear();
                             seg_val.clear();
@@ -620,31 +624,32 @@ struct ChunkSizeAdvisor
                             if constexpr (is_packed_bit_v<T>)
                             {
                                 // A word at a time: the bits that differ from the one below.
-                                const auto*       w     = internal::as_words(vj);
-                                const std::size_t nw    = (s + bits::word_bits - 1) / bits::word_bits;
-                                auto              below = static_cast<bits::WordT>(w[0] & 1u);
+                                const auto*       words = internal::as_words(vj);
+                                const std::size_t nw    = (chunk_sz + bits::word_bits - 1) / bits::word_bits;
+                                auto              below = static_cast<bits::WordT>(words[0] & 1u);
                                 for (std::size_t k = 0; k < nw; ++k)
                                 {
-                                    const bits::WordT x = w[k];
-                                    bits::WordT       t = x ^ ((x << 1) | below);
-                                    below               = x >> (bits::word_bits - 1);
-                                    while (t != 0)
+                                    const bits::WordT word        = words[k];
+                                    bits::WordT       transitions = word ^ ((word << 1) | below);
+                                    below                         = word >> (bits::word_bits - 1);
+                                    while (transitions != 0)
                                     {
-                                        const std::size_t i =
-                                            (k * bits::word_bits) + static_cast<std::size_t>(std::countr_zero(t));
-                                        t &= t - 1;
-                                        if (i == 0 || i >= s)
+                                        const std::size_t bit_pos =
+                                            (k * bits::word_bits) +
+                                            static_cast<std::size_t>(std::countr_zero(transitions));
+                                        transitions &= transitions - 1;
+                                        if (bit_pos == 0 || bit_pos >= chunk_sz)
                                         {
                                             continue;
                                         }
-                                        seg_start.push_back(static_cast<uint32_t>(i));
-                                        seg_val.push_back(value_of(vj, i));
+                                        seg_start.push_back(static_cast<uint32_t>(bit_pos));
+                                        seg_val.push_back(value_of(vj, bit_pos));
                                     }
                                 }
                             }
                             else
                             {
-                                for (uint32_t i = 1; i < s; ++i)
+                                for (uint32_t i = 1; i < chunk_sz; ++i)
                                 {
                                     if (!(vj[i] == vj[i - 1]))
                                     {
@@ -653,36 +658,38 @@ struct ChunkSizeAdvisor
                                     }
                                 }
                             }
-                            const auto seg_of = [&](int64_t i) {
-                                return std::upper_bound(seg_start.begin(), seg_start.end(), static_cast<uint32_t>(i)) -
+                            const auto seg_of = [&](int64_t index)
+                            {
+                                return std::upper_bound(seg_start.begin(), seg_start.end(),
+                                                        static_cast<uint32_t>(index)) -
                                        seg_start.begin() - 1;
                             };
 
-                            const int64_t x0 = j * s;
-                            const int64_t x1 = x0 + s;
+                            const int64_t x0 = chunk_idx * chunk_sz;
+                            const int64_t x1 = x0 + chunk_sz;
                             for (int ci = 0; ci < n_cand; ++ci)
                             {
-                                const uint32_t c = cand[static_cast<std::size_t>(ci)];
-                                if (c % s == 0)
+                                const uint32_t cand_sz = cand[static_cast<std::size_t>(ci)];
+                                if (cand_sz % chunk_sz == 0)
                                 {
                                     continue; // whole chunks only: no ambiguous window
                                 }
-                                for (int64_t w = x0 / c; w * c < x1; ++w)
+                                for (int64_t w = x0 / cand_sz; w * cand_sz < x1; ++w)
                                 {
-                                    const int64_t a0 = w * c;
-                                    const int64_t a1 = a0 + c < l ? a0 + c : l;
+                                    const int64_t a0 = w * cand_sz;
+                                    const int64_t a1 = a0 + cand_sz < len ? a0 + cand_sz : len;
                                     if (a0 <= x0 && x1 <= a1)
                                     {
-                                        continue; // covers chunk j whole: materialised
+                                        continue; // covers chunk chunk_idx whole: materialised
                                     }
-                                    const int64_t ca = a0 / s;
-                                    const int64_t cb = (a1 - 1) / s;
-                                    if (j != ca)
+                                    const int64_t ca = a0 / chunk_sz;
+                                    const int64_t cb = (a1 - 1) / chunk_sz;
+                                    if (chunk_idx != ca)
                                     {
-                                        // j is the window's last chunk: the first one owns
+                                        // chunk_idx is the window's last chunk: the first one owns
                                         // the window when it is materialised in part too.
                                         const void* key = nullptr;
-                                        if (a0 > ca * s && classify(tab.chunk_list_[ca], key) == 2)
+                                        if (a0 > ca * chunk_sz && classify(tab.chunk_list_[ca], key) == 2)
                                         {
                                             continue;
                                         }
@@ -692,8 +699,8 @@ struct ChunkSizeAdvisor
                                     T    val{};
                                     for (int64_t cc = ca; cc <= cb && ok; ++cc)
                                     {
-                                        const int64_t p0  = a0 > cc * s ? a0 : cc * s;
-                                        const int64_t p1  = a1 < (cc + 1) * s ? a1 : (cc + 1) * s;
+                                        const int64_t p0  = a0 > cc * chunk_sz ? a0 : cc * chunk_sz;
+                                        const int64_t p1  = a1 < (cc + 1) * chunk_sz ? a1 : (cc + 1) * chunk_sz;
                                         const auto&   ch  = tab.chunk_list_[cc];
                                         const void*   key = nullptr;
                                         T             part{};
@@ -701,11 +708,11 @@ struct ChunkSizeAdvisor
                                         {
                                             part = ch.read_value_scan(0); // the constant (a scan read: no app stats)
                                         }
-                                        else if (p0 == cc * s && p1 == (cc + 1) * s)
+                                        else if (p0 == cc * chunk_sz && p1 == (cc + 1) * chunk_sz)
                                         {
                                             ok = false; // a whole materialised chunk
                                         }
-                                        else if (cc == j)
+                                        else if (cc == chunk_idx)
                                         {
                                             const auto seg = seg_of(p0 - x0);
                                             ok             = seg == seg_of(p1 - 1 - x0);
@@ -713,9 +720,9 @@ struct ChunkSizeAdvisor
                                         }
                                         else
                                         {
-                                            ok =
-                                                uniform_range(ch.values_load(), static_cast<std::size_t>(p0 - (cc * s)),
-                                                              static_cast<std::size_t>(p1 - (cc * s)), part);
+                                            ok = uniform_range(ch.values_load(),
+                                                               static_cast<std::size_t>(p0 - (cc * chunk_sz)),
+                                                               static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
                                         }
                                         if (ok && has_v)
                                         {
@@ -747,11 +754,11 @@ struct ChunkSizeAdvisor
         // ── Assemble the table (ascending sizes) ──────────────────────────────
         for (int ci = 0; ci < n_cand; ++ci)
         {
-            const uint32_t c     = cand[static_cast<std::size_t>(ci)];
-            const bool     exact = c % s == 0;
-            const int64_t  nch   = nwin(c);
-            int64_t        mat   = 0;
-            if (c == s)
+            const uint32_t cand_sz = cand[static_cast<std::size_t>(ci)];
+            const bool     exact   = cand_sz % chunk_sz == 0;
+            const int64_t  nch     = nwin(cand_sz);
+            int64_t        mat     = 0;
+            if (cand_sz == chunk_sz)
             {
                 rep.cur = static_cast<int>(rep.table.size());
                 mat     = mat0;
@@ -765,13 +772,13 @@ struct ChunkSizeAdvisor
                 mat              = mat < 0 ? 0 : (mat > nch ? nch : mat);
             }
             ChunkSizeEstimate est;
-            est.size      = c;
+            est.size      = cand_sz;
             est.n_chunks  = nch;
             est.mat       = mat;
             est.cst       = nch - mat;
             est.exact     = exact;
             est.mem_bytes = (static_cast<double>(nch) * rep.meta_bytes) +
-                            (static_cast<double>(mat) * static_cast<double>(Arr::ChunkType::storage_units(c)) *
+                            (static_cast<double>(mat) * static_cast<double>(Arr::ChunkType::storage_units(cand_sz)) *
                              sizeof(T)); // Bit: size / 8 bytes, not size
             rep.table.push_back(est);
         }

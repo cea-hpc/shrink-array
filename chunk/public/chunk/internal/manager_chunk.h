@@ -640,29 +640,29 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /**
-     * @brief Call @p f(size, lists) for every reuse-list set of this type
+     * @brief Call @p func(size, lists) for every reuse-list set of this type
      *        whose geometry is known: the legacy lists in a static build (every
      *        buffer has the static size), the per-size lists in a dynamic one,
      *        and the keyed lists. The legacy lists of a dynamic build mix
      *        geometries and are skipped.
      */
     template <typename F>
-    static void for_each_sized_reuse_set(F&& f)
+    static void for_each_sized_reuse_set(F&& func)
     {
         if constexpr (chunk_config::chunk_dynamic)
         {
             for (auto& kv : *list_block_free_thr_by_size_)
             {
-                f(kv.first, kv.second);
+                func(kv.first, kv.second);
             }
         }
         else
         {
-            f(alloc_chunk_count(), list_block_free_thr);
+            func(alloc_chunk_count(), list_block_free_thr);
         }
         for (auto& kv : *list_block_free_thr_keyed_)
         {
-            f(static_cast<unsigned int>(kv.first & 0xffffffffULL), kv.second);
+            func(static_cast<unsigned int>(kv.first & 0xffffffffULL), kv.second);
         }
     }
 
@@ -791,26 +791,26 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     /// @brief Set the candidate-list length that triggers a compression pass.
     /// @details Decides when trigger_compression_if_needed() flags a rank's
     ///          candidate list, hence how often compression runs at all.
-    static void set_size_max_number_of_chunk_to_check_compress(int v)
+    static void set_size_max_number_of_chunk_to_check_compress(int max_chunks)
     {
-        size_max_number_of_chunk_to_check_compress = v;
+        size_max_number_of_chunk_to_check_compress = max_chunks;
     }
 
     /**
-     * @brief Drop from @p v every queued candidate that belongs to @p num_tab.
+     * @brief Drop from @p candidates every queued candidate that belongs to @p num_tab.
      *
      * @details The one place that knows a candidate tuple names its owning array
      *          in field <2>; the remove_from_compress_list_*_by_num_tab helpers
      *          differ only in their traversal.
      *
      * @tparam Vec any sequence of candidate tuples.
-     * @param v       the sequence to filter, modified in place.
+     * @param candidates       the sequence to filter, modified in place.
      * @param num_tab tab index whose candidates are removed.
      */
     template <typename Vec>
-    static void erase_candidates_of_tab(Vec& v, int num_tab) noexcept
+    static void erase_candidates_of_tab(Vec& candidates, int num_tab) noexcept
     {
-        std::erase_if(v, [num_tab](const auto& tup) { return std::get<2>(tup) == num_tab; });
+        std::erase_if(candidates, [num_tab](const auto& tup) { return std::get<2>(tup) == num_tab; });
     }
 
     /// @brief Map key of list_block_free_thr_keyed_: (@p key << 32) | @p size.
@@ -1186,10 +1186,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     for (int thr = 0; thr < n_thr; ++thr)
                     {
                         auto& lst = per_thr[thr].list;
-                        for (const T* b : lst)
+                        for (const T* block : lst)
                         {
-                            CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse");
-                            fast_alloc::svfree(b);
+                            CHUNK_LEDGER_DISCARD(block, "rechunk_to.drain_reuse");
+                            fast_alloc::svfree(block);
                         }
                         lst.clear();
                     }
@@ -1367,13 +1367,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             {
                 continue;
             }
-            for (T* b : cell)
+            for (T* block : cell)
             {
                 CHUNK_FREEPATH_INC(freed);
-                CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse.owner");
-                auto* slab  = geometry->slab_of(b);
+                CHUNK_LEDGER_DISCARD(block, "rechunk_to.drain_reuse.owner");
+                auto* slab  = geometry->slab_of(block);
                 auto* owner = const_cast<Alloc*>(static_cast<const Alloc*>(slab->owner));
-                owner->free_elt_pow2(b, slab);
+                owner->free_elt_pow2(block, slab);
             }
             cell.clear();
             if (release_cells)
@@ -1417,11 +1417,11 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *      Fast-alloc OpenMP dynamic builds; a no-op otherwise.
      * @param team the team running the drain (the refill's)
      * @param size the geometry whose reuse lists are drained
-     * @param s    scratch kept across calls (the bucket matrix, the flags)
+     * @param scratch    scratch kept across calls (the bucket matrix, the flags)
      */
     static void drain_reuse_list_for_size_team([[maybe_unused]] pmp::Team&        team,
                                                [[maybe_unused]] unsigned int      size,
-                                               [[maybe_unused]] TeamDrainScratch& s) noexcept
+                                               [[maybe_unused]] TeamDrainScratch& scratch) noexcept
     {
         if constexpr (chunk_config::chunk_dynamic && chunk_config::use_fast_alloc && build_config::threaded)
         {
@@ -1429,59 +1429,59 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             team.single(
                 [&]
                 {
-                    s.sets.clear();
+                    scratch.sets.clear();
                     if (const auto it = list_block_free_thr_by_size_->find(size);
                         it != list_block_free_thr_by_size_->end())
                     {
-                        s.sets.push_back(&it->second);
+                        scratch.sets.push_back(&it->second);
                     }
                     for (auto& kv : *list_block_free_thr_keyed_)
                     {
                         if (static_cast<unsigned int>(kv.first & 0xffffffffu) == size)
                         {
-                            s.sets.push_back(&kv.second);
+                            scratch.sets.push_back(&kv.second);
                         }
                     }
-                    std::size_t n = 0;
-                    for (const auto* set : s.sets)
+                    std::size_t count = 0;
+                    for (const auto* set : scratch.sets)
                     {
-                        n = std::max(n, set->size());
+                        count = std::max(count, set->size());
                     }
-                    if (s.bucket.size() < n)
+                    if (scratch.bucket.size() < count)
                     {
-                        s.bucket.assign(n, std::vector<std::vector<T*>>(n));
+                        scratch.bucket.assign(count, std::vector<std::vector<T*>>(count));
                     }
-                    if (s.n_flags < n)
+                    if (scratch.n_flags < count)
                     {
-                        s.held    = std::make_unique<std::atomic<unsigned char>[]>(n);
-                        s.dirty   = std::make_unique<std::atomic<unsigned char>[]>(n);
-                        s.n_flags = n;
+                        scratch.held    = std::make_unique<std::atomic<unsigned char>[]>(count);
+                        scratch.dirty   = std::make_unique<std::atomic<unsigned char>[]>(count);
+                        scratch.n_flags = count;
                     }
-                    for (std::size_t r = 0; r < s.n_flags; ++r)
+                    for (std::size_t r = 0; r < scratch.n_flags; ++r)
                     {
-                        s.held[r].store(0, std::memory_order_relaxed);
-                        s.dirty[r].store(0, std::memory_order_relaxed);
+                        scratch.held[r].store(0, std::memory_order_relaxed);
+                        scratch.dirty[r].store(0, std::memory_order_relaxed);
                     }
                     const unsigned int saved_sz = shrink_array::thread_chunk_size();
                     shrink_array::set_thread_chunk_size(size);
-                    s.geometry = &ChunkT<T>::get_chunk_allocator(0, 0u);
+                    scratch.geometry = &ChunkT<T>::get_chunk_allocator(0, 0u);
                     shrink_array::set_thread_chunk_size(saved_sz);
-                }); // implicit barrier: s is complete for every thread
-            auto* const geometry = static_cast<AllocT*>(s.geometry);
+                }); // implicit barrier: scratch is complete for every thread
+            auto* const geometry = static_cast<AllocT*>(scratch.geometry);
             const int   me       = CHUNK_PMP_THREAD_RANK;
-            auto* const held     = s.held.get();
-            auto* const dirty    = s.dirty.get();
-            if (me >= 0 && static_cast<std::size_t>(me) < s.n_flags)
+            auto* const held     = scratch.held.get();
+            auto* const dirty    = scratch.dirty.get();
+            if (me >= 0 && static_cast<std::size_t>(me) < scratch.n_flags)
             {
                 held[me].store(1, std::memory_order_relaxed); // read after the first set's barrier
             }
-            for (auto* set : s.sets)
+            for (auto* set : scratch.sets)
             {
                 auto&      per_thr = *set;
                 const int  n_thr   = static_cast<int>(per_thr.size());
-                const auto is_set  = [](const std::atomic<unsigned char>* f, int r) noexcept
-                { return f[r].load(std::memory_order_relaxed) != 0; };
-                drain_sort_rank(per_thr, n_thr, me, geometry, s.bucket, dirty);
+                const auto is_set  = [](const std::atomic<unsigned char>* flags, int rank) noexcept
+                { return flags[rank].load(std::memory_order_relaxed) != 0; };
+                drain_sort_rank(per_thr, n_thr, me, geometry, scratch.bucket, dirty);
                 team.barrier();
                 team.single(
                     [&]
@@ -1492,13 +1492,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                         {
                             if (!is_set(held, q))
                             {
-                                drain_sort_rank(per_thr, n_thr, q, geometry, s.bucket, dirty);
+                                drain_sort_rank(per_thr, n_thr, q, geometry, scratch.bucket, dirty);
                             }
                         }
                     }); // implicit barrier: every row is sorted, every dirty flag raised
                 if (me >= 0 && me < n_thr && is_set(dirty, me))
                 {
-                    drain_free_rank(n_thr, me, geometry, s.bucket, /*release_cells=*/false);
+                    drain_free_rank(n_thr, me, geometry, scratch.bucket, /*release_cells=*/false);
                 }
                 team.barrier();
                 team.single(
@@ -1508,7 +1508,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                         {
                             if (!is_set(held, r) && is_set(dirty, r))
                             {
-                                drain_free_rank(n_thr, r, geometry, s.bucket, /*release_cells=*/false);
+                                drain_free_rank(n_thr, r, geometry, scratch.bucket, /*release_cells=*/false);
                             }
                         }
                         for (int r = 0; r < n_thr; ++r) // the next set starts clean

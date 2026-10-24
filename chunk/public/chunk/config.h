@@ -468,7 +468,7 @@ struct CheckNaN
     /// @brief No switch to move.
     static void update([[maybe_unused]] bool state) noexcept {}
     /// @brief No check.
-    static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long i) noexcept {}
+    static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long index) noexcept {}
 };
 
 /// @brief The real switch: maybe() checks while it is on.
@@ -481,12 +481,12 @@ class CheckNaN<true>
     {
         check_nan = state;
     }
-    /// @brief global_check_nan(@p val, @p i) if the switch is on.
-    static void maybe(auto val, long i) noexcept
+    /// @brief global_check_nan(@p val, @p index) if the switch is on.
+    static void maybe(auto val, long index) noexcept
     {
         if (check_nan)
         {
-            global_check_nan(val, i);
+            global_check_nan(val, index);
         }
     }
 

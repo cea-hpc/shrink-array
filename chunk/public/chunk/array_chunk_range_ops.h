@@ -59,14 +59,14 @@
 #include "chunk/bit.h"                     // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/element_access.h" // internal::as_words: Bit chunks are words of bits
 #include "chunk/internal/bit_words.h" // bits::count_ones, bits::scan_words, bits::fill_bit_range(_atomic), bits::store_bit_range_atomic
-#include "chunk/internal/in_t.h"                       // InT<T>: the element snapshots
-#include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast
-#include "chunk/internal/chunk_size_policy.h"          // set_thread_chunk_size
-#include "chunk/internal/conditional_counter.h"        // CounterValueT
-#include "chunk/config.h"                              // build_config::threaded, chunk_config
-#include "chunk/internal/chunk_stats.h"                // increm_chunk_* (used directly, not via compression_manager.h)
-#include "chunk/chunk_traits.h"                        // zero / zero_one_value / is_zero_any_family_v: the type traits below
-#include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
+#include "chunk/internal/in_t.h"                // InT<T>: the element snapshots
+#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
+#include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
+#include "chunk/internal/conditional_counter.h" // CounterValueT
+#include "chunk/config.h"                       // build_config::threaded, chunk_config
+#include "chunk/internal/chunk_stats.h"         // increm_chunk_* (used directly, not via compression_manager.h)
+#include "chunk/chunk_traits.h"                 // zero / zero_one_value / is_zero_any_family_v: the type traits below
+#include "chunk/vector_range_ops.h"             // internal::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/relaxed_element.h"            // fill_range_mt: zero_any's shared elements
 
@@ -153,12 +153,12 @@ inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_
  *          against the array's second value, as zero_one_value::Proxy counts it.
  */
 template <typename Arr, typename ChunkClass, typename T>
-void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst, unsigned int s)
+void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst, unsigned int chunk_sz)
 {
     if constexpr (track_zeros_v<Arr>)
     {
         CounterValueT nz = 0;
-        for (unsigned int k = 0; k < s; ++k)
+        for (unsigned int k = 0; k < chunk_sz; ++k)
         {
             if (dst[k] == static_cast<T>(ChunkClass::first_value))
             {
@@ -172,7 +172,7 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
         const T       sv = static_cast<T>(arr.get_second_value());
         CounterValueT n1 = 0;
         CounterValueT n2 = 0;
-        for (unsigned int k = 0; k < s; ++k)
+        for (unsigned int k = 0; k < chunk_sz; ++k)
         {
             if (dst[k] == static_cast<T>(ChunkClass::first_value))
             {
@@ -205,14 +205,14 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
  *         not read it again.
  */
 template <typename Arr, typename ChunkClass>
-[[nodiscard]] bool fold_if_full(Arr& arr, ChunkClass& ch, std::size_t c_begin, unsigned int s)
+[[nodiscard]] bool fold_if_full(Arr& arr, ChunkClass& ch, std::size_t c_begin, unsigned int chunk_sz)
 {
     if constexpr (track_chunk2_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
     {
         using IndType     = decltype(arr.size());
         using T           = typename Arr::value_type;
-        const bool first  = ch.is_full_first_value(s);
-        const bool second = !first && ch.is_full_second_value(s) &&
+        const bool first  = ch.is_full_first_value(chunk_sz);
+        const bool second = !first && ch.is_full_second_value(chunk_sz) &&
                             !(static_cast<T>(arr.get_second_value()) == static_cast<T>(ChunkClass::first_value));
         if (!first && !second)
         {
@@ -228,7 +228,7 @@ template <typename Arr, typename ChunkClass>
         {
             // The ambient geometry and allocator set the free routes by, as the
             // write path pins them (zero_one_value::Proxy::execute_simple_operation).
-            shrink_array::set_thread_chunk_size(s);
+            shrink_array::set_thread_chunk_size(chunk_sz);
             shrink_array::set_thread_alloc_key(proxy.alloc_key());
         }
         if (first)
@@ -252,13 +252,13 @@ template <typename Arr, typename ChunkClass>
         (void)arr;
         (void)ch;
         (void)c_begin;
-        (void)s;
+        (void)chunk_sz;
     }
     return false;
 }
 
 /**
- * @brief Can the chunk whose buffer is @p dst (@p s elements) be uniform?
+ * @brief Can the chunk whose buffer is @p dst (@p chunk_sz elements) be uniform?
  * @details NECESSARY condition only -- first, middle and last element equal.
  *          A uniform chunk always passes; a chunk that fails cannot be
  *          compressed, so queueing it would only cost the next pass a full
@@ -266,9 +266,9 @@ template <typename Arr, typename ChunkClass>
  *          scans onto the writers' slow path).
  */
 template <typename T>
-[[nodiscard]] bool may_be_uniform(const T* dst, unsigned int s) noexcept
+[[nodiscard]] bool may_be_uniform(const T* dst, unsigned int chunk_sz) noexcept
 {
-    return s == 0 || (dst[0] == dst[s / 2] && dst[0] == dst[s - 1]);
+    return chunk_sz == 0 || (dst[0] == dst[chunk_sz / 2] && dst[0] == dst[chunk_sz - 1]);
 }
 
 /**
@@ -277,18 +277,18 @@ template <typename T>
  *          chunk store them concurrently (relaxed_element.h).
  */
 template <typename T>
-[[nodiscard]] bool may_be_uniform_relaxed(const T* dst, unsigned int s) noexcept
+[[nodiscard]] bool may_be_uniform_relaxed(const T* dst, unsigned int chunk_sz) noexcept
 {
-    if (s == 0)
+    if (chunk_sz == 0)
     {
         return true;
     }
     const T v0 = load_element_relaxed(dst);
-    return v0 == load_element_relaxed(dst + (s / 2)) && v0 == load_element_relaxed(dst + s - 1);
+    return v0 == load_element_relaxed(dst + (chunk_sz / 2)) && v0 == load_element_relaxed(dst + chunk_sz - 1);
 }
 
 /**
- * @brief Store @p v into offsets [@p o_lo, @p o_hi) of a chunk buffer other
+ * @brief Store @p value into offsets [@p o_lo, @p o_hi) of a chunk buffer other
  *        threads are writing and reading (fill_range_mt, zero_any).
  * @details Only five offsets are ever read by a thread that does not own them:
  *          0, 1, S-2, S-1 (the marking filter, zero_any::Proxy::may_become_uniform)
@@ -297,15 +297,15 @@ template <typename T>
  *          bulk of the fill still vectorises.
  */
 template <typename T>
-void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t s, T v) noexcept
+void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t chunk_sz, T value) noexcept
 {
     // Ascending for S >= 4; for a smaller S the out-of-order or duplicate
     // entries are skipped by `edge < o`, and S - 2 wrapping for S == 1 by `edge >= o_hi`.
-    const std::array<std::size_t, 5> shared = {0, 1, s / 2, s - 2, s - 1};
-    std::size_t                      o      = o_lo;
+    const std::array<std::size_t, 5> shared = {0, 1, chunk_sz / 2, chunk_sz - 2, chunk_sz - 1};
+    std::size_t                      off    = o_lo;
     for (const std::size_t edge : shared)
     {
-        if (edge < o)
+        if (edge < off)
         {
             continue;
         }
@@ -313,16 +313,16 @@ void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::si
         {
             break;
         }
-        for (; o < edge; ++o)
+        for (; off < edge; ++off)
         {
-            dst[o] = v;
+            dst[off] = value;
         }
-        store_element_relaxed(dst + edge, v);
-        o = edge + 1;
+        store_element_relaxed(dst + edge, value);
+        off = edge + 1;
     }
-    for (; o < o_hi; ++o)
+    for (; off < o_hi; ++off)
     {
-        dst[o] = v;
+        dst[off] = value;
     }
 }
 
@@ -366,7 +366,7 @@ template <typename Arr, typename ChunkClass>
 }
 
 /**
- * @brief Queue the chunk holding element @p i for the next compression pass.
+ * @brief Queue the chunk holding element @p index for the next compression pass.
  *
  * @details The raw stores of the bulk paths below go straight into a
  *          materialised chunk's buffer, past the write path and its marking:
@@ -382,7 +382,7 @@ template <typename Arr, typename ChunkClass>
  *          fast-block member.
  */
 template <typename Arr>
-void queue_for_compression(Arr& arr, std::size_t i)
+void queue_for_compression(Arr& arr, std::size_t index)
 {
     // zero_any: a candidate list in serial builds too (no counters there).
     if constexpr (chunk_config::use_fast_block_compression || is_v2a_family_v<Arr>)
@@ -398,7 +398,7 @@ void queue_for_compression(Arr& arr, std::size_t i)
                 return;
             }
         }
-        auto proxy = arr.element_proxy(static_cast<decltype(arr.size())>(i));
+        auto proxy = arr.element_proxy(static_cast<decltype(arr.size())>(index));
         // Not for zero_one_value::Proxy: it also has set_num_tab_ptr_is_inside_chunk() (from
         // the shared base), but that does not load the second value -- the key
         // of zero_one_value's candidate list -- and the chunk would land in the list of
@@ -437,7 +437,7 @@ void packed_chunk_store(Arr&         arr,
                         std::size_t  c_begin,
                         std::size_t  lo,
                         std::size_t  hi,
-                        unsigned int s,
+                        unsigned int chunk_sz,
                         int          ind2,
                         ValueAt&&    value_at,
                         StoreBits&&  store_bits)
@@ -454,18 +454,18 @@ void packed_chunk_store(Arr&         arr,
         return; // the whole span was the chunk's constant
     }
 
-    bits::WordT* w = shrink_array::internal::as_words(ch.values_load());
-    store_bits(w, i - c_begin, hi - c_begin);
+    bits::WordT* words = shrink_array::internal::as_words(ch.values_load());
+    store_bits(words, i - c_begin, hi - c_begin);
 
     if constexpr (track_chunk2_counts_v<Arr>)
     {
         // Counter mode (serial builds): the element write that brings a count
         // to S compresses the chunk on the spot (manage_full_*), and there is
         // no pass to queue for -- so do what that last write would have done.
-        const auto ones = static_cast<CounterValueT>(bits::count_ones(w, s));
-        ch.set_nb_val_eq_first_value(static_cast<CounterValueT>(s) - ones);
+        const auto ones = static_cast<CounterValueT>(bits::count_ones(words, chunk_sz));
+        ch.set_nb_val_eq_first_value(static_cast<CounterValueT>(chunk_sz) - ones);
         ch.set_nb_val_eq_second_value(ones);
-        if (ones == static_cast<CounterValueT>(s))
+        if (ones == static_cast<CounterValueT>(chunk_sz))
         {
             arr.element_proxy(static_cast<IndType>(c_begin)).manage_full_second_value();
         }
@@ -474,7 +474,7 @@ void packed_chunk_store(Arr&         arr,
             arr.element_proxy(static_cast<IndType>(c_begin)).manage_full_first_value();
         }
     }
-    else if (bits::scan_words(w, s) != bits::Uniform::mixed)
+    else if (bits::scan_words(words, chunk_sz) != bits::Uniform::mixed)
     {
         queue_for_compression(arr, c_begin);
     }
@@ -490,7 +490,7 @@ void packed_chunk_store(Arr&         arr,
  * @brief Bulk fill, one decision per chunk.
  *
  * @details Per chunk in the range:
- *          - fully covered and @p v is the compressible constant: make the
+ *          - fully covered and @p fill_value is the compressible constant: make the
  *            chunk constant outright. A materialised chunk releases its buffer;
  *            an already-constant one costs nothing. No allocation either way.
  *          - otherwise: arm the chunk with real proxy writes until it
@@ -505,12 +505,12 @@ void packed_chunk_store(Arr&         arr,
  * @param arr   target array
  * @param first first index, inclusive (clamped to size())
  * @param last  last index, exclusive (clamped to size())
- * @param v     value to store
+ * @param fill_value     value to store
  * @param drain flush the array's deferred writes first (true); pass false, or
  *              use the assume_drained tag, when the caller already did
  */
 template <internal::ChunkedArray Arr, typename U>
-void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool drain = true)
+void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_value, bool drain = true)
 {
     using T         = Arr::value_type;
     using IndType   = decltype(arr.size());
@@ -533,27 +533,27 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
         arr.flush_pending_deferred_ops(/*force=*/true);
     }
 
-    const unsigned int s     = arr.chunk_size();
-    const InT<T>       value = static_cast<T>(v);
-    const int          ind2  = internal::second_value_index(arr); // zero_one_value's written(ind)
+    const unsigned int chunk_sz = arr.chunk_size();
+    const InT<T>       value    = static_cast<T>(fill_value);
+    const int          ind2     = internal::second_value_index(arr); // zero_one_value's written(ind)
 
     // Pin the ambient geometry once for the whole operation: every
     // materialisation below must size its buffer from THIS array's chunk_size,
     // not from whichever array wrote last (see Proxy::create_value).
     if constexpr (build_config::chunk_dynamic)
     {
-        set_thread_chunk_size(s);
+        set_thread_chunk_size(chunk_sz);
     }
 
     const bool value_is_cst1 = (value == static_cast<T>(ChunkType::first_value));
 
-    const std::size_t first_chunk = first / s;
-    const std::size_t last_chunk  = (last - 1) / s;
+    const std::size_t first_chunk = first / chunk_sz;
+    const std::size_t last_chunk  = (last - 1) / chunk_sz;
 
     for (std::size_t ci = first_chunk; ci <= last_chunk; ++ci)
     {
-        const std::size_t c_begin = ci * s;
-        const std::size_t c_end   = c_begin + s;
+        const std::size_t c_begin = ci * chunk_sz;
+        const std::size_t c_end   = c_begin + chunk_sz;
         const std::size_t lo      = first > c_begin ? first : c_begin;
         const std::size_t hi      = last < c_end ? last : c_end;
         const bool        whole   = (lo == c_begin) && (hi == c_end);
@@ -587,7 +587,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
                     }
                     if constexpr (build_config::threaded)
                     {
-                        ch.clear_st(get_thr_rank_fast(), s); // frees the buffer, marks cst1
+                        ch.clear_st(get_thr_rank_fast(), chunk_sz); // frees the buffer, marks cst1
                     }
                     else
                     {
@@ -608,8 +608,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             }
             const bool bit = static_cast<bool>(value);
             internal::packed_chunk_store(
-                arr, ch, c_begin, lo, hi, s, ind2, [&](std::size_t) { return static_cast<T>(value); },
-                [bit](bits::WordT* w, std::size_t a, std::size_t b) { bits::fill_bit_range(w, a, b, bit); });
+                arr, ch, c_begin, lo, hi, chunk_sz, ind2, [&](std::size_t) { return static_cast<T>(value); },
+                [bit](bits::WordT* words, std::size_t from, std::size_t to)
+                { bits::fill_bit_range(words, from, to, bit); });
         }
         // ── Variants whose second-value state lives in the proxy ─────────────
         else if constexpr (!internal::raw_fillable_v<T>)
@@ -645,9 +646,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             }
 
             // Restore the per-chunk counters the bulk store bypassed.
-            internal::resync_counters(arr, ch, c_begin, dst, s);
+            internal::resync_counters(arr, ch, c_begin, dst, chunk_sz);
             // Serial builds: the chunk is constant now -> folded here (no pass).
-            if (internal::fold_if_full(arr, ch, c_begin, s))
+            if (internal::fold_if_full(arr, ch, c_begin, chunk_sz))
             {
                 continue;
             }
@@ -659,7 +660,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             {
                 compressible_value = compressible_value || value == static_cast<T>(arr.get_second_value());
             }
-            if (compressible_value && internal::may_be_uniform(dst, s))
+            if (compressible_value && internal::may_be_uniform(dst, chunk_sz))
             {
                 internal::queue_for_compression(arr, c_begin);
             }
@@ -701,21 +702,21 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         arr.flush_pending_deferred_ops(/*force=*/true);
     }
 
-    const unsigned int s    = arr.chunk_size();
-    const int          ind2 = internal::second_value_index(arr); // zero_one_value's written(ind)
+    const unsigned int chunk_sz = arr.chunk_size();
+    const int          ind2     = internal::second_value_index(arr); // zero_one_value's written(ind)
 
     if constexpr (build_config::chunk_dynamic)
     {
-        set_thread_chunk_size(s);
+        set_thread_chunk_size(chunk_sz);
     }
 
-    const std::size_t first_chunk = first / s;
-    const std::size_t last_chunk  = (last - 1) / s;
+    const std::size_t first_chunk = first / chunk_sz;
+    const std::size_t last_chunk  = (last - 1) / chunk_sz;
 
     for (std::size_t ci = first_chunk; ci <= last_chunk; ++ci)
     {
-        const std::size_t c_begin = ci * s;
-        const std::size_t c_end   = c_begin + s;
+        const std::size_t c_begin = ci * chunk_sz;
+        const std::size_t c_end   = c_begin + chunk_sz;
         const std::size_t lo      = first > c_begin ? first : c_begin;
         const std::size_t hi      = last < c_end ? last : c_end;
 
@@ -724,12 +725,12 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         if constexpr (is_packed_bit_v<T>)
         {
             // ArrayChunkBits: the source read once per element, stored 64 at a time.
-            const auto src_at = [&](std::size_t i)
-            { return static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first))); };
-            internal::packed_chunk_store(arr, ch, c_begin, lo, hi, s, ind2, src_at,
-                                         [&](bits::WordT* w, std::size_t a, std::size_t b)
+            const auto src_at = [&](std::size_t index)
+            { return static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(index - first))); };
+            internal::packed_chunk_store(arr, ch, c_begin, lo, hi, chunk_sz, ind2, src_at,
+                                         [&](bits::WordT* words, std::size_t from, std::size_t to)
                                          {
-                                             bits::store_bit_range(w, a, b, [&](std::size_t bi)
+                                             bits::store_bit_range(words, from, to, [&](std::size_t bi)
                                                                    { return static_cast<bool>(src_at(c_begin + bi)); });
                                          });
         }
@@ -759,15 +760,15 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
                 dst[k - c_begin] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(k - first)));
             }
 
-            internal::resync_counters(arr, ch, c_begin, dst, s); // as fill_range
-            if (internal::fold_if_full(arr, ch, c_begin, s))     // serial builds: as fill_range
+            internal::resync_counters(arr, ch, c_begin, dst, chunk_sz); // as fill_range
+            if (internal::fold_if_full(arr, ch, c_begin, chunk_sz))     // serial builds: as fill_range
             {
                 continue;
             }
 
             // The source is not known to be uniform: the pass decides -- for
             // the chunks that can be.
-            if (internal::may_be_uniform(dst, s))
+            if (internal::may_be_uniform(dst, chunk_sz))
             {
                 internal::queue_for_compression(arr, c_begin);
             }
@@ -778,9 +779,9 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
 /// @brief fill_range() on an array whose deferred queue the caller has already
 ///        drained (the assume_drained tag): no flush first.
 template <internal::ChunkedArray Arr, typename U>
-void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assume_drained_t /*tag*/)
+void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& value, assume_drained_t /*tag*/)
 {
-    fill_range(arr, first, last, v, /*drain=*/false);
+    fill_range(arr, first, last, value, /*drain=*/false);
 }
 
 /// @brief copy_range() on an array whose deferred queue the caller has already
@@ -806,13 +807,13 @@ namespace internal
  *        runs between them plain.
  */
 template <typename T, typename At>
-void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t s, At&& at) noexcept
+void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t chunk_sz, At&& at) noexcept
 {
-    const std::array<std::size_t, 5> shared = {0, 1, s / 2, s - 2, s - 1};
-    std::size_t                      o      = o_lo;
+    const std::array<std::size_t, 5> shared = {0, 1, chunk_sz / 2, chunk_sz - 2, chunk_sz - 1};
+    std::size_t                      off    = o_lo;
     for (const std::size_t edge : shared)
     {
-        if (edge < o)
+        if (edge < off)
         {
             continue;
         }
@@ -820,16 +821,16 @@ void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::s
         {
             break;
         }
-        for (; o < edge; ++o)
+        for (; off < edge; ++off)
         {
-            dst[o] = at(o);
+            dst[off] = at(off);
         }
         store_element_relaxed(dst + edge, at(edge));
-        o = edge + 1;
+        off = edge + 1;
     }
-    for (; o < o_hi; ++o)
+    for (; off < o_hi; ++off)
     {
-        dst[o] = at(o);
+        dst[off] = at(off);
     }
 }
 
@@ -910,11 +911,11 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
         // bool, not Bit, for ArrayChunkBits: a Bit is a packed reference type.
         using BufValueT = std::conditional_t<is_packed_bit_v<T>, bool, T>;
 
-        const unsigned int s    = arr.chunk_size();
-        const int          ind2 = second_value_index(arr); // zero_one_value's written(ind)
+        const unsigned int chunk_sz = arr.chunk_size();
+        const int          ind2     = second_value_index(arr); // zero_one_value's written(ind)
         if constexpr (build_config::chunk_dynamic)
         {
-            set_thread_chunk_size(s);
+            set_thread_chunk_size(chunk_sz);
         }
         const int thr = get_thr_rank_fast();
 
@@ -928,21 +929,21 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
         {
             thread_local std::unique_ptr<BufValueT[]> tl_buf;
             thread_local unsigned int                 tl_cap = 0;
-            if (tl_cap < s)
+            if (tl_cap < chunk_sz)
             {
-                tl_buf = std::make_unique_for_overwrite<BufValueT[]>(s);
-                tl_cap = s;
+                tl_buf = std::make_unique_for_overwrite<BufValueT[]>(chunk_sz);
+                tl_cap = chunk_sz;
             }
             buf = tl_buf.get();
         }
 
-        const std::size_t first_chunk = first / s;
-        const std::size_t last_chunk  = (last - 1) / s;
+        const std::size_t first_chunk = first / chunk_sz;
+        const std::size_t last_chunk  = (last - 1) / chunk_sz;
 
         for (std::size_t ci = first_chunk; ci <= last_chunk; ++ci)
         {
-            const std::size_t c_begin = ci * s;
-            const std::size_t c_end   = c_begin + s;
+            const std::size_t c_begin = ci * chunk_sz;
+            const std::size_t c_end   = c_begin + chunk_sz;
             const std::size_t lo      = first > c_begin ? first : c_begin;
             const std::size_t hi      = last < c_end ? last : c_end;
 
@@ -974,21 +975,21 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                 buf[i - c_begin] = v0;
                 for (std::size_t k = i + 1; k < hi; ++k)
                 {
-                    const auto v     = static_cast<BufValueT>(static_cast<T>(value_at(k)));
-                    buf[k - c_begin] = v;
-                    same             = same && (v == v0);
+                    const auto value = static_cast<BufValueT>(static_cast<T>(value_at(k)));
+                    buf[k - c_begin] = value;
+                    same             = same && (value == v0);
                 }
             }
-            const auto at = [&](std::size_t o) -> BufValueT
+            const auto at = [&](std::size_t off) -> BufValueT
             {
                 if constexpr (Constant)
                 {
-                    static_cast<void>(o);
+                    static_cast<void>(off);
                     return v0;
                 }
                 else
                 {
-                    return buf[o];
+                    return buf[off];
                 }
             };
 
@@ -1027,13 +1028,13 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         // elements, and write the ones this span reads.
                         if constexpr (Constant)
                         {
-                            fill_span_relaxed_edges(dst, i - c_begin, hi - c_begin, s, static_cast<T>(v0));
+                            fill_span_relaxed_edges(dst, i - c_begin, hi - c_begin, chunk_sz, static_cast<T>(v0));
                         }
                         else
                         {
-                            store_span_relaxed_edges(dst, i - c_begin, hi - c_begin, s, at);
+                            store_span_relaxed_edges(dst, i - c_begin, hi - c_begin, chunk_sz, at);
                         }
-                        uniform = may_be_uniform_relaxed(dst, s); // buffer pinned by the session
+                        uniform = may_be_uniform_relaxed(dst, chunk_sz); // buffer pinned by the session
                     }
                     else
                     {
@@ -1112,13 +1113,13 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
  * @param arr   target array
  * @param first first index, inclusive (clamped to size())
  * @param last  last index, exclusive (clamped to size())
- * @param v     value to store
+ * @param fill_value     value to store
  */
 template <internal::ChunkedArray Arr, typename U>
-void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
+void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& fill_value)
 {
     using T            = Arr::value_type;
-    const InT<T> value = static_cast<T>(v);
+    const InT<T> value = static_cast<T>(fill_value);
     internal::store_range_mt<true>(arr, first, last, [&value](std::size_t) { return static_cast<T>(value); });
 }
 
@@ -1183,7 +1184,7 @@ void transform_range_mt(Arr& arr, std::size_t first, std::size_t last, It src_fi
  *          contract). Callable from a parallel region on disjoint slices.
  */
 template <internal::ChunkedArray Arr, typename F>
-void for_each_value(const Arr& arr, std::size_t first, std::size_t last, F&& f)
+void for_each_value(const Arr& arr, std::size_t first, std::size_t last, F&& func)
 {
     using IndType   = decltype(arr.size());
     const auto size = static_cast<std::size_t>(arr.size());
@@ -1192,14 +1193,14 @@ void for_each_value(const Arr& arr, std::size_t first, std::size_t last, F&& f)
     {
         return;
     }
-    arr.for_each_value(static_cast<IndType>(first), static_cast<IndType>(last), std::forward<F>(f));
+    arr.for_each_value(static_cast<IndType>(first), static_cast<IndType>(last), std::forward<F>(func));
 }
 
 /// @brief for_each_value() over every element of a chunked array.
 template <internal::ChunkedArray Arr, typename F>
-void for_each_value(const Arr& arr, F&& f)
+void for_each_value(const Arr& arr, F&& func)
 {
-    arr.for_each_value(std::forward<F>(f));
+    arr.for_each_value(std::forward<F>(func));
 }
 
 /**
@@ -1210,7 +1211,7 @@ void for_each_value(const Arr& arr, F&& f)
  *          contract). Callable from a parallel region on disjoint slices.
  */
 template <internal::ChunkedArray Arr, typename F>
-void for_each_span(const Arr& arr, std::size_t first, std::size_t last, F&& f)
+void for_each_span(const Arr& arr, std::size_t first, std::size_t last, F&& func)
 {
     using IndType   = decltype(arr.size());
     const auto size = static_cast<std::size_t>(arr.size());
@@ -1219,14 +1220,14 @@ void for_each_span(const Arr& arr, std::size_t first, std::size_t last, F&& f)
     {
         return;
     }
-    arr.for_each_span(static_cast<IndType>(first), static_cast<IndType>(last), std::forward<F>(f));
+    arr.for_each_span(static_cast<IndType>(first), static_cast<IndType>(last), std::forward<F>(func));
 }
 
 /// @brief for_each_span() over every element of a chunked array.
 template <internal::ChunkedArray Arr, typename F>
-void for_each_span(const Arr& arr, F&& f)
+void for_each_span(const Arr& arr, F&& func)
 {
-    arr.for_each_span(std::forward<F>(f));
+    arr.for_each_span(std::forward<F>(func));
 }
 
 /**

@@ -73,12 +73,12 @@ namespace alloc_affinity_detail
 /// sliced and are metadata-heavy: lazy saves them the per-array slabs.
 inline const bool g_eager = []() noexcept
 {
-    const char* e = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
-    if (e == nullptr || e[0] == '\0')
+    const char* env = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
+    if (env == nullptr || env[0] == '\0')
     {
         return chunk_config::use_zero; // the variant's default
     }
-    return e[0] != '0';
+    return env[0] != '0';
 }();
 
 /// True while rechunk_to() constructs its new storage (tmp): the storage that
@@ -111,8 +111,8 @@ struct RechunkStorageScope
 /// freeing it. Off = a fresh vector per re-chunk.
 inline const bool g_reuse_chunk_list = []() noexcept
 {
-    const char* e = std::getenv("CHUNK_RECHUNK_REUSE_LIST");
-    return e == nullptr || e[0] == '\0' || e[0] != '0';
+    const char* env = std::getenv("CHUNK_RECHUNK_REUSE_LIST");
+    return env == nullptr || env[0] == '\0' || env[0] != '0';
 }();
 
 /// True while rechunk_to() destroys its temporary, which by then holds the OLD
@@ -180,17 +180,17 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      *          (one decision per chunk, not per element). Everything else goes
      *          through operator[].
      *
-     * @param i chunk index; the caller guarantees 0 <= i < nb_chunk
+     * @param index chunk index; the caller guarantees 0 <= i < nb_chunk
      */
-    [[nodiscard]] ChunkType& chunk_ref(std::size_t i) noexcept
+    [[nodiscard]] ChunkType& chunk_ref(std::size_t index) noexcept
     {
-        return chunk_list_[i];
+        return chunk_list_[index];
     }
 
     /// @brief Const overload of chunk_ref(): the same chunk, read-only.
-    [[nodiscard]] const ChunkType& chunk_ref(std::size_t i) const noexcept
+    [[nodiscard]] const ChunkType& chunk_ref(std::size_t index) const noexcept
     {
-        return chunk_list_[i];
+        return chunk_list_[index];
     }
 
     /**
@@ -254,40 +254,41 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     }
 
     /**
-     * @brief Size chunk_list to @p n chunks, from the spare a previous
+     * @brief Size chunk_list to @p count chunks, from the spare a previous
      *        re-chunk left when this is a re-chunk's new storage.
      *
      * @details Every re-chunk builds a new chunk_list and frees the old one; at a
      *          small geometry that is hundreds of MB faulted in, then unmapped (a
      *          TLB shootdown on every CPU). The spare is the previous old storage's
-     *          buffer, pages still resident: taken when it holds @p n chunks
+     *          buffer, pages still resident: taken when it holds @p count chunks
      *          without being more than 4x too large. Only for the storage
      *          rechunk_to() builds (quiescent, serial) and only into an empty list,
      *          so no live chunk address ever moves.
-     * @param n the chunk count
+     * @param count the chunk count
      */
-    void acquire_chunk_list(std::size_t n)
+    void acquire_chunk_list(std::size_t count)
     {
         if (alloc_affinity_detail::g_building_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
-            chunk_list_.capacity() == 0 && spare_chunk_list_.capacity() >= n && spare_chunk_list_.capacity() / 4 <= n)
+            chunk_list_.capacity() == 0 && spare_chunk_list_.capacity() >= count &&
+            spare_chunk_list_.capacity() / 4 <= count)
         {
             chunk_list_.swap(spare_chunk_list_); // spare left empty, without a buffer
         }
         // Only reserves (NoInitAllocator): the caller's init loop (static schedule) is the
         // first touch, page faults and NUMA placement included.
-        chunk_list_.resize(n);
+        chunk_list_.resize(count);
     }
 
     /**
-     * @brief Construct chunk @p i of chunk_list in place, value-initialised.
+     * @brief Construct chunk @p index of chunk_list in place, value-initialised.
      * @details For the init loops after a growing resize(), so that the chunk
      *          is first written by the thread that initialises it.
-     * @param i the chunk index, below chunk_list.size()
+     * @param index the chunk index, below chunk_list.size()
      * @return the chunk
      */
-    ChunkType& construct_chunk(int i) noexcept
+    ChunkType& construct_chunk(int index) noexcept
     {
-        return *std::construct_at(&chunk_list_[static_cast<std::size_t>(i)]);
+        return *std::construct_at(&chunk_list_[static_cast<std::size_t>(index)]);
     }
 
     /**

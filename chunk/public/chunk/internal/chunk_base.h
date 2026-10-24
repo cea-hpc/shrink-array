@@ -190,16 +190,16 @@ class DeferredReadGate<Derived, DeferReadGate::none>
 
     /// @brief Read-side gate check: always false (serial build has no
     ///        deferred writes, so nothing can ever be pending).
-    /// @param i Element offset being read; unused.
+    /// @param offset Element offset being read; unused.
     /// @return Always false.
-    [[nodiscard]] bool read_gate_should_wait([[maybe_unused]] int i) const noexcept
+    [[nodiscard]] bool read_gate_should_wait([[maybe_unused]] int offset) const noexcept
     {
         return false;
     }
 
     /// @brief No-op: nothing to synchronise against in a serial build.
-    /// @param i Element offset being read; unused.
-    void reader_sync([[maybe_unused]] int i) const noexcept {}
+    /// @param offset Element offset being read; unused.
+    void reader_sync([[maybe_unused]] int offset) const noexcept {}
 
     /// @brief No-op: no per-chunk pending counter exists in a serial build.
     /// @param thr Calling thread's rank; unused.
@@ -218,9 +218,9 @@ class DeferredReadGate<Derived, DeferReadGate::none>
 
     /// @brief Always false: nothing can ever be pending in a serial build.
     /// @param thr Calling thread's rank; unused.
-    /// @param i Element offset; unused.
+    /// @param offset Element offset; unused.
     /// @return Always false.
-    [[nodiscard]] bool static foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) noexcept
+    [[nodiscard]] bool static foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int offset) noexcept
     {
         return false;
     }
@@ -319,14 +319,14 @@ class DeferredReadGate<Derived, DeferReadGate::precise>
 
     /// @brief Is a FOREIGN thread's op pending on this chunk right now?
     /// @param thr Calling (writing) thread's rank.
-    /// @param i Element offset being written; unused (the check is per-chunk).
+    /// @param offset Element offset being written; unused (the check is per-chunk).
     /// @return true iff something is pending and it was not published by `thr`.
-    [[nodiscard]] bool foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) const noexcept
+    [[nodiscard]] bool foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int offset) const noexcept
     {
         {
-            const auto w =
+            const auto packed =
                 static_cast<uint32_t>(static_cast<const Derived&>(*this).pending_ops_.load(std::memory_order_acquire));
-            return sign_extend_count(w) > 0 && (w >> count_bits) != static_cast<uint32_t>(thr) + 1u;
+            return sign_extend_count(packed) > 0 && (packed >> count_bits) != static_cast<uint32_t>(thr) + 1u;
         }
     }
     /// @brief Read-side gate check: does a reader need to wait/drain before
@@ -343,12 +343,12 @@ class DeferredReadGate<Derived, DeferReadGate::precise>
     }
 
     /// @brief Drain this chunk across all ranks if anything is pending on it.
-    /// @param i Element offset being read.
-    void reader_sync(int i) const noexcept
+    /// @param offset Element offset being read.
+    void reader_sync(int offset) const noexcept
     {
         if (pending_any()) [[unlikely]]
         {
-            static_cast<const Derived&>(*this).wait_for_availability(i);
+            static_cast<const Derived&>(*this).wait_for_availability(offset);
         }
     }
 
@@ -643,10 +643,10 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     /// @param thr_rank Calling thread's rank; selects which per-thread map to
     ///                 enqueue on.
     /// @param num Element offset within the chunk the operation targets.
-    /// @param v Deferred operation to enqueue; ownership transfers to the queue.
+    /// @param op Deferred operation to enqueue; ownership transfers to the queue.
     void to_be_queued_for_deferred_processing(int                                                thr_rank,
                                               int                                                num,
-                                              CompressionManager<T, Derived>::CmpDeferredOpBase* v) const;
+                                              CompressionManager<T, Derived>::CmpDeferredOpBase* op) const;
 
     /// @brief Block until every deferred operation pending on this chunk has
     ///        been applied (drains this chunk across all thread ranks).
@@ -717,13 +717,13 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
         // Built whole (an allocator is not movable); moving the vector into the
         // map moves its buffer, not the allocators.
         std::vector<TCTypeCAllocator<T>> arr(static_cast<std::size_t>(max_thr));
-        constexpr int                    v = std::max(static_cast<int>(8 / sizeof(T)), 1);
+        constexpr int                    per_word = std::max(static_cast<int>(8 / sizeof(T)), 1);
         for (int thr = 0; thr < max_thr; ++thr)
         {
             auto& allocator = arr[static_cast<std::size_t>(thr)];
             allocator.set_rank(thr); // stamped into every slab as owner_rank
             allocator.set_key(key);  // ... and owner_key
-            allocator.init(static_cast<int>(Derived::storage_units(size)), block_size / v, -1);
+            allocator.init(static_cast<int>(Derived::storage_units(size)), block_size / per_word, -1);
         }
         allocator_pool_->emplace(pool_key(key, size), std::move(arr));
     }
@@ -991,27 +991,27 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @details Counted separately: these scans read the whole chunk twice
     ///          per element, which would otherwise dominate `read` and make
     ///          the read hit-rate meaningless.
-    /// @param i Index in the chunk.
+    /// @param offset Index in the chunk.
     /// @return Value at index i.
-    [[nodiscard]] T read_value_scan(int i) const noexcept
+    [[nodiscard]] T read_value_scan(int offset) const noexcept
     {
         if constexpr (chunk_config::stats)
         {
             increm_chunk_scan_read<Derived>();
         }
-        return element_at(i);
+        return element_at(offset);
     }
 
     /// @brief read_value_scan() of an element another thread may be writing:
     ///        a relaxed atomic load (relaxed_element.h). The marking filter's.
     /// @pre internal::relaxed_element_access_v<T>.
-    [[nodiscard]] T read_value_scan_relaxed(int i) const noexcept
+    [[nodiscard]] T read_value_scan_relaxed(int offset) const noexcept
     {
         if constexpr (chunk_config::stats)
         {
             increm_chunk_scan_read<Derived>();
         }
-        return element_at<true>(i);
+        return element_at<true>(offset);
     }
 
     /**
@@ -1048,9 +1048,9 @@ class ChunkBase : public CRTPSupport<Derived>,
         if constexpr (is_packed)
         {
             // One compare per 64 elements (bit_words.h).
-            const bits::Uniform u        = bits::scan_words(internal::as_words(vals), count);
-            const auto          all_of_v = [u](bool v) noexcept
-            { return u == (v ? bits::Uniform::all_true : bits::Uniform::all_false); };
+            const bits::Uniform scan     = bits::scan_words(internal::as_words(vals), count);
+            const auto          all_of_v = [scan](bool bit) noexcept
+            { return scan == (bit ? bits::Uniform::all_true : bits::Uniform::all_false); };
             if constexpr (chunk_config::stats)
             {
                 add_chunk_scan_read<Derived>(static_cast<long>(count));
@@ -1101,9 +1101,9 @@ class ChunkBase : public CRTPSupport<Derived>,
         return scan;
     }
 
-    /// @brief Is the materialised buffer all @p v over its first @p count elements?
+    /// @brief Is the materialised buffer all @p value over its first @p count elements?
     /// @pre The chunk is materialised.
-    [[nodiscard]] bool is_constant_to(InT<T> v, unsigned int count) const noexcept
+    [[nodiscard]] bool is_constant_to(InT<T> value, unsigned int count) const noexcept
     {
         if constexpr (is_packed)
         {
@@ -1112,7 +1112,7 @@ class ChunkBase : public CRTPSupport<Derived>,
                 add_chunk_scan_read<Derived>(static_cast<long>(count));
             }
             return bits::scan_words(internal::as_words(values_load()), count) ==
-                   (static_cast<bool>(v) ? bits::Uniform::all_true : bits::Uniform::all_false);
+                   (static_cast<bool>(value) ? bits::Uniform::all_true : bits::Uniform::all_false);
         }
         // Same shape as scan_constants(): branch-free blocks, exit between them.
         const T*     vals = values_load();
@@ -1124,7 +1124,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             for (unsigned int j = i; j < block_end; ++j)
             {
                 // raw-read: compressor scan of a chunk this pass claimed (steal mark), or a sequential caller
-                bad |= static_cast<unsigned int>(vals[j] != v);
+                bad |= static_cast<unsigned int>(vals[j] != value);
             }
             i = block_end;
             if (bad != 0)
@@ -1156,9 +1156,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     }
 
     /// @brief Read a value at given index with statistics tracking
-    /// @param i Index in the chunk
+    /// @param offset Index in the chunk
     /// @return Value at index i
-    [[nodiscard]] T read_value(int i) const noexcept
+    [[nodiscard]] T read_value(int offset) const noexcept
     {
         if constexpr (chunk_config::stats)
         {
@@ -1176,7 +1176,7 @@ class ChunkBase : public CRTPSupport<Derived>,
                 increm_chunk_read<Derived>();
             }
         }
-        return element_at(i);
+        return element_at(offset);
     }
 
     // reader_sync(i) -- the read-side visibility gate of the pure-read proxy
@@ -1188,9 +1188,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     // ========================================================================
 
     /// @brief Read-only access to chunk elements with optional NaN checking
-    /// @param i Index in the chunk
+    /// @param offset Index in the chunk
     /// @return Value at index i
-    T operator[](int i) const noexcept
+    T operator[](int offset) const noexcept
     {
         if constexpr (chunk_config::stats)
         {
@@ -1210,9 +1210,9 @@ class ChunkBase : public CRTPSupport<Derived>,
         // stores, one of them a release, and an acquire load of `values`) whose
         // ordering the compiler must keep. Every read paid two (perf annotate,
         // Grace: the release store of the second section held the read).
-        const T v = element_at(i);
-        chunk_config::CheckNaN<chunk_config::do_check>::maybe(v, static_cast<long>(i));
-        return v;
+        const T value = element_at(offset);
+        chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(offset));
+        return value;
     }
 
     /**
@@ -1244,10 +1244,10 @@ class ChunkBase : public CRTPSupport<Derived>,
             // second constant points at an identifier, not at values.
             if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
             {
-                const T v = derived().second_value_from_ptr(vals);
+                const T value = derived().second_value_from_ptr(vals);
                 for (int j = 0; j < count; ++j)
                 {
-                    out[j] = v;
+                    out[j] = value;
                 }
                 return;
             }
@@ -1298,11 +1298,11 @@ class ChunkBase : public CRTPSupport<Derived>,
     }
 
     /// @brief Proxy access for read-write operations
-    /// @param i Index in the chunk
+    /// @param offset Index in the chunk
     /// @return Proxy object for lazy write
-    ProxyType operator[](int i) noexcept
+    ProxyType operator[](int offset) noexcept
     {
-        return ProxyType(values_, i, derived());
+        return ProxyType(values_, offset, derived());
     }
 
     // ========================================================================
@@ -1310,9 +1310,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     // ========================================================================
 
     /// @brief Direct read-write access to chunk elements without safety checks
-    /// @param i Index in the chunk
+    /// @param offset Index in the chunk
     /// @return Reference to value at index i
-    T& operator()(int i) const noexcept
+    T& operator()(int offset) const noexcept
     {
         if constexpr (chunk_config::stats)
         {
@@ -1332,7 +1332,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
         static_assert(!is_packed, "operator()(int) returns T&: a Bit has no address (bit.h)");
         // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
-        return values_load()[i];
+        return values_load()[offset];
     }
 
     // ========================================================================
@@ -1594,14 +1594,14 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief Debug-only assertion: abort if offset j is not currently
     ///        written (a clear on an unwritten offset is a bug). Compiled
     ///        out entirely when build_config::any_check is off.
-    /// @param j Element offset expected to be written.
-    void debug_check_written(int j) const noexcept
+    /// @param offset Element offset expected to be written.
+    void debug_check_written(int offset) const noexcept
     {
         if constexpr (build_config::any_check)
         {
-            if (!is_written_at(j))
+            if (!is_written_at(offset))
             {
-                CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written (offset {})", j);
+                CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written (offset {})", offset);
             }
         }
     }
@@ -1763,15 +1763,15 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     /// @brief Whether this chunk is currently materialised (not compressed
     ///        to a constant), at the granularity Derived supports.
-    /// @param j Element offset; used only when Derived distinguishes
+    /// @param offset Element offset; used only when Derived distinguishes
     ///          writtenness per-offset (e.g. zero_one_value/zero_any's second-value
     ///          slot); ignored otherwise (falls back to derived().written()).
     /// @return true if the chunk (or offset j) holds real, materialised data.
-    [[nodiscard]] bool is_written_at(int j) const noexcept
+    [[nodiscard]] bool is_written_at(int offset) const noexcept
     {
-        if constexpr (requires { derived().written(j); })
+        if constexpr (requires { derived().written(offset); })
         {
-            return derived().written(j);
+            return derived().written(offset);
         }
         else
         {
@@ -1780,7 +1780,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     }
 
     /**
-     * @brief The element at @p i, whatever the chunk's state.
+     * @brief The element at @p offset, whatever the chunk's state.
      *
      * @details The single point every element READ goes through. A zero_any
      *          chunk compressed to a second constant points at an identifier
@@ -1795,7 +1795,7 @@ class ChunkBase : public CRTPSupport<Derived>,
      *         element another thread may be writing (relaxed_element.h).
      */
     template <bool Relaxed = false>
-    [[nodiscard]] T element_at(int i) const noexcept
+    [[nodiscard]] T element_at(int offset) const noexcept
     {
         // A pure read is bracketed by a ReadSection (read_reclaim.h): a
         // compression pass running in the same region waits for it before it
@@ -1803,19 +1803,19 @@ class ChunkBase : public CRTPSupport<Derived>,
         // the compressor's own scans and the marking filter: not bracketed.
         if constexpr (Relaxed)
         {
-            return element_at_unguarded<true>(i);
+            return element_at_unguarded<true>(offset);
         }
         else
         {
             const read_reclaim::ReadSection section;
-            return element_at_unguarded<false>(i);
+            return element_at_unguarded<false>(offset);
         }
     }
 
     /// @brief element_at() without the read section: the load of `values` and
     ///        the element, nothing else.
     template <bool Relaxed>
-    [[nodiscard]] T element_at_unguarded(int i) const noexcept
+    [[nodiscard]] T element_at_unguarded(int offset) const noexcept
     {
         // The one branch identifiers cost: a compressed-to-second-constant
         // chunk points into a region that was never written, so the
@@ -1860,7 +1860,7 @@ class ChunkBase : public CRTPSupport<Derived>,
                 return derived().second_value_from_ptr(vals);
             }
             // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
-            return load_at<Relaxed>(vals, i);
+            return load_at<Relaxed>(vals, offset);
         }
         const T* const vals = values_load();
         // TEST KNOB (test_hooks.h): widens the load -> dereference window
@@ -1872,7 +1872,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             test_hooks::maybe_read_delay();
         }
         // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
-        return load_at<Relaxed>(vals, i);
+        return load_at<Relaxed>(vals, offset);
     }
 
     /// @brief Return @p ptr to the allocator instance that carved it, found
@@ -1920,21 +1920,21 @@ class ChunkBase : public CRTPSupport<Derived>,
     }
 
     template <bool Relaxed>
-    [[nodiscard]] static T load_at(const T* vals, int i) noexcept
+    [[nodiscard]] static T load_at(const T* vals, int offset) noexcept
     {
         if constexpr (is_packed)
         {
             // raw-read: load_at, called by element_at_unguarded only
-            return elem_get(vals, static_cast<std::size_t>(i)); // relaxed word load under OpenMP
+            return elem_get(vals, static_cast<std::size_t>(offset)); // relaxed word load under OpenMP
         }
         else if constexpr (Relaxed)
         {
-            return internal::load_element_relaxed(vals + i);
+            return internal::load_element_relaxed(vals + offset);
         }
         else
         {
             // raw-read: load_at, called by element_at_unguarded only
-            return vals[i];
+            return vals[offset];
         }
     }
 };

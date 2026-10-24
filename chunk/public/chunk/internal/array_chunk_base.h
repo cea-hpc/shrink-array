@@ -75,7 +75,7 @@ namespace shrink_array
  * @see ArrayChunkBase::is_written_at
  */
 template <typename D>
-inline constexpr bool has_chunk_written_v = requires(const D& obj, int j) { obj.chunk_written(j); };
+inline constexpr bool has_chunk_written_v = requires(const D& obj, int num_chunk) { obj.chunk_written(num_chunk); };
 
 /**
  * @brief Common implementation of the chunked arrays, injected by CRTP.
@@ -224,38 +224,38 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
         // ── Random access: every jump is a seek() on lin_ ───────────────────
 
-        /** @brief Jump @p n elements (negative: backwards). O(1), one chunk sync. */
-        const_iterator& operator+=(difference_type n) noexcept
+        /** @brief Jump @p offset elements (negative: backwards). O(1), one chunk sync. */
+        const_iterator& operator+=(difference_type offset) noexcept
         {
-            seek(lin_ + static_cast<IndType>(n));
+            seek(lin_ + static_cast<IndType>(offset));
             return *this;
         }
 
-        /** @brief Jump back @p n elements. */
-        const_iterator& operator-=(difference_type n) noexcept
+        /** @brief Jump back @p offset elements. */
+        const_iterator& operator-=(difference_type offset) noexcept
         {
-            seek(lin_ - static_cast<IndType>(n));
+            seek(lin_ - static_cast<IndType>(offset));
             return *this;
         }
 
-        /** @brief The iterator @p n elements after @p it. */
-        [[nodiscard]] friend const_iterator operator+(const_iterator it, difference_type n) noexcept
+        /** @brief The iterator @p offset elements after @p it. */
+        [[nodiscard]] friend const_iterator operator+(const_iterator it, difference_type offset) noexcept
         {
-            it += n;
+            it += offset;
             return it;
         }
 
-        /** @brief The iterator @p n elements after @p it (n + it form). */
-        [[nodiscard]] friend const_iterator operator+(difference_type n, const_iterator it) noexcept
+        /** @brief The iterator @p offset elements after @p it (n + it form). */
+        [[nodiscard]] friend const_iterator operator+(difference_type offset, const_iterator it) noexcept
         {
-            it += n;
+            it += offset;
             return it;
         }
 
-        /** @brief The iterator @p n elements before @p it. */
-        [[nodiscard]] friend const_iterator operator-(const_iterator it, difference_type n) noexcept
+        /** @brief The iterator @p offset elements before @p it. */
+        [[nodiscard]] friend const_iterator operator-(const_iterator it, difference_type offset) noexcept
         {
-            it -= n;
+            it -= offset;
             return it;
         }
 
@@ -267,13 +267,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         }
 
         /**
-         * @brief The element @p n positions away, by VALUE (see the class comment).
+         * @brief The element @p offset positions away, by VALUE (see the class comment).
          * @details A seek per call: a sync per element in a loop, where ++ syncs
          *          once per chunk.
          */
-        [[nodiscard]] reference operator[](difference_type n) const noexcept
+        [[nodiscard]] reference operator[](difference_type offset) const noexcept
         {
-            return *(*this + n);
+            return *(*this + offset);
         }
 
         /**
@@ -647,22 +647,22 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @{
      */
     /**
-     * @brief Call @p f(value) on every element of [@p first, @p last), in order.
+     * @brief Call @p func(value) on every element of [@p first, @p last), in order.
      *
      * @details One sync_chunk per chunk, then blocks of bulk_block elements
-     *          copied under one read section each (ChunkBase::read_block), @p f
+     *          copied under one read section each (ChunkBase::read_block), @p func
      *          called outside it. Stats and NaN-check builds read through the
      *          iterator, so every element still goes through the const operator[].
      * @param first first index, inclusive (clamped to [0, size()])
      * @param last  last index, exclusive (clamped to size())
-     * @param f     called as f(value); its return value is ignored
+     * @param func     called as f(value); its return value is ignored
      * @warning Same contract as the iterator: no other thread may write the
      *          array during the call. Check builds stop on a write deferred
      *          onto the chunk being read. Callable from a parallel region,
      *          every thread on its own slice.
      */
     template <typename F>
-    void for_each_value(IndType first, IndType last, F&& f) const
+    void for_each_value(IndType first, IndType last, F&& func) const
     {
         if constexpr (bulk_fast)
         {
@@ -672,12 +672,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                                 {
                                     for (int j = lo; j < hi; j += bulk_block)
                                     {
-                                        const int n = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                        ch.read_block(j, n, buf.data());
+                                        const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
+                                        ch.read_block(j, len, buf.data());
                                         check_no_write_during_bulk_read(ch, num_chunk, j);
-                                        for (int k = 0; k < n; ++k)
+                                        for (int k = 0; k < len; ++k)
                                         {
-                                            f(buf[k]);
+                                            func(buf[k]);
                                         }
                                     }
                                 });
@@ -696,33 +696,33 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             {
                 return;
             }
-            const const_iterator e = begin() + last;
-            for (const_iterator it = begin() + first; it != e; ++it)
+            const const_iterator end_it = begin() + last;
+            for (const_iterator it = begin() + first; it != end_it; ++it)
             {
-                f(*it);
+                func(*it);
             }
         }
     }
 
     /// @brief for_each_value() over every element.
     template <typename F>
-    void for_each_value(F&& f) const
+    void for_each_value(F&& func) const
     {
-        for_each_value(IndType{0}, m_size_, std::forward<F>(f));
+        for_each_value(IndType{0}, m_size_, std::forward<F>(func));
     }
 
     /**
-     * @brief Call @p f(std::span<const T>) on [@p first, @p last), block by
+     * @brief Call @p func(std::span<const T>) on [@p first, @p last), block by
      *        block, in order: the loop over the span can be vectorised.
      *
-     * @details for_each_value() by blocks of up to bulk_block elements. When @p f
+     * @details for_each_value() by blocks of up to bulk_block elements. When @p func
      *          is also callable as f(const T& v, std::size_t count), a compressed
      *          chunk is passed that way in O(1); other callables get it as spans.
      *          Stats and NaN-check builds fill blocks through the iterator and
      *          never call f(v, count).
      * @param first first index, inclusive (clamped to [0, size()])
      * @param last  last index, exclusive (clamped to size())
-     * @param f     called as f(std::span<const T>), and f(v, count) when it
+     * @param func     called as f(std::span<const T>), and f(v, count) when it
      *              accepts it; its return value is ignored. A span is only
      *              valid during its call.
      * @warning for_each_value()'s contract: no other thread may write the
@@ -730,7 +730,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          thread on its own slice.
      */
     template <typename F>
-    void for_each_span(IndType first, IndType last, F&& f) const
+    void for_each_span(IndType first, IndType last, F&& func) const
     {
         std::array<T, bulk_block> buf;
         if constexpr (bulk_fast)
@@ -740,53 +740,53 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                                 {
                                     for (int j = lo; j < hi; j += bulk_block)
                                     {
-                                        const int n = (hi - j) < bulk_block ? (hi - j) : bulk_block;
+                                        const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
                                         if constexpr (std::invocable<F&, const T&, std::size_t>)
                                         {
                                             // A compressed chunk stays so for the rest of the
                                             // call (no writer): the constant covers [j, hi).
                                             T cst{};
-                                            if (ch.read_block_or_constant(j, n, buf.data(), cst))
+                                            if (ch.read_block_or_constant(j, len, buf.data(), cst))
                                             {
                                                 check_no_write_during_bulk_read(ch, num_chunk, j);
-                                                f(std::as_const(cst), static_cast<std::size_t>(hi - j));
+                                                func(std::as_const(cst), static_cast<std::size_t>(hi - j));
                                                 return;
                                             }
                                         }
                                         else
                                         {
-                                            ch.read_block(j, n, buf.data());
+                                            ch.read_block(j, len, buf.data());
                                         }
                                         check_no_write_during_bulk_read(ch, num_chunk, j);
-                                        f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
+                                        func(std::span<const T>(buf.data(), static_cast<std::size_t>(len)));
                                     }
                                 });
         }
         else
         {
-            int n = 0;
+            int filled = 0;
             for_each_value(first, last,
-                           [&](const T& x)
+                           [&](const T& value)
                            {
-                               buf[n++] = x;
-                               if (n == bulk_block)
+                               buf[filled++] = value;
+                               if (filled == bulk_block)
                                {
-                                   f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
-                                   n = 0;
+                                   func(std::span<const T>(buf.data(), static_cast<std::size_t>(filled)));
+                                   filled = 0;
                                }
                            });
-            if (n > 0)
+            if (filled > 0)
             {
-                f(std::span<const T>(buf.data(), static_cast<std::size_t>(n)));
+                func(std::span<const T>(buf.data(), static_cast<std::size_t>(filled)));
             }
         }
     }
 
     /// @brief for_each_span() over every element.
     template <typename F>
-    void for_each_span(F&& f) const
+    void for_each_span(F&& func) const
     {
-        for_each_span(IndType{0}, m_size_, std::forward<F>(f));
+        for_each_span(IndType{0}, m_size_, std::forward<F>(func));
     }
 
     /**
@@ -805,10 +805,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                                 {
                                     for (int j = lo; j < hi; j += bulk_block)
                                     {
-                                        const int n = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                        ch.read_block(j, n, out);
+                                        const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
+                                        ch.read_block(j, len, out);
                                         check_no_write_during_bulk_read(ch, num_chunk, j);
-                                        out += n;
+                                        out += len;
                                     }
                                 });
             return out;
@@ -816,9 +816,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         else
         {
             for_each_value(first, last,
-                           [&out](const T& x)
+                           [&out](const T& value)
                            {
-                               *out = x;
+                               *out = value;
                                ++out;
                            });
             return out;
@@ -853,19 +853,19 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /**
      * @brief Checked read access.
-     * @param i global element index
+     * @param index global element index
      * @return the element value
-     * @throws std::out_of_range if @p i is negative or >= size()
+     * @throws std::out_of_range if @p index is negative or >= size()
      */
-    [[nodiscard]] const_reference at(IndType i) const;
+    [[nodiscard]] const_reference at(IndType index) const;
 
     /**
      * @brief Checked write access.
-     * @param i global element index
+     * @param index global element index
      * @return the write proxy for that element
-     * @throws std::out_of_range if @p i is negative or >= size()
+     * @throws std::out_of_range if @p index is negative or >= size()
      */
-    [[nodiscard]] reference at(IndType i);
+    [[nodiscard]] reference at(IndType index);
 
     /**
      * @name First / last element
@@ -937,13 +937,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /**
      * @brief Const read access (used by read_value()).
-     * @param i global element index (unchecked)
+     * @param index global element index (unchecked)
      * @return the element value, after the read gate has been honoured
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(IndType i) const noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(IndType index) const noexcept
     {
-        const int   num_chunk = chunk_index_of(i);
-        const int   num       = offset_in_chunk(i);
+        const int   num_chunk = chunk_index_of(index);
+        const int   num       = offset_in_chunk(index);
         const auto& chunk_t   = chunk_list_[num_chunk];
 
         sync_chunk(chunk_t, num_chunk, num);
@@ -953,15 +953,15 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /**
      * @brief Raw reference access: arr(i) = value.
-     * @param i global element index (unchecked)
+     * @param index global element index (unchecked)
      * @return a reference to the physical storage of the element
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] otherwise.
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(IndType i) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(IndType index) noexcept
     {
-        const int num_chunk = chunk_index_of(i);
-        const int num       = offset_in_chunk(i);
+        const int num_chunk = chunk_index_of(index);
+        const int num       = offset_in_chunk(index);
         auto&     chunk_t   = chunk_list_[num_chunk];
 
         sync_chunk(chunk_t, num_chunk, num);
@@ -977,13 +977,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
      *          -DSHRINK_AGGRESSIVE_INLINE, never nvc++) pulls the whole read path in.
      *
-     * @param i global element index; the caller guarantees 0 <= i < size()
+     * @param index global element index; the caller guarantees 0 <= i < size()
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType i) const noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType index) const noexcept
     {
-        const int num_chunk = chunk_index_of(i);
-        const int num       = offset_in_chunk(i);
+        const int num_chunk = chunk_index_of(index);
+        const int num       = offset_in_chunk(index);
         // Lets the compiler drop bounds/sign checks (0 <= num <= modulo by construction).
         // modulo() is read into a local first: clang ignores an assumption that
         // calls a function it cannot prove side-effect free (-Wassume).
@@ -1000,7 +1000,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief Unchecked write access: THE write entry of the container.
      *
-     * @param i global element index; the caller guarantees 0 <= i < size()
+     * @param index global element index; the caller guarantees 0 <= i < size()
      * @return the write proxy for that element, armed with the owning array and
      *         chunk number
      * @warning The proxy is a HANDLE into this array's chunk storage, not a
@@ -1014,30 +1014,30 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          the same kind of proxy. The ElementRef wrapper makes a use of
      *          `auto v = a[i];` fail to compile (internal/element_ref.h).
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](IndType i) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](IndType index) noexcept
     {
         if constexpr (build_config::strict_element_ref)
         {
-            return reference(element_proxy(i));
+            return reference(element_proxy(index));
         }
         else
         {
-            return element_proxy(i);
+            return element_proxy(index);
         }
     }
 
     /**
-     * @brief The write proxy of element @p i, in every build: operator[]'s
+     * @brief The write proxy of element @p index, in every build: operator[]'s
      *        work, for the library code that names the proxy (operator[]
      *        wraps it in an ElementRef).
-     * @param i global element index; the caller guarantees 0 <= i < size()
+     * @param index global element index; the caller guarantees 0 <= i < size()
      * @return the write proxy for that element, armed as operator[]'s
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(IndType i) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(IndType index) noexcept
     {
-        const int        num_chunk = chunk_index_of(i);
+        const int        num_chunk = chunk_index_of(index);
         auto&            chunk_t   = chunk_list_[num_chunk];
-        const int        num       = offset_in_chunk(i);
+        const int        num       = offset_in_chunk(index);
         const ProxyType& val       = chunk_t[num];
 
         // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
@@ -1059,7 +1059,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         // (ChunkBase::reader_sync), and a same-offset WAW is handled on the
         // direct write path. The const accessors and T& operator() keep sync_chunk.
 
-        chunk_config::CheckNaN<chunk_config::do_check>::maybe(val, static_cast<long>(i));
+        chunk_config::CheckNaN<chunk_config::do_check>::maybe(val, static_cast<long>(index));
 
         return val;
     }
@@ -1091,23 +1091,23 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * the narrowing, valid while size() < INT_MAX * chunk_size().
      * @{
      */
-    /// @brief The chunk holding element @p i (>= 0): i / chunk_size() (SizePolicy::chunk_of).
-    [[nodiscard]] int chunk_index_of(IndType i) const noexcept
+    /// @brief The chunk holding element @p index (>= 0): i / chunk_size() (SizePolicy::chunk_of).
+    [[nodiscard]] int chunk_index_of(IndType index) const noexcept
     {
-        return static_cast<int>(size_policy_.chunk_of(i));
+        return static_cast<int>(size_policy_.chunk_of(index));
     }
 
-    /// @brief Element @p i's (>= 0) offset inside its chunk: i % chunk_size() (SizePolicy::offset_of).
-    [[nodiscard]] int offset_in_chunk(IndType i) const noexcept
+    /// @brief Element @p index's (>= 0) offset inside its chunk: i % chunk_size() (SizePolicy::offset_of).
+    [[nodiscard]] int offset_in_chunk(IndType index) const noexcept
     {
-        return static_cast<int>(size_policy_.offset_of(i));
+        return static_cast<int>(size_policy_.offset_of(index));
     }
 
-    /// @brief Chunks allocated for @p n elements: n / chunk_size() + 1 (the last
+    /// @brief Chunks allocated for @p count elements: n / chunk_size() + 1 (the last
     ///        chunk is never full -- see capacity()).
-    [[nodiscard]] int chunks_for(IndType n) const noexcept
+    [[nodiscard]] int chunks_for(IndType count) const noexcept
     {
-        return chunk_index_of(n) + 1;
+        return chunk_index_of(count) + 1;
     }
 
     /** @} */
@@ -1219,15 +1219,15 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     bool exit_census_ = true;
 
     /**
-     * @brief Read the element at @p i.
-     * @param i global element index (unchecked)
+     * @brief Read the element at @p index.
+     * @param index global element index (unchecked)
      * @return the element value
      * @note Protected, not private: zero_any::Array::operator== reads both of its
      *       operands through it.
      */
-    T read_value(IndType i) const noexcept
+    T read_value(IndType index) const noexcept
     {
-        return (*this)(i);
+        return (*this)(index);
     }
 
   private:
@@ -1288,15 +1288,15 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
 
     /**
-     * @brief Is chunk @p j materialised?
+     * @brief Is chunk @p num_chunk materialised?
      * @details Routes to Derived::chunk_written(j) when it exists (zero_one_value::Array,
      *          whose chunks need the second-value index), else asks
      *          chunk_list[j].written() directly.
-     * @param j CHUNK index
-     * @return true if chunk @p j has been written (i.e. is not constant)
+     * @param num_chunk CHUNK index
+     * @return true if chunk @p num_chunk has been written (i.e. is not constant)
      * @see has_chunk_written_v
      */
-    [[nodiscard]] bool is_written_at(int j) const noexcept;
+    [[nodiscard]] bool is_written_at(int num_chunk) const noexcept;
 
     /**
      * @brief Sequential counterpart of get_nb_chunk_written().

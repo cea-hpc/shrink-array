@@ -523,12 +523,12 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                           {
                                               return; // compressed: holds first_value or second_value by definition
                                           }
-                                          const InT<T> v = ck.read_value_scan(0);
-                                          if (v == zero_one_value::Chunk<T>::first_value || v == second_value)
+                                          const InT<T> value = ck.read_value_scan(0);
+                                          if (value == zero_one_value::Chunk<T>::first_value || value == second_value)
                                           {
                                               return; // zero_one_value material, caught or not
                                           }
-                                          if (ck.is_constant_to(v, csz))
+                                          if (ck.is_constant_to(value, csz))
                                           {
                                               ++acc[0];
                                           }
@@ -1034,9 +1034,9 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             {
                 std::string out;
                 int         shown = 0;
-                for (const int j : scanned)
+                for (const int num_chunk : scanned)
                 {
-                    if (std::ranges::find(kept, j) != kept.end())
+                    if (std::ranges::find(kept, num_chunk) != kept.end())
                     {
                         continue;
                     }
@@ -1046,7 +1046,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                         break;
                     }
                     out += ' ';
-                    out += std::to_string(j);
+                    out += std::to_string(num_chunk);
                 }
                 return out;
             };
