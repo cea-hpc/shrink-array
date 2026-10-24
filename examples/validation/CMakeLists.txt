@@ -438,16 +438,22 @@ foreach(_geom IN LISTS _rt_geometries)
       elseif (_h STREQUAL "zero_one_value_foreign_key_validation")
         validation_add_test(zero_one_value_foreign_key_validation ${_exe} ${_h} "8")
       elseif (_h STREQUAL "tbb_validation")
-        validation_add_test(${_base} ${_exe} ${_h} "1;8")
-        # ThreadSanitizer: libtbb.so is not instrumented, and its partitioners'
-        # bookkeeping shows up as races (tsan_tbb.supp says why and what is
-        # left visible). Appended to TSAN_OPTIONS, so the CI's halt_on_error
-        # stays.
         if (SANITIZER STREQUAL "thread")
+          # ThreadSanitizer: N = 2^16 elements instead of 2^18 -- every form,
+          # partitioner and phase still runs, on four times fewer elements: at
+          # 2^18, zero_one_value at 8 threads went past ctest's 1500 s on a
+          # two-core runner. libtbb.so is not instrumented, and its
+          # partitioners' bookkeeping shows up as races (tsan_tbb.supp says
+          # why and what is left visible): appended to TSAN_OPTIONS, so the
+          # CI's halt_on_error stays.
+          validation_add_test(${_base} ${_exe} ${_h} "1;8" 65536)
           foreach(_t ${_base}_1thr ${_base}_8thr)
             set_property(TEST ${_t} APPEND PROPERTY ENVIRONMENT_MODIFICATION
                          "TSAN_OPTIONS=string_append: suppressions=${PROJECT_SOURCE_DIR}/tsan_tbb.supp")
+            set_property(TEST ${_t} PROPERTY TIMEOUT 3000)
           endforeach()
+        else()
+          validation_add_test(${_base} ${_exe} ${_h} "1;8")
         endif()
       elseif (_h STREQUAL "deferred_path_validation")
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
