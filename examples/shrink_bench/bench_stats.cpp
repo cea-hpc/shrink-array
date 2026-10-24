@@ -18,6 +18,7 @@
 /// @brief The value census and filling-rate report. See bench_phases.h.
 
 #include <algorithm>   // std::max (name_padding)
+#include <array>       // std::array (the checksums' names)
 #include <complex>     // operator== on ComplexDouble
 #include <cstddef>     // std::size_t
 #include <string>      // std::string
@@ -277,8 +278,8 @@ namespace
 template <typename... Tabs>
 void print_checksums(const char* const* names, const Tabs&... tabs)
 {
-    std::size_t i = 0;
-    (std::print("\n{} check_sum = {:x}", names[i++], calculate_checksum(tabs)), ...);
+    std::size_t index = 0;
+    (std::print("\n{} check_sum = {:x}", names[index++], calculate_checksum(tabs)), ...);
     std::println("");
 }
 
@@ -310,17 +311,17 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
     {
         if CONSTEXPR (check_sum)
         {
-            static const char* const n[] = {"tab1",      "tab2",     "tab3",          "tab4",        "tab5",
-                                            "tab_int",   "tab_bool", "tab_bool_bits", "tab_complex", "tab_float",
-                                            "tab_short", "tab_char", "tab_long",      "tab_ulong",   "tab_quant",
-                                            "tab_point", "tab_cell"};
+            static constexpr std::array<const char*, 17> names{
+                "tab1",     "tab2",          "tab3",        "tab4",      "tab5",      "tab_int",
+                "tab_bool", "tab_bool_bits", "tab_complex", "tab_float", "tab_short", "tab_char",
+                "tab_long", "tab_ulong",     "tab_quant",   "tab_point", "tab_cell"};
             // tab_bool_bits' checksum equals tab_bool's: a Bit is one byte
             // holding 0 or 1, as a bool.
-            print_checksums(n, tab1, tab2, tab3, tab4, tab5, tab_int, tab_bool, tab_bool_bits, tab_complex, tab_float,
-                            tab_short, tab_char, tab_long, tab_ulong, tab_quant);
+            print_checksums(names.data(), tab1, tab2, tab3, tab4, tab5, tab_int, tab_bool, tab_bool_bits, tab_complex,
+                            tab_float, tab_short, tab_char, tab_long, tab_ulong, tab_quant);
             if (bench_arr.with_struct) // --no_struct
             {
-                print_checksums(n + 15, tab_point, tab_cell);
+                print_checksums(names.data() + 15, tab_point, tab_cell);
             }
         }
     };

@@ -44,12 +44,12 @@
 
 /// @brief splitmix64's finaliser: a bijection on 64 bits that spreads every
 ///        input bit over the whole output.
-constexpr uint64_t checksum_mix(uint64_t x) noexcept
+constexpr uint64_t checksum_mix(uint64_t value) noexcept
 {
-    x += 0x9E3779B97F4A7C15ULL;
-    x = (x ^ (x >> 30U)) * 0xBF58476D1CE4E5B9ULL;
-    x = (x ^ (x >> 27U)) * 0x94D049BB133111EBULL;
-    return x ^ (x >> 31U);
+    value += 0x9E3779B97F4A7C15ULL;
+    value = (value ^ (value >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+    value = (value ^ (value >> 27U)) * 0x94D049BB133111EBULL;
+    return value ^ (value >> 31U);
 }
 
 /// @brief Checksum of the non-zero elements of @p vec, the same for ANY
@@ -168,16 +168,16 @@ using namespace shrink_array;
 constexpr bool use_chunk_array = chunk_config::use_zero || chunk_config::use_zero_one_value;
 using Array                    = std::conditional_t<use_chunk_array, zero::Array<double>, std::vector<double>>;
 
-/// @brief Calls @p f on @p arrays in simple_array_chunk only. @p f is a generic
+/// @brief Calls @p func on @p arrays in simple_array_chunk only. @p func is a generic
 ///        lambda using zero::Array's members (compress, stats): its body is then
 ///        instantiated with zero::Array alone. The same call in a discarded branch
 ///        of main(), which is not a template, would be compiled for std::vector.
 template <typename F, typename... A>
-void if_chunk(F&& f, A&... arrays)
+void if_chunk(F&& func, A&... arrays)
 {
     if constexpr (use_chunk_array)
     {
-        f(arrays...);
+        func(arrays...);
     }
 }
 
@@ -291,7 +291,7 @@ int main()
     start           = end;
     std::println("\nElapsed time distribution : {:g}s", elapsed_seconds.count());
 
-    double v = 0;
+    double value = 0;
 
     for (int k = 0; k < iter_max; ++k)
     {
@@ -330,7 +330,7 @@ int main()
         }
         else
         {
-#pragma omp parallel reduction(+ : v)
+#pragma omp parallel reduction(+ : value)
             {
                 // To simulate comportement of a code where we read more than we write
 #pragma omp for schedule(static) nowait
@@ -354,13 +354,13 @@ int main()
 #pragma omp for schedule(static) nowait
                     for (int i = start0; i < end0; ++i)
                     {
-                        v += std::cos(tab1[i]) + std::sin(tab2[i]) + std::atan(tab3[i]) + std::cos(val);
+                        value += std::cos(tab1[i]) + std::sin(tab2[i]) + std::atan(tab3[i]) + std::cos(val);
                     }
                 }
             }
         }
 
-        std::println("k : {} v = {:g}", k, v);
+        std::println("k : {} v = {:g}", k, value);
 
         if (k % freq_check_sum == 0)
         {
@@ -381,7 +381,7 @@ int main()
         }
     }
 
-    std::println("\nv = {:g}", v);
+    std::println("\nv = {:g}", value);
 
     end             = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;

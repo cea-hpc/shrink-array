@@ -837,14 +837,14 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     /**
      * @brief Core assignment logic without compression tracking
-     * @param v Value to assign
+     * @param value Value to assign
      * @details Handles:
      *          - Short-circuit if value matches compression state
      *          - Decompression if needed
      *          - Actual value write
      * @note Thread safety: Caller must ensure appropriate locking
      */
-    void perform_core_assignment(InT<T> v) const noexcept;
+    void perform_core_assignment(InT<T> value) const noexcept;
 
     /// @brief Materialise the chunk if it is compressed (cst_val1 / cst_val2), so `values`
     ///        points at writable heap storage.
@@ -891,7 +891,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * There is also a slower asynchronous path (deferred/lock-contended
      * case), which pools a write context and defers the same core logic.
      * @tparam U Type of the value being assigned.
-     * @param v Value to assign.
+     * @param value Value to assign.
      * @return The assigned value.
      * @note Complexity: O(1) amortized; may trigger O(n) decompression.
      * @note Thread safety: Thread-safe via fast-path counters or slow-path lock.
@@ -899,7 +899,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     template <typename U>
     // InT<U>, not const U&: this frame is not inlined into the caller, so small types pass
     // in registers. Non-deducible, hence the explicit assign_impl<U>(v).
-    [[nodiscard]] T assign_impl(InT<U> v) noexcept;
+    [[nodiscard]] T assign_impl(InT<U> value) noexcept;
 
     // ========================================================================
     // COMPOUND ARITHMETIC OPERATORS
@@ -912,7 +912,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *        value updates the chunk's counter, a full chunk folds).
      * @tparam U Type of the operand.
      * @tparam Op Binary operator applied to (current, v).
-     * @param v Operand.
+     * @param operand Operand.
      * @param op The operator.
      * @note A result equal to the first value is counted as one, and a chunk
      *       it fills folds: `*=`, `/=` and `%=` (the callers) can land on it
@@ -921,7 +921,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *       (reader_sync) so the RMW cannot clobber it.
      */
     template <typename U, typename Op>
-    void apply_compound_operation(Op op, InT<U> v) noexcept; // InT: see assign_impl
+    void apply_compound_operation(Op op, InT<U> operand) noexcept; // InT: see assign_impl
 
   public:
     /**
@@ -945,9 +945,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      */
     template <typename U>
         requires IsCleanAssignment<T, U>
-    T operator=(const U& v) noexcept
+    T operator=(const U& value) noexcept
     {
-        return assign_impl<U>(v);
+        return assign_impl<U>(value);
     }
 
     /**
@@ -957,10 +957,10 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     template <typename U>
         requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
     [[deprecated("HPC WARNING: Type mismatch in assignment. Possible precision loss. Use 'f' suffix for floats.")]]
-    T operator=(const U& v) noexcept
+    T operator=(const U& value) noexcept
     {
         // The cast is explicit here to clear the final target value
-        return assign_impl<T>(static_cast<T>(v));
+        return assign_impl<T>(static_cast<T>(value));
     }
 
     /**
@@ -973,15 +973,15 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     {
         if (std::addressof(from) != this) // operator& is deleted
         {
-            const InT<T> v = static_cast<T>(from); // complete before the write starts
-            static_cast<void>(assign_impl<T>(v));  // the value written: not needed here
+            const InT<T> value = static_cast<T>(from); // complete before the write starts
+            static_cast<void>(assign_impl<T>(value));  // the value written: not needed here
         }
         return *this;
     }
     Proxy(const Proxy& other) = default;
 
-    T*       operator&()       = delete("no stable address: the chunk may be compressed or moved");
-    const T* operator&() const = delete("no stable address: the chunk may be compressed or moved");
+    T*       operator&()       = delete ("no stable address: the chunk may be compressed or moved");
+    const T* operator&() const = delete ("no stable address: the chunk may be compressed or moved");
 
     /**
      * @brief The owning array (the compression-metadata map key).

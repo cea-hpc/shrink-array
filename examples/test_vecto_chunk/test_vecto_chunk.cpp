@@ -127,7 +127,7 @@ constexpr int iter_max = 10000;
 template <typename V>
 void init(int                              start0,
           int                              end0,
-          int                              k,
+          int                              iter,
           const std::array<int, iter_max>& tab_nba1,
           const std::array<int, iter_max>& tab_nba2,
           V&                               tab1,
@@ -138,11 +138,11 @@ void init(int                              start0,
     for (int i = start0; i < end0; ++i)
     {
         tab1[i] = std::sqrt(double(i));
-        if (i > tab_nba1[k])
+        if (i > tab_nba1[iter])
         {
             tab2[i] = std::cos(double(2 * i));
         }
-        if (i > tab_nba2[k])
+        if (i > tab_nba2[iter])
         {
             tab3[i] = std::sin(tab1[i] + tab2[i]);
         }
@@ -164,10 +164,10 @@ void calculate(double                  val,
 #pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
     for (int i = start0; i < end0; ++i)
     {
-        const int k = index[i - start0];
-        tab_vec[k] += tab1[k] + (tab2[k] * tab3[i]) - tab2[i] + val;
-        //  tab_vec[k] += tab1[k] + tab2[k] * std::atan(tab3[k]) + std::cos(val);
-        //     tab_vec[k] += std::cos(tab1[k]) + std::sin(tab2[k]) + std::atan(tab3[k]) + std::cos(val);
+        const int pos = index[i - start0];
+        tab_vec[pos] += tab1[pos] + (tab2[pos] * tab3[i]) - tab2[i] + val;
+        //  tab_vec[pos] += tab1[pos] + tab2[pos] * std::atan(tab3[pos]) + std::cos(val);
+        //     tab_vec[pos] += std::cos(tab1[pos]) + std::sin(tab2[pos]) + std::atan(tab3[pos]) + std::cos(val);
     }
 }
 
@@ -186,8 +186,8 @@ void calculate1(double                     val,
 #pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
     for (int i = start0; i < end0; ++i)
     {
-        const int k = index[i - start0];
-        tab1[k] += tab_vec[k] + (tab2[k] * tab3[i]) - tab2[i] + val;
+        const int pos = index[i - start0];
+        tab1[pos] += tab_vec[pos] + (tab2[pos] * tab3[i]) - tab2[i] + val;
     }
 }
 
@@ -331,20 +331,20 @@ int main()
 
         for (int p = 0; p < 10; ++p)
         {
-            const int sz = (std::rand() % (1 + (nsz / 100))) + 1;
-            // A window [start, start + sz) strictly inside [1, nsz). Drawn
-            // directly: the former rejection loop (draw start in [1, nsz],
-            // retry while start + sz >= nsz) never terminates once nsz is
+            const int win_sz = (std::rand() % (1 + (nsz / 100))) + 1;
+            // A window [win_start, win_start + win_sz) strictly inside [1, nsz). Drawn
+            // directly: the former rejection loop (draw win_start in [1, nsz],
+            // retry while win_start + win_sz >= nsz) never terminates once nsz is
             // small -- the interval sizes go down to a few elements, and
             // one such iteration hung the run for good.
-            if (nsz - sz - 1 < 1)
+            if (nsz - win_sz - 1 < 1)
             {
                 break;
             }
-            const int start = 1 + (std::rand() % (nsz - sz - 1));
+            const int win_start = 1 + (std::rand() % (nsz - win_sz - 1));
 
             // Shuffle the vector to ensure the array is not ordered
-            std::shuffle(index.begin() + start, index.begin() + start + sz,
+            std::shuffle(index.begin() + win_start, index.begin() + win_start + win_sz,
                          std::default_random_engine(std::time(nullptr)));
         }
 

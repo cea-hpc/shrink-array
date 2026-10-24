@@ -36,10 +36,10 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team,
     auto& tab_ulong     = bench_arr.tab_ulong;
 
     bench_par::region(static_cast<int>(team - 1),
-                      [&]([[maybe_unused]] bench_par::Team& t)
+                      [&]([[maybe_unused]] bench_par::Team& team)
                       {
                           begin_parallel_phase_g();
-                          t.for_static<Int>(
+                          team.for_static<Int>(
                               beg_s, end_s,
                               [&](const Int j) __attribute__((always_inline))
                               {
@@ -83,10 +83,10 @@ void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] Int gra
     auto& tab_ulong     = bench_arr.tab_ulong;
 
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
-            t.for_dynamic(
+            team.for_dynamic(
                 beg_s, end_s, static_cast<int>(grain),
                 [&](Int j)
                 {

@@ -42,16 +42,16 @@ struct TermColor
 /// `inline`, not `static`: one object for the program, not one per translation unit.
 inline const TermColor tc = []() noexcept
 {
-    const bool i = isatty(STDOUT_FILENO) != 0;
+    const bool interactive = isatty(STDOUT_FILENO) != 0;
     return TermColor{
-        .reset   = i ? "\033[0m" : "",
-        .bold    = i ? "\033[1m" : "",
-        .red     = i ? "\033[31m" : "",
-        .green   = i ? "\033[32m" : "",
-        .yellow  = i ? "\033[33m" : "",
-        .cyan    = i ? "\033[36m" : "",
-        .white   = i ? "\033[37m" : "",
-        .magenta = i ? "\033[35m" : "",
+        .reset   = interactive ? "\033[0m" : "",
+        .bold    = interactive ? "\033[1m" : "",
+        .red     = interactive ? "\033[31m" : "",
+        .green   = interactive ? "\033[32m" : "",
+        .yellow  = interactive ? "\033[33m" : "",
+        .cyan    = interactive ? "\033[36m" : "",
+        .white   = interactive ? "\033[37m" : "",
+        .magenta = interactive ? "\033[35m" : "",
     };
 }();
 

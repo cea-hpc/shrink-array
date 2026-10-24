@@ -23,6 +23,7 @@
 #include <thread>      // std::this_thread — used HERE, not by our includers
 #include <type_traits> // std::remove_reference_t (the swap-drain batch type)
 
+#include "fast_allocators/internal/raw_memory.h"       // address_bits, load_from_bytes
 #include "chunk/internal/compression_manager.h"        // the declarations these bodies belong to
 #include "chunk/config.h"                              // build_config::any_check, chunk_config::ring_log_debug
 #include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast, CHUNK_PMP_RANK_BOUND
@@ -185,10 +186,10 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
 
         auto* op_map = ops_map_ptr.get();
 
-        const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
+        const uint32_t payload = static_cast<uint32_t>(::fast_alloc::address_bits(chunk) >> 4U) & 0x00FFFFFFU;
         // ─── Dekker held — execute deferred ops ───────────────────────────
 
-        using FlushLog = ScopedRingLogManualEnd<ev_flush_begin, ev_flush_end>;
+        using FlushLog = ScopedRingLogManualEnd<EventCode::flush_begin, EventCode::flush_end>;
         FlushLog log(payload);
 
         int64_t flushed_here = 0;
@@ -206,7 +207,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
             {
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
-                    ring_log_op(get_tid(), ev_op_flush_one, static_cast<uint32_t>(num),
+                    ring_log_op(get_tid(), EventCode::op_flush_one, static_cast<uint32_t>(num),
                                 static_cast<const void*>(op_ptr.get()));
                 }
 
@@ -269,12 +270,13 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
     {
         // What is left in the set must be exactly the chunks with ops still
         // queued (put back above): anything else is a stale entry.
-        for (ChunkT* c : deferred_chunk_loc)
+        for (ChunkT* chunk : deferred_chunk_loc)
         {
-            const auto it = thread_map.find(c);
+            const auto it = thread_map.find(chunk);
             if (it == thread_map.end() || !it->second || it->second->empty())
             {
-                CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr, c);
+                CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr,
+                                       chunk);
             }
         }
     }
@@ -297,7 +299,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
     const int self_rank = get_thr_rank_fast();
     const int max_thr   = CHUNK_PMP_RANK_BOUND;
 
-    const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
+    const uint32_t payload = static_cast<uint32_t>(::fast_alloc::address_bits(chunk) >> 4U) & 0x00FFFFFFU;
 
     // ─── Cross-flush mutual exclusion is PER RANK ─────────────────────────
     // Preventing two flushers from draining the same arr[r][chunk] (double destroy())
@@ -328,7 +330,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
         }
     }
 
-    using FlushLog = ScopedRingLogManualEnd<ev_flush_begin, ev_flush_end>;
+    using FlushLog = ScopedRingLogManualEnd<EventCode::flush_begin, EventCode::flush_end>;
     FlushLog log(payload);
 
     bool flushed_any = false;
@@ -381,13 +383,13 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
                 if constexpr (build_config::any_check)
                 {
                     DeferredOperationBase* raw  = op_ptr.get();
-                    const auto             addr = reinterpret_cast<std::uintptr_t>(raw);
+                    const auto             addr = ::fast_alloc::address_bits(raw);
                     if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
                                                raw, r);
                     }
-                    const std::uintptr_t vptr = *reinterpret_cast<const std::uintptr_t*>(raw);
+                    const auto vptr = ::fast_alloc::load_from_bytes<std::uintptr_t>(raw); // its first word
                     if (vptr < 0x1000)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
@@ -398,7 +400,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
 
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
-                    ring_log_op(get_tid(), ev_op_flush_one, static_cast<uint32_t>(num),
+                    ring_log_op(get_tid(), EventCode::op_flush_one, static_cast<uint32_t>(num),
                                 static_cast<const void*>(op_ptr.get()));
                 }
 
@@ -541,7 +543,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
 {
     if constexpr (chunk_config::ring_log_debug)
     {
-        ring_log_start(get_tid(), ev_compress_started);
+        ring_log_start(get_tid(), EventCode::compress_started);
     }
 
     add_compression_active();
@@ -562,7 +564,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
         decrement_inflight();
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log_end(get_tid(), ev_compress_finished);
+            ring_log_end(get_tid(), EventCode::compress_finished);
         }
 
         return false;
@@ -624,7 +626,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
                 decrement_inflight();
                 if constexpr (chunk_config::ring_log_debug)
                 {
-                    ring_log_end(get_tid(), ev_compress_finished);
+                    ring_log_end(get_tid(), EventCode::compress_finished);
                 }
                 return false;
             }
@@ -659,7 +661,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
         decrement_inflight();
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log_end(get_tid(), ev_compress_finished);
+            ring_log_end(get_tid(), EventCode::compress_finished);
         }
         return false;
     }
@@ -731,7 +733,7 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::finish()
 
     if constexpr (chunk_config::ring_log_debug)
     {
-        ring_log_end(get_tid(), ev_compress_finished);
+        ring_log_end(get_tid(), EventCode::compress_finished);
     }
 }
 

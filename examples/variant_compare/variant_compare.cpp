@@ -78,16 +78,16 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"       // the IntType = int default of zero_one_value::Array<T> / zero_any::Array<T>
+#include "chunk/chunk_traits.h"         // the IntType = int default of zero_one_value::Array<T> / zero_any::Array<T>
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/config.h"             // chunk_config::use_zero_any, build_config::use_openmp
-#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"        // shrink_array::begin_parallel_phase, finalize_parallel_phase
-#include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
-#include "chunk/internal/exact_rss.h" // exact_rss_kib (smaps_rollup)
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero_any, build_config::use_openmp
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"          // shrink_array::begin_parallel_phase, finalize_parallel_phase
+#include "chunk/internal/env_parse.h"   // arg_number (checked, not atoi)
+#include "chunk/internal/exact_rss.h"   // exact_rss_kib (smaps_rollup)
+#include "chunk/internal/print.h"       // shrink_array::println
 
 
 using namespace shrink_array;
@@ -135,11 +135,11 @@ static void end_phase(Array<double>& arr)
 /// zero_one_value declares its one second value; zero_any finds one per chunk (no
 /// such member). A template, so the discarded call is not checked.
 template <typename Arr>
-static void maybe_declare_second_value(Arr& a, double v)
+static void maybe_declare_second_value(Arr& arr, double value)
 {
-    if constexpr (requires { a.set_second_value(v, false); })
+    if constexpr (requires { arr.set_second_value(value, false); })
     {
-        a.set_second_value(v, false);
+        arr.set_second_value(value, false);
     }
 }
 
@@ -152,21 +152,21 @@ struct Role
 
 static Role role(long chunk, int iter, int nconst)
 {
-    std::uint64_t h = (static_cast<std::uint64_t>(chunk) + 1) * 0x9E3779B97F4A7C15ULL;
-    h ^= static_cast<std::uint64_t>(iter + 1) * 0xBF58476D1CE4E5B9ULL;
-    h ^= h >> 31;
-    h *= 0x94D049BB133111EBULL;
-    h ^= h >> 29;
-    const int r = static_cast<int>(h % 10);
-    if (r <= 1)
+    std::uint64_t hash = (static_cast<std::uint64_t>(chunk) + 1) * 0x9E3779B97F4A7C15ULL;
+    hash ^= static_cast<std::uint64_t>(iter + 1) * 0xBF58476D1CE4E5B9ULL;
+    hash ^= hash >> 31;
+    hash *= 0x94D049BB133111EBULL;
+    hash ^= hash >> 29;
+    const int role_id = static_cast<int>(hash % 10);
+    if (role_id <= 1)
     {
         return {0, 0.};
     }
-    if (r <= 4)
+    if (role_id <= 4)
     {
-        return {0, second_value[(h >> 8) % static_cast<std::uint64_t>(nconst)]};
+        return {0, second_value[(hash >> 8) % static_cast<std::uint64_t>(nconst)]};
     }
-    if (r == 5)
+    if (role_id == 5)
     {
         return {1, 0.};
     }
@@ -174,9 +174,9 @@ static Role role(long chunk, int iter, int nconst)
 }
 
 /// Non-uniform within any chunk of 64 elements or more (period 13).
-static double plain(long i, int iter)
+static double plain(long index, int iter)
 {
-    return static_cast<double>((i * 7 + iter) % 13) * 0.5;
+    return static_cast<double>((index * 7 + iter) % 13) * 0.5;
 }
 
 int main(int argc, char** argv)
@@ -189,20 +189,20 @@ int main(int argc, char** argv)
     bool verify  = false;
     for (int a = 1; a < argc; ++a)
     {
-        const std::string o = argv[a];
-        if (o == "--n" && a + 1 < argc)
+        const std::string opt = argv[a];
+        if (opt == "--n" && a + 1 < argc)
         {
             n_elems = shrink_array::arg_number<long>(argv[++a], n_elems, "--n");
         }
-        else if (o == "--iters" && a + 1 < argc)
+        else if (opt == "--iters" && a + 1 < argc)
         {
             iters = shrink_array::arg_number<int>(argv[++a], iters, "--iters");
         }
-        else if (o == "--constants" && a + 1 < argc)
+        else if (opt == "--constants" && a + 1 < argc)
         {
             nconst = shrink_array::arg_number<int>(argv[++a], nconst, "--constants");
         }
-        else if (o == "--verify")
+        else if (opt == "--verify")
         {
             verify = true;
         }
@@ -220,15 +220,16 @@ int main(int argc, char** argv)
     }
 
     // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
-    const long s       = static_cast<long>(Array<double>(0).chunk_size());
-    n_elems            = (n_elems + s - 1) / s * s;
-    const long nchunks = n_elems / s;
+    const long chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
+    n_elems             = (n_elems + chunk_sz - 1) / chunk_sz * chunk_sz;
+    const long nchunks  = n_elems / chunk_sz;
 
     println("=== variant_compare [{}]  n={}  chunk_size={}  chunks={}  iters={}  constants={}  threads={}{} ===",
-            variant_name(), n_elems, s, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
+            variant_name(), n_elems, chunk_sz, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS,
+            verify ? "  (verify)" : "");
 
-    Array<double> a(static_cast<int>(n_elems));
-    maybe_declare_second_value(a, second_value[0]);
+    Array<double> arr(static_cast<int>(n_elems));
+    maybe_declare_second_value(arr, second_value[0]);
     std::vector<double> ref;
     if (verify)
     {
@@ -243,7 +244,7 @@ int main(int argc, char** argv)
     double    t_read   = 0.;
     double    t_rmw    = 0.;
     double    checksum = 0.;
-    const int n        = static_cast<int>(n_elems);
+    const int count    = static_cast<int>(n_elems);
 
     // Exact RSS at each iteration end, outside the timed passes (a read
     // walks the page tables). A peak inside a pass is not seen.
@@ -256,16 +257,16 @@ int main(int argc, char** argv)
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (int i = 0; i < n; ++i)
+            for (int i = 0; i < count; ++i)
             {
-                const Role r = role(i / s, it, nconst);
-                if (r.kind == 0)
+                const Role cur_role = role(i / chunk_sz, it, nconst);
+                if (cur_role.kind == 0)
                 {
-                    a[i] = r.value;
+                    arr[i] = cur_role.value;
                 }
             }
         }
-        end_phase(a);
+        end_phase(arr);
         t_const += secs(t0);
 
         // plain: the non-uniform chunks
@@ -274,31 +275,31 @@ int main(int argc, char** argv)
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (int i = 0; i < n; ++i)
+            for (int i = 0; i < count; ++i)
             {
-                if (role(i / s, it, nconst).kind == 1)
+                if (role(i / chunk_sz, it, nconst).kind == 1)
                 {
-                    a[i] = plain(i, it);
+                    arr[i] = plain(i, it);
                 }
             }
         }
-        end_phase(a);
+        end_phase(arr);
         t_plain += secs(t0);
 
         // read: everything
         t0              = Clk::now();
         double      sum = 0.;
-        const auto& ca  = std::as_const(a);
+        const auto& ca  = std::as_const(arr);
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static) reduction(+ : sum)
-            for (int i = 0; i < n; ++i)
+            for (int i = 0; i < count; ++i)
             {
                 sum += ca[i];
             }
         }
-        end_phase(a);
+        end_phase(arr);
         t_read += secs(t0);
         checksum += sum;
 
@@ -308,15 +309,15 @@ int main(int argc, char** argv)
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (int i = 0; i < n; ++i)
+            for (int i = 0; i < count; ++i)
             {
-                if (role(i / s, it, nconst).kind == 1)
+                if (role(i / chunk_sz, it, nconst).kind == 1)
                 {
-                    a[i] += 1.;
+                    arr[i] += 1.;
                 }
             }
         }
-        end_phase(a);
+        end_phase(arr);
         t_rmw += secs(t0);
 
         const long rss_it = shrink_array::exact_rss_kib();
@@ -326,12 +327,12 @@ int main(int argc, char** argv)
         {
             for (long i = 0; i < n_elems; ++i)
             {
-                const Role r = role(i / s, it, nconst);
-                if (r.kind == 0)
+                const Role cur_role = role(i / chunk_sz, it, nconst);
+                if (cur_role.kind == 0)
                 {
-                    ref[static_cast<std::size_t>(i)] = r.value;
+                    ref[static_cast<std::size_t>(i)] = cur_role.value;
                 }
-                else if (r.kind == 1)
+                else if (cur_role.kind == 1)
                 {
                     ref[static_cast<std::size_t>(i)] = plain(i, it) + 1.;
                 }
@@ -342,7 +343,7 @@ int main(int argc, char** argv)
     long compressed = 0;
     for (long j = 0; j < nchunks; ++j)
     {
-        compressed += a.written(static_cast<int>(j * s)) ? 0 : 1;
+        compressed += arr.written(static_cast<int>(j * chunk_sz)) ? 0 : 1;
     }
 
     const double total = t_const + t_plain + t_read + t_rmw;
@@ -360,12 +361,12 @@ int main(int argc, char** argv)
         long nbad = 0;
         for (long i = 0; i < n_elems; ++i)
         {
-            if (std::as_const(a)[static_cast<int>(i)] != ref[static_cast<std::size_t>(i)])
+            if (std::as_const(arr)[static_cast<int>(i)] != ref[static_cast<std::size_t>(i)])
             {
                 if (nbad < 3)
                 {
                     println("  MISMATCH a[{}] = {:g}, expected {:g}", i,
-                            static_cast<double>(std::as_const(a)[static_cast<int>(i)]),
+                            static_cast<double>(std::as_const(arr)[static_cast<int>(i)]),
                             ref[static_cast<std::size_t>(i)]);
                 }
                 ++nbad;
@@ -374,6 +375,6 @@ int main(int argc, char** argv)
         println("verify      {} ({} mismatch(es))", nbad ? "FAILED" : "OK", nbad);
         bad = nbad ? 1 : 0;
     }
-    a.clear();
+    arr.clear();
     return bad;
 }

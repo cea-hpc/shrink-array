@@ -94,35 +94,35 @@ using Array = ActiveArray<T>;
 ///        materialised, run the loop over the window, read everything back
 ///        against a std::vector. @return the number of failures.
 template <typename T>
-static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
+static long prealloc_check(const char* name, Int count, T (*value_at)(Int))
 {
-    Array<T>       a(n);
-    std::vector<T> ref(static_cast<std::size_t>(n), T{});
-    const Int      beg   = n / 4;
-    const Int      end   = beg + (n / 8);
+    Array<T>       arr(count);
+    std::vector<T> ref(static_cast<std::size_t>(count), T{});
+    const Int      beg   = count / 4;
+    const Int      end   = beg + (count / 8);
     long           fails = 0;
 
     if constexpr (requires {
-                      a.alloc_chunk(Int{0});
-                      a.chunk_size();
-                      a.written(Int{0});
+                      arr.alloc_chunk(Int{0});
+                      arr.chunk_size();
+                      arr.written(Int{0});
                   })
     {
-        const Int step = static_cast<Int>(a.chunk_size());
+        const Int step = static_cast<Int>(arr.chunk_size());
         bench_par::region(
-            [&]([[maybe_unused]] bench_par::Team& t)
+            [&]([[maybe_unused]] bench_par::Team& team)
             {
                 begin_parallel_phase_g();
-                bench_par::for_static_vec(t, beg / step, ((end - 1) / step) + 1,
+                bench_par::for_static_vec(team, beg / step, ((end - 1) / step) + 1,
                                           [&](const Int c) __attribute__((always_inline))
                                           {
                                               if constexpr (build_config::threaded)
                                               {
-                                                  a.alloc_chunk(c * step, get_thr_rank_fast());
+                                                  arr.alloc_chunk(c * step, get_thr_rank_fast());
                                               }
                                               else
                                               {
-                                                  a.alloc_chunk(c * step);
+                                                  arr.alloc_chunk(c * step);
                                               }
                                           });
                 finalize_parallel_phase_only_flush_g();
@@ -133,10 +133,10 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
         // not the chunks around it.
         long in  = 0;
         long out = 0;
-        for (Int c = 0; c * step < n; ++c)
+        for (Int c = 0; c * step < count; ++c)
         {
             const bool in_window = c >= beg / step && c <= (end - 1) / step;
-            const bool written   = a.written(c * step);
+            const bool written   = arr.written(c * step);
             in += in_window && written;
             out += !in_window && written;
             if (written != in_window && fails < 3)
@@ -150,11 +150,11 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
 
     // The loop over the window: stores into chunks that already exist.
     bench_par::region(
-        [&]([[maybe_unused]] bench_par::Team& t)
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
             begin_parallel_phase_g();
-            bench_par::for_static_vec(t, beg, end,
-                                      [&](const Int i) __attribute__((always_inline)) { a[i] = value_at(i); });
+            bench_par::for_static_vec(team, beg, end,
+                                      [&](const Int i) __attribute__((always_inline)) { arr[i] = value_at(i); });
             finalize_parallel_phase_only_flush_g();
         });
     finalize_parallel_phase_after_flush_g();
@@ -164,10 +164,10 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
     }
 
     // Read back through the read operator, window and surroundings.
-    for (Int i = 0; i < n; ++i)
+    for (Int i = 0; i < count; ++i)
     {
-        const T v = a[i];
-        if (!(v == ref[static_cast<std::size_t>(i)]))
+        const T value = arr[i];
+        if (!(value == ref[static_cast<std::size_t>(i)]))
         {
             if (fails < 5)
             {
@@ -180,13 +180,13 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
 }
 
 /// @brief The --test_prealloc checks; exits 1 on a failure.
-static void run_prealloc_checks(Int n)
+static void run_prealloc_checks(Int count)
 {
     long fails = 0;
-    fails +=
-        prealloc_check<double>("double", n, [](Int i) { return i % 5 == 0 ? 0.0 : 0.5 * static_cast<double>(i % 97); });
-    fails += prealloc_check<int>("int", n, [](Int i) { return static_cast<int>(i % 13); });
-    fails += prealloc_check<bool>("bool", n, [](Int i) { return i % 3 != 0; });
+    fails += prealloc_check<double>("double", count,
+                                    [](Int i) { return i % 5 == 0 ? 0.0 : 0.5 * static_cast<double>(i % 97); });
+    fails += prealloc_check<int>("int", count, [](Int i) { return static_cast<int>(i % 13); });
+    fails += prealloc_check<bool>("bool", count, [](Int i) { return i % 3 != 0; });
     if (fails)
     {
         std::println("[prealloc] FAILED ({})", fails);
@@ -358,9 +358,9 @@ int main(int argc, char* argv[])
     // what a bisection wants).
     const Int freq_ksum = []() -> Int
     {
-        if (const Int n = shrink_array::env_number<Int>("CHUNK_BENCH_KSUM_PERIOD", 0); n > 0)
+        if (const Int period = shrink_array::env_number<Int>("CHUNK_BENCH_KSUM_PERIOD", 0); period > 0)
         {
-            return n;
+            return period;
         }
         return 0; // 0 = follow freq_conso_mem, resolved just below
     }();
@@ -454,15 +454,15 @@ int main(int argc, char* argv[])
             [&](auto... data_types)
             {
                 (
-                    [&](auto t)
+                    [&](auto team)
                     {
                         // Construct the label string: "sizeof(ChunkType<T>)"
-                        const std::string label = "sizeof(" + type_name<ChunkType<decltype(t)>>() + ")";
+                        const std::string label = "sizeof(" + type_name<ChunkType<decltype(team)>>() + ")";
 
                         // Print the line with a dedicated color scheme:
                         // [Label in White] [= in Cyan] [Value in Bold Yellow] [Unit in Green]
                         std::println("{}{:<{}}{}{} = {}{}{}{:<5}{}{} bytes{}", tc.white, label, max_width + 10,
-                                     tc.reset, tc.cyan, tc.reset, tc.bold, tc.yellow, sizeof(ChunkType<decltype(t)>),
+                                     tc.reset, tc.cyan, tc.reset, tc.bold, tc.yellow, sizeof(ChunkType<decltype(team)>),
                                      tc.reset, tc.green, tc.reset);
                     }(data_types),
                     ...); // C++17 Fold expression
@@ -697,13 +697,13 @@ int main(int argc, char* argv[])
     // `if constexpr`, so a normal build never touches std::random_device -- the
     // statement is compiled, never executed, and r stays -1, which the test at
     // the injection site below rejects.
-    Int r          = -1;
+    Int injection  = -1;
     Int cycle_alea = -1;
     if constexpr (test_captur_bug)
     {
         std::mt19937                       rng0(std::random_device{}());
         std::uniform_int_distribution<Int> dist0(0, 2);
-        r = dist0(rng0);
+        injection = dist0(rng0);
 
         std::uniform_int_distribution<Int> dist1(0, 31);
         cycle_alea = dist1(rng0);
@@ -769,8 +769,8 @@ int main(int argc, char* argv[])
             // containers are compared as they are, not after a re-chunk.
             static const bool advise_all = []
             {
-                const char* e = std::getenv("SHRINK_BENCH_ADVISE_ALL");
-                return e == nullptr || e[0] == '\0' || e[0] != '0';
+                const char* env = std::getenv("SHRINK_BENCH_ADVISE_ALL");
+                return env == nullptr || env[0] == '\0' || env[0] != '0';
             }();
             if (advise_all)
             {
@@ -860,17 +860,19 @@ int main(int argc, char* argv[])
             // trend of "in use" against the capacity is the early warning of the
             // exhaustion that stops the run; a refused reclaim freed nothing
             // because it could not run.
-            const auto report = [](const char* name, const SecondValueStats& s)
+            const auto report = [](const char* name, const SecondValueStats& stats)
             {
-                if (s.handed_out == 0 && s.refused() == 0)
+                if (stats.handed_out == 0 && stats.refused() == 0)
                 {
                     return;
                 }
                 std::fprintf(stderr, "  %-14s %zu in use / %zu (%.2f%%), %zu free, %zu reclaim(s), %zu refused%s\n",
-                             name, s.in_use(), s.capacity,
-                             s.capacity != 0 ? 100.0 * static_cast<double>(s.in_use()) / static_cast<double>(s.capacity)
-                                             : 0.0,
-                             s.free, s.reclaims, s.refused(), s.degraded ? "  DEGRADED: reclaims refused" : "");
+                             name, stats.in_use(), stats.capacity,
+                             stats.capacity != 0
+                                 ? 100.0 * static_cast<double>(stats.in_use()) / static_cast<double>(stats.capacity)
+                                 : 0.0,
+                             stats.free, stats.reclaims, stats.refused(),
+                             stats.degraded ? "  DEGRADED: reclaims refused" : "");
             };
             report("double", zero_any::Array<double, Int>::second_value_stats());
             report("float", zero_any::Array<float, Int>::second_value_stats());
@@ -924,7 +926,7 @@ int main(int argc, char* argv[])
 
         if constexpr (test_captur_bug)
         {
-            if (r == 0 && k == cycle_alea)
+            if (injection == 0 && k == cycle_alea)
             {
                 std::println("Triggering abort()! cycle : {}", k);
                 std::fflush(stdout);
@@ -1146,7 +1148,7 @@ int main(int argc, char* argv[])
                 if (have_to_compress)
                 {
                     bench_par::region(
-                        [&]([[maybe_unused]] bench_par::Team& t)
+                        [&]([[maybe_unused]] bench_par::Team& team)
                         {
                             // Compiled in the std::vector build too: a no-op there.
                             ParamChunk::force_compression();

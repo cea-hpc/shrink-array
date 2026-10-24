@@ -48,7 +48,8 @@
 #include <tuple>           // std::tuple_size_v, std::ignore
 #include <type_traits>     // std::remove_cvref_t, std::common_type_t, std::conditional_t
 
-#include "chunk/internal/in_t.h"       // InT<T>: the element snapshots
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "chunk/internal/in_t.h"                 // InT<T>: the element snapshots
 #include "chunk/internal/proxy_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/chunk_size_policy.h"  // ChunkElems — used HERE, not via includers
 #include "chunk/internal/phase_guard.h"        // check-build guard of the phase protocol
@@ -350,10 +351,10 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
     // number (its second-value slot is found through it), a false probe is a build
     // error, not a proxy left at num_tab -1 (a null second-value slot at replay).
     static_assert(
-        !is_zero_any_family_v<ChunkT> || requires(ProxyT p) { p.set_num_tab(0); },
+        !is_zero_any_family_v<ChunkT> || requires(ProxyT probe) { probe.set_num_tab(0); },
         "make_proxy_with_info: a zero_any proxy's set_num_tab(int) must be reachable from here "
         "(it is private: the proxy befriends ::shrink_array::ProxyBaseFastCompPolicy)");
-    if constexpr (requires(ProxyT proxy) { proxy.set_num_tab(0); })
+    if constexpr (requires(ProxyT probe) { probe.set_num_tab(0); })
     {
         proxy.set_num_tab(ctx->num_tab);
     }
@@ -608,7 +609,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl([[maybe_unused]] th
                 // end_write. Concurrent writers on the same chunk are handled by
                 // the is_cst_val re-checks in handle_{bool,no_bool}_assignment.
 
-                const ScopedRingLog<ev_begin_fast_path, ev_end_fast_path> fast_log;
+                const ScopedRingLog<EventCode::begin_fast_path, EventCode::end_fast_path> fast_log;
 
                 // ─── Pre-write invariant: our flag still holds
                 if constexpr (build_config::any_check)
@@ -687,7 +688,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl([[maybe_unused]] th
                 return false;
             }
 
-            const ScopedRingLog<ev_begin_slow_path, ev_end_slow_path> slow_log;
+            const ScopedRingLog<EventCode::begin_slow_path, EventCode::end_slow_path> slow_log;
 
             // Check #2 failed: a compressor slipped in between check #1 and
             // begin_write. Release our flag, then defer the write.
@@ -826,14 +827,14 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaB
  * @tparam U         Operand type.
  * @tparam Op        Binary operation type.
  * @tparam AsyncBody Callable `(ctx, proxy)` applying the operation on replay.
- * @param v          Operand, stored converted to T.
+ * @param operand          Operand, stored converted to T.
  * @param operation  Operation to replay.
  * @param async_body Replay body.
  */
 template <typename Derived, typename T, typename ChunkT>
 template <typename U, typename Op, typename AsyncBody>
 void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(this Derived& self,
-                                                             const U&      v,
+                                                             const U&      operand,
                                                              Op            operation,
                                                              AsyncBody&&   async_body)
 {
@@ -842,7 +843,7 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(this Derived& self,
     using CtxType = std::conditional_t<is_simple_proxy<ProxyType>::value, ArithmeticOperationProxyContext<T, Op>,
                                        ArithmeticOperationContext<T, Op, ChunkT, ProxyType>>;
 
-    auto* ctx = pool_new_ctx<CtxType>(self, static_cast<T>(v), operation, self.ptr_on_array_);
+    auto* ctx = pool_new_ctx<CtxType>(self, static_cast<T>(operand), operation, self.ptr_on_array_);
 
     auto op_async = [ctx, body = std::forward<AsyncBody>(async_body)]() mutable
     {
@@ -897,25 +898,27 @@ constexpr bool check_is_cst_val2([[maybe_unused]] const P& proxy)
 template <typename Derived, typename T, typename ChunkT>
 template <typename U, typename Op>
     requires std::is_invocable_r_v<T, Op, T, U>
-void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(this Derived& self, Op operation, const U& v, InT<T> v_old)
+void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(this Derived& self, Op operation, const U& operand, InT<T> v_old)
 {
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkT>(v);
+        increm_chunk_write<ChunkT>(operand);
     }
 
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
-    const auto compute_operation = [&self, operation, &v, v_old] // v: the call's parameter, alive for the call
+    const auto compute_operation =
+        [&self, operation, &operand, v_old] // operand: the call's parameter, alive for the call
     {
         std::ignore = v_old;
 
         self.execute_arithmetic_compound_operation(
-            operation, static_cast<T>(v),
-            [&self, &v, operation](auto) // operation functor is used instead of the passed one to ensure consistency
+            operation, static_cast<T>(operand),
+            [&self, &operand,
+             operation](auto) // operation functor is used instead of the passed one to ensure consistency
             {
                 const InT<T>   current = self.load_value();
-                const CalcType res     = operation(static_cast<CalcType>(current), static_cast<CalcType>(v));
+                const CalcType res     = operation(static_cast<CalcType>(current), static_cast<CalcType>(operand));
 
                 // ─── Pre-store check: cst_val should not be visible here under Dekker ───
                 if constexpr (build_config::any_check)
@@ -965,7 +968,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(this Derived& self, Op opera
         if (const bool need_async = self.write_with_optional_lock_info(compute_operation); need_async)
         {
             self.enqueue_async_arithmetic(
-                v, operation,
+                operand, operation,
                 [v_old](auto* ctx, auto& proxy)
                 {
                     proxy.execute_arithmetic_compound_operation_async(
@@ -1041,12 +1044,12 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(this Derived& self, Op opera
 // is what makes v_old -- the input of the read-modify-write -- trustworthy.
 template <typename Derived, typename T, typename ChunkT>
 template <typename U, typename Op>
-void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U> v, Op operation) noexcept
+void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U> operand, Op operation) noexcept
 {
     self.check_not_stale();
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkT>(v);
+        increm_chunk_write<ChunkT>(operand);
     }
 
     // ── Cross-rank RMW materialisation ──────────────────────────────────────
@@ -1058,14 +1061,14 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U>
 
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
-    const auto op_lambda = [&self, &v, operation] // v: the call's parameter, alive for the call
+    const auto op_lambda = [&self, &operand, operation] // operand: the call's parameter, alive for the call
     {
         self.execute_operation(
-            [&self, &v, operation]
+            [&self, &operand, operation]
             {
                 const InT<T> current = self.load_value();
                 // Compute in CalcType, truncate back to T.
-                const CalcType intermediate = operation(static_cast<CalcType>(current), static_cast<CalcType>(v));
+                const CalcType intermediate = operation(static_cast<CalcType>(current), static_cast<CalcType>(operand));
 
                 const T result = static_cast<T>(intermediate);
                 self.store_value(result);
@@ -1082,7 +1085,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U>
         if (const bool need_async = self.write_with_optional_lock_info(op_lambda); need_async)
         {
             self.enqueue_async_arithmetic(
-                v, operation,
+                operand, operation,
                 [&](auto* ctx, auto& proxy)
                 {
                     proxy.execute_operation_async(
@@ -1134,7 +1137,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U>
                             {
                                 auto&      chunk_ref = ctx->chunk;
                                 const auto chunk_id =
-                                    static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&chunk_ref) >> 4);
+                                    static_cast<uint32_t>(::fast_alloc::address_bits(&chunk_ref) >> 4);
                                 const uint32_t info =
                                     (chunk_id & 0x00FFFFFFU) | (static_cast<uint32_t>(ctx->num & 0xFF) << 24);
 
@@ -1150,10 +1153,10 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U>
 
                                 if (values == cst1 || is_cst2)
                                 {
-                                    ring_log(get_tid(), ev_values_load_is_cst, info);
+                                    ring_log(get_tid(), EventCode::values_load_is_cst, info);
                                     return; // skip the write: keep cst_val clean
                                 }
-                                ring_log(get_tid(), ev_lambda_async_arith, info);
+                                ring_log(get_tid(), EventCode::lambda_async_arith, info);
                             }
 
                             if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
@@ -1180,29 +1183,29 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U>
 // nothing, so the whole operation can be deferred without anyone waiting.
 template <typename Derived, typename T, typename ChunkT>
 template <typename U, typename Op>
-void ProxyBase<Derived, T, ChunkT>::bitwise_assign(this Derived& self, InT<U> v, Op operation) noexcept
+void ProxyBase<Derived, T, ChunkT>::bitwise_assign(this Derived& self, InT<U> operand, Op operation) noexcept
     requires std::is_integral_v<T> && std::is_integral_v<U>
 {
     self.check_not_stale();
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkT>(v);
+        increm_chunk_write<ChunkT>(operand);
     }
 
     // Cross-rank RMW materialisation, as in arithmetic_assign: this engine
     // reads val[num] in place, and a deferred write to THIS offset still queued
-    // (possibly the refused plain `= v` before this op) would resolve in the
+    // (possibly the refused plain `= operand` before this op) would resolve in the
     // wrong order.
     self.chunk_.reader_sync(self.num_);
 
     using CalcType = std::common_type_t<T, U>;
 
-    const auto op_lambda = [&self, &v, operation] // v: the call's parameter, alive for the call
+    const auto op_lambda = [&self, &operand, operation] // operand: the call's parameter, alive for the call
     {
         self.execute_inplace_operation(
-            [&v, operation](T& elem)
+            [&operand, operation](T& elem)
             {
-                const CalcType intermediate = operation(static_cast<CalcType>(elem), static_cast<CalcType>(v));
+                const CalcType intermediate = operation(static_cast<CalcType>(elem), static_cast<CalcType>(operand));
                 elem                        = static_cast<T>(intermediate);
             });
     };
@@ -1214,7 +1217,7 @@ void ProxyBase<Derived, T, ChunkT>::bitwise_assign(this Derived& self, InT<U> v,
             // The replay body outlives this call: capture nothing of this
             // frame (a [&] capture of `operation` would dangle at replay). The
             // operation is read from the context, which holds its own copy.
-            self.enqueue_async_arithmetic(v, operation,
+            self.enqueue_async_arithmetic(operand, operation,
                                           [](auto* ctx, auto& proxy)
                                           {
                                               proxy.execute_inplace_operation_async(

@@ -85,12 +85,12 @@ void zero_any::Array<T, IntType>::rebuild_storage(IntType sz)
             // zero_one_value::Array::rebuild_storage; serial inside a region (the caller
             // need not be the whole team) and below the one threshold,
             // parallel_storage_init::parallel_init_min_chunks.
-            const auto init_chunk = [&](int i)
+            const auto init_chunk = [&](int num_chunk)
             {
-                Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab_, i, 0);
-                Proxy<T>::tab_type_cst_val[num_tab_][i] = CstSlot::first;
-                Proxy<T>::BaseSpec::set(num_tab_, i, T{});
-                this->construct_chunk(i).init_after_constructor();
+                Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab_, num_chunk, 0);
+                Proxy<T>::tab_type_cst_val[num_tab_][num_chunk] = CstSlot::first;
+                Proxy<T>::BaseSpec::set(num_tab_, num_chunk, T{});
+                this->construct_chunk(num_chunk).init_after_constructor();
             };
             parallel_storage_init::for_each_chunk(nb_chunk_, init_chunk);
         }
@@ -329,16 +329,16 @@ void zero_any::Array<T, IntType>::clear_core()
 
                     // Is it actually constant? (same notion fill_list_to_compress uses:
                     // every element equal to the block's first element.)
-                    const auto v = ck.constant_value(csz);
-                    if (!v)
+                    const auto cst = ck.constant_value(csz);
+                    if (!cst)
                     {
                         continue;
                     }
-                    if (*v == static_cast<T>(Chunk<T>::first_value))
+                    if (*cst == static_cast<T>(Chunk<T>::first_value))
                     {
                         ++missed_first;
                     }
-                    else if (*v == Proxy<T>::BaseSpec::get_tab_second_value(num_tab_, j).get())
+                    else if (*cst == Proxy<T>::BaseSpec::get_tab_second_value(num_tab_, j).get())
                     {
                         ++missed_second;
                     }
@@ -673,12 +673,13 @@ void zero_any::Array<T, IntType>::resize(IntType newsz)
     parallel_storage_init::for_each_chunk(nb_chunk_ - old_nb_chunk,
                                           [this, old_nb_chunk, num_tab](int k)
                                           {
-                                              const int i = old_nb_chunk + k;
-                                              this->construct_chunk(i).init_after_constructor();
-                                              Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
-                                              Proxy<T>::tab_type_cst_val[num_tab][i] = CstSlot::first;
+                                              const int num_chunk = old_nb_chunk + k;
+                                              this->construct_chunk(num_chunk).init_after_constructor();
+                                              Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab,
+                                                                                                       num_chunk, 0);
+                                              Proxy<T>::tab_type_cst_val[num_tab][num_chunk] = CstSlot::first;
                                               // T{}: the struct elements have no conversion from 0
-                                              Proxy<T>::BaseSpec::set(num_tab, i, T{});
+                                              Proxy<T>::BaseSpec::set(num_tab, num_chunk, T{});
                                           });
 
     // std::vector semantics for the regrown range [old_size, newsz): it reads

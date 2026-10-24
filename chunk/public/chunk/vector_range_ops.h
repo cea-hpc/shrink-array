@@ -90,8 +90,8 @@ namespace internal
  *          the chunked arrays' iterator is read-only (a value, never a T&).
  */
 template <typename A>
-concept ChunkedArray = requires(A& arr, const A& ca, std::size_t i) {
-    { arr.chunk_ref(i) };
+concept ChunkedArray = requires(A& arr, const A& ca, std::size_t index) {
+    { arr.chunk_ref(index) };
     { ca.chunk_size() } -> std::convertible_to<unsigned int>;
     { ca.size() };
 };
@@ -105,15 +105,15 @@ concept ChunkedArray = requires(A& arr, const A& ca, std::size_t i) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * @brief Set every element of [first, last) to @p v.
+ * @brief Set every element of [first, last) to @p fill_value.
  * @param container target container
  * @param first     first index, inclusive (clamped to container.size())
  * @param last      last index, exclusive (clamped to container.size())
- * @param v         value to store
+ * @param fill_value         value to store
  */
 template <typename C, typename U>
     requires(!internal::ChunkedArray<C>)
-void fill_range(C& container, std::size_t first, std::size_t last, const U& v)
+void fill_range(C& container, std::size_t first, std::size_t last, const U& fill_value)
 {
     const auto size = static_cast<std::size_t>(container.size());
     last            = std::min(last, size);
@@ -122,7 +122,7 @@ void fill_range(C& container, std::size_t first, std::size_t last, const U& v)
         return;
     }
     std::fill(std::next(container.begin(), static_cast<std::ptrdiff_t>(first)),
-              std::next(container.begin(), static_cast<std::ptrdiff_t>(last)), static_cast<C::value_type>(v));
+              std::next(container.begin(), static_cast<std::ptrdiff_t>(last)), static_cast<C::value_type>(fill_value));
 }
 
 /**
@@ -150,9 +150,9 @@ void copy_range(C& container, std::size_t first, std::size_t last, It src_first)
 ///        accepted so the tag form of the call is the same on every container.
 template <typename C, typename U>
     requires(!internal::ChunkedArray<C>)
-void fill_range(C& container, std::size_t first, std::size_t last, const U& v, assume_drained_t /*tag*/)
+void fill_range(C& container, std::size_t first, std::size_t last, const U& fill_value, assume_drained_t /*tag*/)
 {
-    fill_range(container, first, last, v);
+    fill_range(container, first, last, fill_value);
 }
 
 /// @brief copy_range() on a plain container, tag form: see fill_range's tag
@@ -174,11 +174,11 @@ void copy_range(C& container, std::size_t first, std::size_t last, It src_first,
  */
 template <typename C, typename U>
     requires(!internal::ChunkedArray<C>)
-void fill_range_mt(C& container, std::size_t first, std::size_t last, const U& v)
+void fill_range_mt(C& container, std::size_t first, std::size_t last, const U& fill_value)
 {
     static_assert(!std::is_same_v<C, std::vector<bool>>,
                   "fill_range_mt: std::vector<bool> packs neighbouring indices into one word");
-    fill_range(container, first, last, v);
+    fill_range(container, first, last, fill_value);
 }
 
 /**
@@ -220,15 +220,15 @@ void transform_range_mt(C& container, std::size_t first, std::size_t last, It sr
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * @brief Call @p f(value) on every element of [@p first, @p last), in order.
+ * @brief Call @p func(value) on every element of [@p first, @p last), in order.
  * @param container source container
  * @param first     first index, inclusive (clamped to container.size())
  * @param last      last index, exclusive (clamped to container.size())
- * @param f         called as f(value); its return value is ignored
+ * @param func         called as f(value); its return value is ignored
  */
 template <typename C, typename F>
     requires(!internal::ChunkedArray<C>)
-void for_each_value(const C& container, std::size_t first, std::size_t last, F&& f)
+void for_each_value(const C& container, std::size_t first, std::size_t last, F&& func)
 {
     const auto size = static_cast<std::size_t>(container.size());
     last            = std::min(last, size);
@@ -236,26 +236,26 @@ void for_each_value(const C& container, std::size_t first, std::size_t last, F&&
     {
         return;
     }
-    const auto e = std::next(container.begin(), static_cast<std::ptrdiff_t>(last));
-    for (auto it = std::next(container.begin(), static_cast<std::ptrdiff_t>(first)); it != e; ++it)
+    const auto end_it = std::next(container.begin(), static_cast<std::ptrdiff_t>(last));
+    for (auto it = std::next(container.begin(), static_cast<std::ptrdiff_t>(first)); it != end_it; ++it)
     {
-        f(*it);
+        func(*it);
     }
 }
 
 /// @brief for_each_value() over every element of @p container.
 template <typename C, typename F>
     requires(!internal::ChunkedArray<C>)
-void for_each_value(const C& container, F&& f)
+void for_each_value(const C& container, F&& func)
 {
     for (auto it = container.begin(); it != container.end(); ++it)
     {
-        f(*it);
+        func(*it);
     }
 }
 
 /**
- * @brief Call @p f(std::span<const T>) on [@p first, @p last): a contiguous
+ * @brief Call @p func(std::span<const T>) on [@p first, @p last): a contiguous
  *        container is handed over as one span.
  * @details The chunked overload (array_chunk_range_ops.h) hands over blocks,
  *          and compressed chunks as f(v, count) when f accepts it: code
@@ -263,11 +263,11 @@ void for_each_value(const C& container, F&& f)
  * @param container source container (std::vector<bool> is not contiguous)
  * @param first     first index, inclusive (clamped to container.size())
  * @param last      last index, exclusive (clamped to container.size())
- * @param f         called as f(std::span<const T>); its return value is ignored
+ * @param func         called as f(std::span<const T>); its return value is ignored
  */
 template <typename C, typename F>
     requires(!internal::ChunkedArray<C> && std::ranges::contiguous_range<const C>)
-void for_each_span(const C& container, std::size_t first, std::size_t last, F&& f)
+void for_each_span(const C& container, std::size_t first, std::size_t last, F&& func)
 {
     using T         = std::ranges::range_value_t<const C>;
     const auto size = static_cast<std::size_t>(std::ranges::size(container));
@@ -276,15 +276,15 @@ void for_each_span(const C& container, std::size_t first, std::size_t last, F&& 
     {
         return;
     }
-    f(std::span<const T>(std::ranges::data(container) + first, last - first));
+    func(std::span<const T>(std::ranges::data(container) + first, last - first));
 }
 
 /// @brief for_each_span() over every element of @p container.
 template <typename C, typename F>
     requires(!internal::ChunkedArray<C> && std::ranges::contiguous_range<const C>)
-void for_each_span(const C& container, F&& f)
+void for_each_span(const C& container, F&& func)
 {
-    for_each_span(container, 0, static_cast<std::size_t>(std::ranges::size(container)), std::forward<F>(f));
+    for_each_span(container, 0, static_cast<std::size_t>(std::ranges::size(container)), std::forward<F>(func));
 }
 
 /**

@@ -40,7 +40,7 @@ namespace shrink_array::chunk_array_new
 {
 
 /**
- * @brief Run @p init on each of the @p count chunks at @p v, on a team of its
+ * @brief Run @p init on each of the @p count chunks at @p chunks, on a team of its
  *        own from parallel_storage_init::parallel_init_min_chunks chunks on,
  *        outside a region (parallel_storage_init::for_each_chunk()).
  *
@@ -56,14 +56,14 @@ namespace shrink_array::chunk_array_new
  *
  * @tparam C    chunk type
  * @tparam Init callable `void(C&)`
- * @param v    first chunk
+ * @param chunks    first chunk
  * @param count    how many
  * @param init what to run on each
  */
 template <typename C, typename Init>
-void init_chunks(C* v, std::size_t count, Init init) noexcept
+void init_chunks(C* chunks, std::size_t count, Init init) noexcept
 {
-    parallel_storage_init::for_each_chunk(static_cast<int>(count), [v, &init](int k) { init(v[k]); });
+    parallel_storage_init::for_each_chunk(static_cast<int>(count), [chunks, &init](int k) { init(chunks[k]); });
 }
 
 } // namespace shrink_array::chunk_array_new

@@ -96,16 +96,16 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& end,
                       std::chrono::duration<double>&         elapsed_seconds);
 
-/// @brief Store sqrt(@p v) at index @p i of @p tab. For a zero::Array, the raw reference tab(i) is used only
+/// @brief Store sqrt(@p value) at index @p index of @p tab. For a zero::Array, the raw reference tab(i) is used only
 ///        when the chunk is written, operator[] otherwise.
 /// @param tab Destination array.
-/// @param i Element index.
-/// @param v Value whose square root is stored.
+/// @param index Element index.
+/// @param value Value whose square root is stored.
 template <class Arr, typename T>
-void neutral_sqrt_assign(Arr& tab, Int i, T v)
+void neutral_sqrt_assign(Arr& tab, Int index, T value)
 {
-    // zero: the raw reference tab(i) is valid on a MATERIALISED chunk only. The
-    // write that computed v (tab2[i] = fmod(...)) can itself have compressed
+    // zero: the raw reference tab(index) is valid on a MATERIALISED chunk only. The
+    // write that computed value (tab2[index] = fmod(...)) can itself have compressed
     // the chunk -- a 0 completing an all-zero chunk, which the serial (counter)
     // build folds at once -- and the raw store then went into the shared
     // constant (harmless for sqrt(0) = 0, an CHUNK_INVARIANT_FAILED in checked
@@ -113,18 +113,18 @@ void neutral_sqrt_assign(Arr& tab, Int i, T v)
     // do not change.
     if constexpr (chunk_config::use_zero)
     {
-        if (tab.written(i))
+        if (tab.written(index))
         {
-            tab(i) = std::sqrt(v); // discarded quand Arr=std::vector : never typed
+            tab(index) = std::sqrt(value); // discarded quand Arr=std::vector : never typed
         }
         else
         {
-            tab[i] = std::sqrt(v);
+            tab[index] = std::sqrt(value);
         }
     }
     else
     {
-        tab[i] = std::sqrt(v);
+        tab[index] = std::sqrt(value);
     }
 }
 
@@ -132,7 +132,7 @@ void neutral_sqrt_assign(Arr& tab, Int i, T v)
  * @brief One iteration of the main compute loop, over [start0, end0).
  *
  * @param bench_arr      the arrays.
- * @param k      the iteration index; the workload varies its pattern with k % 16.
+ * @param iter      the iteration index; the workload varies its pattern with k % 16.
  * @param start0 start of the window this iteration writes.
  * @param end0 end of that window.
  * @param tab_nba1 the per-iteration thresholds main() precomputed; read at
@@ -153,7 +153,7 @@ void neutral_sqrt_assign(Arr& tab, Int i, T v)
  *       it keeps references out of the reduction clause.
  */
 void bench_phase_compute(BenchArrays&            bench_arr,
-                         Int                     k,
+                         Int                     iter,
                          Int                     start0,
                          Int                     end0,
                          const std::vector<Int>& tab_nba1,
@@ -176,7 +176,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr);
  *        into @p point_sum. Same arguments as bench_phase_compute.
  */
 void bench_phase_struct_compute(BenchArrays&            bench_arr,
-                                Int                     k,
+                                Int                     iter,
                                 Int                     start0,
                                 Int                     end0,
                                 const std::vector<Int>& tab_nba1,
@@ -194,11 +194,11 @@ void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0);
 void bench_phase_mask_fill(BenchArrays& bench_arr);
 
 /**
- * @brief tab_mask's iteration @p k: flips in one mixed block in 16, a constant
+ * @brief tab_mask's iteration @p iter: flips in one mixed block in 16, a constant
  *        segment in 32 turned whole to the other constant, then a read sweep of
  *        the blocks written into @p mask_count.
  */
-void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count);
+void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count);
 
 /**
  * @brief Stress (a): a team one thread SHORT of the default, over [beg_s, end_s).
@@ -219,17 +219,17 @@ void bench_phase_stress_dynamic(BenchArrays& bench_arr, Int grain, Int beg_s, In
  * @brief Stress (d): fill_range_mt from every thread, over [beg_s, end_s).
  * @details 64-element blocks dealt round-robin, so chunks are shared between
  *          threads; eight arrays, every constant outcome plus a plain value
- *          alternating between neighbouring blocks. @p k picks which of the
+ *          alternating between neighbouring blocks. @p iter picks which of the
  *          two value sets runs, so chunks go back and forth across the run.
  *          See bench_phase_ranges.cpp.
  */
-void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s);
+void bench_phase_range_mt(BenchArrays& bench_arr, Int iter, Int beg_s, Int end_s);
 
 /// @name The four sibling range-fill regions
 /// Same shape, different values and closing bound. See bench_phase_ranges.cpp.
 /// @{
-void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i);
-void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i);
+void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int iter);
+void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int iter);
 void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end);
 void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end);
 /// @}
@@ -300,7 +300,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats);
  * @brief The re-chunk sweep: find the next run in tab1, rewrite it.
  *
  * @param bench_arr the arrays.
- * @param k the iteration index; k % 4, % 8 and % 16 pick which of the four
+ * @param iter the iteration index; k % 4, % 8 and % 16 pick which of the four
  *        bench_phase_range_* patterns gets written.
  * @param size the window this iteration works in (size, start0, end0).
  *        Printed.
@@ -314,7 +314,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats);
  *          file: side by side, it becomes visible that the four differ only by
  *          the value written and by the sentinel the scan stops on.
  */
-void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, Int end0);
+void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0);
 
 /**
  * @brief Print the thirteen checksums.

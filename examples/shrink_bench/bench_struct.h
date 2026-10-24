@@ -93,18 +93,18 @@ struct std::formatter<Cell>
     }
 };
 
-/// @brief Print @p p as "(x, y, z)" (its std::formatter).
+/// @brief Print @p point as "(x, y, z)" (its std::formatter).
 /// @return @p os.
-inline std::ostream& operator<<(std::ostream& os, const Point3& p)
+inline std::ostream& operator<<(std::ostream& os, const Point3& point)
 {
-    return os << std::format("{}", p);
+    return os << std::format("{}", point);
 }
 
-/// @brief Print @p c as "{material, fraction}" (its std::formatter).
+/// @brief Print @p cell as "{material, fraction}" (its std::formatter).
 /// @return @p os.
-inline std::ostream& operator<<(std::ostream& os, const Cell& c)
+inline std::ostream& operator<<(std::ostream& os, const Cell& cell)
 {
-    return os << std::format("{}", c);
+    return os << std::format("{}", cell);
 }
 
 /// @name The second values of the struct arrays

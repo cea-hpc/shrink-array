@@ -116,23 +116,23 @@ struct Xorshift
 ///        constant, whatever the array itself would call them.
 long pointing_at(const Arr& arr, long n_chunks, const double* cst)
 {
-    long n = 0;
+    long count = 0;
     for (long c = 0; c < n_chunks; ++c)
     {
-        n += (arr.chunk_ref(static_cast<std::size_t>(c)).values_load() == cst) ? 1 : 0;
+        count += (arr.chunk_ref(static_cast<std::size_t>(c)).values_load() == cst) ? 1 : 0;
     }
-    return n;
+    return count;
 }
 
 /// @brief Chunks of @p arr compressed (not materialised).
-long compressed(const Arr& arr, long n_chunks, long S)
+long compressed(const Arr& arr, long n_chunks, long chunk_sz)
 {
-    long n = 0;
+    long count = 0;
     for (long c = 0; c < n_chunks; ++c)
     {
-        n += arr.written(static_cast<Ind>(c * S)) ? 0 : 1;
+        count += arr.written(static_cast<Ind>(c * chunk_sz)) ? 0 : 1;
     }
-    return n;
+    return count;
 }
 
 } // namespace
@@ -149,33 +149,33 @@ int run(int /*argc*/, char** /*argv*/)
 
     int fails = 0;
     {
-        Arr        a;
-        Arr        b;
-        const long S = static_cast<long>(a.chunk_size());
-        a.resize(static_cast<Ind>(chunks_a * S));
-        b.resize(static_cast<Ind>(chunks_b * S));
-        a.set_second_value(val_a);
-        b.set_second_value(val_b);
-        const Arr& ca   = a;
-        const Arr& cb   = b;
+        Arr        arr;
+        Arr        other;
+        const long chunk_sz = static_cast<long>(arr.chunk_size());
+        arr.resize(static_cast<Ind>(chunks_a * chunk_sz));
+        other.resize(static_cast<Ind>(chunks_b * chunk_sz));
+        arr.set_second_value(val_a);
+        other.set_second_value(val_b);
+        const Arr& ca   = arr;
+        const Arr& cb   = other;
         const int  team = CHUNK_PMP_MAX_THREADS;
         println("=== zero_one_value_foreign_key_validation  chunk_size={}  threads={}  a: {} chunks of {:g} (declares "
                 "{:g})  b: {} chunks (declares {:g}) ===",
-                S, team, chunks_a, val_b, val_a, chunks_b, val_b);
+                chunk_sz, team, chunks_a, val_b, val_a, chunks_b, val_b);
 
-        // `a` = 2.0 everywhere, `b` = 2.0 everywhere and compressed to it.
+        // `arr` = 2.0 everywhere, `other` = 2.0 everywhere and compressed to it.
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (long i = 0; i < chunks_a * S; ++i)
+            for (long i = 0; i < chunks_a * chunk_sz; ++i)
             {
-                a[static_cast<Ind>(i)] = val_b;
+                arr[static_cast<Ind>(i)] = val_b;
             }
 #pragma omp for schedule(static)
-            for (long i = 0; i < chunks_b * S; ++i)
+            for (long i = 0; i < chunks_b * chunk_sz; ++i)
             {
-                b[static_cast<Ind>(i)] = val_b;
+                other[static_cast<Ind>(i)] = val_b;
             }
         }
         end_phase();
@@ -183,23 +183,23 @@ int run(int /*argc*/, char** /*argv*/)
         {
             begin_phase();
 #pragma omp single
-            b.compress();
+            other.compress();
         }
         end_phase();
-        const long b_compressed0 = compressed(cb, chunks_b, S);
+        const long b_compressed0 = compressed(cb, chunks_b, chunk_sz);
 
-        // The stress: own chunks of `b` toggled, own offsets of `a` rewritten.
+        // The stress: own chunks of `other` toggled, own offsets of `arr` rewritten.
         const char*  env_s   = std::getenv("FK_SECONDS");
         const double seconds = env_s ? std::atof(env_s) : 2.0;
-        // `b`'s constant: the pointer every compressed chunk of `b` holds.
+        // `other`'s constant: the pointer every compressed chunk of `other` holds.
         const double* const b_cst       = cb.chunk_ref(0).values_load();
         const long          a_on_b_cst0 = pointing_at(ca, chunks_a, b_cst);
         std::atomic<long>   toggles{0};
 #pragma omp parallel
         {
             begin_phase();
-            const int  me = CHUNK_PMP_THREAD_RANK;
-            const int  n  = CHUNK_PMP_NUM_THREADS;
+            const int  me       = CHUNK_PMP_THREAD_RANK;
+            const int  nthreads = CHUNK_PMP_NUM_THREADS;
             Xorshift   rng{0x2545F4914F6CDD1DULL ^ (static_cast<std::uint64_t>(me + 1) * 0x9E3779B97F4A7C15ULL)};
             const auto t0    = std::chrono::steady_clock::now();
             long       local = 0;
@@ -207,15 +207,16 @@ int run(int /*argc*/, char** /*argv*/)
             {
                 for (int r = 0; r < 256; ++r)
                 {
-                    // `b`: a chunk of this thread's, materialised then constant again.
-                    const long cbk = me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_b / n)) * n;
-                    const Ind  b0  = static_cast<Ind>(cbk * S);
-                    b[b0]          = 3.0;
-                    b[b0]          = val_b;
-                    // `a`: an element of this thread's, rewritten to the same 2.0.
+                    // `other`: a chunk of this thread's, materialised then constant again.
+                    const long cbk =
+                        me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_b / nthreads)) * nthreads;
+                    const Ind b0 = static_cast<Ind>(cbk * chunk_sz);
+                    other[b0]    = 3.0;
+                    other[b0]    = val_b;
+                    // `arr`: an element of this thread's, rewritten to the same 2.0.
                     const long cak = static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_a));
-                    const long off = me % S;
-                    a[static_cast<Ind>(cak * S + off)] = val_b;
+                    const long off = me % chunk_sz;
+                    arr[static_cast<Ind>(cak * chunk_sz + off)] = val_b;
                     ++local;
                 }
             }
@@ -224,7 +225,7 @@ int run(int /*argc*/, char** /*argv*/)
         end_phase();
 
         const long a_compressed = pointing_at(ca, chunks_a, b_cst);
-        const long b_compressed = compressed(cb, chunks_b, S);
+        const long b_compressed = compressed(cb, chunks_b, chunk_sz);
         println("[zero_one_value/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; "
                 "a: {} of {} chunks on b's constant before the stress, {} after",
                 toggles.load(), seconds, b_compressed0, chunks_b, b_compressed, a_on_b_cst0, chunks_a, a_compressed);
@@ -241,20 +242,20 @@ int run(int /*argc*/, char** /*argv*/)
             ++fails;
         }
 
-        // A write into every chunk of `a` must not reach `b`.
+        // A write into every chunk of `arr` must not reach `other`.
         for (long c = 0; c < chunks_a; ++c)
         {
-            a[static_cast<Ind>(c * S + (S - 1))] = 5.0;
+            arr[static_cast<Ind>(c * chunk_sz + (chunk_sz - 1))] = 5.0;
         }
         long bad_b = 0;
         long bad_a = 0;
-        for (long i = 0; i < chunks_b * S; ++i)
+        for (long i = 0; i < chunks_b * chunk_sz; ++i)
         {
             bad_b += (cb[static_cast<Ind>(i)] != val_b) ? 1 : 0;
         }
-        for (long i = 0; i < chunks_a * S; ++i)
+        for (long i = 0; i < chunks_a * chunk_sz; ++i)
         {
-            const double want = (i % S == S - 1) ? 5.0 : val_b;
+            const double want = (i % chunk_sz == chunk_sz - 1) ? 5.0 : val_b;
             bad_a += (ca[static_cast<Ind>(i)] != want) ? 1 : 0;
         }
         if (bad_b != 0 || bad_a != 0)

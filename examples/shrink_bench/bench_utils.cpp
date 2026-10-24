@@ -120,8 +120,8 @@ static shrink_array::RssPeakSampler& bench_rss_sampler()
     static shrink_array::RssPeakSampler sampler(
         []
         {
-            const char* e = std::getenv("SHRINK_BENCH_RSS_SAMPLE_MS");
-            return e != nullptr ? std::atoi(e) : 0;
+            const char* env = std::getenv("SHRINK_BENCH_RSS_SAMPLE_MS");
+            return env != nullptr ? std::atoi(env) : 0;
         }());
     return sampler;
 }
@@ -278,28 +278,28 @@ void memory_consumption(const std::string& msg)
 // -----------------------------------------------------------------------------
 // Correlation shapes used to generate synthetic values.
 // -----------------------------------------------------------------------------
-Int linear_correlation(Int i, Int sz, Int sz1)
+Int linear_correlation(Int index, Int sz, Int sz1)
 {
-    return static_cast<Int>((static_cast<double>(sz1) / static_cast<double>(sz)) * static_cast<double>(i));
+    return static_cast<Int>((static_cast<double>(sz1) / static_cast<double>(sz)) * static_cast<double>(index));
 }
 
-Int exponential_correlation(Int i, Int sz, Int sz1, double p)
+Int exponential_correlation(Int index, Int sz, Int sz1, double rate)
 {
-    return static_cast<Int>(static_cast<double>(sz1) * pow(static_cast<double>(i) / static_cast<double>(sz), p));
+    return static_cast<Int>(static_cast<double>(sz1) * pow(static_cast<double>(index) / static_cast<double>(sz), rate));
 }
 
-Int interpolation(Int i, Int sz, Int sz1)
+Int interpolation(Int index, Int sz, Int sz1)
 {
-    return static_cast<Int>(static_cast<double>(sz1) * sqrt(static_cast<double>(i) / static_cast<double>(sz)));
+    return static_cast<Int>(static_cast<double>(sz1) * sqrt(static_cast<double>(index) / static_cast<double>(sz)));
 }
 
 // -----------------------------------------------------------------------------
 // CLI helpers.
 // -----------------------------------------------------------------------------
-Int levenshtein(const std::string& a, const std::string& b)
+Int levenshtein(const std::string& lhs, const std::string& rhs)
 {
-    const size_t len_a = a.size();
-    const size_t len_b = b.size();
+    const size_t len_a = lhs.size();
+    const size_t len_b = rhs.size();
     std::vector  dp(len_a + 1, std::vector<Int>(len_b + 1));
 
     for (size_t i = 0; i <= len_a; ++i)
@@ -316,7 +316,7 @@ Int levenshtein(const std::string& a, const std::string& b)
             }
             else
             {
-                const Int subst = (a[i - 1] != b[j - 1]) ? 1 : 0;
+                const Int subst = (lhs[i - 1] != rhs[j - 1]) ? 1 : 0;
                 dp[i][j]        = std::min({dp[i - 1][j - 1] + subst, dp[i - 1][j] + 1, dp[i][j - 1] + 1});
             }
         }

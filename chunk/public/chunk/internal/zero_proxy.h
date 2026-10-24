@@ -79,11 +79,11 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
      */
     [[nodiscard]] int get_num_tab(Key key) const noexcept
     {
-        for (const auto& [k, v] : vec_)
+        for (const auto& [entry_key, tab] : vec_)
         {
-            if (k == key)
+            if (entry_key == key)
             {
-                return v;
+                return tab;
             }
         }
 
@@ -180,11 +180,12 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @tparam U Type of the operand.
      * @param ctx Async write context.
      * @param op The operator to apply.
-     * @param v Operand to combine with the current value.
+     * @param operand Operand to combine with the current value.
      * @param lbd Called (with `op`) when the chunk was not yet written.
      */
     template <typename Op, typename Body, typename U>
-    void execute_arithmetic_compound_operation_async(auto* ctx, Op op, [[maybe_unused]] const U& v, Body lbd) const;
+    void
+    execute_arithmetic_compound_operation_async(auto* ctx, Op op, [[maybe_unused]] const U& operand, Body lbd) const;
 
     /**
      * @brief Resolve and cache this proxy's table number from ptr_on_array.
@@ -543,11 +544,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        materialising the chunk first if it is currently compressed.
      * @param vals The chunk's values pointer, loaded by the caller inside the
      *        write session; it decides whether to materialise.
-     * @param v Value to write.
+     * @param value Value to write.
      * @return The pointer the store went through: @p vals, or the one loaded
      *         again after the materialisation.
      */
-    T* perform_core_assignment(T* vals, InT<T> v) const noexcept;
+    T* perform_core_assignment(T* vals, InT<T> value) const noexcept;
 
     /**
      * @brief Shared implementation behind operator+=/operator-=: materialise
@@ -557,12 +558,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @tparam Body Callable used only on the "chunk was not written" fast path.
      * @tparam U Type of the operand being combined with the current value.
      * @param op The operator to apply.
-     * @param v Operand to combine with the current value.
+     * @param operand Operand to combine with the current value.
      * @param lbd Called (with `op`) when the chunk was not yet written, right
      *            after materialising it.
      */
     template <typename Op, typename Body, typename U>
-    void execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& v, Body lbd);
+    void execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& operand, Body lbd);
 
     /**
      * @brief Run an arbitrary in-place operation on this element,
@@ -580,7 +581,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        compressed AND is the value being assigned the compressible
      *        constant? If so, the write is a genuine no-op.
      * @tparam U Type of the value being assigned.
-     * @param v Value being assigned.
+     * @param value Value being assigned.
      * @return true if v == zero and the chunk is already compressed.
      * @note Never while the chunk has a deferred op pending (pending_any()):
      *       that op, older than this write in program order, would replay
@@ -588,9 +589,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *       early-out sits before the engine. Constant-false serially.
      */
     template <typename U>
-    [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& v) const noexcept
+    [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& value) const noexcept
     {
-        return v == zero && is_cst_val() && !chunk_.pending_any();
+        return value == zero && is_cst_val() && !chunk_.pending_any();
     }
 
     /**
@@ -598,13 +599,13 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        is already compressed to it; maintains the zero counter in
      *        counter-mode builds.
      * @tparam U Type of the value being assigned.
-     * @param v Value to write.
+     * @param value Value to write.
      * @return The value that was written.
      */
     template <typename U>
     // InT<U>, not const U&: this is the one frame not inlined into the caller,
     // so small types cross the call by value. Non-deducible: call assign_impl<U>(v).
-    T assign_impl(InT<U> v) noexcept;
+    T assign_impl(InT<U> value) noexcept;
 
     /**
      * @brief Run a write on this element, materialising the chunk if needed and
@@ -627,11 +628,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *          thread.
      * @tparam U Type of the operand.
      * @tparam BinaryOp Binary operator to apply (divides/multiplies/modulo).
-     * @param v Operand to combine with the current value.
+     * @param operand Operand to combine with the current value.
      * @param op The operator to apply.
      */
     template <typename U, typename BinaryOp>
-    void apply_compound_operation(InT<U> v, BinaryOp op); // InT: see assign_impl
+    void apply_compound_operation(InT<U> operand, BinaryOp op); // InT: see assign_impl
 
   public:
     using CHUNK_INHERIT_CTOR_TYPENAME FastCompPolicy::ProxyFastCompPolicy;
@@ -650,18 +651,18 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /** @brief Clean path: exact match or safe conversion (small operand, by value). */
     template <typename U>
         requires IsCleanAssignment<T, U>
-    T operator=(const U& v) noexcept
+    T operator=(const U& operand) noexcept
     {
-        return assign_impl<U>(v);
+        return assign_impl<U>(operand);
     }
 
     /** @brief Trap path: risky conversion (e.g. float = double). */
     template <typename U>
         requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
     [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
-    T operator=(const U& v) noexcept
+    T operator=(const U& operand) noexcept
     {
-        return assign_impl<T>(static_cast<T>(v));
+        return assign_impl<T>(static_cast<T>(operand));
     }
 
     /**
@@ -735,62 +736,62 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /**
      * @brief Add `v` to this element in place.
      * @tparam U Type of the operand.
-     * @param v Operand to add.
+     * @param operand Operand to add.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementAddable<T>
-    Proxy operator+=(const U& v) noexcept
+    Proxy operator+=(const U& operand) noexcept
     {
-        this->template arithmetic_assign<U>(v, std::plus<>{});
+        this->template arithmetic_assign<U>(operand, std::plus<>{});
         return *this;
     }
 
     /**
      * @brief Subtract `v` from this element in place.
      * @tparam U Type of the operand.
-     * @param v Operand to subtract.
+     * @param operand Operand to subtract.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementSubtractable<T>
-    Proxy operator-=(const U& v) noexcept
+    Proxy operator-=(const U& operand) noexcept
     {
-        this->template arithmetic_assign<U>(v, std::minus<>{});
+        this->template arithmetic_assign<U>(operand, std::minus<>{});
         return *this;
     }
 
     /**
      * @brief Divide this element by `v` in place.
      * @tparam U Type of the operand.
-     * @param v Divisor. Integer element: check builds stop on v == 0
+     * @param operand Divisor. Integer element: check builds stop on v == 0
      *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementDivisible<T>
-    Proxy operator/=(const U& v) noexcept
+    Proxy operator/=(const U& operand) noexcept
     {
-        internal::check_integer_divisor<T>(v, "/=");
-        apply_compound_operation<U>(v, std::divides<>());
+        internal::check_integer_divisor<T>(operand, "/=");
+        apply_compound_operation<U>(operand, std::divides<>());
         return *this;
     }
 
     /**
      * @brief Multiply this element by `v` in place.
      * @tparam U Type of the operand.
-     * @param v Multiplier.
+     * @param operand Multiplier.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementMultipliable<T>
-    Proxy operator*=(const U& v) noexcept
+    Proxy operator*=(const U& operand) noexcept
     {
-        apply_compound_operation<U>(v, std::multiplies<>());
+        apply_compound_operation<U>(operand, std::multiplies<>());
         return *this;
     }
 
@@ -798,19 +799,19 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Compute this element modulo `v` in place. Integral T only; a
      *        no-op passthrough (returns v unchanged) for non-integral T.
      * @tparam U Type of the operand.
-     * @param v Modulus. Check builds stop on v == 0
+     * @param operand Modulus. Check builds stop on v == 0
      *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementModulable<T> || std::is_same_v<T, bool>
-    Proxy operator%=(const U& v) noexcept
+    Proxy operator%=(const U& operand) noexcept
     {
         if constexpr (std::is_integral_v<T>)
         {
-            internal::check_integer_divisor<T>(v, "%=");
-            apply_compound_operation<U>(v, typename Base::modulo{});
+            internal::check_integer_divisor<T>(operand, "%=");
+            apply_compound_operation<U>(operand, typename Base::modulo{});
             return *this;
         }
         else
@@ -865,8 +866,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 
     // No address, and do not add operator T&(): `tab[nc] = val` would route
     // through it and materialise blocks for nothing. Hence foo(T&) rejects a[i].
-    T*       operator&()       = delete("no stable address: the chunk may be compressed or moved");
-    const T* operator&() const = delete("no stable address: the chunk may be compressed or moved");
+    T*       operator&()       = delete ("no stable address: the chunk may be compressed or moved");
+    const T* operator&() const = delete ("no stable address: the chunk may be compressed or moved");
 
     /**
      * @brief The table number of array @p ptr.

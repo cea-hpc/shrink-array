@@ -295,7 +295,7 @@ class WriteCompressSyncPolicy
         {
             if constexpr (chunk_config::ring_log_debug)
             {
-                ring_log(get_tid(), ev_policy_begin_write, static_cast<uint32_t>(thr));
+                ring_log(get_tid(), EventCode::policy_begin_write, static_cast<uint32_t>(thr));
             }
             per_thread_writing[thr].v.store(chunk, std::memory_order_relaxed);
             std::atomic_signal_fence(std::memory_order_seq_cst); // compiler: keep the store before the loads
@@ -313,7 +313,7 @@ class WriteCompressSyncPolicy
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_policy_end_write, static_cast<uint32_t>(thr));
+            ring_log(get_tid(), EventCode::policy_end_write, static_cast<uint32_t>(thr));
         }
 
         per_thread_writing[thr].v.store(nullptr, std::memory_order_release);
@@ -456,7 +456,7 @@ class WriteCompressSyncPolicy
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_policy_begin_write, static_cast<uint32_t>(thr));
+            ring_log(get_tid(), EventCode::policy_begin_write, static_cast<uint32_t>(thr));
         }
 
         per_thread_writing[thr].v.store(chunk, std::memory_order_seq_cst);

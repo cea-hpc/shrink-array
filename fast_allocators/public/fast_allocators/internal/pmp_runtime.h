@@ -268,12 +268,12 @@ inline void leave_application_phase() noexcept
 }
 
 /// @brief The team size of the next regions opened without num_threads (omp_set_num_threads).
-inline void set_num_threads([[maybe_unused]] int n) noexcept
+inline void set_num_threads([[maybe_unused]] int nthreads) noexcept
 {
 #ifdef _OPENMP
-    omp_set_num_threads(n);
+    omp_set_num_threads(nthreads);
 #elif FAST_ALLOC_PMP_BACKEND_STD
-    std_backend::settings().nthreads.store(n > 0 ? n : 0, std::memory_order_relaxed);
+    std_backend::settings().nthreads.store(nthreads > 0 ? nthreads : 0, std::memory_order_relaxed);
 #endif
 }
 
@@ -312,13 +312,13 @@ struct RuntimeSchedule
 }
 
 /// @brief Set the calling task's schedule of the `schedule(runtime)` loops (omp_set_schedule).
-inline void set_runtime_schedule([[maybe_unused]] RuntimeSchedule s) noexcept
+inline void set_runtime_schedule([[maybe_unused]] RuntimeSchedule sched) noexcept
 {
 #ifdef _OPENMP
-    omp_set_schedule(static_cast<omp_sched_t>(s.kind), s.chunk);
+    omp_set_schedule(static_cast<omp_sched_t>(sched.kind), sched.chunk);
 #elif FAST_ALLOC_PMP_BACKEND_STD
-    std_backend::settings().sched_kind.store(s.kind, std::memory_order_relaxed);
-    std_backend::settings().sched_chunk.store(s.chunk, std::memory_order_relaxed);
+    std_backend::settings().sched_kind.store(sched.kind, std::memory_order_relaxed);
+    std_backend::settings().sched_chunk.store(sched.chunk, std::memory_order_relaxed);
 #endif
 }
 
@@ -458,9 +458,9 @@ inline bool configure_thread_rank_registry(int capacity) noexcept
                 cap = std::max({cap, std_backend::nthreads_var(), std_backend::env_threads("CHUNK_THREAD_CAPACITY")});
             }
         }
-        auto* r = new RankRegistry(cap); // NOLINT(cppcoreguidelines-owning-memory): immortal
+        auto* registry = new RankRegistry(cap); // NOLINT(cppcoreguidelines-owning-memory): immortal
         detail::g_registry_built.store(true, std::memory_order_release);
-        return r;
+        return registry;
     }();
     return *registry;
 }

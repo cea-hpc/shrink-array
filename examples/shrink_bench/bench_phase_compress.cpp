@@ -153,8 +153,8 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         if constexpr (bench_par::team_regions)
         {
             bench_par::region(
-                [&]([[maybe_unused]] bench_par::Team& t)
-                { all([&](const char* name) { t.single([&] { announce(name); }, bench_par::nowait); }); });
+                [&]([[maybe_unused]] bench_par::Team& team)
+                { all([&](const char* name) { team.single([&] { announce(name); }, bench_par::nowait); }); });
         }
         else
         {

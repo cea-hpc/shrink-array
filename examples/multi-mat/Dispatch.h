@@ -34,21 +34,21 @@ class Dispatch
     }
 
     /// @brief The kinds, one per material.
-    void set(const std::vector<bool>& t)
+    void set(const std::vector<bool>& flags)
     {
-        tab_chunk_ = t;
+        tab_chunk_ = flags;
     }
 
-    /// @brief Is material @p i kept in chunk arrays?
-    [[nodiscard]] bool is_chunk(int i) const
+    /// @brief Is material @p index kept in chunk arrays?
+    [[nodiscard]] bool is_chunk(int index) const
     {
-        return tab_chunk_[i];
+        return tab_chunk_[index];
     }
 
-    /// @brief Is material @p i kept in std::vectors?
-    [[nodiscard]] bool is_vector(int i) const
+    /// @brief Is material @p index kept in std::vectors?
+    [[nodiscard]] bool is_vector(int index) const
     {
-        return !tab_chunk_[i];
+        return !tab_chunk_[index];
     }
 
   private:

@@ -73,14 +73,15 @@
 // <iostream> directly: param_chunk.h would be a circular include (it reaches this header).
 #include <iostream> // std::cout
 
-#include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
-#include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
-#include "chunk/internal/in_t.h"              // InT<T>: the value parameters
-#include "chunk/internal/value_hash.h"        // value_hash (index_hash)
-#include "chunk/config.h"                     // build_config::use_mm_protect
-#include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/log.h"                        // CHUNK_LOG (the identifier and index warnings)
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "chunk/internal/chunk_size_policy.h"    // cst_buffer_size
+#include "chunk/internal/env_parse.h"            // env_number (CHUNK_CST_VAL2_ID_LIMIT)
+#include "chunk/internal/in_t.h"                 // InT<T>: the value parameters
+#include "chunk/internal/value_hash.h"           // value_hash (index_hash)
+#include "chunk/config.h"                        // build_config::use_mm_protect
+#include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/immortal.h"             // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/log.h"                           // CHUNK_LOG (the identifier and index warnings)
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
 #endif
@@ -181,19 +182,19 @@ struct SecondValueRef
             return *slot;
         }
     }
-    /// @brief Record @p v as the chunk's second value. For an indexed type this
+    /// @brief Record @p value as the chunk's second value. For an indexed type this
     ///        registers the value's slot if it is new (find_or_set).
-    void set(T v) const
+    void set(T value) const
     {
         if constexpr (SecondValueTraits<T>::indexed)
         {
             // Up to the record: a reclaim must not run in between (LookupGuard).
             const typename GlobalVecHolder<T>::LookupGuard in_flight;
-            *slot = TabCstVal2Holder<T>::id_for_value(v);
+            *slot = TabCstVal2Holder<T>::id_for_value(value);
         }
         else
         {
-            *slot = v;
+            *slot = value;
         }
     }
     /// @brief Record the value of a slot the caller already has.
@@ -431,18 +432,18 @@ class GlobalVecHolder
     [[nodiscard]] static SecondValueStats stats() noexcept
     {
         constexpr auto   rx = std::memory_order_relaxed;
-        SecondValueStats s;
-        s.handed_out       = ids_handed_out();
-        s.free             = free_id_count();
-        s.free             = s.free < s.handed_out ? s.free : s.handed_out; // two relaxed reads
-        s.capacity         = id_capacity();
-        s.degraded         = index_degraded.load(rx);
-        s.reclaims         = reclaim_runs.load(rx);
-        s.freed            = reclaim_freed.load(rx);
-        s.refused_parallel = refused_parallel.load(rx);
-        s.refused_rechunk  = refused_rechunk.load(rx);
-        s.refused_degraded = refused_degraded.load(rx);
-        return s;
+        SecondValueStats stats;
+        stats.handed_out       = ids_handed_out();
+        stats.free             = free_id_count();
+        stats.free             = stats.free < stats.handed_out ? stats.free : stats.handed_out; // two relaxed reads
+        stats.capacity         = id_capacity();
+        stats.degraded         = index_degraded.load(rx);
+        stats.reclaims         = reclaim_runs.load(rx);
+        stats.freed            = reclaim_freed.load(rx);
+        stats.refused_parallel = refused_parallel.load(rx);
+        stats.refused_rechunk  = refused_rechunk.load(rx);
+        stats.refused_degraded = refused_degraded.load(rx);
+        return stats;
     }
 
     /// @brief Identifier (1-based) of the slot @p ptr.
@@ -450,7 +451,9 @@ class GlobalVecHolder
     [[nodiscard]] static std::uint32_t slot_id(const T* ptr) noexcept
     {
         const std::byte* base = region_begin.load(std::memory_order_relaxed);
-        return static_cast<std::uint32_t>((reinterpret_cast<const std::byte*>(ptr) - base) / region_stride) + 1u;
+        return static_cast<std::uint32_t>((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) /
+                                          region_stride) +
+               1u;
     }
 
     // ── Reclaim contract, checked in check builds ──────────────────────────
@@ -535,11 +538,11 @@ class GlobalVecHolder
         /// @brief Fail if a lookup or registration is in flight.
         static void check_no_lookup(const char* when) noexcept
         {
-            if (const int n = lookups_in_flight.load(std::memory_order_seq_cst); n != 0) [[unlikely]]
+            if (const int in_flight = lookups_in_flight.load(std::memory_order_seq_cst); in_flight != 0) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("cst_val2: reclaim {} with {} second-value lookup(s) or registration(s) "
                                        "in flight (reclaim_second_values() needs a sequential point)",
-                                       when, n);
+                                       when, in_flight);
             }
         }
     };
@@ -720,19 +723,19 @@ class GlobalVecHolder
     [[nodiscard]] static T value_of_ptr(const T* ptr) noexcept
     {
         const std::byte* base = region_begin.load(std::memory_order_relaxed);
-        const auto       id   = ((reinterpret_cast<const std::byte*>(ptr) - base) / region_stride) + 1u;
+        const auto id = ((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) / region_stride) + 1u;
         return value_by_id[id];
     }
 
     /**
-     * @brief Look @p v up in the index, lock-free. This is the hot path.
+     * @brief Look @p value up in the index, lock-free. This is the hot path.
      * @return Its slot, or null -- meaning "not found HERE", never
      *         "not registered". The caller must fall back.
      * @details A hit is revalidated (value_of_ptr(p) == v) whatever the
      *          concurrency: open addressing probes across collisions, so the
      *          slot reached may belong to another value.
      */
-    static T* index_lookup(InT<T> v) noexcept
+    static T* index_lookup(InT<T> value) noexcept
     {
         // The table named here is never freed while a reader can hold it (see
         // index_generations). A superseded generation misses newer values: a miss
@@ -743,15 +746,15 @@ class GlobalVecHolder
             return nullptr;
         }
         const size_t mask = table->cap - 1;
-        const size_t slot = index_hash(v) & mask;
+        const size_t slot = index_hash(value) & mask;
         for (int probe = 0; probe < index_max_probe; ++probe)
         {
             T* entry = table->slots[(slot + probe) & mask].load(std::memory_order_acquire);
             if (entry == nullptr)
             {
-                return nullptr; // empty slot => v is not indexed here
+                return nullptr; // empty slot => value is not indexed here
             }
-            if (value_of_ptr(entry) == v)
+            if (value_of_ptr(entry) == value)
             {
                 return entry; // validated hit
             }
@@ -760,7 +763,7 @@ class GlobalVecHolder
     }
 
     /**
-     * @brief Record that @p v is served by @p ptr. No-op if already present.
+     * @brief Record that @p value is served by @p ptr. No-op if already present.
      * @pre Called under #insert_mutex -- this is the single writer.
      * @details A plain release store suffices: it pairs with the acquire load
      *          in index_lookup(), so a lock-free reader that sees the pointer
@@ -768,7 +771,7 @@ class GlobalVecHolder
      * @note Giving up after #index_max_probe sets #index_degraded rather than
      *       failing: the value IS registered in the chain, just not indexed.
      */
-    static void index_publish(InT<T> v, T* ptr) noexcept
+    static void index_publish(InT<T> value, T* ptr) noexcept
     {
         IndexTable* table = index_tab.load(std::memory_order_relaxed);
         // Grow before the table passes half full: linear probing degrades
@@ -780,14 +783,14 @@ class GlobalVecHolder
         for (int attempt = 0; attempt < 2; ++attempt)
         {
             const size_t mask = table->cap - 1;
-            const size_t slot = index_hash(v) & mask;
+            const size_t slot = index_hash(value) & mask;
             for (int probe = 0; probe < index_max_probe; ++probe)
             {
                 const size_t idx = (slot + probe) & mask;
                 const T*     cur = table->slots[idx].load(std::memory_order_acquire);
                 if (cur != nullptr)
                 {
-                    if (value_of_ptr(cur) == v)
+                    if (value_of_ptr(cur) == value)
                     {
                         return; // already indexed (equivalent pointer)
                     }
@@ -1106,9 +1109,9 @@ class GlobalVecHolder
     ///          past them -- a Point {x, y, z} with one x, a {int mat; double
     ///          rho} -- all landed on one slot and degraded the index. Member
     ///          by member with C++26 reflection, so padding is not read.
-    static size_t index_hash(InT<T> v) noexcept
+    static size_t index_hash(InT<T> value) noexcept
     {
-        return value_hash<T>(v);
+        return value_hash<T>(value);
     }
 
     /**
@@ -1317,7 +1320,8 @@ class TabCstVal2Holder
     [[nodiscard]] static std::uint32_t id_of_ptr(const T* ptr) noexcept
     {
         const std::byte* base = VecHolder::region_begin.load(std::memory_order_relaxed);
-        return static_cast<std::uint32_t>((reinterpret_cast<const std::byte*>(ptr) - base) / VecHolder::region_stride) +
+        return static_cast<std::uint32_t>((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) /
+                                          VecHolder::region_stride) +
                1u;
     }
     /**
@@ -1361,15 +1365,15 @@ class TabCstVal2Holder
         VecHolder::clear_if_last(nb_val2);
     }
 
-    /// @brief The identifier for @p v, registering its slot if it is new;
+    /// @brief The identifier for @p value, registering its slot if it is new;
     ///        0 for T{} (the "no second value" the value table wrote as 0).
-    [[nodiscard]] static std::uint32_t id_for_value(InT<T> v)
+    [[nodiscard]] static std::uint32_t id_for_value(InT<T> value)
     {
-        if (v == T{})
+        if (value == T{})
         {
             return 0;
         }
-        return id_of_ptr(find_or_register(v));
+        return id_of_ptr(find_or_register(value));
     }
 
   private:

@@ -196,12 +196,12 @@ inline constexpr Int bench_mask_block = 64;
 
 /// @brief A 64-bit mix (splitmix64's finaliser): the deterministic "random"
 ///        of tab_mask -- integers only, so every build computes the same bits.
-[[nodiscard]] constexpr std::uint64_t bench_mask_hash(std::uint64_t x) noexcept
+[[nodiscard]] constexpr std::uint64_t bench_mask_hash(std::uint64_t value) noexcept
 {
-    x += 0x9E3779B97F4A7C15ull;
-    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
-    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
-    return x ^ (x >> 31);
+    value += 0x9E3779B97F4A7C15ull;
+    value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9ull;
+    value = (value ^ (value >> 27)) * 0x94D049BB133111EBull;
+    return value ^ (value >> 31);
 }
 
 /// @brief What a segment of tab_mask holds.
@@ -224,16 +224,16 @@ enum class BenchMaskKind
 /// @brief The kind of segment @p seg (fixed for the run).
 [[nodiscard]] constexpr BenchMaskKind bench_mask_kind(Int seg) noexcept
 {
-    const auto h = bench_mask_hash(static_cast<std::uint64_t>(seg) * 0x51ED27ull) % 100;
-    if (h < 30)
+    const auto hash = bench_mask_hash(static_cast<std::uint64_t>(seg) * 0x51ED27ull) % 100;
+    if (hash < 30)
     {
         return BenchMaskKind::all_false;
     }
-    if (h < 60)
+    if (hash < 60)
     {
         return BenchMaskKind::all_true;
     }
-    if (h < 85)
+    if (hash < 85)
     {
         return BenchMaskKind::random;
     }
@@ -241,19 +241,19 @@ enum class BenchMaskKind
 }
 
 /// @brief The starting value of tab_mask[i].
-[[nodiscard]] constexpr bool bench_mask_initial(Int i) noexcept
+[[nodiscard]] constexpr bool bench_mask_initial(Int index) noexcept
 {
-    const auto h = bench_mask_hash(static_cast<std::uint64_t>(i));
-    switch (bench_mask_kind(i / bench_mask_segment))
+    const auto hash = bench_mask_hash(static_cast<std::uint64_t>(index));
+    switch (bench_mask_kind(index / bench_mask_segment))
     {
         case BenchMaskKind::all_false:
             return false;
         case BenchMaskKind::all_true:
             return true;
         case BenchMaskKind::random:
-            return (h & 1u) != 0;
+            return (hash & 1u) != 0;
         case BenchMaskKind::scattered:
-            return h % 32 == 0;
+            return hash % 32 == 0;
     }
     return false;
 }

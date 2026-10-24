@@ -31,11 +31,12 @@
 #include <stdio.h>  // fileno (POSIX)
 #include <unistd.h> // isatty
 
-#include "chunk/config.h"             // build_config::threaded (get_tid)
-#include "chunk/internal/enum_name.h" // upper_enum_name, table_matches (event_name)
-#include "chunk/PMP_CHUNK.h"          // chunk_pmp_team_rank (get_tid)
-#include "chunk/ring_log_debug.h"     // the declarations defined here
-#include "chunk/log.h"                // CHUNK_LOG
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "chunk/config.h"                        // build_config::threaded (get_tid)
+#include "chunk/internal/enum_name.h"            // upper_enum_name, table_matches (event_name)
+#include "chunk/PMP_CHUNK.h"                     // chunk_pmp_team_rank (get_tid)
+#include "chunk/ring_log_debug.h"                // the declarations defined here
+#include "chunk/log.h"                           // CHUNK_LOG
 
 #ifdef CHUNK_RING_LOG_ANY
 
@@ -128,7 +129,7 @@ void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr)
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
     ring_buf[idx].info = num;
-    ring_buf[idx].addr = reinterpret_cast<uint64_t>(addr);
+    ring_buf[idx].addr = static_cast<uint64_t>(::fast_alloc::address_bits(addr));
 }
 
 void ring_log_start(uint32_t tid, EventCode ev, uint32_t info)
@@ -154,36 +155,36 @@ const char* event_color(EventCode ev)
 {
     switch (ev)
     {
-        case ev_begin_slow_path:
+        case EventCode::begin_slow_path:
             return "\033[36m"; // cyan
-        case ev_end_slow_path:
+        case EventCode::end_slow_path:
             return "\033[32m"; // green
-        case ev_begin_fast_path:
+        case EventCode::begin_fast_path:
             return "\033[33m"; // yellow
-        case ev_end_fast_path:
+        case EventCode::end_fast_path:
             return "\033[90m"; // grey
-        case ev_compress_attempt:
+        case EventCode::compress_attempt:
             return "\033[35m"; // magenta
-        case ev_compress_started:
+        case EventCode::compress_started:
             return "\033[34m"; // blue
-        case ev_compress_aborted:
+        case EventCode::compress_aborted:
             return "\033[31m"; // red
-        case ev_compress_finished:
+        case EventCode::compress_finished:
             return "\033[92m"; // light green
-        case ev_policy_begin_write:
+        case EventCode::policy_begin_write:
             return "\033[96m"; // light cyan
-        case ev_policy_end_write:
+        case EventCode::policy_end_write:
             return "\033[94m"; // light blue
-        case ev_mark_thread_has_ops:
+        case EventCode::mark_thread_has_ops:
             return "\033[93m"; // light yellow
-        case ev_clear_thread_has_ops:
+        case EventCode::clear_thread_has_ops:
             return "\033[95m"; // light magenta
         default:
             return "\033[0m"; // reset
     }
 }
 
-// The event's name: its enumerator without "ev_", upper-cased ("STORE_VALUE").
+// The event's name: its enumerator, upper-cased ("STORE_VALUE").
 // The switch is the table of the builds without reflection (Clang, oneAPI):
 // no `default:`, so -Wswitch reports an event added without its case. Where
 // the compiler has reflection the name is derived from the enumerator, and the
@@ -192,66 +193,66 @@ constexpr const char* event_name_table(EventCode ev) noexcept
 {
     switch (ev)
     {
-        case ev_begin_slow_path:
+        case EventCode::begin_slow_path:
             return "BEGIN_SLOW_PATH";
-        case ev_end_slow_path:
+        case EventCode::end_slow_path:
             return "END_SLOW_PATH";
-        case ev_begin_fast_path:
+        case EventCode::begin_fast_path:
             return "BEGIN_FAST_PATH";
-        case ev_end_fast_path:
+        case EventCode::end_fast_path:
             return "END_FAST_PATH";
-        case ev_compress_attempt:
+        case EventCode::compress_attempt:
             return "COMPRESS_ATTEMPT";
-        case ev_compress_started:
+        case EventCode::compress_started:
             return "COMPRESS_STARTED";
-        case ev_compress_aborted:
+        case EventCode::compress_aborted:
             return "COMPRESS_ABORTED";
-        case ev_compress_finished:
+        case EventCode::compress_finished:
             return "COMPRESS_FINISHED";
-        case ev_cas_values_to_cst:
+        case EventCode::cas_values_to_cst:
             return "CAS_VALUES_TO_CST";
-        case ev_cas_values_from_cst:
+        case EventCode::cas_values_from_cst:
             return "CAS_VALUES_FROM_CST";
-        case ev_cas_values_fail:
+        case EventCode::cas_values_fail:
             return "CAS_VALUES_FAIL";
-        case ev_flush_begin:
+        case EventCode::flush_begin:
             return "FLUSH_BEGIN";
-        case ev_flush_end:
+        case EventCode::flush_end:
             return "FLUSH_END";
-        case ev_lambda_async_assign:
+        case EventCode::lambda_async_assign:
             return "LAMBDA_ASYNC_ASSIGN";
-        case ev_lambda_async_arith:
+        case EventCode::lambda_async_arith:
             return "LAMBDA_ASYNC_ARITH";
-        case ev_values_load_is_cst:
+        case EventCode::values_load_is_cst:
             return "VALUES_LOAD_IS_CST";
-        case ev_store_value:
+        case EventCode::store_value:
             return "STORE_VALUE";
-        case ev_policy_begin_write:
+        case EventCode::policy_begin_write:
             return "POLICY_BEGIN_WRITE";
-        case ev_policy_end_write:
+        case EventCode::policy_end_write:
             return "POLICY_END_WRITE";
-        case ev_mark_thread_has_ops:
+        case EventCode::mark_thread_has_ops:
             return "MARK_THREAD_HAS_OPS";
-        case ev_clear_thread_has_ops:
+        case EventCode::clear_thread_has_ops:
             return "CLEAR_THREAD_HAS_OPS";
-        case ev_op_alloc:
+        case EventCode::op_alloc:
             return "OP_ALLOC";
-        case ev_op_enqueue:
+        case EventCode::op_enqueue:
             return "OP_ENQUEUE";
-        case ev_op_free:
+        case EventCode::op_free:
             return "OP_FREE";
-        case ev_op_flush_one:
+        case EventCode::op_flush_one:
             return "OP_FLUSH_ONE";
-        case ev_value_alloc:
+        case EventCode::value_alloc:
             return "VALUE_ALLOC";
-        case ev_value_free:
+        case EventCode::value_free:
             return "VALUE_FREE";
     }
     return "UNKNOWN";
 }
 
     #if SHRINK_ARRAY_HAS_ENUM_NAME
-static_assert(table_matches<EventCode>(event_name_table, "ev_"),
+static_assert(table_matches<EventCode>(event_name_table, ""),
               "event_name_table() disagrees with the EventCode enumerators: add or fix the case");
 
 const char* event_name(EventCode ev)
@@ -260,7 +261,7 @@ const char* event_name(EventCode ev)
     {
         if (ev == [:en:])
         {
-            constexpr const char* name = upper_enum_name(en, "ev_");
+            constexpr const char* name = upper_enum_name(en, "");
             return name;
         }
     }
@@ -299,7 +300,7 @@ void dump_ring()
 // block mask alone would merge with the slab's other ops.
 void dump_ring_for_addr(const void* target)
 {
-    const uint64_t target_addr = reinterpret_cast<uint64_t>(target);
+    const uint64_t target_addr = static_cast<uint64_t>(::fast_alloc::address_bits(target));
     const uint64_t bmask       = ~static_cast<uint64_t>(0xffffULL);
     const uint32_t head        = ring_head.load(std::memory_order_relaxed);
     const uint32_t start       = (head > ring_size) ? (head - ring_size) : 0;
@@ -364,7 +365,7 @@ struct Interval
 };
 
 // Event types for sweep line; order matters for tie-breaking
-enum EventType : std::uint8_t
+enum class EventType : std::uint8_t
 {
     comp_start = 0,
     fast_start = 1,
@@ -485,7 +486,7 @@ bool analyze_ring_sweep()
 
         switch (entry.ev)
         {
-            case ev_begin_fast_path:
+            case EventCode::begin_fast_path:
                 if (!thr_state.in_fast)
                 {
                     thr_state.in_fast    = true;
@@ -493,7 +494,7 @@ bool analyze_ring_sweep()
                 }
                 break;
 
-            case ev_end_fast_path:
+            case EventCode::end_fast_path:
                 if (thr_state.in_fast)
                 {
                     fast_intervals[entry.tid].push_back({thr_state.fast_start, entry.ts});
@@ -501,8 +502,8 @@ bool analyze_ring_sweep()
                 }
                 break;
 
-            case ev_compress_attempt:
-            case ev_compress_started:
+            case EventCode::compress_attempt:
+            case EventCode::compress_started:
                 if (!thr_state.in_compress)
                 {
                     thr_state.in_compress    = true;
@@ -510,8 +511,8 @@ bool analyze_ring_sweep()
                 }
                 break;
 
-            case ev_compress_finished:
-            case ev_compress_aborted:
+            case EventCode::compress_finished:
+            case EventCode::compress_aborted:
                 if (thr_state.in_compress)
                 {
                     compress_intervals[entry.tid].push_back({thr_state.compress_start, entry.ts});
@@ -603,13 +604,13 @@ bool analyze_ring_sweep()
                 }
                 if (is_compress)
                 {
-                    endpoints.push_back({iv.start, comp_start, tid, i});
-                    endpoints.push_back({iv.end, comp_end, tid, i});
+                    endpoints.push_back({iv.start, EventType::comp_start, tid, i});
+                    endpoints.push_back({iv.end, EventType::comp_end, tid, i});
                 }
                 else
                 {
-                    endpoints.push_back({iv.start, fast_start, tid, i});
-                    endpoints.push_back({iv.end, fast_end, tid, i});
+                    endpoints.push_back({iv.start, EventType::fast_start, tid, i});
+                    endpoints.push_back({iv.end, EventType::fast_end, tid, i});
                 }
             }
         }
@@ -675,7 +676,7 @@ bool analyze_ring_sweep()
     {
         switch (ep.type)
         {
-            case comp_start:
+            case EventType::comp_start:
             {
                 if (ep.idx >= compress_intervals[ep.tid].size())
                 {
@@ -690,7 +691,7 @@ bool analyze_ring_sweep()
                 break;
             }
 
-            case comp_end:
+            case EventType::comp_end:
             {
                 const uint64_t key = make_key(ep.tid, ep.idx);
                 const auto     it  = active_index_by_key.find(key);
@@ -709,7 +710,7 @@ bool analyze_ring_sweep()
                 break;
             }
 
-            case fast_start:
+            case EventType::fast_start:
             {
                 if (ep.idx >= fast_intervals[ep.tid].size())
                 {
@@ -733,7 +734,7 @@ bool analyze_ring_sweep()
                 break;
             }
 
-            case fast_end:
+            case EventType::fast_end:
                 // nothing to do; overlaps already recorded at fast_start
                 break;
         }

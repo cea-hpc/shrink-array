@@ -37,9 +37,9 @@ namespace shrink_array
 /// @brief The value as a string, for the diagnostics written with operator<<:
 ///        std::format's rendering when the type has one, the bytes otherwise.
 template <typename V>
-std::string value_repr(const V& v)
+std::string value_repr(const V& value)
 {
-    return std::format("{}", logging::detail::fmt_arg(v));
+    return std::format("{}", logging::detail::fmt_arg(value));
 }
 
 namespace detail

@@ -30,13 +30,13 @@ namespace sa = shrink_array;
 using shrink_array::println;
 
 // What element i holds after the write loop below.
-static double expected(int i, int n)
+static double expected(int index, int count)
 {
-    if (i < n / 8)
+    if (index < count / 8)
     {
-        return 1.0 + static_cast<double>(i % 7); // varied values: these chunks keep a buffer
+        return 1.0 + static_cast<double>(index % 7); // varied values: these chunks keep a buffer
     }
-    if (i < n / 2)
+    if (index < count / 2)
     {
         return 3.5; // one constant: these chunks compress
     }
@@ -49,8 +49,8 @@ int main()
 
     int bad = 0;
     {
-        const int                   n = 1 << 24; // 16 M doubles: 128 MiB as a std::vector
-        sa::zero_any::Array<double> a(n);        // every element 0.0, no buffer allocated yet
+        const int                   count = 1 << 24; // 16 M doubles: 128 MiB as a std::vector
+        sa::zero_any::Array<double> arr(count);      // every element 0.0, no buffer allocated yet
 
         // Write, in parallel. a[i] is a write proxy: it decides whether the
         // chunk must be materialised, and queues it for compression when it
@@ -63,25 +63,25 @@ int main()
             [&]
             {
 #pragma omp for
-                for (int i = 0; i < n / 2; ++i)
+                for (int i = 0; i < count / 2; ++i)
                 {
-                    a[i] = expected(i, n);
+                    arr[i] = expected(i, count);
                 }
             });
 
         // Read, through a const reference: operator[] then returns a double.
-        const auto& ca = std::as_const(a);
+        const auto& ca = std::as_const(arr);
 #pragma omp parallel for reduction(+ : bad)
-        for (int i = 0; i < n; ++i)
+        for (int i = 0; i < count; ++i)
         {
-            if (ca[i] != expected(i, n))
+            if (ca[i] != expected(i, count))
             {
                 ++bad;
             }
         }
 
-        a.shrink_to_fit(); // fold every chunk that has become constant (sequential point)
-        println("n = {} elements, {} wrong, chunks holding a buffer: {:.1f} %", n, bad, a.stats());
+        arr.shrink_to_fit(); // fold every chunk that has become constant (sequential point)
+        println("n = {} elements, {} wrong, chunks holding a buffer: {:.1f} %", count, bad, arr.stats());
     } // the array releases its chunks here
 
     sa::release_chunk_pools(); // give the reuse pools back

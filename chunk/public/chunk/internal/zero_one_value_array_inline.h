@@ -523,12 +523,12 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                           {
                                               return; // compressed: holds first_value or second_value by definition
                                           }
-                                          const InT<T> v = ck.read_value_scan(0);
-                                          if (v == zero_one_value::Chunk<T>::first_value || v == second_value)
+                                          const InT<T> value = ck.read_value_scan(0);
+                                          if (value == zero_one_value::Chunk<T>::first_value || value == second_value)
                                           {
                                               return; // zero_one_value material, caught or not
                                           }
-                                          if (ck.is_constant_to(v, csz))
+                                          if (ck.is_constant_to(value, csz))
                                           {
                                               ++acc[0];
                                           }
@@ -1034,9 +1034,9 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             {
                 std::string out;
                 int         shown = 0;
-                for (const int j : scanned)
+                for (const int num_chunk : scanned)
                 {
-                    if (std::ranges::find(kept, j) != kept.end())
+                    if (std::ranges::find(kept, num_chunk) != kept.end())
                     {
                         continue;
                     }
@@ -1046,7 +1046,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                         break;
                     }
                     out += ' ';
-                    out += std::to_string(j);
+                    out += std::to_string(num_chunk);
                 }
                 return out;
             };
@@ -1084,24 +1084,24 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         const std::size_t shown = tab.size() < 10 ? tab.size() : 10;
         for (std::size_t k = 0; k < shown; ++k)
         {
-            const int ind       = tab[k];
+            const int num_chunk = tab[k];
             int       is_inside = -1; // the candidate-list flag exists in fast-block builds only
             if constexpr (chunk_config::use_fast_block_compression)
             {
                 is_inside = static_cast<int>(shrink_array::zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(
                                                  shrink_array::zero_one_value::Proxy<T>::share_info_array->get_num_tab(
-                                                     this->registry_key()))[ind]
+                                                     this->registry_key()))[num_chunk]
                                                  .load(std::memory_order_acquire));
             }
             int count = -1; // the counters exist in counter builds only
             if constexpr (chunk_config::use_compression_with_counter)
             {
-                const auto& chunk = chunk_list_[ind];
+                const auto& chunk = chunk_list_[num_chunk];
                 count             = static_cast<int>(second ? chunk.get_nb_second_value() : chunk.get_nb_first_value());
             }
             CHUNK_LOG(debug, compress, "residual zero_one_value::Array: chunk {} (element {}): is_inside={} count={}",
-                      ind, static_cast<IntType>(ind) * static_cast<IntType>(this->size_policy_.size()), is_inside,
-                      count);
+                      num_chunk, static_cast<IntType>(num_chunk) * static_cast<IntType>(this->size_policy_.size()),
+                      is_inside, count);
         }
     };
     report(tab_nb1, "first_value", false);

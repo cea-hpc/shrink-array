@@ -34,21 +34,21 @@ namespace fast_alloc
 {
 
 template <class F>
-decltype(auto) StaticConstArray::with_bucket(std::size_t i, F&& f)
+decltype(auto) StaticConstArray::with_bucket(std::size_t bucket, F&& func)
 {
     // One comparison per bucket, unrolled; the compiler is free to make it a
     // jump table.
     return [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto)
     {
-        using R = decltype(f(std::get<0>(buckets())));
+        using R = decltype(func(std::get<0>(buckets())));
         if constexpr (std::is_void_v<R>)
         {
-            (void)((i == I ? (f(std::get<I>(buckets())), true) : false) || ...);
+            (void)((bucket == I ? (func(std::get<I>(buckets())), true) : false) || ...);
         }
         else
         {
             R result{};
-            (void)((i == I ? (result = f(std::get<I>(buckets())), true) : false) || ...);
+            (void)((bucket == I ? (result = func(std::get<I>(buckets())), true) : false) || ...);
             return result;
         }
     }(std::make_index_sequence<n_buckets>{});

@@ -121,16 +121,16 @@
 #include <type_traits> // std::conditional_t
 #include <omp.h>       // omp_get_thread_num, omp_get_max_threads
 
-#include "chunk/chunk_traits.h"        // forward decls + default IntType = int
-#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"         // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"              // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
-#include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/test_hooks.h" // test_hooks::read_delay_* / pass_delay_*
-#include "chunk/internal/print.h"      // shrink_array::println
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/test_hooks.h"  // test_hooks::read_delay_* / pass_delay_*
+#include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -195,9 +195,9 @@ constexpr double pollute_value = 3.0;
 
 long env_long(const char* name, long dflt)
 {
-    const char* e = std::getenv(name);
-    const long  v = e ? std::atol(e) : 0;
-    return v > 0 ? v : dflt;
+    const char* env   = std::getenv(name);
+    const long  value = env ? std::atol(env) : 0;
+    return value > 0 ? value : dflt;
 }
 
 struct Xorshift
@@ -214,11 +214,11 @@ struct Xorshift
 
 // set_second_value only exists on zero_one_value / zero_any.
 template <typename A, typename Val>
-void maybe_set_second_value(A& a, const Val& v)
+void maybe_set_second_value(A& arr, const Val& value)
 {
-    if constexpr (requires(A x) { x.set_second_value(v); })
+    if constexpr (requires(A probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
@@ -235,26 +235,26 @@ int run_compound(int team, int writers, double seconds, long pollute)
 
     int rc = 0;
     {
-        Arr        a;
-        const long S = static_cast<long>(a.chunk_size());
-        const long N = writers * per_writer * S;
-        a.resize(static_cast<Ind>(N));
-        maybe_set_second_value(a, second_value);
-        const Arr& ca = a;
+        Arr        arr;
+        const long chunk_sz = static_cast<long>(arr.chunk_size());
+        const long total    = writers * per_writer * chunk_sz;
+        arr.resize(static_cast<Ind>(total));
+        maybe_set_second_value(arr, second_value);
+        const Arr& ca = arr;
 
         println("=== read_reclaim_validation compound [variant = {}]  threads={} (writers {})  chunk_size={}  "
                 "read_delay_every={} ({} us)  pollute={}  {:.0f} s ===",
-                variant_name(), team, writers, S, test_hooks::read_delay_every, test_hooks::read_delay_us, pollute,
-                seconds);
+                variant_name(), team, writers, chunk_sz, test_hooks::read_delay_every, test_hooks::read_delay_us,
+                pollute, seconds);
 
         // Victims uniform at the second value, serially, before any region.
         for (long w = 0; w < writers; ++w)
         {
             for (long c = 0; c < n_victims; ++c)
             {
-                for (long k = 0; k < S; ++k)
+                for (long k = 0; k < chunk_sz; ++k)
                 {
-                    a[static_cast<Ind>((w * per_writer + c) * S + k)] = second_value;
+                    arr[static_cast<Ind>((w * per_writer + c) * chunk_sz + k)] = second_value;
                 }
             }
         }
@@ -279,9 +279,9 @@ int run_compound(int team, int writers, double seconds, long pollute)
                 {
                     for (long c = 0; c < n_victims; ++c)
                     {
-                        const Ind v0 = static_cast<Ind>((base_v + c) * S);
-                        a[v0]        = 1.0;          // materialise (filled with V)
-                        a[v0]        = second_value; // uniform again: a candidate
+                        const Ind v0 = static_cast<Ind>((base_v + c) * chunk_sz);
+                        arr[v0]      = 1.0;          // materialise (filled with V)
+                        arr[v0]      = second_value; // uniform again: a candidate
 
                         // Polluters, as a ring: the chunk half a ring behind goes
                         // back to 0 (a candidate), the one at the head is
@@ -290,19 +290,20 @@ int run_compound(int team, int writers, double seconds, long pollute)
                         // then sees.
                         for (long q = 0; q < pollute; ++q)
                         {
-                            const Ind old0 = static_cast<Ind>((base_p + (next_p + n_polluters / 2) % n_polluters) * S);
-                            a[old0]        = 0.0;
-                            const Ind p0   = static_cast<Ind>((base_p + next_p) * S);
-                            next_p         = (next_p + 1) % n_polluters;
-                            a[p0]          = pollute_value;
+                            const Ind old0 =
+                                static_cast<Ind>((base_p + (next_p + n_polluters / 2) % n_polluters) * chunk_sz);
+                            arr[old0]    = 0.0;
+                            const Ind p0 = static_cast<Ind>((base_p + next_p) * chunk_sz);
+                            next_p       = (next_p + 1) % n_polluters;
+                            arr[p0]      = pollute_value;
                         }
                     }
-                    long n = 0;
+                    long count = 0;
                     for (long c = 0; c < n_victims; ++c)
                     {
-                        n += ca.written(static_cast<Ind>((base_v + c) * S)) ? 0 : 1;
+                        count += ca.written(static_cast<Ind>((base_v + c) * chunk_sz)) ? 0 : 1;
                     }
-                    compressed_seen.fetch_add(n, std::memory_order_relaxed);
+                    compressed_seen.fetch_add(count, std::memory_order_relaxed);
                     sweeps.fetch_add(1, std::memory_order_relaxed);
                 }
                 writers_left.fetch_sub(1, std::memory_order_release);
@@ -318,17 +319,17 @@ int run_compound(int team, int writers, double seconds, long pollute)
                 Xorshift   rng{0x9E3779B97F4A7C15ULL ^ (static_cast<std::uint64_t>(me) * 0xBF58476D1CE4E5B9ULL)};
                 const long n_rmw     = team - writers;
                 const long rmw_rank  = me - writers;
-                const long n_own     = (S - 1 - rmw_rank + n_rmw - 1) / n_rmw; // offsets of this thread
+                const long n_own     = (chunk_sz - 1 - rmw_rank + n_rmw - 1) / n_rmw; // offsets of this thread
                 long       local_ops = 0;
                 while (n_own > 0 && writers_left.load(std::memory_order_acquire) > 0)
                 {
-                    const long w   = static_cast<long>(rng.next() % static_cast<std::uint64_t>(writers));
-                    const long c   = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_victims));
-                    const long kk  = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_own));
-                    const long j   = 1 + rmw_rank + kk * n_rmw;
-                    const Ind  idx = static_cast<Ind>((w * per_writer + c) * S + j);
-                    a[idx] *= 2.0;
-                    a[idx] *= 0.5;
+                    const long writer = static_cast<long>(rng.next() % static_cast<std::uint64_t>(writers));
+                    const long victim = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_victims));
+                    const long kk     = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_own));
+                    const long offset = 1 + rmw_rank + kk * n_rmw;
+                    const Ind  idx    = static_cast<Ind>((writer * per_writer + victim) * chunk_sz + offset);
+                    arr[idx] *= 2.0;
+                    arr[idx] *= 0.5;
                     local_ops += 2;
                 }
                 test_hooks::read_delay_enabled = false;
@@ -343,19 +344,20 @@ int run_compound(int team, int writers, double seconds, long pollute)
         {
             for (long c = 0; c < n_victims; ++c)
             {
-                for (long k = 0; k < S; ++k)
+                for (long k = 0; k < chunk_sz; ++k)
                 {
-                    const Ind    idx = static_cast<Ind>((w * per_writer + c) * S + k);
-                    const double v   = ca[idx];
-                    if (v != second_value) [[unlikely]]
+                    const Ind    idx   = static_cast<Ind>((w * per_writer + c) * chunk_sz + k);
+                    const double value = ca[idx];
+                    if (value != second_value) [[unlikely]]
                     {
                         if (bad < 8)
                         {
                             println("[{}/read-reclaim compound] FAIL element {} (chunk {}, offset {}) = {:g}, "
                                     "expected {:g} -- a compound operation was lost{}",
-                                    variant_name(), static_cast<long>(idx), w * per_writer + c, k, v, second_value,
-                                    v == second_value / 2 ? " (a *= 2 dropped)"
-                                                          : (v == second_value * 2 ? " (a *= 0.5 dropped)" : ""));
+                                    variant_name(), static_cast<long>(idx), w * per_writer + c, k, value, second_value,
+                                    value == second_value / 2
+                                        ? " (a *= 2 dropped)"
+                                        : (value == second_value * 2 ? " (a *= 0.5 dropped)" : ""));
                         }
                         ++bad;
                     }
@@ -400,16 +402,17 @@ int run_remark(int team, double seconds)
 
     int rc = 0;
     {
-        Arr        a;
-        const long S = static_cast<long>(a.chunk_size());
-        a.resize(static_cast<Ind>(pool_chunks * S));
-        const Arr& ca = a;
+        Arr        arr;
+        const long chunk_sz = static_cast<long>(arr.chunk_size());
+        arr.resize(static_cast<Ind>(pool_chunks * chunk_sz));
+        const Arr& ca = arr;
         test_hooks::pass_delay_us =
             static_cast<unsigned>(env_long("READ_RECLAIM_PASS_DELAY_US", CHUNK_TEST_PASS_DELAY_US));
 
         println("=== read_reclaim_validation remark [variant = {}]  threads={}  chunk_size={}  pool={} chunks  "
                 "pass_delay_every={} ({} us, thread 0)  {:.0f} s ===",
-                variant_name(), team, S, pool_chunks, test_hooks::pass_delay_every, test_hooks::pass_delay_us, seconds);
+                variant_name(), team, chunk_sz, pool_chunks, test_hooks::pass_delay_every, test_hooks::pass_delay_us,
+                seconds);
 
         std::atomic<long> lost{0};
         std::atomic<long> writes{0};
@@ -424,7 +427,7 @@ int run_remark(int team, double seconds)
             }
             // Offsets of my own, j = me + k * team: two threads never write
             // the same element.
-            const long n_own = (S - me + team - 1) / team;
+            const long n_own = (chunk_sz - me + team - 1) / team;
             Xorshift   rng{0xD1B54A32D192ED03ULL ^ (static_cast<std::uint64_t>(me + 1) * 0x9E3779B97F4A7C15ULL)};
             long       local = 0;
             const auto t0    = std::chrono::steady_clock::now();
@@ -432,22 +435,22 @@ int run_remark(int team, double seconds)
             {
                 for (int r = 0; r < 256; ++r)
                 {
-                    const long c     = static_cast<long>(rng.next() % static_cast<std::uint64_t>(pool_chunks));
-                    const long j     = me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_own)) * team;
-                    const Ind  idx   = static_cast<Ind>(c * S + j);
-                    a[idx]           = 1.0;
-                    const double got = static_cast<double>(a[idx]); // read_pure: synchronised
+                    const long victim = static_cast<long>(rng.next() % static_cast<std::uint64_t>(pool_chunks));
+                    const long offset = me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_own)) * team;
+                    const Ind  idx    = static_cast<Ind>(victim * chunk_sz + offset);
+                    arr[idx]          = 1.0;
+                    const double got  = static_cast<double>(arr[idx]); // read_pure: synchronised
                     if (got != 1.0) [[unlikely]]
                     {
-                        const long k = lost.fetch_add(1, std::memory_order_relaxed);
-                        if (k < 8)
+                        const long slot = lost.fetch_add(1, std::memory_order_relaxed);
+                        if (slot < 8)
                         {
                             println("[{}/read-reclaim remark] FAIL thread {}: element {} (chunk {}, offset {}) "
                                     "reads {:g} right after writing 1 -- the write was lost",
-                                    variant_name(), me, static_cast<long>(idx), c, j, got);
+                                    variant_name(), me, static_cast<long>(idx), victim, offset, got);
                         }
                     }
-                    a[idx] = 0.0; // constant again: a candidate
+                    arr[idx] = 0.0; // constant again: a candidate
                     ++local;
                 }
             }
@@ -457,7 +460,7 @@ int run_remark(int team, double seconds)
         end_phase();
 
         long nonzero = 0;
-        for (long i = 0; i < pool_chunks * S; ++i)
+        for (long i = 0; i < pool_chunks * chunk_sz; ++i)
         {
             nonzero += (ca[static_cast<Ind>(i)] != 0.0) ? 1 : 0;
         }
@@ -527,16 +530,16 @@ int run(int argc, char** argv)
     long fails = 0;
     int  rc    = 0;
     {
-        Arr        a;
-        const long S = static_cast<long>(a.chunk_size());
-        const long N = writers * per_writer * S;
-        a.resize(static_cast<Ind>(N));
-        const Arr& ca = a;
+        Arr        arr;
+        const long chunk_sz = static_cast<long>(arr.chunk_size());
+        const long total    = writers * per_writer * chunk_sz;
+        arr.resize(static_cast<Ind>(total));
+        const Arr& ca = arr;
 
         println("=== read_reclaim_validation [variant = {}]  threads={} (writers {})  chunk_size={}  "
                 "read_delay_every={} ({} us)  pollute={}  {:.0f} s ===",
-                variant_name(), team, writers, S, test_hooks::read_delay_every, test_hooks::read_delay_us, pollute,
-                seconds);
+                variant_name(), team, writers, chunk_sz, test_hooks::read_delay_every, test_hooks::read_delay_us,
+                pollute, seconds);
 
         std::atomic<int>  writers_left{writers};
         std::atomic<long> bad{0};
@@ -560,9 +563,9 @@ int run(int argc, char** argv)
                 {
                     for (long c = 0; c < n_victims; ++c)
                     {
-                        const Ind v0 = static_cast<Ind>((base_v + c) * S);
-                        a[v0]        = 1.0; // materialise
-                        a[v0]        = 0.0; // constant again: a candidate
+                        const Ind v0 = static_cast<Ind>((base_v + c) * chunk_sz);
+                        arr[v0]      = 1.0; // materialise
+                        arr[v0]      = 0.0; // constant again: a candidate
 
                         // Pollute, as a ring: the chunk half a ring behind
                         // goes back to 0 (a candidate: the pass frees it),
@@ -574,26 +577,27 @@ int run(int argc, char** argv)
                         // undone at once would hand a late reader zeros again.
                         for (long q = 0; q < pollute; ++q)
                         {
-                            const Ind old0 = static_cast<Ind>((base_p + (next_p + n_polluters / 2) % n_polluters) * S);
-                            for (long k = 0; k < S; ++k)
+                            const Ind old0 =
+                                static_cast<Ind>((base_p + (next_p + n_polluters / 2) % n_polluters) * chunk_sz);
+                            for (long k = 0; k < chunk_sz; ++k)
                             {
-                                a[old0 + static_cast<Ind>(k)] = 0.0;
+                                arr[old0 + static_cast<Ind>(k)] = 0.0;
                             }
-                            const Ind p0 = static_cast<Ind>((base_p + next_p) * S);
+                            const Ind p0 = static_cast<Ind>((base_p + next_p) * chunk_sz);
                             next_p       = (next_p + 1) % n_polluters;
-                            a[p0]        = pollute_value + 1.0;
-                            for (long k = 1; k < S; ++k)
+                            arr[p0]      = pollute_value + 1.0;
+                            for (long k = 1; k < chunk_sz; ++k)
                             {
-                                a[p0 + static_cast<Ind>(k)] = pollute_value;
+                                arr[p0 + static_cast<Ind>(k)] = pollute_value;
                             }
                         }
                     }
-                    long n = 0;
+                    long count = 0;
                     for (long c = 0; c < n_victims; ++c)
                     {
-                        n += ca.written(static_cast<Ind>((base_v + c) * S)) ? 0 : 1;
+                        count += ca.written(static_cast<Ind>((base_v + c) * chunk_sz)) ? 0 : 1;
                     }
-                    compressed_seen.fetch_add(n, std::memory_order_relaxed);
+                    compressed_seen.fetch_add(count, std::memory_order_relaxed);
                     sweeps.fetch_add(1, std::memory_order_relaxed);
                 }
                 writers_left.fetch_sub(1, std::memory_order_release);
@@ -606,24 +610,24 @@ int run(int argc, char** argv)
                 long     local_reads = 0;
                 while (writers_left.load(std::memory_order_acquire) > 0)
                 {
-                    const long w   = static_cast<long>(rng.next() % static_cast<std::uint64_t>(writers));
-                    const long c   = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_victims));
-                    const long j   = 1 + static_cast<long>(rng.next() % static_cast<std::uint64_t>(S - 1));
-                    const Ind  idx = static_cast<Ind>((w * per_writer + c) * S + j);
+                    const long writer = static_cast<long>(rng.next() % static_cast<std::uint64_t>(writers));
+                    const long victim = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_victims));
+                    const long offset = 1 + static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunk_sz - 1));
+                    const Ind  idx    = static_cast<Ind>((writer * per_writer + victim) * chunk_sz + offset);
                     // Both read entries: the const operator[] and the write
                     // proxy's conversion (operator T -> read_pure), which a
                     // `double v = a[i]` on a non-const array goes through.
-                    const double v = (local_reads & 1) ? ca[idx] : static_cast<double>(a[idx]);
+                    const double value = (local_reads & 1) ? ca[idx] : static_cast<double>(arr[idx]);
                     ++local_reads;
-                    if (v != 0.0) [[unlikely]]
+                    if (value != 0.0) [[unlikely]]
                     {
-                        const long k = bad.fetch_add(1, std::memory_order_relaxed);
-                        if (k < 8)
+                        const long slot = bad.fetch_add(1, std::memory_order_relaxed);
+                        if (slot < 8)
                         {
                             println("[{}/read-reclaim] FAIL stale read: element {} (chunk {}, offset {}) = {:g}, "
                                     "expected 0 -- read from a released buffer{}",
-                                    variant_name(), static_cast<long>(idx), w * per_writer + c, j, v,
-                                    v == pollute_value ? " (reused and overwritten)" : "");
+                                    variant_name(), static_cast<long>(idx), writer * per_writer + victim, offset, value,
+                                    value == pollute_value ? " (reused and overwritten)" : "");
                         }
                     }
                 }

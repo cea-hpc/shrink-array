@@ -105,11 +105,11 @@ constexpr const char* variant_name()
 // zero_one_value before any write (its candidate list is keyed by second_value), so it
 // is done here for the same reason rechunk_validation does it.
 template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
+void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
+    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
@@ -117,16 +117,16 @@ void maybe_set_second_value(Arr& a, const Val& v)
 // constant/materialised transitions are exercised) while making a wrong read
 // obvious — a mis-sized buffer returns the value of a DIFFERENT run, not a
 // neighbouring one.
-static double pattern(long i)
+static double pattern(long index)
 {
-    return double((i / 5000) % 3);
+    return double((index / 5000) % 3);
 }
 
 /**
  * @brief Write a whole array at chunk size @p csz, read it back, compare.
  * @return 0 if every element round-trips, 1 otherwise (details on stdout).
  */
-static int round_trip_at(unsigned int csz, long n)
+static int round_trip_at(unsigned int csz, long count)
 {
     // BOTH halves are needed, and this is the property under test: the array
     // side (set_active_chunk_size) and the allocator side (register_chunk_size).
@@ -134,7 +134,7 @@ static int round_trip_at(unsigned int csz, long n)
     set_thread_chunk_size(csz);
     ParamChunk::register_chunk_size(csz);
 
-    Array<double> arr(n);
+    Array<double> arr(count);
     maybe_set_second_value(arr, 2.0);
 
     if (arr.chunk_size() != csz)
@@ -143,17 +143,17 @@ static int round_trip_at(unsigned int csz, long n)
         return 1;
     }
 
-    std::vector<double> ref(n);
-    for (long i = 0; i < n; ++i)
+    std::vector<double> ref(count);
+    for (long i = 0; i < count; ++i)
     {
-        const double v = pattern(i);
-        arr[i]         = v;
-        ref[i]         = v;
+        const double value = pattern(i);
+        arr[i]             = value;
+        ref[i]             = value;
     }
 
     long bad   = 0;
     long first = -1;
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
         if (arr[i] != ref[i])
         {
@@ -171,22 +171,22 @@ static int round_trip_at(unsigned int csz, long n)
         // the buffer actually had, which names the geometry the allocator used.
         println("[{}/size={}] FAIL: {}/{} mismatches, first at i={} "
                 "(chunk #{}, offset {}) got={:g} expected={:g}",
-                variant_name(), csz, bad, n, first, first / (long)csz, first % (long)csz, (double)arr[first],
+                variant_name(), csz, bad, count, first, first / (long)csz, first % (long)csz, (double)arr[first],
                 ref[first]);
         return 1;
     }
 
-    println("[{}/size={}] OK: {} elements round-trip", variant_name(), csz, n);
+    println("[{}/size={}] OK: {} elements round-trip", variant_name(), csz, count);
     return 0;
 }
 
 static int run_body(int argc, char** argv)
 {
-    const long n = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
+    const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
 
     ParamChunk::init_indexes(true);
 
-    println("=== dyn_geometry_validation [variant = {}]  N={} ===", variant_name(), n);
+    println("=== dyn_geometry_validation [variant = {}]  N={} ===", variant_name(), count);
 
     int fails = 0;
 
@@ -195,7 +195,7 @@ static int run_body(int argc, char** argv)
     // size here would test the refusal, not the round-trip.
     for (unsigned int csz = 64; csz <= shrink_array::cst_buffer_size; csz <<= 1)
     {
-        fails += round_trip_at(csz, n);
+        fails += round_trip_at(csz, count);
     }
 
     println("\n[{}] {}", variant_name(),

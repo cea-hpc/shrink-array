@@ -102,11 +102,11 @@ constexpr const char* variant_name()
 }
 
 template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
+void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
+    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
@@ -136,19 +136,19 @@ static void expect(bool ok, const char* what, long got, long want)
 /// on a team of the build's backend (parallel_phase: OpenMP, or the std backend,
 /// where an `omp parallel for` would run on one thread and take the parked
 /// buffers of one rank only), static blocks as `omp for` gives.
-static void materialise_all(Array<double>& arr, long n)
+static void materialise_all(Array<double>& arr, long count)
 {
-    parallel_phase([&]
-                   { pmp::current_team().for_static(0L, n, [&](long i) { arr[i] = 1.0 + static_cast<double>(i); }); });
+    parallel_phase(
+        [&] { pmp::current_team().for_static(0L, count, [&](long i) { arr[i] = 1.0 + static_cast<double>(i); }); });
 }
 
 int run(int argc, char** argv)
 {
-    const long n = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
+    const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
     ParamChunk::init_indexes(true);
 
-    println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), n, CHUNK_PMP_MAX_THREADS);
+    println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), count, CHUNK_PMP_MAX_THREADS);
 
     const long base = Manager::get_somme_chunk_create();
     expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long)Manager::reuse_pool_blocks(), 0);
@@ -157,23 +157,23 @@ int run(int argc, char** argv)
     long chunks_a = 0;
     long chunks_b = 0;
     {
-        Array<double> a(n);
-        maybe_set_second_value(a, 3.5);
+        Array<double> arr(count);
+        maybe_set_second_value(arr, 3.5);
         chunks_a = Manager::get_somme_chunk_create() - base;
         expect(chunks_a > 0, "somme_chunk_create grew by a's chunks", chunks_a, chunks_a);
 
-        Array<double> b(n / 2);
-        maybe_set_second_value(b, 3.5);
+        Array<double> half(count / 2);
+        maybe_set_second_value(half, 3.5);
         chunks_b = Manager::get_somme_chunk_create() - base - chunks_a;
         expect(chunks_b > 0, "somme_chunk_create grew by b's chunks", chunks_b, chunks_b);
 
-        materialise_all(a, n);
-        materialise_all(b, n / 2);
+        materialise_all(arr, count);
+        materialise_all(half, count / 2);
         // The array keeps one chunk past the last element (N / csz + 1), so when
         // N is a multiple of the chunk size that spare chunk is never written.
-        const long csz       = static_cast<long>(a.chunk_size());
-        const long covering  = (n + csz - 1) / csz;
-        const long written_a = a.get_nb_chunk_written();
+        const long csz       = static_cast<long>(arr.chunk_size());
+        const long covering  = (count + csz - 1) / csz;
+        const long written_a = arr.get_nb_chunk_written();
         expect(written_a == covering, "a fully materialised (written == chunks covering N)", written_a, covering);
 
         // --- 2. parking: a's buffers go to the pools, exactly ----------------
@@ -182,8 +182,8 @@ int run(int argc, char** argv)
         // slabs empty, and NOTHING stays parked. The default threshold keeps
         // this harness's arrays below the line; -DCHUNK_ALLOC_AFFINITY_MIN_BYTES=1
         // puts every array above it, and this is what the check expects then.
-        const bool a_owns_slabs = a.alloc_key() != 0;
-        a.clear();
+        const bool a_owns_slabs = arr.alloc_key() != 0;
+        arr.clear();
         expect(Manager::get_somme_chunk_create() == base + chunks_b,
                "somme_chunk_create back down by a's chunks after a.clear()", Manager::get_somme_chunk_create(),
                base + chunks_b);
@@ -196,10 +196,10 @@ int run(int argc, char** argv)
                parked, want_parked);
 
         // The next array takes them back.
-        Array<double> c(n);
-        maybe_set_second_value(c, 3.5);
-        materialise_all(c, n);
-        const long written_c    = c.get_nb_chunk_written();
+        Array<double> third(count);
+        maybe_set_second_value(third, 3.5);
+        materialise_all(third, count);
+        const long written_c    = third.get_nb_chunk_written();
         const long parked_after = static_cast<long>(Manager::reuse_pool_blocks());
         const long want_after   = parked > written_c ? parked - written_c : 0;
         const long slack        = static_cast<long>(CHUNK_PMP_MAX_THREADS); // per-rank pools, see the header
@@ -209,18 +209,18 @@ int run(int argc, char** argv)
         // --- 3. re-chunk (dyn): nothing left parked at the old geometry ------
         if constexpr (build_config::chunk_dynamic)
         {
-            const unsigned old_size = b.chunk_size();
+            const unsigned old_size = half.chunk_size();
             const unsigned new_size = old_size * 4 <= shrink_array::cst_buffer_size ? old_size * 4 : old_size / 2;
             if (new_size != old_size)
             {
                 const long before = Manager::get_somme_chunk_create();
-                b.rechunk_to(new_size);
-                expect(b.chunk_size() == new_size, "b re-chunked to the new geometry", b.chunk_size(), new_size);
+                half.rechunk_to(new_size);
+                expect(half.chunk_size() == new_size, "b re-chunked to the new geometry", half.chunk_size(), new_size);
                 const long at_old = static_cast<long>(Manager::reuse_pool_blocks_at(old_size));
                 expect(at_old == 0, "nothing parked at the OLD geometry after rechunk_to", at_old, 0);
                 // Chunks alive followed the geometry: fewer chunks at a larger size.
                 const long delta = Manager::get_somme_chunk_create() - before;
-                const long want  = static_cast<long>(b.get_nb_chunk_written()) - chunks_b;
+                const long want  = static_cast<long>(half.get_nb_chunk_written()) - chunks_b;
                 expect(delta <= 0 && delta >= want - 1, "somme_chunk_create follows the new chunk count", delta, want);
             }
         }

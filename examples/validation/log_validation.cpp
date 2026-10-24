@@ -124,24 +124,24 @@ void on_free(const volatile void* /*p*/) {}
 [[maybe_unused]] const int g_hooks_installed = __sanitizer_install_malloc_and_free_hooks(on_malloc, on_free);
 } // namespace
 #else
-void* operator new(std::size_t n)
+void* operator new(std::size_t size)
 {
     count_allocation();
-    if (void* p = std::malloc(n == 0 ? 1 : n))
+    if (void* ptr = std::malloc(size == 0 ? 1 : size))
     {
-        return p;
+        return ptr;
     }
     throw std::bad_alloc{};
 }
 
-void operator delete(void* p) noexcept
+void operator delete(void* ptr) noexcept
 {
-    std::free(p);
+    std::free(ptr);
 }
 
-void operator delete(void* p, std::size_t /*n*/) noexcept
+void operator delete(void* ptr, std::size_t /*n*/) noexcept
 {
-    std::free(p);
+    std::free(ptr);
 }
 #endif
 
@@ -170,24 +170,24 @@ struct Captured
 
 std::vector<Captured> g_captured;
 
-void capture(const logging::Record& r, void* /*user*/) noexcept
+void capture(const logging::Record& record, void* /*user*/) noexcept
 {
-    g_captured.push_back(Captured{r.level, r.channel, std::string{r.message}, r.location.line()});
+    g_captured.push_back(Captured{record.level, record.channel, std::string{record.message}, record.location.line()});
 }
 
 // Preallocated: what check 7's sink writes into, so the sink allocates nothing.
 std::array<char, logging::line_max> g_last{};
 std::size_t                         g_last_len = 0;
 
-void capture_no_alloc(const logging::Record& r, void* /*user*/) noexcept
+void capture_no_alloc(const logging::Record& record, void* /*user*/) noexcept
 {
-    g_last_len = r.message.size();
-    std::memcpy(g_last.data(), r.message.data(), r.message.size());
+    g_last_len = record.message.size();
+    std::memcpy(g_last.data(), record.message.data(), record.message.size());
 }
 
-void logging_sink(const logging::Record& r, void* /*user*/) noexcept
+void logging_sink(const logging::Record& record, void* /*user*/) noexcept
 {
-    capture(r, nullptr);
+    capture(record, nullptr);
     CHUNK_LOG(warn, general, "from inside the sink"); // must reach the default sink, not deadlock
 }
 
@@ -220,15 +220,16 @@ void check_environment()
     bool       bad_item_reported = false;
     bool       first_line        = false;
     bool       deprecated        = false;
-    for (const auto& l : lines)
+    for (const auto& line : lines)
     {
         deprecated |=
-            l.starts_with("[shrink_array][env][W][") &&
-            l.ends_with("] CHUNK_RECHUNK_TRACE_MEM is deprecated: it means CHUNK_LOG=memory=debug, which it now "
-                        "sets");
-        bad_item_reported |= l.starts_with("[shrink_array][env][W][") && l.find("\"verbose\"") != std::string::npos;
+            line.starts_with("[shrink_array][env][W][") &&
+            line.ends_with("] CHUNK_RECHUNK_TRACE_MEM is deprecated: it means CHUNK_LOG=memory=debug, which it now "
+                           "sets");
+        bad_item_reported |=
+            line.starts_with("[shrink_array][env][W][") && line.find("\"verbose\"") != std::string::npos;
         first_line |=
-            l.starts_with("[shrink_array][general][W][") && l.ends_with("] first line through the default sink");
+            line.starts_with("[shrink_array][general][W][") && line.ends_with("] first line through the default sink");
     }
     check(bad_item_reported, "env: CHUNK_LOG item \"verbose\" reported in CHUNK_LOG_FILE");
     check(first_line, "env: a message reaches CHUNK_LOG_FILE with its prefix");
@@ -240,34 +241,34 @@ void check_parse()
 {
     using logging::detail::default_max;
     using logging::detail::parse_spec;
-    constexpr auto ix = [](Channel c) { return static_cast<std::size_t>(c); };
+    constexpr auto ix = [](Channel chan) { return static_cast<std::size_t>(chan); };
 
-    auto s = parse_spec("", default_max);
-    check(s.n_bad == 0 && s.max == default_max, "parse: empty spec keeps the base");
+    auto spec = parse_spec("", default_max);
+    check(spec.n_bad == 0 && spec.max == default_max, "parse: empty spec keeps the base");
 
-    s = parse_spec("debug", default_max);
-    check(s.max[ix(Channel::env)] == Level::debug && s.max[ix(Channel::advisor)] == Level::debug,
+    spec = parse_spec("debug", default_max);
+    check(spec.max[ix(Channel::env)] == Level::debug && spec.max[ix(Channel::advisor)] == Level::debug,
           "parse: a bare level sets every channel");
 
-    s = parse_spec("warn,rechunk=trace", default_max);
-    check(s.max[ix(Channel::rechunk)] == Level::trace && s.max[ix(Channel::pool)] == Level::warn,
+    spec = parse_spec("warn,rechunk=trace", default_max);
+    check(spec.max[ix(Channel::rechunk)] == Level::trace && spec.max[ix(Channel::pool)] == Level::warn,
           "parse: channel=level after the bare level");
 
-    s = parse_spec("rechunk=trace,error", default_max);
-    check(s.max[ix(Channel::rechunk)] == Level::error, "parse: left to right, a later bare level wins");
+    spec = parse_spec("rechunk=trace,error", default_max);
+    check(spec.max[ix(Channel::rechunk)] == Level::error, "parse: left to right, a later bare level wins");
 
-    s = parse_spec(" info , pool = debug ,, ", default_max);
-    check(s.n_bad == 0 && s.max[ix(Channel::pool)] == Level::debug && s.max[ix(Channel::drain)] == Level::info,
+    spec = parse_spec(" info , pool = debug ,, ", default_max);
+    check(spec.n_bad == 0 && spec.max[ix(Channel::pool)] == Level::debug && spec.max[ix(Channel::drain)] == Level::info,
           "parse: spaces and empty items");
 
-    s = parse_spec("off", default_max);
-    check(s.max[ix(Channel::general)] == Level::fatal, "parse: off lets nothing but fatal");
+    spec = parse_spec("off", default_max);
+    check(spec.max[ix(Channel::general)] == Level::fatal, "parse: off lets nothing but fatal");
 
-    s = parse_spec("loud,nochan=debug,pool=loud,fatal,pool=info,a,b,c", default_max);
-    check(s.n_bad == 7 && s.bad[0] == "loud" && s.bad[1] == "nochan=debug" && s.bad[2] == "pool=loud" &&
-              s.bad[3] == "fatal",
+    spec = parse_spec("loud,nochan=debug,pool=loud,fatal,pool=info,a,b,c", default_max);
+    check(spec.n_bad == 7 && spec.bad[0] == "loud" && spec.bad[1] == "nochan=debug" && spec.bad[2] == "pool=loud" &&
+              spec.bad[3] == "fatal",
           "parse: the items not understood, in order (fatal is not a level CHUNK_LOG sets)");
-    check(s.max[ix(Channel::pool)] == Level::info, "parse: a bad item changes nothing, the good ones apply");
+    check(spec.max[ix(Channel::pool)] == Level::info, "parse: a bad item changes nothing, the good ones apply");
 }
 
 // --- 3 ----------------------------------------------------------------------
@@ -375,10 +376,10 @@ void check_no_allocation()
     delete g_kept;
 
     logging::set_sink(capture_no_alloc);
-    const double v = 2.5;
+    const double value = 2.5;
     g_news.store(0);
     g_counting = true;
-    CHUNK_LOG(warn, general, "no allocation: {} {:.3f} {} {}", 123456789L, v, std::string_view{"view"}, &v);
+    CHUNK_LOG(warn, general, "no allocation: {} {:.3f} {} {}", 123456789L, value, std::string_view{"view"}, &value);
     CHUNK_LOG(debug, general, "filtered out {}", 1);
     CHUNK_LOG_POW2(warn, general, "pow2 no allocation {}", 1);
     g_counting = false;
@@ -389,10 +390,10 @@ void check_no_allocation()
     // A pointer to an object is spelled as its address, with no cast at the
     // call; a char pointer stays a string.
     std::array<char, logging::line_max> buf{};
-    const int                           i   = 3;
-    const char* const                   str = "text";
-    const std::size_t                   len = logging::detail::format_message(buf.data(), "{} {}", &i, str);
-    check(std::string_view(buf.data(), len) == std::format("{} text", static_cast<const void*>(&i)),
+    const int                           number = 3;
+    const char* const                   str    = "text";
+    const std::size_t                   len    = logging::detail::format_message(buf.data(), "{} {}", &number, str);
+    check(std::string_view(buf.data(), len) == std::format("{} text", static_cast<const void*>(&number)),
           "a pointer is spelled as its address, a char pointer as a string");
 }
 
@@ -422,28 +423,29 @@ void check_threads()
     }
     std::array<int, n_threads> seen{};
     int                        broken = 0;
-    for (const auto& l : read_lines(g_log_path))
+    for (const auto& line : read_lines(g_log_path))
     {
-        if (!l.starts_with("[shrink_array][general][I]["))
+        if (!line.starts_with("[shrink_array][general][I]["))
         {
             continue;
         }
-        int        t   = -1;
-        int        i   = -1;
-        const auto pos = l.find("] thread ");
-        if (pos == std::string::npos || std::sscanf(l.c_str() + pos, "] thread %d line %d", &t, &i) != 2 || t < 0 ||
-            t >= n_threads || !l.ends_with(" padding-padding"))
+        int        thread  = -1;
+        int        line_no = -1;
+        const auto pos     = line.find("] thread ");
+        if (pos == std::string::npos ||
+            std::sscanf(line.c_str() + pos, "] thread %d line %d", &thread, &line_no) != 2 || thread < 0 ||
+            thread >= n_threads || !line.ends_with(" padding-padding"))
         {
             ++broken;
             continue;
         }
-        ++seen[static_cast<std::size_t>(t)];
+        ++seen[static_cast<std::size_t>(thread)];
     }
     check(broken == 0, "threads: every line whole");
     bool all = true;
-    for (const int s : seen)
+    for (const int lines_seen : seen)
     {
-        all &= (s == n_lines);
+        all &= (lines_seen == n_lines);
     }
     check(all, "threads: every line of every thread in the file");
     logging::configure("warn");
@@ -456,22 +458,22 @@ struct NoFormatter // an element type with no std::formatter: printed as its byt
     std::uint32_t b;
 };
 
-void fatal_sink(const logging::Record& r, void* /*user*/) noexcept
+void fatal_sink(const logging::Record& record, void* /*user*/) noexcept
 {
-    std::println("SINK {}: {}", logging::name(r.level), r.message);
+    std::println("SINK {}: {}", logging::name(record.level), record.message);
     std::fflush(stdout);
 }
 
-void failing_sink(const logging::Record& r, void* /*user*/) noexcept
+void failing_sink(const logging::Record& record, void* /*user*/) noexcept
 {
-    CHUNK_INVARIANT_FAILED("failure inside the sink, on \"{}\"", r.message);
+    CHUNK_INVARIANT_FAILED("failure inside the sink, on \"{}\"", record.message);
 }
 
-/// @brief The child of check 9: case @p k, which aborts (or, case 4 in a
+/// @brief The child of check 9: case @p which, which aborts (or, case 4 in a
 ///        build that is not a check build, returns).
-int run_fatal(int k)
+int run_fatal(int which)
 {
-    switch (k)
+    switch (which)
     {
         case 0: // block, backtrace, bytes and complex spelled, record in CHUNK_LOG_FILE
             CHUNK_INVARIANT_FAILED("value {} complex {} bytes {}", 7, std::complex<double>(1.0, -2.0),
@@ -523,91 +525,92 @@ struct FatalRun
     std::string log;         ///< CHUNK_LOG_FILE
 };
 
-FatalRun run_child(const char* self, int k)
+FatalRun run_child(const char* self, int which)
 {
     const std::string dir  = std::filesystem::temp_directory_path().string();
-    const std::string base = dir + "/shrink_log_fatal." + std::to_string(::getpid()) + "." + std::to_string(k);
+    const std::string base = dir + "/shrink_log_fatal." + std::to_string(::getpid()) + "." + std::to_string(which);
     const std::string cmd  = "ulimit -c 0; CHUNK_LOG=warn CHUNK_LOG_FILE=\"" + base + ".log\" timeout 60 \"" +
-                             std::string(self) + "\" --fatal " + std::to_string(k) + " > \"" + base + ".out\" 2>&1";
+                             std::string(self) + "\" --fatal " + std::to_string(which) + " > \"" + base + ".out\" 2>&1";
     FatalRun          run;
     const int         status = std::system(cmd.c_str());
     run.status               = (status != -1 && WIFEXITED(status)) ? WEXITSTATUS(status) : -1;
-    for (const auto& l : read_lines(base + ".out"))
+    for (const auto& line : read_lines(base + ".out"))
     {
-        run.out += l + "\n";
+        run.out += line + "\n";
     }
-    for (const auto& l : read_lines(base + ".log"))
+    for (const auto& line : read_lines(base + ".log"))
     {
-        run.log += l + "\n";
+        run.log += line + "\n";
     }
     std::remove((base + ".out").c_str());
     std::remove((base + ".log").c_str());
     return run;
 }
 
-std::size_t count(const std::string& s, std::string_view what)
+std::size_t count(const std::string& text, std::string_view what)
 {
-    std::size_t n = 0;
-    for (std::size_t pos = s.find(what); pos != std::string::npos; pos = s.find(what, pos + what.size()))
+    std::size_t occurrences = 0;
+    for (std::size_t pos = text.find(what); pos != std::string::npos; pos = text.find(what, pos + what.size()))
     {
-        ++n;
+        ++occurrences;
     }
-    return n;
+    return occurrences;
 }
 
 void check_fatal(const char* self)
 {
     constexpr int abort_status = 134; // 128 + SIGABRT, as the shell reports it
 
-    auto r = run_child(self, 0);
-    check(r.status == abort_status, "fatal: CHUNK_INVARIANT_FAILED aborts");
-    check(count(r.out, "In file '") == 1 && r.out.find("Inside function: ") != std::string::npos,
+    auto run = run_child(self, 0);
+    check(run.status == abort_status, "fatal: CHUNK_INVARIANT_FAILED aborts");
+    check(count(run.out, "In file '") == 1 && run.out.find("Inside function: ") != std::string::npos,
           "fatal: location block on stderr");
-    check(r.out.find("value 7 complex (1-2i) bytes 0x0100000002000000") != std::string::npos,
+    check(run.out.find("value 7 complex (1-2i) bytes 0x0100000002000000") != std::string::npos,
           "fatal: int, std::complex and a type with no formatter spelled");
-    check(r.out.find("--- Execution Backtrace ---") != std::string::npos, "fatal: backtrace on stderr");
-    check(r.log.find("[shrink_array][general][F][") != std::string::npos &&
-              r.log.find("] value 7 complex") != std::string::npos,
+    check(run.out.find("--- Execution Backtrace ---") != std::string::npos, "fatal: backtrace on stderr");
+    check(run.log.find("[shrink_array][general][F][") != std::string::npos &&
+              run.log.find("] value 7 complex") != std::string::npos,
           "fatal: the record reaches CHUNK_LOG_FILE");
     if (g_fails != 0)
     {
-        println("---- child 0 output ----\n{}---- log ----\n{}------------------------", r.out, r.log);
+        println("---- child 0 output ----\n{}---- log ----\n{}------------------------", run.out, run.log);
     }
 
-    r = run_child(self, 1);
-    check(r.status == abort_status && count(r.out, "In file '") == 1 &&
-              count(r.out, "--- Execution Backtrace ---") == 1,
+    run = run_child(self, 1);
+    check(run.status == abort_status && count(run.out, "In file '") == 1 &&
+              count(run.out, "--- Execution Backtrace ---") == 1,
           "fatal: 8 threads failing at once give one report");
 
-    r = run_child(self, 2);
-    check(r.status == abort_status && r.out.find("SINK fatal: to the sink 42") != std::string::npos &&
-              r.out.find("--- Execution Backtrace ---") != std::string::npos,
+    run = run_child(self, 2);
+    check(run.status == abort_status && run.out.find("SINK fatal: to the sink 42") != std::string::npos &&
+              run.out.find("--- Execution Backtrace ---") != std::string::npos,
           "fatal: the record reaches the program's sink, after the block");
 
-    r = run_child(self, 3);
+    run = run_child(self, 3);
     // The first record the sink sees is the deprecation warning of
     // CHUNK_RECHUNK_TRACE_MEM (inherited from main), written while the
     // configuration is read: the failure must not wait on that read.
-    check(r.status == abort_status && r.out.find("failure inside the sink, on \"") != std::string::npos,
+    check(run.status == abort_status && run.out.find("failure inside the sink, on \"") != std::string::npos,
           "fatal: a failure inside the sink stops, even during the configuration (no deadlock: timeout 60 s)");
 
-    r = run_child(self, 5);
-    check(r.status == abort_status && r.out.find("[CRITICAL_FAILURE] allocator failure 6") != std::string::npos &&
-              r.out.find("--- Execution Backtrace ---") != std::string::npos &&
-              r.log.find("[shrink_array][general][F][") != std::string::npos,
+    run = run_child(self, 5);
+    check(run.status == abort_status && run.out.find("[CRITICAL_FAILURE] allocator failure 6") != std::string::npos &&
+              run.out.find("--- Execution Backtrace ---") != std::string::npos &&
+              run.log.find("[shrink_array][general][F][") != std::string::npos,
           "FAST_ALLOC_FATAL: the same fatal report (block, backtrace, CHUNK_LOG_FILE)");
 
-    r = run_child(self, 4);
+    run = run_child(self, 4);
     if constexpr (shrink_array::build_config::any_check)
     {
-        check(r.status == abort_status && r.out.find("[drain] check failed 5") != std::string::npos &&
-                  r.out.find("carried on") == std::string::npos,
+        check(run.status == abort_status && run.out.find("[drain] check failed 5") != std::string::npos &&
+                  run.out.find("carried on") == std::string::npos,
               "CHUNK_CHECK_FAILED stops a check build");
     }
     else
     {
-        check(r.status == 0 && r.log.find("[shrink_array][drain][E][") != std::string::npos &&
-                  r.log.find("] check failed 5") != std::string::npos && r.out.find("carried on") != std::string::npos,
+        check(run.status == 0 && run.log.find("[shrink_array][drain][E][") != std::string::npos &&
+                  run.log.find("] check failed 5") != std::string::npos &&
+                  run.out.find("carried on") != std::string::npos,
               "CHUNK_CHECK_FAILED logs an error and carries on outside a check build");
     }
 }

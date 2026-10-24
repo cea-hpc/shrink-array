@@ -129,7 +129,7 @@ template <typename T, typename Derived>
 void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_processing(
     int                                                thr_rank,
     int                                                num,
-    CompressionManager<T, Derived>::CmpDeferredOpBase* v) const
+    CompressionManager<T, Derived>::CmpDeferredOpBase* op) const
 {
     ensure_deferred_array_initialized();
 
@@ -176,7 +176,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
         if (it_existing != ops_map_ptr->end())
         {
             it_existing->second->destroy(); // idempotent teardown of the superseded op
-            it_existing->second = DeferredOpPtr(static_cast<DeferredOperationBase*>(v), DeferredOpDeleter{});
+            it_existing->second = DeferredOpPtr(static_cast<DeferredOperationBase*>(op), DeferredOpDeleter{});
         }
         else
         {
@@ -184,7 +184,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
             // `dirty && pending_any()`, so pending>0 must hold for the op's whole lifetime
             // (flushers see the op via the Dekker write flag, not this counter).
             chunk_ptr->pending_publish(thr_rank); // owner-tagged; no-op when counterless
-            (*ops_map_ptr)[num] = DeferredOpPtr(static_cast<DeferredOperationBase*>(v), DeferredOpDeleter{});
+            (*ops_map_ptr)[num] = DeferredOpPtr(static_cast<DeferredOperationBase*>(op), DeferredOpDeleter{});
             // Publish globally BEFORE releasing the writing flag, so a flusher that
             // observes !is_thread_writing(r) and proceeds to scan also observes it.
             CompressionManager<T, Derived>::inc_pending_ops(thr_rank);

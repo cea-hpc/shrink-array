@@ -91,12 +91,12 @@ class Materialisations
         {
             return 0;
         }
-        long s = 0;
+        long sum = 0;
         for (const RankSlot& slot : slots_)
         {
-            s += slot.n[key % key_slots];
+            sum += slot.n[key % key_slots];
         }
-        return s;
+        return sum;
     }
 
   private:
@@ -106,8 +106,8 @@ class Materialisations
         std::call_once(once_,
                        []
                        {
-                           const int n = CHUNK_PMP_MAX_THREADS;
-                           slots_.resize(static_cast<std::size_t>(n > 0 ? n : 1)); // value-initialised: 0
+                           const int nthreads = CHUNK_PMP_MAX_THREADS;
+                           slots_.resize(static_cast<std::size_t>(nthreads > 0 ? nthreads : 1)); // value-initialised: 0
                        });
     }
 

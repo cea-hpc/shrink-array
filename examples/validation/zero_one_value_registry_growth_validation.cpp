@@ -93,17 +93,17 @@ void end_phase()
     }
 }
 
-/// @brief Write @p v everywhere from a region, then compress from a region.
-void fill_and_compress(Arr& arr, double v)
+/// @brief Write @p value everywhere from a region, then compress from a region.
+void fill_and_compress(Arr& arr, double value)
 {
-    const long n = static_cast<long>(arr.size());
+    const long count = static_cast<long>(arr.size());
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static)
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
-            arr[static_cast<Ind>(i)] = v;
+            arr[static_cast<Ind>(i)] = value;
         }
     }
     end_phase();
@@ -119,29 +119,29 @@ void fill_and_compress(Arr& arr, double v)
 /// @brief Chunks of @p arr still materialised.
 int materialised(const Arr& arr)
 {
-    const long s = static_cast<long>(arr.chunk_size());
-    const long n = static_cast<long>(arr.size());
-    int        m = 0;
-    for (long j = 0; j * s < n; ++j)
+    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const long count    = static_cast<long>(arr.size());
+    int        nmat     = 0;
+    for (long j = 0; j * chunk_sz < count; ++j)
     {
-        m += arr.written(static_cast<Ind>(j * s)) ? 1 : 0;
+        nmat += arr.written(static_cast<Ind>(j * chunk_sz)) ? 1 : 0;
     }
-    return m;
+    return nmat;
 }
 
-/// @brief Every element of @p arr equals @p v; prints the first few misses.
-long check_all(const char* what, const Arr& arr, double v)
+/// @brief Every element of @p arr equals @p value; prints the first few misses.
+long check_all(const char* what, const Arr& arr, double value)
 {
-    long       bad = 0;
-    const long n   = static_cast<long>(arr.size());
-    for (long i = 0; i < n; ++i)
+    long       bad   = 0;
+    const long count = static_cast<long>(arr.size());
+    for (long i = 0; i < count; ++i)
     {
         const double got = arr[static_cast<Ind>(i)];
-        if (got != v)
+        if (got != value)
         {
             if (bad < 4)
             {
-                println("[zero_one_value/registry] FAIL {}[{}] = {:g}, expected {:g}", what, i, got, v);
+                println("[zero_one_value/registry] FAIL {}[{}] = {:g}, expected {:g}", what, i, got, value);
             }
             ++bad;
         }
@@ -157,19 +157,19 @@ int run(int /*argc*/, char** /*argv*/)
 
     int fails = 0;
     {
-        Arr        a;
-        const long s = static_cast<long>(a.chunk_size());
-        a.resize(static_cast<Ind>(n_chunks * s));
-        a.set_second_value(1.0);
-        println("=== zero_one_value_registry_growth_validation  chunk_size={}  threads={}  others={} ===", s,
+        Arr        arr;
+        const long chunk_sz = static_cast<long>(arr.chunk_size());
+        arr.resize(static_cast<Ind>(n_chunks * chunk_sz));
+        arr.set_second_value(1.0);
+        println("=== zero_one_value_registry_growth_validation  chunk_size={}  threads={}  others={} ===", chunk_sz,
                 CHUNK_PMP_MAX_THREADS, n_others);
 
-        // 1. `a` compressed to its second value.
-        fill_and_compress(a, 1.0);
-        if (const int m = materialised(a); m != 0)
+        // 1. `arr` compressed to its second value.
+        fill_and_compress(arr, 1.0);
+        if (const int nmat = materialised(arr); nmat != 0)
         {
             println("[zero_one_value/registry] FAIL premise: {} of {} chunks of `a` still materialised after the pass",
-                    m, n_chunks);
+                    nmat, n_chunks);
             ++fails;
         }
 
@@ -177,13 +177,13 @@ int run(int /*argc*/, char** /*argv*/)
         std::vector<std::unique_ptr<Arr>> others;
         for (int k = 0; k < n_others; ++k)
         {
-            others.push_back(std::make_unique<Arr>(static_cast<Ind>(4 * s)));
+            others.push_back(std::make_unique<Arr>(static_cast<Ind>(4 * chunk_sz)));
             others.back()->set_second_value(2.0 + k);
             fill_and_compress(*others.back(), 2.0 + k);
         }
 
         // 3. Everything reads back.
-        long bad = check_all("a", a, 1.0);
+        long bad = check_all("a", arr, 1.0);
         for (int k = 0; k < n_others; ++k)
         {
             bad += check_all("other", *others[static_cast<std::size_t>(k)], 2.0 + k);
@@ -201,12 +201,12 @@ int run(int /*argc*/, char** /*argv*/)
                     n_others + 1);
         }
 
-        // 4. `a` materialised and compressed again: still recognised.
-        a[0] = 7.0;
-        a[0] = 1.0;
-        fill_and_compress(a, 1.0);
-        const int  m2   = materialised(a);
-        const long bad2 = check_all("a (recompressed)", a, 1.0);
+        // 4. `arr` materialised and compressed again: still recognised.
+        arr[0] = 7.0;
+        arr[0] = 1.0;
+        fill_and_compress(arr, 1.0);
+        const int  m2   = materialised(arr);
+        const long bad2 = check_all("a (recompressed)", arr, 1.0);
         if (m2 != 0 || bad2 != 0)
         {
             println("[zero_one_value/registry] FAIL after recompression: {} chunk(s) materialised, {} wrong read(s)",

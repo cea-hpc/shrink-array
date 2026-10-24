@@ -46,11 +46,11 @@ namespace shrink_array
 ///        fallback when smaps_rollup is missing; -1 if neither is readable.
 inline long exact_rss_kib() noexcept
 {
-    if (std::FILE* f = std::fopen("/proc/self/smaps_rollup", "r"))
+    if (std::FILE* file = std::fopen("/proc/self/smaps_rollup", "r"))
     {
         std::array<char, 256> line{};
         long                  kib = -1;
-        while (std::fgets(line.data(), static_cast<int>(line.size()), f) != nullptr)
+        while (std::fgets(line.data(), static_cast<int>(line.size()), file) != nullptr)
         {
             // "Rss:   <n> kB": the key, blanks, then the number.
             constexpr std::string_view key = "Rss:";
@@ -62,27 +62,27 @@ inline long exact_rss_kib() noexcept
             sv.remove_prefix(key.size());
             const std::size_t first = sv.find_first_not_of(" \t");
             sv.remove_prefix(first == std::string_view::npos ? sv.size() : first);
-            long v = 0;
-            if (const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), v); ec == std::errc{})
+            long value = 0;
+            if (const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), value); ec == std::errc{})
             {
-                kib = v;
+                kib = value;
                 break;
             }
         }
-        (void)std::fclose(f); // read-only: nothing to flush, nothing to report
+        (void)std::fclose(file); // read-only: nothing to flush, nothing to report
         if (kib >= 0)
         {
             return kib;
         }
     }
-    if (std::FILE* f = std::fopen("/proc/self/statm", "r"))
+    if (std::FILE* file = std::fopen("/proc/self/statm", "r"))
     {
-        long      size = 0;
-        long      res  = 0;
-        const int n    = std::fscanf(f, "%ld %ld", &size, &res);
-        (void)std::fclose(f);
+        long      size   = 0;
+        long      res    = 0;
+        const int fields = std::fscanf(file, "%ld %ld", &size, &res);
+        (void)std::fclose(file);
         const long ps = ::sysconf(_SC_PAGESIZE);
-        if (n == 2 && ps > 0)
+        if (fields == 2 && ps > 0)
         {
             return res * (ps / 1024);
         }

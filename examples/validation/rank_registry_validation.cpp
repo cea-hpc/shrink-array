@@ -58,20 +58,21 @@ void expect(bool ok, const char* what)
 /// A registry on its own: lowest free first, -1 when full, release and reuse.
 void check_sequential()
 {
-    pmp::RankRegistry r(4);
-    expect(r.capacity() == 4, "capacity 4");
-    expect(r.acquire() == 0 && r.acquire() == 1 && r.acquire() == 2 && r.acquire() == 3, "ranks 0..3 in order");
-    expect(r.acquire() == -1, "full: -1");
-    expect(r.in_use() == 4 && r.high_water() == 4, "in_use / high_water at 4");
-    r.release(1);
-    r.release(3);
-    expect(r.acquire() == 1, "the lowest free rank first (1)");
-    expect(r.acquire() == 3, "then 3");
-    r.release(0);
-    r.release(1);
-    r.release(2);
-    r.release(3);
-    expect(r.in_use() == 0 && r.high_water() == 4, "all given back, high water kept");
+    pmp::RankRegistry registry(4);
+    expect(registry.capacity() == 4, "capacity 4");
+    expect(registry.acquire() == 0 && registry.acquire() == 1 && registry.acquire() == 2 && registry.acquire() == 3,
+           "ranks 0..3 in order");
+    expect(registry.acquire() == -1, "full: -1");
+    expect(registry.in_use() == 4 && registry.high_water() == 4, "in_use / high_water at 4");
+    registry.release(1);
+    registry.release(3);
+    expect(registry.acquire() == 1, "the lowest free rank first (1)");
+    expect(registry.acquire() == 3, "then 3");
+    registry.release(0);
+    registry.release(1);
+    registry.release(2);
+    registry.release(3);
+    expect(registry.in_use() == 0 && registry.high_water() == 4, "all given back, high water kept");
     pmp::RankRegistry one(0);
     expect(one.capacity() == 1 && one.acquire() == 0 && one.acquire() == -1, "capacity floored at 1");
 }
@@ -79,32 +80,32 @@ void check_sequential()
 /// Threads racing for the ranks of one registry: all distinct, all below the capacity.
 void check_concurrent_acquire()
 {
-    constexpr int            n = 16;
-    pmp::RankRegistry        r(n);
-    std::vector<int>         got(n, -2);
-    std::barrier             start(n);
+    constexpr int            count = 16;
+    pmp::RankRegistry        registry(count);
+    std::vector<int>         got(count, -2);
+    std::barrier             start(count);
     std::vector<std::thread> ts;
-    for (int k = 0; k < n; ++k)
+    for (int k = 0; k < count; ++k)
     {
         ts.emplace_back(
             [&, k]
             {
                 start.arrive_and_wait();
-                got[k] = r.acquire();
+                got[k] = registry.acquire();
             });
     }
-    for (auto& t : ts)
+    for (auto& thread : ts)
     {
-        t.join();
+        thread.join();
     }
-    std::vector<int> seen(n, 0);
+    std::vector<int> seen(count, 0);
     bool             ok = true;
-    for (const int g : got)
+    for (const int got_rank : got)
     {
-        ok = ok && g >= 0 && g < n && seen[g]++ == 0;
+        ok = ok && got_rank >= 0 && got_rank < count && seen[got_rank]++ == 0;
     }
     expect(ok, "concurrent acquire: n distinct ranks in [0, n)");
-    expect(r.acquire() == -1, "concurrent acquire: then full");
+    expect(registry.acquire() == -1, "concurrent acquire: then full");
 }
 
 /// The process-wide registry through registered_rank(): stable per thread,
@@ -128,8 +129,8 @@ void check_registered_rank()
         ts.emplace_back(
             [&, k]
             {
-                const int r = pmp::registered_rank();
-                got[k]      = (pmp::registered_rank() == r) ? r : -3;
+                const int rank = pmp::registered_rank();
+                got[k]         = (pmp::registered_rank() == rank) ? rank : -3;
                 held.arrive_and_wait();
                 done.arrive_and_wait();
             });
@@ -141,16 +142,16 @@ void check_registered_rank()
     expect(extra == -1, "a thread past the capacity gets -1");
     std::vector<int> seen(cap, 0);
     bool             ok = true;
-    for (const int g : got)
+    for (const int got_rank : got)
     {
-        ok = ok && g >= 0 && g < cap && seen[g]++ == 0;
+        ok = ok && got_rank >= 0 && got_rank < cap && seen[got_rank]++ == 0;
     }
     expect(ok, "live threads: distinct stable ranks in [0, cap)");
     expect(reg.in_use() == cap, "cap ranks in use");
     done.arrive_and_wait();
-    for (auto& t : ts)
+    for (auto& thread : ts)
     {
-        t.join();
+        thread.join();
     }
     expect(reg.in_use() == 0, "every rank given back at thread exit");
 
@@ -166,9 +167,9 @@ void check_registered_rank()
     constexpr int                 waves = 50;
     constexpr int                 per   = 8;
     std::vector<std::atomic<int>> owner(cap);
-    for (auto& o : owner)
+    for (auto& slot : owner)
     {
-        o.store(0);
+        slot.store(0);
     }
     std::atomic<int> clash{0};
     std::atomic<int> out_of_range{0};
@@ -180,29 +181,29 @@ void check_registered_rank()
             wave.emplace_back(
                 [&]
                 {
-                    int r = pmp::registered_rank();
-                    while (r < 0)
+                    int rank = pmp::registered_rank();
+                    while (rank < 0)
                     {
                         std::this_thread::yield();
-                        r = pmp::registered_rank();
+                        rank = pmp::registered_rank();
                     }
-                    if (r >= cap)
+                    if (rank >= cap)
                     {
                         ++out_of_range;
                         return;
                     }
-                    if (owner[r].exchange(1) != 0)
+                    if (owner[rank].exchange(1) != 0)
                     {
                         ++clash;
                     }
                     std::this_thread::yield();
-                    owner[r].store(0);
+                    owner[rank].store(0);
                     pmp::release_registered_rank();
                 });
         }
-        for (auto& t : wave)
+        for (auto& thread : wave)
         {
-            t.join();
+            thread.join();
         }
     }
     expect(clash.load() == 0, "waves: no rank held by two threads at once");
@@ -229,10 +230,10 @@ void check_queries()
     {
         expect(pmp::level() == 0 && !pmp::in_parallel() && pmp::team_rank() == 0, "outside any region");
     }
-    const auto s = pmp::get_runtime_schedule();
-    pmp::set_runtime_schedule(s);
+    const auto sched = pmp::get_runtime_schedule();
+    pmp::set_runtime_schedule(sched);
     const auto s2 = pmp::get_runtime_schedule();
-    expect(s.kind == s2.kind && s.chunk == s2.chunk, "runtime schedule round trip");
+    expect(sched.kind == s2.kind && sched.chunk == s2.chunk, "runtime schedule round trip");
 }
 } // namespace
 

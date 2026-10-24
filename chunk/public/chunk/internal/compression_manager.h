@@ -652,10 +652,10 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
      */
     static void mark_list_dangerous_for_thread(int thr_rank) noexcept
     {
-        auto& v = dangerous_lists_per_thread[thr_rank].value;
-        if (v.load(std::memory_order_relaxed) == 0)
+        auto& lists = dangerous_lists_per_thread[thr_rank].value;
+        if (lists.load(std::memory_order_relaxed) == 0)
         {
-            v.store(1, std::memory_order_release);
+            lists.store(1, std::memory_order_release);
         }
     }
 
@@ -803,7 +803,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_mark_thread_has_ops, static_cast<uint32_t>(thr_rank));
+            ring_log(get_tid(), EventCode::mark_thread_has_ops, static_cast<uint32_t>(thr_rank));
         }
         get_thread_ops_flag_tls().v = true;
     }
@@ -814,7 +814,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_clear_thread_has_ops, static_cast<uint32_t>(thr_rank));
+            ring_log(get_tid(), EventCode::clear_thread_has_ops, static_cast<uint32_t>(thr_rank));
         }
         get_thread_ops_flag_tls().v = false;
     }
