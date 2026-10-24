@@ -32,8 +32,7 @@
 //   - `alias` argument: the source and the destination one array must stop
 //     the program (ctest: expect_stop.cmake).
 //
-// Exit 0, 1 with the first mismatches, 77 (ctest SKIP_RETURN_CODE) without
-// mdspan. Run by ctest; the variant comes from the CHUNK_VARIANT_* macro.
+// Exit 0, 1 with the first mismatches. Run by ctest; the variant comes from the CHUNK_VARIANT_* macro.
 
 #include <algorithm>   // std::clamp, std::min, std::max
 #include <array>       // std::array (the extents)
@@ -49,12 +48,11 @@
 #include "chunk/config.h"               // chunk_config::use_zero_one_value*
 #include "chunk/internal/print.h"       // shrink_array::println
 #include "chunk/manage_ompt.h"          // parallel_phase
-#include "chunk/mdspan_tile_ops.h"      // md::stencil_tiles(_mt), SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan_tile_ops.h"      // md::stencil_tiles(_mt)
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 
 using namespace shrink_array;
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
 namespace
 {
@@ -145,7 +143,7 @@ void write_field(const View& f)
     parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long i = 0; i < nx; ++i)
             {
                 for (long j = 0; j < ny; ++j)
@@ -204,7 +202,7 @@ void run_stencil(How w, const Src& src, const Dst& dst, long h, const B& bnd, U&
             parallel_phase(
                 [&]
                 {
-    #pragma omp for schedule(static, 1)
+#pragma omp for schedule(static, 1)
                     for (long k = 0; k < nt; ++k)
                     {
                         md::stencil_tiles(src, dst, h, bnd, static_cast<typename Src::index_type>(k),
@@ -425,18 +423,6 @@ int main(int argc, char** argv)
         println("mdspan_stencil_validation: {} failure(s)", fails);
         return 1;
     }
-    println("mdspan_stencil_validation: OK ({})", md::mdspan_source);
+    println("mdspan_stencil_validation: OK");
     return 0;
 }
-
-#else
-
-int main(int argc, char** argv)
-{
-    (void)argc;
-    (void)argv;
-    println("mdspan_stencil_validation: skipped (neither <mdspan> nor kokkos/mdspan on the include path)");
-    return 77;
-}
-
-#endif

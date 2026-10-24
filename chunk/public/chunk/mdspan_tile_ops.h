@@ -66,24 +66,23 @@
  *          size works -- a tile may then straddle chunks.
  */
 
-#include "chunk/mdspan.h" // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan.h" // shrink_array::md
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
-    #include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
-    #include <array>       // std::array (the tile buffer, the tile coordinates)
-    #include <concepts>    // std::invocable, std::same_as, std::integral
-    #include <cstddef>     // std::size_t, std::ptrdiff_t
-    #include <limits>      // std::numeric_limits (the box corners)
-    #include <span>        // std::span (the blocks of for_each_span)
-    #include <tuple>       // std::apply (a multi-index into a mapping)
-    #include <type_traits> // std::remove_cvref_t, std::is_const_v
-    #include <utility>     // std::as_const, std::forward, std::pair
-    #include <vector> // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
+#include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
+#include <array>       // std::array (the tile buffer, the tile coordinates)
+#include <concepts>    // std::invocable, std::same_as, std::integral
+#include <cstddef>     // std::size_t, std::ptrdiff_t
+#include <limits>      // std::numeric_limits (the box corners)
+#include <span>        // std::span (the blocks of for_each_span)
+#include <tuple>       // std::apply (a multi-index into a mapping)
+#include <type_traits> // std::remove_cvref_t, std::is_const_v
+#include <utility>     // std::as_const, std::forward, std::pair
+#include <vector>      // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
 
-    #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
-    #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
-    #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
 namespace shrink_array::md
 {
@@ -121,10 +120,10 @@ using ValueOf = typename ArrayOf<View>::value_type;
 /// @brief The block type a callback receives, row-major over the tile:
 ///        static extents Tile... (layout_tiled), dextents (layout_tiled_dyn).
 template <typename View, typename E, std::size_t... Tile>
-auto block_type_of(layout_tiled<Tile...>*) -> mdns::mdspan<E, mdns::extents<typename View::index_type, Tile...>>;
+auto block_type_of(layout_tiled<Tile...>*) -> std::mdspan<E, std::extents<typename View::index_type, Tile...>>;
 
 template <typename View, typename E, std::size_t Rank>
-auto block_type_of(layout_tiled_dyn<Rank>*) -> mdns::mdspan<E, mdns::dextents<typename View::index_type, Rank>>;
+auto block_type_of(layout_tiled_dyn<Rank>*) -> std::mdspan<E, std::dextents<typename View::index_type, Rank>>;
 
 template <typename View, typename E>
 using block_t = decltype(block_type_of<View, E>(static_cast<typename View::layout_type*>(nullptr)));
@@ -2323,5 +2322,3 @@ void copy_box_in_mt(const View&                        f,
 }
 
 } // namespace shrink_array::md
-
-#endif // SHRINK_ARRAY_HAS_MDSPAN

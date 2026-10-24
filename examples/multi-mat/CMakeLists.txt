@@ -71,9 +71,8 @@ target_compile_definitions(multi-mat-embedded PRIVATE MULTIMAT_EMBEDDED_COMPRESS
 # multi-mat-md: the same mock on a 2D mesh, every array through an mdspan
 # view (chunk/mdspan.h): a material occupies a box per iteration, the chunk
 # materials are laid out in tiles of one chunk and walked tile by tile
-# (chunk/mdspan_tile_ops.h). Needs <mdspan> or kokkos/mdspan on the include
-# path, else it exits 77 (skipped). Its tests are small and replay the run
-# serially (--verify), once per way of walking the chunk materials.
+# (chunk/mdspan_tile_ops.h). Its tests are small and replay the run serially
+# (--verify), once per way of walking the chunk materials.
 set(_mm_md_sources main_md.cpp
         SimuMd.h LoopsMd.h ComputeLoopsMd.h
         MultiMatAlgo.h Loops.h PMP.h Containers.h Dispatch.h config.h)
@@ -86,7 +85,6 @@ function(multi_mat_md_test name exe)
              COMMAND ${exe} --nx 200 --ny 328 --mat 6 --iter 24 --option 3 --pc-chunk 8 --pc-vector 8
                      --freq-rtz 5 --freq-compress 4 --seed 7 --verify ${ARGN})
     set_property(TEST ${name} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
-    set_property(TEST ${name} PROPERTY SKIP_RETURN_CODE 77)
 endfunction()
 multi_mat_md_test(multi_mat_md_tiles multi-mat-md --chunk-mode tiles)
 multi_mat_md_test(multi_mat_md_elements multi-mat-md --chunk-mode elements)
@@ -98,7 +96,6 @@ add_test(NAME multi_mat_md_balance
          COMMAND multi-mat-md --nx 480 --ny 480 --mat 20 --iter 12 --option 1 --pc-chunk 4 --seed 5
                  --max-imbalance 1.25)
 set_property(TEST multi_mat_md_balance PROPERTY ENVIRONMENT OMP_NUM_THREADS=16)
-set_property(TEST multi_mat_md_balance PROPERTY SKIP_RETURN_CODE 77)
 
 if (CHUNK_HAVE_OMPT)
     add_executable(multi-mat-md-embedded ${_mm_md_sources} manage_ompt.cpp)

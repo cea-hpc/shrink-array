@@ -256,8 +256,7 @@ one per tile (`mdspan_tiles`, 2048 x 2048 field):
 
 ### Sub-views: `md::submdspan`
 
-`md::submdspan(f, slices...)` is the `submdspan` of the `mdspan` in use (`Kokkos::submdspan`, or
-`std::submdspan` where the standard library has it), with `md::full_extent`. The view's data
+`md::submdspan(f, slices...)` is `std::submdspan`, with `md::full_extent`. The view's data
 handle is an `md::handle`: the array and the index in it of the sub-view's first element
 (`f.data_handle().base`); `*f.data_handle()` is still the array.
 
@@ -358,34 +357,11 @@ The options are listed at the top of `main_md.cpp`.
 
 ## 4. Where `mdspan` comes from
 
-| available | used |
-|---|---|
-| `<mdspan>` with `__cpp_lib_mdspan` (libstdc++ 16, libc++ 17 and later; libstdc++ 15 has no `<mdspan>`) | `std::mdspan` |
-| otherwise, `<mdspan/mdspan.hpp>` on the include path (the reference implementation, kokkos/mdspan) | its `mdspan`, in the namespace it declares |
-| neither | nothing: the header only defines `SHRINK_ARRAY_HAS_MDSPAN` to 0 |
-
-`f[i, j]` needs the multidimensional subscript of C++23 (GCC 12, Clang 15 and later); the
-library already requires C++23. The harness and the demo exit 77 without an `mdspan`, which ctest
-reports as skipped. `md::submdspan` is the standard's `std::submdspan` when the library has it
--- it is C++26 (`__cpp_lib_submdspan`: libstdc++ 16 with `-std=c++26`) -- else kokkos/mdspan's;
-the tiled layouts give both their `submdspan_mapping`.
-
-`md::mdspan_source` says which one a build uses, and whether it has `submdspan`
-(`"std::mdspan, no submdspan"`, `"kokkos/mdspan, submdspan"`, ...); `mdspan_validation` and
-`mdspan_tiles` print it. Checked (October 2026):
-
-| toolchain | `mdspan` | result |
-|---|---|---|
-| GCC 14, libstdc++ 14 + kokkos/mdspan | kokkos, `submdspan` | every harness |
-| Clang 19, libc++ 19 | `std::mdspan`, no `submdspan` | the views, both tiled layouts, the tile operations, `mdspan_tiles`, `multi-mat-md`; the `submdspan` harnesses skipped |
-| GCC 15, libstdc++ 15 + kokkos/mdspan | kokkos, `submdspan` | every harness |
-| GCC 15, libstdc++ 15 alone | none: libstdc++ 15 has no `<mdspan>` | the library and the rest build; every `mdspan` harness, `mdspan_tiles` and `multi-mat-md` skipped (exit 77) |
-| GCC 16, libstdc++ 16, C++23 | `std::mdspan`, no `submdspan` | every harness but the `submdspan` ones, skipped |
-| GCC 16, libstdc++ 16, C++26 | `std::mdspan`, `std::submdspan` | every harness, the `submdspan` ones and the misaligned sub-view refused included |
-
-GCC 15 and 16 are conda-forge's (15.3, 16.2), Debug, OpenMP. With CMake 3.28,
-`-DCMAKE_CXX_STANDARD=26` leaves the build in `gnu++23` (the targets ask for `cxx_std_23`): the
-C++26 run passed `-std=gnu++26` through a compiler wrapper.
+The standard library's: `std::mdspan` (C++23) and `std::submdspan` (C++26), both in GCC 16's
+libstdc++, the compiler this branch builds with. `md::submdspan` and `md::full_extent` are
+`std::submdspan` and `std::full_extent`; the tiled layouts give it their `submdspan_mapping`.
+`chunk/mdspan.h` stops with an `#error` where `__cpp_lib_submdspan` is missing. (`cpp23` also takes
+the reference implementation, kokkos/mdspan, and builds without an `mdspan`.)
 
 ## 5. Rules and limits
 
@@ -406,7 +382,7 @@ C++26 run passed `-std=gnu++26` through a compiler wrapper.
 
 | file | contents |
 |---|---|
-| `chunk/public/chunk/mdspan.h` | `md::mdspan_source`, `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::as_const`, `md::view_type`, `md::tiled_view_type`, `md::submdspan` |
+| `chunk/public/chunk/mdspan.h` | `md::accessor`, `md::handle`, `md::layout_tiled` (and its `submdspan_mapping`), `md::layout_tiled_dyn`, `md::view`, `md::tiled_view`, `md::tiled_view_dyn`, `md::tiled_size`, `md::tiled_size_dyn`, `md::tile_shape`, `md::as_const`, `md::view_type`, `md::tiled_view_type`, `md::submdspan` |
 | `examples/validation/mdspan_validation.cpp` | writes through the view and linear read-back, compound operators, rank 3, read-only views (`md::as_const` of a row-major, a tiled and a sub-view), the tiled mapping (bijection, padding), a uniform tile is a uniform run; every variant (one ctest each, `mdspan_validation_<variant>`) |
 | `chunk/public/chunk/mdspan_tile_ops.h` | `md::for_each_tile(_mt)`, `md::update_tiles(_mt)`, `md::fill_box(_mt)`, `md::copy_box_out(_mt)`, `md::copy_box_in(_mt)`, `md::stencil_tiles(_mt)`, `md::halo_block`, `md::constant_boundary`, `md::clamp_boundary`, `md::tile_count`, `md::tile` |
 | `examples/validation/mdspan_tile_ops_validation.cpp` | blocks, tile extents on padded edges, uniform tiles, the update against the element formula, untouched tiles stay compressed, the parallel update; the `_mt` forms (each tile of the view or of a box visited once and no other, a thread's tiles within one of the others' count, `fill_box_mt` on tiled and row-major views, in a phase and outside any region); every variant at 1 and 8 threads, and `mdspan_tile_ops_misaligned` (a tile smaller than a chunk refused in a parallel region) |

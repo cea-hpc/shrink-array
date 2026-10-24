@@ -52,27 +52,25 @@
  * already split the work.
  */
 
-#include "chunk/mdspan.h" // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan.h" // shrink_array::md
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
-    #include <algorithm>   // std::min, std::max, std::copy_n, std::fill
-    #include <array>       // std::array (box corners, tile buffers)
-    #include <cstddef>     // std::size_t
-    #include <optional>    // std::optional (the uniform-tile hint)
-    #include <type_traits> // std::is_const_v, std::remove_reference_t
+#include <algorithm>   // std::min, std::max, std::copy_n, std::fill
+#include <array>       // std::array (box corners, tile buffers)
+#include <cstddef>     // std::size_t
+#include <optional>    // std::optional (the uniform-tile hint)
+#include <type_traits> // std::is_const_v, std::remove_reference_t
 
-    #include "chunk/internal/chunk_size_config.h" // shrink_array::static_chunk_size
-    #include "chunk/mdspan_tile_ops.h"            // md::update_tiles, md::for_each_tile, md::fill_box
+#include "chunk/internal/chunk_size_config.h" // shrink_array::static_chunk_size
+#include "chunk/mdspan_tile_ops.h"            // md::update_tiles, md::for_each_tile, md::fill_box
 
-    #include "config.h"     // PRAGMA_FORCEINLINE
-    #include "Containers.h" // Vect, VectChunk, VectChunk2
+#include "config.h"     // PRAGMA_FORCEINLINE
+#include "Containers.h" // Vect, VectChunk, VectChunk2
 
 namespace multi_mat::md
 {
 
-namespace smd  = shrink_array::md;
-namespace mdns = shrink_array::md::mdns;
+namespace smd = shrink_array::md;
 
 /// @brief The cells [i0, i0 + h) x [j0, j0 + w) a material occupies at one
 ///        iteration.
@@ -237,7 +235,7 @@ struct CellLoops
         {
             if constexpr (Simd)
             {
-    #pragma omp simd
+#pragma omp simd
                 for (int j = c.j0; j < c.j1(); ++j)
                 {
                     ((ws.f[i, j] = ws.fn(i, j)), ...);
@@ -281,7 +279,7 @@ struct CellLoops
             double s = 0;
             if constexpr (Simd)
             {
-    #pragma omp simd reduction(+ : s)
+#pragma omp simd reduction(+ : s)
                 for (int j = c.j0; j < c.j1(); ++j)
                 {
                     s += fn(fr[i, j], t0[i, j], t1[i, j], t2[i, j]);
@@ -310,7 +308,7 @@ struct LoopsMdVector : CellLoops<true>
     template <typename Vec>
     auto view(Vec& v, int nx, int ny) const
     {
-        return mdns::mdspan(v.data(), mdns::dextents<int, 2>(nx, ny));
+        return std::mdspan(v.data(), std::dextents<int, 2>(nx, ny));
     }
 };
 
@@ -444,7 +442,7 @@ struct LoopsMdTiles
                 for (int i = ia; i < ib; ++i)
                 {
                     const int row = i * te1;
-    #pragma omp simd reduction(+ : s)
+#pragma omp simd reduction(+ : s)
                     for (int j = row + ja; j < row + jb; ++j)
                     {
                         s += fn(pf[j], p0[j], p1[j], p2[j]);
@@ -543,5 +541,3 @@ struct LoopsMdTiles
 };
 
 } // namespace multi_mat::md
-
-#endif // SHRINK_ARRAY_HAS_MDSPAN

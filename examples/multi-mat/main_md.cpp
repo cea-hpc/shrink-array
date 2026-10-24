@@ -36,8 +36,7 @@
  *        [--freq-compress N] [--interface N] [--chunk-mode tiles|elements|rows]
  *        [--seed S] [--verify] [--max-imbalance R] [--verbose]
  * Exit 0; 1 when --verify finds a difference, or when the most loaded
- * thread wrote more than R times the mean; 2 on a bad argument; 77 when
- * no mdspan is available (ctest: skipped).
+ * thread wrote more than R times the mean; 2 on a bad argument.
  */
 
 #include <algorithm> // std::max
@@ -57,7 +56,7 @@
 #include "chunk/param_chunk.h"                // ParamChunk
 
 #include "config.h"         // multi_mat::max_threads, embedded_compression
-#include "ComputeLoopsMd.h" // SimuMd::compute_loops, verify (SHRINK_ARRAY_HAS_MDSPAN)
+#include "ComputeLoopsMd.h" // SimuMd::compute_loops, verify
 #include "Dispatch.h"       // Dispatch
 
 using namespace shrink_array;
@@ -65,7 +64,6 @@ using namespace shrink_array;
 /// @brief The storage of every material, read by the containers.
 Dispatch dispatch;
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
 namespace multi_mat::md
 {
@@ -239,7 +237,7 @@ void SimuMd::compute_distribution()
 
     std::mt19937 rng(seed != 0 ? seed + 1 : std::random_device{}());
     box_store.resize(static_cast<std::size_t>(iter_max) * static_cast<std::size_t>(nbmat));
-    const auto bx = mdns::mdspan(box_store.data(), mdns::dextents<int, 2>(iter_max, nbmat));
+    const auto bx = std::mdspan(box_store.data(), std::dextents<int, 2>(iter_max, nbmat));
     for (int it = 0; it < iter_max; ++it)
     {
         for (int mat = 0; mat < nbmat; ++mat)
@@ -282,7 +280,7 @@ void print_stats(const SimuMd& s, const MultiMatAlgoT& mm_algo)
                          frac += get_mat_vec(s.frac).stats();
                          const auto c0 = loops.view(std::as_const(t0), s.nx, s.ny);
                          long       nz = 0;
-    #pragma omp parallel for reduction(+ : nz)
+#pragma omp parallel for reduction(+ : nz)
                          for (int i = 0; i < s.nx; ++i)
                          {
                              for (int j = 0; j < s.ny; ++j)
@@ -344,7 +342,7 @@ int run(SimuMd& s, const MultiMatAlgoT& mm_algo, const char* chunk_policy)
     s.work.assign(static_cast<std::size_t>(multi_mat::max_threads()), {});
     double value = 0;
     t0           = std::chrono::steady_clock::now();
-    #pragma omp parallel reduction(+ : value)
+#pragma omp parallel reduction(+ : value)
     {
         s.compute_loops(mm_algo, value);
     }
@@ -430,13 +428,3 @@ int main(int argc, char** argv)
     }
     return 2;
 }
-
-#else
-
-int main()
-{
-    std::println("multi-mat-md: skipped (neither <mdspan> nor kokkos/mdspan on the include path)");
-    return 77;
-}
-
-#endif

@@ -711,7 +711,7 @@ endif()
 
 # --- mdspan_validation_<variant>: the mdspan view of chunk/mdspan.h (row-major
 # and tiled layouts, writes through the view, linear read-back), default static
-# size. Exits 77 -- skipped -- without <mdspan> or kokkos/mdspan.
+# size.
 foreach(_vi RANGE ${_rt_nvar_last})
   list(GET _rt_variant_names   ${_vi} _vname)
   list(GET _rt_variant_libbase ${_vi} _libbase)
@@ -724,15 +724,13 @@ foreach(_vi RANGE ${_rt_nvar_last})
     validation_setup_target(${_tgt})
     add_test(NAME ${_tgt} COMMAND ${_tgt})
     set_property(TEST ${_tgt} PROPERTY LABELS validation)
-    set_property(TEST ${_tgt} PROPERTY SKIP_RETURN_CODE 77)
   endif()
 endforeach()
 
 # --- mdspan_submdspan_validation_<variant>: md::submdspan of a row-major and of
 # a tiled view (chunk/mdspan.h), the tile operations on a tiled sub-view, at 1
 # and 8 threads. mdspan_submdspan_misaligned: a tiled slice off the tiles must
-# stop the program. Exits 77 -- skipped -- without a submdspan (kokkos/mdspan,
-# or a C++26 <mdspan>).
+# stop the program.
 foreach(_vi RANGE ${_rt_nvar_last})
   list(GET _rt_variant_names   ${_vi} _vname)
   list(GET _rt_variant_libbase ${_vi} _libbase)
@@ -744,15 +742,11 @@ foreach(_vi RANGE ${_rt_nvar_last})
     validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
     validation_setup_target(${_tgt})
     validation_add_test(${_tgt} ${_tgt} "" "1;8")
-    foreach(_nthr 1 8)
-      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
-    endforeach()
     if (_vname STREQUAL "zero_any")
       add_test(NAME mdspan_submdspan_misaligned
                COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=misaligned
                        "-DEXPECT=a tiled sub-view takes ranges" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)
-      set_tests_properties(mdspan_submdspan_misaligned PROPERTIES LABELS validation
-                           SKIP_REGULAR_EXPRESSION "expect_stop: skipped \\(exit 77\\)")
+      set_tests_properties(mdspan_submdspan_misaligned PROPERTIES LABELS validation)
     endif()
   endif()
 endforeach()
@@ -760,7 +754,7 @@ endforeach()
 # --- mdspan_tiled_dyn_validation_<variant>[_dyn]: md::layout_tiled_dyn (the tile
 # at run time) against layout_tiled, tiled_view_dyn's tile per chunk, the tile
 # operations on it; at the default static size, and at dyn for the variants
-# built there (a re-chunk under the view). Exits 77 without an mdspan.
+# built there (a re-chunk under the view).
 foreach(_vi RANGE ${_rt_nvar_last})
   list(GET _rt_variant_names   ${_vi} _vname)
   list(GET _rt_variant_libbase ${_vi} _libbase)
@@ -777,9 +771,6 @@ foreach(_vi RANGE ${_rt_nvar_last})
       validation_variant_defs(${_tgt} ${_vmacro} ${_geom})
       validation_setup_target(${_tgt})
       validation_add_test(${_tgt} ${_tgt} "" "1;8")
-      foreach(_nthr 1 8)
-        set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
-      endforeach()
     endif()
   endforeach()
 endforeach()
@@ -800,9 +791,6 @@ foreach(_vi RANGE ${_rt_nvar_last})
     validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
     validation_setup_target(${_tgt})
     validation_add_test(${_tgt} ${_tgt} "" "1;8")
-    foreach(_nthr 1 8)
-      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
-    endforeach()
     if (OMP AND _vname STREQUAL "zero_any" AND CHUNK_DEFAULT_SIZE GREATER 64)
       add_test(NAME mdspan_tile_ops_misaligned
                COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=misaligned
@@ -827,9 +815,6 @@ foreach(_vi RANGE ${_rt_nvar_last})
     validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
     validation_setup_target(${_tgt})
     validation_add_test(${_tgt} ${_tgt} "" "1;8")
-    foreach(_nthr 1 8)
-      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
-    endforeach()
   endif()
 endforeach()
 
@@ -849,9 +834,6 @@ foreach(_vi RANGE ${_rt_nvar_last})
     validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
     validation_setup_target(${_tgt})
     validation_add_test(${_tgt} ${_tgt} "" "1;8")
-    foreach(_nthr 1 8)
-      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY SKIP_RETURN_CODE 77)
-    endforeach()
     if (_vname STREQUAL "zero_any")
       add_test(NAME mdspan_stencil_alias
                COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=alias

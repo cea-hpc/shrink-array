@@ -31,8 +31,7 @@
 //   - `misaligned` argument: a tiled slice that does not start on a tile
 //     stops the program (expect_stop.cmake).
 //
-// Exit 0, 1 with the first mismatches, 77 (ctest SKIP_RETURN_CODE) when no
-// submdspan is available (neither kokkos/mdspan nor a C++26 <mdspan>).
+// Exit 0, 1 with the first mismatches.
 
 #include <array>       // std::array (the boxes)
 #include <cstddef>     // std::size_t
@@ -52,7 +51,6 @@
 
 using namespace shrink_array;
 
-#if SHRINK_ARRAY_HAS_MDSPAN && SHRINK_ARRAY_HAS_SUBMDSPAN
 
 namespace
 {
@@ -265,7 +263,7 @@ void tiled()
     parallel_phase(
         [&]
         {
-    #pragma omp for schedule(dynamic, 1)
+#pragma omp for schedule(dynamic, 1)
             for (long k = 0; k < n; ++k)
             {
                 md::update_tiles(s, k, k + 1,
@@ -340,13 +338,3 @@ int main(int argc, char** argv)
     println("mdspan_submdspan_validation: OK");
     return 0;
 }
-
-#else
-
-int main()
-{
-    println("mdspan_submdspan_validation: skipped (no submdspan: neither kokkos/mdspan nor a C++26 <mdspan>)");
-    return 77;
-}
-
-#endif

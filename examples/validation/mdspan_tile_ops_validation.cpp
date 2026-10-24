@@ -38,8 +38,7 @@
 //   - `misaligned` argument: tiles of a quarter chunk in a parallel region
 //     must stop the program (ctest: PASS_REGULAR_EXPRESSION on the message).
 //
-// Exit 0, 1 with the first mismatches, 77 (ctest SKIP_RETURN_CODE) without
-// mdspan. Run by ctest; the variant comes from the CHUNK_VARIANT_* macro.
+// Exit 0, 1 with the first mismatches. Run by ctest; the variant comes from the CHUNK_VARIANT_* macro.
 
 #include <algorithm>   // std::min, std::max (the reference boxes), std::minmax_element
 #include <array>       // std::array (the boxes)
@@ -55,13 +54,12 @@
 #include "chunk/config.h"               // chunk_config::use_zero_one_value*
 #include "chunk/internal/print.h"       // shrink_array::println
 #include "chunk/manage_ompt.h"          // parallel_phase
-#include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles(_mt), md::fill_box(_mt), SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/param_chunk.h" // ParamChunk::init_indexes
-#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/mdspan_tile_ops.h"      // md::for_each_tile(_mt), md::update_tiles(_mt), md::fill_box(_mt)
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 
 using namespace shrink_array;
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
 namespace
 {
@@ -296,7 +294,7 @@ void update_tiles_parallel()
     parallel_phase(
         [&]
         {
-    #pragma omp for schedule(dynamic, 1)
+#pragma omp for schedule(dynamic, 1)
             for (long k = 0; k < n; ++k)
             {
                 md::update_tiles(f, k, k + 1,
@@ -316,7 +314,7 @@ void update_tiles_parallel()
     parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static, 1)
+#pragma omp for schedule(static, 1)
             for (long k = 0; k < n; ++k)
             {
                 md::update_tiles(
@@ -407,7 +405,7 @@ void fill_box_tiled(bool parallel)
             parallel_phase(
                 [&]
                 {
-    #pragma omp for schedule(static, 1)
+#pragma omp for schedule(static, 1)
                     for (long k = 0; k < n; ++k)
                     {
                         md::fill_box(f, b.lo, b.hi, b.v, k, k + 1);
@@ -436,7 +434,7 @@ void fill_box_row_major(bool parallel)
             parallel_phase(
                 [&]
                 {
-    #pragma omp for schedule(static, 3)
+#pragma omp for schedule(static, 3)
                     for (long i = 0; i < nx; ++i) // each thread its rows of the box
                     {
                         md::fill_box(f, std::array<long, 2>{std::max(b.lo[0], i), b.lo[1]},
@@ -494,7 +492,7 @@ void team_tiles()
             md::update_tiles_mt(f,
                                 [&](const auto& t, auto b)
                                 {
-    #pragma omp atomic
+#pragma omp atomic
                                     ++visits[static_cast<std::size_t>(k_of(t))];
                                     for (long i = 0; i < t.extent[0]; ++i)
                                     {
@@ -525,14 +523,14 @@ void team_tiles()
     std::fill(visits.begin(), visits.end(), 0);
     std::vector<long> per_thread;
     long              wrong = 0;
-    #pragma omp parallel
+#pragma omp parallel
     {
-    #pragma omp single
+#pragma omp single
         per_thread.assign(static_cast<std::size_t>(CHUNK_PMP_NUM_THREADS), 0);
         const auto me    = static_cast<std::size_t>(CHUNK_PMP_THREAD_RANK);
         const auto check = [&](const auto& t, auto value_at)
         {
-    #pragma omp atomic
+#pragma omp atomic
             ++visits[static_cast<std::size_t>(k_of(t))];
             ++per_thread[me];
             for (long i = 0; i < t.extent[0]; ++i)
@@ -541,7 +539,7 @@ void team_tiles()
                 {
                     if (value_at(i, j) != cell(t.origin[0] + i, t.origin[1] + j))
                     {
-    #pragma omp atomic
+#pragma omp atomic
                         ++wrong;
                     }
                 }
@@ -578,7 +576,7 @@ void team_tiles()
             md::update_tiles_mt(f, blo, bhi,
                                 [&](const auto& t, auto b)
                                 {
-    #pragma omp atomic
+#pragma omp atomic
                                     ++visits[static_cast<std::size_t>(k_of(t))];
                                     for (long i = 0; i < t.extent[0]; ++i)
                                     {
@@ -611,17 +609,17 @@ void team_tiles()
         }
     }
     std::fill(visits.begin(), visits.end(), 0);
-    #pragma omp parallel
+#pragma omp parallel
     md::for_each_tile_mt(
         f, blo, bhi,
         [&](const auto& t, auto)
         {
-    #pragma omp atomic
+#pragma omp atomic
             ++visits[static_cast<std::size_t>(k_of(t))];
         },
         [&](const auto& t, double)
         {
-    #pragma omp atomic
+#pragma omp atomic
             ++visits[static_cast<std::size_t>(k_of(t))];
         });
     bad = 0;
@@ -718,14 +716,3 @@ int main(int argc, char** argv)
     println("mdspan_tile_ops_validation: OK");
     return 0;
 }
-
-#else
-
-int main()
-{
-    shrink_array::println(
-        "mdspan_tile_ops_validation: skipped (neither <mdspan> nor kokkos/mdspan on the include path)");
-    return 77;
-}
-
-#endif

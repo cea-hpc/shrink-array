@@ -50,8 +50,7 @@
  *          md::stencil_tiles_mt, without and with its uniform shortcut.
  *
  *          Usage: mdspan_tiles [n]   (an n x n field, 2048 by default)
- *          Exit 0, 1 when a layout does not read back the field, 77 when
- *          mdspan is not available.
+ *          Exit 0, 1 when a layout does not read back the field.
  */
 
 #include <algorithm> // std::min
@@ -66,14 +65,13 @@
 #include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/print.h" // shrink_array::println
 #include "chunk/manage_ompt.h"    // parallel_phase
-#include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan.h"         // shrink_array::md
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_*(_mt), md::stencil_tiles_mt
 #include "chunk/param_chunk.h" // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
 namespace
 {
@@ -134,7 +132,7 @@ Count run(const char* name, sa::zero_any::Array<double>& a, View f, long n, int&
     sa::parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long i = 0; i < n; ++i)
             {
                 for (long j = 0; j < n; ++j)
@@ -179,7 +177,7 @@ void fill_tiled(sa::zero_any::Array<double>& t, long n)
     sa::parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long i = 0; i < n; ++i)
             {
                 for (long j = 0; j < n; ++j)
@@ -215,7 +213,7 @@ void kernels(long n, int& bad)
     {
         auto   t0 = std::chrono::steady_clock::now();
         double s  = 0;
-    #pragma omp parallel for schedule(static) reduction(+ : s)
+#pragma omp parallel for schedule(static) reduction(+ : s)
         for (long i = 0; i < n; ++i)
         {
             for (long j = 0; j < n; ++j)
@@ -228,7 +226,7 @@ void kernels(long n, int& bad)
 
         t0 = std::chrono::steady_clock::now();
         s  = 0;
-    #pragma omp parallel for schedule(static) reduction(+ : s)
+#pragma omp parallel for schedule(static) reduction(+ : s)
         for (long k = 0; k < ntiles; ++k)
         {
             sa::md::for_each_tile(
@@ -262,7 +260,7 @@ void kernels(long n, int& bad)
     sa::parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long i = 0; i < n; ++i)
             {
                 for (long j = 0; j < n; ++j)
@@ -277,7 +275,7 @@ void kernels(long n, int& bad)
     sa::parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long k = 0; k < ntiles; ++k)
             {
                 sa::md::update_tiles(
@@ -363,7 +361,7 @@ void paint(long n, int& bad)
     sa::parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long i = 0; i < n; ++i)
             {
                 for (const Rect& r : rects)
@@ -409,7 +407,7 @@ void paint(long n, int& bad)
             for (const Rect& r : rects)
             {
                 sa::md::fill_box_mt(fm, r.lo, r.hi, r.v);
-    #pragma omp barrier
+#pragma omp barrier
             }
         });
     const double p_mt = seconds_since(t0);
@@ -460,8 +458,8 @@ void box_copy(long n, int& bad)
     const long nt = sa::md::tile_count(ft);
 
     // Out.
-    auto        t0 = std::chrono::steady_clock::now();
-    #pragma omp parallel for schedule(static)
+    auto t0 = std::chrono::steady_clock::now();
+#pragma omp parallel for schedule(static)
     for (long i = lo[0]; i < hi[0]; ++i)
     {
         for (long j = lo[1]; j < hi[1]; ++j)
@@ -471,7 +469,7 @@ void box_copy(long n, int& bad)
     }
     const double o_elem = seconds_since(t0);
     t0                  = std::chrono::steady_clock::now();
-    #pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static)
     for (long k = 0; k < nt; ++k)
     {
         sa::md::copy_box_out(ct, lo, hi, t_out.data(), static_cast<int>(k), static_cast<int>(k + 1));
@@ -497,7 +495,7 @@ void box_copy(long n, int& bad)
     sa::parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long i = lo[0]; i < hi[0]; ++i)
             {
                 for (long j = lo[1]; j < hi[1]; ++j)
@@ -511,7 +509,7 @@ void box_copy(long n, int& bad)
     sa::parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long k = 0; k < nt; ++k)
             {
                 sa::md::copy_box_in(ft, lo, hi, src.data(), static_cast<int>(k), static_cast<int>(k + 1));
@@ -543,7 +541,7 @@ void box_copy(long n, int& bad)
     sa::parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long i = 0; i < n; ++i)
             {
                 for (long j = 0; j < n; ++j)
@@ -555,7 +553,7 @@ void box_copy(long n, int& bad)
     sa::zero_any::Array<double>::make_block_compression();
     const auto cr = sa::md::view(std::as_const(r), n, n);
     t0            = std::chrono::steady_clock::now();
-    #pragma omp parallel
+#pragma omp parallel
     {
         const long nth = CHUNK_PMP_NUM_THREADS;
         const long me  = CHUNK_PMP_THREAD_RANK;
@@ -638,7 +636,7 @@ void box_copy_team(long n, int& bad)
     const double o_range = best(
         [&]
         {
-    #pragma omp  parallel for schedule(static)
+#pragma omp parallel for schedule(static)
             for (long k = 0; k < nt; ++k)
             {
                 sa::md::copy_box_out(ct, lo, hi, range_out.data(), static_cast<int>(k), static_cast<int>(k + 1));
@@ -647,7 +645,7 @@ void box_copy_team(long n, int& bad)
     const double o_team = best(
         [&]
         {
-    #pragma omp parallel
+#pragma omp parallel
             sa::md::copy_box_out_mt(ct, lo, hi, team_out.data());
         });
     if (team_out != range_out)
@@ -666,7 +664,7 @@ void box_copy_team(long n, int& bad)
             sa::parallel_phase(
                 [&]
                 {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
                     for (long k = 0; k < nt; ++k)
                     {
                         sa::md::copy_box_in(ft, lo, hi, src.data(), static_cast<int>(k), static_cast<int>(k + 1));
@@ -695,7 +693,7 @@ void box_copy_team(long n, int& bad)
             sa::parallel_phase(
                 [&]
                 {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
                     for (long k = 0; k < nt; ++k)
                     {
                         sa::md::fill_box(ft, lo, hi, v, static_cast<int>(k), static_cast<int>(k + 1));
@@ -731,7 +729,7 @@ void box_copy_team(long n, int& bad)
         [&]
         {
             double acc = 0;
-    #pragma omp  parallel for schedule(static) reduction(+ : acc)
+#pragma omp          parallel for schedule(static) reduction(+ : acc)
             for (long k = 0; k < nt; ++k)
             {
                 sa::md::for_each_tile(
@@ -744,7 +742,7 @@ void box_copy_team(long n, int& bad)
         [&]
         {
             double acc = 0;
-    #pragma omp parallel reduction(+ : acc)
+#pragma omp parallel reduction(+ : acc)
             sa::md::for_each_tile_mt(
                 ct, [&](const auto& t, auto b) { add_block(acc, t, b); },
                 [&](const auto& t, double v) { add_uniform(acc, t, v); });
@@ -796,7 +794,7 @@ void stencil(long n, int& bad)
             sa::parallel_phase(
                 [&]
                 {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
                     for (long i = 0; i < n; ++i)
                     {
                         const long im = i > 0 ? i - 1 : 0;
@@ -881,7 +879,7 @@ void index_cost(long n, int& bad)
     sa::parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long i = 0; i < n; ++i)
             {
                 for (long j = 0; j < n; ++j)
@@ -905,7 +903,7 @@ void index_cost(long n, int& bad)
             double     s  = 0;
             if (c == 0)
             {
-    #pragma omp parallel for schedule(static) reduction(+ : s)
+#pragma omp parallel for schedule(static) reduction(+ : s)
                 for (long k = 0; k < n * n; ++k)
                 {
                     s += ca[k];
@@ -913,7 +911,7 @@ void index_cost(long n, int& bad)
             }
             else if (c == 1)
             {
-    #pragma omp parallel for schedule(static) reduction(+ : s)
+#pragma omp parallel for schedule(static) reduction(+ : s)
                 for (long i = 0; i < n; ++i)
                 {
                     for (long j = 0; j < n; ++j)
@@ -924,7 +922,7 @@ void index_cost(long n, int& bad)
             }
             else
             {
-    #pragma omp parallel for schedule(static) reduction(+ : s)
+#pragma omp parallel for schedule(static) reduction(+ : s)
                 for (long i = 0; i < n; ++i)
                 {
                     for (long j = 0; j < n; ++j)
@@ -953,7 +951,6 @@ int main(int argc, char** argv)
     sa::ParamChunk::init_indexes(true);
     const long n   = argc > 1 ? std::atol(argv[1]) : 2048;
     int        bad = 0;
-    sa::println("mdspan_tiles: {}", sa::md::mdspan_source);
     sa::println("mdspan_tiles: {} x {} doubles ({:.1f} MiB as a std::vector), chunk size 256", n, n,
                 static_cast<double>(n) * static_cast<double>(n) * sizeof(double) / (1024.0 * 1024.0));
     {
@@ -974,13 +971,3 @@ int main(int argc, char** argv)
     sa::destroy_block_chunk();
     return bad == 0 ? 0 : 1;
 }
-
-#else
-
-int main()
-{
-    sa::println("mdspan_tiles: skipped (neither <mdspan> nor kokkos/mdspan on the include path)");
-    return 77;
-}
-
-#endif

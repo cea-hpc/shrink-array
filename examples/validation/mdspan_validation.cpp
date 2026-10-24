@@ -26,8 +26,7 @@
 //     padding; writes through the tiled view read back through it; a uniform
 //     tile is a uniform chunk, a row-major uniform block of the same shape is not.
 //
-// Exit 0, 1 with the first mismatches, 77 (ctest SKIP_RETURN_CODE) when neither
-// <mdspan> nor kokkos/mdspan is available. Run by ctest; the variant comes from
+// Exit 0, 1 with the first mismatches. Run by ctest; the variant comes from
 // the CHUNK_VARIANT_* macro of the target.
 
 #include <cstddef>     // std::size_t
@@ -41,12 +40,11 @@
 #include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"               // chunk_config::use_zero_one_value*
 #include "chunk/internal/print.h"       // shrink_array::println
-#include "chunk/mdspan.h"               // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan.h"               // shrink_array::md
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 
 using namespace shrink_array;
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
 namespace
 {
@@ -182,7 +180,6 @@ void row_major()
             expect(tc[i, j] == static_cast<double>(i * 1000 + j), "md::as_const of a tiled view", i, j);
         }
     }
-    #if SHRINK_ARRAY_HAS_SUBMDSPAN
     const auto sub = md::as_const(md::submdspan(f, std::pair{1, nx - 1}, std::pair{2, ny - 3}));
     static_assert(std::is_const_v<typename decltype(sub)::element_type>, "md::as_const of a sub-view");
     for (long i = 0; i + 2 < nx; ++i)
@@ -193,7 +190,6 @@ void row_major()
             expect(sub[i, j] == y, "md::as_const of a sub-view", i, j);
         }
     }
-    #endif
 }
 
 void rank3()
@@ -227,8 +223,8 @@ void rank3()
 template <std::size_t TH, std::size_t TW>
 void tiled_mapping(long nx, long ny)
 {
-    using M = md::layout_tiled<TH, TW>::template mapping<md::mdns::dextents<long, 2>>;
-    const M           m(md::mdns::dextents<long, 2>(nx, ny));
+    using M = md::layout_tiled<TH, TW>::template mapping<std::dextents<long, 2>>;
+    const M           m(std::dextents<long, 2>(nx, ny));
     const long        span = m.required_span_size();
     const long        th   = static_cast<long>(TH);
     const long        tw   = static_cast<long>(TW);
@@ -340,16 +336,6 @@ int main()
         println("mdspan_validation: {} failure(s)", fails);
         return 1;
     }
-    println("mdspan_validation: OK ({})", md::mdspan_source);
+    println("mdspan_validation: OK");
     return 0;
 }
-
-#else
-
-int main()
-{
-    println("mdspan_validation: skipped (neither <mdspan> nor kokkos/mdspan on the include path)");
-    return 77;
-}
-
-#endif

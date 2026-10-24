@@ -28,9 +28,7 @@
 #include <algorithm>  // std::min, std::max
 #include <cstddef>    // std::size_t
 #include <version>    // __cpp_lib_mdspan
-#if defined(__cpp_lib_mdspan)
-    #include <mdspan> // std::mdspan, std::dextents
-#endif
+#include <mdspan>     // std::mdspan, std::dextents
 
 #include "Containers.h" // MultiArray, VectChunk2
 
@@ -183,7 +181,6 @@ struct Simu
     class IterMatTable
     {
       public:
-#if defined(__cpp_lib_mdspan)
         void resize(int n_iter, int n_mat)
         {
             extents_ = Extents(static_cast<std::size_t>(n_iter), static_cast<std::size_t>(n_mat));
@@ -200,23 +197,6 @@ struct Simu
         using Extents = std::dextents<std::size_t, 2>;
         std::vector<int> data_;
         Extents          extents_{0, 0};
-#else
-        void resize(int n_iter, int n_mat)
-        {
-            n_mat_ = static_cast<std::size_t>(n_mat);
-            data_.assign(static_cast<std::size_t>(n_iter) * n_mat_, 0);
-        }
-
-        /// int& on a mutable table, const int& on a const one.
-        auto& operator[](this auto& self, int it, int mat)
-        {
-            return self.data_[(static_cast<std::size_t>(it) * self.n_mat_) + static_cast<std::size_t>(mat)];
-        }
-
-      private:
-        std::vector<int> data_;
-        std::size_t      n_mat_ = 0;
-#endif
     };
 
     IterMatTable tab_size;  ///< [iteration, material] size of the interval

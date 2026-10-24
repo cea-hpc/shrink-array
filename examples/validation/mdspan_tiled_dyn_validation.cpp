@@ -29,8 +29,7 @@
 //   - in a _dyn library: after a re-chunk the view still reads and writes the
 //     right elements (nothing moves), serially.
 //
-// Exit 0, 1 with the first mismatches, 77 (ctest SKIP_RETURN_CODE) without an
-// mdspan.
+// Exit 0, 1 with the first mismatches.
 
 #include <array>       // std::array (tiles, extents, boxes)
 #include <cstddef>     // std::size_t
@@ -49,7 +48,6 @@
 
 using namespace shrink_array;
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
 namespace
 {
@@ -103,7 +101,7 @@ template <std::size_t T0, std::size_t T1>
 void same_mapping(long nx, long ny)
 {
     using I  = int;
-    using E  = md::mdns::dextents<I, 2>;
+    using E  = std::dextents<I, 2>;
     using MS = md::layout_tiled<T0, T1>::template mapping<E>;
     using MD = md::layout_tiled_dyn<2>::mapping<E>;
     const MS ms(E(nx, ny));
@@ -137,7 +135,6 @@ void same_mapping(long nx, long ny)
         }
     }
 
-    #if SHRINK_ARRAY_HAS_SUBMDSPAN
     // Their sub-views, aligned on the tiles, ending at the extent.
     const long i0 = static_cast<long>(T0), j0 = static_cast<long>(2 * T1);
     auto       ss = md::submdspan(fs, std::pair{i0, nx}, std::pair{j0, ny});
@@ -150,7 +147,6 @@ void same_mapping(long nx, long ny)
             expect(ss.mapping()(i, j) == sd.mapping()(i, j), "sub index", i, j);
         }
     }
-    #endif
     a.clear();
 }
 
@@ -244,7 +240,7 @@ void tile_ops(Array<double>& a, const View& f, const char* name)
         parallel_phase(
             [&]
             {
-    #pragma omp for schedule(dynamic, 1)
+#pragma omp for schedule(dynamic, 1)
                 for (long k = 0; k < n; ++k)
                 {
                     md::update_tiles(f, k, k + 1, minus_one);
@@ -392,13 +388,3 @@ int main()
     println("mdspan_tiled_dyn_validation: OK");
     return 0;
 }
-
-#else
-
-int main()
-{
-    println("mdspan_tiled_dyn_validation: skipped (neither <mdspan> nor kokkos/mdspan on the include path)");
-    return 77;
-}
-
-#endif

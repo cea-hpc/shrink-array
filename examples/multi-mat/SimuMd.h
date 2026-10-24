@@ -23,19 +23,18 @@
  *        mdspan (LoopsMd.h).
  */
 
-#include "LoopsMd.h" // multi_mat::md::Box, the policies, SHRINK_ARRAY_HAS_MDSPAN
+#include "LoopsMd.h" // multi_mat::md::Box, the policies
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
-    #include <algorithm> // std::min
-    #include <array>     // std::array
-    #include <cmath>     // std::cos, std::sin, std::tan
-    #include <cstddef>   // std::size_t
-    #include <optional>  // std::optional
-    #include <vector>    // std::vector
+#include <algorithm> // std::min
+#include <array>     // std::array
+#include <cmath>     // std::cos, std::sin, std::tan
+#include <cstddef>   // std::size_t
+#include <optional>  // std::optional
+#include <vector>    // std::vector
 
-    #include "Containers.h"   // MultiArray, VectChunk2
-    #include "MultiMatAlgo.h" // MultiMatAlgo
+#include "Containers.h"   // MultiArray, VectChunk2
+#include "MultiMatAlgo.h" // MultiMatAlgo
 
 namespace multi_mat::md
 {
@@ -102,7 +101,7 @@ struct SimuMd
 
     [[nodiscard]] auto boxes() const
     {
-        return mdns::mdspan(box_store.data(), mdns::dextents<int, 2>(iter_max, nbmat));
+        return std::mdspan(box_store.data(), std::dextents<int, 2>(iter_max, nbmat));
     }
 
     // ── Steps (main_md.cpp, ComputeLoopsMd.h) ────────────────────────────
@@ -213,5 +212,3 @@ struct SimuMd
 };
 
 } // namespace multi_mat::md
-
-#endif // SHRINK_ARRAY_HAS_MDSPAN

@@ -38,8 +38,7 @@
 //     strided shares a partition of the box, their inner bounds on a chunk
 //     boundary or a row's end.
 //
-// Exit 0, 1 with the first mismatches, 77 (ctest SKIP_RETURN_CODE) without
-// mdspan. Run by ctest; the variant comes from the CHUNK_VARIANT_* macro.
+// Exit 0, 1 with the first mismatches. Run by ctest; the variant comes from the CHUNK_VARIANT_* macro.
 
 #include <algorithm>   // std::min, std::max, std::fill, std::max_element
 #include <array>       // std::array (the boxes)
@@ -55,13 +54,12 @@
 #include "chunk/config.h"               // chunk_config::use_zero_one_value*
 #include "chunk/internal/print.h"       // shrink_array::println
 #include "chunk/manage_ompt.h"          // parallel_phase
-#include "chunk/mdspan_tile_ops.h"      // md::copy_box_out(_mt), md::copy_box_in(_mt), SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan_tile_ops.h"      // md::copy_box_out(_mt), md::copy_box_in(_mt)
 #include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 
 using namespace shrink_array;
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
 namespace
 {
@@ -121,7 +119,7 @@ void fill_from_cells(const View& f, std::vector<double>& ref)
     parallel_phase(
         [&]
         {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
             for (long i = 0; i < nx; ++i)
             {
                 for (long j = 0; j < ny; ++j)
@@ -326,7 +324,6 @@ void rank3()
 // A sub-view and a column (last stride != 1), with submdspan.
 void sub_views()
 {
-    #if SHRINK_ARRAY_HAS_SUBMDSPAN
     Array<double>       a(static_cast<int>(nx * ny));
     auto                f = md::view(a, nx, ny);
     std::vector<double> ref(static_cast<std::size_t>(nx * ny));
@@ -362,7 +359,6 @@ void sub_views()
     std::vector<double> cout(94, -1.0);
     md::copy_box_out(col, clo, chi, cout.data());
     expect(cout == cbuf, "column copy_box_out");
-    #endif
 }
 
 // From every thread of a phase: tile by tile (tiled), row slices (row-major).
@@ -394,7 +390,7 @@ void parallel()
         parallel_phase(
             [&]
             {
-    #pragma omp for schedule(static)
+#pragma omp for schedule(static)
                 for (long k = 0; k < nt; ++k)
                 {
                     md::copy_box_in(f, lo, hi, src.data(), static_cast<int>(k), static_cast<int>(k + 1));
@@ -411,7 +407,7 @@ void parallel()
         expect(mismatches_with(f, ref) == 0, "parallel tiled copy_box_in", mismatches_with(f, ref));
         std::vector<double> out(static_cast<std::size_t>(n), -1.0);
         const auto          cf = md::as_const(f);
-    #pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static)
         for (long k = 0; k < nt; ++k)
         {
             md::copy_box_out(cf, lo, hi, out.data(), static_cast<int>(k), static_cast<int>(k + 1));
@@ -446,7 +442,7 @@ void parallel()
         expect(mismatches_with(f, ref) == 0, "parallel row-major copy_box_in", mismatches_with(f, ref));
         std::vector<double> out(static_cast<std::size_t>(n), -1.0);
         const auto          cf = md::view(std::as_const(a), nx, ny);
-    #pragma omp parallel
+#pragma omp parallel
         {
             const long nth = CHUNK_PMP_NUM_THREADS;
             const long me  = CHUNK_PMP_THREAD_RANK;
@@ -472,7 +468,7 @@ void out_and_in_mt(const char* name, const View& f, std::vector<double>& ref)
         const Box&          hi = box.second;
         const long          n  = box_size(lo, hi);
         std::vector<double> buf(static_cast<std::size_t>(n), -7.0);
-    #pragma omp parallel
+#pragma omp parallel
         md::copy_box_out_mt(f, lo, hi, buf.data());
         std::vector<double> alone(static_cast<std::size_t>(n), -9.0);
         md::copy_box_out_mt(f, lo, hi, alone.data()); // outside a region: the whole box
@@ -537,10 +533,10 @@ void deals()
         long                 heaviest = 0;
         int                  team     = 1;
         long                 twice    = 0;
-    #pragma omp parallel
+#pragma omp parallel
         {
             const int me = CHUNK_PMP_THREAD_RANK;
-    #pragma omp single
+#pragma omp single
             {
                 team = CHUNK_PMP_NUM_THREADS;
                 cells.assign(static_cast<std::size_t>(team), 0);
@@ -555,7 +551,7 @@ void deals()
                                                     w *= std::min<long>(hi[r], t.origin[r] + t.extent[r]) -
                                                          std::max<long>(lo[r], t.origin[r]);
                                                 }
-    #pragma omp critical
+#pragma omp critical
                                                 {
                                                     twice += owner[static_cast<std::size_t>(k)] >= 0 ? 1 : 0;
                                                     owner[static_cast<std::size_t>(k)] = me;
@@ -588,13 +584,13 @@ void deals()
         long                  gaps      = 0;
         long                  unaligned = 0;
         int                   team      = 1;
-    #pragma omp parallel
+#pragma omp parallel
         {
-    #pragma omp single
+#pragma omp single
             team = CHUNK_PMP_NUM_THREADS;
         }
         std::vector<std::pair<std::size_t, std::size_t>> share(static_cast<std::size_t>(team));
-    #pragma omp parallel
+#pragma omp parallel
         share[static_cast<std::size_t>(CHUNK_PMP_THREAD_RANK)] = md::detail::team_share(v)(lo, hi, true);
         const auto w                                           = static_cast<std::size_t>(hi[1] - lo[1]);
         for (const auto& [c0, c1] : share)
@@ -648,11 +644,10 @@ void team()
         }
         parallel_phase([&] { md::copy_box_in_mt(f, lo, hi, src.data()); });
         std::vector<double> out(src.size(), -1.0);
-    #pragma omp parallel
+#pragma omp parallel
         md::copy_box_out_mt(f, lo, hi, out.data());
         expect(out == src, "team rank 3");
     }
-    #if SHRINK_ARRAY_HAS_SUBMDSPAN
     {
         Array<double>       a(static_cast<int>(nx * ny));
         auto                f = md::view(a, nx, ny);
@@ -674,7 +669,7 @@ void team()
         parallel_phase([&] { md::copy_box_in_mt(sub, lo, hi, src.data()); });
         expect(mismatches_with(f, ref) == 0, "team submdspan copy_box_in_mt", mismatches_with(f, ref));
         std::vector<double> out(src.size(), -1.0);
-        #pragma omp parallel
+#pragma omp parallel
         md::copy_box_out_mt(sub, lo, hi, out.data());
         expect(out == src, "team submdspan copy_box_out_mt");
 
@@ -690,11 +685,10 @@ void team()
         parallel_phase([&] { md::copy_box_in_mt(col, clo, chi, cbuf.data()); });
         expect(mismatches_with(f, ref) == 0, "team column copy_box_in_mt", mismatches_with(f, ref));
         std::vector<double> cout(94, -1.0);
-        #pragma omp parallel
+#pragma omp parallel
         md::copy_box_out_mt(col, clo, chi, cout.data());
         expect(cout == cbuf, "team column copy_box_out_mt");
     }
-    #endif
 }
 } // namespace
 
@@ -715,16 +709,6 @@ int main()
         println("mdspan_copy_box_validation: {} failure(s)", fails);
         return 1;
     }
-    println("mdspan_copy_box_validation: OK ({})", md::mdspan_source);
+    println("mdspan_copy_box_validation: OK");
     return 0;
 }
-
-#else
-
-int main()
-{
-    println("mdspan_copy_box_validation: skipped (neither <mdspan> nor kokkos/mdspan on the include path)");
-    return 77;
-}
-
-#endif

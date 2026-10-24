@@ -31,20 +31,19 @@
  * material.
  */
 
-#include "SimuMd.h" // SimuMd, SHRINK_ARRAY_HAS_MDSPAN
+#include "SimuMd.h" // SimuMd
 
-#if SHRINK_ARRAY_HAS_MDSPAN
 
-    #include <algorithm>   // std::fill, std::max
-    #include <chrono>      // std::chrono::steady_clock (the phase times)
-    #include <cmath>       // std::abs
-    #include <type_traits> // std::is_same_v, std::remove_cvref_t
-    #include <utility>     // std::as_const
-    #include <vector>      // std::vector (the replay)
-    #include <print>       // std::println
+#include <algorithm>   // std::fill, std::max
+#include <chrono>      // std::chrono::steady_clock (the phase times)
+#include <cmath>       // std::abs
+#include <type_traits> // std::is_same_v, std::remove_cvref_t
+#include <utility>     // std::as_const
+#include <vector>      // std::vector (the replay)
+#include <print>       // std::println
 
-    #include "config.h"     // multi_mat::begin_parallel_phase, barrier_phase, embedded_compression
-    #include "Containers.h" // VectChunk, dispatch
+#include "config.h"     // multi_mat::begin_parallel_phase, barrier_phase, embedded_compression
+#include "Containers.h" // VectChunk, dispatch
 
 namespace multi_mat::md
 {
@@ -144,7 +143,7 @@ void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, do
                      });
     }
 
-    #pragma omp barrier
+#pragma omp barrier
     multi_mat::barrier_phase();
     if (multi_mat::thread_rank() == 0)
     {
@@ -158,7 +157,7 @@ void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, do
     {
         if (verbose || it % freq_msg == 0)
         {
-    #pragma omp single nowait
+#pragma omp single nowait
             std::println("Iteration : {}{}", it, it % freq_rtz == 0 ? " (boxes reset to zero)" : "");
         }
 
@@ -220,7 +219,7 @@ void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, do
                          });
         }
 
-    #pragma omp barrier
+#pragma omp barrier
         multi_mat::barrier_phase(); // the reads below see the writes above (manual executable only)
         lap(time_write);
 
@@ -247,7 +246,7 @@ void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, do
         }
 
         // The next writes (or the compression pass) after every read.
-    #pragma omp barrier
+#pragma omp barrier
         lap(time_read);
 
         // Manual executable only: the field arrays compressed by an explicit
@@ -270,7 +269,7 @@ void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, do
                                  }
                              }
                          });
-    #pragma omp barrier
+#pragma omp barrier
             lap(time_compress);
         }
     }
@@ -383,5 +382,3 @@ long SimuMd::verify(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, double re
 }
 
 } // namespace multi_mat::md
-
-#endif // SHRINK_ARRAY_HAS_MDSPAN

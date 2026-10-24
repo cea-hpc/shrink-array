@@ -72,6 +72,8 @@ ALLOWED = {
     "ChunkOmpPolicy", "CompressionManagerOmpPolicy",
     # a former ring-log event name the CHANGELOG cites (ring_log_debug.cpp prints END_SLOW_PATH now)
     "EV_END_SLOW_PATH",
+    # removed on cpp26 (std::mdspan only), which CHANGELOG.md records
+    "md::mdspan_source", "SHRINK_ARRAY_HAS_MDSPAN", "SHRINK_ARRAY_HAS_SUBMDSPAN",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh",
     # C++ standard library, compiler, language

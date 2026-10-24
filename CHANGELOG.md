@@ -111,6 +111,23 @@ the tag's checksum to the recipe.
   against a `std::vector` -- and that a nested struct with a base class or
   a private member is refused.
 
+### Changed (cpp26)
+
+- GCC 16 only: the branch uses C++26 contracts as such, and CMake refuses a
+  compiler without them; `compile_all.sh` defaults to C++26 there
+  (`CHUNK_CXX_STANDARD=26`), so it builds the gnu configurations only.
+- Contracts: `pre` on `operator[]` and `element_proxy` (`0 <= index <
+  size()`), `swap()` (same chunk geometry), the chunks' `clear_st()` /
+  `release_st()` (the chunk is materialised); `pre` / `post` on `resize()`,
+  `reserve()`, `assign()`, `clear()`, `push_back()`, `emplace_back()`;
+  `contract_assert` in the iterator comparisons (one array). `CHUNK_CONTRACTS`
+  sets the evaluation semantic (AUTO: enforce in a check build, ignore
+  otherwise). `contracts_validation` provokes each kind of violation.
+- `chunk/mdspan.h` uses `std::mdspan` and `std::submdspan` only: the
+  kokkos/mdspan fallback, `SHRINK_ARRAY_HAS_MDSPAN`,
+  `SHRINK_ARRAY_HAS_SUBMDSPAN` and `md::mdspan_source` are gone, and the
+  mdspan harnesses no longer skip (exit 77).
+
 ### Fixed (cpp26)
 
 - Chunk2A's second-value index could exhaust the memory: once its probe budget
