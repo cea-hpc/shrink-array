@@ -38,7 +38,6 @@
 //
 // Exit status 0 when every check holds.
 
-#include <cstdio>  // std::printf
 #include <cstring> // std::memset
 #include <utility> // std::as_const
 
@@ -46,6 +45,7 @@
 #include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"         // build_config::has_reflection
 #include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/internal/print.h" // shrink_array::println
 
 namespace sa = shrink_array;
 
@@ -123,7 +123,7 @@ static int run_case(const char* name, int n_chunks, F f, std::size_t expected, b
 
         const sa::SecondValueStats s      = sa::zero_any::Array<T>::second_value_stats();
         const bool                 ids_ok = exact ? s.in_use() == expected : s.in_use() <= expected;
-        std::printf("%-10s %5d chunks: %5zu identifier(s) (expected %s%zu), index %s, %d wrong value(s)  %s\n", name,
+        sa::println("{:<10} {:5} chunks: {:5} identifier(s) (expected {}{}), index {}, {} wrong value(s)  {}", name,
                     n_chunks, s.in_use(), exact ? "" : "<= ", expected, s.degraded ? "DEGRADED" : "ok", bad,
                     (ids_ok && !s.degraded && bad == 0) ? "OK" : "FAIL");
         if (!ids_ok || s.degraded)
@@ -137,7 +137,7 @@ static int run_case(const char* name, int n_chunks, F f, std::size_t expected, b
 int main()
 {
     constexpr bool refl = sa::build_config::has_reflection;
-    std::printf("member-wise hash (C++26 reflection): %s\n", refl ? "yes" : "no");
+    sa::println("member-wise hash (C++26 reflection): {}", refl ? "yes" : "no");
 
     int       bad = 0;
     const int k   = 2000; // distinct values: far past the index's probe budget (64)

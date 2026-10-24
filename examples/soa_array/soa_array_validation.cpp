@@ -52,15 +52,15 @@
 
 #include <algorithm>   // std::fill, std::copy (the reference)
 #include <cstdint>     // std::uint8_t (a colour)
-#include <cstdio>      // std::printf
 #include <type_traits> // std::is_same_v, std::remove_cvref_t (the column types)
 #include <utility>     // std::as_const
 #include <vector>      // std::vector, the reference
 
-#include "chunk/zero_chunk.h"  // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h" // parallel_phase
-#include "chunk/zero_array.h"  // zero::Array (an annotated column)
-#include "chunk/soa_array.h"   // shrink_array::SoaArray, shrink_array::soa::plain, soa::column
+#include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
+#include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/zero_array.h"     // zero::Array (an annotated column)
+#include "chunk/soa_array.h"      // shrink_array::SoaArray, shrink_array::soa::plain, soa::column
+#include "chunk/internal/print.h" // shrink_array::println
 
 #if !SHRINK_ARRAY_HAS_SOA_ARRAY
     #error "soa_array_validation needs C++26 static reflection (GCC 16, -freflection): CMake builds it only then"
@@ -162,29 +162,27 @@ static int particles(int n)
         {
             if (bad++ < 5)
             {
-                std::printf("particle %d differs\n", i);
+                sa::println("particle {} differs", i);
             }
         }
     }
-    std::printf("particles: n = %d, %d wrong\n", n, bad);
+    sa::println("particles: n = {}, {} wrong", n, bad);
     a.for_each_column(
         [](std::string_view name, const auto& col)
         {
             if constexpr (requires { col.stats(); })
             {
-                std::printf("  column %-4.*s %5.1f %% of chunks hold a buffer\n", static_cast<int>(name.size()),
-                            name.data(), col.stats());
+                sa::println("  column {:<4} {:5.1f} % of chunks hold a buffer", name, col.stats());
             }
             else
             {
-                std::printf("  column %-4.*s plain: %zu elements, uncompressed\n", static_cast<int>(name.size()),
-                            name.data(), col.size());
+                sa::println("  column {:<4} plain: {} elements, uncompressed", name, col.size());
             }
         });
     if (a.column<^^Particle::mat>().stats() > 7.0 || a.column<^^Particle::flag>().stats() > 1.0 ||
         a.column<^^Particle::rho>().stats() > 5.0)
     {
-        std::printf("particles: an annotated compressed column does not compress\n");
+        sa::println("particles: an annotated compressed column does not compress");
         ++bad;
     }
     return bad;
@@ -214,7 +212,7 @@ static int ranges(int n)
         }
         if (w != 0)
         {
-            std::printf("ranges: %s, %d wrong\n", what, w);
+            sa::println("ranges: {}, {} wrong", what, w);
             ++bad;
         }
     };
@@ -226,7 +224,7 @@ static int ranges(int n)
     check("fill_range");
     if (a.column<^^Particle::rho>().stats() > 1.0 || a.column<^^Particle::flag>().stats() > 1.0)
     {
-        std::printf("ranges: a uniform fill left buffers in a compressed column\n");
+        sa::println("ranges: a uniform fill left buffers in a compressed column");
         ++bad;
     }
     std::vector<Particle> src(static_cast<std::size_t>(n));
@@ -275,7 +273,7 @@ static int ranges(int n)
     n = static_cast<int>(v.size());
     if (a.size() != v.size())
     {
-        std::printf("ranges: size %zu after resize and push_back, expected %zu\n", a.size(), v.size());
+        sa::println("ranges: size {} after resize and push_back, expected {}", a.size(), v.size());
         ++bad;
     }
     check("resize(n, v), push_back");
@@ -283,7 +281,7 @@ static int ranges(int n)
     v.resize(static_cast<std::size_t>(n / 2));
     n = static_cast<int>(v.size());
     check("resize(n)");
-    std::printf("ranges: %d wrong\n", bad);
+    sa::println("ranges: {} wrong", bad);
     return bad;
 }
 
@@ -453,24 +451,23 @@ static int nested(int n)
     {
         w += same3(out[static_cast<std::size_t>(i)], src[static_cast<std::size_t>(i)]) ? 0 : 1;
     }
-    std::printf("nested: n = %d, %zu columns, %d wrong\n", n, Soa3::column_count, w);
+    sa::println("nested: n = {}, {} columns, {} wrong", n, Soa3::column_count, w);
     a.for_each_column(
         [](std::string_view name, const auto& col)
         {
             if constexpr (requires { col.stats(); })
             {
-                std::printf("  column %-8.*s %5.1f %% of chunks hold a buffer\n", static_cast<int>(name.size()),
-                            name.data(), col.stats());
+                sa::println("  column {:<8} {:5.1f} % of chunks hold a buffer", name, col.stats());
             }
             else
             {
-                std::printf("  column %-8.*s plain\n", static_cast<int>(name.size()), name.data());
+                sa::println("  column {:<8} plain", name);
             }
         });
     if (a.column<^^Cell3::mat>().stats() > 1.0 || a.column<^^Cell3::pos, ^^Vec3::z>().stats() > 1.0 ||
         a.column_at<11>().stats() > 1.0)
     {
-        std::printf("nested: a constant column holds buffers\n");
+        sa::println("nested: a constant column holds buffers");
         ++w;
     }
     return w + bad;
@@ -549,20 +546,16 @@ int main()
         }
 
         // Per column: the share of chunks that hold a buffer.
-        std::printf("n = %d elements, %d wrong\n", n, bad);
-        a.for_each_column(
-            [](std::string_view name, const auto& col)
-            {
-                std::printf("  column %-5.*s %5.1f %% of chunks hold a buffer\n", static_cast<int>(name.size()),
-                            name.data(), col.stats());
-            });
+        sa::println("n = {} elements, {} wrong", n, bad);
+        a.for_each_column([](std::string_view name, const auto& col)
+                          { sa::println("  column {:<5} {:5.1f} % of chunks hold a buffer", name, col.stats()); });
 
         const double mat_buf  = a.column<^^Cell::mat>().stats();
         const double flag_buf = a.column<^^Cell::flag>().stats();
         const double rho_buf  = a.column<^^Cell::rho>().stats();
         if (mat_buf > 1.0 || flag_buf > 1.0 || rho_buf > 26.0)
         {
-            std::printf("compression below expectations: mat %.1f %%, flag %.1f %%, rho %.1f %%\n", mat_buf, flag_buf,
+            sa::println("compression below expectations: mat {:.1f} %, flag {:.1f} %, rho {:.1f} %", mat_buf, flag_buf,
                         rho_buf);
             ++bad;
         }
