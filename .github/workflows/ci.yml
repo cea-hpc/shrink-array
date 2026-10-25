@@ -1,10 +1,12 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 #
-# The per-push CI: the source checks, then gcc 14 in an OpenMP, a serial and a
-# std-threads (+ oneTBB) build with the check-mode switches (CHECK_OPTIM), the
-# validation harnesses at chunk size 256 (`check` target: ctest -L validation),
-# the native runs of the GenMC models (ctest -L formal) and the std backend under
+# The per-push CI: the source checks (clang-format 23 included), then gcc 14 in
+# an OpenMP, a serial and a std-threads (+ oneTBB) build with the check-mode
+# switches (CHECK_OPTIM), the validation harnesses at chunk size 256 (`check`
+# target: ctest -L validation), the examples (ctest -L examples), the library
+# installed and getting_started built against it (find_package), the native runs
+# of the GenMC models (ctest -L formal) and the std backend under
 # ThreadSanitizer. The long builds -- the other sanitizers, _dyn, clang, AArch64,
 # GenMC itself -- belong to a nightly workflow, not here.
 
@@ -32,10 +34,19 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+      # check_format needs clang-format 23 exactly (another version formats
+      # differently): apt.llvm.org's, the runner has an older one.
+      - name: clang-format 23
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang-format-23
+          clang-format-23 --version
       - name: check_* scripts
         run: |
           status=0
-          for s in check_docs check_tracked check_raw_reads check_includes check_naming check_headers; do
+          for s in check_docs check_tracked check_raw_reads check_includes check_naming check_headers check_format; do
             echo "::group::$s"
             python3 scripts/$s.py . || status=1
             echo "::endgroup::"
@@ -95,9 +106,11 @@ jobs:
           - name: OpenMP
             cmake_args: -DOMP=ON
             formal: true
+            install: true
           - name: serial
             cmake_args: -DOMP=OFF
             formal: true
+            install: true
           # The std backend (the library's own std::jthread team, no OpenMP) and
           # the TBB adaptor: std_thread_validation and tbb_validation.
           - name: std + TBB
@@ -127,6 +140,23 @@ jobs:
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
+      # check builds every example; -L validation runs none of them.
+      - name: Examples (ctest -L examples)
+        run: ctest --test-dir build -L examples --output-on-failure
+      # What a user project does: the library alone, installed, and
+      # examples/getting_started configured on its own with find_package(chunk).
+      - name: Install, then getting_started against the install
+        if: matrix.install
+        run: |
+          cmake -S . -B build-lib -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ matrix.cmake_args }} \
+            -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF \
+            -DSHRINK_ARRAY_BUILD_EXAMPLES=OFF -DSHRINK_ARRAY_BUILD_TESTS=OFF
+          cmake --build build-lib
+          cmake --install build-lib --prefix "$RUNNER_TEMP/prefix"
+          cmake -S examples/getting_started -B build-gs -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/prefix"
+          cmake --build build-gs
+          OMP_NUM_THREADS=4 ./build-gs/getting_started
       - name: GenMC models, native runs
         if: matrix.formal
         run: |
