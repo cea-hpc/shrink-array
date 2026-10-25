@@ -334,7 +334,7 @@ class Team
             }
             return;
         }
-        std::uint64_t seq  = 0;
+        std::uint64_t      seq  = 0;
         std_backend::Slot& slot = ctx_->enter(rank_, seq);
         for (long long b = slot.next.fetch_add(c, std::memory_order_relaxed); b < n;
              b           = slot.next.fetch_add(c, std::memory_order_relaxed))
@@ -389,7 +389,7 @@ class Team
             f();
             return;
         }
-        std::uint64_t seq  = 0;
+        std::uint64_t      seq  = 0;
         std_backend::Slot& slot = ctx_->enter(rank_, seq);
         if (!slot.claimed.exchange(true, std::memory_order_acq_rel))
         {
@@ -419,7 +419,7 @@ class Team
     }
 
     std_backend::TeamCtx* ctx_  = nullptr;
-    int            rank_ = 0;
+    int                   rank_ = 0;
 };
 
 /// @brief The team the calling thread runs in: inside a team, the innermost;

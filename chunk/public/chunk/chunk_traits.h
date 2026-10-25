@@ -151,8 +151,8 @@ struct ArrayChunkTraits<zero::Array<T, IntType>>
     using ChunkType   = zero::Chunk<T>;               ///< Chunk type the array holds.
     using ProxyType   = zero::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
     using ManagerType = ManagerChunk<zero::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                      ///< Stored element type.
-    using IndexType   = IntType;                   ///< Signed global index type.
+    using value_type  = T;                            ///< Stored element type.
+    using IndexType   = IntType;                      ///< Signed global index type.
 };
 
 /// @brief zero_any::Array<T, IntType> maps to zero_any::Chunk<T>, zero_any::Proxy<T>, ManagerChunk<zero_any::Chunk, T>,
@@ -163,8 +163,8 @@ struct ArrayChunkTraits<zero_any::Array<T, IntType>>
     using ChunkType   = zero_any::Chunk<T>;               ///< Chunk type the array holds.
     using ProxyType   = zero_any::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
     using ManagerType = ManagerChunk<zero_any::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                        ///< Stored element type.
-    using IndexType   = IntType;                     ///< Signed global index type.
+    using value_type  = T;                                ///< Stored element type.
+    using IndexType   = IntType;                          ///< Signed global index type.
 };
 
 /// @brief zero_one_value::Array<T, IntType> maps to zero_one_value::Chunk<T>, zero_one_value::Proxy<T>,
@@ -175,8 +175,8 @@ struct ArrayChunkTraits<zero_one_value::Array<T, IntType>>
     using ChunkType   = zero_one_value::Chunk<T>;               ///< Chunk type the array holds.
     using ProxyType   = zero_one_value::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
     using ManagerType = ManagerChunk<zero_one_value::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                       ///< Stored element type.
-    using IndexType   = IntType;                    ///< Signed global index type.
+    using value_type  = T;                                      ///< Stored element type.
+    using IndexType   = IntType;                                ///< Signed global index type.
 };
 
 // ============================================================================
