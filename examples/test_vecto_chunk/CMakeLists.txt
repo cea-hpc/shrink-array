@@ -23,6 +23,7 @@ chunk_require_cxx20(test_vecto_chunk PRIVATE)
 target_link_libraries(test_vecto_chunk PRIVATE chunk_zero_${CHUNK_DEFAULT_SIZE})
 
 add_test(NAME test_vecto_chunk COMMAND test_vecto_chunk)
+set_property(TEST test_vecto_chunk PROPERTY LABELS examples)
 
 set_property(TEST test_vecto_chunk
         PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)

@@ -24,6 +24,9 @@ target_compile_definitions(simple_array_chunk PRIVATE CHUNK_VARIANT_ZERO=1)
 
 add_test(NAME simple_array_chunk COMMAND simple_array_chunk)
 set_property(TEST simple_array_chunk PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+set_property(TEST simple_array_chunk PROPERTY LABELS examples)
 
+# Not labelled `examples`: one std::vector of 10^9 doubles per array, more
+# memory than a CI runner has (simple_array_chunk is the same program compressed).
 add_test(NAME simple_array_vector COMMAND simple_array_vector)
 set_property(TEST simple_array_vector PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
