@@ -33,7 +33,7 @@
 namespace fast_alloc
 {
 
-template <class F>
+template <typename F>
 decltype(auto) StaticConstArray::with_bucket(std::size_t bucket, F&& func)
 {
     // One comparison per bucket, unrolled; the compiler is free to make it a
