@@ -27,10 +27,12 @@ namespace shrink_array
 // 1. PRIMARY FORWARD DECLARATIONS (With default arguments)
 // ============================================================================
 
-// The three array classes, one namespace each: what the variant compresses.
+// The array classes, one namespace each: what the variant compresses.
 //   zero             zeros only
 //   zero_one_value   zero and one value declared for the whole array
 //   zero_any         zero and, chunk by chunk, any value
+//   pattern          integers: zero, any value, and (being written) a shared motif
+//                    plus an offset per chunk (docs/pattern_design.md)
 namespace zero
 {
 template <ArrayChunkElement T, typename IntType = int>
@@ -46,6 +48,11 @@ namespace zero_any
 template <ArrayChunkElement T, typename IntType = int>
 class Array;
 } // namespace zero_any
+namespace pattern
+{
+template <ArrayChunkElement T, typename IntType = int>
+class Array;
+} // namespace pattern
 
 // The former names, kept until 1.0.
 template <ArrayChunkElement T, typename IntType = int>
@@ -84,6 +91,16 @@ template <typename T>
 class Proxy;
 
 } // namespace zero_any
+
+namespace pattern
+{
+
+template <typename T>
+class Chunk;
+template <typename T>
+class Proxy;
+
+} // namespace pattern
 
 // Former names of the chunk and proxy classes, until 1.0.
 template <typename T>
@@ -137,6 +154,14 @@ struct ChunkTraits<zero_any::Chunk<T>>
     using ManagerType = ManagerChunk<zero_any::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
+/// @brief pattern::Chunk<T> maps to pattern::Proxy<T> and ManagerChunk<pattern::Chunk, T>.
+template <typename T>
+struct ChunkTraits<pattern::Chunk<T>>
+{
+    using ProxyType   = pattern::Proxy<T>;               ///< Write proxy returned by the chunk's non-const operator[].
+    using ManagerType = ManagerChunk<pattern::Chunk, T>; ///< Per-type manager owning the compression machinery.
+};
+
 // ============================================================================
 // 3. ARRAY TO CHUNK MAPPING (ArrayChunkTraits)
 // ============================================================================
@@ -179,6 +204,18 @@ struct ArrayChunkTraits<zero_one_value::Array<T, IntType>>
     using IndexType   = IntType;                                ///< Signed global index type.
 };
 
+/// @brief pattern::Array<T, IntType> maps to pattern::Chunk<T>, pattern::Proxy<T>,
+///        ManagerChunk<pattern::Chunk, T>, value T and index IntType.
+template <ArrayChunkElement T, typename IntType>
+struct ArrayChunkTraits<pattern::Array<T, IntType>>
+{
+    using ChunkType   = pattern::Chunk<T>;               ///< Chunk type the array holds.
+    using ProxyType   = pattern::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
+    using ManagerType = ManagerChunk<pattern::Chunk, T>; ///< Per-type manager owning the compression machinery.
+    using value_type  = T;                               ///< Stored element type.
+    using IndexType   = IntType;                         ///< Signed global index type.
+};
+
 // ============================================================================
 // 4. THE ZERO_ANY FAMILY
 // ============================================================================
@@ -205,8 +242,40 @@ struct ZeroAnyFamily<zero_any::Chunk<T>> : std::true_type
 {
 };
 
+/// @brief pattern::Chunk, zero_any's chunk with shared motifs (docs/pattern_design.md).
+template <typename T>
+struct ZeroAnyFamily<pattern::Chunk<T>> : std::true_type
+{
+};
+
 /// @brief ZeroAnyFamily<ChunkT>::value.
 template <typename ChunkT>
 inline constexpr bool is_zero_any_family_v = ZeroAnyFamily<ChunkT>::value;
+
+// ============================================================================
+// 5. THE MOTIF STATE
+// ============================================================================
+//
+// A member of the family whose chunk can also equal a shared motif plus an
+// offset of its own (pattern::Chunk, docs/pattern_design.md): its values
+// pointer then names the motif, and the offset sits in the chunk's
+// second-value slot. The shared code reads and materialises such a chunk in
+// branches compiled for these members only: zero_any's code is unchanged.
+
+/// @brief Has @p ChunkT the motif state? Specialised for each such member.
+template <typename ChunkT>
+struct HasMotifState : std::false_type
+{
+};
+
+/// @brief pattern::Chunk: the motif state's first member.
+template <typename T>
+struct HasMotifState<pattern::Chunk<T>> : std::true_type
+{
+};
+
+/// @brief HasMotifState<ChunkT>::value.
+template <typename ChunkT>
+inline constexpr bool has_motif_state_v = HasMotifState<ChunkT>::value;
 
 } // namespace shrink_array

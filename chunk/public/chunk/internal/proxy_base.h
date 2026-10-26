@@ -225,10 +225,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     /// @details Through internal::element_of(), like read_values(): a raw read
     ///          of a zero_any chunk compressed to its second value gives 0 (the
     ///          identifier region), and a replayed `*=` would store 0 * x.
-    [[nodiscard]] static T read_values_async(auto* ctx) noexcept
-    {
-        return internal::element_of(ctx->chunk.values_load(), static_cast<std::size_t>(ctx->num));
-    }
+    [[nodiscard]] static T read_values_async(auto* ctx) noexcept;
 
   protected:
     /**
@@ -530,13 +527,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief read_values() through a pointer the caller has already loaded.
     /// @param vals The chunk's values pointer, loaded inside the write session;
     ///        saves the reload when the write path has one in hand.
-    [[nodiscard]] T read_values_at(const T* const vals) const noexcept
-    {
-        // TEST KNOB (test_hooks.h), as in ChunkBase::element_at: widens
-        // the load -> dereference window. Compiled out by default.
-        test_hooks::maybe_read_delay();
-        return internal::element_of(vals, static_cast<std::size_t>(num_));
-    }
+    [[nodiscard]] T read_values_at(const T* const vals) const noexcept;
     /// @brief read_values() for a pre-check made BEFORE the write session
     ///        (the `0 * x` shortcut of the compound operations): inside a
     ///        read_reclaim::ReadSection.
@@ -783,12 +774,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief The ordinary read: synchronise this offset, then read it live.
     /// @details The only place the read-side synchronisation cost is paid, and
     ///          the entry point behind `operator T()`.
-    [[nodiscard]] T read_pure() const noexcept
-    {
-        check_not_stale();
-        chunk_.reader_sync(num_);
-        return chunk_.read_value(num_); // read_value accounts the read in stats
-    }
+    [[nodiscard]] T read_pure() const noexcept;
     // ========================================================================
     // Common metadata management
     // ========================================================================

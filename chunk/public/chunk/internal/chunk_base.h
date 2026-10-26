@@ -778,6 +778,14 @@ class ChunkBase : public CRTPSupport<Derived>,
         return std::nullopt;
     }
 
+    /// @brief read_value() for a member with the motif state: @p offset_slot
+    ///        is the chunk's second-value slot (element_at(offset, slot)).
+    /// @param offset Index in the chunk
+    /// @param offset_slot The chunk's second-value slot
+    /// @return Value at index i
+    [[nodiscard]] T read_value(int offset, const T* offset_slot) const noexcept
+        requires has_motif_state_v<Derived>;
+
     /// @brief Read a value at given index with statistics tracking
     /// @param offset Index in the chunk
     /// @return Value at index i
@@ -815,6 +823,17 @@ class ChunkBase : public CRTPSupport<Derived>,
      * @param out   destination, @p count elements
      */
     void read_block(int first, int count, T* out) const noexcept;
+
+    /// @brief read_block() for a member with the motif state, given the chunk's
+    ///        second-value slot @p offset_slot (a motif chunk reads motif + offset).
+    void read_block(int first, int count, T* out, const T* offset_slot) const noexcept
+        requires has_motif_state_v<Derived>;
+
+    /// @brief read_block_or_constant() for a member with the motif state, given
+    ///        the chunk's second-value slot: a motif chunk is no constant, its
+    ///        block is read as motif + offset (returns false).
+    bool read_block_or_constant(int first, int count, T* out, T& cst, const T* offset_slot) const noexcept
+        requires has_motif_state_v<Derived>;
 
     /**
      * @brief read_block(), unless the chunk is compressed: then its constant.
@@ -1143,6 +1162,23 @@ class ChunkBase : public CRTPSupport<Derived>,
      */
     template <bool Relaxed = false>
     [[nodiscard]] T element_at(int offset) const noexcept;
+
+    /**
+     * @brief element_at() for a member with the motif state, given the chunk's
+     *        second-value slot @p offset_slot, where a motif chunk keeps its offset.
+     * @details The readers that know the chunk's index (the array's accessors,
+     *          its iterator and bulk reads, the proxy) call this one: a motif
+     *          chunk reads motif[offset] + *offset_slot, any other chunk as
+     *          element_at(offset). The ONE load of `values` is kept.
+     */
+    template <bool Relaxed = false>
+    [[nodiscard]] T element_at(int offset, const T* offset_slot) const noexcept
+        requires has_motif_state_v<Derived>;
+
+    /// @brief element_at(offset, slot) without the read section.
+    template <bool Relaxed>
+    [[nodiscard]] T element_at_unguarded(int offset, const T* offset_slot) const noexcept
+        requires has_motif_state_v<Derived>;
 
     /// @brief element_at() without the read section: the load of `values` and
     ///        the element, nothing else.

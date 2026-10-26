@@ -208,6 +208,34 @@ std::size_t GlobalVecHolder<T>::reclaim_unmarked(const std::vector<std::uint8_t>
 }
 
 template <typename T>
+void GlobalVecHolder<T>::register_marker(MarkFn mark) noexcept
+{
+    for (auto& slot : markers)
+    {
+        MarkFn expected = nullptr;
+        if (slot.compare_exchange_strong(expected, mark, std::memory_order_acq_rel) || expected == mark)
+        {
+            return;
+        }
+    }
+    CHUNK_INVARIANT_FAILED("GlobalVecHolder::register_marker: more than {} members of the zero_any family "
+                           "share the second-value registry",
+                           max_markers);
+}
+
+template <typename T>
+void GlobalVecHolder<T>::mark_all(std::vector<std::uint8_t>& referenced)
+{
+    for (const auto& slot : markers)
+    {
+        if (const MarkFn mark = slot.load(std::memory_order_acquire); mark != nullptr)
+        {
+            mark(referenced);
+        }
+    }
+}
+
+template <typename T>
 [[nodiscard]] T* GlobalVecHolder<T>::take_free_slot() noexcept
 {
     if (free_ids.empty())

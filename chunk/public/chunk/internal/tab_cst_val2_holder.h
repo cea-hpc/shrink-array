@@ -497,6 +497,37 @@ class GlobalVecHolder
      */
     static std::size_t reclaim_unmarked(const std::vector<std::uint8_t>& referenced);
 
+    // ── The members of the zero_any family that share this registry ──────────
+    //
+    // Every array of the family with element type T draws its second values from this one
+    // registry: zero_any::Array<T> and pattern::Array<T> alike. A reclaim must mark what ALL
+    // of them still name: each member registers its mark here on its first use of the
+    // registry (zero_any::ArrayImpl::acquire_cst2_registry()), and
+    // zero_any::ArrayImpl::reclaim_second_values(), on any member, runs them all.
+
+    /// @brief A member's mark: sets referenced[id] for each identifier its live arrays name.
+    using MarkFn = void (*)(std::vector<std::uint8_t>& referenced);
+
+    /// @brief How many members can register a mark (zero_any, pattern, and room to spare).
+    static constexpr std::size_t max_markers = 4;
+
+    /**
+     * @brief Register @p mark, once: a mark already there is not added again.
+     * @details Lock-free (a CAS per slot), callable from any thread. More members than
+     *          max_markers is an invariant failure: a member left out would have its
+     *          values freed under it.
+     * @param mark The member's mark function.
+     */
+    static void register_marker(MarkFn mark) noexcept;
+
+    /// @brief Run every registered mark over @p referenced (reclaim_second_values()).
+    /// @param referenced One flag per identifier, set for those still named.
+    static void mark_all(std::vector<std::uint8_t>& referenced);
+
+    /// @brief The registered marks (register_marker()); null = free slot. Never
+    ///        unregistered: a mark only reads its member's registry of arrays.
+    static inline std::array<std::atomic<MarkFn>, max_markers> markers{};
+
     /// @brief A freed identifier's slot, or null when none is free.
     /// @pre Under #insert_mutex (alloc_chunk(), from find_or_register()).
     [[nodiscard]] static T* take_free_slot() noexcept;

@@ -25,6 +25,7 @@ Decisions taken with the author (October 2026):
 | where | a **new variant** built from `zero_any`, not a mode of `zero_any` |
 | name | class **pattern::Array**: the array classes live in a namespace each, named after what they compress (zero, zero_one_value, zero_any, pattern); the CMake library follows the other variants |
 | the uniform chunks | **option B**: `zero_any`'s second-value registry, **kept as it is**; the variant adds only a *motif* state (a pointer into a shared motif region + an offset), and the offset serves the motif chunks only |
+| where the motif offset lives | **in the chunk's second-value slot** (§3): a motif chunk has no second value, so its slot is free; no byte more per chunk, one cache line more per read of a motif chunk |
 
 Mathematically `zero_any` is the special case `P = 0` (a chunk uniform at V is the zero motif plus
 the offset V), and an earlier draft of this note built on it: constants as offsets, no
@@ -57,12 +58,24 @@ the second-value registry), never the motif one, so the zero motif is never regi
 `zero_any` keeps 16 bytes per chunk (the pointer, a pending-operations count and the steal mark)
 and a row of `sizeof(T)` bytes per chunk for its second value, plus two bytes of rows.
 Here `zero_any`'s layout is kept as it is (the second-value row and the type rows serve the
-uniform chunks exactly as before) and the offset is **added in the chunk object**, next to the
-pointer the reader loads anyway: 24 bytes for 4- and 8-byte integers instead of 16. Per chunk:
-34 bytes (8-byte elements) or 30 (4-byte elements), against 26 or 22 for `zero_any`: +8 bytes,
-the price of option B against the earlier draft (which dropped the second-value row and one type
-row). The memory per chunk stays the same order, and the read of a motif chunk finds its offset
-in the line already loaded.
+uniform chunks exactly as before), and the offset takes **the chunk's slot in the second-value
+row**: a motif chunk has no second value, so that slot -- `sizeof(T)` bytes, allocated for every
+chunk already -- is free. Per chunk: 26 bytes (8-byte elements) or 22 (4-byte elements), exactly
+`zero_any`'s.
+
+This is a choice between memory and locality. The other place is the chunk object, next to the
+pointer the reader loads anyway: 24 bytes instead of 16, hence +8 bytes per chunk for every
+chunk of the array (34 or 30 bytes), but the offset of a motif chunk in the line already loaded.
+The slot costs nothing in memory, and one more cache line per read of a **motif** chunk only:
+the row is another array, indexed by the chunk's array (`num_tab`) and position. The reads of
+zero, uniform and materialised chunks -- `zero_any`'s -- do not touch it. The +8 bytes are
+therefore not the price of option B but of the offset in the chunk; the slot is retained, and
+the other option stays an open point (§11), to measure with `access_cost`.
+
+Two consequences. A reader must know the chunk's index to find the slot: the chunk object
+alone does not (§4). And the slot must hold a `T`: under `CHUNK_SECOND_VALUE_INDEXED` a slot
+of a type wider than 4 bytes holds a 4-byte identifier, which an offset does not fit, so
+`pattern::Array` refuses that configuration (a `static_assert`) for those types.
 
 ## 4. The read
 
@@ -78,39 +91,49 @@ if p is in the motif region:  v += offset           // wrapping
   measure is that compare plus the add on the **materialised, zero and uniform** reads, which are
   `zero_any`'s reads and must not slow down by more than the noise (the access cost bench,
   `access_cost`, decides).
-- A read of a motif chunk costs one more add and no more cache line than a `zero_any` read.
+- A read of a motif chunk costs one more add and one more cache line than a `zero_any` read:
+  the slot (§3).
 - Every place that reads a chunk goes through the one element accessor of the chunk base
   (`element_at`, behind `read_value`, `read_value_scan`, the scans, `copy_from`, the comparison,
   the range operations, the advisor); the offset is added there and nowhere else. Direct
   `values[i]` reads (about 25 sites, all listed by grep) are each checked once.
+- The chunk does not know where its slot is: the accessor takes it from its caller, which
+  knows the chunk's index -- the array's accessors, its iterator and bulk reads (`num_tab`
+  and the chunk number), the proxy (its armed slot). A read of a motif chunk without its slot
+  is an invariant failure, except the marking filter's relaxed scan, which only takes a hint.
 
 ## 5. The write
 
 A write into a motif chunk **materialises** it first, like `zero_any` materialises a constant chunk
 pre-filled with its constant: the buffer receives `P[j] + off` for every `j`, **absolute**
-values, then the write goes in. `offset` is left as it is (it is ignored while the pointer is not
-in the region), so the pointer switch is the single publication point and a reader never combines
-a new pointer with a wrong offset. The fast path (a write into an already materialised chunk)
-is `zero_any`'s, unchanged.
+values, then the write goes in. The offset is left in the slot (it is ignored while the pointer
+is not in the region), so the pointer switch is the single publication point and a reader never
+combines a new pointer with a wrong offset. Until the chunk next compresses, `zero_any`'s write
+path sees that offset where it expects the chunk's second value: its marking heuristics take a
+wrong hint at worst, and its one shortcut on it (a write of the second value onto an element
+that already holds it is skipped) stays right. The fast path (a write into an already
+materialised chunk) is `zero_any`'s, unchanged.
 
 ## 6. The offset and the readers (the hard point)
 
 A reader loads the pointer and then the offset; they are two words. The sequences:
 
-- **buffer -> motif** (compression): the compressor stores `offset` first (release), then
-  switches the pointer by CAS (acq_rel). A reader that sees the new pointer sees the new offset;
-  one that sees the old (buffer) pointer ignores the offset.
+- **buffer -> motif** (compression): the compressor stores the offset in the slot first
+  (release), then switches the pointer by CAS (acq_rel). A reader that sees the new pointer sees
+  the new offset; one that sees the old (buffer) pointer ignores the slot.
 - **motif -> buffer** (materialisation): the buffer is filled, then the pointer is published.
   `offset` is not touched.
-- The remaining hazard: a reader that loaded an **old motif pointer** `Q` and reads `offset`
-  only after the chunk went `Q -> buffer -> (offset rewritten) -> Q'`. It would add the new offset
-  to `Q`. The compression pass already waits for a **grace period** (readers announced before
-  the pass have left their read section) before it recycles a buffer: the offset is rewritten
-  only in that pass, after that wait, and only on chunks that were materialised **before the
-  pass began**. A reader of the old motif pointer began before the materialisation, hence before
-  the wait ends. This needs the same argument as the buffer reclaim handshake, and **a fourth
-  reduced GenMC model** (`formal/`), with its mutation oracles, before the variant is called
-  correct.
+- The remaining hazard: a reader that loaded an **old motif pointer** `Q` and reads the slot
+  only after the chunk went `Q -> buffer -> (slot rewritten) -> Q'`. It would add the new value
+  of the slot to `Q`. With the offset in the slot, two writes rewrite it: a compression to a new
+  motif (a new offset), and `zero_any`'s compression of the chunk to a constant (its second
+  value, registered by the pass). Both happen in the compression pass only. The pass already
+  waits for a **grace period** (readers announced before the pass have left their read section)
+  before it recycles a buffer: the slot is rewritten only in that pass, after that wait, and only
+  on chunks that were materialised **before the pass began**. A reader of the old motif pointer
+  began before the materialisation, hence before the wait ends. This needs the same argument as
+  the buffer reclaim handshake, and **a fourth reduced GenMC model** (`formal/`), covering both
+  rewrites of the slot, with its mutation oracles, before the variant is called correct.
 
 ## 7. The motif registry
 
@@ -154,15 +177,16 @@ explicit entry point stays possible and costs nothing in the design.
 | array container, copy/move, swap, registry of arrays | as is | the class name and the traits |
 | write engine, proxies, deferred writes, barriers | as is | the read of a motif chunk; the materialisation pre-fill |
 | compression lists, reservation, the pass, the Dekker handshakes | as is | classification (`fill_list_to_compress`): constant or motif |
-| `clear_int_st` / CAS commit of a compression | the CAS | stores the offset first, installs the motif pointer |
-| second-value registry, `reclaim_second_values` | as is, for the uniform chunks | nothing; the **motif** registry (§7) is a second registry built on the same machinery |
+| `clear_int_st` / CAS commit of a compression | the CAS | stores the offset in the slot first, installs the motif pointer |
+| second-value registry, `reclaim_second_values` | as is, for the uniform chunks | nothing; the **motif** registry (§7) is a second registry built on the same machinery; a motif chunk's slot holds its offset (§3) |
 | marking filter (`may_become_uniform`) | the idea | replaced by the completion rule of §8 |
 | range operations, `copy_from`, comparisons | as is | read through the element accessor |
 | rechunk and the advisor | later | a motif is chunk-size dependent (§7) |
 
 ## 10. Stages
 
-1. **The chunk and the read**: the motif region, the offset in the chunk, the element accessor,
+1. **The chunk and the read**: the motif region, the offset in the second-value slot, the
+   element accessor taking the slot from its caller,
    the static sizes, single-thread; `zero_any`'s zero and uniform chunks untouched (the
    parameterisation of `zero_any` -- a common trait and per-model hooks -- comes first, with
    `zero_any`'s machine code unchanged, checked by the existing harnesses); validation harness
@@ -183,6 +207,14 @@ explicit entry point stays possible and costs nothing in the design.
 - **Cost of the read compare** on materialised chunks (stage 1 measures it first; if it is
   visible, the motif chunks can be recognised by a bit in the pending-operations word instead
   of the pointer range).
+- **Where the offset lives** (§3). The slot is retained: no byte more per chunk, a cache line
+  more per read of a motif chunk. The other option, the offset in the chunk object (+8 bytes per
+  chunk, the offset in the line already loaded), is to be measured with `access_cost` on
+  motif-heavy reads -- a connectivity read in its order -- before stage 5; it would also lift
+  the indexed-slot restriction below.
+- **`CHUNK_SECOND_VALUE_INDEXED`** is refused for element types wider than 4 bytes (their slot
+  holds an identifier, §3): a 64-bit connectivity then pays `zero_any`'s full slot. To revisit
+  if the indexed slots matter for those arrays.
 - **Motifs shorter than a chunk** (a stride that does not divide the chunk size, or an offset
   that grows inside the chunk) are not covered: `chunk[j] = P[j mod s] + (j div s) * step` would
   be a second kind of motif. Measure on real connectivities first.

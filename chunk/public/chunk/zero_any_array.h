@@ -51,6 +51,82 @@ class ManagerChunk;
 namespace zero_any
 {
 
+/// @brief reclaim_second_values(): identifier @p id is still referenced.
+inline void mark_cst2_id(std::vector<std::uint8_t>& referenced, std::uint32_t id) noexcept
+{
+    if (id != 0 && id < referenced.size())
+    {
+        referenced[id] = 1;
+    }
+}
+
+/**
+ * @brief The mark of one member of the zero_any family, for
+ *        reclaim_second_values(): every second-value identifier its live
+ *        arrays still name, set in @p referenced.
+ * @details Over every array of the member, whatever its index type (the keys of
+ *          ProxyT's registry of arrays):
+ *            - a chunk compressed to a second value: its values pointer is the slot;
+ *            - a per-chunk second-value slot (ProxyT's table) naming a registered value
+ *              (init_values_cst_val() finds the slot from it by value).
+ *          The members with the same element type share one registry
+ *          (GlobalVecHolder<T>): each registers this function for itself
+ *          (GlobalVecHolder::register_marker(), from acquire_cst2_registry()), and
+ *          a reclaim on any of them runs all the marks.
+ * @tparam T      Element type (not bool: bool has no registry).
+ * @tparam ProxyT The member's proxy: its registry of arrays and second-value table.
+ * @tparam ChunkT The member's chunk type: the registry's keys.
+ * @param referenced One flag per identifier.
+ */
+template <typename T, typename ProxyT, typename ChunkT>
+void mark_second_values(std::vector<std::uint8_t>& referenced)
+{
+    using Gvh = GlobalVecHolder<T>;
+
+    // Chunks compressed to a second value.
+    ProxyT::share_info_array->for_each_key(
+        [&referenced](ArrayKey<ChunkT> arr)
+        {
+            if (arr == nullptr)
+            {
+                return;
+            }
+            // The key is the array's core, whatever its index type.
+            const int nc = arr->chunk_count();
+            for (int j = 0; j < nc; ++j)
+            {
+                const T* vals = arr->chunk_ref(static_cast<std::size_t>(j)).values_load();
+                if (Gvh::region_contains(vals))
+                {
+                    mark_cst2_id(referenced, Gvh::slot_id(vals));
+                }
+            }
+        });
+
+    // Every slot of every row: a released row is empty, a stale entry only keeps a
+    // value one pass longer.
+    using Spec              = ProxyT::BaseSpec;
+    const std::size_t nrows = Spec::second_value_row_count();
+    for (std::size_t r = 0; r < nrows; ++r)
+    {
+        const auto& row = Spec::get_tab_second_value(static_cast<int>(r));
+        for (const auto& slot : row)
+        {
+            if constexpr (SecondValueTraits<T>::indexed)
+            {
+                mark_cst2_id(referenced, slot); // the identifier itself; 0 = none
+            }
+            else if (!(slot == T{}))
+            {
+                if (const T* hit = Gvh::index_lookup(slot))
+                {
+                    mark_cst2_id(referenced, Gvh::slot_id(hit));
+                }
+            }
+        }
+    }
+}
+
 /**
  * @brief The body of zero_any::Array, shared by the zero_any family
  *        (chunk_traits.h): a member's array class derives from
@@ -258,18 +334,17 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     }
 
     /**
-     * @brief Free the second values that no chunk of any zero_any::Array<T>
-     *        refers to any more, so that the registry reuses their
-     *        identifiers instead of carving new ones.
+     * @brief Free the second values that no chunk of any array of the
+     *        zero_any family with element type T (zero_any::Array<T>,
+     *        pattern::Array<T>) refers to any more, so that the registry
+     *        reuses their identifiers instead of carving new ones.
      *
      * @details The registry (GlobalVecHolder) forgets nothing on its own: drifting constants
      *          register new values until the identifiers run out (CHUNK_CST_VAL2_MAX_IDS),
      *          which stops the run. This marks what is referenced, over every live array of
-     *          the type whatever its index type, and frees the rest:
-     *            - a chunk compressed to a second value: its values pointer is the slot;
-     *            - a per-chunk second-value slot (zero_any::Proxy's table) naming a registered value
-     *              (init_values_cst_val() finds the slot from it by value).
-     *          O(chunks of every zero_any::Array<T>) + O(registered values).
+     *          every member of the family sharing the registry, whatever its index type
+     *          (mark_second_values(), one per member, GlobalVecHolder::mark_all()), and
+     *          frees the rest. O(chunks of every such array) + O(registered values).
      *
      * @return How many identifiers were freed; 0 when refused: inside a parallel region,
      *         during a re-chunk rebuild, or with a degraded index (the mark could miss a
@@ -316,15 +391,6 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     static void make_block_compression();
 
   private:
-    /// @brief reclaim_second_values(): identifier @p id is still referenced.
-    static void mark_cst2_id(std::vector<std::uint8_t>& referenced, std::uint32_t id) noexcept
-    {
-        if (id != 0 && id < referenced.size())
-        {
-            referenced[id] = 1;
-        }
-    }
-
     /**
      * @brief Claim this array's identity before its storage is built.
      * @details Called by create() through ArrayChunkBase: registers the address and takes
@@ -378,19 +444,14 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     /**
      * @brief Take this array's reference on the cst2 registry, once, as soon
      *        as it has chunks.
-     * @details The registry is shared by every zero_any::Array<T> and reference-counted (the
-     *          last release frees everything). Given back in clear_core() only if taken: an
-     *          array built empty and grown by resize() needs one too, and an empty array's
-     *          teardown must not drop one it never took.
+     * @details The registry is shared by every array of the zero_any family with element
+     *          type T and reference-counted (the last release frees everything). Given back
+     *          in clear_core() only if taken: an array built empty and grown by resize()
+     *          needs one too, and an empty array's teardown must not drop one it never took.
+     *          Registers this member's mark with the registry on the way, for
+     *          reclaim_second_values().
      */
-    void acquire_cst2_registry()
-    {
-        if (!holds_cst2_registry_)
-        {
-            ChunkType::Holder::create();
-            holds_cst2_registry_ = true;
-        }
-    }
+    void acquire_cst2_registry();
 
     /// @brief The identity step of swap(): num_tab and the registry entry (the
     ///        per-chunk metadata rows follow the chunks), the cst2 registry

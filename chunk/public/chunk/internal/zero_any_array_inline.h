@@ -188,6 +188,15 @@ void zero_any::ArrayImpl<Derived>::clear()
                                   const auto& ck = chunk_list_[j];
                                   if (!ck.written())
                                   {
+                                      if constexpr (has_motif_state_v<ChunkType>)
+                                      {
+                                          // A motif chunk is no constant (stage 1: no advice on motifs).
+                                          if (ChunkType::is_motif_ptr(ck.values_load()))
+                                          {
+                                              summary[static_cast<std::size_t>(j)] = {false, T{}};
+                                              return;
+                                          }
+                                      }
                                       summary[static_cast<std::size_t>(j)] = {true, ck.read_value_scan(0)};
                                       return;
                                   }
@@ -801,48 +810,9 @@ std::size_t zero_any::ArrayImpl<Derived>::reclaim_second_values()
         }
         std::vector<std::uint8_t> referenced(handed_out + 1, 0);
 
-        // Chunks compressed to a second value.
-        ProxyType::share_info_array->for_each_key(
-            [&referenced](ArrayKey<ChunkType> arr)
-            {
-                if (arr == nullptr)
-                {
-                    return;
-                }
-                // The key is the array's core, whatever its index type.
-                const int nc = arr->chunk_count();
-                for (int j = 0; j < nc; ++j)
-                {
-                    const T* vals = arr->chunk_ref(static_cast<std::size_t>(j)).values_load();
-                    if (Gvh::region_contains(vals))
-                    {
-                        mark_cst2_id(referenced, Gvh::slot_id(vals));
-                    }
-                }
-            });
+        // What every member of the family sharing the registry still names.
+        Gvh::mark_all(referenced);
 
-        // Every slot of every row: a released row is empty, a stale entry only keeps a
-        // value one pass longer.
-        using Spec              = ProxyType::BaseSpec;
-        const std::size_t nrows = Spec::second_value_row_count();
-        for (std::size_t r = 0; r < nrows; ++r)
-        {
-            const auto& row = Spec::get_tab_second_value(static_cast<int>(r));
-            for (const auto& slot : row)
-            {
-                if constexpr (SecondValueTraits<T>::indexed)
-                {
-                    mark_cst2_id(referenced, slot); // the identifier itself; 0 = none
-                }
-                else if (!(slot == T{}))
-                {
-                    if (const T* hit = Gvh::index_lookup(slot))
-                    {
-                        mark_cst2_id(referenced, Gvh::slot_id(hit));
-                    }
-                }
-            }
-        }
         const std::size_t freed = Gvh::reclaim_unmarked(referenced);
         Gvh::reclaim_freed.fetch_add(freed, std::memory_order_relaxed);
         return freed;
@@ -859,6 +829,20 @@ template <typename Derived>
     else
     {
         return GlobalVecHolder<T>::stats();
+    }
+}
+
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::acquire_cst2_registry()
+{
+    if (!holds_cst2_registry_)
+    {
+        if constexpr (!std::is_same_v<T, bool>)
+        {
+            GlobalVecHolder<T>::register_marker(&mark_second_values<T, ProxyType, ChunkType>);
+        }
+        ChunkType::Holder::create();
+        holds_cst2_registry_ = true;
     }
 }
 

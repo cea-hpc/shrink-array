@@ -767,6 +767,30 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(bool        
         // Exclude a concurrent steal of this chunk: see wait_before_materialise().
         wait_before_materialise<T>(derived(), thr_rank);
 
+        if constexpr (has_motif_state_v<Derived>)
+        {
+            // A motif chunk: fill from its motif plus the offset its slot holds,
+            // and publish against THAT motif pointer (a lost CAS recycles the
+            // buffer, as below). The offset stays in the slot: a reader that
+            // loaded the motif pointer may still be reading it.
+            T* const motif = Base::values_load();
+            if (Derived::is_motif_ptr(motif)) [[unlikely]]
+            {
+                const T* const slot = ptr_second_value.slot;
+                const auto     fill = [motif, slot](T* ptr)
+                {
+                    for (unsigned int j = 0; j < shrink_array::alloc_chunk_count(); ++j)
+                    {
+                        ptr[j] = Derived::motif_value(motif, static_cast<int>(j), slot);
+                    }
+                };
+                T* const values_loc = Base::allocate_chunk_internal(thr_rank, fill);
+                Base::apply_cas_or_recup(values_loc, thr_rank, [this, motif](T* new_ptr)
+                                         { return this->compare_and_swap_gen(new_ptr, motif); });
+                return;
+            }
+        }
+
         const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
         {
             if (!need_set_second_value)
@@ -861,6 +885,25 @@ template <typename T, typename Derived>
 void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value(bool              need_set_second_value,
                                                                   SecondValueRef<T> ptr_second_value)
 {
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // A motif chunk: fill from its motif plus the offset its slot holds.
+        const T* const motif = values_;
+        if (Derived::is_motif_ptr(motif)) [[unlikely]]
+        {
+            const T* const slot = ptr_second_value.slot;
+            const auto     fill = [motif, slot](T* ptr)
+            {
+                for (unsigned int j = 0; j < alloc_chunk_count(); ++j)
+                {
+                    ptr[j] = Derived::motif_value(motif, static_cast<int>(j), slot);
+                }
+            };
+            values_ = Base::allocate_chunk_internal(0, fill);
+            return;
+        }
+    }
+
     const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
     {
         if (!need_set_second_value)
@@ -1172,7 +1215,15 @@ template <typename T, typename Derived>
 [[nodiscard]] bool zero_any::ChunkStateQueries<T, Derived>::is_cst_val2() const noexcept
 {
     const T* current_value = base()->values_load();
-    if constexpr (is_not_bool)
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // A motif chunk is compressed too, to no second value: for the write
+        // engine a constant to materialise (create_value() fills it from its
+        // motif). is_cst_val2_ptr_of() stays the registry test alone: the
+        // reads and the second-value shortcuts must not see a motif there.
+        return Holder::is_cst_val2_ptr(current_value) || Derived::is_motif_ptr(current_value);
+    }
+    else if constexpr (is_not_bool)
     {
         return Holder::is_cst_val2_ptr(current_value); // a range test on the region
     }
@@ -1215,7 +1266,11 @@ template <typename T, typename Derived>
     {
         return true;
     }
-    if constexpr (is_not_bool)
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        return Holder::is_cst_val2_ptr(ptr) || Derived::is_motif_ptr(ptr); // a motif is shared memory
+    }
+    else if constexpr (is_not_bool)
     {
         return Holder::is_cst_val2_ptr(ptr);
     }

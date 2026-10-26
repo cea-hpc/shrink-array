@@ -308,6 +308,21 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back()
 // ---------------------------------------------------------------------------
 
 template <typename Derived>
+[[nodiscard]] ArrayChunkBase<Derived>::const_iterator::reference ArrayChunkBase<Derived>::const_iterator::operator*() const noexcept
+{
+    // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[num].
+    check_no_write_since_entry();
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        return chunk_->read_value(num_, owner_->motif_offset_slot(num_chunk_));
+    }
+    else
+    {
+        return (*chunk_)[num_];
+    }
+}
+
+template <typename Derived>
 ArrayChunkBase<Derived>::const_iterator& ArrayChunkBase<Derived>::const_iterator::operator++() noexcept
 {
     // lin_ is the ONLY thing operator==/!= compare: it must track the
@@ -416,7 +431,7 @@ void ArrayChunkBase<Derived>::for_each_value(IndType first, IndType last, F&& fu
                                 for (int j = lo; j < hi; j += bulk_block)
                                 {
                                     const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                    ch.read_block(j, len, buf.data());
+                                    read_chunk_block(ch, num_chunk, j, len, buf.data());
                                     check_no_write_during_bulk_read(ch, num_chunk, j);
                                     for (int k = 0; k < len; ++k)
                                     {
@@ -465,7 +480,7 @@ void ArrayChunkBase<Derived>::for_each_span(IndType first, IndType last, F&& fun
                                         // A compressed chunk stays so for the rest of the
                                         // call (no writer): the constant covers [j, hi).
                                         T cst{};
-                                        if (ch.read_block_or_constant(j, len, buf.data(), cst))
+                                        if (read_chunk_block_or_constant(ch, num_chunk, j, len, buf.data(), cst))
                                         {
                                             check_no_write_during_bulk_read(ch, num_chunk, j);
                                             func(std::as_const(cst), static_cast<std::size_t>(hi - j));
@@ -474,7 +489,7 @@ void ArrayChunkBase<Derived>::for_each_span(IndType first, IndType last, F&& fun
                                     }
                                     else
                                     {
-                                        ch.read_block(j, len, buf.data());
+                                        read_chunk_block(ch, num_chunk, j, len, buf.data());
                                     }
                                     check_no_write_during_bulk_read(ch, num_chunk, j);
                                     func(std::span<const T>(buf.data(), static_cast<std::size_t>(len)));
@@ -513,7 +528,7 @@ OutIt ArrayChunkBase<Derived>::read_range(IndType first, IndType last, OutIt out
                                 for (int j = lo; j < hi; j += bulk_block)
                                 {
                                     const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                    ch.read_block(j, len, out);
+                                    read_chunk_block(ch, num_chunk, j, len, out);
                                     check_no_write_during_bulk_read(ch, num_chunk, j);
                                     out += len;
                                 }
@@ -547,6 +562,25 @@ void ArrayChunkBase<Derived>::swap(Derived& other) noexcept
 }
 
 template <typename Derived>
+CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T ArrayChunkBase<Derived>::operator()(IndType index) const noexcept
+{
+    const int   num_chunk = chunk_index_of(index);
+    const int   num       = offset_in_chunk(index);
+    const auto& chunk_t   = chunk_list_[num_chunk];
+
+    sync_chunk(chunk_t, num_chunk, num);
+
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        return chunk_t.read_value(num, motif_offset_slot(num_chunk));
+    }
+    else
+    {
+        return chunk_t.read_value(num);
+    }
+}
+
+template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T ArrayChunkBase<Derived>::operator[](IndType index) const noexcept
 {
     const int num_chunk = chunk_index_of(index);
@@ -561,7 +595,14 @@ CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T ArrayChunkBase<Deriv
 
     sync_chunk(chunk_t, num_chunk, num);
 
-    return chunk_t[num];
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        return chunk_t.read_value(num, motif_offset_slot(num_chunk));
+    }
+    else
+    {
+        return chunk_t[num];
+    }
 }
 
 template <typename Derived>
@@ -657,6 +698,41 @@ void ArrayChunkBase<Derived>::for_each_chunk_span(IndType first, IndType last, F
         const ChunkType& ch = chunk_list_[static_cast<std::size_t>(c)];
         sync_chunk(ch, c, lo);
         fn(ch, c, lo, hi);
+    }
+}
+
+template <typename Derived>
+void ArrayChunkBase<Derived>::read_chunk_block(const ChunkType& ch,
+                                               int num_chunk,
+                                               int first,
+                                               int count,
+                                               T* out) const noexcept
+{
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        ch.read_block(first, count, out, motif_offset_slot(num_chunk));
+    }
+    else
+    {
+        ch.read_block(first, count, out);
+    }
+}
+
+template <typename Derived>
+bool ArrayChunkBase<Derived>::read_chunk_block_or_constant(const ChunkType& ch,
+                                                           int num_chunk,
+                                                           int first,
+                                                           int count,
+                                                           T* out,
+                                                           T& cst) const noexcept
+{
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        return ch.read_block_or_constant(first, count, out, cst, motif_offset_slot(num_chunk));
+    }
+    else
+    {
+        return ch.read_block_or_constant(first, count, out, cst);
     }
 }
 

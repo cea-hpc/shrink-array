@@ -63,7 +63,7 @@ class ManagerChunk;
 namespace zero_any
 {
 
-// Used by zero_any::Proxy and zero_any::PointerMap.
+// Used by zero_any::Proxy.
 template <typename T>
 class Chunk;
 
@@ -71,15 +71,16 @@ class Chunk;
  * @brief Registry mapping array keys (pointers) to their table number, for
  *        zero_any: a linear-scan vector while small, switching once and for all
  *        to a hash map past SmallN entries.
- * @tparam T Element type: the keys are arrays of zero_any::Chunk<T>.
+ * @tparam ChunkT Chunk type of the registered arrays: the keys are arrays of
+ *         ChunkT (zero_any::Chunk<T>, or another member of the zero_any family).
  * @tparam SmallN Entry count past which the hash map is used.
  */
-template <typename T, size_t SmallN = 16>
+template <typename ChunkT, size_t SmallN = 16>
 class PointerMap
 {
   public:
     /// @brief The key: the array's identity.
-    using Key = ArrayKey<Chunk<T>>;
+    using Key = ArrayKey<ChunkT>;
 
     PointerMap()                                 = default;
     ~PointerMap()                                = default;
@@ -554,6 +555,16 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     /// @brief Arm ptr_second_value from num_tab / num_chunk (no-op for bool).
     void set_ptr_second_value() noexcept;
 
+    /// @brief The second-value slot of this proxy's chunk, where a motif chunk
+    ///        keeps its offset (has_motif_state_v members only). Does not arm
+    ///        anything: num_tab is looked up when the proxy has not resolved it.
+    [[nodiscard]] const T* motif_offset_slot() const noexcept
+        requires has_motif_state_v<ChunkT>
+    {
+        const int tab = num_tab_ >= 0 ? num_tab_ : share_info_array->get_num_tab(ptr_on_array_);
+        return BaseSpec::get_tab_second_value(tab, num_chunk_).slot;
+    }
+
     /// @brief This proxy's array index (ProxyBase::get_num_tab(), re-exported
     ///        past the policy layers).
     [[nodiscard]] int get_num_tab() const noexcept
@@ -595,7 +606,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     /**
      * @brief Mapping from pointer to tab information for chunk lookup.
      */
-    static inline constinit internal::LazyImmortal<PointerMap<T>> share_info_array; ///< pointer->tab mapping
+    static inline constinit internal::LazyImmortal<PointerMap<ChunkT>> share_info_array; ///< pointer->tab mapping
 
   private:
     using ManagerChunk2A = typename ChunkTraits<ChunkT>::ManagerType;
