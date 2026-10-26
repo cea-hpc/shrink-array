@@ -362,8 +362,10 @@ exists in French ([docs/README.md](docs/README.md)); the changes from one versio
 shrink-array is at version 0.1: before 1.0, a minor release may change the interface
 ([versioning policy](CHANGELOG.md)). Every push runs the source checks, the GCC 14 builds
 (OpenMP, serial and std threads with oneTBB), the validation harnesses, the std backend under
-ThreadSanitizer and the GenMC models
-([CI](.github/workflows/ci.yml)).
+ThreadSanitizer and the GenMC models, the OpenMP build on x86-64 and on AArch64
+([CI](.github/workflows/ci.yml)); every night, the AArch64 builds too long for a push -- the std
+backend under ThreadSanitizer, the `_dyn` build
+([nightly](.github/workflows/nightly.yml)).
 
 Trying it on your own data is the most useful feedback: if it saves memory in your code -- or
 does not -- [open an issue](https://github.com/cea-hpc/shrink-array/issues) with the type, the

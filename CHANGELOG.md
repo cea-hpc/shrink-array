@@ -53,6 +53,12 @@ the tag's checksum to the recipe.
 ### Added
 
 - CI: the per-push workflow builds and validates the std backend with oneTBB, and runs it under ThreadSanitizer.
+- CI on AArch64: the per-push workflow runs the OpenMP check build, the examples, the install
+  test and the native GenMC runs on GitHub's `ubuntu-24.04-arm` runner too -- the weak memory
+  model the handshakes were modelled for, which x86-64 cannot exercise. A nightly workflow
+  (`.github/workflows/nightly.yml`, develop every night, any branch on demand) runs on AArch64
+  what is too long for a push: the std backend with oneTBB under ThreadSanitizer, and the
+  OpenMP `_dyn` build with its re-chunk harnesses.
 - OpenMP is no longer required: the library runs its own parallel work on a
   backend chosen at build time, CMake `CHUNK_THREADS=openmp|std|serial`
   (empty, the default: from `OMP`, as before). `std` runs the teams on

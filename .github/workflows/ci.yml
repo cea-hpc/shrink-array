@@ -7,8 +7,11 @@
 # target: ctest -L validation), the examples (ctest -L examples), the library
 # installed and getting_started built against it (find_package), the native runs
 # of the GenMC models (ctest -L formal) and the std backend under
-# ThreadSanitizer. The long builds -- the other sanitizers, _dyn, clang, AArch64,
-# GenMC itself -- belong to a nightly workflow, not here.
+# ThreadSanitizer. The OpenMP build runs on AArch64 as well (ubuntu-24.04-arm,
+# Neoverse): the lock-free handshakes were written for that weak memory model,
+# and x86 cannot see them fail. The long builds -- the other sanitizers, _dyn,
+# clang, GenMC itself, the AArch64 ThreadSanitizer and _dyn builds -- belong to
+# nightly.yml, not here.
 
 name: CI
 
@@ -97,23 +100,35 @@ jobs:
 
   build-test:
     name: gcc 14, ${{ matrix.name }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: OpenMP
+            runner: ubuntu-24.04
+            cmake_args: -DOMP=ON
+            formal: true
+            install: true
+          # The same build on AArch64 (4 Neoverse cores, 16 GB, like the x86
+          # runner): the writer/compressor, compressor/flush and reader/reclaim
+          # handshakes on the memory model they were modelled for. The CMake
+          # arch flag is -mcpu=native there (-march=native on x86).
+          - name: AArch64 OpenMP
+            runner: ubuntu-24.04-arm
             cmake_args: -DOMP=ON
             formal: true
             install: true
           - name: serial
+            runner: ubuntu-24.04
             cmake_args: -DOMP=OFF
             formal: true
             install: true
           # The std backend (the library's own std::jthread team, no OpenMP) and
           # the TBB adaptor: std_thread_validation and tbb_validation.
           - name: std + TBB
+            runner: ubuntu-24.04
             cmake_args: -DCHUNK_THREADS=std -DCHUNK_WITH_TBB=ON
             tbb: true
     env:
