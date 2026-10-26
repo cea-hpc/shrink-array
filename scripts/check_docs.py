@@ -81,7 +81,7 @@ ALLOWED = {
     "sort", "data", "capacity", "reserve", "resize", "clear", "assign", "swap", "front", "back", "at",
     "size", "empty", "complex", "array", "vector", "deque", "string", "operator==", "operator<",
     "operator<=>", "_GLIBCXX_ASSERTIONS", "__FAST_MATH__", "_OPENMP", "__GLIBC__", "__GNUC__",
-    "__NVCOMPILER", "auto", "const", "static_assert",
+    "__NVCOMPILER", "__has_cpp_attribute", "auto", "const", "static_assert",
     # OpenMP, OMPT
     "omp_get_max_threads", "omp_get_num_procs", "omp_get_thread_num", "omp_get_thread_limit",
     "omp_get_ancestor_thread_num", "omp_set_num_threads", "omp_in_parallel", "ompt_start_tool",

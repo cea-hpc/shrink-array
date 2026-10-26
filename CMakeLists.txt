@@ -957,6 +957,15 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_cpp23_idioms
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_cpp23_idioms.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_cpp23_idioms PROPERTY LABELS validation)
+    # Every C++ source as clang-format 23 leaves it (scripts/check_format.py),
+    # where that version is installed: another one formats differently.
+    find_program(CHUNK_CLANG_FORMAT_23 clang-format-23)
+    if (CHUNK_CLANG_FORMAT_23)
+      add_test(NAME check_format
+               COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_format.py ${PROJECT_SOURCE_DIR})
+      set_property(TEST check_format PROPERTY LABELS validation)
+      set_property(TEST check_format PROPERTY ENVIRONMENT CLANG_FORMAT=${CHUNK_CLANG_FORMAT_23})
+    endif()
     # The Doxygen documentation builds without a warning (scripts/check_doxygen.py),
     # when Doxygen is installed: find_package(Doxygen) above, for the doc target.
     if (DOXYGEN_FOUND)

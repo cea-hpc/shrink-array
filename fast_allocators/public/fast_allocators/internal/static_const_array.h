@@ -277,7 +277,7 @@ class StaticConstArray
 
     /// @brief Run @p func on bucket @p bucket of the ladder; its result, if any.
     /// @pre @p bucket < n_buckets.
-    template <class F>
+    template <typename F>
     static decltype(auto) with_bucket(std::size_t bucket, F&& func);
 
     /// @brief The per-thread batches. IMMORTAL and built at first use, like the

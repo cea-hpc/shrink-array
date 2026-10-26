@@ -131,7 +131,7 @@ class RechunkDecider
 
     /// @brief Store the policy.
     /// @param pol Decision thresholds.
-    explicit RechunkDecider(RechunkPolicy pol = {}) : pol_(pol) {}
+    explicit RechunkDecider(const RechunkPolicy& pol = {}) : pol_(pol) {}
 
     /// @brief Table index to act on: rep.best, or a capped coarsening step
     ///        (at most pol_.max_coarsen_factor x cur_size; rep.cur when

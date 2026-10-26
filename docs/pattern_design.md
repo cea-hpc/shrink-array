@@ -24,33 +24,45 @@ Decisions taken with the author (October 2026):
 | when is a chunk examined | the **write heuristic** only (like `zero_any`), no explicit pass |
 | where | a **new variant** built from `zero_any`, not a mode of `zero_any` |
 | name | class **pattern::Array**: the array classes live in a namespace each, named after what they compress (zero, zero_one_value, zero_any, pattern); the CMake library follows the other variants |
+| the uniform chunks | **option B**: `zero_any`'s second-value registry, **kept as it is**; the variant adds only a *motif* state (a pointer into a shared motif region + an offset), and the offset serves the motif chunks only |
 
-`zero_any` is the special case `P = 0`: a chunk uniform at V is the zero motif plus the offset V.
-The new variant therefore needs **no second-value registry**: constants are offsets.
+Mathematically `zero_any` is the special case `P = 0` (a chunk uniform at V is the zero motif plus
+the offset V), and an earlier draft of this note built on it: constants as offsets, no
+second-value registry. That is not the design retained. `zero_any`'s zero and uniform chunks,
+its registry, its `reclaim_second_values()` and its three modelled handshakes stay untouched
+(the variant is built by parameterising `zero_any`'s code, not by cloning it); the motif is a
+**fourth state**, next to them, with its own registry (§7) and its own handshake (§6). What the
+variant adds is then bounded: it changes nothing a `zero_any` chunk does, and only a motif chunk
+pays for the offset.
 
 ## 2. What a chunk can be
 
-| state | `values` points to | offset |
-|---|---|---|
-| zero | the shared zero buffer, slot 0 of the motif region | 0 |
-| motif | a registered motif `P` (slot > 0 of the motif region) | `off` |
-| uniform at V | the zero motif | `V` |
-| materialised | a buffer owned by the chunk, holding the **absolute** values | ignored |
+| state | `values` points to | offset | from |
+|---|---|---|---|
+| zero | the shared zero buffer | ignored | `zero_any`, as is |
+| uniform at V | the constant buffer of V in the second-value registry | ignored | `zero_any`, as is |
+| motif | a registered motif `P` in the **motif region** | `off` | **new** |
+| materialised | a buffer owned by the chunk, holding the **absolute** values | ignored | `zero_any`, as is |
 
-A uniform chunk is a motif chunk whose motif is the zero one; there is no separate "second
-value" state. A motif is **normalised**: `P[0] = 0`, `P[j] = A[j] - A[0]` (wrapping arithmetic, on
-the unsigned type of the same width, so a signed overflow is never undefined behaviour). Two
-chunks are equal up to an offset exactly when they have the same normalised motif.
+The zero, uniform and materialised states are `zero_any`'s, read and written by its code; the
+motif state is the only addition, and the offset is read only when `values` points into the
+motif region. A motif is **normalised**: `P[0] = 0`, `P[j] = A[j] - A[0]` (wrapping arithmetic,
+on the unsigned type of the same width, so a signed overflow is never undefined behaviour). Two
+chunks are equal up to an offset exactly when they have the same normalised motif. A chunk whose
+normalised motif is all zero is a uniform chunk: it takes `zero_any`'s path (its constant goes to
+the second-value registry), never the motif one, so the zero motif is never registered.
 
 ## 3. Layout
 
 `zero_any` keeps 16 bytes per chunk (the pointer, a pending-operations count and the steal mark)
 and a row of `sizeof(T)` bytes per chunk for its second value, plus two bytes of rows.
-Here the offset lives **in the chunk object**, next to the pointer the reader loads anyway:
-24 bytes for 4- and 8-byte integers, a one-byte type row no longer needed (the type is the region
-test of §4), the candidate flag row kept. Per chunk: 25 bytes, against 26 (8-byte
-elements) or 22 (4-byte elements) for `zero_any`. The memory per chunk is the same order; the
-read is cheaper because the offset is in the line already loaded.
+Here `zero_any`'s layout is kept as it is (the second-value row and the type rows serve the
+uniform chunks exactly as before) and the offset is **added in the chunk object**, next to the
+pointer the reader loads anyway: 24 bytes for 4- and 8-byte integers instead of 16. Per chunk:
+34 bytes (8-byte elements) or 30 (4-byte elements), against 26 or 22 for `zero_any`: +8 bytes,
+the price of option B against the earlier draft (which dropped the second-value row and one type
+row). The memory per chunk stays the same order, and the read of a motif chunk finds its offset
+in the line already loaded.
 
 ## 4. The read
 
@@ -60,11 +72,12 @@ v = p[j]
 if p is in the motif region:  v += offset           // wrapping
 ```
 
-- The motif region is **one reserved virtual range** (mmap), so "in the region" is one
-  subtract-compare against two constants, not a table lookup. `zero_any` already does this
-  test for its registry (`region_contains`); the cost to measure is that compare plus the add on
-  the **materialised** reads, which must not slow down by more than the noise (the access
-  cost bench, `access_cost`, decides).
+- The motif region is **one reserved virtual range** (mmap), distinct from the second-value
+  registry's, so "in the region" is one subtract-compare against two constants, not a table
+  lookup. `zero_any` already does this test for its registry (`region_contains`); the cost to
+  measure is that compare plus the add on the **materialised, zero and uniform** reads, which are
+  `zero_any`'s reads and must not slow down by more than the noise (the access cost bench,
+  `access_cost`, decides).
 - A read of a motif chunk costs one more add and no more cache line than a `zero_any` read.
 - Every place that reads a chunk goes through the one element accessor of the chunk base
   (`element_at`, behind `read_value`, `read_value_scan`, the scans, `copy_from`, the comparison,
@@ -111,8 +124,9 @@ A reader loads the pointer and then the offset; they are two words. The sequence
   sighting only counts the hash in a small probation table (a counting filter, bounded memory);
   the chunk of the first sighting stays materialised. On a mesh, that is one chunk per distinct
   motif.
-- **Reclaim.** As `zero_any`'s `reclaim_second_values`: at a sequential point, mark the motifs still
-  referenced, free the others.
+- **Reclaim.** Modelled on `zero_any`'s `reclaim_second_values` (which stays, for the constants):
+  at a sequential point, mark the motifs still referenced, free the others. The two registries
+  are reclaimed by the same call, each its own entries.
 - **Geometry.** A motif has the chunk's element count, so there is one registry per chunk size.
   First stage: the static sizes (`CHUNK_STATIC_SIZES`); the dynamic geometry and the rechunk
   come in a later stage (§10).
@@ -124,8 +138,9 @@ in order. A chunk joins the compression list when a write **completes it**: the 
 **last element**, or of its **first element**, whichever the writer order produces (the scan
 tells whether the chunk is really a motif; a chunk examined too early is dropped and is examined
 again at the next write of those positions). The scan computes the normalised motif, hashes it,
-looks it up, and compresses on a match; zero and uniform chunks are found by the same scan (the
-motif is all zero).
+looks it up, and compresses on a match. A scan whose normalised motif is all zero has found a
+zero or a uniform chunk: it hands the chunk to `zero_any`'s compression (the constant to the
+second-value registry), the motif registry sees nothing of it.
 
 Known limit: a chunk filled in a random order, whose first and last elements are written
 before the rest, is examined too early and may stay materialised; the range operations
@@ -140,7 +155,7 @@ explicit entry point stays possible and costs nothing in the design.
 | write engine, proxies, deferred writes, barriers | as is | the read of a motif chunk; the materialisation pre-fill |
 | compression lists, reservation, the pass, the Dekker handshakes | as is | classification (`fill_list_to_compress`): constant or motif |
 | `clear_int_st` / CAS commit of a compression | the CAS | stores the offset first, installs the motif pointer |
-| second-value registry, `reclaim_second_values` | the machinery | becomes the **motif** registry (§7), the constants leave it |
+| second-value registry, `reclaim_second_values` | as is, for the uniform chunks | nothing; the **motif** registry (§7) is a second registry built on the same machinery |
 | marking filter (`may_become_uniform`) | the idea | replaced by the completion rule of §8 |
 | range operations, `copy_from`, comparisons | as is | read through the element accessor |
 | rechunk and the advisor | later | a motif is chunk-size dependent (§7) |
@@ -148,8 +163,10 @@ explicit entry point stays possible and costs nothing in the design.
 ## 10. Stages
 
 1. **The chunk and the read**: the motif region, the offset in the chunk, the element accessor,
-   the static sizes, single-thread; validation harness comparing with `std::vector` on
-   zero-only, uniform, shifted-motif and random chunks.
+   the static sizes, single-thread; `zero_any`'s zero and uniform chunks untouched (the
+   parameterisation of `zero_any` -- a common trait and per-model hooks -- comes first, with
+   `zero_any`'s machine code unchanged, checked by the existing harnesses); validation harness
+   comparing with `std::vector` on zero-only, uniform, shifted-motif and random chunks.
 2. **Compression and the registry**: scan, hash, admission, the CAS commit, materialisation on
    write; the OpenMP and std backends; the check-mode builds.
 3. **The model**: the GenMC handshake of §6 and its mutations; the findings are applied to the

@@ -8,8 +8,8 @@ the root of `include/`: a user's own copy of either library is left alone, and a
 
 | file | upstream | version | license | local patches |
 |---|---|---|---|---|
-| `chunk/vendor/ankerl/unordered_dense.h` | [martinus/unordered_dense](https://github.com/martinus/unordered_dense) | v5.3.1 (commit `c164976d`) | MIT, [licenses/unordered_dense-MIT.txt](licenses/unordered_dense-MIT.txt) | 2 |
-| `chunk/vendor/ankerl/stl.h` | martinus/unordered_dense | v5.3.1 (commit `c164976d`) | MIT | none |
+| `chunk/vendor/ankerl/unordered_dense.h` | [martinus/unordered_dense](https://github.com/martinus/unordered_dense) | v5.3.3 (commit `7c58a8b7`) | MIT, [licenses/unordered_dense-MIT.txt](licenses/unordered_dense-MIT.txt) | 2 |
+| `chunk/vendor/ankerl/stl.h` | martinus/unordered_dense | v5.3.3 (commit `7c58a8b7`) | MIT | none |
 | `chunk/vendor/flat_hash_map.hpp` | [skarupke/flat_hash_map](https://github.com/skarupke/flat_hash_map) | master, commit `2c468743` (2018-07-15, the last one: unmaintained) | Boost Software License 1.0, [licenses/flat_hash_map-BSL-1.0.txt](licenses/flat_hash_map-BSL-1.0.txt) | 1 |
 
 Each file opens with the SPDX line of its upstream license (`// SPDX-License-Identifier: MIT`,
@@ -39,7 +39,7 @@ installed under `share/doc/chunk/`.
 ## Things to know
 
 - The version macros of `unordered_dense.h` are upstream's and are not touched: they name the
-  inline namespace (`ankerl::unordered_dense::v5_3_1`).
+  inline namespace (`ankerl::unordered_dense::v5_3_3`).
 - `unordered_dense.h` mentions `CLAUDE.md`, `notes/index-design.md` and issue numbers: those are
   files and issues of the upstream repository, kept as they are.
 - One translation unit sees one copy of each. Both keep their upstream guard

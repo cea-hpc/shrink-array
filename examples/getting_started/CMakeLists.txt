@@ -54,4 +54,5 @@ endif()
 
 if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_test(NAME getting_started COMMAND getting_started)
+  set_property(TEST getting_started PROPERTY LABELS examples)
 endif()
