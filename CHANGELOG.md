@@ -153,6 +153,9 @@ the tag's checksum to the recipe.
   build runs the same regions, with the same clauses.
 - Spack: the variant `openmp` is replaced by `threads` (`+openmp` is now
   `threads=openmp`, `~openmp` `threads=serial`).
+- Vendored ankerl::unordered_dense updated from 5.3.1 to 5.3.3, its two local patches (nvc++)
+  carried over: `__has_cpp_attribute` is probed with `defined()` first (MSVC 19.16); no other
+  change.
 
 ### Deprecated
 
