@@ -140,9 +140,13 @@ jobs:
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
-      # check builds every example; -L validation runs none of them.
+      # check builds only the executables of the directories that call
+      # shrink_stamp_directory_targets() (validation, variant_compare, ...), not
+      # the programs behind the `examples` label: they are built here.
       - name: Examples (ctest -L examples)
-        run: ctest --test-dir build -L examples --output-on-failure
+        run: |
+          cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
+          ctest --test-dir build -L examples --output-on-failure
       # What a user project does: the library alone, installed, and
       # examples/getting_started configured on its own with find_package(chunk).
       - name: Install, then getting_started against the install
