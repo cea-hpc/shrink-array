@@ -52,43 +52,41 @@ namespace zero_any
 {
 
 /**
- * @brief Chunked array whose chunks may each compress to their OWN second value.
- *
- * @details Same layout as zero_one_value::Array, but where zero_one_value::Array shares a SINGLE second value
- *          across the array, here every chunk registers its own (find-or-set), so a chunk
- *          compresses as soon as all its elements equal any one constant. Costs a per-chunk
- *          second-value table (zero_any::ProxySpec), garbage-collected through GlobalVecHolder.
- *
- *          Each array registers its address in zero_any::Proxy::share_info_array to get a num_tab,
- *          the index into every per-tab metadata table. That registration is the array's
- *          identity: taken in pre_create_hook(), exchanged by rechunk_swap_identity(),
- *          released in the destructor.
- *
- * @tparam T        stored element type
- * @tparam IntType index type used for sizes and element positions
+ * @brief The body of zero_any::Array, shared by the zero_any family
+ *        (chunk_traits.h): a member's array class derives from
+ *        ArrayImpl<itself>.
+ * @details Everything that names the element, index, chunk, proxy or manager
+ *          type takes it from ArrayChunkTraits<Derived>, so a member gets its
+ *          own registry (ProxyType::share_info_array), metadata tables and
+ *          candidate lists. The constructors, the destructor and the
+ *          assignments stay in the final class -- a constructor is not
+ *          inherited, and the copy and move ones name that class -- built on
+ *          init_storage() and destroy_storage(). zero_any::Array<T, IntType>
+ *          derives from ArrayImpl<Array<T, IntType>> and adds only those.
+ * @tparam Derived The member's array class.
  */
-template <ArrayChunkElement T, typename IntType>
-class Array : public SecondValueArrayBase<Array<T, IntType>>,
-              public ParallelSupport<Array<T, IntType>>,
-              public RechunkHooks<Array<T, IntType>>
+template <typename Derived>
+class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<Derived>, public RechunkHooks<Derived>
 {
   public:
-    using ManagerChunk2A = ManagerChunk<zero_any::Chunk, T>; ///< Same type as ManagerType.
+    using Base2   = SecondValueArrayBase<Derived>; ///< Second-value common base (dirty bitset, second-value plumbing).
+    using Base    = ArrayChunkBase<Derived>;       ///< Base shared by every variant.
+    using Hooks2A = RechunkHooks<Derived>;         ///< Re-chunk hooks (dynamic geometry).
 
-    using Base2   = SecondValueArrayBase<Array>; ///< Second-value common base (dirty bitset, second-value plumbing).
-    using Base    = ArrayChunkBase<Array>;       ///< Base shared by every variant.
-    using Hooks2A = RechunkHooks<Array>;         ///< Re-chunk hooks (dynamic geometry).
-
-    friend Base2;                 ///< The CRTP base reaches this class's private members.
-    friend ArrayChunkBase<Array>; ///< For swap_identity().
+    friend Base2; ///< The CRTP base reaches this class's private members.
+    friend Base;  ///< For swap_identity().
 
     // Re-declared (not only inherited): the mixins declare them too, so an outside
     // `Arr::ChunkType` would be ambiguous between base subobjects (lookup precedes access).
-    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<zero_any::Array>.
-    using ChunkType   = Base2::ChunkType;   ///< zero_any::Chunk<T>, the chunk type held in chunk_list.
-    using ManagerType = Base2::ManagerType; ///< ManagerChunk<zero_any::Chunk, T>, the per-type manager.
-    using ProxyType   = Base2::ProxyType;   ///< zero_any::Proxy<T>, the write proxy of the non-const accessors.
+    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<Derived>.
+    using T           = Base2::T;           ///< Stored element type.
+    using IntType     = Base2::IndType;     ///< Index type used for sizes and element positions.
+    using ChunkType   = Base2::ChunkType;   ///< The chunk type held in chunk_list (zero_any::Chunk<T>).
+    using ManagerType = Base2::ManagerType; ///< The per-type manager (ManagerChunk<zero_any::Chunk, T>).
+    using ProxyType   = Base2::ProxyType;   ///< The write proxy of the non-const accessors (zero_any::Proxy<T>).
     using value_type  = T;                  ///< Stored element type.
+
+    using ManagerChunk2A = ManagerType; ///< Same type as ManagerType.
 
     // The former snake_case spellings, kept until 1.0 (types are PascalCase).
     using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
@@ -114,103 +112,48 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     using Base::assign; // the (first, last) overload, hidden by the one above otherwise
 
+  protected:
+    // ── What the final class's constructors and destructor are built on ──────
+    //
+    // Never copied or moved as such: the final class's copy and move operations
+    // build an empty array and then copy the elements or exchange the storage.
+
+    ArrayImpl()  = default;
+    ~ArrayImpl() = default;
+
+    ArrayImpl(const ArrayImpl&)            = delete;
+    ArrayImpl(ArrayImpl&&)                 = delete;
+    ArrayImpl& operator=(const ArrayImpl&) = delete;
+    ArrayImpl& operator=(ArrayImpl&&)      = delete;
+
     /**
-     * @brief Build an array of @p sz elements at the current active geometry.
-     * @param sz initial element count; 0 by default, as std::vector (a fresh
-     *           array is empty, so a push_back on it yields one element)
+     * @brief The constructors' body: build the storage for @p sz elements at
+     *        the current active geometry, and claim the array's identity.
+     * @param sz initial element count
      */
-    explicit Array(IntType sz = 0)
+    void init_storage(IntType sz)
     {
         if constexpr (build_config::threaded)
         {
-            WriteCompressSyncPolicy<Proxy<T>>::ensure_initialized();
+            WriteCompressSyncPolicy<ProxyType>::ensure_initialized();
         }
 
         this->create(sz);
     }
 
-    // ── The copy family: deep, element by element ────────────────────────────
-    //
-    // Never an alias of the source's buffers: ArrayChunkBase::copy_from reads every element
-    // through the source's gate and writes it through this array's proxy. All sequential.
-    // zero_any finds each chunk's second value by itself: nothing to carry over.
-
-    /// @brief Deep copy: from.size() elements read from @p from. Sequential context.
-    /// @param from Source array.
-    Array(const Array& from) : Array(from.size())
-    {
-        this->copy_from(from);
-    }
-
     /**
-     * @brief Move-construct: an empty array at the active geometry takes
-     *        @p other's chunks, geometry and identity -- the exchange of
-     *        swap() -- and @p other is left empty and valid.
-     * @details O(1) in the elements. Must be user-declared: the copy constructor and
-     *          move-assignment suppress the implicit one. Sequential context.
-     * @note noexcept, so std::vector moves arrays on reallocation. What can fail (the
-     *       registration, the deferred-write drain) fails only on memory exhaustion or a
-     *       corrupt registry, already fatal: std::terminate.
-     */
-    Array(Array&& other) noexcept : Array(0)
-    {
-        this->swap_storage_and_identity(other);
-    }
-
-    /// @brief Build an array of std::distance(@p first, @p last) elements and assign them from the range.
-    /// @param first Start of the source range.
-    /// @param last End of the source range.
-    template <std::forward_iterator It>
-    Array(It first, It last) : Array(static_cast<IntType>(std::distance(first, last)))
-    {
-        this->assign(first, last);
-    }
-
-    /// @brief Build an array holding the elements of @p il.
-    /// @param il Source values.
-    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
-
-    /**
-     * @brief Release the storage, then the registry entry.
+     * @brief The destructor's body: release the storage, then the registry entry.
      * @warning The erase() is required: a later array at this address (common for stack
      *          arrays, e.g. rechunk_to()'s @c tmp) would inherit the stale num_tab
      *          (get_num_tab() returns the FIRST match) and corrupt another tab's metadata.
      */
-    ~Array()
+    void destroy_storage()
     {
         clear();
-        Proxy<T>::share_info_array->erase(this->registry_key());
+        ProxyType::share_info_array->erase(this->registry_key());
     }
 
-    /**
-     * @brief Move-assign: this array's own contents are released (clear()),
-     *        then it takes @p other's -- chunks, geometry and identity, by the
-     *        same exchange as swap(); @p other is left empty and valid.
-     * @details This array's old chunks are released first (candidates purged); the moved
-     *          chunks keep their metadata rows (num_tab). Sequential context, as clear().
-     * @note noexcept, as the move constructor: a failure here terminates.
-     */
-    Array& operator=(Array&& other) noexcept
-    {
-        if (this != &other)
-        {
-            clear();
-            this->swap_storage_and_identity(other);
-        }
-        return *this;
-    }
-
-    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
-    ///        is a no-op; num_tab is not copied, identity stays with the address.
-    Array& operator=(const Array& from)
-    {
-        if (this != &from)
-        {
-            this->copy_from(from);
-        }
-        return *this;
-    }
-
+  public:
     /**
      * @brief Has the chunk holding element @p index been materialised?
      * @param index element index
@@ -255,12 +198,14 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @param other array to compare against
      * @return true if both arrays have the same size and the same values
      * @note Compares decompressed values, so two arrays that are equal but
-     *       compressed differently still compare equal. Chunk by chunk, on a
+     *       compressed differently still compare equal. A const ArrayImpl&, not
+     *       the final type: C++20's reversed candidate would make `a == b`
+     *       ambiguous (one derived-to-base conversion each way). Chunk by chunk, on a
      *       team of its own for a large array outside a region
      *       (parallel_storage_init::for_each_chunk); a difference found stops
      *       the chunks not yet started. Neither array may be written meanwhile.
      */
-    bool operator==(const Array& other) const noexcept
+    bool operator==(const ArrayImpl& other) const noexcept
     {
         if (m_size_ != other.m_size_)
         {
@@ -433,8 +378,8 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
             std::vector<std::uint8_t> referenced(handed_out + 1, 0);
 
             // Chunks compressed to a second value.
-            Proxy<T>::share_info_array->for_each_key(
-                [&referenced](ArrayKey<zero_any::Chunk<T>> arr)
+            ProxyType::share_info_array->for_each_key(
+                [&referenced](ArrayKey<ChunkType> arr)
                 {
                     if (arr == nullptr)
                     {
@@ -454,7 +399,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
             // Every slot of every row: a released row is empty, a stale entry only keeps a
             // value one pass longer.
-            using Spec              = Proxy<T>::BaseSpec;
+            using Spec              = ProxyType::BaseSpec;
             const std::size_t nrows = Spec::second_value_row_count();
             for (std::size_t r = 0; r < nrows; ++r)
             {
@@ -525,7 +470,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      */
     void pre_create_hook()
     {
-        auto& sh_inf = *zero_any::Proxy<T>::share_info_array;
+        auto& sh_inf = *ProxyType::share_info_array;
 
         sh_inf.insert(this->registry_key(), nb_tab);
         num_tab_ = nb_tab;
@@ -550,7 +495,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      */
     auto get_metadata(IntType index) const noexcept
     {
-        return zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(index));
+        return ProxyType::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(index));
     }
 
     /// @brief Storage teardown shared by clear() and rechunk_to().
@@ -579,7 +524,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     {
         if (!holds_cst2_registry_)
         {
-            Chunk<T>::Holder::create();
+            ChunkType::Holder::create();
             holds_cst2_registry_ = true;
         }
     }
@@ -587,12 +532,12 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// @brief The identity step of swap(): num_tab and the registry entry (the
     ///        per-chunk metadata rows follow the chunks), the cst2 registry
     ///        reference (it goes with the chunks that need it).
-    void swap_identity(Array& other)
+    void swap_identity(Derived& other)
     {
         using std::swap;
         swap(this->num_tab_, other.num_tab_);
         swap(holds_cst2_registry_, other.holds_cst2_registry_);
-        Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
+        ProxyType::share_info_array->swap_keys(this->registry_key(), other.registry_key());
     }
 
     // ── cst2 mark-sweep GC: read-only mark + report ──────────────────────────
@@ -609,8 +554,8 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      */
     static void gc_collect_live(std::unordered_set<const void*>& live)
     {
-        Proxy<T>::share_info_array->for_each_key(
-            [&](ArrayKey<zero_any::Chunk<T>> arr)
+        ProxyType::share_info_array->for_each_key(
+            [&](ArrayKey<ChunkType> arr)
             {
                 // The key is the array's core, whatever its index type.
                 const int nc = arr->chunk_count();
@@ -625,9 +570,119 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
             });
     }
 
-    /// @brief This array holds one reference on zero_any::Chunk<T>'s cst2 registry
+    /// @brief This array holds one reference on the chunk type's cst2 registry
     ///        (TabCstVal2Holder). See acquire_cst2_registry().
     bool holds_cst2_registry_ = false;
+};
+
+/**
+ * @brief Chunked array whose chunks may each compress to their OWN second value.
+ *
+ * @details Same layout as zero_one_value::Array, but where zero_one_value::Array shares a SINGLE second value
+ *          across the array, here every chunk registers its own (find-or-set), so a chunk
+ *          compresses as soon as all its elements equal any one constant. Costs a per-chunk
+ *          second-value table (zero_any::ProxySpec), garbage-collected through GlobalVecHolder.
+ *
+ *          Each array registers its address in zero_any::Proxy::share_info_array to get a num_tab,
+ *          the index into every per-tab metadata table. That registration is the array's
+ *          identity: taken in pre_create_hook(), exchanged by rechunk_swap_identity(),
+ *          released in the destructor.
+ *
+ *          All of it is ArrayImpl's, shared by the zero_any family; this class adds the
+ *          constructors, the destructor and the assignments.
+ *
+ * @tparam T        stored element type
+ * @tparam IntType index type used for sizes and element positions
+ */
+template <ArrayChunkElement T, typename IntType>
+class Array : public ArrayImpl<Array<T, IntType>>
+{
+  public:
+    /**
+     * @brief Build an array of @p sz elements at the current active geometry.
+     * @param sz initial element count; 0 by default, as std::vector (a fresh
+     *           array is empty, so a push_back on it yields one element)
+     */
+    explicit Array(IntType sz = 0)
+    {
+        this->init_storage(sz);
+    }
+
+    // ── The copy family: deep, element by element ────────────────────────────
+    //
+    // Never an alias of the source's buffers: ArrayChunkBase::copy_from reads every element
+    // through the source's gate and writes it through this array's proxy. All sequential.
+    // zero_any finds each chunk's second value by itself: nothing to carry over.
+
+    /// @brief Deep copy: from.size() elements read from @p from. Sequential context.
+    /// @param from Source array.
+    Array(const Array& from) : Array(from.size())
+    {
+        this->copy_from(from);
+    }
+
+    /**
+     * @brief Move-construct: an empty array at the active geometry takes
+     *        @p other's chunks, geometry and identity -- the exchange of
+     *        swap() -- and @p other is left empty and valid.
+     * @details O(1) in the elements. Must be user-declared: the copy constructor and
+     *          move-assignment suppress the implicit one. Sequential context.
+     * @note noexcept, so std::vector moves arrays on reallocation. What can fail (the
+     *       registration, the deferred-write drain) fails only on memory exhaustion or a
+     *       corrupt registry, already fatal: std::terminate.
+     */
+    Array(Array&& other) noexcept : Array(0)
+    {
+        this->swap_storage_and_identity(other);
+    }
+
+    /// @brief Build an array of std::distance(@p first, @p last) elements and assign them from the range.
+    /// @param first Start of the source range.
+    /// @param last End of the source range.
+    template <std::forward_iterator It>
+    Array(It first, It last) : Array(static_cast<IntType>(std::distance(first, last)))
+    {
+        this->assign(first, last);
+    }
+
+    /// @brief Build an array holding the elements of @p il.
+    /// @param il Source values.
+    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
+
+    /// @brief Release the storage, then the registry entry (ArrayImpl::destroy_storage()).
+    ~Array()
+    {
+        this->destroy_storage();
+    }
+
+    /**
+     * @brief Move-assign: this array's own contents are released (clear()),
+     *        then it takes @p other's -- chunks, geometry and identity, by the
+     *        same exchange as swap(); @p other is left empty and valid.
+     * @details This array's old chunks are released first (candidates purged); the moved
+     *          chunks keep their metadata rows (num_tab). Sequential context, as clear().
+     * @note noexcept, as the move constructor: a failure here terminates.
+     */
+    Array& operator=(Array&& other) noexcept
+    {
+        if (this != &other)
+        {
+            this->clear();
+            this->swap_storage_and_identity(other);
+        }
+        return *this;
+    }
+
+    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
+    ///        is a no-op; num_tab is not copied, identity stays with the address.
+    Array& operator=(const Array& from)
+    {
+        if (this != &from)
+        {
+            this->copy_from(from);
+        }
+        return *this;
+    }
 };
 
 } // namespace zero_any
