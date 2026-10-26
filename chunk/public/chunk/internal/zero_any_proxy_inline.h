@@ -440,11 +440,11 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable
     {
         if (is_val2)
         {
-            this->chunk.create_value_bool(true);
+            this->chunk_.create_value_bool(true);
         }
         else if (Base::is_cst_val1())
         {
-            this->chunk.create_value_bool(false);
+            this->chunk_.create_value_bool(false);
         }
     }
 }
