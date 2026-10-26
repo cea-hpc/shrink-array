@@ -288,24 +288,7 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
      * @note This is the CAS-steal that makes a compressor's window dangerous to
      *       concurrent writers -- see CompressionManager's hard_inflight_.
      */
-    T* try_mark_cst_and_get_old()
-    {
-        T* old = Base::values_load();
-        if (old == Base::get_cst_val1()) [[unlikely]]
-        {
-            return nullptr;
-        }
-
-        T* expected = old;
-        T* new_ptr  = Base::get_cst_val1();
-
-        if (!values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
-            [[unlikely]]
-        {
-            return nullptr;
-        }
-        return old;
-    }
+    T* try_mark_cst_and_get_old();
 
     /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only from OUTSIDE a parallel
@@ -516,44 +499,11 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /// manage_full_zero() later re-compresses a chunk that is not all-zero.
     /// ChunkFastCompPolicy holds the atomic `values` (non-copyable), copied by
     /// hand below.
-    Chunk(const Chunk& other)
-
-        : ChunkCounterPolicy<chunk_config::use_compression_with_counter>(other)
-    {
-        if constexpr (build_config::threaded)
-        {
-            values_.store(other.values_.load());
-        }
-        else
-        {
-            values_ = other.values_;
-        }
-    }
+    Chunk(const Chunk& other);
 
     /// @brief Copy the zero-counter base and the `values` pointer of @p other unless it is this chunk.
     /// @return *this.
-    Chunk& operator=(const Chunk<T>& other)
-    {
-        if (this == &other)
-        {
-            return *this;
-        }
-
-        // Same reason as the copy ctor: propagate the zero-counter state.
-        ChunkCounterPolicy<chunk_config::use_compression_with_counter>::operator=(other);
-
-        if constexpr (build_config::threaded)
-        {
-            T* loaded_value = other.values.load();
-            values_.store(loaded_value);
-        }
-        else
-        {
-            values_ = other.values;
-        }
-
-        return *this;
-    }
+    Chunk& operator=(const Chunk<T>& other);
 
     /// @brief Point this chunk at the shared zero constant (compressed state).
     void init_values_cst_val()
@@ -579,37 +529,10 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     /// @brief Materialise storage if still compressed, from @p thr_rank's pool.
     /// @param thr_rank calling thread's rank; ignored in serial builds
-    void alloc_chunk([[maybe_unused]] int thr_rank)
-    {
-        if (is_cst_val1())
-        {
-            if constexpr (chunk_config::stats)
-            {
-                increm_chunk_write<ChunkType>();
-            }
-
-            if constexpr (build_config::threaded)
-            {
-                this->create_value(thr_rank);
-            }
-            else
-            {
-                this->create_value();
-            }
-        }
-    }
+    void alloc_chunk([[maybe_unused]] int thr_rank);
 
     /// @brief Get reference to the chunk manager (static access)
-    static auto& get_manager() noexcept
-    {
-        // Do not make this a function-local static: its lazy guard's first init
-        // can run from compress() inside an OpenMP region and deadlock threads on
-        // __cxa_guard_acquire. A LazyImmortal (chunk/internal/immortal.h) is built
-        // by the manager's registration (ManagerChunk::init_static_state), before
-        // any array or thread reaches it, and never destroyed (a global array
-        // still uses it after main).
-        return *s_manager_;
-    }
+    static auto& get_manager() noexcept;
 
     /**
      * @brief Drain and compress every thread's candidate list.

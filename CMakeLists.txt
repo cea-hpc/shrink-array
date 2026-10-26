@@ -921,6 +921,11 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_naming
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_naming.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_naming PROPERTY LABELS validation)
+    # A member function body longer than 5 lines is defined out of class, in the
+    # header's _inline.h companion (scripts/check_inline_bodies.py; apply moves them).
+    add_test(NAME check_inline_bodies
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_inline_bodies.py --check ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_inline_bodies PROPERTY LABELS validation)
     # Every source file carries its license: the Apache block for C++, SPDX
     # lines for scripts and build files, the upstream SPDX line for the vendored
     # headers (scripts/check_headers.py; --fix repairs).

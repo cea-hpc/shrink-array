@@ -23,7 +23,8 @@
 #include <span>    // std::span
 #include <vector>  // std::vector
 
-#include "chunk/config.h" // build_config:: mirrors that select the policies below
+#include "chunk/config.h"                 // build_config:: mirrors that select the policies below
+#include "chunk/internal/for_each_type.h" // for_each_type, for fill_manager_chunk
 
 /**
  * @file all_type_chunk_decl.h
@@ -53,6 +54,9 @@ namespace shrink_array
 {
 
 struct ManagerChunkInt;
+
+template <template <typename> class ChunkT, typename T>
+class ManagerChunk; // manager_chunk.h; named by fill_manager_chunk, complete where it is instantiated
 
 // ===========================================================================
 // Build-dependent halves of the registry's surface.
@@ -426,7 +430,11 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * @tparam Types   Type tuple owned by the consumer (e.g. MyChunkTypes).
      */
     template <template <typename> class ChunkT, typename Types>
-    void fill_manager_chunk();
+    void fill_manager_chunk()
+    {
+        // One ManagerChunk per T of Types (a std::tuple).
+        for_each_type<Types>([this]<typename T> { this->register_manager<ManagerChunk<ChunkT, T>>(); });
+    }
 
     /// Resizes every manager's compression-candidate list to the current thread count.
     void resize_chunk_to_compress_potentially() const;

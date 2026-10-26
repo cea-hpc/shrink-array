@@ -90,32 +90,14 @@ class PointerMapChunk2InfArrayPolicy
      * @brief All registered inf_array pointers, in map order.
      * @return Vector of every second value's currently-registered pointer.
      */
-    [[nodiscard]] std::vector<InfArrayT*> get_all_inf_array() const
-    {
-        std::vector<InfArrayT*> values;
-
-        for (const auto& [key, v] : map_inf_array_)
-        {
-            values.push_back(v);
-        }
-
-        return values;
-    }
+    [[nodiscard]] std::vector<InfArrayT*> get_all_inf_array() const;
 
     /**
      * @brief Look up the inf_array record pointer registered for a second value.
      * @param key Second value to look up.
      * @return The registered pointer, or nullptr if @p key is not registered.
      */
-    [[nodiscard]] InfArrayT* find_inf_array(InT<T> key) const
-    {
-        const auto it = map_inf_array_.find(key);
-        if (it != map_inf_array_.end())
-        {
-            return it->second;
-        }
-        return nullptr;
-    }
+    [[nodiscard]] InfArrayT* find_inf_array(InT<T> key) const;
 
     /**
      * @brief Drop every entry still pointing at @p self_ptr.
@@ -129,20 +111,7 @@ class PointerMapChunk2InfArrayPolicy
      *
      * @param self_ptr Address of the departing array's inf_array member.
      */
-    void erase_inf_array_by_ptr(const InfArrayT* self_ptr)
-    {
-        for (auto it = map_inf_array_.begin(); it != map_inf_array_.end();)
-        {
-            if (it->second == self_ptr)
-            {
-                it = map_inf_array_.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
+    void erase_inf_array_by_ptr(const InfArrayT* self_ptr);
 
   protected:
     using MapType0 = ValueToInfTupleMapHelper<T>::type;
@@ -239,33 +208,7 @@ class PointerMap
     /// @brief Check-only: write the searched @p key and every stored
     ///        (key, num_tab) on the log (an error) before a lookup from @p
     ///        site fails.
-    void report_key_not_found(Key key, const char* site) const noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            // -1 means "outside any parallel region"; CHUNK_PMP_* already
-            // folds to that in a serial build.
-            const int    rank  = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
-            const size_t count = vec_.size();
-
-            // The valid keys, bounded so a corrupt size can't run away (and
-            // cut at the log's line length anyway).
-            std::array<char, logging::line_max> keys{};
-            std::size_t                         n   = 0;
-            const size_t                        lim = (count > 64u) ? 64u : count;
-            for (size_t i = 0; i < lim && n < keys.size(); ++i)
-            {
-                n += static_cast<std::size_t>(std::format_to_n(keys.data() + n, keys.size() - n, " [{} num_tab={}]",
-                                                               static_cast<const void*>(vec_[i].first),
-                                                               vec_[i].second.num_tab)
-                                                  .size);
-            }
-            CHUNK_LOG(error, general,
-                      "share_info {}: KEY NOT FOUND: this={} rank={} searched_key={} vec.size={}; valid keys:{}{}",
-                      site, this, rank, key, count, std::string_view{keys.data(), n < keys.size() ? n : keys.size()},
-                      count > lim ? " ...(truncated)" : "");
-        }
-    }
+    void report_key_not_found(Key key, const char* site) const noexcept;
 
     /// Map from values to constant index values.
     MapType map_ind_cst_val2_;
@@ -312,22 +255,7 @@ class PointerMap
      * @param ind New index to assign.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    void replace_all_other_elm(Key key, InT<T> val, int ind) noexcept
-    {
-        for (auto& item : vec_)
-        {
-            if (item.first == key)
-            {
-                auto& info        = item.second;
-                info.second_value = val;
-                info.ind          = ind;
-                return;
-            }
-        }
-        report_key_not_found(key, "replace_all_other_elm");
-        CHUNK_INVARIANT_FAILED("[share_info replace_all_other_elm] key NOT FOUND: this={} size={} key={}", this,
-                               vec_.size(), key);
-    }
+    void replace_all_other_elm(Key key, InT<T> val, int ind) noexcept;
 
     /// @brief Record that second value @p key sits at index @p ind of the
     ///        shared value table.
@@ -337,157 +265,27 @@ class PointerMap
     }
 
     /// @brief Every registered second value, in map order.
-    [[nodiscard]] std::vector<T> get_all_second_value() const
-    {
-        std::vector<T> keys;
-
-        for (const auto& [key, v] : map_ind_cst_val2_)
-        {
-            keys.push_back(key);
-        }
-
-        return keys;
-    }
+    [[nodiscard]] std::vector<T> get_all_second_value() const;
 
     /// @brief Index of second value @p key in the shared value table, or -1
     ///        when it is not registered (0 for bool, which has no table).
-    [[nodiscard]] int find_ind_tab_cst2(InT<T> key) const
-    {
-        if constexpr (is_not_bool)
-        {
-            const auto it = map_ind_cst_val2_.find(key);
-            if (it != map_ind_cst_val2_.end())
-            {
-                return it->second;
-            }
-            return -1;
-        }
-        else
-        {
-            return 0;
-        }
-    }
+    [[nodiscard]] int find_ind_tab_cst2(InT<T> key) const;
 
     /// @brief Change the second value and its table index recorded for
     ///        array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    void replace(Key key, InT<T> val, int ind) noexcept
-    {
-        for (auto& item : vec_)
-        {
-            if (item.first == key)
-            {
-                item.second.second_value = val;
-                item.second.ind          = ind;
-                return;
-            }
-        }
-
-        report_key_not_found(key, "replace");
-        CHUNK_INVARIANT_FAILED("[share_info replace] key NOT FOUND: this={} size={} key={}", this, vec_.size(), key);
-    }
+    void replace(Key key, InT<T> val, int ind) noexcept;
 
     /// @brief The second value recorded for array @p key (true for bool).
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    [[nodiscard]] T get_second_value(Key key) const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            for (const auto& item : vec_)
-            {
-                if (item.first == key)
-                {
-                    return item.second.second_value;
-                }
-            }
-        }
-        else
-        {
-            return true;
-        }
-        report_key_not_found(key, "get_second_value");
-        CHUNK_INVARIANT_FAILED("[share_info get_second_value] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
-                               key);
-    }
+    [[nodiscard]] T get_second_value(Key key) const noexcept;
     /// @brief The num_tab recorded for array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    [[nodiscard]] int get_num_tab(Key key) const noexcept
-    {
-        for (const auto& item : vec_)
-        {
-            if (item.first == key)
-            {
-                return item.second.num_tab;
-            }
-        }
-        report_key_not_found(key, "get_num_tab");
-        CHUNK_INVARIANT_FAILED("[share_info get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
-                               key);
-    }
+    [[nodiscard]] int get_num_tab(Key key) const noexcept;
 
     /// @brief The whole (second value, index, num_tab) tuple recorded for
     ///        array @p key.
-    [[nodiscard]] InfArrayT get_info_second_value(Key key) const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            if constexpr (build_config::any_check)
-            {
-                // Snapshot size() ONCE and index stable deque slots (see the storage
-                // note above): a concurrent append cannot move the loop bound.
-                const size_t count = vec_.size();
-
-                if (count > (1U << 30U))
-                {
-                    CHUNK_INVARIANT_FAILED("[share_info get] corrupt vec: this={} size={} key={}", this, count, key);
-                }
-
-                for (size_t i = 0; i < count; ++i)
-                {
-                    if (vec_[i].first == key)
-                    {
-                        return vec_[i].second;
-                    }
-                }
-                CHUNK_INVARIANT_FAILED("[share_info get] key NOT FOUND: this={} size={} key={} "
-                                       "(dangling ctx->ptr_on_array, or array destroyed while a deferred op "
-                                       "still referenced it?)",
-                                       this, count, key);
-            }
-            else
-            {
-                // deque: snapshot size() and index stable slots (see above).
-                const size_t count = vec_.size();
-                for (size_t i = 0; i < count; ++i)
-                {
-                    if (vec_[i].first == key)
-                    {
-                        return vec_[i].second;
-                    }
-                }
-                report_key_not_found(key, "get_info_second_value");
-                CHUNK_INVARIANT_FAILED("[share_info get_info_second_value] key NOT FOUND: this={} size={} key={}", this,
-                                       vec_.size(), key);
-            }
-        }
-        else
-        {
-            // bool: second_value is always `true`, but num_tab is PER-ARRAY, so look
-            // the key up. Do not return vec[0]: every bool array (rechunk_to's tmp
-            // included) would get the first one's num_tab and its compression-flag
-            // write would index the wrong array's tab_is_inside_chunk_list_to_compress
-            // (heap overflow). Same hazard as PointerMapLinear::erase().
-            const size_t count = vec_.size();
-            for (size_t i = 0; i < count; ++i)
-            {
-                if (vec_[i].first == key)
-                {
-                    return vec_[i].second;
-                }
-            }
-            return vec_[0].second; // fallback: not registered (should not happen)
-        }
-    }
+    [[nodiscard]] InfArrayT get_info_second_value(Key key) const noexcept;
 
     // erase(), swap_entries(), exists(), size() and for_each_key() come from
     // PointerMapLinear (shared with zero::PointerMap).
@@ -496,3 +294,5 @@ class PointerMap
 } // namespace zero_one_value
 
 } // namespace shrink_array
+
+#include "chunk/internal/zero_one_value_pointer_map_inline.h" // the template bodies

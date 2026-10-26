@@ -191,35 +191,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      * @note Replacing the vector frees the previous flags, so this doubles as
      *       the release path on a re-chunk.
      */
-    static void resize_tab_is_int(int num_tab, int nb_chunk)
-    {
-        // Check builds: the row is REALLOCATED, so every flag goes back to 0.
-        // A chunk still flagged here still sits in a candidate list: its entry
-        // outlives the caller's chunk_list realloc, and the cleared flag lets
-        // the chunk be queued twice. The callers' compression pass (resize,
-        // after its deferred-op drain) must empty the lists first; this checks
-        // it. Mirrors zero_any::Proxy::resize_tab_is_int(num_tab, old, nb).
-        if constexpr (build_config::any_check)
-        {
-            if (static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
-            {
-                const auto& row = tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)];
-                for (std::size_t j = 0; j < row.size(); ++j)
-                {
-                    if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
-                    {
-                        CHUNK_INVARIANT_FAILED(
-                            "resize_tab_is_int: tab {} chunk {} still queued for compression while its "
-                            "flag row is reallocated ({} -> {} chunks)",
-                            num_tab, j, row.size(), nb_chunk);
-                    }
-                }
-            }
-        }
-        // Every flag 0, constructed by a team for a large array.
-        tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
-            parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(nb_chunk), char{0});
-    }
+    static void resize_tab_is_int(int num_tab, int nb_chunk);
 
     /**
      * @brief Release one array's candidate flags (its teardown).
@@ -447,20 +419,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        swapped-out or released chunks. Called first by every read and
     ///        write entry (read_pure, operator T, assign_impl, the compound and
     ///        in-place funnels). Nothing in other builds.
-    void check_not_stale() const noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            if (stale_guard_.gen != nullptr && *stale_guard_.gen != stale_guard_.seen) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED(
-                    "write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
-                    "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
-                    "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
-                    ptr_on_array_, num_chunk_, num_);
-            }
-        }
-    }
+    void check_not_stale() const noexcept;
 
     using CompressionManagerType = CompressionManager<T, ChunkT>;
 
@@ -541,16 +500,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /// @brief This element, read raw: `values[num]`, or its bit for Bit
     ///        (element_access.h). No sync, no check.
-    [[nodiscard]] T raw_elem() const noexcept
-    {
-        // Only the serial counter mode reads through this: no pass runs
-        // concurrently there. A build with in-region passes must read through
-        // the write session, element_at, or read_values_outside_session.
-        static_assert(chunk_config::use_compression_with_counter || sizeof(T) == 0,
-                      "raw_elem(): serial counter mode only -- no concurrent pass may release the buffer");
-        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        return elem_get(static_cast<const T*>(values_), static_cast<std::size_t>(num_));
-    }
+    [[nodiscard]] T raw_elem() const noexcept;
 
     /// @brief This element, written raw: `values[num] = v`, or an atomic RMW
     ///        of its word for Bit. No sync, no check.
@@ -571,53 +521,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        (after the materialisation, if there was one); saves a reload.
     /// @param value The value to store.
     /// @pre As store_value().
-    void store_value_at(T* const vals, InT<T> value) const noexcept
-    {
-        // The chunk must not be COMMITTED to a compressor here: a writer on a
-        // marked chunk is sent to the slow path by must_defer_write(), and a
-        // compressor commits its claims only once its window is shut -- no
-        // writer flagged on a marked chunk. Do not test "merely marked" (1):
-        // the compressor may have marked it after this writer's check #2 and
-        // be waiting on the flag (false positive). If this fires, the
-        // compressor passed its window with this writer's flag up: suspect the
-        // ordering of the gate's read, not the propagation of the mark (this
-        // write then races scan_constants()/read_value_scan()).
-        if constexpr (build_config::any_check && chunk_config::use_chunk_steal_mark)
-        {
-            if (chunk_.steal_committed()) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num_);
-            }
-        }
-        // zero_any: the marking filter of another writer may be reading this
-        // element -- relaxed atomic store, see relaxed_element.h.
-        if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
-        {
-            internal::store_element_relaxed(vals + num_, static_cast<T>(value));
-        }
-        else
-        {
-            // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
-            elem_set(vals, static_cast<std::size_t>(num_), static_cast<T>(value));
-        }
-    }
+    void store_value_at(T* const vals, InT<T> value) const noexcept;
 
     /// @brief Raw read for the WRITE path only. Deliberately does not sync.
     /// @warning Not an ordinary read -- use read_pure(). The reason it must not
     ///          sync is in the body comment.
-    [[nodiscard]] T read_values() const noexcept
-    {
-        // WRITE-PATH helper ONLY (v_old capture + mark_for_compression new value
-        // in execute_simple_operation / arithmetic_assign). It must NOT sync:
-        // syncing re-flushes from inside a write (begin_write held) and, when
-        // pending_ops_>0, wait_for_availability's replay reallocates `values`
-        // under the in-flight writer. Same-offset visibility on the write path
-        // is handled by the WAW erase before the write body; pure reads use
-        // read_pure(). Not raw for a zero_any second constant (see
-        // internal::element_of()): the compression decision must see the
-        // constant, not 0.
-        return read_values_at(values_);
-    }
+    [[nodiscard]] T read_values() const noexcept;
     /// @brief read_values() through a pointer the caller has already loaded.
     /// @param vals The chunk's values pointer, loaded inside the write session;
     ///        saves the reload when the write path has one in hand.
@@ -1124,15 +1033,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief `a[i] ^= b` for ArrayChunkBits: flips the element when @p operand is true.
     template <typename U>
     Derived operator^=(const U& operand) noexcept
-        requires is_packed_bit_v<T> && bit_operand_v<U>
-    {
-        if (static_cast<bool>(operand))
-        {
-            const bool cur = static_cast<bool>(read_pure()); // synchronised read, as operator bool()
-            derived()      = !cur;
-        }
-        return derived();
-    }
+        requires is_packed_bit_v<T> && bit_operand_v<U>;
 
     /**
      * @brief Compound left shift operator
@@ -1205,23 +1106,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * Returns the value after increment.
      */
     Derived operator++() noexcept
-        requires ElementIncrementable<T>
-    {
-        const auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { ++elem; }); };
-
-        const auto inc_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [](T& elem) { ++elem; }); };
-
-        apply_inplace_operation(inc_operation, inc_operation_async);
-
-        // Return the proxy, not a value. Never read `values[num]` here: `values`
-        // is the ctor-time snapshot, and the call above may have materialised
-        // the chunk (snapshot stale, possibly the cst sentinel) or DEFERRED the
-        // op (cell not yet updated, another rank's replay may be writing it).
-        // The returned proxy's operator T() is read_pure(): `y = ++a[i]` gets
-        // the right value, and the synchronised read is only paid when used.
-        return derived();
-    }
+        requires ElementIncrementable<T>;
 
     /**
      * @brief Pre-decrement operator
@@ -1230,18 +1115,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * Returns the value after decrement.
      */
     Derived operator--() noexcept
-        requires ElementIncrementable<T>
-    {
-        const auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { --elem; }); };
-
-        const auto dec_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [](T& elem) { --elem; }); };
-
-        apply_inplace_operation(dec_operation, dec_operation_async);
-
-        // Return the proxy, not a value: see operator++().
-        return derived();
-    }
+        requires ElementIncrementable<T>;
 
     /**
      * @brief Post-increment operator
@@ -1251,18 +1125,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * Returns the original value before increment.
      */
     T operator++(int) noexcept
-        requires ElementIncrementable<T>
-    {
-        T temp(*this);
-
-        const auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem++; }); };
-
-        const auto inc_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem++; }); };
-
-        apply_inplace_operation(inc_operation, inc_operation_async);
-        return temp;
-    }
+        requires ElementIncrementable<T>;
 
     /**
      * @brief Post-decrement operator
@@ -1272,17 +1135,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * Returns the original value before decrement.
      */
     T operator--(int) noexcept
-        requires ElementIncrementable<T>
-    {
-        T          temp(*this);
-        const auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem--; }); };
-
-        const auto dec_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem--; }); };
-
-        apply_inplace_operation(dec_operation, dec_operation_async);
-        return temp;
-    }
+        requires ElementIncrementable<T>;
 
     /**
      * @brief Set the candidate-list flag of chunk @p num_chunkl of array @p num_tabl.
@@ -1316,18 +1169,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @param write_fn Function to execute.
      */
     template <typename WriteFn>
-    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_info(WriteFn write_fn)
-    {
-        const auto lbd_info = [this]
-        {
-            if constexpr (chunk_config::use_fast_block_compression)
-            {
-                derived().set_info_on_chunk();
-            }
-        };
-
-        return write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
-    }
+    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_info(WriteFn write_fn);
 
     /**
      * @brief Deferred-path tail: a dangerous rank still drives its pass.

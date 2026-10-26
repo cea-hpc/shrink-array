@@ -480,17 +480,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      * @brief This proxy's second constant value. Bool: always true.
      * @return The second constant value.
      */
-    [[nodiscard]] auto get_second_value() const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return second_value_;
-        }
-        else
-        {
-            return true;
-        }
-    }
+    [[nodiscard]] auto get_second_value() const noexcept;
     /**
      * @brief Get the compression candidate list for a specific thread
      * @param thr Thread rank [0, MAX_THREADS)
@@ -499,19 +489,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      *          This allows grouping chunks with the same second_value for batch compression.
      */
 
-    VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
-    {
-        const auto second_value = get_second_value();
-        // find(), not operator[]: operator[] INSERTS a null entry for a missing
-        // key, which have_chunk_to_compress() would dereference later.
-        auto&      candidates = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
-        const auto it         = candidates.find(second_value);
-        if (it == candidates.end() || it->second == nullptr) [[unlikely]]
-        {
-            chunk2_missing_candidate_list(thr);
-        }
-        return *it->second;
-    }
+    VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept;
 
     /**
      * @brief Async-context counterpart of get_vec_tuple_to_compress_potentially_thr().
@@ -519,19 +497,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      * @param thr Thread rank [0, MAX_THREADS).
      * @return Reference to vector of (chunk*, chunk_idx, tab_idx) tuples.
      */
-    VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const
-    {
-        const auto second_value = get_second_value(ctx);
-        // find(), not operator[]: operator[] INSERTS a null entry for a missing
-        // key, which have_chunk_to_compress() would dereference later.
-        auto&      candidates = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
-        const auto it         = candidates.find(second_value);
-        if (it == candidates.end() || it->second == nullptr) [[unlikely]]
-        {
-            chunk2_missing_candidate_list(thr);
-        }
-        return *it->second;
-    }
+    VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const;
 
     /**
      * @brief Mark for compression with explicit old value
@@ -604,17 +570,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      * @param ctx Async write context.
      * @return The second constant value.
      */
-    [[nodiscard]] static auto get_second_value(auto* ctx) noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return ctx->second_value;
-        }
-        else
-        {
-            return true;
-        }
-    }
+    [[nodiscard]] static auto get_second_value(auto* ctx) noexcept;
 
     /**
      * @brief Checks if a value change should trigger compression consideration
@@ -696,27 +652,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
      *          Resets value counter to zero.
      * @post Chunk compressed; memory freed; values points to const storage
      */
-    void manage_full_first_value() const
-    {
-        // Pin the ambient chunk size before the free chain (clear_st -> ... ->
-        // get_chunk_allocator(thr_rank).free_elt_pow2()): get_chunk_allocator() routes by the
-        // ambient thread_chunk_size(), not by the buffer. A stale ambient (left by another
-        // array's write) selects the wrong pool, which then removes a node it does not own.
-        // Fast-alloc only: std-alloc's svfree() does not route by ambient.
-        if constexpr (build_config::chunk_dynamic)
-        {
-            shrink_array::set_thread_chunk_size(this->chunk_size());
-        }
-        if constexpr (is_not_bool)
-        {
-            chunk_.clear_st(0, this->ind_);
-        }
-        else
-        {
-            chunk_.clear_st(0, 0); // bool: ind ignored by bool-aware clear_int_st
-        }
-        chunk_.values_ = static_cast<T*>(chunk_.get_cst_val1());
-    }
+    void manage_full_first_value() const;
 
     /**
      * @brief Handle chunk that became fully second_value
@@ -724,22 +660,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
      *          Resets value counter to zero.
      * @post Chunk compressed; memory freed; values points to second_value storage
      */
-    void manage_full_second_value() const
-    {
-        // Same rule as manage_full_first_value(): see that function's comment.
-        if constexpr (build_config::chunk_dynamic)
-        {
-            shrink_array::set_thread_chunk_size(this->chunk_size());
-        }
-        if constexpr (is_not_bool)
-        {
-            chunk_.clear_st(1, this->ind_);
-        }
-        else
-        {
-            chunk_.clear_st(1, 0); // bool: ind ignored by bool-aware clear_int_st
-        }
-    }
+    void manage_full_second_value() const;
 
   protected:
     /**
@@ -870,23 +791,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *        harmless: the chunk can only have been materialised since, and
      *        the CAS of chunk.create_value() then fails.
      */
-    void create_value(bool is_cst2) const noexcept
-    {
-        if constexpr (build_config::chunk_dynamic)
-        {
-            // Route this (possibly worker-thread) allocation to the pool of THIS array's chunk
-            // size: set the per-thread active size right before materialising.
-            shrink_array::set_thread_chunk_size(this->chunk_size());
-        }
-        if constexpr (is_not_bool)
-        {
-            chunk_.create_value(is_cst2, inf_array_);
-        }
-        else
-        {
-            chunk_.create_value_bool(is_cst2);
-        }
-    }
+    void create_value(bool is_cst2) const noexcept;
 
     /**
      * @brief Core assignment logic without compression tracking
@@ -1022,15 +927,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @param from Proxy to read the value from.
      * @return *this.
      */
-    const Proxy& operator=(const Proxy& from) noexcept
-    {
-        if (std::addressof(from) != this) // operator& is deleted
-        {
-            const InT<T> value = static_cast<T>(from); // complete before the write starts
-            static_cast<void>(assign_impl<T>(value));  // the value written: not needed here
-        }
-        return *this;
-    }
+    const Proxy& operator=(const Proxy& from) noexcept;
     Proxy(const Proxy& other) = default;
 
     T*       operator&()       = delete;
@@ -1055,18 +952,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @note Non-bool only: aborts if called on a bool chunk (bool has no
      *       indexed second constant -- use the no-arg overload below).
      */
-    [[nodiscard]] bool is_cst_val2(int ind) const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return chunk_.is_cst_val2(ind);
-        }
-        else
-        {
-            CHUNK_INVARIANT_FAILED("zero_one_value::Proxy<bool>::is_cst_val2(ind): bool has no indexed second constant "
-                                   "-- use is_cst_val2()");
-        }
-    }
+    [[nodiscard]] bool is_cst_val2(int ind) const noexcept;
 
     /**
      * @brief Check if chunk is compressed to the second constant. Works for
@@ -1075,17 +961,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *        single shared second constant.
      * @return true if the chunk is compressed to the second constant.
      */
-    [[nodiscard]] bool is_cst_val2() const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return chunk_.is_cst_val2(BaseSpec::ind_);
-        }
-        else
-        {
-            return chunk_.is_cst_val2();
-        }
-    }
+    [[nodiscard]] bool is_cst_val2() const noexcept;
 
     /**
      * @brief is_cst_val2() judged from an already-loaded values pointer.
@@ -1095,17 +971,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @param vals The pointer the caller loaded.
      * @return true if @p vals is the chunk's second constant buffer.
      */
-    [[nodiscard]] bool is_cst_val2_at(const T* vals) const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return vals == chunk_.get_cst_val2(BaseSpec::ind_);
-        }
-        else
-        {
-            return vals == chunk_.get_cst_val2();
-        }
-    }
+    [[nodiscard]] bool is_cst_val2_at(const T* vals) const noexcept;
 
     // ========================================================================
     // Metadata initialization
@@ -1154,26 +1020,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *          outside the parallel phases. Always true in builds without the
      *          per-value lists (no OpenMP / no fast block compression).
      */
-    [[nodiscard]] static bool has_candidate_list(InT<T> second_val) noexcept
-    {
-        if constexpr (build_config::threaded && chunk_config::use_fast_block_compression)
-        {
-            const auto& per_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr;
-            const int   thr     = get_thr_rank_fast();
-            if (thr < 0 || static_cast<std::size_t>(thr) >= per_thr.size()) [[unlikely]]
-            {
-                return false;
-            }
-            const auto& candidates = per_thr[thr];
-            const auto  it         = candidates.find(second_val);
-            return it != candidates.end() && it->second != nullptr;
-        }
-        else
-        {
-            (void)second_val;
-            return true;
-        }
-    }
+    [[nodiscard]] static bool has_candidate_list(InT<T> second_val) noexcept;
 
     /**
      * @brief Look up the (second_value, ind, num_tab) metadata tuple

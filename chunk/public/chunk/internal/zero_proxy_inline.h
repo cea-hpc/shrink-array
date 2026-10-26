@@ -784,4 +784,143 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const
     CompressionManagerType::mark_list_safe_for_thread(thr_rank);
 }
 
+// ---------------------------------------------------------------------------
+// shrink_array::PointerMap<T>
+// ---------------------------------------------------------------------------
+
+template <typename T>
+[[nodiscard]] int zero::PointerMap<T>::get_num_tab(Key key) const noexcept
+{
+    for (const auto& [entry_key, tab] : vec_)
+    {
+        if (entry_key == key)
+        {
+            return tab;
+        }
+    }
+
+    CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
+                           key);
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ProxyFastCompPolicy<Derived, T, Enabled>
+// ---------------------------------------------------------------------------
+
+template <typename Derived, typename T, bool Enabled>
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::set_num_tab() noexcept
+{
+    // Armed by the array's operator[] (see zero_any::Proxy::set_num_tab): the
+    // registry lookup only for a proxy armed otherwise.
+    if (num_tab_ >= 0) [[likely]]
+    {
+        return;
+    }
+    num_tab_ = Derived::get_num_tab(ptr_on_array_);
+}
+
+template <typename Derived, typename T, bool Enabled>
+[[nodiscard]] int zero::ProxyFastCompPolicy<Derived, T, Enabled>::get_num_tab_async(
+    auto* ctx,
+    [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept
+{
+    // The context's num_tab, captured at enqueue: the one the replay proxy
+    // is armed with (make_proxy_with_info), without a registry scan per
+    // replayed op. Check builds compare it with the registry while the
+    // array is still registered.
+    if constexpr (build_config::any_check)
+    {
+        if (Derived::share_info_array->exists(ptr) && Derived::share_info_array->get_num_tab(ptr) != ctx->num_tab)
+        {
+            CHUNK_INVARIANT_FAILED("[Proxy get_num_tab_async] ctx num_tab={} but the registry says {} for {}",
+                                   ctx->num_tab, Derived::share_info_array->get_num_tab(ptr), ptr);
+        }
+    }
+    return ctx->num_tab;
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::Proxy<T>
+// ---------------------------------------------------------------------------
+
+template <typename T>
+void zero::Proxy<T>::create_value() const noexcept
+{
+    if constexpr (build_config::chunk_dynamic)
+    {
+        // Route this (possibly worker-thread) allocation to the allocator
+        // for THIS array's chunk size before materializing.
+        shrink_array::set_thread_chunk_size(this->chunk_size());
+        shrink_array::set_thread_alloc_key(this->alloc_key());
+    }
+    chunk_.create_value();
+}
+
+template <typename T>
+template <typename WriteFn>
+CHUNK_FORCE_INLINE bool zero::Proxy<T>::write_with_optional_lock(WriteFn write_fn) noexcept
+{
+    const auto lbd_info = [this]
+    {
+        if constexpr (chunk_config::use_fast_block_compression)
+        {
+            set_info_on_chunk();
+        }
+    };
+
+    return Base::write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
+}
+
+template <typename T>
+[[nodiscard]] bool zero::Proxy<T>::fold_if_full_zero() const
+{
+    if constexpr (chunk_config::use_compression_with_counter)
+    {
+        if (chunk_.is_not_cst_val1() && chunk_.is_full_zero(this->chunk_size()))
+        {
+            if constexpr (build_config::chunk_dynamic)
+            {
+                shrink_array::set_thread_chunk_size(this->chunk_size());
+                shrink_array::set_thread_alloc_key(this->alloc_key());
+            }
+            this->manage_full_zero();
+            return true;
+        }
+    }
+    return false;
+}
+
+template <typename T>
+zero::Proxy<T>::operator T() const noexcept
+{
+    this->check_not_stale();
+    if constexpr (chunk_config::stats)
+    {
+        increm_chunk_read<ChunkType>();
+    }
+
+    if constexpr (build_config::threaded)
+    {
+        // chunk_size_frozen_ != 0: a replay proxy whose ptr_on_array may
+        // dangle (see ProxyBase::chunk_size_frozen_) -- never dereference it;
+        // it runs inside a flush, so go straight to the gated read.
+        if (chunk_size_frozen_ == 0U && ptr_on_array_ != nullptr) [[likely]]
+        {
+            if (!ptr_on_array_->is_chunk_dirty(num_chunk_)) [[likely]]
+            {
+                // A pure read, like element_at: inside a ReadSection, or a
+                // pass in the region may release the buffer between the
+                // pointer load and the element load (read_reclaim.h).
+                const read_reclaim::ReadSection section;
+                // raw-read: inside a read_reclaim::ReadSection
+                return values_[num_];
+            }
+        }
+        return Base::read_pure();
+    }
+
+    // raw-read: serial build (no OpenMP, no concurrent pass)
+    return values_[num_];
+}
+
 } // namespace shrink_array

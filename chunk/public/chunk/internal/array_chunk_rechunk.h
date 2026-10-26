@@ -196,21 +196,7 @@ class RechunkSupport<Derived, true>
      *          returns (once, for all types) before the next write phase.
      * @see rechunk_to
      */
-    static void rechunk_all_to(unsigned int new_size)
-    {
-        ProxyType::share_info_array->for_each_key(
-            [new_size](ArrayKey<ChunkType> key)
-            {
-                if (key != nullptr)
-                {
-                    // The key is an array's core, and the arrays of this
-                    // element type may differ in index type: reach each one's
-                    // own rechunk_to() through the core (the registry hands out
-                    // const keys; a re-chunk rebuilds the array).
-                    const_cast<ArrayChunkCore<ChunkType>*>(key)->rechunk_erased(new_size);
-                }
-            });
-    }
+    static void rechunk_all_to(unsigned int new_size);
 };
 
 // ── Static-geometry build: nothing to re-chunk ───────────────────────────────

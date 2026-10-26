@@ -107,4 +107,47 @@ bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
     return ProxyType::share_info_array->swap_keys(self().registry_key(), tmp.registry_key());
 }
 
+// ---------------------------------------------------------------------------
+// shrink_array::RechunkHooks<Derived, true>
+// ---------------------------------------------------------------------------
+
+template <typename Derived>
+[[nodiscard]] auto& RechunkHooks<Derived, true>::candidate_lists_thr() noexcept
+{
+    if constexpr (is_zero_any_family)
+    {
+        return ManagerType::chunk2a_to_compress_potentially_thr;
+    }
+    else
+    {
+        return ManagerType::chunk_to_compress_potentially_thr;
+    }
+}
+
+template <typename Derived>
+[[nodiscard]] auto& RechunkHooks<Derived, true>::candidate_list() noexcept
+{
+    if constexpr (is_zero_any_family)
+    {
+        return ManagerType::chunk2a_to_compress_potentially;
+    }
+    else
+    {
+        return ManagerType::chunk_to_compress_potentially;
+    }
+}
+
+template <typename Derived>
+void RechunkHooks<Derived, true>::remove_candidates_of_tab(int num_tab) noexcept
+{
+    if constexpr (is_zero_any_family)
+    {
+        ManagerType::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
+    }
+    else
+    {
+        ManagerType::remove_from_compress_list_chunk_by_num_tab(num_tab);
+    }
+}
+
 } // namespace shrink_array

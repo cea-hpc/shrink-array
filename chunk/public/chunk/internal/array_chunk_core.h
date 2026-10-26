@@ -221,37 +221,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     ///        rank; registers allocators, reuse lists and their budget with the
     ///        manager. Call from rebuild_storage() once nb_chunk is known
     ///        (sequential). Idempotent for an array that already has a key.
-    void assign_alloc_key()
-    {
-        if constexpr (build_config::alloc_affinity_min_bytes == 0 || !build_config::chunk_dynamic ||
-                      !build_config::use_fast_alloc || !build_config::threaded)
-        {
-            return;
-        }
-        if (nb_chunk_ <= 0)
-        {
-            return;
-        }
-        // Lazy affinity: only the storage a re-chunk builds takes its own set (an array
-        // already keyed keeps its key). A set costs one partly-filled slab per (rank, size),
-        // for a benefit -- whole slabs emptied by the NEXT re-chunk -- that only a
-        // re-chunked array collects.
-        if (alloc_key_ == 0 && !alloc_affinity_detail::g_eager && !alloc_affinity_detail::g_building_rechunk_storage)
-        {
-            return;
-        }
-        const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk_) * sizeof(ChunkType);
-        if (meta_bytes < build_config::alloc_affinity_min_bytes)
-        {
-            return;
-        }
-        const unsigned int key =
-            (alloc_key_ != 0) ? alloc_key_ : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
-        // Keep the key ONLY if the manager built its allocator set: a key with no registered
-        // set makes route_omp_dynamic_alloc fall through to the legacy single allocator,
-        // which is neither this size's nor this array's.
-        alloc_key_ = ManagerType::register_alloc_key(key, size_policy_.size(), nb_chunk_) ? key : 0u;
-    }
+    void assign_alloc_key();
 
     /**
      * @brief Size chunk_list to @p count chunks, from the spare a previous
@@ -266,18 +236,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      *          so no live chunk address ever moves.
      * @param count the chunk count
      */
-    void acquire_chunk_list(std::size_t count)
-    {
-        if (alloc_affinity_detail::g_building_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
-            chunk_list_.capacity() == 0 && spare_chunk_list_.capacity() >= count &&
-            spare_chunk_list_.capacity() / 4 <= count)
-        {
-            chunk_list_.swap(spare_chunk_list_); // spare left empty, without a buffer
-        }
-        // Only reserves (NoInitAllocator): the caller's init loop (static schedule) is the
-        // first touch, page faults and NUMA placement included.
-        chunk_list_.resize(count);
-    }
+    void acquire_chunk_list(std::size_t count);
 
     /**
      * @brief Construct chunk @p index of chunk_list in place, value-initialised.
@@ -297,16 +256,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      * @details The larger of the two buffers is kept (more re-chunks fit in
      *          it), the other one freed. At most one spare per chunk type.
      */
-    void release_chunk_list()
-    {
-        chunk_list_.clear();
-        if (alloc_affinity_detail::g_releasing_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
-            chunk_list_.capacity() > spare_chunk_list_.capacity())
-        {
-            chunk_list_.swap(spare_chunk_list_);
-            ChunkListType().swap(chunk_list_); // frees the smaller one
-        }
-    }
+    void release_chunk_list();
 
     /**
      * @brief Chunk-size policy — the single home for chunk geometry.
@@ -367,3 +317,5 @@ struct NoRegistryKeyCanary
 using RegistryKeyCanaryBase = std::conditional_t<build_config::any_check, RegistryKeyCanary, NoRegistryKeyCanary>;
 
 } // namespace shrink_array
+
+#include "chunk/internal/array_chunk_core_inline.h" // the template bodies

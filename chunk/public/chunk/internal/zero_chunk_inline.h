@@ -541,4 +541,103 @@ void zero::ChunkThreadPolicy<T, Derived, false>::release_st(bool count_release)
     derived().init_values_cst_val();
 }
 
+// ---------------------------------------------------------------------------
+// shrink_array::ChunkThreadPolicy<T, Derived, Enabled>
+// ---------------------------------------------------------------------------
+
+template <typename T, typename Derived, bool Enabled>
+T* zero::ChunkThreadPolicy<T, Derived, Enabled>::try_mark_cst_and_get_old()
+{
+    T* old = Base::values_load();
+    if (old == Base::get_cst_val1()) [[unlikely]]
+    {
+        return nullptr;
+    }
+
+    T* expected = old;
+    T* new_ptr  = Base::get_cst_val1();
+
+    if (!values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
+        [[unlikely]]
+    {
+        return nullptr;
+    }
+    return old;
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::Chunk<T>
+// ---------------------------------------------------------------------------
+
+template <typename T>
+zero::Chunk<T>::Chunk(const Chunk& other)
+    : ChunkCounterPolicy<chunk_config::use_compression_with_counter>(other)
+{
+    if constexpr (build_config::threaded)
+    {
+        values_.store(other.values_.load());
+    }
+    else
+    {
+        values_ = other.values_;
+    }
+}
+
+template <typename T>
+zero::Chunk<T>& zero::Chunk<T>::operator=(const Chunk<T>& other)
+{
+    if (this == &other)
+    {
+        return *this;
+    }
+
+    // Same reason as the copy ctor: propagate the zero-counter state.
+    ChunkCounterPolicy<chunk_config::use_compression_with_counter>::operator=(other);
+
+    if constexpr (build_config::threaded)
+    {
+        T* loaded_value = other.values.load();
+        values_.store(loaded_value);
+    }
+    else
+    {
+        values_ = other.values;
+    }
+
+    return *this;
+}
+
+template <typename T>
+void zero::Chunk<T>::alloc_chunk([[maybe_unused]] int thr_rank)
+{
+    if (is_cst_val1())
+    {
+        if constexpr (chunk_config::stats)
+        {
+            increm_chunk_write<ChunkType>();
+        }
+
+        if constexpr (build_config::threaded)
+        {
+            this->create_value(thr_rank);
+        }
+        else
+        {
+            this->create_value();
+        }
+    }
+}
+
+template <typename T>
+auto& zero::Chunk<T>::get_manager() noexcept
+{
+    // Do not make this a function-local static: its lazy guard's first init
+    // can run from compress() inside an OpenMP region and deadlock threads on
+    // __cxa_guard_acquire. A LazyImmortal (chunk/internal/immortal.h) is built
+    // by the manager's registration (ManagerChunk::init_static_state), before
+    // any array or thread reaches it, and never destroyed (a global array
+    // still uses it after main).
+    return *s_manager_;
+}
+
 } // namespace shrink_array

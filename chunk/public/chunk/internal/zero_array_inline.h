@@ -498,4 +498,48 @@ void zero::Array<T, IntType>::resize(IntType newsz)
     }
 }
 
+// ---------------------------------------------------------------------------
+// shrink_array::Array<T, IntType>
+// ---------------------------------------------------------------------------
+
+template <ArrayChunkElement T, typename IntType>
+zero::Array<T, IntType>::~Array()
+{
+    clear();
+    // Drop our (this -> num_tab) registry entry so a later array at this
+    // address does not inherit our stale num_tab via zero::PointerMap's
+    // first-match lookup (required for rechunk_to's tmp). Must run AFTER
+    // clear(), which still needs get_num_tab(registry_key()).
+    Proxy<T>::share_info_array->erase(this->registry_key());
+}
+
+template <ArrayChunkElement T, typename IntType>
+zero::Array<T, IntType>& zero::Array<T, IntType>::operator=(Array&& other) noexcept
+{
+    if (this != &other)
+    {
+        clear();
+        this->swap_storage_and_identity(other);
+    }
+    return *this;
+}
+
+template <ArrayChunkElement T, typename IntType>
+void zero::Array<T, IntType>::compress(bool verbose)
+{
+    const bool in_parr = CHUNK_PMP_IN_PARALLEL_REGION;
+
+    if (in_parr)
+    {
+        // Inside the caller's region: other threads may be reading, so
+        // the buffers released wait for a grace period (read_reclaim.h).
+        const read_reclaim::PassScope pass_scope;
+        compress_int(verbose);
+    }
+    else
+    {
+        pmp::team(pmp::Options{}, [&](pmp::Team& team) { compress_int(team, verbose); });
+    }
+}
+
 } // namespace shrink_array

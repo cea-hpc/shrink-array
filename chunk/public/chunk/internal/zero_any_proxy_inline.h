@@ -1250,4 +1250,367 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::apply_compound_operation(Op op, In
     }
 }
 
+// ---------------------------------------------------------------------------
+// shrink_array::PointerMap<T, SmallN>
+// ---------------------------------------------------------------------------
+
+template <typename T, size_t SmallN>
+[[nodiscard]] int zero_any::PointerMap<T, SmallN>::get_num_tab(Key key) const noexcept
+{
+    if (!using_big_)
+    {
+        for (const auto& [entry_key, tab] : small_)
+        {
+            if (entry_key == key)
+            {
+                return tab;
+            }
+        }
+        CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}", this,
+                               small_.size(), key);
+    }
+
+    if (const auto it = big_.find(key); it != big_.end())
+    {
+        return it->second;
+    }
+    CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}", this,
+                           big_.size(), key);
+}
+
+template <typename T, size_t SmallN>
+void zero_any::PointerMap<T, SmallN>::erase(Key key) noexcept
+{
+    if (!using_big_)
+    {
+        for (auto it = small_.begin(); it != small_.end(); ++it)
+        {
+            if (it->first == key)
+            {
+                small_.erase(it);
+                return;
+            }
+        }
+    }
+    else
+    {
+        // ankerl's erase throws on a key it finds changed; ~zero_any::Array
+        // calls this and is noexcept: fail with the key instead.
+        try
+        {
+            big_.erase(key);
+        }
+        catch (const std::exception& e)
+        {
+            CHUNK_INVARIANT_FAILED("[zero_any::PointerMap erase] failed: {} (this={} key={})", e.what(), this, key);
+        }
+    }
+}
+
+template <typename T, size_t SmallN>
+void zero_any::PointerMap<T, SmallN>::insert(Key key, int num_tab)
+{
+    if (!using_big_)
+    {
+        small_.emplace_back(key, num_tab);
+
+        if (small_.size() > SmallN)
+        {
+            using_big_ = true;
+            big_.reserve(small_.size());
+            for (const auto& [key, tab] : small_)
+            {
+                big_[key] = tab;
+            }
+            small_.clear();
+        }
+    }
+    else
+    {
+        big_[key] = num_tab;
+    }
+}
+
+template <typename T, size_t SmallN>
+bool zero_any::PointerMap<T, SmallN>::set_num_tab(Key key, int new_num_tab) noexcept
+{
+    if (!using_big_)
+    {
+        for (auto& [k, tab] : small_)
+        {
+            if (k == key)
+            {
+                tab = new_num_tab;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    const auto it = big_.find(key);
+    if (it == big_.end())
+    {
+        return false;
+    }
+    it->second = new_num_tab;
+    return true;
+}
+
+template <typename T, size_t SmallN>
+bool zero_any::PointerMap<T, SmallN>::swap_keys(Key key_a, Key key_b) noexcept
+{
+    int  na = 0;
+    int  nb = 0;
+    bool fa = false;
+    bool fb = false;
+    if (!using_big_)
+    {
+        for (const auto& [key, tab] : small_)
+        {
+            if (key == key_a)
+            {
+                na = tab;
+                fa = true;
+            }
+            if (key == key_b)
+            {
+                nb = tab;
+                fb = true;
+            }
+        }
+        if (!fa || !fb)
+        {
+            return false;
+        }
+        for (auto& [key, tab] : small_)
+        {
+            if (key == key_a)
+            {
+                tab = nb;
+            }
+            else if (key == key_b)
+            {
+                tab = na;
+            }
+        }
+        return true;
+    }
+
+    const auto ia = big_.find(key_a);
+    const auto ib = big_.find(key_b);
+    if (ia == big_.end() || ib == big_.end())
+    {
+        return false;
+    }
+    std::swap(ia->second, ib->second);
+    return true;
+}
+
+template <typename T, size_t SmallN>
+template <typename F>
+void zero_any::PointerMap<T, SmallN>::for_each_key(F&& func) const
+{
+    if (!using_big_)
+    {
+        for (const auto& [key, tab] : small_)
+        {
+            func(key);
+        }
+    }
+    else
+    {
+        for (const auto& [key, tab] : big_)
+        {
+            func(key);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ProxySpec<T, Derived, ChunkT>
+// ---------------------------------------------------------------------------
+
+template <typename T, typename Derived, typename ChunkT>
+void zero_any::ProxySpec<T, Derived, ChunkT>::resize(int nb_tab, int nb_chunk_old, int nb_chunk)
+{
+    auto&     row  = tab_second_value[static_cast<std::size_t>(nb_tab)];
+    const int held = static_cast<int>(row.size());
+    // Keeps [0, min(old, new)); new slots value-initialised (by a team for a large array).
+    parallel_storage_init::resize_filled(row, static_cast<std::size_t>(nb_chunk), SecondValueSlotT{});
+    // Clear from the OLD count too: the row may hold more than nb_chunk_old entries.
+    // Only up to what it held: resize_filled() initialised the rest.
+    for (int k = nb_chunk_old; k < std::min(held, nb_chunk); ++k)
+    {
+        row[static_cast<std::size_t>(k)] = SecondValueSlotT{};
+    }
+}
+
+template <typename T, typename Derived, typename ChunkT>
+void zero_any::ProxySpec<T, Derived, ChunkT>::clear([[maybe_unused]] int num_tab)
+{
+    // Released, not just emptied: a re-chunk destroys the old storage under its own
+    // num_tab, so a row left allocated leaks at every re-chunk. Swap with an empty
+    // row: `= {}` would keep the capacity.
+    if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
+    {
+        SecondValueRowT().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ProxySpec<bool, Derived, ChunkT>
+// ---------------------------------------------------------------------------
+
+template <typename Derived, typename ChunkT>
+void zero_any::ProxySpec<bool, Derived, ChunkT>::resize(int nb_tab, int nb_chunk_old, int nb_chunk)
+{
+    realloc_unique(tab_second_value[nb_tab], nb_chunk_old, nb_chunk);
+
+    // realloc_unique leaves the new tail indeterminate: fill it here.
+    if (nb_chunk > nb_chunk_old)
+    {
+        std::ranges::fill(tab_second_value[nb_tab].get() + nb_chunk_old, tab_second_value[nb_tab].get() + nb_chunk,
+                          false);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ProxyImpl<T, Derived, ChunkT>
+// ---------------------------------------------------------------------------
+
+template <typename T, typename Derived, typename ChunkT>
+const zero_any::ProxyImpl<T, Derived, ChunkT>& zero_any::ProxyImpl<T, Derived, ChunkT>::operator=(const ProxyImpl& from) noexcept
+{
+    if (std::addressof(from) != this) // operator& is deleted
+    {
+        const InT<T> value = static_cast<T>(from); // complete before the write starts
+        assign_impl<T>(value);
+    }
+    return *this;
+}
+
+template <typename T, typename Derived, typename ChunkT>
+void zero_any::ProxyImpl<T, Derived, ChunkT>::set_num_tab() noexcept
+{
+    // Armed by the array's operator[]: nothing to look up. A proxy armed otherwise
+    // (replay reconstruction, only the array pointer set) resolves it through the registry.
+    if (num_tab_ >= 0) [[likely]]
+    {
+        if constexpr (build_config::any_check)
+        {
+            if (num_tab_ != share_info_array->get_num_tab(ptr_on_array_))
+            {
+                CHUNK_INVARIANT_FAILED(
+                    "zero_any::ProxyImpl::set_num_tab: armed num_tab {} differs from the registry's for array {}",
+                    num_tab_, ptr_on_array_);
+            }
+        }
+        return;
+    }
+    num_tab_ = share_info_array->get_num_tab(ptr_on_array_);
+}
+
+template <typename T, typename Derived, typename ChunkT>
+void zero_any::ProxyImpl<T, Derived, ChunkT>::clear_tab_is_int(int num_tab)
+{
+    BaseSpec::clear(num_tab);
+    // Released, not just emptied (clear() keeps the capacity): every re-chunk would
+    // leave one byte per old chunk behind.
+    parallel_storage_init::NoInitVector<CstSlot>().swap(tab_type_cst_val[num_tab]);
+    // Same for the candidate flags.
+    Base::release_tab_is_int(num_tab);
+}
+
+template <typename T, typename Derived, typename ChunkT>
+void zero_any::ProxyImpl<T, Derived, ChunkT>::create_value(SecondValueRef<T> ptr_second_value) const noexcept
+{
+    if constexpr (build_config::chunk_dynamic)
+    {
+        // Set the per-thread active size from THIS array right before materialising, so a
+        // write on any worker allocates from the right size pool.
+        shrink_array::set_thread_chunk_size(this->chunk_size());
+        shrink_array::set_thread_alloc_key(this->alloc_key());
+    }
+    if constexpr (is_not_bool)
+    {
+        chunk_.create_value(is_cst_val2(), ptr_second_value);
+    }
+    else
+    {
+        static_assert(dependent_false_v<T>,
+                      "create_value(..., second value) is for non-bool elements: use create_value_bool()");
+    }
+}
+
+template <typename T, typename Derived, typename ChunkT>
+void zero_any::ProxyImpl<T, Derived, ChunkT>::create_value_bool() const noexcept
+{
+    if constexpr (build_config::chunk_dynamic)
+    {
+        shrink_array::set_thread_chunk_size(this->chunk_size());
+        shrink_array::set_thread_alloc_key(this->alloc_key());
+    }
+    if constexpr (is_bool)
+    {
+        chunk_.create_value_bool(is_cst_val2());
+    }
+    else
+    {
+        static_assert(dependent_false_v<T>,
+                      "create_value_bool() is for bool elements: use create_value(..., second value)");
+    }
+}
+
+template <typename T, typename Derived, typename ChunkT>
+[[nodiscard]] bool zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_value,
+                                                                                        InT<T> new_value,
+                                                                                        InT<T> second_value,
+                                                                                        InT<T> first_value) const noexcept
+{
+    if (CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value,
+                                                                      first_value))
+    {
+        return true;
+    }
+    const bool discover = (second_value == first_value && new_value != first_value);
+    const bool leave    = (second_value != first_value && old_value == second_value && new_value != second_value);
+    if (!discover && !leave)
+    {
+        return false;
+    }
+    if constexpr (chunk_config::use_fast_block_compression)
+    {
+        // Already queued: add_to_compression_list() is a no-op. One relaxed load; the
+        // filter's reads are only paid once the pass has reset the flag.
+        if (this->ptr_is_inside_chunk_list_to_compress_ != nullptr &&
+            this->ptr_is_inside_chunk_list_to_compress_->load(std::memory_order_relaxed) != 0)
+        {
+            return true;
+        }
+    }
+    return may_become_uniform(new_value);
+}
+
+template <typename T, typename Derived, typename ChunkT>
+[[nodiscard]] bool zero_any::ProxyImpl<T, Derived, ChunkT>::may_become_uniform(InT<T> value) const noexcept
+{
+    if constexpr (!internal::relaxed_element_access_v<T>)
+    {
+        return true;
+    }
+    else
+    {
+        const int chunk_sz = static_cast<int>(this->chunk_size());
+        if (chunk_sz < 3) [[unlikely]]
+        {
+            return true;
+        }
+        const int offset = this->num_;
+        const int r0     = (offset == 0) ? 1 : 0;
+        const int r1     = (offset == chunk_sz - 1) ? chunk_sz - 2 : chunk_sz - 1;
+        return this->chunk_.read_value_scan_relaxed(r0) == value &&
+               this->chunk_.read_value_scan_relaxed(r1) == value;
+    }
+}
+
 } // namespace shrink_array

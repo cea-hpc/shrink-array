@@ -79,36 +79,7 @@ class ChunkSpec
      * \param ind Index of the second value.
      * \return Pointer to the constant value array.
      */
-    [[nodiscard]] static T* get_cst_val2(int ind) noexcept
-    {
-        // An array with no second value (chunk_config::no_second_value_index)
-        // has no block: nullptr, which no chunk's `values` ever equals.
-        if (ind < 0)
-        {
-            return nullptr;
-        }
-        if constexpr (build_config::any_check)
-        {
-            if (static_cast<size_t>(ind) >= tab_m_ptr_cst_val2->size()) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
-                                       tab_m_ptr_cst_val2->size());
-                return nullptr;
-            }
-        }
-
-        T* ret = nullptr;
-        if constexpr (use_mm_protect)
-        {
-            ret = (*tab_m_ptr_cst_val2)[ind];
-        }
-        else
-        {
-            ret = (*tab_m_ptr_cst_val2)[ind].data();
-        }
-        CHUNK_CHECK_VALUES_PTR(ret, "get_cst_val2");
-        return ret;
-    }
+    [[nodiscard]] static T* get_cst_val2(int ind) noexcept;
     /*!
      * \brief Checks whether `values` IS the second constant's pointer at
      *        index `ind` (i.e. the chunk is currently compressed to it).
@@ -153,18 +124,7 @@ class ChunkSpec
      * \param v Pointer to test.
      * \return True if v matches the second constant at some index.
      */
-    [[nodiscard]] static bool is_cst_val2_any(const T* vals) noexcept
-    {
-        const int nb_cst_val2 = static_cast<int>(tab_m_ptr_cst_val2->size());
-        for (int i = 0; i < nb_cst_val2; ++i)
-        {
-            if (vals == get_cst_val2(i))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    [[nodiscard]] static bool is_cst_val2_any(const T* vals) noexcept;
 
   private:
     static constexpr bool use_mm_protect = build_config::use_mm_protect;
@@ -213,17 +173,7 @@ class ChunkSpec<T>
      *        possible second value).
      * \param values_loc Buffer to fill.
      */
-    static void init_block_2nd_value(T* values_loc)
-    {
-        if constexpr (is_packed_bit_v<T>)
-        {
-            bits::fill_bits(internal::as_words(values_loc), alloc_chunk_count(), true);
-        }
-        else
-        {
-            std::fill_n(values_loc, alloc_chunk_count(), true);
-        }
-    }
+    static void init_block_2nd_value(T* values_loc);
 
   protected:
     // Bit: every BIT set -- the buffer is read as 64-bit words, hence the
@@ -426,35 +376,13 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
      * \param need_set_second_value True to pre-fill with the second value, false for first_value.
      * \param inf_array (second_value, index, ...) tuple of the owning array.
      */
-    void create_value(bool need_set_second_value, const InfArrayT& inf_array) noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            create_value(need_set_second_value, inf_array, get_thr_rank_fast());
-        }
-        else
-        {
-            static_assert(dependent_false_v<T>,
-                          "create_value(bool, inf_array) is for non-bool elements: use create_value_bool()");
-        }
-    }
+    void create_value(bool need_set_second_value, const InfArrayT& inf_array) noexcept;
 
     /*!
      * \brief create_value_bool() with the calling thread's rank. Bool only.
      * \param need_set_second_value True to pre-fill with `true`, false for first_value.
      */
-    void create_value_bool(bool need_set_second_value) noexcept
-    {
-        if constexpr (is_bool)
-        {
-            create_value_bool(need_set_second_value, get_thr_rank_fast());
-        }
-        else
-        {
-            static_assert(dependent_false_v<T>,
-                          "create_value_bool() is for bool elements: use create_value(bool, inf_array)");
-        }
-    }
+    void create_value_bool(bool need_set_second_value) noexcept;
 
     /*!
      * \brief Install the constant and release the old buffer (every compression path).
@@ -615,24 +543,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     /**
      * @brief Scans all threads to see if any chunk is marked for compression with a specific value.
      */
-    static bool have_chunk_to_compress(T second_value, int max_thr)
-    {
-        if (is_vec_tuple_to_compress_potentially_empty_thr())
-        {
-            return false;
-        }
-
-        for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
-        {
-            auto&      map_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
-            const auto it      = map_thr.find(second_value);
-            if (it != map_thr.end() && !it->second->empty())
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    static bool have_chunk_to_compress(T second_value, int max_thr);
 
     /**
      * @brief Boolean specific version of the compression check.
@@ -653,22 +564,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      *                             second constant (vs the first).
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap(T* values_loc, int ind, bool expected_is_cst_val2) noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            // One CAS against the precise expected pointer (see zero_any::Chunk::compare_and_swap): two
-            // CAS combined with && could succeed on the wrong side after a cst_val1 <-> cst_val2
-            // race, installing a buffer whose init does not match the observed state.
-            T* expected = expected_is_cst_val2 ? BaseSpec::get_cst_val2(ind) : Base::get_cst_val1();
-            return Base::compare_and_swap_gen(values_loc, expected);
-        }
-        else
-        {
-            CHUNK_INVARIANT_FAILED("zero_one_value::Chunk::compare_and_swap(values, ind, ...) on a bool chunk: "
-                                   "compare_and_swap_bool is the bool path");
-        }
-    }
+    [[nodiscard]] bool compare_and_swap(T* values_loc, int ind, bool expected_is_cst_val2) noexcept;
 
     /**
      * @brief Bool path of compare_and_swap() -- no ind (bool has a single shared array).
@@ -676,18 +572,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * @param expected_is_cst_val2 Whether the expected current state is the second constant.
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap_bool(T* values_loc, bool expected_is_cst_val2) noexcept
-    {
-        if constexpr (is_bool)
-        {
-            T* expected = expected_is_cst_val2 ? BaseSpec::get_cst_val2() : Base::get_cst_val1();
-            return Base::compare_and_swap_gen(values_loc, expected);
-        }
-        else
-        {
-            CHUNK_INVARIANT_FAILED("zero_one_value::Chunk::compare_and_swap_bool on a non-bool chunk");
-        }
-    }
+    [[nodiscard]] bool compare_and_swap_bool(T* values_loc, bool expected_is_cst_val2) noexcept;
 
     /**
      * @brief Compress every non-bool candidate chunk of (thr_rank, inf_array's second value).
@@ -772,17 +657,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * @return Reference to the (thr, second_value) candidate list.
      */
     static VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
-                                                                                      InT<T> second_value) noexcept
-    {
-        // find(), not operator[]: see zero_one_value::Proxy::get_vec_tuple_to_compress_potentially_thr.
-        auto&      lists_by_value = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
-        const auto it             = lists_by_value.find(second_value);
-        if (it == lists_by_value.end() || it->second == nullptr) [[unlikely]]
-        {
-            chunk2_missing_candidate_list(thr);
-        }
-        return *it->second;
-    }
+                                                                                      InT<T> second_value) noexcept;
 
     /**
      * @brief Core compression sweep: drain the candidate list of one (thread,
@@ -1075,17 +950,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      *          std::vector<zero_one_value::Chunk> reallocation goes through it. Same rule as zero
      *          (zero_chunk.h). `values` is atomic and is copied by hand.
      */
-    Chunk(const Chunk& other) : CounterPolicy(other)
-    {
-        if constexpr (build_config::threaded)
-        {
-            values_.store(other.values_.load());
-        }
-        else
-        {
-            values_ = other.values_;
-        }
-    }
+    Chunk(const Chunk& other);
 
     /**
      * @brief Copy assignment: copies the values pointer (shallow) AND the counters.
@@ -1093,28 +958,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * @return *this.
      * @see Chunk(const Chunk&) for why the counters must follow `values`.
      */
-    Chunk<T>& operator=(const Chunk<T>& other)
-    {
-        if (this == &other)
-        {
-            return *this;
-        }
-
-        // See the copy ctor: the counters must follow `values`.
-        CounterPolicy::operator=(other);
-
-        if constexpr (build_config::threaded)
-        {
-            T* loaded_value = other.values.load();
-            values_.store(loaded_value);
-        }
-        else
-        {
-            values_ = other.values;
-        }
-
-        return *this;
-    }
+    Chunk<T>& operator=(const Chunk<T>& other);
 
     /*!
      * \brief Point this chunk's values at the shared first-constant buffer
@@ -1128,79 +972,28 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     /*!
      * \brief Initializes internal pointers after construction.
      */
-    void init_after_constructor()
-    {
-        if constexpr (is_not_bool)
-        {
-            init_values_cst_val1();
-        }
-        else
-        {
-            init_values_cst_val_bool(0);
-        }
-    }
+    void init_after_constructor();
 
     /*!
      * \brief Non-bool: point this chunk's values at the requested constant.
      * \param num_compress_value 0 for the first constant, non-zero for the second at `ind`.
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      */
-    void init_values_cst_val(int num_compress_value, int ind)
-    {
-        if (num_compress_value == 0)
-        {
-            values_ = Base::get_cst_val1();
-        }
-        else
-        {
-            if constexpr (is_not_bool)
-            {
-                values_ = BaseSpec::get_cst_val2(ind);
-            }
-            else
-            {
-                static_assert(
-                    dependent_false_v<T>,
-                    "Logic Error: init_values_cst_val is for non-bool elements: use init_values_cst_val_bool instead.");
-            }
-        }
-    }
+    void init_values_cst_val(int num_compress_value, int ind);
 
     /*!
      * \brief Bool-only: point this chunk's values at the requested constant.
      * \param num_compress_value 0 for the first constant, non-zero for the
      *                            (single, shared) second constant.
      */
-    void init_values_cst_val_bool(int num_compress_value)
-    {
-        if constexpr (is_bool)
-        {
-            values_ = num_compress_value == 0 ? Base::get_cst_val1() : BaseSpec::m_ptr_cst_val2.data();
-        }
-        else
-        {
-            static_assert(dependent_false_v<T>,
-                          "Logic Error: init_values_cst_val_bool called on a non-boolean chunk type.");
-        }
-    }
+    void init_values_cst_val_bool(int num_compress_value);
 
     /*!
      * \brief Bool-only: whether this chunk is currently materialised (holds
      *        real data, neither constant).
      * \return True if values differs from both the first and second constant.
      */
-    [[nodiscard]] bool written() const
-    {
-        if constexpr (is_bool)
-        {
-            return values_ != Base::get_cst_val1() && is_not_cst_val2();
-        }
-        else
-        {
-            static_assert(dependent_false_v<T>, "Logic Error: written() called on a non-boolean chunk. For non-bool "
-                                                "types, use written(int ind) instead.");
-        }
-    }
+    [[nodiscard]] bool written() const;
 
     /*!
      * \brief Whether this chunk owns a real heap buffer that must be
@@ -1211,22 +1004,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      *       parked/freed as if allocated.
      * \return True if the chunk's values pointer is a live, owned buffer.
      */
-    [[nodiscard]] bool owns_live_buffer() const noexcept
-    {
-        const T* vals = Base::values_load();
-        if (vals == Base::get_cst_val1())
-        {
-            return false;
-        }
-        if constexpr (is_bool)
-        {
-            return !BaseSpec::is_cst_val2(vals);
-        }
-        else
-        {
-            return !BaseSpec::is_cst_val2_any(vals);
-        }
-    }
+    [[nodiscard]] bool owns_live_buffer() const noexcept;
 
     /*!
      * \brief Non-bool: whether this chunk is currently materialised (holds
@@ -1234,18 +1012,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \param ind Index of the second constant value.
      * \return True if values differs from both constants.
      */
-    [[nodiscard]] bool written(int ind) const
-    {
-        if constexpr (is_not_bool)
-        {
-            return values_ != Base::get_cst_val1() && is_not_cst_val2(ind);
-        }
-        else
-        {
-            static_assert(dependent_false_v<T>, "Logic Error: written(int ind) called on a boolean chunk. Boolean "
-                                                "chunks use a single shared second value, use written() instead.");
-        }
-    }
+    [[nodiscard]] bool written(int ind) const;
 
     /*!
      * \brief Checks whether the chunk IS currently compressed to the second
@@ -1253,37 +1020,14 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \param ind Index of the second value.
      * \return True if values equals the second constant at ind.
      */
-    [[nodiscard]] bool is_cst_val2(int ind) const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return values_ == BaseSpec::get_cst_val2(ind);
-        }
-        else
-        {
-            static_assert(dependent_false_v<T>, "Logic Error: is_cst_val2(int ind) called on a boolean chunk. Boolean "
-                                                "chunks do not use indexed constants.");
-        }
-    }
+    [[nodiscard]] bool is_cst_val2(int ind) const noexcept;
 
     /*!
      * \brief Bool-only: checks whether the chunk IS currently compressed to
      *        the (single, shared) second constant.
      * \return True if values equals the second constant.
      */
-    [[nodiscard]] bool is_cst_val2() const noexcept
-    {
-        if constexpr (is_bool)
-        {
-            return values_ == BaseSpec::get_cst_val2();
-        }
-        else
-        {
-            static_assert(
-                dependent_false_v<T>,
-                "Logic Error: is_cst_val2() called on a non-boolean chunk. Non-bool types require an index (int ind).");
-        }
-    }
+    [[nodiscard]] bool is_cst_val2() const noexcept;
 
     /*!
      * \brief Checks that the chunk does NOT use the second constant at
@@ -1291,93 +1035,27 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \param ind Index of the second value.
      * \return True if values differs from the second constant at ind.
      */
-    [[nodiscard]] bool is_not_cst_val2(int ind) const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return !is_cst_val2(ind);
-        }
-        else
-        {
-            static_assert(dependent_false_v<T>, "Logic Error: is_not_cst_val2(int ind) called on a boolean chunk.");
-        }
-    }
+    [[nodiscard]] bool is_not_cst_val2(int ind) const noexcept;
 
     /*!
      * \brief Bool-only: negation of is_cst_val2().
      * \return True if values does NOT equal the (single, shared) second constant.
      */
-    [[nodiscard]] bool is_not_cst_val2() const noexcept
-    {
-        if constexpr (is_bool)
-        {
-            return !is_cst_val2();
-        }
-        else
-        {
-            static_assert(dependent_false_v<T>, "Logic Error: is_not_cst_val2() called on a non-boolean chunk.");
-        }
-    }
+    [[nodiscard]] bool is_not_cst_val2() const noexcept;
 
     /*!
      * \brief Materialise this chunk if it is currently compressed to either
      *        constant; a no-op otherwise (already materialised).
      * \param inf_array (second_value, ...) tuple describing the target state.
      */
-    void alloc_chunk(const InfArrayT& inf_array)
-    {
-        if (is_cst_val(inf_array.ind))
-        {
-            // bool has its own materialiser.
-            if constexpr (is_not_bool)
-            {
-                create_value(false, inf_array);
-            }
-            else
-            {
-                create_value_bool(false);
-            }
-        }
-    }
+    void alloc_chunk(const InfArrayT& inf_array);
 
     /*!
      * \brief Per-thread variant of alloc_chunk().
      * \param inf_array (second_value, ...) tuple describing the target state.
      * \param thr_rank Calling thread's rank (ignored in serial builds).
      */
-    void alloc_chunk(const InfArrayT& inf_array, [[maybe_unused]] int thr_rank)
-    {
-        if (is_cst_val(inf_array.ind))
-        {
-            if constexpr (chunk_config::stats)
-            {
-                increm_chunk_write<ChunkType>();
-            }
-
-            if constexpr (build_config::threaded)
-            {
-                if constexpr (is_not_bool)
-                {
-                    create_value(false, inf_array, thr_rank);
-                }
-                else
-                {
-                    create_value_bool(false, thr_rank);
-                }
-            }
-            else
-            {
-                if constexpr (is_not_bool)
-                {
-                    create_value(false, inf_array);
-                }
-                else
-                {
-                    create_value_bool(false);
-                }
-            }
-        }
-    }
+    void alloc_chunk(const InfArrayT& inf_array, [[maybe_unused]] int thr_rank);
 
     static_assert(
         std::is_same_v<InfArrayT,
@@ -1398,17 +1076,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \brief Stores a pointer to the chunk's values.
      * \param ptr Pointer to store.
      */
-    void values_store(T* ptr) noexcept
-    {
-        if constexpr (build_config::threaded)
-        {
-            values_.store(ptr, std::memory_order_release);
-        }
-        else
-        {
-            values_ = ptr;
-        }
-    }
+    void values_store(T* ptr) noexcept;
 
     /*!
      * \brief Attempt to atomically compress the chunk to either cst_val1 or
@@ -1419,83 +1087,14 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      *         won the race (caller must not free anything); otherwise the
      *         old pointer, which the caller now owns and must free/recycle.
      */
-    [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, int ind)
-    {
-        T* old = Base::values_load();
-        if constexpr (is_bool)
-        {
-            if (old == Base::get_cst_val1() || BaseSpec::is_cst_val2(old)) [[unlikely]]
-            {
-                return nullptr;
-            }
-        }
-        else
-        {
-            if (old == Base::get_cst_val1() || BaseSpec::is_cst_val2(old, ind)) [[unlikely]]
-            {
-                return nullptr;
-            }
-            // No second value declared: no block to compress to. The scans never file such a
-            // chunk under the second constant, so this is a guard, not a path.
-            if (num_compress_value != 0 && ind < 0) [[unlikely]]
-            {
-                if constexpr (build_config::any_check)
-                {
-                    CHUNK_INVARIANT_FAILED("[chunk] compress to cst_val2 on an array with no second value");
-                }
-                return nullptr;
-            }
-        }
-
-        T* expected = old;
-        T* new_ptr  = nullptr;
-
-        if (num_compress_value == 0)
-        {
-            new_ptr = Base::get_cst_val1();
-        }
-        else
-        {
-            if constexpr (is_bool)
-            {
-                new_ptr = BaseSpec::get_cst_val2();
-            }
-            else
-            {
-                new_ptr = BaseSpec::get_cst_val2(ind);
-            }
-        }
-
-        // Only the thread whose CAS replaces 'old' by 'new_ptr' may free/recycle the old block.
-        CHUNK_CHECK_VALUES_PTR_C(new_ptr, "try_mark.new_ptr", this);
-        if (!values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
-            [[unlikely]]
-        {
-            // Another thread changed 'values': free nothing.
-            return nullptr;
-        }
-
-        // Unique transition to a constant: the caller frees/recycles the old pointer.
-        return old;
-    }
+    [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, int ind);
 
     /*!
      * \brief Bool-only: whether the chunk is currently compressed to EITHER
      *        constant (cst1 or cst2).
      * \return true if the chunk is compressed to either constant.
      */
-    [[nodiscard]] bool is_cst_val() const noexcept
-    {
-        if constexpr (is_bool)
-        {
-            return Base::is_cst_val1() || is_cst_val2();
-        }
-        else
-        {
-            static_assert(dependent_false_v<T>,
-                          "Logic Error: is_cst_val() without index called on a non-boolean chunk.");
-        }
-    }
+    [[nodiscard]] bool is_cst_val() const noexcept;
 
     /*!
      * \brief Whether the chunk is currently compressed to EITHER constant
@@ -1503,17 +1102,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \param ind Index of the second constant (used only for non-bool chunks).
      * \return true if the chunk is compressed to either constant.
      */
-    [[nodiscard]] bool is_cst_val(int ind) const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values_, ind);
-        }
-        else
-        {
-            return Base::is_cst_val1() || BaseSpec::is_cst_val2(values_);
-        }
-    }
+    [[nodiscard]] bool is_cst_val(int ind) const noexcept;
 
     static inline constinit internal::LazyImmortal<ManagerChunk2> s_manager_;
 };

@@ -205,39 +205,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      *       (parallel_storage_init::for_each_chunk); a difference found stops
      *       the chunks not yet started. Neither array may be written meanwhile.
      */
-    bool operator==(const ArrayImpl& other) const noexcept
-    {
-        if (m_size_ != other.m_size_)
-        {
-            return false;
-        }
-        if (m_size_ == 0)
-        {
-            return true;
-        }
-        const auto  csz = static_cast<long long>(this->chunk_size());
-        std::atomic differ{false};
-        parallel_storage_init::for_each_chunk(
-            this->chunk_index_of(m_size_ - 1) + 1,
-            [&](int c)
-            {
-                if (differ.load(std::memory_order_relaxed))
-                {
-                    return;
-                }
-                const long long lo = static_cast<long long>(c) * csz;
-                const long long hi = std::min(lo + csz, static_cast<long long>(m_size_));
-                for (long long i = lo; i < hi; ++i)
-                {
-                    if (Base2::read_value(static_cast<IntType>(i)) != other.read_value(static_cast<IntType>(i)))
-                    {
-                        differ.store(true, std::memory_order_relaxed);
-                        return;
-                    }
-                }
-            });
-        return !differ.load(std::memory_order_relaxed);
-    }
+    bool operator==(const ArrayImpl& other) const noexcept;
 
     /**
      * @brief Release all storage and report end-of-life statistics.
@@ -328,102 +296,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      *          (GlobalVecHolder's LookupGuard / ReclaimScope); release builds
      *          check nothing.
      */
-    static std::size_t reclaim_second_values()
-    {
-        if constexpr (std::is_same_v<T, bool>)
-        {
-            return 0; // one shared constant array, no registry (TabCstVal2Holder<bool>)
-        }
-        else
-        {
-            using Gvh = GlobalVecHolder<T>;
-            // Each refusal counted by cause (second_value_stats()): it returns
-            // 0 as a call with nothing to free does.
-            if (CHUNK_PMP_IN_PARALLEL_REGION)
-            {
-                Gvh::refused_parallel.fetch_add(1, std::memory_order_relaxed);
-                return 0;
-            }
-            if (g_in_rechunk_rebuild.load(std::memory_order_acquire))
-            {
-                Gvh::refused_rechunk.fetch_add(1, std::memory_order_relaxed);
-                return 0;
-            }
-            if (Gvh::index_degraded.load(std::memory_order_relaxed))
-            {
-                Gvh::refused_degraded.fetch_add(1, std::memory_order_relaxed);
-                // Sticky until the last array of the type goes: say it once, the
-                // run will otherwise end on the identifier exhaustion with no cause.
-                static std::atomic warned{false};
-                if (!warned.exchange(true, std::memory_order_relaxed))
-                {
-                    CHUNK_LOG(warn, compress,
-                              "reclaim_second_values() refused: the second-value index is degraded, a value unfindable "
-                              "by value could be freed. Nothing is reclaimed for this type until its last array is "
-                              "destroyed.");
-                }
-                return 0;
-            }
-            // Check builds: no lookup or registration in flight from here to the
-            // end of reclaim_unmarked() -- the mark included, since a slot found
-            // before it and recorded after it would be freed (GlobalVecHolder's
-            // "Reclaim contract").
-            const typename Gvh::ReclaimScope scope;
-            Gvh::reclaim_runs.fetch_add(1, std::memory_order_relaxed);
-            const std::size_t handed_out = Gvh::ids_handed_out();
-            if (handed_out == 0)
-            {
-                return 0;
-            }
-            std::vector<std::uint8_t> referenced(handed_out + 1, 0);
-
-            // Chunks compressed to a second value.
-            ProxyType::share_info_array->for_each_key(
-                [&referenced](ArrayKey<ChunkType> arr)
-                {
-                    if (arr == nullptr)
-                    {
-                        return;
-                    }
-                    // The key is the array's core, whatever its index type.
-                    const int nc = arr->chunk_count();
-                    for (int j = 0; j < nc; ++j)
-                    {
-                        const T* vals = arr->chunk_ref(static_cast<std::size_t>(j)).values_load();
-                        if (Gvh::region_contains(vals))
-                        {
-                            mark_cst2_id(referenced, Gvh::slot_id(vals));
-                        }
-                    }
-                });
-
-            // Every slot of every row: a released row is empty, a stale entry only keeps a
-            // value one pass longer.
-            using Spec              = ProxyType::BaseSpec;
-            const std::size_t nrows = Spec::second_value_row_count();
-            for (std::size_t r = 0; r < nrows; ++r)
-            {
-                const auto& row = Spec::get_tab_second_value(static_cast<int>(r));
-                for (const auto& slot : row)
-                {
-                    if constexpr (SecondValueTraits<T>::indexed)
-                    {
-                        mark_cst2_id(referenced, slot); // the identifier itself; 0 = none
-                    }
-                    else if (!(slot == T{}))
-                    {
-                        if (const T* hit = Gvh::index_lookup(slot))
-                        {
-                            mark_cst2_id(referenced, Gvh::slot_id(hit));
-                        }
-                    }
-                }
-            }
-            const std::size_t freed = Gvh::reclaim_unmarked(referenced);
-            Gvh::reclaim_freed.fetch_add(freed, std::memory_order_relaxed);
-            return freed;
-        }
-    }
+    static std::size_t reclaim_second_values();
 
     /**
      * @brief Where this type's second-value identifiers stand: in use against
@@ -437,17 +310,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      *          reads, callable at any time, from any thread: exact at a
      *          sequential point. All zero for bool (no registry).
      */
-    [[nodiscard]] static SecondValueStats second_value_stats() noexcept
-    {
-        if constexpr (std::is_same_v<T, bool>)
-        {
-            return {};
-        }
-        else
-        {
-            return GlobalVecHolder<T>::stats();
-        }
-    }
+    [[nodiscard]] static SecondValueStats second_value_stats() noexcept;
 
     /// @brief Compress every chunk currently queued as a candidate.
     static void make_block_compression();
@@ -552,23 +415,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      * @param[out] live set the referenced cst2 buffer pointers are inserted into
      * @see gc_mark_report for the reporting counterpart
      */
-    static void gc_collect_live(std::unordered_set<const void*>& live)
-    {
-        ProxyType::share_info_array->for_each_key(
-            [&](ArrayKey<ChunkType> arr)
-            {
-                // The key is the array's core, whatever its index type.
-                const int nc = arr->chunk_count();
-                for (int j = 0; j < nc; ++j)
-                {
-                    const auto& ch = arr->chunk_ref(static_cast<std::size_t>(j));
-                    if (ch.is_cst_val2())
-                    {
-                        live.insert(static_cast<const void*>(ch.values_load()));
-                    }
-                }
-            });
-    }
+    static void gc_collect_live(std::unordered_set<const void*>& live);
 
     /// @brief This array holds one reference on the chunk type's cst2 registry
     ///        (TabCstVal2Holder). See acquire_cst2_registry().
@@ -663,15 +510,7 @@ class Array : public ArrayImpl<Array<T, IntType>>
      *          chunks keep their metadata rows (num_tab). Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    Array& operator=(Array&& other) noexcept
-    {
-        if (this != &other)
-        {
-            this->clear();
-            this->swap_storage_and_identity(other);
-        }
-        return *this;
-    }
+    Array& operator=(Array&& other) noexcept;
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op; num_tab is not copied, identity stays with the address.
