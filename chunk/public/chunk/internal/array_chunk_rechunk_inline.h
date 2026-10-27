@@ -729,6 +729,15 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     all_cst1 = false;
                     if constexpr (is_zero_any_family_v<ChunkType>)
                     {
+                        if constexpr (has_motif_state_v<ChunkType>)
+                        {
+                            // A motif chunk (pattern::Array): is_cst_val2() for the write
+                            // engine, but no constant -- its elements are motif + offset.
+                            if (ChunkType::is_motif_ptr(och.values_load()))
+                            {
+                                all_folded = false;
+                            }
+                        }
                         if (!och.is_cst_val2())
                         {
                             all_folded = false;
@@ -844,6 +853,21 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         {
                             std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(pos), len,
                                         och.second_value_from_ptr(vals));
+                            pos += len;
+                            continue;
+                        }
+                    }
+                    if constexpr (has_motif_state_v<ChunkType>)
+                    {
+                        // A motif chunk: motif + its offset, from its second-value slot
+                        // (quiescent source: the slot is stable, no re-check needed).
+                        if (ChunkType::is_motif_ptr(vals))
+                        {
+                            const T offset = internal::load_element_relaxed(self().motif_offset_slot(oc));
+                            for (std::size_t k = 0; k < len; ++k)
+                            {
+                                buf[pos + k] = ChunkType::motif_value(vals, static_cast<int>(off + k), offset);
+                            }
                             pos += len;
                             continue;
                         }

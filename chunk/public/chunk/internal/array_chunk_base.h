@@ -951,6 +951,15 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         return (*this)(index);
     }
 
+    /// @brief The second-value slot of chunk @p num_chunk, where a motif chunk
+    ///        keeps its offset (has_motif_state_v members only). Protected, not
+    ///        private: the family's array re-exports it for the chunk-size advisor.
+    [[nodiscard]] const T* motif_offset_slot(int num_chunk) const noexcept
+        requires has_motif_state_v<ChunkType>
+    {
+        return ProxyType::BaseSpec::get_tab_second_value(this->num_tab_, num_chunk).slot;
+    }
+
   private:
     /// @brief Elements per read section in the bulk reads (8 to 64 measure
     ///        alike; the larger, the fewer sections on long ranges).
@@ -965,13 +974,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     template <typename Fn>
     void for_each_chunk_span(IndType first, IndType last, Fn&& fn) const;
 
-    /// @brief The second-value slot of chunk @p num_chunk, where a motif chunk
-    ///        keeps its offset (has_motif_state_v members only).
-    [[nodiscard]] const T* motif_offset_slot(int num_chunk) const noexcept
-        requires has_motif_state_v<ChunkType>
-    {
-        return ProxyType::BaseSpec::get_tab_second_value(this->num_tab_, num_chunk).slot;
-    }
 
     /// @brief ch.read_block(), with chunk @p num_chunk's offset slot for a
     ///        member with the motif state.

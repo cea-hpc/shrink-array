@@ -175,6 +175,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     using Base2::m_size_;
     using Base2::nb_chunk_;
     using Base2::resize;
+    using Base2::motif_offset_slot; // has_motif_state_v members: the advisor reads a motif chunk's offset
 
     using Base::nb_tab;
     using Base::num_tab_;

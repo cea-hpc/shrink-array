@@ -42,7 +42,7 @@ template <typename T>
 [[nodiscard]] const T* pattern::MotifRegion<T>::find(const T* motif, std::size_t count, std::uint64_t h) noexcept
 {
     const IndexTable* const table = index_.load(std::memory_order_acquire);
-    if (table == nullptr || count != entry_count_.load(std::memory_order_relaxed))
+    if (table == nullptr)
     {
         return nullptr;
     }
@@ -54,7 +54,9 @@ template <typename T>
         {
             return nullptr;
         }
-        if (table->slots[i].hash.load(std::memory_order_relaxed) == h &&
+        // The hash mixes the count in; the entry's own count (its segment's,
+        // set before any of its entries was published) confirms it.
+        if (table->slots[i].hash.load(std::memory_order_relaxed) == h && entry_count_of(entry) == count &&
             std::memcmp(entry, motif, count * sizeof(T)) == 0)
         {
             return entry;
@@ -71,11 +73,14 @@ pattern::MotifRegion<T>::find_or_admit(const T* motif, std::size_t count, std::u
     {
         return entry;
     }
-    auto&              counter = probation_[static_cast<std::size_t>(h >> (64U - probation_bits))];
-    const std::uint8_t seen    = counter.load(std::memory_order_relaxed);
-    if (seen == 0 || seen == tag)
+    auto&               entry = probation_[static_cast<std::size_t>(h >> (64U - probation_bits))];
+    const auto          check = static_cast<std::uint16_t>(((h >> (56U - probation_bits)) & 0xFFU) << 8U);
+    const std::uint16_t seen  = entry.load(std::memory_order_relaxed);
+    if ((seen & 0xFF00U) != check || (seen & 0xFFU) == 0 || (seen & 0xFFU) == tag)
     {
-        counter.store(tag, std::memory_order_relaxed); // a race only admits one sighting early
+        // A first sighting (or another motif's entry, taken over), or the same
+        // sighter again. A race only admits one sighting early.
+        entry.store(static_cast<std::uint16_t>(check | tag), std::memory_order_relaxed);
         first_seen_.fetch_add(1, std::memory_order_relaxed);
         return nullptr;
     }
@@ -88,18 +93,18 @@ template <typename T>
     const std::scoped_lock lock(mutex_);
     if (begin_.load(std::memory_order_relaxed) == nullptr)
     {
-        reserve(count);
-    }
-    else if (count != entry_count_.load(std::memory_order_relaxed))
-    {
-        CHUNK_INVARIANT_FAILED("pattern::MotifRegion: an entry of {} elements, the region holds {} per entry", count,
-                               entry_count_.load(std::memory_order_relaxed));
+        reserve();
     }
     if (const T* const entry = find(motif, count, h)) // registered meanwhile
     {
         return entry;
     }
-    T* const entry = take_slot();
+    T* const entry = take_slot(count);
+    if (entry == nullptr)
+    {
+        full_.fetch_add(1, std::memory_order_relaxed); // no segment left for this size
+        return nullptr;
+    }
     std::memcpy(entry, motif, count * sizeof(T));
     live().at(id_of(entry)) = 1;
     index_publish(entry, h); // after the copy: a reader that finds it sees the motif
@@ -111,13 +116,15 @@ template <typename T>
 template <typename T>
 [[nodiscard]] std::uint32_t pattern::MotifRegion<T>::id_of(const void* ptr) noexcept
 {
-    const std::byte* const base = begin_.load(std::memory_order_acquire);
-    if (base == nullptr || !contains(ptr))
+    if (!contains(ptr))
     {
         return 0;
     }
-    const std::size_t bytes = entry_bytes_.load(std::memory_order_relaxed);
-    return static_cast<std::uint32_t>((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) / bytes + 1);
+    const std::byte* const base = begin_.load(std::memory_order_relaxed);
+    const std::size_t      off  = ::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base);
+    const Segment&         seg  = segments_[off / segment_bytes];
+    const std::size_t      slot = seg.bytes == 0 ? seg.carved : (off % segment_bytes) / seg.bytes;
+    return slot < seg.carved ? segment_ids()[off / segment_bytes][slot] : 0;
 }
 
 template <typename T>
@@ -133,7 +140,7 @@ std::size_t pattern::MotifRegion<T>::reclaim_unmarked(const std::vector<std::uin
         if (flags[id] != 0 && (id >= referenced.size() || referenced[id] == 0))
         {
             flags[id] = 0;
-            free_ids().push_back(static_cast<std::uint32_t>(id));
+            size_class(entry_count_of(entry_by_id()[id])).free_ids.push_back(static_cast<std::uint32_t>(id));
             ++freed;
         }
     }
@@ -148,7 +155,7 @@ std::size_t pattern::MotifRegion<T>::reclaim_unmarked(const std::vector<std::uin
 }
 
 template <typename T>
-void pattern::MotifRegion<T>::reserve(std::size_t count)
+void pattern::MotifRegion<T>::reserve()
 {
     void* const raw =
         ::mmap(nullptr, region_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
@@ -156,33 +163,63 @@ void pattern::MotifRegion<T>::reserve(std::size_t count)
     {
         CHUNK_INVARIANT_FAILED("pattern::MotifRegion: cannot reserve {} bytes of address space", region_bytes);
     }
-    entry_count_.store(count, std::memory_order_relaxed);
-    entry_bytes_.store((count * sizeof(T) + entry_align - 1) / entry_align * entry_align, std::memory_order_relaxed);
     live().assign(1, 0); // identifier 0: none
+    entry_by_id().assign(1, nullptr);
+    segment_ids().assign(segment_count, {});
     begin_.store(static_cast<std::byte*>(raw), std::memory_order_release);
 }
 
 template <typename T>
-T* pattern::MotifRegion<T>::take_slot()
+pattern::MotifRegion<T>::SizeClass& pattern::MotifRegion<T>::size_class(std::size_t count)
 {
-    std::byte* const  base  = begin_.load(std::memory_order_relaxed);
-    const std::size_t bytes = entry_bytes_.load(std::memory_order_relaxed);
-    if (!free_ids().empty())
+    for (auto& cls : size_classes())
     {
-        const std::uint32_t id = free_ids().back();
-        free_ids().pop_back();
-        return reinterpret_cast<T*>(base + static_cast<std::size_t>(id - 1) * bytes);
+        if (cls.count == count)
+        {
+            return cls;
+        }
     }
-    const std::size_t used = used_.load(std::memory_order_relaxed);
-    if (used + bytes > region_bytes)
+    size_classes().push_back(SizeClass{count, segment_count, {}});
+    sizes_.store(size_classes().size(), std::memory_order_relaxed);
+    return size_classes().back();
+}
+
+template <typename T>
+T* pattern::MotifRegion<T>::take_slot(std::size_t count)
+{
+    SizeClass& cls = size_class(count);
+    if (!cls.free_ids.empty())
     {
-        CHUNK_INVARIANT_FAILED("pattern::MotifRegion: the region is full ({} entries of {} bytes, "
-                               "CHUNK_MOTIF_REGION_BYTES = {})",
-                               entries(), bytes, region_bytes);
+        const std::uint32_t id = cls.free_ids.back();
+        cls.free_ids.pop_back();
+        return const_cast<T*>(entry_by_id()[id]);
     }
-    used_.store(used + bytes, std::memory_order_relaxed);
+    const std::size_t bytes = (count * sizeof(T) + entry_align - 1) / entry_align * entry_align;
+    if (bytes > segment_bytes)
+    {
+        return nullptr; // an entry larger than a segment: CHUNK_MOTIF_SEGMENT_BYTES too small
+    }
+    if (cls.open == segment_count || (segments_[cls.open].carved + 1) * bytes > segment_bytes)
+    {
+        if (segments_used_ == segment_count)
+        {
+            return nullptr;
+        }
+        cls.open      = segments_used_++;
+        Segment& seg  = segments_[cls.open];
+        seg.bytes     = bytes;
+        // Before any entry of the segment is published (index_publish's release).
+        seg.count.store(count, std::memory_order_relaxed);
+    }
+    Segment&            seg = segments_[cls.open];
+    const std::uint32_t id  = static_cast<std::uint32_t>(next_id_.load(std::memory_order_relaxed));
+    std::byte* const    at  = begin_.load(std::memory_order_relaxed) + cls.open * segment_bytes + seg.carved * bytes;
+    ++seg.carved;
+    segment_ids()[cls.open].push_back(id);
     live().push_back(0);
-    return reinterpret_cast<T*>(base + used);
+    entry_by_id().push_back(reinterpret_cast<const T*>(at));
+    next_id_.store(id + std::size_t{1}, std::memory_order_relaxed);
+    return reinterpret_cast<T*>(at);
 }
 
 template <typename T>
@@ -238,16 +275,13 @@ void pattern::MotifRegion<T>::index_rebuild()
 {
     index_.store(nullptr, std::memory_order_release);
     generations().clear();
-    std::byte* const  base  = begin_.load(std::memory_order_relaxed);
-    const std::size_t bytes = entry_bytes_.load(std::memory_order_relaxed);
-    const std::size_t count = entry_count_.load(std::memory_order_relaxed);
-    const auto&       flags = live();
+    const auto& flags = live();
     for (std::size_t id = 1; id < flags.size(); ++id)
     {
         if (flags[id] != 0)
         {
-            const T* const entry = reinterpret_cast<const T*>(base + (id - 1) * bytes);
-            index_publish(entry, hash(entry, count));
+            const T* const entry = entry_by_id()[id];
+            index_publish(entry, hash(entry, entry_count_of(entry)));
         }
     }
 }
