@@ -57,6 +57,7 @@
 // ============================================================================
 
 #include <algorithm> // std::sort, std::unique, std::upper_bound, std::ranges::min_element (best)
+#include <array>     // std::array (motif_chunk_data's buffers)
 #include <atomic>    // std::atomic_ref (the per-thread counts merged)
 #include <bit>       // std::bit_width, std::countr_zero
 #include <cmath>     // std::lround (the extrapolated materialised count)
@@ -74,6 +75,8 @@
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 #include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
 #include "chunk/internal/print.h"              // shrink_array::println
+#include "chunk/chunk_traits.h"                // has_motif_state_v (pattern::Array's motif chunks)
+#include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
 
 namespace shrink_array
 {
@@ -110,6 +113,43 @@ struct ChunkSizeReport
     int                            best = -1;         ///< index into table (-1: none)
     int                            cur  = -1;         ///< index of current size (-1: none)
 };
+
+namespace internal
+{
+/**
+ * @brief The data of chunk @p idx of @p tab, a member with the motif state
+ *        (pattern::Array): its buffer; for a motif chunk, its motif plus its
+ *        offset, written into this thread's scratch buffer @p which (0 or 1:
+ *        the analysis holds two chunks' data at once).
+ * @details For ChunkSizeAdvisor::analyze(), at a quiescent point: the slot is
+ *          stable. A function template of its own, with its own buffers, called
+ *          from discarded branches for the other variants: their code -- the
+ *          analysis lambdas and what they capture -- is unchanged. GCC orders a
+ *          lambda's captures by first appearance, discarded branches included:
+ *          the callers name nothing the lambdas did not already name first.
+ */
+template <typename Arr>
+[[nodiscard]] const typename Arr::value_type* motif_chunk_data(const Arr& tab, int64_t idx, int which)
+{
+    using ChunkT = typename Arr::ChunkType;
+    using T      = typename Arr::value_type;
+    static thread_local std::array<std::vector<T>, 2> buffers;
+    std::vector<T>&                                   scratch = buffers[static_cast<std::size_t>(which)];
+    const T* const                                    vals    = tab.chunk_list_[idx].values_load();
+    if (!ChunkT::is_motif_ptr(vals))
+    {
+        return vals;
+    }
+    const T        off      = load_element_relaxed(tab.motif_offset_slot(static_cast<int>(idx)));
+    const uint32_t chunk_sz = tab.chunk_size();
+    scratch.resize(chunk_sz);
+    for (uint32_t i = 0; i < chunk_sz; ++i)
+    {
+        scratch[i] = ChunkT::motif_value(vals, static_cast<int>(i), off);
+    }
+    return scratch.data();
+}
+} // namespace internal
 
 /// @brief Estimates an array's model memory at other chunk sizes without re-chunking (see the header comment).
 /// @tparam T Element type.
@@ -235,6 +275,16 @@ struct ChunkSizeAdvisor
             if (chunk.is_cst_val1())
             {
                 return 0;
+            }
+            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+            {
+                // A motif chunk (pattern::Array): is_cst_val2() for the write engine,
+                // but no constant. Its data -- motif + offset, data_of() below -- is
+                // read as a materialised chunk's (no motif forecast: never optimistic).
+                if (Arr::ChunkType::is_motif_ptr(chunk.values_load()))
+                {
+                    return 2;
+                }
             }
             if constexpr (chunk_config::use_zero_any)
             {
@@ -572,6 +622,7 @@ struct ChunkSizeAdvisor
                     std::vector<uint32_t> seg_start; // the picked chunk's runs of equal values ...
                     std::vector<T>        seg_val;   // ... and their values
 
+
                     // Element index of a materialised buffer, and whether [first, last)
                     // of it is uniform (its value in `val`).
                     const auto value_of = [](const T* vals, std::size_t index) -> T
@@ -617,6 +668,10 @@ struct ChunkSizeAdvisor
                         {
                             const int64_t chunk_idx = picks[static_cast<std::size_t>(pick)];
                             const T*      vj        = tab.chunk_list_[chunk_idx].values_load();
+                            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+                            {
+                                vj = internal::motif_chunk_data(tab, chunk_idx, 0); // pattern::Array
+                            }
 
                             // Chunk chunk_idx's runs of equal values: [b, e) of it is uniform iff
                             // b and e - 1 fall in the same run.
@@ -723,9 +778,19 @@ struct ChunkSizeAdvisor
                                         }
                                         else
                                         {
-                                            ok = uniform_range(ch.values_load(),
-                                                               static_cast<std::size_t>(p0 - (cc * chunk_sz)),
-                                                               static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+                                            {
+                                                ok =
+                                                    uniform_range(internal::motif_chunk_data(tab, cc, 1),
+                                                                  static_cast<std::size_t>(p0 - (cc * chunk_sz)),
+                                                                  static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                            }
+                                            else
+                                            {
+                                                ok = uniform_range(
+                                                    ch.values_load(), static_cast<std::size_t>(p0 - (cc * chunk_sz)),
+                                                    static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                            }
                                         }
                                         if (ok && has_v)
                                         {

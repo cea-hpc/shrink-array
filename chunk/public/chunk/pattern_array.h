@@ -70,9 +70,6 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
 {
     static_assert(std::is_integral_v<T> && !std::is_same_v<T, bool>,
                   "pattern::Array holds integers only (docs/pattern_design.md, section 1)");
-    static_assert(!build_config::chunk_dynamic,
-                  "pattern::Array: static chunk sizes only for now -- a motif has the chunk's element count "
-                  "(docs/pattern_design.md, sections 7 and 10)");
 
   public:
     /**

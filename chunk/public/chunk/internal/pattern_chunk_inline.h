@@ -49,6 +49,12 @@ void pattern::Chunk<T>::compress_motif_candidates(int thr)
     using ProxyT = typename ChunkTraits<Chunk>::ProxyType;
     for (const auto& [chunk, motif, offset, num_chunk, num_tab, size] : motif_candidates_)
     {
+        // Per-chunk geometry pin, as make_block_compression() for the constants: the
+        // buffer goes back to the pool of ITS size (dynamic builds).
+        if constexpr (build_config::chunk_dynamic)
+        {
+            shrink_array::set_thread_chunk_size(size.count());
+        }
         const SecondValueRef<T> slot = ProxyT::BaseSpec::get_tab_second_value(num_tab, num_chunk);
         chunk->block_clear_motif(&ProxyT::tab_type_cst_val[num_tab][num_chunk], slot, motif, offset, thr);
         chunk->steal_unmark();

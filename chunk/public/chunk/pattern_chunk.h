@@ -41,12 +41,13 @@
 
 #include "chunk/chunk_traits.h"                 // ChunkTraits<pattern::Chunk<T>>, HasMotifState
 #include "chunk/internal/motif_region.h"        // pattern::MotifRegion
-#include "chunk/internal/relaxed_element.h"     // load_element_relaxed (the offset)
+#include "chunk/internal/relaxed_element.h"     // load_element_acquire (the offset)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueTraits (the slot type), SecondValueRef
 #include "chunk/internal/cst_slot.h"            // CstSlot::motif
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_compress, add_chunk_bytes_freed (CHUNK_STATS)
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
-#include "chunk/config.h"                       // build_config::threaded
+#include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size (the pass, dynamic builds)
+#include "chunk/config.h"                       // build_config::threaded, chunk_dynamic
 #include "chunk/zero_any_chunk.h"               // zero_any::ChunkImpl
 
 namespace shrink_array

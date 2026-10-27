@@ -210,7 +210,9 @@ int main()
         ParamChunk::init_indexes(true);
     }
 
-    constexpr int sz = 1000000000;
+    // 3 arrays of sz doubles: 2.4 GB for std::vector. 1e9 (24 GB at once) made
+    // the ctest fail with bad_alloc on a 30 GB workstation with anything else running.
+    constexpr int sz = 100000000;
     //  constexpr int sz = 100000;
     constexpr int iter_max = 10000;
 

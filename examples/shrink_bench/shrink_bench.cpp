@@ -76,7 +76,7 @@ namespace shrink_array
 ///        chunked build only. The objects exist in every build so the loop
 ///        reads the same; RechunkDecider::consider() is itself a no-op when
 ///        !chunk_dynamic, and this flag gates the rest with `if constexpr`.
-inline constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_config::chunk_dynamic;
+constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_config::chunk_dynamic;
 
 template <typename T>
 using Array = ActiveArray<T>;

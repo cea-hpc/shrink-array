@@ -212,9 +212,9 @@ static long check_returned(C& arr, long index, Op op)
 }
 
 template <typename T>
-inline constexpr bool is_complex_v = false;
+constexpr bool is_complex_v = false;
 template <typename V>
-inline constexpr bool is_complex_v<std::complex<V>> = true;
+constexpr bool is_complex_v<std::complex<V>> = true;
 
 /// @brief Every compound operator of T on c[i], each result used and checked.
 ///        Values stay small: no overflow, no shift past the width, no division

@@ -153,8 +153,8 @@ A reader loads the pointer and then the offset; they are two words. The sequence
   alone never decides equality).
 - **Admission.** Registering every distinct motif would make random data cost *more* (one
   registered copy per chunk). A motif is registered the **second time** it is seen, **by another
-  chunk**: the first sighting only records, at its hash in a probation table of 64 Ki bytes, an
-  8-bit tag of the chunk that made it; the chunk of the first sighting stays materialised. The same
+  chunk**: the first sighting only records, at its hash in a probation table of 64 Ki entries
+  of 16 bits, 8 more bits of the hash and an 8-bit tag of the chunk that made it; the chunk of the first sighting stays materialised. The same
   chunk seen again with the same contents (a random chunk rewritten unchanged) stays on
   probation: a motif one chunk uses saves nothing. Collisions in the table or between tags cost a
   missed or a useless entry, never a wrong value. On a mesh, that is one chunk per distinct
@@ -164,10 +164,21 @@ A reader loads the pointer and then the offset; they are two words. The sequence
   are reclaimed by the same call, `pattern::Array<T>::reclaim_second_values()`, each its own
   entries: the motifs only outside a parallel region. A freed entry's identifier is handed out
   again; the index is rebuilt from the survivors and the probation table cleared.
-- **Geometry.** A motif has the chunk's element count, so there is one registry per chunk size.
-  First stage: the static sizes (`CHUNK_STATIC_SIZES`); the dynamic geometry and the rechunk
-  come in a later stage (§10). Today one region holds one entry size per `T`: an entry of another
-  size is an invariant failure.
+- **Geometry.** A motif has the chunk's element count. One region per `T` holds every size: it
+  is cut into **segments** (64 MiB, `CHUNK_MOTIF_SEGMENT_BYTES`), each owned by one entry size
+  and handed out on demand, so the range test stays one test and an entry's size is its
+  segment's; the hash mixes the size in and a lookup confirms it. A static build may use every
+  segment; the sizes of a dynamic build (an array's own, a rechunk's new one) share them. No
+  segment left for a size: the motif is not registered (`MotifStats::full`) and the chunk stays
+  materialised.
+- **Rechunk.** `rechunk_to()` rebuilds the array at the new size from the old chunks' values: a
+  motif chunk is read as its motif plus its offset (never as `zero_any`'s same-constant shortcut,
+  although `is_cst_val2()` holds for it), and the rebuilt chunks, written through the proxies,
+  are queued by the completion rule and compressed to motifs of the new size by the next pass.
+- **Advisor.** `ChunkSizeAdvisor` reads a motif chunk as data (motif plus offset), never as a
+  constant: its constant forecasts are those `zero_any` would make on the same values, and it
+  forecasts no motif compression (never optimistic). Forecasting motifs per candidate size is
+  open (§11).
 
 ## 8. When a chunk is examined
 
@@ -207,7 +218,7 @@ explicit entry point stays possible and costs nothing in the design.
 | second-value registry, `reclaim_second_values` | as is, for the uniform chunks | nothing; the **motif** registry (§7) is a second registry built on the same machinery; a motif chunk's slot holds its offset (§3) |
 | marking filter (`may_become_uniform`) | the idea | replaced by the completion rule of §8 |
 | range operations, `copy_from`, comparisons | as is | read through the element accessor |
-| rechunk and the advisor | later | a motif is chunk-size dependent (§7) |
+| rechunk and the advisor | as is | a motif chunk read as motif plus offset (§7); the advisor forecasts no motif |
 
 ## 10. Stages
 
@@ -225,7 +236,10 @@ explicit entry point stays possible and costs nothing in the design.
    sources before the variant is announced. *Done*: `formal/motif_offset.c`, one finding (F5,
    the reader's re-check and the release stores of the slot, §6), applied.
 4. **Dynamic geometry, rechunk, advisor**: motifs per size; the advisor counts a sub-block as
-   compressible when it matches a motif.
+   compressible when it matches a motif. *Done but the last point*: the region per size
+   (segments), the pass at each chunk's own size, the rechunk, the advisor reading motif chunks
+   as data (`pattern_validation_zero_any_dyn`, cases Q and R). The motif forecast of the advisor
+   is open (§11).
 5. **Bench and docs**: a mesh-connectivity case in `shrink_bench`, `access_cost` for the
    materialised reads, the `algo_` document in both languages (this note then goes away).
 
@@ -247,6 +261,11 @@ explicit entry point stays possible and costs nothing in the design.
 - **Motifs shorter than a chunk** (a stride that does not divide the chunk size, or an offset
   that grows inside the chunk) are not covered: `chunk[j] = P[j mod s] + (j div s) * step` would
   be a second kind of motif. Measure on real connectivities first.
+- **The advisor's motif forecast.** At a candidate size C, a window would be compressed to a
+  motif if its normalised content is shared with another window (the admission rule). An
+  estimate from the sampled chunks -- the normalised hashes of their windows, counted twice or
+  more -- is cheap, but changes `ChunkSizeEstimate` (a public struct) and the decider's
+  behaviour; to decide, and to measure on real connectivities.
 - **Naming.** Decided (October 2026): one namespace per variant, named after what it compresses,
   with the class called Array in each: zero::Array, zero_one_value::Array, zero_any::Array and,
   for this variant, pattern::Array. The CMake targets and the package keep the `chunk` names

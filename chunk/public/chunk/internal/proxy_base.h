@@ -695,9 +695,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Bind a proxy to one element.
     /// @note Leaves #ptr_on_array_, #num_chunk_ and #num_tab_ unset --
     ///       set_this_and_num_chunk() and set_num_tab() finish the job, and the
-    ///       compression paths need them.
-    // ptr_on_array and num_chunk are set before use (see the @note); left
-    // unset here on purpose, this constructor runs on every element access.
+    ///       compression paths need them. A proxy rebuilt from a deferred-write
+    ///       context (make_proxy_with_info()) gets set_num_chunk() alone, never
+    ///       #ptr_on_array_: its array may be gone since the enqueue. There,
+    ///       #chunk_size_frozen_ -- frozen non-zero at enqueue, while the array
+    ///       was alive -- keeps every read of the pointer away: chunk_size(),
+    ///       alloc_key() and their callers test it first.
+    // Left unset here on purpose (see the @note): this constructor runs on
+    // every element access.
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
     explicit ProxyBase(AtomicPtrRefT values, int num, ChunkT& chunk) noexcept
         : values_(values), num_(num), chunk_(chunk)

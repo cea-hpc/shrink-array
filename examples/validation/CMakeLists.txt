@@ -510,13 +510,15 @@ endforeach()
 # zero_any::Array. Its own executable, outside the zero_any group: it
 # instantiates pattern::Array and zero_any::Array for four element types (about
 # 2 GB of compiler memory alone, at -O3 -g), which took the group's unity TU
-# past 7 GB. At the default static size: pattern::Array is static only.
-if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
-  set(_tgt pattern_validation_zero_any_${CHUNK_DEFAULT_SIZE})
-  validation_harness_executable(${_tgt} chunk_zero_any CHUNK_VARIANT_ZERO_ANY ${CHUNK_DEFAULT_SIZE}
-                                pattern_validation)
-  validation_add_test(${_tgt} ${_tgt} pattern_validation "1;8")
-endif()
+# past 7 GB. At the default static size, and in the dynamic geometry (the
+# chunk size per array, and its rechunk: docs/pattern_design.md, stage 4).
+foreach(_geom ${CHUNK_DEFAULT_SIZE} dyn)
+  if (TARGET chunk_zero_any_${_geom})
+    set(_tgt pattern_validation_zero_any_${_geom})
+    validation_harness_executable(${_tgt} chunk_zero_any CHUNK_VARIANT_ZERO_ANY ${_geom} pattern_validation)
+    validation_add_test(${_tgt} ${_tgt} pattern_validation "1;8")
+  endif()
+endforeach()
 
 # --- element_ref_validation: what operator[] accepts and refuses
 # (chunk/internal/element_ref.h), in every build that has the harnesses.

@@ -20,7 +20,8 @@
  *
  * @details Built against the zero_any library (pattern::Array is a member of
  *          the zero_any family, built on its machinery), at the default static
- *          size, as its own executable: pattern_validation_zero_any_<size>.
+ *          size and in the dynamic geometry, as its own executables:
+ *          pattern_validation_zero_any_<size> and pattern_validation_zero_any_dyn.
  *
  *          For int, long, unsigned and short, an array of chunks of four
  *          kinds -- zero, uniform at a value of their own, a shifted motif
@@ -85,7 +86,15 @@
  *            O  random chunks, then the same rewritten unchanged: no motif
  *               admitted (a second sighting by the same chunk does not count);
  *            P  everything rewritten at random, reclaim_second_values(): every
- *               motif of the type freed; the connectivity again: compressed again.
+ *               motif of the type freed; the connectivity again: compressed again;
+ *            Q  (dynamic geometry) the connectivity rechunked to twice, half, four
+ *               times and back to the chunk size: the values, and the chunks
+ *               compressed again to motifs of the new size.
+ *
+ *          R  the chunk-size advisor on a pattern::Array and a zero_any::Array
+ *             holding the same four kinds of chunks: the same table, row for row
+ *             -- pattern's motif chunks are read as data (motif + offset), never
+ *             as constants.
  *
  *          Usage: pattern_validation [chunks]
  */
@@ -98,6 +107,7 @@
 #include "chunk/chunk_traits.h"       // forward decls + default IntType = int
 #include "chunk/zero_any_array.h"     // zero_any::Array (H)
 #include "chunk/pattern_array.h"      // pattern::Array, pattern::MotifRegion
+#include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor (R)
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/zero_chunk.h"         // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"             // chunk_config::use_zero_any, build_config::has_not_ompt
@@ -643,6 +653,7 @@ static void motif_compression(const char* tname, long nch)
     {
         ref = random(4242);
         write_range(arr, ref, 0, n);
+        expect_same("P  rewritten at random", arr, ref);
         expect_eq("P  motif chunks after the rewrite", motif_chunks(arr, nch), 0);
         const pattern::MotifStats before_p = Region::stats();
         (void)Arr::reclaim_second_values();
@@ -654,6 +665,69 @@ static void motif_compression(const char* tname, long nch)
         const long nm2 = motif_chunks(arr, nch);
         expect_true("P  compressed again", nm2 >= nch - first_sightings && nm2 <= nch - 1);
     }
+
+    // Q (dynamic geometry): the connectivity rechunked to twice, half, four times and
+    // back to the chunk size: the values read back, and the rebuilt chunks -- written
+    // by the refill, queued by the completion rule -- are compressed again to motifs of
+    // the NEW size (a size class of their own in the region), once the pass has run.
+    if constexpr (build_config::chunk_dynamic)
+    {
+        for (const long size : {2 * csz, csz / 2, 4 * csz, csz})
+        {
+            arr.rechunk_to(static_cast<int>(size));
+            const long nch_q = (n + size - 1) / size;
+            expect_same("Q  rechunked", arr, ref);
+            end_phase<Arr>();
+            const long nm_q = motif_chunks(arr, nch_q);
+            println("  {:<44} {} of {} at {}", "Q  motif chunks", nm_q, nch_q, size);
+            // A chunk of half the size holds one of two motifs; back at the chunk
+            // size the motif is registered already: no first sighting at all.
+            const long distinct = size < csz ? csz / size : 1;
+            expect_true("Q  compressed at the new size", nm_q >= nch_q - distinct * first_sightings && nm_q <= nch_q);
+            expect_same("Q  after the pass", arr, ref);
+        }
+        expect_true("Q  one size class per chunk size", Region::stats().sizes >= 3);
+    }
+}
+
+/// @brief R (see the file comment): the chunk-size advisor on pattern::Array<T>
+///        and on zero_any::Array<T> holding the same values: the same table, row
+///        for row (a motif chunk's data is read as zero_any reads a buffer).
+template <typename T>
+static void advisor_agrees(const char* tname, long nch)
+{
+    using PArr     = pattern::Array<T, long>;
+    using ZArr     = zero_any::Array<T, long>;
+    const long csz = static_cast<long>(PArr(0).chunk_size());
+    const long n   = nch * csz;
+    println("--- pattern::Array<{}>  the advisor", tname);
+    std::uint64_t  rng = 99;
+    std::vector<T> ref(static_cast<std::size_t>(n));
+    for (long i = 0; i < n; ++i)
+    {
+        ref[static_cast<std::size_t>(i)] = value_of<T>(kind_of(i / csz), i / csz, i % csz, 0, rng);
+    }
+    PArr parr(n);
+    ZArr zarr(n);
+    write_range(parr, ref, 0, n);
+    write_range(zarr, ref, 0, n);
+    expect_true("R  pattern has motif chunks", motif_chunks(parr, nch) > 0);
+    const ChunkSizeReport pr   = ChunkSizeAdvisor<T>::analyze(parr);
+    const ChunkSizeReport zr   = ChunkSizeAdvisor<T>::analyze(zarr);
+    bool                  same = pr.table.size() == zr.table.size() && !pr.table.empty();
+    for (std::size_t i = 0; same && i < pr.table.size(); ++i)
+    {
+        const auto& a = pr.table[i];
+        const auto& b = zr.table[i];
+        same = a.size == b.size && a.n_chunks == b.n_chunks && a.mat == b.mat && a.cst == b.cst && a.exact == b.exact;
+        if (!same)
+        {
+            println("  R  row {}: pattern {} chunks {} mat {} cst; zero_any {} chunks {} mat {} cst", a.size,
+                    a.n_chunks, a.mat, a.cst, b.n_chunks, b.mat, b.cst);
+        }
+    }
+    println("  {:<44} {} rows", "R  advisor table", pr.table.size());
+    expect_true("R  the same table as zero_any", same);
 }
 
 /// @brief H (see the file comment): the registry shared with zero_any.
@@ -721,6 +795,8 @@ int run(int argc, char** argv)
     motif_compression<long>("long", nch);
     motif_compression<unsigned>("unsigned", nch);
     motif_compression<short>("short", nch);
+    advisor_agrees<int>("int", nch);
+    advisor_agrees<long>("long", nch);
 
     release_chunk_pools();
     destroy_block_chunk();
