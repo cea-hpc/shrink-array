@@ -25,6 +25,8 @@
  * serial, the calling thread. The TBB bench (BENCH_PAR_TBB, a std build with
  * CHUNK_WITH_TBB): one TBB task per virtual rank, which never waits for
  * another -- the arrays written from TBB's threads, as a TBB program would.
+ * There region() also begins and ends the library's phase around the tasks,
+ * as OMPT does around an OpenMP region (region_ends_phase).
  *
  * Inside it, the loops are written as a header macro followed by the body:
  *
@@ -81,6 +83,9 @@
     #include <oneapi/tbb/global_control.h> // oneapi::tbb::global_control (the thread count)
     #include <oneapi/tbb/parallel_for.h>   // oneapi::tbb::parallel_for, static_partitioner
     #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena
+
+    #include "chunk/manage_ompt.h" // finalize_parallel_phase (the end of a region)
+    #include "chunk/tbb_adaptor.h" // shrink_array::tbb::phase_body (the begin of each task)
 #endif
 
 namespace bench_par
@@ -99,6 +104,10 @@ static_assert(shrink_array::pmp::backend == shrink_array::pmp::BackendKind::std_
 /// @brief false: the regions are TBB tasks, not a team of the library -- a
 ///        team-wide pass of the library (compress()) cannot run inside one.
 inline constexpr bool team_regions = false;
+
+/// @brief true: region() begins and ends the library's phase itself, as OMPT
+///        does around an OpenMP region (bench_phases.h's wrappers stand aside).
+inline constexpr bool region_ends_phase = true;
 
 namespace detail
 {
@@ -295,27 +304,38 @@ inline oneapi::tbb::task_arena& arena()
 }
 } // namespace detail
 
-/// @brief Run @p body(Team&) once per virtual rank of [0, @p num_threads), as TBB tasks.
+/**
+ * @brief Run @p body(Team&) once per virtual rank of [0, @p num_threads), as TBB
+ *        tasks, as one phase of the library.
+ * @details What OMPT does for an OpenMP region, placed here since TBB has no
+ *          region hook (a task_scheduler_observer sees a thread join the arena,
+ *          not a parallel_for end): begin_parallel_phase() before every task
+ *          (tbb_adaptor.h's phase_body()), finalize_parallel_phase() once the
+ *          arena call has returned -- every task done. Every region ends a phase,
+ *          as every top-level OpenMP region does under OMPT; the bench's own
+ *          begin_parallel_phase_g() / finalize_*_g() are no-ops in this build
+ *          (region_ends_phase).
+ */
 template <typename Body>
 void region(int num_threads, Body&& body)
 {
     const int         n = num_threads > 0 ? num_threads : CHUNK_PMP_MAX_THREADS;
     detail::RegionCtx ctx;
+    const auto        tasks = [&](const oneapi::tbb::blocked_range<int>& r)
+    {
+        for (int k = r.begin(); k != r.end(); ++k)
+        {
+            Team t(&ctx, k, n);
+            body(t);
+        }
+    };
     detail::arena().execute(
         [&]
         {
-            oneapi::tbb::parallel_for(
-                oneapi::tbb::blocked_range<int>(0, n, 1),
-                [&](const oneapi::tbb::blocked_range<int>& r)
-                {
-                    for (int k = r.begin(); k != r.end(); ++k)
-                    {
-                        Team t(&ctx, k, n);
-                        body(t);
-                    }
-                },
-                oneapi::tbb::static_partitioner{});
+            oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<int>(0, n, 1), shrink_array::tbb::phase_body(tasks),
+                                      oneapi::tbb::static_partitioner{});
         });
+    shrink_array::finalize_parallel_phase();
 }
 
 /// @brief region() with CHUNK_PMP_MAX_THREADS virtual ranks.
@@ -332,6 +352,10 @@ using Team = shrink_array::pmp::Team;
 /// @brief true: a region is a team of the library's backend, inside which the
 ///        library's team-wide passes (compress()) share the work.
 inline constexpr bool team_regions = true;
+
+/// @brief false: the phase is begun and ended by OMPT or by the bench's own
+///        calls (bench_phases.h), not by region().
+inline constexpr bool region_ends_phase = false;
 
 /// @brief Run @p body(Team&) on every thread of a new team of the backend's default size.
 template <typename Body>
