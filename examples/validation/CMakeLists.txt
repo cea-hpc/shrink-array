@@ -466,6 +466,12 @@ foreach(_geom IN LISTS _rt_geometries)
         else()
           validation_add_test(${_base} ${_exe} ${_h} "1;8")
         endif()
+      elseif (_h STREQUAL "shrink_to_fit_validation")
+        validation_add_test(${_base} ${_exe} ${_h} "1;8")
+        # With the end-of-phase pass off, shrink_to_fit() alone must fold every
+        # rank's candidates (it folded the calling rank's only).
+        validation_add_test(${_base}_aggressive ${_exe} ${_h} "8")
+        set_property(TEST ${_base}_aggressive_8thr APPEND PROPERTY ENVIRONMENT CHUNK_AGGRESSIVE_COMPRESSION=1)
       elseif (_h STREQUAL "deferred_path_validation")
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
       elseif (_h STREQUAL "phase_protocol_validation")
