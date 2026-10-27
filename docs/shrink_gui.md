@@ -27,6 +27,7 @@ A **run** is a directory on the cluster, `<runs directory>/<id>/`:
 | `launch.sh` | detached mode: `ccc_mprun <options> bash run.sh` |
 | `out.log` | everything the job printed |
 | `jobid` | (`ccc_msub`) the batch id, for `squeue` and `ccc_mdel` |
+| `submit.log` | (`ccc_msub`) the submission command (`$ ccc_msub job.sh`) and what the batch system answered |
 | `start_time` | when the run started on the node (seconds since the epoch), for the Duration column |
 | `exit_code` | written when the command returns |
 | `events.jsonl` | (`bench_and_test.py`) structured progress: phases, k/N |
@@ -122,7 +123,7 @@ tabs follow the current row.
 
 | tab | contents |
 |---|---|
-| Log | the selected run's log, followed live; search with Ctrl+F |
+| Log | the selected run's log, followed live; search with Ctrl+F. At submission, before the job's own log exists, the run directory, the program's command line and the submission command (`cd <run> && ccc_msub job.sh`, with the batch system's answer) |
 | Summary | `multi_launch_stress.py`: per build (runs, failures, times); `bench_and_test.py`: its phases (duration, errors) or its `bench_summary.csv` |
 | Chart | `multi_launch_stress.py`: each run's time against the thread count, filtered by build and variant; "Compare with" overlays another run. `bench_and_test.py`: its `bench_summary.csv`, one line per variant against the thread count for one config (time, peak memory or speedup); "Compare with" overlays another run of the same architecture, dashed, and gives the B / A ratio (geometric mean over the common points, and the worst point) |
 | Errors | the error log read in the output directory: `bench_errors.log` for `bench_and_test.py` (one entry per failure, as soon as it happens), the failed runs' `error_*.txt` for `multi_launch_stress.py`; the tab turns red when there are errors. For `bench_and_test.py`, the list on the left gives each failure (`failed_cases.jsonl`); a click shows its complete output (`run_logs/`). "Rerun failures…" submits a `--rerun-failed --rerun-repeat N` run of the run shown, same partition and options, its logs apart in `run_logs/rerun-<date>` |

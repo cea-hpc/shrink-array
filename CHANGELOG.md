@@ -52,6 +52,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- shrink_gui: the Log pane shows, as soon as a job is submitted, the run directory, the
+  program's command line and the submission command (`cd <run> && ccc_msub job.sh`, with the
+  batch system's answer); until now it stayed empty while the job waited in the queue, since
+  run.sh prints its `[gui] command:` line on the node. `submit.log` starts with the command too.
 - CI: the per-push workflow builds and validates the std backend with oneTBB, and runs it under ThreadSanitizer.
 - CI on AArch64: the per-push workflow runs the OpenMP check build, the examples, the install
   test and the native GenMC runs on GitHub's `ubuntu-24.04-arm` runner too -- the weak memory

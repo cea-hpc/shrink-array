@@ -456,6 +456,7 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"\1 already has an active run on \2 (\3).\nTwo simultaneous runs of one architecture may write "
      r"the same directory (oracles, summary).\n\nSubmit anyway?"),
     (r"^soumis : job (\S+)$", r"submitted: job \1"), (r"^lancé : (.*)$", r"started: \1"),
+    (r"^\[gui\] commande : ", "[gui] command: "), (r"^\[gui\] soumission : ", "[gui] submission: "),
     (r"^options de (\S+) reprises$", r"options of \1 reused"),
     (r"\ble job (\S+) \(ccc_mdel\)", r"job \1 (ccc_mdel)"),
     (r"^Arrêter le run (\S+) \?\n", r"Stop run \1?\n"),

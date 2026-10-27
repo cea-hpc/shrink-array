@@ -49,6 +49,14 @@ def test_submit_follow_summary_fetch(gui, site):
     w, pump = gui
     _choose_fake(w, pump)
     rid = _submit(w, pump, {"runs": "30", "step": "0.01", "fail_every": "11"}, 0)
+    # The commands, in the Log pane as soon as the job is submitted (the
+    # job's own log starts with the job): the program's and the submission's.
+    assert pump(lambda: "[gui] soumission : " in w.log.toPlainText(), 10)
+    head = w.log.toPlainText()
+    assert f"[gui] run " in head and f"/{rid}" in head
+    assert "[gui] commande : " in head and "fake_stress.py" in head and "fail_every" in head
+    assert "ccc_msub job.sh" in head and "Submitted Batch Session" in head
+    assert (site.runs / rid / "submit.log").read_text().startswith("$ ccc_msub job.sh\n")
     assert _wait_status(w, pump, rid, "fini")
     w.table.selectRow(0)
     assert pump(lambda: "exit code 0" in w.log.toPlainText(), 10)

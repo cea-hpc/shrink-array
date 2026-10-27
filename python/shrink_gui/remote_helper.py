@@ -540,6 +540,10 @@ def act_launch(a):
                + 'echo "[gui] end $(date \'+%F %T\')  exit code $code"\n')
         write(os.path.join(d, "job.sh"), job)
         submit = shlex.split(batch["submit"])
+        # The command as run, for the window (shown as soon as the job is
+        # submitted, while run.sh's "[gui] command:" line waits for the node)
+        # and as the first line of submit.log.
+        launched = " ".join(shlex.quote(x) for x in submit + ["job.sh"])
         try:
             p = subprocess.Popen(submit + ["job.sh"], cwd=d, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, universal_newlines=True)
@@ -547,13 +551,15 @@ def act_launch(a):
         except OSError as e:
             print(json.dumps({"error": "%s : %s" % (submit[0], e)}))
             return
-        write(os.path.join(d, "submit.log"), out)
+        write(os.path.join(d, "submit.log"), "$ %s\n%s" % (launched, out))
         ids = re.findall(batch.get("jobid_re") or r"\b(\d{2,})\b", out)
         if p.returncode != 0 or not ids:
             print(json.dumps({"error": "%s (code %s) : %s" % (submit[0], p.returncode, out.strip()[-1500:])}))
             return
         write(os.path.join(d, "jobid"), ids[-1])
-        print(json.dumps({"run_dir": d, "jobid": ids[-1]}))
+        print(json.dumps({"run_dir": d, "jobid": ids[-1],
+                          "launched": "cd %s && %s" % (shlex.quote(d), launched),
+                          "submit_out": out.strip()}))
     else:
         write(os.path.join(d, "launch.sh"), spec["launch.sh"])
         out = open(os.path.join(d, "out.log"), "wb")
@@ -562,7 +568,10 @@ def act_launch(a):
                              start_new_session=True)
         write(os.path.join(d, "pid"), str(p.pid))
         write(os.path.join(d, "host"), socket.gethostname())
-        print(json.dumps({"run_dir": d, "pid": p.pid}))
+        # launch.sh itself prints the detached command ("[gui] ccc_mprun ...")
+        # as its first line of out.log.
+        print(json.dumps({"run_dir": d, "pid": p.pid,
+                          "launched": "cd %s && bash launch.sh" % shlex.quote(d)}))
 
 def tail_text(path, nbytes=65536):
     try:

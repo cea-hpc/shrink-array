@@ -393,6 +393,14 @@ class LaunchForm:
             self.info(f"soumis : job {r['jobid']}" if "jobid" in r else f"lancé : {r['run_dir']}")
             self.current, self.offset = rid, -1     # -1: the end of the log first (act_tail)
             self.log.clear()
+            # What was just run, at once: the job's own log (run.sh's "[gui]
+            # command:" line) only starts with the job, on the node.
+            head = [f"[gui] run {r['run_dir']}", f"[gui] commande : {cmd}"]
+            if r.get("launched"):
+                head.append(f"[gui] soumission : {r['launched']}")
+            if r.get("submit_out"):
+                head.append(r["submit_out"])
+            self.log.append_raw("".join(T(line) + "\n" for line in head))
             self.refresh(select=rid)
 
         self.remote.helper("launch", [self.runs_dir.text().strip(), rid, blob], done)
