@@ -36,7 +36,7 @@ integer, and the wrapping arithmetic has no floating-point equivalent.
 The class is `pattern::Array<T, IntType>`, built in the `zero_any` library
 (`chunk::chunk_zero_any`, `CHUNK_VARIANT_ZERO_ANY`), static or dynamic geometry. Code:
 `chunk/pattern_array.h`, `chunk/pattern_chunk.h`, `internal/pattern_proxy.h`,
-`internal/motif_region.h` and their `_inline.h` companions; the family's shared code branches on
+`internal/motif_region.h` and their _inline.h companions; the family's shared code branches on
 the trait `has_motif_state_v` (`chunk/chunk_traits.h`), always at compile time: `zero_any`'s
 machine code is the same with or without `pattern` (checked function by function on its
 libraries, benchmark and validation programs).

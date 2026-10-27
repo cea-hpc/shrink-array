@@ -39,7 +39,7 @@ d'équivalent flottant.
 La classe est `pattern::Array<T, IntType>`, construite dans la bibliothèque `zero_any`
 (`chunk::chunk_zero_any`, `CHUNK_VARIANT_ZERO_ANY`), en géométrie statique ou dynamique. Code :
 `chunk/pattern_array.h`, `chunk/pattern_chunk.h`, `internal/pattern_proxy.h`,
-`internal/motif_region.h` et leurs compagnons `_inline.h` ; le code partagé de la famille
+`internal/motif_region.h` et leurs compagnons _inline.h ; le code partagé de la famille
 bifurque sur le trait `has_motif_state_v` (`chunk/chunk_traits.h`), toujours à la compilation :
 le code machine de `zero_any` est le même avec ou sans `pattern` (vérifié fonction par fonction
 sur ses bibliothèques, son benchmark et ses programmes de validation).
