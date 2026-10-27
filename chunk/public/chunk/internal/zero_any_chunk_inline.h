@@ -325,11 +325,9 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         }
         else
         {
-            // bool: no second-value pointer, ordering issue does not apply
-            if (second_v)
-            {
-                chunk_ptr->Holder::find_or_set_ind_cst_val2();
-            }
+            // bool: no second-value pointer, ordering issue does not apply. The
+            // shared array of true needs no registering: clear_int_st() takes it
+            // from Holder::find_cst_val2_ptr().
 
             CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 
@@ -481,10 +479,8 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
             const auto scan = Base::scan_constants(static_cast<T>(false), static_cast<T>(true), size.count());
             compact1        = scan.first;
             compact2        = scan.second;
-            if (compact2)
-            {
-                Holder::find_or_set_ind_cst_val2();
-            }
+            // new_cst_val2_ptr stays nullptr: clear_int_st() takes bool's one
+            // shared array from Holder::find_cst_val2_ptr().
         }
 
         // Both modes go through the long clear_int_st(): the type-2 clear MUST commit
