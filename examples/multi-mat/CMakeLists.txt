@@ -56,12 +56,16 @@ multi_mat_setup_target(multi-mat)
 
 add_test(NAME multi_mat COMMAND multi-mat)
 set_property(TEST multi_mat PROPERTY LABELS examples)
+# check builds it (cmake/shrink_build_stamp.cmake), as it builds the harnesses: ctest -L examples
+# finds it.
+set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS multi-mat)
 set_property(TEST multi_mat PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 
 if (CHUNK_HAVE_OMPT)
     add_executable(multi-mat-embedded ${_mm_sources} manage_ompt.cpp)
     add_test(NAME multi_mat_embedded COMMAND multi-mat-embedded)
     set_property(TEST multi_mat_embedded PROPERTY LABELS examples)
+    set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS multi-mat-embedded)
     set_property(TEST multi_mat_embedded PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 else ()
     add_executable(multi-mat-embedded EXCLUDE_FROM_ALL ${_mm_sources} manage_ompt.cpp)
