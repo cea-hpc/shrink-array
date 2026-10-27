@@ -75,7 +75,10 @@ class RechunkHooks<Derived, true>
      * @param new_size the chunk size the array is moving to
      * @details The buffers parked there were sized for an older geometry.
      */
-    void rechunk_drain_reuse_list(unsigned int new_size) const;
+    void rechunk_drain_reuse_list(unsigned int new_size) const
+    {
+        ManagerType::drain_reuse_list_for_size(new_size);
+    }
 
     /// @brief Capture the array-level state that must survive the rechunk.
     /// @return this array's second value

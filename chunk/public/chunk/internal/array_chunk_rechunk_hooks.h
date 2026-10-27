@@ -97,7 +97,10 @@ class RechunkHooks<Derived, true>
      * @param new_size the chunk size the array is moving to
      * @details The buffers parked there were sized for an older geometry.
      */
-    void rechunk_drain_reuse_list(unsigned int new_size);
+    void rechunk_drain_reuse_list(unsigned int new_size)
+    {
+        ManagerType::drain_reuse_list_for_size(new_size);
+    }
 
     /**
      * @brief Swap registry identity with the fresh array built at the new geometry.

@@ -91,12 +91,6 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
 }
 
 template <typename Derived>
-void RechunkHooks<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size)
-{
-    ManagerType::drain_reuse_list_for_size(new_size);
-}
-
-template <typename Derived>
 bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
     // num_tab is set in pre_create_hook and indexes the per-array metadata, so

@@ -21,7 +21,6 @@
 #include <optional>  // std::nullopt (the clears)
 
 #include "chunk/internal/in_t.h"            // InT<T>: the element snapshots
-#include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (steal-mark check)
 #include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 
@@ -95,24 +94,6 @@ template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
     ::operator delete(ptr);
-}
-
-template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(Derived* chunks, std::size_t count) noexcept
-{
-    chunk_array_new::init_chunks(chunks, count, [](Derived& chunk) { chunk.init_after_constructor(); });
-}
-
-/**
- * @brief Records which of the two constants this chunk is being compressed to.
- *
- * @param num_compress_value 0 for the first constant, anything else for the second.
- * @param ptr_type_cst Slot of the per-chunk type table to write.
- */
-template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::set_cst_val_to_cst_val(int num_compress_value, CstSlot* ptr_type_cst) noexcept
-{
-    *ptr_type_cst = cst_slot_of(num_compress_value);
 }
 
 /**
@@ -856,21 +837,6 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(bool ne
     }
 }
 
-/// @brief create_value() on the calling thread's rank.
-template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(bool              need_set_second_value,
-                                                                    SecondValueRef<T> ptr_second_value)
-{
-    create_value(need_set_second_value, ptr_second_value, get_thr_rank_fast());
-}
-
-/// @brief create_value_bool() on the calling thread's rank.
-template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value)
-{
-    create_value_bool(need_set_second_value, get_thr_rank_fast());
-}
-
 // ---------------------------------------------------------------------------
 // zero_any::ChunkThreadPolicy<T, Derived, false>: materialise and clear, serial mode.
 // ---------------------------------------------------------------------------
@@ -933,21 +899,6 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value_bool(bool need
     // (Base::init_block() is the `false` fill).
     static T k_second_value = static_cast<T>(true); // a slot the handle can point at; never written
     create_value(need_set_second_value, SecondValueRef<T>{&k_second_value});
-}
-
-/**
- * @brief Compresses this chunk back to a constant, if it is materialised.
- *
- * @param ptr_type_cst     Slot of the per-chunk type table to update.
- * @param ptr_second_value The chunk's second-value slot.
- * @param thr_rank         Rank whose pool receives the released buffer.
- */
-template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear(CstSlot*          ptr_type_cst,
-                                                             SecondValueRef<T> ptr_second_value,
-                                                             int               thr_rank)
-{
-    Base::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
 }
 
 /**
@@ -1103,7 +1054,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int           
 
 template <typename T, typename Derived>
 [[nodiscard]] T* zero_any::ChunkConcurrentOps<T, Derived>::try_mark_cst_and_get_old(int num_compress_value,
-                                                                                    T* cst2_ptr) noexcept
+                                                                                    T*  cst2_ptr) noexcept
 {
     T* old = base()->values_load();
     if (old == Base::get_cst_val1() || Holder::is_cst_val2_ptr(old))
@@ -1150,7 +1101,7 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
-[[nodiscard]] bool zero_any::ChunkConcurrentOps<T, Derived>::compare_and_swap(T* values_loc,
+[[nodiscard]] bool zero_any::ChunkConcurrentOps<T, Derived>::compare_and_swap(T*   values_loc,
                                                                               bool expected_is_cst_val2) noexcept
 {
     // A chunk's second constant IS its values pointer (no per-chunk copy). The CAS must
@@ -1200,8 +1151,7 @@ template <typename T, typename Derived>
     if constexpr (chunk_config::ring_log_debug)
     {
         const uint32_t chunk_id = ring_chunk_id();
-        const uint32_t info =
-            (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24U);
+        const uint32_t info = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24U);
         ring_log(get_tid(), failed ? EventCode::cas_values_fail : EventCode::cas_values_from_cst, info);
     }
     return failed;
@@ -1285,7 +1235,7 @@ template <typename T, typename Derived>
 // ---------------------------------------------------------------------------
 
 template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::init_values_cst_val(const CstSlot* ptr_type_cst,
+void zero_any::ChunkImpl<T, Derived>::init_values_cst_val(const CstSlot*    ptr_type_cst,
                                                           SecondValueRef<T> ptr_second_value) noexcept
 {
     if (*ptr_type_cst == CstSlot::first)

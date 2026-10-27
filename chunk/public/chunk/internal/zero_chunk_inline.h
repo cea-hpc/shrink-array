@@ -25,7 +25,6 @@
 #include "chunk/zero_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/config.h"     // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists (dependent calls)
@@ -48,13 +47,6 @@ template <typename T, typename Derived, bool Enabled>
     auto* chunks = static_cast<zero::Chunk<T>*>(::operator new(sz));
     init_chunks_cst_val(chunks, sz / sizeof(zero::Chunk<T>));
     return static_cast<void*>(chunks);
-}
-
-template <typename T, typename Derived, bool Enabled>
-void zero::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero::Chunk<T>* chunks,
-                                                                       std::size_t     count) noexcept
-{
-    chunk_array_new::init_chunks(chunks, count, [](zero::Chunk<T>& chunk) { chunk.init_values_cst_val(); });
 }
 
 // Out of line on purpose, as operator new[] above: avoids a false -Wmismatched-new-delete
@@ -237,14 +229,6 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::create_value(int thr_rank) no
 
     // Release fence: the caller's following stores cannot be reordered before the CAS (AArch64).
     std::atomic_thread_fence(std::memory_order_release);
-}
-
-// OpenMP: delegates to the rank-aware overload. The serial specialisation below allocates
-// directly (no per-thread free list).
-template <typename T, typename Derived, bool Enabled>
-void zero::ChunkThreadPolicy<T, Derived, Enabled>::create_value() noexcept
-{
-    create_value(get_thr_rank_fast());
 }
 
 template <typename T, typename Derived>
@@ -570,8 +554,7 @@ T* zero::ChunkThreadPolicy<T, Derived, Enabled>::try_mark_cst_and_get_old()
 // ---------------------------------------------------------------------------
 
 template <typename T>
-zero::Chunk<T>::Chunk(const Chunk& other)
-    : ChunkCounterPolicy<chunk_config::use_compression_with_counter>(other)
+zero::Chunk<T>::Chunk(const Chunk& other) : ChunkCounterPolicy<chunk_config::use_compression_with_counter>(other)
 {
     if constexpr (build_config::threaded)
     {

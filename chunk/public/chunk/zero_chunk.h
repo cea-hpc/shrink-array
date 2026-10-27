@@ -32,6 +32,7 @@
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_cst_val)
 
 namespace shrink_array
 {
@@ -246,7 +247,10 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
 
     /// @brief Materialise storage for the calling thread.
     /// @details Delegates to the rank-aware overload using this thread's rank.
-    void create_value() noexcept;
+    void create_value() noexcept
+    {
+        create_value(get_thr_rank_fast());
+    }
 
     /// @brief Compress: release this chunk's buffer to @p thr_rank's reuse
     ///        list and count it as a compression (CHUNK_STATS).
@@ -295,7 +299,10 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
     ///          region (inside one, an orphaned `omp for` would hang waiting for
     ///          the other threads). An application that placement-news an array
     ///          of chunks initialises it here.
-    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept
+    {
+        chunk_array_new::init_chunks(chunks, count, [](Chunk<T>& chunk) { chunk.init_values_cst_val(); });
+    }
 
     /**
      * @brief Zero-fill a buffer that allocate_chunk_internal has just created.

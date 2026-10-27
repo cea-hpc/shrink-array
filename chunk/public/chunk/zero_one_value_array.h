@@ -284,7 +284,14 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @details clear_core() plus the pre-drain compression stats.
      * @see clear_core
      */
-    void clear();
+    void clear()
+    {
+        // clear() and clear_core() are currently the same teardown; the split exists so
+        // rechunk_to() can release its temporary array through clear_core() without
+        // going through the public entry point.
+        this->invalidate_proxies();
+        clear_core();
+    }
 
     /**
      * @brief Audit pass: report the constant chunks the incremental compression missed.
@@ -310,7 +317,12 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief Public entry point for the audit pass.
      * @see compress_int, which this forwards to.
      */
-    void compress();
+    void compress()
+    {
+        // Plain forwarder. Do not add an in-parallel-region test here: it hit an LLVM
+        // OpenMP runtime bug.
+        compress_int();
+    }
 
     /// @brief Read-only access to the underlying chunk list.
     [[nodiscard]] const Base::ChunkListType& get_chunk_list() const noexcept

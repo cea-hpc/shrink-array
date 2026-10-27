@@ -46,6 +46,20 @@
 
 namespace shrink_array
 {
+// Forward declarations breaking the include cycle chunk_func.h -> zero_chunk.h -> zero_proxy.h ->
+// THIS file -> chunk_func.h: when chunk_func.h is the entry point, its
+// templates are not yet declared here (#pragma once skips it), and the explicit
+// load_balance_list_block_free_thr<T>() calls below need a declaration. Defined in chunk_func.h.
+template <typename T>
+bool need_load_balance_list_block_free_thr();
+template <typename T>
+void load_balance_list_block_free_thr();
+
+// Forward declaration: only named in contexts that depend on T. The definition
+// (chunk/internal/compression_manager.h) comes with manager_chunk_inline.h.
+template <typename T, typename ChunkT>
+struct CompressionManager;
+
 namespace internal
 {
 /// @brief One repeat seen by the teardown dedup phase: skip @p ptr when freeing bucket @p bucket.
@@ -303,18 +317,29 @@ class ManagerChunkParallelImpl<ChunkT, T, true> : public virtual ManagerChunkPar
     void alloc_chunk_allocator_thr() override;
 
     void resize_all_list_block_free_thr() override;
-    void load_balance_list_block_free() override;
+    /// @brief Redistribute released buffers across the per-thread free-lists.
+    /// @details A thread that frees far more than it allocates would otherwise hoard
+    ///          buffers its neighbours need. Delegates to the free function that owns the policy.
+    void load_balance_list_block_free() override
+    {
+        load_balance_list_block_free_thr<T>();
+    }
     void flush_all_deferred(bool in_parallel, bool& have_flushed) override;
     void destroy_after_flush(bool in_parallel) override;
 
     void delete_list_block_chunk_free_itself() override;
 
-    [[nodiscard]] bool need_load_balance_list_block_free() const override;
-    std::size_t        clear_list_block_free_prepare() override;
-    void               clear_list_block_free_screen(int bucket) override;
-    void               clear_list_block_free_sort(int bucket) override;
-    void               clear_list_block_free_dedup(int slice, int nslices) override;
-    void               clear_list_block_free_thr(int bucket) override;
+    /// @brief Is the imbalance between per-thread free-lists worth a redistribution pass?
+    /// @return True when load_balance_list_block_free() would be worth calling.
+    [[nodiscard]] bool need_load_balance_list_block_free() const override
+    {
+        return need_load_balance_list_block_free_thr<T>();
+    }
+    std::size_t clear_list_block_free_prepare() override;
+    void        clear_list_block_free_screen(int bucket) override;
+    void        clear_list_block_free_sort(int bucket) override;
+    void        clear_list_block_free_dedup(int slice, int nslices) override;
+    void        clear_list_block_free_thr(int bucket) override;
 };
 
 /// @brief Serial builds: a single allocator, and nothing per-thread to manage.
@@ -323,7 +348,12 @@ class ManagerChunkParallelImpl<ChunkT, T, false> : public virtual ManagerChunkPa
 {
   private:
     void init_allocator(int block_size) const override;
-    void delete_chunk_allocator() override;
+    /// @brief Destroy this type's single chunk allocator (serial build).
+    void delete_chunk_allocator() override
+    {
+        // std-alloc: allocator_data is NullValueAllocator, destroy() is a no-op.
+        ChunkT<T>::allocator_data->destroy();
+    }
 };
 
 /**
@@ -641,7 +671,11 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @details Called by AllTypeChunk::register_manager(), before the manager
      *          is published: the fan-outs and the first array come after it.
      */
-    static void init_static_state();
+    static void init_static_state()
+    {
+        CompressionManager<T, ChunkT<T>>::ensure_initialised();
+        (void)ChunkT<T>::get_manager(); // built now, outside any parallel region of the type
+    }
 
     ManagerChunk(const ManagerChunk&)            = delete;
     ManagerChunk& operator=(const ManagerChunk&) = delete;
@@ -826,7 +860,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *        keep it (drain_reuse_list_for_size_team(), reused per slice).
      */
     template <typename Alloc>
-    static void drain_free_rank(int n_thr, int rank, Alloc* geometry, DrainBuckets& bucket, bool release_cells) noexcept;
+    static void
+    drain_free_rank(int n_thr, int rank, Alloc* geometry, DrainBuckets& bucket, bool release_cells) noexcept;
 
     /// @brief What drain_reuse_list_for_size_team() keeps from one slice
     ///        boundary to the next: the owner buckets (grown once, then reused

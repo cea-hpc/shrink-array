@@ -55,6 +55,7 @@
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
 #include "chunk/internal/element_ref.h"         // ElementRef: what operator[] returns
 #include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
+#include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools -- shrink_to_fit()
 
 namespace shrink_array
 {
@@ -654,7 +655,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          and rank, not per array), so this serves every array. Size and
      *          capacity do not change. Sequential context.
      */
-    void shrink_to_fit();
+    void shrink_to_fit()
+    {
+        invalidate_proxies();
+        compress_now_and_trim_pools();
+    }
 
     /**
      * @brief Checked read access.
@@ -698,7 +703,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(IndType count, T val); // T, not InT<T>: val may be a(i) -- resize() can free it
+    void assign(IndType count, T val) // T, not InT<T>: val may be a(i) -- resize() can free it
+    {
+        derived().resize(count);
+        write_range_by_chunks(0, count, [&val](IndType) { return val; });
+    }
 
     /**
      * @brief assign(): the elements of [first, last), in order.
