@@ -16,7 +16,7 @@
 
 /**
  * @file pattern_validation.cpp
- * @brief pattern::Array against std::vector (docs/pattern_design.md, stage 1).
+ * @brief pattern::Array against std::vector (docs/algo_pattern.md).
  *
  * @details Built against the zero_any library (pattern::Array is a member of
  *          the zero_any family, built on its machinery), at the default static
@@ -46,8 +46,8 @@
  *               constant) is not queued, the write-path marking only queues
  *               a write from or to one of the chunk's two constants.
  *               pattern::Array also queues a chunk whose first or last element
- *               is written (its completion rule, docs/pattern_design.md,
- *               section 8): every uniform chunk is compressed again;
+ *               is written (its completion rule, docs/algo_pattern.md,
+ *               section 4): every uniform chunk is compressed again;
  *            D  a copy (equal, then unequal after one write in it);
  *            E  a move (the source left empty);
  *            F  a shrinking then a growing resize (std::vector semantics);

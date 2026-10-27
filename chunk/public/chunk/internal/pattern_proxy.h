@@ -19,7 +19,7 @@
 /**
  * @file pattern_proxy.h
  * @brief pattern::Proxy, the write proxy of pattern::Array: zero_any::ProxyImpl
- *        with pattern::Chunk as the chunk type (docs/pattern_design.md).
+ *        with pattern::Chunk as the chunk type (docs/algo_pattern.md).
  */
 
 #include <ostream> // std::ostream (operator<<)
@@ -63,7 +63,7 @@ class Proxy : public zero_any::ProxyImpl<T, Proxy<T>, Chunk<T>>
     Proxy(const Proxy& other) = default;
 
     /// @brief Does this write complete its chunk: its first or its last element
-    ///        (docs/pattern_design.md, section 8)?
+    ///        (docs/algo_pattern.md, section 4)?
     [[nodiscard]] bool is_completion_write() const noexcept
     {
         return this->num_ == 0 || this->num_ == static_cast<int>(this->chunk_size()) - 1;

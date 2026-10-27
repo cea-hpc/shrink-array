@@ -211,7 +211,7 @@ All of it holds under RC11 and IMM. What the table says is the subject of sectio
 
 ## 7. The model of handshake 4: motif readers against the rewrites of the offset slot
 
-`formal/motif_offset.c` is section 6 of [pattern_design.md](pattern_design.md). A chunk of
+`formal/motif_offset.c` is section 6 of [algo_pattern.md](algo_pattern.md). A chunk of
 `pattern::Array` compressed to a **motif** points at a shared, registered motif, and keeps its
 **offset** in its second-value slot: element `j` is `motif[j] + offset`, two words, the pointer
 and the slot, loaded one after the other. The slot is rewritten by a compression pass, before it
@@ -356,7 +356,7 @@ buffer again: it rewrites the slot first -- the offset of another motif B, or th
 of a constant -- then switches the pointer. The reader then returns `A[j]` plus the new slot
 value: a value the chunk never held. The checker found it in two executions (the reader reads
 A, then the pass's offset 20, and returns 5 + 20 = 25 where the chunk held 15, then 27).
-`pattern_design.md` section 6 had argued the hazard away: the slot "is rewritten only in that
+The design note of `pattern::Array` (its section 6, now [algo_pattern.md](algo_pattern.md) section 6) had argued the hazard away: the slot "is rewritten only in that
 pass, after that wait". It is not -- the grace period of `PassScope` protects the buffer the
 pass frees, after the CAS, not the slot it rewrites before it. A second defect came with it: for
 the two constants the pass rewrites the slot through `SecondValueRef::reset()` and

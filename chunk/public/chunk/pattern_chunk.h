@@ -18,7 +18,7 @@
 
 /**
  * @file pattern_chunk.h
- * @brief pattern::Chunk, the chunk of pattern::Array (docs/pattern_design.md).
+ * @brief pattern::Chunk, the chunk of pattern::Array (docs/algo_pattern.md).
  *
  * @details A member of the zero_any family (chunk_traits.h): its body is
  *          zero_any::ChunkImpl's, so it compresses to zero or to a second value
@@ -65,7 +65,7 @@ template <typename T>
 class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
 {
     static_assert(std::is_integral_v<T> && !std::is_same_v<T, bool>,
-                  "pattern::Chunk holds integers only (docs/pattern_design.md, section 1)");
+                  "pattern::Chunk holds integers only (docs/algo_pattern.md, section 1)");
     static_assert(!SecondValueTraits<T>::indexed,
                   "pattern::Chunk keeps a motif chunk's offset in its second-value slot, which must hold a T: "
                   "build without CHUNK_SECOND_VALUE_INDEXED, or use an element type of at most 4 bytes");
@@ -166,7 +166,7 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
 
     /**
      * @brief Compress this materialised chunk to @p motif plus @p offset.
-     * @details The order of docs/pattern_design.md, section 6: the offset to the
+     * @details The order of docs/algo_pattern.md, section 5: the offset to the
      *          chunk's second-value slot first (release), then the values pointer
      *          from the buffer to the motif (the CAS, acq_rel: a reader that sees the
      *          motif sees the offset), then the buffer released after the grace period

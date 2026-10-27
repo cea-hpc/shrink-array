@@ -37,6 +37,11 @@ geometry. They differ in **what they can compress**.
 Boolean arrays in `zero_one_value` builds can also use `ArrayChunkBits`, which
 packs 8 booleans per byte in a materialised chunk.
 
+`zero_any` builds also provide **`pattern::Array`**, for integers: a member of the `zero_any`
+family that compresses, besides its constants, a chunk equal to a **shared motif plus an offset**
+-- the shape of a mesh connectivity, compressed to about 1 % of a vector on a structured mesh.
+See [algo_pattern.md](algo_pattern.md).
+
 ## 3. What a chunk costs
 
 Every chunk costs its **metadata**, whether it is compressed or not. For all three variants,

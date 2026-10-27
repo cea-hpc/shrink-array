@@ -82,6 +82,7 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         auto& tab_point     = bench_arr.tab_point;
         auto& tab_cell      = bench_arr.tab_cell;
         auto& tab_mask      = bench_arr.tab_mask;
+        auto& tab_conn      = bench_arr.tab_conn;
 
         // Compress the queued candidates first, from outside the region: each
         // compress() below runs in an `omp single`, where compress_int cannot
@@ -148,6 +149,11 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
             {
                 say(" tab_mask");
                 compress_one(tab_mask);
+            }
+            if (bench_arr.with_conn) // --no_conn
+            {
+                say(" tab_conn");
+                compress_one(tab_conn);
             }
         };
         if constexpr (bench_par::team_regions)

@@ -263,6 +263,59 @@ def test_start_after_a_compile_run(gui, site):
     assert (site.runs / rid).exists()
 
 
+def test_compile_all_over_several_nodes(gui, site, monkeypatch):
+    """"Nœuds" 3: three batch jobs, the same command plus --pool=<the
+    submission>; then "Démarrage : après" waits for all three."""
+    from shrink_gui import config
+    w, pump = gui
+    w.program.setCurrentText("compile_all.sh")
+    assert pump(lambda: w.form.schema is not None and "pool" in w.form.widgets)   # read from its usage()
+    w.mode.setCurrentIndex(w.mode.findData("mprun"))
+    assert not w.where.isRowVisible(w.nodes)                    # batch only
+    w.mode.setCurrentIndex(w.mode.findData("msub"))
+    assert w.where.isRowVisible(w.nodes)
+    w.nodes.setValue(3)
+    assert "--pool=<la soumission>" in w.preview.toPlainText() and "3 jobs" in w.preview.toPlainText()
+    # The real compile_all.sh read the options; a stand-in runs in the jobs.
+    stub = site.root / "stub"
+    stub.mkdir()
+    (stub / "compile_all.sh").write_text('echo "args: $*"; sleep 4; exit 0\n')
+    monkeypatch.setitem(config.PROGRAMS["compile_all.sh"], "cwd", str(stub))
+    w.extra.setText("--pool=mine")
+    n = len(w.runs)
+    w.launch()                                                   # a --pool of one's own: refused
+    pump(lambda: False, 1)
+    assert len(w.runs) == n and "Nœuds" in w.statusBar().currentMessage()
+    w.extra.setText("")
+    time.sleep(1.05)
+    w.launch()
+    assert pump(lambda: len(w.runs) == n + 3, 30)
+    jobs = sorted((r for r in w.runs if r["meta"].get("pool")), key=lambda r: r["meta"]["node"])
+    pool = jobs[0]["meta"]["pool"]
+    assert [r["id"] for r in jobs] == [f"{pool}-n{k}" for k in (1, 2, 3)]
+    assert all(r["meta"]["nodes"] == 3 and r["meta"]["command"].endswith(f" --pool={pool}") for r in jobs)
+    assert "--pool" not in json.dumps(jobs[0]["meta"]["values"])  # "Reprendre ses options": a new pool
+    row = next(i for i, r in enumerate(w.runs) if r["id"] == jobs[1]["id"])
+    assert w.table.item(row, 1).text() == "compile_all.sh [2/3]"
+    # One entry for the three jobs, while they run.
+    assert pump(lambda: w.after.findData(pool) >= 0, 10)
+    assert w.after.itemText(w.after.findData(pool)) == f"après {pool} (3 nœuds)"
+    assert all(w.after.findData(r["id"]) < 0 for r in jobs)
+    w.after.setCurrentIndex(w.after.findData(pool))
+    jobids = [(site.runs / r["id"] / "jobid").read_text().strip() for r in jobs]
+    _choose_fake(w, pump)
+    assert not w.where.isRowVisible(w.nodes)                    # a program that cannot share its work
+    rid = _submit(w, pump, {"runs": "1"}, len(w.runs))
+    assert f'--dependency=afterok:{":".join(jobids)}' in (site.runs / rid / "job.sh").read_text()
+    assert _wait_status(w, pump, rid, "fini", 60)
+    for r in jobs:
+        assert f"args: --pool={pool}" in (site.runs / r["id"] / "out.log").read_text()
+    w.nodes.setValue(1)
+    w.reuse_run(jobs[2])                                         # back to compile_all.sh over 3 nodes
+    assert w.program.currentText() == "compile_all.sh" and w.nodes.value() == 3
+    assert "--pool=<la soumission>" in w.preview.toPlainText()
+
+
 def test_build_check_follows_the_options(gui):
     w, pump = gui
     w.program.setCurrentText("multi_launch_stress.py")

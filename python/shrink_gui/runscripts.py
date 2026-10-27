@@ -122,8 +122,9 @@ echo "[gui] cwd $PWD"
 
 def wait_sh(after=None, delay_s=0):
     """The detached mode's wait before its command: @p delay_s seconds, then the
-    end of the run @p after = {"run": id, "cond": "ok"|"any"}, a sibling in the
-    runs directory (its exit_code file; a batch run that left the queue
+    end of the runs of @p after = {"run": id, "runs": [ids], "cond": "ok"|"any"}
+    ("runs", when given, all of them; else "run"), siblings in the
+    runs directory (their exit_code files; a batch run that left the queue
     without one counts as failed). Not started: exit code 95. The file
     "waiting" marks the wait (status "en attente")."""
     if not after and not delay_s:
@@ -134,8 +135,10 @@ def wait_sh(after=None, delay_s=0):
            'touch "$D/waiting"']
     if delay_s:
         out.append(f'echo "[gui] waiting {int(delay_s)} s before starting"; sleep {int(delay_s)}')
-    if after:
-        rid, cond = after["run"], after.get("cond", "ok")
+    # Each run in turn (the jobs of a submission over several nodes: all of
+    # them, after["runs"]); one that failed stops the wait at once.
+    for rid in (after.get("runs") or [after["run"]]) if after else []:
+        cond = after.get("cond", "ok")
         out.append(f"""W="$D/../{rid}"
 echo "[gui] waiting for the end of run {rid} ({'if it succeeds' if cond == 'ok' else 'whatever its result'})"
 POLL="${{SHRINK_GUI_POLL:-30}}"

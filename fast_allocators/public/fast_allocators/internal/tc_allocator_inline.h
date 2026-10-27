@@ -19,11 +19,13 @@
 // Bodies of the slab classes declared in tc_allocator.h, which includes this
 // file at its end.
 
-#include <bit>     // std::bit_width, the element-size shift
-#include <cstddef> // std::ptrdiff_t, the element offsets; std::byte (the blocks)
-#include <cstdint> // std::uintptr_t
-#include <utility> // std::cmp_less (the element-size check)
-#include <vector>  // std::vector
+#include <sys/mman.h> // madvise, MADV_DONTNEED (advise_free_pages)
+#include <algorithm>  // std::min, std::stable_sort (order_fullest_first)
+#include <bit>        // std::bit_width, the element-size shift
+#include <cstddef>    // std::ptrdiff_t, the element offsets; std::byte (the blocks)
+#include <cstdint>    // std::uintptr_t
+#include <utility>    // std::cmp_less (the element-size check), std::cmp_greater_equal
+#include <vector>     // std::vector
 
 #include "fast_allocators/internal/raw_memory.h" // store_to_bytes
 #include "fast_allocators/tc_allocator.h"        // the declarations these bodies belong to
@@ -181,6 +183,110 @@ inline void TCSlab<Links>::free_block(int elem) noexcept
     }
 
     --nn_ref;
+}
+
+template <FreeLinks Links>
+std::size_t TCSlab<Links>::advise_free_pages(std::size_t page, std::vector<unsigned char>& scratch) noexcept
+{
+    if constexpr (!side_links)
+    {
+        // The links are IN the free elements: their pages hold the free list.
+        (void)page;
+        (void)scratch;
+        return 0;
+    }
+    else
+    {
+        const auto n     = static_cast<std::size_t>(block_size);
+        const auto es    = static_cast<std::size_t>(element_size);
+        const auto bytes = static_cast<std::size_t>(block_allocator);
+        if (nn_ref <= 0 || nn_ref >= block_size || page == 0 || bytes <= page || es == 0 ||
+            (fast_alloc::address_bits(data) % page) != 0)
+        {
+            return 0; // empty (the sweep's), full, or a slab of one page
+        }
+        reclaim_partial_scanned().fetch_add(1, std::memory_order_relaxed);
+        try
+        {
+            scratch.assign(n, 0);
+        }
+        catch (...)
+        {
+            return 0;
+        }
+        // The free elements: the free list, then everything past the bump index.
+        std::size_t listed = 0;
+        for (int e = first_free; e != free_list_end; e = link(e))
+        {
+            if (std::cmp_greater_equal(e, n) || scratch[static_cast<std::size_t>(e)] != 0 || listed >= n)
+            {
+                FAST_ALLOC_DBG_ASSERT(false && "TCSlab::advise_free_pages: malformed free list");
+                return 0;
+            }
+            scratch[static_cast<std::size_t>(e)] = 1;
+            ++listed;
+        }
+        const auto carved = static_cast<std::size_t>(used_size);
+        for (std::size_t e = carved; e < n; ++e)
+        {
+            scratch[e] = 1;
+        }
+        if (listed + (n - carved) != n - static_cast<std::size_t>(nn_ref))
+        {
+            FAST_ALLOC_DBG_ASSERT(false && "TCSlab::advise_free_pages: free list and nn_ref disagree");
+            return 0; // a mis-accounted block stays mapped
+        }
+
+        const std::size_t end_of_elements = n * es;
+        const std::size_t last_page       = (bytes / page) - 1; // the back-pointer's: kept
+        std::size_t       advised         = 0;
+        std::size_t       run_begin       = last_page; // none open
+        const auto        close_run       = [&](std::size_t run_end) noexcept
+        {
+            if (run_begin < run_end)
+            {
+                const std::size_t len = (run_end - run_begin) * page;
+                if (::madvise(data + (run_begin * page), len, MADV_DONTNEED) == 0)
+                {
+                    advised += len;
+                    reclaim_partial_syscalls().fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+            run_begin = last_page;
+        };
+        for (std::size_t pg = 0; pg < last_page; ++pg)
+        {
+            const std::size_t b0       = pg * page;
+            bool              all_free = true;
+            if (b0 < end_of_elements)
+            {
+                const std::size_t e0 = b0 / es;
+                const std::size_t e1 = std::min(((b0 + page) - 1) / es, n - 1);
+                for (std::size_t e = e0; e <= e1; ++e)
+                {
+                    if (scratch[e] == 0)
+                    {
+                        all_free = false;
+                        break;
+                    }
+                }
+            }
+            if (all_free)
+            {
+                if (run_begin == last_page)
+                {
+                    run_begin = pg;
+                }
+            }
+            else
+            {
+                close_run(pg);
+            }
+        }
+        close_run(last_page);
+        reclaim_partial_bytes().fetch_add(advised, std::memory_order_relaxed);
+        return advised;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -565,6 +671,73 @@ std::size_t TCTypeCAllocator<ElemT>::collect_empty_slabs([[maybe_unused]] SlabSw
         }
         return collected;
     }
+}
+
+template <typename ElemT>
+std::size_t TCTypeCAllocator<ElemT>::tidy_slabs_in_use() noexcept
+{
+    if constexpr (alloc_config::use_std_alloc)
+    {
+        return 0;
+    }
+    else
+    {
+        if (alloc_config::slab_fullest_first())
+        {
+            order_fullest_first();
+        }
+        if constexpr (!alloc_config::reclaim_empty_slabs)
+        {
+            return 0; // CHUNK_RECLAIM_EMPTY_SLABS=OFF: nothing is given back
+        }
+        else
+        {
+            if (!alloc_config::reclaim_partial_slabs())
+            {
+                return 0;
+            }
+            const std::size_t          page = detail::reclaim_page_size();
+            std::vector<unsigned char> scratch;
+            std::size_t                advised = 0;
+            // Only #block: a full slab has no free element, an empty one is
+            // collect_empty_slabs()'s.
+            for (auto* p = this->block; p != nullptr; p = p->next)
+            {
+                advised += p->advise_free_pages(page, scratch);
+            }
+            return advised;
+        }
+    }
+}
+
+template <typename ElemT>
+void TCTypeCAllocator<ElemT>::order_fullest_first() noexcept
+{
+    std::vector<TCCAllocator*> slabs;
+    try
+    {
+        for (auto* p = this->block; p != nullptr; p = p->next)
+        {
+            slabs.push_back(p);
+        }
+    }
+    catch (...)
+    {
+        return; // the order stays as it was
+    }
+    if (slabs.size() < 2)
+    {
+        return;
+    }
+    std::stable_sort(slabs.begin(), slabs.end(),
+                     [](const TCCAllocator* a, const TCCAllocator* b) noexcept { return a->nn_ref > b->nn_ref; });
+    for (std::size_t i = 0; i < slabs.size(); ++i)
+    {
+        slabs[i]->prev = i > 0 ? slabs[i - 1] : nullptr;
+        slabs[i]->next = i + 1 < slabs.size() ? slabs[i + 1] : nullptr;
+    }
+    this->block = slabs.front();
+    FAST_ALLOC_SL_LIST_CHECK(sl_check(this->block));
 }
 
 #endif // FAST_ALLOC_PMP_THREADED

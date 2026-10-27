@@ -145,7 +145,7 @@ run ok    "source, 3 readers"                                --check-liveness --
 echo "-- mutations: each must be refused --"
 run error "MUT_SLOT_LOAD_RELAXED (the re-check needs acquire)" -- -DMUT_SLOT_LOAD_RELAXED $M5
 run error "MUT_SLOT_STORE_RELAXED (the pass's store must be release)" -- -DMUT_SLOT_STORE_RELAXED $M5
-run error "MUT_CAS_BEFORE_SLOT (pattern_design.md section 6: the slot first)" -- -DMUT_CAS_BEFORE_SLOT $M5
+run error "MUT_CAS_BEFORE_SLOT (algo_pattern.md section 6: the slot first)" -- -DMUT_CAS_BEFORE_SLOT $M5
 run error "MUT_NO_GRACE (calibration)"                       -- -DMUT_NO_GRACE $M5
 echo "-- the behaviours the model changed in the source (F5) --"
 run error "MUT_NO_RECHECK, another motif (F5, before)"       -- -DMUT_NO_RECHECK $M5

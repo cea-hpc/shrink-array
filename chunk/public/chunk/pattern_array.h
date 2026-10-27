@@ -19,7 +19,7 @@
 /**
  * @file pattern_array.h
  * @brief pattern::Array: a chunked integer array for runs of zeros and motifs
- *        repeated with a shift (docs/pattern_design.md).
+ *        repeated with a shift (docs/algo_pattern.md).
  *
  * @details Being written, in the stages of the design note. Today a member of
  *          the zero_any family with zero_any's behaviour: a chunk compresses to
@@ -40,15 +40,10 @@
 #include <type_traits>      // std::is_integral_v, std::is_same_v
 
 #include <cstddef> // std::size_t
-#include <cstdint> // std::uint8_t (the motif marks)
-#include <vector>  // std::vector (install_motif_for_test, the motif marks)
 
 #include "chunk/chunk_traits.h"           // ArrayChunkTraits<pattern::Array>, ArrayChunkElement
-#include "chunk/internal/motif_region.h"  // pattern::MotifRegion (install_motif_for_test)
-#include "chunk/config.h"                 // build_config::chunk_dynamic
-#include "chunk/PMP_CHUNK.h"              // CHUNK_PMP_IN_PARALLEL_REGION (the motif reclaim)
 #include "chunk/pattern_chunk.h"          // pattern::Chunk
-#include "chunk/internal/pattern_proxy.h" // pattern::Proxy
+#include "chunk/internal/pattern_proxy.h" // pattern::Proxy (the only include of it: Array's ProxyType must be complete)
 #include "chunk/zero_any_array.h"         // zero_any::ArrayImpl
 
 namespace shrink_array
@@ -59,7 +54,7 @@ namespace pattern
 
 /**
  * @brief Chunked integer array of the zero_any family, to become the array of
- *        shifted motifs (docs/pattern_design.md). All of it is zero_any::ArrayImpl's;
+ *        shifted motifs (docs/algo_pattern.md). All of it is zero_any::ArrayImpl's;
  *        this class adds the constructors, the destructor and the assignments.
  *
  * @tparam T        stored element type: an integer type other than bool
@@ -69,7 +64,7 @@ template <ArrayChunkElement T, typename IntType>
 class Array : public zero_any::ArrayImpl<Array<T, IntType>>
 {
     static_assert(std::is_integral_v<T> && !std::is_same_v<T, bool>,
-                  "pattern::Array holds integers only (docs/pattern_design.md, section 1)");
+                  "pattern::Array holds integers only (docs/algo_pattern.md, section 1)");
 
   public:
     /**
@@ -153,7 +148,7 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
      * @brief zero_any's reclaim_second_values() -- the constants no array of the
      *        zero_any family with element type T names any more -- then the motif
      *        registry's: the motifs no chunk of any pattern::Array<T> points at
-     *        (docs/pattern_design.md, section 7). One call, each registry its own
+     *        (docs/algo_pattern.md, section 3). One call, each registry its own
      *        entries.
      * @return How many second values were freed; the motifs freed are in
      *         MotifRegion<T>::stats().

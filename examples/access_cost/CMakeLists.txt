@@ -46,4 +46,22 @@ endforeach()
 
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).
+# access_cost_pattern_<size>: pattern::Array against zero_any::Array and a
+# std::vector, on varied data and on a mesh connectivity (docs/algo_pattern.md).
+# A member of the zero_any family: linked with the zero_any library.
+if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+  set(_tgt access_cost_pattern_${CHUNK_DEFAULT_SIZE})
+  add_executable(${_tgt} access_cost_pattern.cpp)
+  target_link_libraries(${_tgt} PRIVATE chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+  if (OMP)
+    target_link_libraries(${_tgt} PUBLIC OpenMP::OpenMP_CXX)
+  endif ()
+  chunk_require_cxx_std(${_tgt} PRIVATE)
+  foreach(_nthr 1 8)
+    add_test(NAME ${_tgt}_smoke_${_nthr}thr COMMAND ${_tgt} --n 262144 --reps 2 --verify)
+    set_property(TEST ${_tgt}_smoke_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
+    set_property(TEST ${_tgt}_smoke_${_nthr}thr PROPERTY LABELS validation)
+  endforeach()
+endif()
+
 shrink_stamp_directory_targets()

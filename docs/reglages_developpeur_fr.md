@@ -36,6 +36,9 @@
 | `CHUNK_RECHUNK_SLICES` | 16 | nombre de tranches de la reconstruction de `zero` |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
 | `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()` |
+| `CHUNK_RECLAIM_PARTIAL` | 1 | un balayage (`trim_reuse_pools`, `CHUNK_RECLAIM_PHASE_KEEP`) rend aussi les pages libres des slabs de valeurs encore utilisés, comme `malloc_trim` dans les tas de glibc (la dernière page de chaque slab, son pointeur arrière, est gardée) ; `0` : seulement les slabs vides, comme avant. `CHUNK_ARENA_REPORT` les compte sur sa ligne `partial` |
+| `CHUNK_SLAB_FULLEST_FIRST` | 1 | un balayage rechaîne les slabs de valeurs qui ont de la place du plus plein au moins plein : les allocations suivantes remplissent les slabs denses et les clairsemés se vident ; `0` : l'ordre est laissé tel quel |
+| `CHUNK_SLAB_MIN_PAGES` | non défini | plancher de la taille des slabs de valeurs, en pages ; non défini : aucun (le slab de chaque type d'élément fait tout de même au moins une page). `16` est l'ancien défaut : des slabs de 1 Mio à 64 threads sur pages de 64 Kio au lieu de 256 Kio, pour un A/B de la mémoire résidente. *Retrait prévu : 31/12/2026.* |
 | `CHUNK_RECHUNK_RECYCLE` | actif | reconstruction de `zero` : les slabs qu'une tranche vient de vider vont à la tranche suivante au lieu d'être rendus au système ; `0` le désactive. *Retrait prévu : 31/12/2026.* |
 | `CHUNK_RECHUNK_KEEP_RECYCLED_MB` | 0 | reconstruction de `zero` : à sa fin, jusqu'à ce nombre de Mio par arène des slabs recyclés qu'aucune tranche n'a repris restent résidents (répartis à parts égales entre les rangs) pour les allocations suivantes, au lieu d'être rendus au système ; `0` : tous sont rendus |
 | `CHUNK_RECHUNK_KEEP_RECYCLED` | inactif | `1` : idem, sans plafond (le RSS garde chaque reliquat jusqu'à sa réutilisation) |
@@ -100,6 +103,7 @@ de dépréciation.
 | `BENCH_SCHED_BLOCK` | taille des blocs d'ordonnancement des phases du banc (64 ; 0 = tranches contiguës) |
 | `NO_IO`, `COMPRESS` | équivalents de `--no_io` et `--compress` |
 | `--no_mask`, `--mask_scale <x>` | sans `tab_mask` ; ou sa taille, `x × sz` (défaut 1/32) |
+| `--no_conn` | sans `tab_conn`, la connectivité de maillage (`pattern::Array` dans les builds `zero_one_value` et `zero_any`) |
 | `--no_struct` | sans les tableaux de structures (`Point3`, `Cell`) |
 
 ## 5. Macros de compilation
@@ -188,6 +192,7 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles |
 | `--no-hardening` | sans `CHUNK_GLIBCXX_ASSERTIONS` ni `CHUNK_UBSAN` sur les builds Debug et sanitizer |
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
+| `--pool=<id>` | partager les configurations avec les autres runs qui ont le même `<id>` (un job batch par nœud, champ « Nœuds » de `shrink_gui`) : chacun construit celles qu'il réclame le premier ; `<id>` est un nom sous `$CHUNK_BUILD_REP/.pools/` ou un dossier partagé par tous les nœuds |
 
 `compile_all_gnu.sh` accepte en plus `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). La mémoire de
 compilation par job se règle par `CHUNK_MEM_PER_JOB_MB` (3 072 Mo par défaut, le double pour

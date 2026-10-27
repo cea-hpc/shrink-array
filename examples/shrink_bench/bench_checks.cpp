@@ -48,6 +48,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
     auto& tab_mask      = bench_arr.tab_mask;
+    auto& tab_conn      = bench_arr.tab_conn;
 
     // The flags the two lambdas captured from main(), under their original
     // names so the bodies below are VERBATIM.
@@ -109,6 +110,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             std::uint64_t tab_point_ch     = 0;
             std::uint64_t tab_cell_ch      = 0;
             std::uint64_t tab_mask_ch      = 0;
+            std::uint64_t tab_conn_ch      = 0;
 
             VectorChecksum vec1_ch(tab1);
             VectorChecksum vec2_ch(tab2);
@@ -130,6 +132,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             VectorChecksum vec_point_ch(tab_point);
             VectorChecksum vec_cell_ch(tab_cell);
             VectorChecksum vec_mask_ch(tab_mask);
+            VectorChecksum vec_conn_ch(tab_conn);
 
             // One calculate_checksum_0 call per array, not a variadic fold over
             // them: a fold helper taking its VectorChecksum arguments by value
@@ -184,6 +187,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                 tab_point_ch += vec_point_ch.checksum_thr[thr];
                 tab_cell_ch += vec_cell_ch.checksum_thr[thr];
                 tab_mask_ch += vec_mask_ch.checksum_thr[thr];
+                tab_conn_ch += vec_conn_ch.checksum_thr[thr];
             }
 
             tab1_ch = ~tab1_ch;
@@ -206,6 +210,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             tab_point_ch = ~tab_point_ch;
             tab_cell_ch  = ~tab_cell_ch;
             tab_mask_ch  = ~tab_mask_ch;
+            tab_conn_ch  = ~tab_conn_ch;
 
             std::println("");
 
@@ -268,6 +273,15 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                             if (bench_arr.with_mask) // --no_mask: no reference file either
                             {
                                 lbd_check(ind, "tab_mask", tab_mask, tab_mask_ch, true /* one byte per bool */);
+                            }
+                        },
+                        bench_par::nowait);
+                    team.single(
+                        [&]
+                        {
+                            if (bench_arr.with_conn) // --no_conn: no reference file either
+                            {
+                                lbd_check(ind, "tab_conn", tab_conn, tab_conn_ch);
                             }
                         },
                         bench_par::nowait);

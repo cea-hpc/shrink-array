@@ -1599,7 +1599,7 @@ zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_
     }
     if constexpr (has_motif_state_v<ChunkT>)
     {
-        // The completion rule (docs/pattern_design.md, section 8): a write of the chunk's
+        // The completion rule (docs/algo_pattern.md, section 4): a write of the chunk's
         // first or last element queues it; the pass's scan tells a motif from the rest.
         if (static_cast<const Derived*>(this)->is_completion_write())
         {

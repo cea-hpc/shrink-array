@@ -654,7 +654,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // is_not_bool) would fail to compile the condition itself.
         [[maybe_unused]] const int ind_old2 = [&]
         {
-            if constexpr (chunk_config::use_zero_one_value)
+            // A zero_any-family array in a zero_one_value build (pattern::Array): no index.
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkType>)
             {
                 if constexpr (Derived::is_not_bool)
                 {
@@ -672,7 +673,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         }();
         [[maybe_unused]] const auto inf_new2 = [&]
         {
-            if constexpr (chunk_config::use_zero_one_value)
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkType>)
             {
                 if constexpr (Derived::is_not_bool)
                 {

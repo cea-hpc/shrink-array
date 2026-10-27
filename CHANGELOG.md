@@ -215,6 +215,18 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `CHUNK_SLAB_MIN_PAGES` (developer setting): a floor in pages for the value slabs' size; `16`
+  restores the former default, for an A/B (see Changed).
+- Fast allocator: a sweep (`trim_reuse_pools()`, `CHUNK_RECLAIM_PHASE_KEEP`) also gives back the
+  free pages of the value slabs still in use (`TCSlab::advise_free_pages`), as `malloc_trim`
+  does inside glibc's heaps: a slab no longer stays resident whole for its last few live buffers.
+  The value slabs keep their free-list links aside, so a free element is never written to; the
+  last page, the back-pointer's, is kept. `CHUNK_RECLAIM_PARTIAL=0` turns it off; the
+  `CHUNK_ARENA_REPORT` `partial` line counts it.
+- Fast allocator: the same sweep re-chains the value slabs with room fullest first
+  (`TCTypeCAllocator::order_fullest_first`), so the next allocations fill the dense slabs and
+  the sparse ones drain, to be given back whole. `CHUNK_SLAB_FULLEST_FIRST=0` turns it off.
+- fast_allocators 2.3.0 (the two above); `CHUNK_FAST_ALLOCATORS_VERSION` follows.
 - shrink_gui runs on PySide6 6.2 and 6.3: QFormLayout's setRowVisible() / isRowVisible() came
   with Qt 6.4, and the window stopped at start-up without them (AttributeError in
   machine_panel). `widgets.RowVisibleFormLayout` provides them on every 6.x -- Qt's own from
@@ -263,9 +275,19 @@ the tag's checksum to the recipe.
   build lists include the std builds.
 - Spack: variant `threads=openmp|std|serial` (default `openmp`), and `+tbb`
   for the TBB examples (with `+examples threads=std`).
+- `compile_all.sh --pool=<id>` (and `compile_all_gnu.sh`): runs given the same id share the
+  configurations, each built by the first run that claims it. `shrink_gui` 0.14 uses it for
+  its "Nodes" field: `compile_all.sh` over N one-node batch jobs, and "Start: after" waits for
+  all of them (`docs/shrink_gui.md`, section 3).
 
 ### Changed
 
+- Fast allocator: the value slabs are no longer floored at sixteen pages. The floor capped the
+  last page an emptied slab used to keep; a sweep now gives the slab back whole, and the floor
+  only made the slabs larger on 64 KiB-page nodes -- 1 MiB at 64 threads instead of 256 KiB --
+  hence a larger partly-used slab per (rank, element type, array, size), and more memory kept
+  resident by a slab's last few live buffers. Each element type's slab is floored at one page
+  and at its largest buffer instead (`value_slab.h`). Unchanged on 4 KiB pages.
 - The three array classes live in a namespace each, named after what they compress:
   `zero::Array` (was `ArrayChunk`), `zero_one_value::Array` (was `ArrayChunk2`),
   `zero_any::Array` (was `ArrayChunk2A`). The chunk and proxy classes, the CMake targets and
@@ -355,6 +377,9 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `compile_all.sh`: the slot pool (`.build-slots.<host>.<pid>`) and the log directory
+  (`logs/<date>-<host>-<pid>`) of a run carry the host name. In a `$CHUNK_BUILD_REP` shared by
+  several nodes, two runs with the same pid used the same slot pool.
 - Chunk2A: the deferred replay of `=` stored the element with a plain store
   while another writer's uniform-chunk scan read it as a relaxed atomic -- a
   data race (found by TSan on the std backend, present under OpenMP too).

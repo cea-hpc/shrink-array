@@ -274,6 +274,25 @@ class alignas(64) TCSlab
         first_free = free_list_end;
     }
 
+    /**
+     * @brief Give back the pages of this slab, still in use, that hold free
+     *        elements only (MADV_DONTNEED). Side links only; 0 otherwise.
+     * @param page The system page size.
+     * @param scratch Reused between calls: one flag per element.
+     * @return The bytes given back.
+     * @details Free: the elements of the free list and those at or past the
+     *          bump index. A page is dropped when every element overlapping it
+     *          is free (bytes past the last element count as free); the last
+     *          page is kept, its last word being the back-pointer every free
+     *          reads. Runs of adjacent pages take one madvise() each. A free
+     *          list that does not account for exactly block_size - nn_ref
+     *          elements drops nothing: a mis-accounted block must stay mapped,
+     *          as in manage_full_empty().
+     * @pre Serial, quiescent: no alloc() or free on this slab in flight. Called
+     *      only by a sweep (TCTypeCAllocator::tidy_slabs_in_use()).
+     */
+    std::size_t advise_free_pages(std::size_t page, std::vector<unsigned char>& scratch) noexcept;
+
     /// @brief Index of the element at @p ptr within this slab: offset / #element_size
     ///        without a division. One 64x64->128 multiplication by #element_magic_
     ///        (Lemire, Kaser & Kurz 2019, exact for every 32-bit dividend and
@@ -1133,6 +1152,23 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
     ///         is applied by the sweep, to all instances together.
     std::size_t collect_empty_slabs([[maybe_unused]] SlabSweep&  sweep,
                                     [[maybe_unused]] std::size_t keep_empty = 0) noexcept;
+
+    /**
+     * @brief The slabs of this instance that are still in use, at a sweep:
+     *        re-chain them fullest first (CHUNK_SLAB_FULLEST_FIRST), then give
+     *        back their free pages (CHUNK_RECLAIM_PARTIAL,
+     *        TCSlab::advise_free_pages()).
+     * @details The empty slabs are collect_empty_slabs()'s; call this first, at
+     *          the same serial, quiescent point (ManagerChunk::sweep_empty_slabs).
+     * @return The bytes given back.
+     */
+    std::size_t tidy_slabs_in_use() noexcept;
+
+  private:
+    /// @brief Re-chain #block by decreasing occupancy (nn_ref), stable: alloc()
+    ///        takes the head, so the dense slabs fill and the sparse ones drain.
+    ///        Leaves the order as it was if the scratch vector cannot be had.
+    void order_fullest_first() noexcept;
 };
 
 #endif
