@@ -89,6 +89,9 @@
 #                           resize's release) and zero_any's operator== equal a
 #                           std::vector's, with the phase bracketed; inside a
 #                           region they stay on the calling thread.
+#   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
+#                           keeps a buffer, in every build (a serial zero_any
+#                           left its last partial batch of candidates).
 #   compound_ops_validation `*=`, `/=`, `%=` read back what std::vector would
 #                           (results landing on zero included), `double /= 0.0`
 #                           gives inf, set_second_value(0) declares nothing;
@@ -240,7 +243,8 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         swap_move_validation range_counters_validation thread_growth_validation
                         nested_region_validation concurrent_teams_validation iterator_validation
                         stale_proxy_validation
-                        region_storage_validation compound_ops_validation bulk_write_team_validation)
+                        region_storage_validation compound_ops_validation bulk_write_team_validation
+                        shrink_to_fit_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.

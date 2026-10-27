@@ -186,10 +186,12 @@ void release_chunk_pools()
 std::size_t compress_now_and_trim_pools()
 {
     const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
-    if constexpr (chunk_config::use_fast_block_compression)
-    {
-        ens_type_chunk.force_chunk_to_compress();
-    }
+    // Every build: a serial zero_any queues its candidates too, and folds them
+    // in batches of half the list (perform_compression); the last, partial
+    // batch waited here for good. force_chunk_to_compress() sweeps what each
+    // build queues (nothing for a serial zero or zero_one_value: their
+    // counters compress on the write).
+    ens_type_chunk.force_chunk_to_compress();
     return ens_type_chunk.trim_reuse_pools(0);
 }
 

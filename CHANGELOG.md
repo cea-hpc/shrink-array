@@ -220,6 +220,12 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `shrink_to_fit()` and `ParamChunk::force_compression()` left uniform `zero_any` chunks
+  materialised in a serial build (OpenMP off): a serial `zero_any` queues its compression
+  candidates and folds them in batches of half the list from the write path, and both swept the
+  last, partial batch only in the OpenMP builds. Up to that many chunks kept a buffer -- right
+  values, memory not given back (cpp26's `cst2_hash_validation` saw 1750 second values for
+  2000). They sweep in every build now; `shrink_to_fit_validation` checks it.
 - `compile_all.sh`: the slot pool (`.build-slots.<host>.<pid>`) and the log directory
   (`logs/<date>-<host>-<pid>`) of a run carry the host name. In a `$CHUNK_BUILD_REP` shared by
   several nodes, two runs with the same pid used the same slot pool.
