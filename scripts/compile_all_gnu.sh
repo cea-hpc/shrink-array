@@ -79,6 +79,13 @@ while [[ $# -gt 0 ]]; do
             export CHUNK_BUILD_TARGET="${1#*=}"
             shift
             ;;
+        --pool=*)
+            # Shared with other runs (see --pool in compile_all.sh, pool_init).
+            # Under compile_all.sh it comes through CHUNK_POOL instead.
+            export CHUNK_POOL="${1#*=}"
+            [ -n "$CHUNK_POOL" ] || { echo "ERROR: --pool= (expected a name or a directory)" >&2; exit 2; }
+            shift
+            ;;
         --exec=*)
             # Build only the Ninja target(s) matching it inside each selected
             # build dir, e.g. --exec=shrink_bench_zero_64, --exec='*_dyn', or a
@@ -90,7 +97,7 @@ while [[ $# -gt 0 ]]; do
         *)
             # Previously swallowed silently — a --debug_only (underscore) went
             # unnoticed and the intended flag was never applied.
-            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--jobs=<N>|--target=<glob>|--exec=<ninja-target>)" >&2
+            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--jobs=<N>|--target=<glob>|--exec=<ninja-target>|--pool=<id>)" >&2
             exit 2
             ;;
     esac
@@ -129,6 +136,7 @@ check_target_arg $(known_build_names "$0")
 build_rep="$CHUNK_BUILD_REP"
 
 create_build_rep
+pool_init
 
 # --- Architecture detection & compiler/flags selection ---
 if [ "$(uname -m)" = "aarch64" ]; then
@@ -393,6 +401,7 @@ else
     wait_all
 fi
 rc=$?
+pool_summary
 # Standalone run: a --target / --exec that let nothing through is an error
 # (under compile_all.sh the parent gives that verdict for both scripts).
 if ! check_arg_epilogue; then

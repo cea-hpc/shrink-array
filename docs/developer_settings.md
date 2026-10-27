@@ -189,6 +189,7 @@ the common options. `--help` gives the full list.
 | `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them |
 | `--no-hardening` | without `CHUNK_GLIBCXX_ASSERTIONS` or `CHUNK_UBSAN` on the Debug and sanitizer builds |
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
+| `--pool=<id>` | share the configurations with the other runs given the same `<id>` (one batch job per node, `shrink_gui`'s "Nodes" field): each builds those it claims first; `<id>` is a name under `$CHUNK_BUILD_REP/.pools/` or a directory all the nodes share |
 
 `compile_all_gnu.sh` also accepts `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). The compilation
 memory per job is set by `CHUNK_MEM_PER_JOB_MB` (3,072 MB by default, twice that for

@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> October 2026, `shrink_gui` 0.13 (prototype). A window on the laptop to submit
+> October 2026, `shrink_gui` 0.14 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `omp_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
@@ -69,6 +69,7 @@ runs again by itself.
 | Submission | `ccc_msub` (batch, the default) or `ccc_mprun` detached from the login node |
 | Max time (-T) | takes `2 d`, `1 h 30`, `90 min`, `1-00:00:00` |
 | QoS (-Q) | "auto" picks the QoS from the duration, by the limits `ccc_mqinfo` reports |
+| Nodes | `compile_all.sh` in batch mode: the number of one-node jobs that share the compilation (below) |
 | Start | after a `compile_all.sh` run not finished yet (Slurm dependency `afterok`/`afterany`), and/or not before a given time |
 | Builds up to date | before the command, `ninja -n` on the builds used: refuse (code 96), warn, or skip |
 | Directives, Launcher (job) | the `#MSUB` lines and the launcher on the node; per partition, remembered |
@@ -94,6 +95,22 @@ turns this check off for a program.
 `compile_all.sh` only runs as a batch job, never on the login node. Its `--target` and
 `--exec` fields have a "Choose…" button listing the configurations and executables found on
 the cluster.
+
+**Compiling on several nodes.** With "Nodes" N > 1, "Submit" makes N batch jobs, one node
+each, with the same directives and the same command plus `--pool=<the submission's id>`.
+They show in the table as `compile_all.sh [k/N]`, runs `<id>-n1` to `<id>-nN`. Each job walks
+the configurations in the usual order and builds a configuration only if it is the first to
+claim it (an atomic `mkdir` in `$CHUNK_BUILD_REP/.pools/<id>/`); it skips those another job
+claimed. The load balances itself: a job claims its next configuration once its node has a build slot
+for the one before (one claimed ahead at most), whatever the builds cost, and nothing needs to
+know beforehand which configurations this architecture builds. A job that starts once the others have claimed
+everything ends at once, with code 0. Each log ends with
+`[POOL] n configuration(s) built by this run, m by the other runs of pool <id>`.
+"Start: after" then offers the submission as one entry, "after `<id>` (N nodes)": the job waits
+for all N (`--dependency=afterok:j1:…:jN`). "Reuse its options" makes a new pool: the form's
+values never hold the `--pool` the window added. The field is hidden in detached mode and for
+the other programs. `--pool` can also be given by hand, to a `compile_all.sh` run from a shell
+(`--help`).
 
 `omp_speedup.py` (OpenMP speedup curves of shrink_bench executables on one target: `--target`,
 `--exec` or `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) likewise runs as a
@@ -162,6 +179,11 @@ not depend on the window: closing it leaves the run going, as a batch job would.
 "Submit". Then program `bench_and_test.py`, "Start: after" that build run, "if it succeeds",
 "Submit". The second job waits for the first in the Slurm queue; if the first fails, the
 second stays pending and the interface says so.
+
+**Build on three nodes, then test.** Program `compile_all.sh`, mode `ccc_msub`, "Nodes" 3,
+"Submit": three jobs share the configurations. Then `bench_and_test.py`, "Start: after"
+the submission ("after `<id>` (3 nodes)"), "if it succeeds", "Submit": the bench starts when
+the three jobs have ended without a failure.
 
 **A stress campaign on x86.** Partition `milan-bxi`, program `multi_launch_stress.py`,
 "Architecture defaults" (8 to 64 threads, the builds of `build_x86_64.txt`), "Submit". The
@@ -246,6 +268,10 @@ They are skipped when PySide6 is not installed.
 - A prototype, written for the TGCC machines; another site writes its site file (§6). The
   scheduler must be Slurm underneath (`squeue`, `--dependency`, `--begin`).
 - One connection at a time. The interface does not open the master connection itself.
+- Several nodes (§3): the build directory `$CHUNK_BUILD_REP` must be on a file system that all
+  the nodes share (the claims are directories there). Every job asks for the same time
+  (-T) as one would. A job that fails lets the others go on; its configurations are not
+  taken back by them.
 - This machine from Windows (`wsl.exe`) is not covered by the tests (they run on Linux).
   WSL may stop a distribution once no window of it is left open: keep one open while a
   run goes.

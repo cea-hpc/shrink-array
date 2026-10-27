@@ -351,6 +351,19 @@ EN = {
         "Interface language (applied at once).",
     # start conditions and build check (Démarrage / Builds à jour)
     "Démarrage": "Start", "Builds à jour": "Builds up to date", "pas avant": "not before",
+    "Nœuds": "Nodes", "la soumission": "the submission",
+    "Nombre de jobs batch d'un nœud chacun entre lesquels la compilation est partagée "
+    "(compile_all.sh --pool, ccc_msub seulement).\n\n"
+    "Chaque job reçoit la même commande et les mêmes directives ; il construit les configurations qu'il "
+    "réclame le premier, dans l'ordre habituel, et laisse les autres aux autres jobs : la charge s'équilibre "
+    "seule. Un job qui démarre quand tout est déjà pris finit aussitôt (code 0).\n\n"
+    "« Démarrage : après » propose ensuite la soumission entière : on attend tous ses jobs.":
+        "Number of batch jobs of one node each that share the compilation "
+        "(compile_all.sh --pool, ccc_msub only).\n\n"
+        "Each job gets the same command and directives; it builds the configurations it claims first, in "
+        "the usual order, and leaves the others to the other jobs: the load balances itself. A job that "
+        "starts when everything is already taken ends at once (code 0).\n\n"
+        "\"Start: after\" then offers the whole submission: all its jobs are waited for.",
     "dès la soumission": "on submission", "si elle réussit": "if it succeeds",
     "quelle que soit son issue": "whatever its result",
     "refuser de démarrer si un build n'est pas à jour": "refuse to start if a build is not up to date",
@@ -398,7 +411,12 @@ EN_RE = [(re.compile(a), b) for a, b in (
      "Fix it, then click \"Read options\". Meanwhile the \"extra arguments\" field passes options as they are."),
     (r"\(pas d'aide dans le script\)", "(no help in the script)"),
     (r"^la QoS (\S+) n'est pas ouverte sur (\S+)$", r"QoS \1 is not open on \2"),
+    (r"^après (\S+) \((\d+) nœuds\)$", r"after \1 (\2 nodes)"),
     (r"^après (\S+)$", r"after \1"),
+    (r"^(\d+) jobs, un nœud chacun$", r"\1 jobs, one node each"),
+    (r"^soumis : (\d+) jobs, un nœud chacun$", r"submitted: \1 jobs, one node each"),
+    (r"^(\S+) est ajouté par le champ « Nœuds » : retirez-le de la commande$",
+     r'\1 is added by the "Nodes" field: remove it from the command'),
     (r"^en attente sans fin \((\S+) a échoué : à arrêter\)$", r"pending for ever (\1 failed: stop it)"),
     (r"^soumission refusée : ", "submission refused: "),
     (r"^le run (\S+) a échoué \(code (\S+)\) : rien soumis$", r"run \1 failed (code \2): nothing submitted"),

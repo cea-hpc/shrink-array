@@ -40,6 +40,8 @@ class RunActions:
             self.time_s.setValue(int(m["time_s"]))
         if m.get("qos_wanted"):
             self.qos.setCurrentIndex(max(0, self.qos.findData(m["qos_wanted"])))
+        if self.pool_opt():          # the number of nodes of its submission (1: a single job)
+            self.nodes.setValue(int(m.get("nodes", 1)))
         self.form.set_values(m.get("values", {}))
         self.extra.setText(m.get("extra", ""))
         if m.get("check_builds") and self.check_builds.isEnabled():

@@ -112,6 +112,10 @@ the tag's checksum to the recipe.
   build lists include the std builds.
 - Spack: variant `threads=openmp|std|serial` (default `openmp`), and `+tbb`
   for the TBB examples (with `+examples threads=std`).
+- `compile_all.sh --pool=<id>` (and `compile_all_gnu.sh`): runs given the same id share the
+  configurations, each built by the first run that claims it. `shrink_gui` 0.14 uses it for
+  its "Nodes" field: `compile_all.sh` over N one-node batch jobs, and "Start: after" waits for
+  all of them (`docs/shrink_gui.md`, section 3).
 
 ### Changed
 
@@ -210,6 +214,9 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `compile_all.sh`: the slot pool (`.build-slots.<host>.<pid>`) and the log directory
+  (`logs/<date>-<host>-<pid>`) of a run carry the host name. In a `$CHUNK_BUILD_REP` shared by
+  several nodes, two runs with the same pid used the same slot pool.
 - Chunk2A: the deferred replay of `=` stored the element with a plain store
   while another writer's uniform-chunk scan read it as a relaxed atomic -- a
   data race (found by TSan on the std backend, present under OpenMP too).

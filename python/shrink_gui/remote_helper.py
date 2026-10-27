@@ -94,15 +94,21 @@ def queue_states():
 STATES = {"PENDING": "en attente", "CONFIGURING": "démarrage", "RUNNING": "en cours",
           "COMPLETING": "en cours", "SUSPENDED": "suspendu"}
 
+def after_runs(after):
+    """The runs a start condition waits for: after["runs"] (the jobs of a
+    submission over several nodes), else after["run"]."""
+    return after.get("runs") or [after["run"]]
+
 def pending_detail(d, st):
-    """A waiting run whose start condition can no longer be met: the run it
+    """A waiting run whose start condition can no longer be met: a run it
     waits for failed (Slurm keeps such a job pending, DependencyNeverSatisfied)."""
     meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
     after = meta.get("after")
     if after and after.get("cond", "ok") == "ok":
-        code = (read(os.path.join(os.path.dirname(d), after["run"], "exit_code")) or "").strip()
-        if code and code != "0":
-            return "en attente sans fin (%s a échoué : à arrêter)" % after["run"]
+        for rid in after_runs(after):
+            code = (read(os.path.join(os.path.dirname(d), rid, "exit_code")) or "").strip()
+            if code and code != "0":
+                return "en attente sans fin (%s a échoué : à arrêter)" % rid
     return st
 
 def status(d, q):
@@ -464,27 +470,31 @@ def act_validate(a):
 
 def after_extra(base, spec):
     """(Slurm options, error): the start conditions of a batch
-    run -- after the run spec["after"] = {"run", "cond": "ok"|"any"}
-    (--dependency=afterok|afterany on its job), not before spec["delay_s"]
-    seconds (--begin=now+N). A run already finished is decided here: Slurm
-    forgets a finished job after a few minutes, a dependency on it would be
-    refused."""
+    run -- after the runs of spec["after"] = {"run", "runs", "cond": "ok"|"any"}
+    (--dependency=afterok|afterany on their jobs, after_runs), not before
+    spec["delay_s"] seconds (--begin=now+N). A run already finished is decided
+    here: Slurm forgets a finished job after a few minutes, a dependency on it
+    would be refused."""
     extra = []
     after = spec.get("after")
     if after:
-        ad = rdir(base, after["run"])
-        if not os.path.isfile(os.path.join(ad, "meta.json")):
-            return None, "le run %s n'existe pas" % after["run"]
-        code = (read(os.path.join(ad, "exit_code")) or "").strip()
-        jobid = (read(os.path.join(ad, "jobid")) or "").strip()
-        if code:
-            if after.get("cond", "ok") == "ok" and code != "0":
-                return None, "le run %s a échoué (code %s) : rien soumis" % (after["run"], code)
-        elif jobid:
+        jobids = []
+        for rid in after_runs(after):
+            ad = rdir(base, rid)
+            if not os.path.isfile(os.path.join(ad, "meta.json")):
+                return None, "le run %s n'existe pas" % rid
+            code = (read(os.path.join(ad, "exit_code")) or "").strip()
+            jobid = (read(os.path.join(ad, "jobid")) or "").strip()
+            if code:
+                if after.get("cond", "ok") == "ok" and code != "0":
+                    return None, "le run %s a échoué (code %s) : rien soumis" % (rid, code)
+            elif jobid:
+                jobids.append(jobid)
+            else:
+                return None, "le run %s n'a pas de job batch à attendre" % rid
+        if jobids:
             extra.append("--dependency=%s:%s" % ("afterok" if after.get("cond", "ok") == "ok" else "afterany",
-                                                 jobid))
-        else:
-            return None, "le run %s n'a pas de job batch à attendre" % after["run"]
+                                                 ":".join(jobids)))
     if spec.get("delay_s"):
         extra.append("--begin=now+%d" % int(spec["delay_s"]))
     return extra, None

@@ -137,6 +137,10 @@ PROGRAMS = {
         # "Choisir…" beside these fields: the configurations / executables
         # compile_all.sh can build, read on inti (see BUILD_REP).
         "pickers": {"target": "configs", "exec": "execs"},
+        # "Nœuds" N > 1: N batch jobs of one node, the same command plus
+        # --pool=<the submission>; each configuration is built by the first
+        # job that claims it (functions_for_compile.sh, pool_init).
+        "pool_opt": "--pool",
         "out_re": None, "out_files": [],
         "progress_re": None, "eta_re": None,
         "summary": None, "summary_file": None,
