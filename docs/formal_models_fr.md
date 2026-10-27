@@ -189,7 +189,7 @@ passante telle qu'elle est.
 
 ## 7. Le modèle du protocole 4 : lecteurs d'un motif contre réécritures de la case d'offset
 
-`formal/motif_offset.c` est la section 6 de [pattern_design.md](pattern_design.md). Un chunk de
+`formal/motif_offset.c` est la section 6 de [algo_pattern_fr.md](algo_pattern_fr.md). Un chunk de
 `pattern::Array` compressé vers un **motif** pointe sur un motif partagé, enregistré, et garde son
 **offset** dans sa case de seconde valeur : l'élément `j` vaut `motif[j] + offset`, deux mots, le
 pointeur et la case, lus l'un après l'autre. La case est réécrite par une passe de compression,
@@ -342,7 +342,7 @@ tampon : elle réécrit d'abord la case -- l'offset d'un autre motif B, ou la se
 constante -- puis bascule le pointeur. Le lecteur rend alors `A[j]` plus la nouvelle valeur de la
 case : une valeur que le chunk n'a jamais tenue. Le vérificateur l'a trouvé en deux exécutions (le
 lecteur lit A, puis l'offset 20 de la passe, et rend 5 + 20 = 25 là où le chunk a tenu 15, puis
-27). La section 6 de `pattern_design.md` écartait ce danger : la case « n'est réécrite que dans
+27). La note de conception de `pattern::Array` (sa section 6, aujourd'hui la section 6 de [algo_pattern_fr.md](algo_pattern_fr.md)) écartait ce danger : la case « n'est réécrite que dans
 cette passe, après cette attente ». Ce n'est pas le cas -- la période de grâce de `PassScope`
 protège le tampon que la passe libère, après le CAS, pas la case qu'elle réécrit avant. Un second
 défaut venait avec : pour les deux constantes, la passe réécrit la case par

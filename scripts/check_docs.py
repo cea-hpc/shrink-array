@@ -55,8 +55,6 @@ ENGLISH_ONLY = {
     # the threads branch's working plan, status and decisions: it goes with the
     # branch, not into a release
     "threading_backends.md",
-    # the plan of the pattern::Array variant: replaced by algo_ documents when it exists
-    "pattern_design.md",
 }
 
 # Real names that are not defined in this tree.

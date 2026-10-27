@@ -37,6 +37,11 @@ dynamique. Elles diffèrent par **ce qu'elles savent compresser**.
 Les tableaux de booléens des builds `zero_one_value` peuvent en plus utiliser `ArrayChunkBits`, qui
 range 8 booléens par octet dans un chunk matérialisé.
 
+Les builds `zero_any` fournissent aussi **`pattern::Array`**, pour les entiers : un membre de la
+famille `zero_any` qui compresse, en plus de ses constantes, un chunk égal à un **motif partagé
+plus un offset** -- la forme d'une connectivité de maillage, compressée à environ 1 % d'un vecteur
+sur un maillage structuré. Voir [algo_pattern_fr.md](algo_pattern_fr.md).
+
 ## 3. Ce que coûte un chunk
 
 Tout chunk coûte ses **métadonnées**, qu'il soit compressé ou non. Pour les trois variantes,

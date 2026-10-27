@@ -15,7 +15,11 @@
  */
 
 #pragma once
-#include "chunk/pattern_array.h" // the class these bodies belong to
+
+#include <vector>
+
+#include "chunk/pattern_array.h"         // the class these bodies belong to
+#include "chunk/internal/motif_region.h" // pattern::MotifRegion (install_motif_for_test)
 
 namespace shrink_array
 {

@@ -32,7 +32,7 @@ namespace shrink_array
 //   zero_one_value   zero and one value declared for the whole array
 //   zero_any         zero and, chunk by chunk, any value
 //   pattern          integers: zero, any value, and (being written) a shared motif
-//                    plus an offset per chunk (docs/pattern_design.md)
+//                    plus an offset per chunk (docs/algo_pattern.md)
 namespace zero
 {
 template <ArrayChunkElement T, typename IntType = int>
@@ -221,7 +221,7 @@ struct ArrayChunkTraits<pattern::Array<T, IntType>>
 // ============================================================================
 //
 // zero_any compresses a chunk to zero or to a value of its own. The variants
-// built on its code (pattern::Array, docs/pattern_design.md) share its
+// built on its code (pattern::Array, docs/algo_pattern.md) share its
 // compression lists, its write engine, its relaxed element stores and its
 // serial compression path, and differ in what a compressed chunk's values
 // pointer names: zero_any's, a second value; pattern's, a motif to which the
@@ -242,7 +242,7 @@ struct ZeroAnyFamily<zero_any::Chunk<T>> : std::true_type
 {
 };
 
-/// @brief pattern::Chunk, zero_any's chunk with shared motifs (docs/pattern_design.md).
+/// @brief pattern::Chunk, zero_any's chunk with shared motifs (docs/algo_pattern.md).
 template <typename T>
 struct ZeroAnyFamily<pattern::Chunk<T>> : std::true_type
 {
@@ -257,7 +257,7 @@ inline constexpr bool is_zero_any_family_v = ZeroAnyFamily<ChunkT>::value;
 // ============================================================================
 //
 // A member of the family whose chunk can also equal a shared motif plus an
-// offset of its own (pattern::Chunk, docs/pattern_design.md): its values
+// offset of its own (pattern::Chunk, docs/algo_pattern.md): its values
 // pointer then names the motif, and the offset sits in the chunk's
 // second-value slot. The shared code reads and materialises such a chunk in
 // branches compiled for these members only: zero_any's code is unchanged.

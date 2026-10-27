@@ -19,7 +19,7 @@
 /**
  * @file motif_region.h
  * @brief pattern::MotifRegion: the motifs of pattern::Array<T>, in one reserved
- *        virtual range (docs/pattern_design.md, sections 4 and 7).
+ *        virtual range (docs/algo_pattern.md, sections 3 and 6).
  */
 
 #include <sys/mman.h> // mmap, MAP_NORESERVE

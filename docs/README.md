@@ -18,7 +18,7 @@
 | choose a variant (`zero`, `zero_one_value`, `zero_any`) | [variants.md](variants.md) | choisir une variante (`zero`, `zero_one_value`, `zero_any`) | [variantes_fr.md](variantes_fr.md) |
 | know whether a sparse format, a compressor or a sparse grid fits better | [alternatives.md](alternatives.md) | savoir si un format creux, un compresseur ou une grille creuse convient mieux | [alternatives_fr.md](alternatives_fr.md) |
 | understand reads, writes, in-flight compression, deferred writes | [algo_zero_one_value.md](algo_zero_one_value.md) | comprendre lecture, écriture, compression en vol, écritures différées | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) |
-| know what `zero` and `zero_any` do differently | [algo_zero.md](algo_zero.md), [algo_zero_any.md](algo_zero_any.md) | savoir ce que `zero` et `zero_any` font autrement | [algo_zero_fr.md](algo_zero_fr.md), [algo_zero_any_fr.md](algo_zero_any_fr.md) |
+| know what `zero`, `zero_any` and `pattern` do differently | [algo_zero.md](algo_zero.md), [algo_zero_any.md](algo_zero_any.md), [algo_pattern.md](algo_pattern.md) | savoir ce que `zero`, `zero_any` et `pattern` font autrement | [algo_zero_fr.md](algo_zero_fr.md), [algo_zero_any_fr.md](algo_zero_any_fr.md), [algo_pattern_fr.md](algo_pattern_fr.md) |
 | understand how writers, compressors and readers exclude each other without a lock | [synchronisation_dekker.md](synchronisation_dekker.md) | comprendre comment écrivains, compresseurs et lecteurs s'excluent sans verrou | [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
 | check the handshakes with a model checker: the reduced models, their calibration, the findings | [formal_models.md](formal_models.md) | vérifier les handshakes avec un vérificateur de modèles : les modèles réduits, leur calibration, les constats | [formal_models_fr.md](formal_models_fr.md) |
 | use dynamic geometry and adaptive re-chunking | [adaptive_rechunk.md](adaptive_rechunk.md) | utiliser la géométrie dynamique et le rechunk adaptatif | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) |
@@ -39,14 +39,14 @@
 | [algo_zero_one_value.md](algo_zero_one_value.md) / [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) | the whole algorithm, through `zero_one_value`: geometry, chunk states, reads, writes through proxies, write engine, deferred writes, OMPT, in-flight compression, re-chunk, range operations |
 | [algo_zero.md](algo_zero.md) / [algo_zero_fr.md](algo_zero_fr.md) | `zero`: compression to zero only, serial counters, pass threshold, sliced re-chunk |
 | [algo_zero_any.md](algo_zero_any.md) / [algo_zero_any_fr.md](algo_zero_any_fr.md) | `zero_any`: one second value per chunk, second-value registry, its own queueing criteria |
+| [algo_pattern.md](algo_pattern.md) / [algo_pattern_fr.md](algo_pattern_fr.md) | `pattern::Array`, a member of the `zero_any` family: a chunk = a shared motif + an offset (integers, mesh connectivities), the motif registry, the completion rule, the offset slot and its handshake, dynamic geometry, results |
 | [synchronisation_dekker.md](synchronisation_dekker.md) / [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) | Dekker's algorithm, its symmetric and asymmetric (`membarrier`) shapes, and its three uses: writers ↔ compressors, flushes ↔ compressors, readers ↔ buffer reclaim |
-| [formal_models.md](formal_models.md) / [formal_models_fr.md](formal_models_fr.md) | the reduced models of the handshakes under GenMC: how to run them, the mutation calibration, the findings F1 to F4, the limits |
+| [formal_models.md](formal_models.md) / [formal_models_fr.md](formal_models_fr.md) | the reduced models of the handshakes under GenMC: how to run them, the mutation calibration, the findings F1 to F5, the limits |
 | [adaptive_rechunk.md](adaptive_rechunk.md) / [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) | advisor, decider, rebuild, per-array allocators, results and limits |
 | [environment_variables.md](environment_variables.md) / [variables_environnement_fr.md](variables_environnement_fr.md) | the user settings: environment variables, CMake options, variant and geometry |
 | [developer_settings.md](developer_settings.md) / [reglages_developpeur_fr.md](reglages_developpeur_fr.md) | the developers' switches, with their removal dates: tuning, traces, forced rechunks, benchmark, macros, debugging options, build scripts |
 | [performance_measurement.md](performance_measurement.md) / [mesures_performance_fr.md](mesures_performance_fr.md) | measurement traps (`VmRSS`, timing noise), method, recipes |
 | [shrink_gui.md](shrink_gui.md) / [shrink_gui_fr.md](shrink_gui_fr.md) | the GUI that submits `compile_all.sh`, `bench_and_test.py` and `multi_launch_stress.py` on the cluster and follows them: start, window, git pull, site configuration |
-| [pattern_design.md](pattern_design.md) | design note of the pattern::Array variant (a chunk = a shared motif + an offset; integers; connectivity), English only |
 | `example_bench_test.txt`, `example_multi_launch_stress.txt` | how to launch `bench_and_test.py` and `multi_launch_stress.py` |
 
 ## The code on one page / Le code en une page

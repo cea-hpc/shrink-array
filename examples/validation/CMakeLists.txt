@@ -488,7 +488,7 @@ endforeach()
 # instantiates pattern::Array and zero_any::Array for four element types (about
 # 2 GB of compiler memory alone, at -O3 -g), which took the group's unity TU
 # past 7 GB. At the default static size, and in the dynamic geometry (the
-# chunk size per array, and its rechunk: docs/pattern_design.md, stage 4).
+# chunk size per array, and its rechunk: docs/algo_pattern.md, section 8).
 foreach(_geom ${CHUNK_DEFAULT_SIZE} dyn)
   if (TARGET chunk_zero_any_${_geom})
     set(_tgt pattern_validation_zero_any_${_geom})

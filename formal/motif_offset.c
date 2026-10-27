@@ -16,7 +16,7 @@
 
 /*
  * formal/motif_offset.c -- handshake 4: the readers of a pattern::Array motif chunk against the
- * rewrites of its second-value slot, which holds the chunk's offset (docs/pattern_design.md,
+ * rewrites of its second-value slot, which holds the chunk's offset (docs/algo_pattern.md,
  * section 6; docs/formal_models.md, section 7).
  *
  * A REDUCED MODEL. One chunk of two elements compressed to motif A = {0, 5} with offset 10 in
