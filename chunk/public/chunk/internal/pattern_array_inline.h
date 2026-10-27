@@ -42,7 +42,7 @@ pattern::Array<T, IntType>& pattern::Array<T, IntType>::operator=(Array&& other)
 template <ArrayChunkElement T, typename IntType>
 bool pattern::Array<T, IntType>::install_motif_for_test(int num_chunk, const T* elems)
 {
-    using ChunkT = Array::ChunkType;
+    using ChunkT = typename Array::ChunkType;
     auto& chunk  = this->chunk_list_[static_cast<std::size_t>(num_chunk)];
     if (!chunk.is_cst_val1())
     {
@@ -75,7 +75,7 @@ std::size_t pattern::Array<T, IntType>::reclaim_second_values()
 template <ArrayChunkElement T, typename IntType>
 std::size_t pattern::Array<T, IntType>::reclaim_motifs()
 {
-    using ChunkT = Array::ChunkType;
+    using ChunkT = typename Array::ChunkType;
     std::vector<std::uint8_t> referenced(MotifRegion<T>::ids_carved() + 1, 0);
     Array::ProxyType::share_info_array->for_each_key(
         [&referenced](ArrayKey<ChunkT> arr)
