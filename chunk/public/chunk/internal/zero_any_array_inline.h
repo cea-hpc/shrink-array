@@ -833,7 +833,7 @@ template <typename Derived>
 }
 
 template <typename Derived>
-void zero_any::ArrayImpl<Derived>::acquire_cst2_registry()
+inline void zero_any::ArrayImpl<Derived>::acquire_cst2_registry()
 {
     if (!holds_cst2_registry_)
     {

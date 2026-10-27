@@ -137,22 +137,30 @@ A reader loads the pointer and then the offset; they are two words. The sequence
 
 ## 7. The motif registry
 
-- Entries are chunk-sized arrays of `T` in the motif region, in chained segments of 64 slots like
-  `zero_any`'s registry, filled **before** they are published (release). Finding a known motif is a
-  lock-free hash probe; only a new motif takes the insertion lock.
+- Entries are chunk-sized arrays of `T` in the motif region (`MotifRegion<T>`), one reserved
+  virtual range per `T` whose pages are touched only as entries are written; an entry is filled
+  **before** it is published (release). Finding a known motif is a lock-free probe of an
+  open-addressed index; only a new motif takes the insertion lock. A grown index keeps its
+  superseded tables until the next reclaim, so a reader never holds a freed table.
 - A key is a 64-bit hash of the normalised motif, **confirmed by comparing the arrays** (a hash
   alone never decides equality).
 - **Admission.** Registering every distinct motif would make random data cost *more* (one
-  registered copy per chunk). A motif is registered the **second time** it is seen: the first
-  sighting only counts the hash in a small probation table (a counting filter, bounded memory);
-  the chunk of the first sighting stays materialised. On a mesh, that is one chunk per distinct
-  motif.
+  registered copy per chunk). A motif is registered the **second time** it is seen, **by another
+  chunk**: the first sighting only records, at its hash in a probation table of 64 Ki bytes, an
+  8-bit tag of the chunk that made it; the chunk of the first sighting stays materialised. The same
+  chunk seen again with the same contents (a random chunk rewritten unchanged) stays on
+  probation: a motif one chunk uses saves nothing. Collisions in the table or between tags cost a
+  missed or a useless entry, never a wrong value. On a mesh, that is one chunk per distinct
+  motif (one per thread at most when several passes see it at once).
 - **Reclaim.** Modelled on `zero_any`'s `reclaim_second_values` (which stays, for the constants):
   at a sequential point, mark the motifs still referenced, free the others. The two registries
-  are reclaimed by the same call, each its own entries.
+  are reclaimed by the same call, `pattern::Array<T>::reclaim_second_values()`, each its own
+  entries: the motifs only outside a parallel region. A freed entry's identifier is handed out
+  again; the index is rebuilt from the survivors and the probation table cleared.
 - **Geometry.** A motif has the chunk's element count, so there is one registry per chunk size.
   First stage: the static sizes (`CHUNK_STATIC_SIZES`); the dynamic geometry and the rechunk
-  come in a later stage (§10).
+  come in a later stage (§10). Today one region holds one entry size per `T`: an entry of another
+  size is an invariant failure.
 
 ## 8. When a chunk is examined
 
@@ -164,6 +172,17 @@ again at the next write of those positions). The scan computes the normalised mo
 looks it up, and compresses on a match. A scan whose normalised motif is all zero has found a
 zero or a uniform chunk: it hands the chunk to `zero_any`'s compression (the constant to the
 second-value registry), the motif registry sees nothing of it.
+
+As implemented (stage 2): the write path queues a chunk when its first or last element is
+written, in addition to `zero_any`'s marking; the pass runs `zero_any`'s two constant scans first
+and, for a chunk that is neither, a third classification (`Chunk::classify_motif`). A match keeps
+the pass's claim on the chunk, and the chunk is compressed after the constants of the same pass
+(`compress_motif_candidates`): the offset stored in the slot (release), the type slot set to
+`CstSlot::motif`, the values pointer switched by CAS from the buffer to the motif, the buffer
+released to the pool after the grace period, as `zero_any`'s compression to a constant. The rule
+also catches the uniform chunks `zero_any` misses (a chunk whose last write lands on an element
+whose old value was neither constant is not queued by `zero_any`): `pattern_validation` checks that
+`pattern::Array` compresses every uniform chunk again where `zero_any` compresses at most as many.
 
 Known limit: a chunk filled in a random order, whose first and last elements are written
 before the rest, is examined too early and may stay materialised; the range operations
@@ -192,7 +211,9 @@ explicit entry point stays possible and costs nothing in the design.
    `zero_any`'s machine code unchanged, checked by the existing harnesses); validation harness
    comparing with `std::vector` on zero-only, uniform, shifted-motif and random chunks.
 2. **Compression and the registry**: scan, hash, admission, the CAS commit, materialisation on
-   write; the OpenMP and std backends; the check-mode builds.
+   write; the OpenMP and std backends; the check-mode builds. *Done for the OpenMP backend at the
+   static size* (`pattern_validation`, cases M to P, at 1 and 8 threads; `zero_any`'s library
+   objects unchanged); the std backend is still to run.
 3. **The model**: the GenMC handshake of §6 and its mutations; the findings are applied to the
    sources before the variant is announced.
 4. **Dynamic geometry, rechunk, advisor**: motifs per size; the advisor counts a sub-block as

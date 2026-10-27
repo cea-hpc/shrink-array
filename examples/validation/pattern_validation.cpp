@@ -28,9 +28,11 @@
  *          checked element by element against a std::vector holding the same
  *          values, after each of the steps below. The same steps run on a
  *          zero_any::Array, and the two must compress the same number of
- *          chunks at every step: until the motif state exists, pattern::Array
- *          is zero_any's machinery with tables of its own, and compresses
- *          exactly as zero_any does.
+ *          chunks to a constant at A and B: pattern::Array is zero_any's
+ *          machinery with tables of its own. At C pattern::Array compresses
+ *          every uniform chunk, zero_any at most as many (see C). The motif
+ *          chunks are counted apart (the motif kind is compressed to its motif
+ *          by pattern::Array only).
  *
  *            A  the first write of every element, then the between-region
  *               pass: the zero and uniform chunks are compressed (the
@@ -41,7 +43,10 @@
  *               all of them compress, in zero_any as here: a chunk whose LAST
  *               write lands on an element B changed (old value neither
  *               constant) is not queued, the write-path marking only queues
- *               a write from or to one of the chunk's two constants;
+ *               a write from or to one of the chunk's two constants.
+ *               pattern::Array also queues a chunk whose first or last element
+ *               is written (its completion rule, docs/pattern_design.md,
+ *               section 8): every uniform chunk is compressed again;
  *            D  a copy (equal, then unequal after one write in it);
  *            E  a move (the source left empty);
  *            F  a shrinking then a growing resize (std::vector semantics);
@@ -68,6 +73,19 @@
  *            K  reads through the write proxy: right, and nothing materialised;
  *            L  a compound += on motif chunks (the old value read through the
  *               proxy), then the same comparison.
+ *
+ *          Then the compression to motifs, by the write path (a chunk is queued
+ *          when its first or last element is written) and the pass (a motif is
+ *          registered at its second sighting), for the same four types:
+ *
+ *            M  a connectivity -- every chunk one motif plus its own offset --
+ *               written in order: every chunk compressed to the motif but the
+ *               first sightings (one, or one per thread), one motif registered;
+ *            N  one write in every other chunk: the motif ones materialised;
+ *            O  random chunks, then the same rewritten unchanged: no motif
+ *               admitted (a second sighting by the same chunk does not count);
+ *            P  everything rewritten at random, reclaim_second_values(): every
+ *               motif of the type freed; the connectivity again: compressed again.
  *
  *          Usage: pattern_validation [chunks]
  */
@@ -222,14 +240,41 @@ static T value_of(Kind kind, long num_chunk, long j, long round, std::uint64_t& 
     }
 }
 
-/// @brief How many chunks of @p arr hold no buffer (compressed to a constant).
+/// @brief Is chunk @p c of @p arr in the motif state? (false for a zero_any array)
+template <typename Arr>
+static bool is_motif_chunk(const Arr& arr, long c)
+{
+    using ChunkT = typename Arr::ChunkType;
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        return ChunkT::is_motif_ptr(arr.get_chunk_list()[static_cast<std::size_t>(c)].values_load());
+    }
+    else
+    {
+        return false;
+    }
+}
+
+/// @brief How many chunks of @p arr are compressed to a constant (no buffer, no motif).
 template <typename Arr>
 static long compressed_chunks(const Arr& arr, long nch, long csz)
 {
     long n = 0;
     for (long c = 0; c < nch; ++c)
     {
-        n += arr.written(c * csz) ? 0 : 1;
+        n += (arr.written(c * csz) || is_motif_chunk(arr, c)) ? 0 : 1;
+    }
+    return n;
+}
+
+/// @brief How many chunks of @p arr are in the motif state.
+template <typename Arr>
+static long motif_chunks(const Arr& arr, long nch)
+{
+    long n = 0;
+    for (long c = 0; c < nch; ++c)
+    {
+        n += is_motif_chunk(arr, c) ? 1 : 0;
     }
     return n;
 }
@@ -290,6 +335,10 @@ static std::vector<long> round_trip(const char* vname, const char* tname, long n
     expect_same("C  uniform chunks at a new value", arr, ref);
     census.push_back(compressed_chunks(arr, nch, csz));
     println("  {:<44} {} of {}", "C  compressed chunks (zero and uniform)", census.back(), zero_or_uniform);
+    if constexpr (std::is_same_v<Arr, pattern::Array<T, long>>)
+    {
+        println("  {:<44} {}", "C  motif chunks", motif_chunks(arr, nch));
+    }
 
     // D: a copy.
     {
@@ -331,7 +380,8 @@ static void against_zero_any(const char* tname, long nch)
 {
     const std::vector<long> pc = round_trip<pattern::Array, T>("pattern", tname, nch);
     const std::vector<long> zc = round_trip<zero_any::Array, T>("zero_any", tname, nch);
-    expect_true("pattern compresses as zero_any at A, B, C", pc == zc);
+    expect_true("pattern compresses as zero_any at A, B", pc[0] == zc[0] && pc[1] == zc[1]);
+    expect_true("pattern compresses at least as zero_any at C", pc[2] >= zc[2]);
 }
 
 /// @brief Write @p value into @p arr[@p i] for each (i, value) of @p writes,
@@ -403,8 +453,20 @@ static void motif_state(const char* tname, long nch)
     std::vector<T>    ref(static_cast<std::size_t>(n), T{});
     Arr               arr(n);
     const long        n_motif = install(arr, ref, 0, 0);
-    expect_eq("I  motifs registered (one, shared by all)",
-              static_cast<long>(pattern::MotifRegion<T>::entries() - entries_before), 1);
+    {
+        // All the installed chunks point at the same entry: one motif, shared.
+        const T* shared = nullptr;
+        long     others = 0;
+        for (long c = 0; c < nch; c += 3)
+        {
+            const T* const p = arr.get_chunk_list()[static_cast<std::size_t>(c)].values_load();
+            shared           = shared == nullptr ? p : shared;
+            others += (p != shared) ? 1 : 0;
+        }
+        expect_eq("I  installed chunks on another motif than the first", others, 0);
+        expect_true("I  at most one motif registered for them",
+                    pattern::MotifRegion<T>::entries() <= entries_before + 1);
+    }
     expect_eq("I  motif chunks materialised", materialised(arr, 0), 0);
 
     // I: every read path.
@@ -488,6 +550,111 @@ static void motif_state(const char* tname, long nch)
     }
 }
 
+/// @brief Cases M to P on pattern::Array<T> (see the file comment): the
+///        compression to motifs, by the write path and the pass.
+template <typename T>
+static void motif_compression(const char* tname, long nch)
+{
+    using Arr      = pattern::Array<T, long>;
+    using Ch       = pattern::Chunk<T>;
+    using Region   = pattern::MotifRegion<T>;
+    const long csz = static_cast<long>(Arr(0).chunk_size());
+    const long n   = nch * csz;
+    println("--- pattern::Array<{}>  compression to motifs", tname);
+
+    // A connectivity: chunk c is a motif plus c times a stride (every chunk the same motif,
+    // shifted); not the motif of the cases I to L.
+    const auto connectivity = [&](long stride)
+    {
+        std::vector<T> ref(static_cast<std::size_t>(n));
+        for (long i = 0; i < n; ++i)
+        {
+            const long c                     = i / csz;
+            const long j                     = i % csz;
+            ref[static_cast<std::size_t>(i)] = Ch::wrapping_add(static_cast<T>((j % 7) * 3 + j / 8 + 1),
+                                                                static_cast<T>(c * stride));
+        }
+        return ref;
+    };
+    const auto random = [&](std::uint64_t seed)
+    {
+        std::vector<T> ref(static_cast<std::size_t>(n));
+        for (auto& v : ref)
+        {
+            seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+            v    = static_cast<T>(seed >> 33U);
+        }
+        return ref;
+    };
+    // A first sighting leaves its chunk materialised: one per motif, one per thread at most
+    // when the threads' passes see it at once.
+    const long first_sightings = CHUNK_PMP_MAX_THREADS;
+
+    // M: the connectivity written in order.
+    const pattern::MotifStats before = Region::stats();
+    std::vector<T>   ref    = connectivity(1000);
+    Arr              arr(n);
+    write_range(arr, ref, 0, n);
+    expect_same("M  written in order", arr, ref);
+    const long nm = motif_chunks(arr, nch);
+    println("  {:<44} {} of {}", "M  motif chunks", nm, nch);
+    expect_true("M  every chunk but the first sightings", nm >= nch - first_sightings && nm <= nch - 1);
+    expect_eq("M  motifs registered", static_cast<long>(Region::stats().registered - before.registered), 1);
+    {
+        std::vector<T> out(static_cast<std::size_t>(n));
+        arr.read_range(0, n, out.data());
+        expect_true("M  read_range", out == ref);
+    }
+
+    // N: one write in every other chunk materialises the motif ones from their motif.
+    {
+        std::vector<std::pair<long, T>> writes;
+        long                            hit = 0;
+        for (long c = 0; c < nch; c += 2)
+        {
+            hit += is_motif_chunk(arr, c) ? 1 : 0;
+            const long i                     = c * csz + csz / 2;
+            ref[static_cast<std::size_t>(i)] = static_cast<T>(ref[static_cast<std::size_t>(i)] + 1);
+            writes.emplace_back(i, ref[static_cast<std::size_t>(i)]);
+        }
+        write_some(arr, writes);
+        expect_same("N  one write in every other chunk", arr, ref);
+        expect_eq("N  motif chunks left", motif_chunks(arr, nch), nm - hit);
+    }
+
+    // O: random chunks: no motif is admitted (each is a first sighting).
+    {
+        const pattern::MotifStats before_o = Region::stats();
+        const auto       ref_r    = random(777);
+        Arr              arr_r(n);
+        write_range(arr_r, ref_r, 0, n);
+        expect_same("O  random chunks", arr_r, ref_r);
+        expect_eq("O  motif chunks", motif_chunks(arr_r, nch), 0);
+        expect_eq("O  motifs registered", static_cast<long>(Region::stats().registered - before_o.registered), 0);
+        // The same chunks rewritten unchanged: each motif seen again, by the same chunk.
+        write_range(arr_r, ref_r, 0, n);
+        expect_same("O  rewritten unchanged", arr_r, ref_r);
+        expect_eq("O  motifs registered, rewritten", static_cast<long>(Region::stats().registered - before_o.registered), 0);
+    }
+
+    // P: the reclaim. Every chunk rewritten at random: no chunk points at a motif any more,
+    // so reclaim_second_values() frees every motif of T. Then the connectivity again.
+    {
+        ref = random(4242);
+        write_range(arr, ref, 0, n);
+        expect_eq("P  motif chunks after the rewrite", motif_chunks(arr, nch), 0);
+        const pattern::MotifStats before_p = Region::stats();
+        (void)Arr::reclaim_second_values();
+        expect_true("P  motifs freed", Region::stats().freed > before_p.freed);
+        expect_eq("P  motifs left", static_cast<long>(Region::entries()), 0);
+        ref = connectivity(3);
+        write_range(arr, ref, 0, n);
+        expect_same("P  the connectivity again", arr, ref);
+        const long nm2 = motif_chunks(arr, nch);
+        expect_true("P  compressed again", nm2 >= nch - first_sightings && nm2 <= nch - 1);
+    }
+}
+
 /// @brief H (see the file comment): the registry shared with zero_any.
 static void shared_registry(long nch)
 {
@@ -549,6 +716,10 @@ int run(int argc, char** argv)
     motif_state<long>("long", nch);
     motif_state<unsigned>("unsigned", nch);
     motif_state<short>("short", nch);
+    motif_compression<int>("int", nch);
+    motif_compression<long>("long", nch);
+    motif_compression<unsigned>("unsigned", nch);
+    motif_compression<short>("short", nch);
 
     release_chunk_pools();
     destroy_block_chunk();

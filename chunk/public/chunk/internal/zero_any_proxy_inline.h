@@ -1590,6 +1590,15 @@ template <typename T, typename Derived, typename ChunkT>
     {
         return true;
     }
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        // The completion rule (docs/pattern_design.md, section 8): a write of the chunk's
+        // first or last element queues it; the pass's scan tells a motif from the rest.
+        if (static_cast<const Derived*>(this)->is_completion_write())
+        {
+            return true;
+        }
+    }
     const bool discover = (second_value == first_value && new_value != first_value);
     const bool leave    = (second_value != first_value && old_value == second_value && new_value != second_value);
     if (!discover && !leave)

@@ -490,6 +490,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     friend Base;
     friend Base2;
     friend BaseFastCompPolicy;
+    friend Derived; // pattern::Proxy widens pre_check_mark_for_compression() (its completion rule)
 
     // Qualified: an unqualified friend template would declare a new
     // zero_any::ProxyBaseFastCompPolicy, and make_proxy_with_info's requires

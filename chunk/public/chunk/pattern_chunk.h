@@ -32,12 +32,21 @@
  *          Integers only.
  */
 
+#include <atomic>      // std::atomic_ref (the offset's release store)
+#include <cstddef>     // std::size_t
+#include <cstdint>     // std::uint64_t (the motif hash)
+#include <tuple>       // std::tuple (the motif candidates)
 #include <type_traits> // std::is_integral_v, std::is_same_v, std::make_unsigned_t
+#include <vector>      // std::vector (the motif candidates, the scan buffer)
 
 #include "chunk/chunk_traits.h"                 // ChunkTraits<pattern::Chunk<T>>, HasMotifState
 #include "chunk/internal/motif_region.h"        // pattern::MotifRegion
 #include "chunk/internal/relaxed_element.h"     // load_element_relaxed (the offset)
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueTraits (the slot type)
+#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueTraits (the slot type), SecondValueRef
+#include "chunk/internal/cst_slot.h"            // CstSlot::motif
+#include "chunk/internal/chunk_stats.h"         // increm_chunk_compress, add_chunk_bytes_freed (CHUNK_STATS)
+#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
+#include "chunk/config.h"                       // build_config::threaded
 #include "chunk/zero_any_chunk.h"               // zero_any::ChunkImpl
 
 namespace shrink_array
@@ -93,8 +102,66 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
     {
         return wrapping_add(motif[j], internal::load_element_relaxed(offset_slot));
     }
+
+    /// @brief A chunk the pass found equal to a registered motif plus an offset:
+    ///        the chunk, the motif, the offset, its index, its array's table, its geometry.
+    using MotifCandidate = std::tuple<Chunk*, const T*, T, int, int, ChunkElems>;
+
+    /**
+     * @brief The pass's third classification, after zero_any's two constants
+     *        (fill_list_to_compress()): is this claimed, materialised chunk a
+     *        registered motif plus an offset? If so, it is queued for
+     *        compress_motif_candidates(), and keeps its claim.
+     * @details Reads the chunk in one block, normalises it (element j minus element
+     *          0, wrapping: element 0 is the offset), hashes the motif and asks the
+     *          registry under its admission rule (MotifRegion::find_or_admit), the
+     *          sighter being this chunk: a first sighting only records its tag,
+     *          and the chunk stays materialised. An
+     *          all-zero motif is a uniform chunk, which zero_any's scan has already
+     *          classified: it never gets here.
+     * @param num_chunk The chunk's index in its array.
+     * @param num_tab   Its array's table.
+     * @param size      Its array's geometry.
+     */
+    void classify_motif(int num_chunk, int num_tab, ChunkElems size);
+
+    /// @brief How many motif candidates this thread's pass holds (fill_list_chunk_to_compress_in_par()).
+    [[nodiscard]] static std::size_t motif_candidate_count() noexcept
+    {
+        return motif_candidates_.size();
+    }
+
+    /**
+     * @brief Compress the motif candidates of this thread's pass (make_block_compression(),
+     *        after the two constants), then release their claims and empty the list.
+     * @param thr The pass's rank: whose pool receives the buffers.
+     */
+    static void compress_motif_candidates(int thr);
+
+    /**
+     * @brief Compress this materialised chunk to @p motif plus @p offset.
+     * @details The order of docs/pattern_design.md, section 6: the offset to the
+     *          chunk's second-value slot first (release), then the values pointer
+     *          from the buffer to the motif (the CAS, acq_rel: a reader that sees the
+     *          motif sees the offset), then the buffer released after the grace period
+     *          (free_block_to_pool(), as zero_any's clear). The chunk is claimed by the
+     *          pass: no other pass compresses it and no writer swaps its buffer, so the
+     *          CAS cannot fail.
+     * @param ptr_type_cst The chunk's type slot: set to CstSlot::motif.
+     * @param slot         The chunk's second-value slot: receives the offset.
+     * @param motif        The registered motif.
+     * @param offset       The chunk's offset (its element 0).
+     * @param thr_rank     Rank whose pool receives the buffer.
+     */
+    void block_clear_motif(CstSlot* ptr_type_cst, SecondValueRef<T> slot, const T* motif, T offset, int thr_rank);
+
+  private:
+    static inline thread_local std::vector<MotifCandidate> motif_candidates_; ///< This thread's pass's motif hits.
+    static inline thread_local std::vector<T>              motif_scratch_;    ///< The scan's normalised motif.
 };
 
 } // namespace pattern
 
 } // namespace shrink_array
+
+#include "chunk/internal/pattern_chunk_inline.h" // the template bodies

@@ -165,6 +165,15 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(VecTupleChunkA2pInt2
         {
             ll_compt2.emplace_back(std::make_tuple(static_cast<Derived*>(this), second_v, num_chunk, num_tab, size));
         }
+        if constexpr (has_motif_state_v<Derived>)
+        {
+            // Neither constant: a registered motif plus an offset? (pattern::Chunk queues it
+            // for its own commit, Derived::compress_motif_candidates().)
+            if (!scan.first && !scan.second)
+            {
+                static_cast<Derived*>(this)->classify_motif(num_chunk, num_tab, size);
+            }
+        }
     }
 }
 
@@ -319,6 +328,12 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
+    }
+
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // The chunks found equal to a registered motif plus an offset.
+        Derived::compress_motif_candidates(thr);
     }
 
     for (int k = 0; k < sz; ++k)
@@ -661,11 +676,24 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
 
             const auto n1 = ll_compt1.size();
             const auto n2 = ll_compt2.size();
-            chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
-            // Not selected: nothing will be stolen, release it to the writers now.
-            if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
+            if constexpr (has_motif_state_v<Derived>)
             {
-                chunk_t->steal_unmark();
+                // A motif candidate is stolen too (compress_motif_candidates()): it keeps its claim.
+                const auto n3 = Derived::motif_candidate_count();
+                chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
+                if (ll_compt1.size() == n1 && ll_compt2.size() == n2 && Derived::motif_candidate_count() == n3)
+                {
+                    chunk_t->steal_unmark();
+                }
+            }
+            else
+            {
+                chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
+                // Not selected: nothing will be stolen, release it to the writers now.
+                if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
+                {
+                    chunk_t->steal_unmark();
+                }
             }
         }
     }
@@ -1242,6 +1270,15 @@ void zero_any::ChunkImpl<T, Derived>::init_values_cst_val(const CstSlot*    ptr_
     {
         Base::values_ = Base::get_cst_val1();
         return;
+    }
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // A motif chunk's pointer is in no table (its slot holds an offset, not a second
+        // value): nothing rebuilds it from the type. A path that gets here lost the motif.
+        if (*ptr_type_cst == CstSlot::motif) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("init_values_cst_val: a motif chunk cannot be rebuilt from its type");
+        }
     }
     if constexpr (is_not_bool)
     {

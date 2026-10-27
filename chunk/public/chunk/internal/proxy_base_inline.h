@@ -1364,7 +1364,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::resize_tab_is_int(int
 }
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-[[nodiscard]] T ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::read_values_async(auto* ctx) noexcept
+[[nodiscard]] inline T ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::read_values_async(auto* ctx) noexcept
 {
     if constexpr (has_motif_state_v<ChunkT>)
     {
@@ -1460,7 +1460,7 @@ template <typename Derived, typename T, typename ChunkT>
 }
 
 template <typename Derived, typename T, typename ChunkT>
-[[nodiscard]] T ProxyBase<Derived, T, ChunkT>::read_values_at(const T* const vals) const noexcept
+[[nodiscard]] inline T ProxyBase<Derived, T, ChunkT>::read_values_at(const T* const vals) const noexcept
 {
     // TEST KNOB (test_hooks.h), as in ChunkBase::element_at: widens
     // the load -> dereference window. Compiled out by default.
@@ -1477,7 +1477,7 @@ template <typename Derived, typename T, typename ChunkT>
 }
 
 template <typename Derived, typename T, typename ChunkT>
-[[nodiscard]] T ProxyBase<Derived, T, ChunkT>::read_pure() const noexcept
+[[nodiscard]] inline T ProxyBase<Derived, T, ChunkT>::read_pure() const noexcept
 {
     check_not_stale();
     chunk_.reader_sync(num_);

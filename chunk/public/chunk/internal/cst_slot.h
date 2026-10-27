@@ -37,6 +37,7 @@ enum class CstSlot : std::uint8_t
 {
     first  = 0, ///< the first constant (cst_val1)
     second = 1, ///< the chunk's second constant (cst_val2)
+    motif  = 2, ///< a shared motif plus the chunk's offset (pattern::Array: has_motif_state_v)
 };
 
 /// @brief The slot of constant @p num_compress_value: 0 the first, any other the second.

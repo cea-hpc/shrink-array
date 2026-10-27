@@ -40,11 +40,13 @@
 #include <type_traits>      // std::is_integral_v, std::is_same_v
 
 #include <cstddef> // std::size_t
-#include <vector>  // std::vector (install_motif_for_test)
+#include <cstdint> // std::uint8_t (the motif marks)
+#include <vector>  // std::vector (install_motif_for_test, the motif marks)
 
 #include "chunk/chunk_traits.h"           // ArrayChunkTraits<pattern::Array>, ArrayChunkElement
 #include "chunk/internal/motif_region.h"  // pattern::MotifRegion (install_motif_for_test)
 #include "chunk/config.h"                 // build_config::chunk_dynamic
+#include "chunk/PMP_CHUNK.h"              // CHUNK_PMP_IN_PARALLEL_REGION (the motif reclaim)
 #include "chunk/pattern_chunk.h"          // pattern::Chunk
 #include "chunk/internal/pattern_proxy.h" // pattern::Proxy
 #include "chunk/zero_any_array.h"         // zero_any::ArrayImpl
@@ -121,15 +123,7 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
 
     /// @brief Move-assign: this array's own contents are released, then it
     ///        takes @p other's, by the exchange of swap(). Sequential context.
-    Array& operator=(Array&& other) noexcept
-    {
-        if (this != &other)
-        {
-            this->clear();
-            this->swap_storage_and_identity(other);
-        }
-        return *this;
-    }
+    Array& operator=(Array&& other) noexcept;
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op; num_tab is not copied, identity stays with the address.
@@ -156,28 +150,34 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
      * @param elems     The chunk's elements, chunk_size() of them.
      * @return false, and nothing done, when the chunk is not at the first constant.
      */
-    bool install_motif_for_test(int num_chunk, const T* elems)
-    {
-        using ChunkT = typename Array::ChunkType;
-        auto& chunk  = this->chunk_list_[static_cast<std::size_t>(num_chunk)];
-        if (!chunk.is_cst_val1())
-        {
-            return false;
-        }
-        const auto     count = static_cast<std::size_t>(this->chunk_size());
-        std::vector<T> motif(count);
-        for (std::size_t j = 0; j < count; ++j)
-        {
-            motif[j] = ChunkT::wrapping_sub(elems[j], elems[0]);
-        }
-        const T* const entry = MotifRegion<T>::find_or_register(motif.data(), count);
-        // The offset first, then the pointer: the order of the compression to come.
-        Array::ProxyType::BaseSpec::set(this->num_tab_, num_chunk, elems[0]);
-        chunk.values_store(const_cast<T*>(entry)); // never written through: a motif chunk materialises first
-        return true;
-    }
+    bool install_motif_for_test(int num_chunk, const T* elems);
+
+    /**
+     * @brief zero_any's reclaim_second_values() -- the constants no array of the
+     *        zero_any family with element type T names any more -- then the motif
+     *        registry's: the motifs no chunk of any pattern::Array<T> points at
+     *        (docs/pattern_design.md, section 7). One call, each registry its own
+     *        entries.
+     * @return How many second values were freed; the motifs freed are in
+     *         MotifRegion<T>::stats().
+     * @pre The sequential point of zero_any::ArrayImpl::reclaim_second_values(),
+     *      over every pattern::Array<T> as well. Refused, for the motifs too, inside
+     *      a parallel region.
+     */
+    static std::size_t reclaim_second_values();
+
+    /**
+     * @brief The motif registry's reclaim alone: mark the motif every chunk of every
+     *        pattern::Array<T> points at, whatever its index type, and free the others
+     *        (MotifRegion::reclaim_unmarked()).
+     * @return How many motifs were freed.
+     * @pre As reclaim_second_values().
+     */
+    static std::size_t reclaim_motifs();
 };
 
 } // namespace pattern
 
 } // namespace shrink_array
+
+#include "chunk/internal/pattern_array_inline.h" // the template bodies
