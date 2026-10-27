@@ -148,8 +148,7 @@ void EmptySlabSweep<Slab>::advise_runs() noexcept
     {
         const Run* runs = runs_.data();
         pmp::parallel_for(0L, n_runs, pmp::Options{.num_threads = nthr, .sched = pmp::Schedule::dynamic(16)},
-                          [runs](long i)
-                          { ::madvise(detail::addr_ptr(runs[i].begin), runs[i].len, MADV_DONTNEED); });
+                          [runs](long i) { ::madvise(detail::addr_ptr(runs[i].begin), runs[i].len, MADV_DONTNEED); });
         return;
     }
     for (long i = 0; i < n_runs; ++i)
@@ -172,8 +171,8 @@ inline void* SlabArena::allocate(std::size_t size, std::size_t align, int rank)
     {
         if (live_.contains(fast_alloc::address_bits(block)))
         {
-            FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC recycled slab {} (size={}): handed out while still live",
-                             name_, block, size);
+            FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC recycled slab {} (size={}): handed out while still live", name_,
+                             block, size);
         }
         live_.insert(fast_alloc::address_bits(block));
         bytes_live_ += size;
@@ -259,8 +258,7 @@ inline void SlabArena::recycle_batch(void* const* blocks, std::size_t count, std
         }
         if (live_.erase(fast_alloc::address_bits(block)) == 0)
         {
-            CHUNK_LOG(warn, arena, "{}: recycle of an unknown/free slab {} (size={}) -- ignored", name_, block,
-                      size);
+            CHUNK_LOG(warn, arena, "{}: recycle of an unknown/free slab {} (size={}) -- ignored", name_, block, size);
             continue;
         }
         bytes_live_ -= size;
@@ -351,8 +349,7 @@ inline std::size_t SlabArena::advise_recycled(std::size_t keep_bytes) noexcept
             {
                 // Resident slabs behind the advised ones: pop_recycled()
                 // hands out the back first, pages already there.
-                std::stable_partition(list.begin(), list.end(),
-                                      [](const Recycled& entry) { return entry.advised; });
+                std::stable_partition(list.begin(), list.end(), [](const Recycled& entry) { return entry.advised; });
             }
         }
     }

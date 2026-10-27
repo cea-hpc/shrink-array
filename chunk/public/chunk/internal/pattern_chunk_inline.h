@@ -36,7 +36,8 @@ void pattern::Chunk<T>::classify_motif(int num_chunk, int num_tab, ChunkElems si
         elem = wrapping_sub(elem, offset);
     }
     const std::uint64_t h = MotifRegion<T>::hash(motif_scratch_.data(), count);
-    if (const T* const motif = MotifRegion<T>::find_or_admit(motif_scratch_.data(), count, h, MotifRegion<T>::sighting_tag(this)))
+    if (const T* const motif =
+            MotifRegion<T>::find_or_admit(motif_scratch_.data(), count, h, MotifRegion<T>::sighting_tag(this)))
     {
         motif_candidates_.emplace_back(this, motif, offset, num_chunk, num_tab, size);
     }
@@ -56,11 +57,11 @@ void pattern::Chunk<T>::compress_motif_candidates(int thr)
 }
 
 template <typename T>
-void pattern::Chunk<T>::block_clear_motif(CstSlot* ptr_type_cst,
+void pattern::Chunk<T>::block_clear_motif(CstSlot*          ptr_type_cst,
                                           SecondValueRef<T> slot,
-                                          const T* motif,
-                                          T offset,
-                                          int thr_rank)
+                                          const T*          motif,
+                                          T                 offset,
+                                          int               thr_rank)
 {
     std::atomic_ref<T>(*slot.slot).store(offset, std::memory_order_release);
     *ptr_type_cst = CstSlot::motif;

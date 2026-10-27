@@ -1350,10 +1350,9 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::resize_tab_is_int(int
             {
                 if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
                 {
-                    CHUNK_INVARIANT_FAILED(
-                        "resize_tab_is_int: tab {} chunk {} still queued for compression while its "
-                        "flag row is reallocated ({} -> {} chunks)",
-                        num_tab, j, row.size(), nb_chunk);
+                    CHUNK_INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                                           "flag row is reallocated ({} -> {} chunks)",
+                                           num_tab, j, row.size(), nb_chunk);
                 }
             }
         }
@@ -1391,11 +1390,10 @@ void ProxyBase<Derived, T, ChunkT>::check_not_stale() const noexcept
     {
         if (stale_guard_.gen != nullptr && *stale_guard_.gen != stale_guard_.seen) [[unlikely]]
         {
-            CHUNK_INVARIANT_FAILED(
-                "write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
-                "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
-                "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
-                ptr_on_array_, num_chunk_, num_);
+            CHUNK_INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
+                                   "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
+                                   "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
+                                   ptr_on_array_, num_chunk_, num_);
         }
     }
 }
@@ -1493,7 +1491,8 @@ template <typename Derived, typename T, typename ChunkT>
 
 template <typename Derived, typename T, typename ChunkT>
 template <typename U>
-Derived ProxyBase<Derived, T, ChunkT>::operator^=(const U& operand) noexcept requires is_packed_bit_v<T> && bit_operand_v<U>
+Derived ProxyBase<Derived, T, ChunkT>::operator^=(const U& operand) noexcept
+    requires is_packed_bit_v<T> && bit_operand_v<U>
 {
     if (static_cast<bool>(operand))
     {
@@ -1504,7 +1503,8 @@ Derived ProxyBase<Derived, T, ChunkT>::operator^=(const U& operand) noexcept req
 }
 
 template <typename Derived, typename T, typename ChunkT>
-Derived ProxyBase<Derived, T, ChunkT>::operator++() noexcept requires ElementIncrementable<T>
+Derived ProxyBase<Derived, T, ChunkT>::operator++() noexcept
+    requires ElementIncrementable<T>
 {
     const auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { ++elem; }); };
 
@@ -1523,7 +1523,8 @@ Derived ProxyBase<Derived, T, ChunkT>::operator++() noexcept requires ElementInc
 }
 
 template <typename Derived, typename T, typename ChunkT>
-Derived ProxyBase<Derived, T, ChunkT>::operator--() noexcept requires ElementIncrementable<T>
+Derived ProxyBase<Derived, T, ChunkT>::operator--() noexcept
+    requires ElementIncrementable<T>
 {
     const auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { --elem; }); };
 
@@ -1537,7 +1538,8 @@ Derived ProxyBase<Derived, T, ChunkT>::operator--() noexcept requires ElementInc
 }
 
 template <typename Derived, typename T, typename ChunkT>
-T ProxyBase<Derived, T, ChunkT>::operator++(int) noexcept requires ElementIncrementable<T>
+T ProxyBase<Derived, T, ChunkT>::operator++(int) noexcept
+    requires ElementIncrementable<T>
 {
     T temp(*this);
 
@@ -1551,7 +1553,8 @@ T ProxyBase<Derived, T, ChunkT>::operator++(int) noexcept requires ElementIncrem
 }
 
 template <typename Derived, typename T, typename ChunkT>
-T ProxyBase<Derived, T, ChunkT>::operator--(int) noexcept requires ElementIncrementable<T>
+T ProxyBase<Derived, T, ChunkT>::operator--(int) noexcept
+    requires ElementIncrementable<T>
 {
     T          temp(*this);
     const auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem--; }); };

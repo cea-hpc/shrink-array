@@ -169,7 +169,7 @@ void SecondValueChunkBase<T, Derived>::apply_cas_or_recup(T* values_loc, int thr
 }
 
 template <typename T, typename Derived>
-void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int num_compress_value,
+void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int                num_compress_value,
                                                                        std::optional<int> ind_opt) const noexcept
 {
     if constexpr (build_config::any_check)
@@ -243,7 +243,7 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int num_c
 }
 
 template <typename T, typename Derived>
-void SecondValueChunkBase<T, Derived>::assert_writable_buffer(const T* target_ptr,
+void SecondValueChunkBase<T, Derived>::assert_writable_buffer(const T*                   target_ptr,
                                                               const std::source_location loc) noexcept
 {
     if constexpr (build_config::any_check)
@@ -274,8 +274,7 @@ void SecondValueChunkBase<T, Derived>::assert_writable_buffer(const T* target_pt
             invariant_failed(loc,
                              "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
                              "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
-                             type_name<T>(), this, static_cast<const void*>(target_ptr), c1, c2,
-                             get_thr_rank_fast());
+                             type_name<T>(), this, static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
         }
     }
 }

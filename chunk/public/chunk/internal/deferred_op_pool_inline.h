@@ -244,8 +244,8 @@ void FastAllocatorConcrete<T, Arena>::probe_returned_block(const void* ptr, cons
 
         if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
         {
-            CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
-                                   ptr, sizeof(T), build_config::use_fast_alloc ? &allocator() : nullptr);
+            CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path, ptr,
+                                   sizeof(T), build_config::use_fast_alloc ? &allocator() : nullptr);
         }
     }
 }

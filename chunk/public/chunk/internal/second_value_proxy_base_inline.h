@@ -62,9 +62,9 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_if_needed(bo
 }
 
 template <typename Derived, typename T, typename ChunkT>
-void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_before_store(InT<T> second_val,
-                                                                                 InT<T> new_value,
-                                                                                 InT<T> first_value,
+void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_before_store(InT<T>   second_val,
+                                                                                 InT<T>   new_value,
+                                                                                 InT<T>   first_value,
                                                                                  const T* vals) const
 {
     // isv false makes the whole test a no-op: skip the read of the old
@@ -83,7 +83,8 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_before_store
 
 template <typename Derived, typename T, typename ChunkT>
 template <typename WriteFn>
-[[nodiscard]] CHUNK_FORCE_INLINE bool SecondValueProxyBase<Derived, T, ChunkT>::write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept
+[[nodiscard]] CHUNK_FORCE_INLINE bool
+SecondValueProxyBase<Derived, T, ChunkT>::write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept
 {
     const auto lbd_info = [this]
     {
@@ -105,9 +106,10 @@ template <typename WriteFn>
 }
 
 template <typename Derived, typename T, typename ChunkT>
-[[nodiscard]] bool SecondValueProxyBase<Derived, T, ChunkT>::is_cst_val_new_value_is_other_cst_val(InT<T> new_value,
-                                                                                                   InT<T> first_value,
-                                                                                                   InT<T> second_val) const noexcept
+[[nodiscard]] bool
+SecondValueProxyBase<Derived, T, ChunkT>::is_cst_val_new_value_is_other_cst_val(InT<T> new_value,
+                                                                                InT<T> first_value,
+                                                                                InT<T> second_val) const noexcept
 {
     // CRTP dispatch: each variant owns its fast pre-check. zero_one_value keeps the
     // "a constant is written" test below; zero_any widens it (see

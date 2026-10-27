@@ -64,10 +64,8 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] const T* pattern::MotifRegion<T>::find_or_admit(const T* motif,
-                                                                std::size_t count,
-                                                                std::uint64_t h,
-                                                                std::uint8_t tag)
+[[nodiscard]] const T*
+pattern::MotifRegion<T>::find_or_admit(const T* motif, std::size_t count, std::uint64_t h, std::uint8_t tag)
 {
     if (const T* const entry = find(motif, count, h))
     {
@@ -94,8 +92,8 @@ template <typename T>
     }
     else if (count != entry_count_.load(std::memory_order_relaxed))
     {
-        CHUNK_INVARIANT_FAILED("pattern::MotifRegion: an entry of {} elements, the region holds {} per entry",
-                               count, entry_count_.load(std::memory_order_relaxed));
+        CHUNK_INVARIANT_FAILED("pattern::MotifRegion: an entry of {} elements, the region holds {} per entry", count,
+                               entry_count_.load(std::memory_order_relaxed));
     }
     if (const T* const entry = find(motif, count, h)) // registered meanwhile
     {
@@ -119,8 +117,7 @@ template <typename T>
         return 0;
     }
     const std::size_t bytes = entry_bytes_.load(std::memory_order_relaxed);
-    return static_cast<std::uint32_t>(
-        (::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) / bytes + 1);
+    return static_cast<std::uint32_t>((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) / bytes + 1);
 }
 
 template <typename T>
@@ -160,8 +157,7 @@ void pattern::MotifRegion<T>::reserve(std::size_t count)
         CHUNK_INVARIANT_FAILED("pattern::MotifRegion: cannot reserve {} bytes of address space", region_bytes);
     }
     entry_count_.store(count, std::memory_order_relaxed);
-    entry_bytes_.store((count * sizeof(T) + entry_align - 1) / entry_align * entry_align,
-                       std::memory_order_relaxed);
+    entry_bytes_.store((count * sizeof(T) + entry_align - 1) / entry_align * entry_align, std::memory_order_relaxed);
     live().assign(1, 0); // identifier 0: none
     begin_.store(static_cast<std::byte*>(raw), std::memory_order_release);
 }

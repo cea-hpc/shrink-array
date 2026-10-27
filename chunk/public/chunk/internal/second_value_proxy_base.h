@@ -286,7 +286,8 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *        write session: the old value and the race check read through it
      *        instead of reloading it (see zero_any::Proxy::handle_no_bool_assignment).
      */
-    void mark_for_compression_before_store(InT<T> second_val, InT<T> new_value, InT<T> first_value, const T* vals) const;
+    void
+    mark_for_compression_before_store(InT<T> second_val, InT<T> new_value, InT<T> first_value, const T* vals) const;
 
     /**
      * @brief Marks block for compression with an explicit old boolean value

@@ -70,8 +70,7 @@ void DirtyBitsetSupport<Derived, true>::reallocate_dirty_bitset(int old_nb_chunk
     const int old_nb_words = words_for(old_nb_chunk);
     const int new_nb_words = words_for(new_nb_chunk);
 
-    auto new_bitset =
-        parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(new_nb_words) + 1);
+    auto new_bitset = parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(new_nb_words) + 1);
 
     if (!bitset_.empty())
     {

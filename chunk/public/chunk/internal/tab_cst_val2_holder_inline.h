@@ -256,9 +256,8 @@ std::byte* GlobalVecHolder<T>::region_alloc(std::size_t bytes)
     // ONE capacity: what value_by_id can hold (region_usable, lowered by
     // CHUNK_CST_VAL2_ID_LIMIT); alloc_chunk() writes value_by_id[id] for every slot
     // carved here, so a slot past it would be a write past the table. Warn once at half.
-    const std::size_t cap_bytes =
-        (bytes != 0 && id_limit * bytes < region_usable) ? id_limit * bytes : region_usable;
-    const char* limiting =
+    const std::size_t cap_bytes = (bytes != 0 && id_limit * bytes < region_usable) ? id_limit * bytes : region_usable;
+    const char*       limiting =
         (max_ids * id_stride) < region_bytes ? "CHUNK_CST_VAL2_MAX_IDS" : "CHUNK_CST_VAL2_REGION_BYTES";
     if (id_limit < max_ids)
     {
@@ -270,11 +269,10 @@ std::byte* GlobalVecHolder<T>::region_alloc(std::size_t bytes)
         bool               expected = false;
         if (warned.compare_exchange_strong(expected, true, std::memory_order_relaxed))
         {
-            CHUNK_LOG(
-                warn, compress,
-                "second-value identifiers past half used: {} of {} (bound by {}). Raise it if the count keeps "
-                "growing; running out aborts.",
-                off / bytes, cap_bytes / bytes, limiting);
+            CHUNK_LOG(warn, compress,
+                      "second-value identifiers past half used: {} of {} (bound by {}). Raise it if the count keeps "
+                      "growing; running out aborts.",
+                      off / bytes, cap_bytes / bytes, limiting);
         }
     }
     if (off + bytes > cap_bytes) [[unlikely]]
@@ -423,8 +421,8 @@ void GlobalVecHolder<T>::clear_if_last(int& nb_val2)
 
     if (nb_segs > 1)
     {
-        std::cout << "[cst_val2] " << nb_val2 << " distinct second values across " << nb_segs
-                  << " segments (capacity " << nb_segs * Segment<T>::slots_per_segment
+        std::cout << "[cst_val2] " << nb_val2 << " distinct second values across " << nb_segs << " segments (capacity "
+                  << nb_segs * Segment<T>::slots_per_segment
                   << "), index_degraded=" << index_degraded.load(std::memory_order_relaxed) << "\n";
     }
 
@@ -467,8 +465,8 @@ void GlobalVecHolder<T>::region_init()
     void*     raw  = mmap(nullptr, region_usable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (raw == MAP_FAILED) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("[cst_val2] cannot reserve the second-value region ({} MiB): {}",
-                               region_usable >> 20U, std::strerror(errno));
+        CHUNK_INVARIANT_FAILED("[cst_val2] cannot reserve the second-value region ({} MiB): {}", region_usable >> 20U,
+                               std::strerror(errno));
     }
     // CHUNK_THP (experimental, off by default): advice only. Not under
     // MM_PROTECT, where the region stays PROT_NONE.

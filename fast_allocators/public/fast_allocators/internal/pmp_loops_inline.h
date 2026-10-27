@@ -32,54 +32,54 @@ template <typename Index, typename Body>
 void pmp::Team::for_static(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-#ifdef _OPENMP
+    #ifdef _OPENMP
     if (wait_mode == WaitMode::nowait)
     {
-    #pragma omp for schedule(static) nowait
+        #pragma omp for schedule(static) nowait
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
         return;
     }
-    #pragma omp for schedule(static)
+        #pragma omp for schedule(static)
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#else
+    #else
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#endif
+    #endif
 }
 
 template <typename Index, typename Body>
 void pmp::Team::for_static_simd(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-#ifdef _OPENMP
+    #ifdef _OPENMP
     if (wait_mode == WaitMode::nowait)
     {
-    #pragma omp for simd schedule(static) nowait
+        #pragma omp for simd schedule(static) nowait
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
         return;
     }
-    #pragma omp for simd schedule(static)
+        #pragma omp for simd schedule(static)
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#else
+    #else
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#endif
+    #endif
 }
 
 template <typename Index, typename Body>
@@ -87,59 +87,59 @@ void pmp::Team::for_static_chunks(Index first, Index last, int chunk, Body&& bod
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     [[maybe_unused]] const int step = chunk > 0 ? chunk : 1;
-#ifdef _OPENMP
+    #ifdef _OPENMP
     if (wait_mode == WaitMode::nowait)
     {
-    #pragma omp for schedule(static, step) nowait
+        #pragma omp for schedule(static, step) nowait
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
         return;
     }
-    #pragma omp for schedule(static, step)
+        #pragma omp for schedule(static, step)
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#else
+    #else
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#endif
+    #endif
 }
 
 template <typename Index, typename Body>
-void pmp::Team::for_static_chunks_simd(Index first,
-                                       Index last,
-                                       int chunk,
-                                       Body&& body,
+void pmp::Team::for_static_chunks_simd(Index                     first,
+                                       Index                     last,
+                                       int                       chunk,
+                                       Body&&                    body,
                                        [[maybe_unused]] WaitMode wait_mode)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     [[maybe_unused]] const int step = chunk > 0 ? chunk : 1;
-#ifdef _OPENMP
+    #ifdef _OPENMP
     if (wait_mode == WaitMode::nowait)
     {
-    #pragma omp for simd schedule(static, step) nowait
+        #pragma omp for simd schedule(static, step) nowait
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
         return;
     }
-    #pragma omp for simd schedule(static, step)
+        #pragma omp for simd schedule(static, step)
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#else
+    #else
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#endif
+    #endif
 }
 
 template <typename Index, typename Body>
@@ -147,82 +147,82 @@ void pmp::Team::for_dynamic(Index first, Index last, int chunk, Body&& body, [[m
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     [[maybe_unused]] const int step = chunk > 0 ? chunk : 1;
-#ifdef _OPENMP
+    #ifdef _OPENMP
     if (wait_mode == WaitMode::nowait)
     {
-    #pragma omp for schedule(dynamic, step) nowait
+        #pragma omp for schedule(dynamic, step) nowait
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
         return;
     }
-    #pragma omp for schedule(dynamic, step)
+        #pragma omp for schedule(dynamic, step)
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#else
+    #else
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#endif
+    #endif
 }
 
 template <typename Index, typename Body>
 void pmp::Team::for_runtime(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode)
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-#ifdef _OPENMP
+    #ifdef _OPENMP
     if (wait_mode == WaitMode::nowait)
     {
-    #pragma omp for schedule(runtime) nowait
+        #pragma omp for schedule(runtime) nowait
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
         return;
     }
-    #pragma omp for schedule(runtime)
+        #pragma omp for schedule(runtime)
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#else
+    #else
     for (Index i = first; i < last; ++i)
     {
         body(i);
     }
-#endif
+    #endif
 }
 
 template <typename F>
 void pmp::Team::single(F&& func, [[maybe_unused]] WaitMode wait_mode)
 {
-#ifdef _OPENMP
+    #ifdef _OPENMP
     if (wait_mode == WaitMode::nowait)
     {
-    #pragma omp single nowait
+        #pragma omp single nowait
         func();
         return;
     }
-    #pragma omp single
+        #pragma omp single
     func();
-#else
+    #else
     func();
-#endif
+    #endif
 }
 
 template <typename F>
 void pmp::Team::masked(F&& func)
 {
-#ifdef _OPENMP
-    #pragma omp masked
+    #ifdef _OPENMP
+        #pragma omp masked
     func();
-#else
+    #else
     func();
-#endif
+    #endif
 }
 
 } // namespace fast_alloc

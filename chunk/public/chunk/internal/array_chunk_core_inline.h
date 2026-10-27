@@ -49,8 +49,7 @@ void ArrayChunkCore<ChunkT>::assign_alloc_key()
     {
         return;
     }
-    const unsigned int key =
-        (alloc_key_ != 0) ? alloc_key_ : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
+    const unsigned int key = (alloc_key_ != 0) ? alloc_key_ : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
     // Keep the key ONLY if the manager built its allocator set: a key with no registered
     // set makes route_omp_dynamic_alloc fall through to the legacy single allocator,
     // which is neither this size's nor this array's.

@@ -293,7 +293,8 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back()
 // ---------------------------------------------------------------------------
 
 template <typename Derived>
-[[nodiscard]] inline ArrayChunkBase<Derived>::const_iterator::reference ArrayChunkBase<Derived>::const_iterator::operator*() const noexcept
+[[nodiscard]] inline ArrayChunkBase<Derived>::const_iterator::reference
+ArrayChunkBase<Derived>::const_iterator::operator*() const noexcept
 {
     // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[num].
     check_no_write_since_entry();

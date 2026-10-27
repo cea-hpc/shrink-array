@@ -1497,7 +1497,8 @@ void zero_any::ProxySpec<bool, Derived, ChunkT>::resize(int nb_tab, int nb_chunk
 // ---------------------------------------------------------------------------
 
 template <typename T, typename Derived, typename ChunkT>
-const zero_any::ProxyImpl<T, Derived, ChunkT>& zero_any::ProxyImpl<T, Derived, ChunkT>::operator=(const ProxyImpl& from) noexcept
+const zero_any::ProxyImpl<T, Derived, ChunkT>&
+zero_any::ProxyImpl<T, Derived, ChunkT>::operator=(const ProxyImpl& from) noexcept
 {
     if (std::addressof(from) != this) // operator& is deleted
     {
@@ -1580,13 +1581,13 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::create_value_bool() const noexcept
 }
 
 template <typename T, typename Derived, typename ChunkT>
-[[nodiscard]] bool zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_value,
-                                                                                        InT<T> new_value,
-                                                                                        InT<T> second_value,
-                                                                                        InT<T> first_value) const noexcept
+[[nodiscard]] bool
+zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_value,
+                                                                     InT<T> new_value,
+                                                                     InT<T> second_value,
+                                                                     InT<T> first_value) const noexcept
 {
-    if (CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value,
-                                                                      first_value))
+    if (CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value, first_value))
     {
         return true;
     }
@@ -1635,8 +1636,7 @@ template <typename T, typename Derived, typename ChunkT>
         const int offset = this->num_;
         const int r0     = (offset == 0) ? 1 : 0;
         const int r1     = (offset == chunk_sz - 1) ? chunk_sz - 2 : chunk_sz - 1;
-        return this->chunk_.read_value_scan_relaxed(r0) == value &&
-               this->chunk_.read_value_scan_relaxed(r1) == value;
+        return this->chunk_.read_value_scan_relaxed(r0) == value && this->chunk_.read_value_scan_relaxed(r1) == value;
     }
 }
 

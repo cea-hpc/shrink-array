@@ -252,20 +252,23 @@ class MotifRegion
         return generations_storage_.value;
     }
 
-    static inline std::mutex                 mutex_;          ///< Serialises registrations and reclaims.
-    static inline std::atomic<std::byte*>    begin_{nullptr}; ///< Start of the reservation; null before the first.
-    static inline std::atomic<std::size_t>   used_{0};        ///< Bytes of the region carved.
-    static inline std::atomic<std::size_t>   entry_count_{0}; ///< Elements per entry.
-    static inline std::atomic<std::size_t>   entry_bytes_{0}; ///< Bytes per entry (cache-line rounded).
-    static inline std::atomic<IndexTable*>   index_{nullptr}; ///< The current index generation.
-    static inline std::atomic<std::size_t>   entries_{0};     ///< Live entries.
-    static inline std::atomic<std::size_t>   registered_{0};  ///< MotifStats::registered.
-    static inline std::atomic<std::size_t>   first_seen_{0};  ///< MotifStats::first_seen.
-    static inline std::atomic<std::size_t>   reclaims_{0};    ///< MotifStats::reclaims.
-    static inline std::atomic<std::size_t>   freed_{0};       ///< MotifStats::freed.
-    static inline std::array<std::atomic<std::uint8_t>, std::size_t{1} << probation_bits> probation_{}; ///< First sightings.
-    static inline constinit internal::Immortal<std::vector<std::uint8_t>> live_storage_{};   ///< Live flag per identifier.
-    static inline constinit internal::Immortal<std::vector<std::uint32_t>> free_ids_storage_{}; ///< Reclaimed identifiers.
+    static inline std::mutex               mutex_;          ///< Serialises registrations and reclaims.
+    static inline std::atomic<std::byte*>  begin_{nullptr}; ///< Start of the reservation; null before the first.
+    static inline std::atomic<std::size_t> used_{0};        ///< Bytes of the region carved.
+    static inline std::atomic<std::size_t> entry_count_{0}; ///< Elements per entry.
+    static inline std::atomic<std::size_t> entry_bytes_{0}; ///< Bytes per entry (cache-line rounded).
+    static inline std::atomic<IndexTable*> index_{nullptr}; ///< The current index generation.
+    static inline std::atomic<std::size_t> entries_{0};     ///< Live entries.
+    static inline std::atomic<std::size_t> registered_{0};  ///< MotifStats::registered.
+    static inline std::atomic<std::size_t> first_seen_{0};  ///< MotifStats::first_seen.
+    static inline std::atomic<std::size_t> reclaims_{0};    ///< MotifStats::reclaims.
+    static inline std::atomic<std::size_t> freed_{0};       ///< MotifStats::freed.
+    static inline std::array<std::atomic<std::uint8_t>, std::size_t{1} << probation_bits>
+        probation_{}; ///< First sightings.
+    static inline constinit internal::Immortal<std::vector<std::uint8_t>>
+        live_storage_{}; ///< Live flag per identifier.
+    static inline constinit internal::Immortal<std::vector<std::uint32_t>>
+        free_ids_storage_{}; ///< Reclaimed identifiers.
     static inline constinit internal::Immortal<std::vector<std::unique_ptr<IndexTable>>>
         generations_storage_{}; ///< Every index generation since the last rebuild.
 };

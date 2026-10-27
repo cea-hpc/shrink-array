@@ -534,7 +534,7 @@ void TCTypeAllocator<ElemT>::add_allocated_size(size_t& sum_used_size,
 // ---------------------------------------------------------------------------
 
 template <typename ElemT>
-std::size_t TCTypeCAllocator<ElemT>::collect_empty_slabs([[maybe_unused]] SlabSweep& sweep,
+std::size_t TCTypeCAllocator<ElemT>::collect_empty_slabs([[maybe_unused]] SlabSweep&  sweep,
                                                          [[maybe_unused]] std::size_t keep_empty) noexcept
 {
     if constexpr (alloc_config::use_std_alloc || !alloc_config::reclaim_empty_slabs)

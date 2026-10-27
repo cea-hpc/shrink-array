@@ -738,25 +738,25 @@ bool zero_any::ArrayImpl<Derived>::operator==(const ArrayImpl& other) const noex
     }
     const auto  csz = static_cast<long long>(this->chunk_size());
     std::atomic differ{false};
-    parallel_storage_init::for_each_chunk(
-        this->chunk_index_of(m_size_ - 1) + 1,
-        [&](int c)
-        {
-            if (differ.load(std::memory_order_relaxed))
-            {
-                return;
-            }
-            const long long lo = static_cast<long long>(c) * csz;
-            const long long hi = std::min(lo + csz, static_cast<long long>(m_size_));
-            for (long long i = lo; i < hi; ++i)
-            {
-                if (Base2::read_value(static_cast<IntType>(i)) != other.read_value(static_cast<IntType>(i)))
-                {
-                    differ.store(true, std::memory_order_relaxed);
-                    return;
-                }
-            }
-        });
+    parallel_storage_init::for_each_chunk(this->chunk_index_of(m_size_ - 1) + 1,
+                                          [&](int c)
+                                          {
+                                              if (differ.load(std::memory_order_relaxed))
+                                              {
+                                                  return;
+                                              }
+                                              const long long lo = static_cast<long long>(c) * csz;
+                                              const long long hi = std::min(lo + csz, static_cast<long long>(m_size_));
+                                              for (long long i = lo; i < hi; ++i)
+                                              {
+                                                  if (Base2::read_value(static_cast<IntType>(i)) !=
+                                                      other.read_value(static_cast<IntType>(i)))
+                                                  {
+                                                      differ.store(true, std::memory_order_relaxed);
+                                                      return;
+                                                  }
+                                              }
+                                          });
     return !differ.load(std::memory_order_relaxed);
 }
 

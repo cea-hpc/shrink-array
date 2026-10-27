@@ -1126,7 +1126,9 @@ template <typename Derived, typename T, typename ChunkT, bool Enabled>
 }
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-VectorTuple4ChunkInt2<zero_one_value::Chunk, T>& zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+VectorTuple4ChunkInt2<zero_one_value::Chunk, T>&
+zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_to_compress_potentially_thr(
+    int thr) const noexcept
 {
     const auto second_value = get_second_value();
     // find(), not operator[]: operator[] INSERTS a null entry for a missing
@@ -1141,9 +1143,10 @@ VectorTuple4ChunkInt2<zero_one_value::Chunk, T>& zero_one_value::ProxyFastCompPo
 }
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-VectorTuple4ChunkInt2<zero_one_value::Chunk, T>& zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_to_compress_potentially_async_thr(
+VectorTuple4ChunkInt2<zero_one_value::Chunk, T>&
+zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_to_compress_potentially_async_thr(
     auto* ctx,
-    int thr) const
+    int   thr) const
 {
     const auto second_value = get_second_value(ctx);
     // find(), not operator[]: operator[] INSERTS a null entry for a missing
@@ -1158,7 +1161,8 @@ VectorTuple4ChunkInt2<zero_one_value::Chunk, T>& zero_one_value::ProxyFastCompPo
 }
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-[[nodiscard]] auto zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_second_value(auto* ctx) noexcept
+[[nodiscard]] auto
+zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_second_value(auto* ctx) noexcept
 {
     if constexpr (is_not_bool)
     {

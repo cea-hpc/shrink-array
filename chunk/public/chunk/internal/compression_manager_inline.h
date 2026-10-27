@@ -921,7 +921,8 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::record_enqueue_deferred
 }
 
 template <typename T, typename ChunkT, bool Enabled>
-[[nodiscard]] inline bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::must_defer_write(const ChunkT& chunk) noexcept
+[[nodiscard]] inline bool
+CompressionManagerThreadPolicy<T, ChunkT, Enabled>::must_defer_write(const ChunkT& chunk) noexcept
 {
     if constexpr (chunk_config::use_chunk_steal_mark)
     {

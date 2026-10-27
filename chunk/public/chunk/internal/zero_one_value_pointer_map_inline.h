@@ -25,7 +25,8 @@ namespace shrink_array
 // ---------------------------------------------------------------------------
 
 template <typename T, bool Enabled>
-[[nodiscard]] std::vector<typename PointerMapChunk2InfArrayPolicy<T, Enabled>::InfArrayT*> PointerMapChunk2InfArrayPolicy<T, Enabled>::get_all_inf_array() const
+[[nodiscard]] std::vector<typename PointerMapChunk2InfArrayPolicy<T, Enabled>::InfArrayT*>
+PointerMapChunk2InfArrayPolicy<T, Enabled>::get_all_inf_array() const
 {
     std::vector<InfArrayT*> values;
 
@@ -38,7 +39,8 @@ template <typename T, bool Enabled>
 }
 
 template <typename T, bool Enabled>
-[[nodiscard]] PointerMapChunk2InfArrayPolicy<T, Enabled>::InfArrayT* PointerMapChunk2InfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
+[[nodiscard]] PointerMapChunk2InfArrayPolicy<T, Enabled>::InfArrayT*
+PointerMapChunk2InfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
 {
     const auto it = map_inf_array_.find(key);
     if (it != map_inf_array_.end())
@@ -91,8 +93,8 @@ void zero_one_value::PointerMap<T>::report_key_not_found(Key key, const char* si
                                               .size);
         }
         CHUNK_LOG(error, general,
-                  "share_info {}: KEY NOT FOUND: this={} rank={} searched_key={} vec.size={}; valid keys:{}{}",
-                  site, this, rank, key, count, std::string_view{keys.data(), n < keys.size() ? n : keys.size()},
+                  "share_info {}: KEY NOT FOUND: this={} rank={} searched_key={} vec.size={}; valid keys:{}{}", site,
+                  this, rank, key, count, std::string_view{keys.data(), n < keys.size() ? n : keys.size()},
                   count > lim ? " ...(truncated)" : "");
     }
 }
@@ -196,12 +198,12 @@ template <typename T>
         }
     }
     report_key_not_found(key, "get_num_tab");
-    CHUNK_INVARIANT_FAILED("[share_info get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
-                           key);
+    CHUNK_INVARIANT_FAILED("[share_info get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(), key);
 }
 
 template <typename T>
-[[nodiscard]] zero_one_value::PointerMap<T>::InfArrayT zero_one_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
+[[nodiscard]] zero_one_value::PointerMap<T>::InfArrayT
+zero_one_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
 {
     if constexpr (is_not_bool)
     {

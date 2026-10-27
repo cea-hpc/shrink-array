@@ -83,7 +83,8 @@ std::size_t pattern::Array<T, IntType>::reclaim_motifs()
             const int nc = arr->chunk_count();
             for (int j = 0; j < nc; ++j)
             {
-                const std::uint32_t id = MotifRegion<T>::id_of(arr->chunk_ref(static_cast<std::size_t>(j)).values_load());
+                const std::uint32_t id =
+                    MotifRegion<T>::id_of(arr->chunk_ref(static_cast<std::size_t>(j)).values_load());
                 if (id != 0 && id < referenced.size())
                 {
                     referenced[id] = 1;

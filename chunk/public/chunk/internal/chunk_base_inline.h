@@ -336,9 +336,9 @@ void DeferredReadGate<Derived, DeferReadGate::precise>::pending_retire(int32_t c
 
 template <typename T, typename Derived>
 template <typename InitReused, typename InitFresh>
-T* ChunkAllocPolicy<T, Derived, true>::allocate_chunk_internal(int thr_rank,
+T* ChunkAllocPolicy<T, Derived, true>::allocate_chunk_internal(int        thr_rank,
                                                                InitReused init_reused,
-                                                               InitFresh init_fresh)
+                                                               InitFresh  init_fresh)
 {
     const auto& self       = static_cast<const Derived&>(*this);
     T*          values_loc = nullptr;
@@ -421,9 +421,9 @@ T* ChunkAllocPolicy<T, Derived, true>::allocate_chunk_internal(int thr_rank,
 
 template <typename T, typename Derived>
 template <typename InitReused, typename InitFresh>
-T* ChunkAllocPolicy<T, Derived, false>::allocate_chunk_internal([[maybe_unused]] int thr_rank,
+T* ChunkAllocPolicy<T, Derived, false>::allocate_chunk_internal([[maybe_unused]] int        thr_rank,
                                                                 [[maybe_unused]] InitReused init_reused,
-                                                                InitFresh init_fresh)
+                                                                InitFresh                   init_fresh)
 {
     const auto& self       = static_cast<const Derived&>(*this);
     T*          values_loc = nullptr;
@@ -497,8 +497,8 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::recup_value(T* values_loc, int th
 
 template <typename T, typename Derived>
 void ChunkDynamicAllocPolicy<T, Derived, true>::register_chunk_size(unsigned int size,
-                                                                    int max_thr,
-                                                                    int block_size,
+                                                                    int          max_thr,
+                                                                    int          block_size,
                                                                     unsigned int key)
 {
     if (allocator_pool_->contains(pool_key(key, size)))
@@ -604,9 +604,8 @@ void ChunkBase<T, Derived>::values_store(T* new_values) noexcept
 }
 
 template <typename T, typename Derived>
-[[nodiscard]] ChunkBase<T, Derived>::ConstantScan ChunkBase<T, Derived>::scan_constants(InT<T> first_v,
-                                                                                        InT<T> second_v,
-                                                                                        unsigned int count) const noexcept
+[[nodiscard]] ChunkBase<T, Derived>::ConstantScan
+ChunkBase<T, Derived>::scan_constants(InT<T> first_v, InT<T> second_v, unsigned int count) const noexcept
 {
     // Block-wise, branch-free inside a block: an early exit per element
     // keeps the compiler from vectorising the walk, and most scans run to
@@ -713,8 +712,8 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
-[[nodiscard]] T ChunkBase<T, Derived>::read_value(int offset,
-                                                  const T* offset_slot) const noexcept requires has_motif_state_v<Derived>
+[[nodiscard]] T ChunkBase<T, Derived>::read_value(int offset, const T* offset_slot) const noexcept
+    requires has_motif_state_v<Derived>
 {
     if constexpr (chunk_config::stats)
     {
@@ -814,10 +813,8 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexc
 }
 
 template <typename T, typename Derived>
-void ChunkBase<T, Derived>::read_block(int first,
-                                       int count,
-                                       T* out,
-                                       const T* offset_slot) const noexcept requires has_motif_state_v<Derived>
+void ChunkBase<T, Derived>::read_block(int first, int count, T* out, const T* offset_slot) const noexcept
+    requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
     const T* const                  vals = values_load();
@@ -847,11 +844,9 @@ void ChunkBase<T, Derived>::read_block(int first,
 }
 
 template <typename T, typename Derived>
-bool ChunkBase<T, Derived>::read_block_or_constant(int first,
-                                                   int count,
-                                                   T* out,
-                                                   T& cst,
-                                                   const T* offset_slot) const noexcept requires has_motif_state_v<Derived>
+bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out, T& cst, const T* offset_slot)
+    const noexcept
+    requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
     const T* const                  vals = values_load();
@@ -966,7 +961,7 @@ void ChunkBase<T, Derived>::free_values(T* ptr, [[maybe_unused]] int thr_rank)
 }
 
 template <typename T, typename Derived>
-auto& ChunkBase<T, Derived>::get_chunk_allocator([[maybe_unused]] int thr_rank,
+auto& ChunkBase<T, Derived>::get_chunk_allocator([[maybe_unused]] int          thr_rank,
                                                  [[maybe_unused]] unsigned int key) noexcept
 {
     if constexpr (build_config::use_fast_alloc)
@@ -1163,8 +1158,8 @@ template <bool Relaxed>
 
 template <typename T, typename Derived>
 template <bool Relaxed>
-[[nodiscard]] T ChunkBase<T, Derived>::element_at(int offset,
-                                                  const T* offset_slot) const noexcept requires has_motif_state_v<Derived>
+[[nodiscard]] T ChunkBase<T, Derived>::element_at(int offset, const T* offset_slot) const noexcept
+    requires has_motif_state_v<Derived>
 {
     if constexpr (Relaxed)
     {
@@ -1179,8 +1174,8 @@ template <bool Relaxed>
 
 template <typename T, typename Derived>
 template <bool Relaxed>
-[[nodiscard]] T ChunkBase<T, Derived>::element_at_unguarded(int offset,
-                                                            const T* offset_slot) const noexcept requires has_motif_state_v<Derived>
+[[nodiscard]] T ChunkBase<T, Derived>::element_at_unguarded(int offset, const T* offset_slot) const noexcept
+    requires has_motif_state_v<Derived>
 {
     const T* const vals = values_load();
     if constexpr (!Relaxed)

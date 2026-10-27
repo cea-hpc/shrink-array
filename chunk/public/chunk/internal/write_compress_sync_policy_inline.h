@@ -41,7 +41,7 @@ void WriteCompressSyncPolicy<ProxyT, Enabled>::ensure_initialized()
 }
 
 template <typename ProxyT, bool Enabled>
-[[gnu::always_inline]] inline void WriteCompressSyncPolicy<ProxyT, Enabled>::announce_write(int thr,
+[[gnu::always_inline]] inline void WriteCompressSyncPolicy<ProxyT, Enabled>::announce_write(int         thr,
                                                                                             const void* chunk) noexcept
 {
     if (dekker::asymmetric_active()) [[likely]]

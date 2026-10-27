@@ -569,10 +569,10 @@ static void motif_compression(const char* tname, long nch)
         std::vector<T> ref(static_cast<std::size_t>(n));
         for (long i = 0; i < n; ++i)
         {
-            const long c                     = i / csz;
-            const long j                     = i % csz;
-            ref[static_cast<std::size_t>(i)] = Ch::wrapping_add(static_cast<T>((j % 7) * 3 + j / 8 + 1),
-                                                                static_cast<T>(c * stride));
+            const long c = i / csz;
+            const long j = i % csz;
+            ref[static_cast<std::size_t>(i)] =
+                Ch::wrapping_add(static_cast<T>((j % 7) * 3 + j / 8 + 1), static_cast<T>(c * stride));
         }
         return ref;
     };
@@ -592,8 +592,8 @@ static void motif_compression(const char* tname, long nch)
 
     // M: the connectivity written in order.
     const pattern::MotifStats before = Region::stats();
-    std::vector<T>   ref    = connectivity(1000);
-    Arr              arr(n);
+    std::vector<T>            ref    = connectivity(1000);
+    Arr                       arr(n);
     write_range(arr, ref, 0, n);
     expect_same("M  written in order", arr, ref);
     const long nm = motif_chunks(arr, nch);
@@ -625,8 +625,8 @@ static void motif_compression(const char* tname, long nch)
     // O: random chunks: no motif is admitted (each is a first sighting).
     {
         const pattern::MotifStats before_o = Region::stats();
-        const auto       ref_r    = random(777);
-        Arr              arr_r(n);
+        const auto                ref_r    = random(777);
+        Arr                       arr_r(n);
         write_range(arr_r, ref_r, 0, n);
         expect_same("O  random chunks", arr_r, ref_r);
         expect_eq("O  motif chunks", motif_chunks(arr_r, nch), 0);
@@ -634,7 +634,8 @@ static void motif_compression(const char* tname, long nch)
         // The same chunks rewritten unchanged: each motif seen again, by the same chunk.
         write_range(arr_r, ref_r, 0, n);
         expect_same("O  rewritten unchanged", arr_r, ref_r);
-        expect_eq("O  motifs registered, rewritten", static_cast<long>(Region::stats().registered - before_o.registered), 0);
+        expect_eq("O  motifs registered, rewritten",
+                  static_cast<long>(Region::stats().registered - before_o.registered), 0);
     }
 
     // P: the reclaim. Every chunk rewritten at random: no chunk points at a motif any more,

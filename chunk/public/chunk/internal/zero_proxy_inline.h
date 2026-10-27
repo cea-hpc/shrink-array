@@ -820,9 +820,9 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::set_num_tab() noexcept
 }
 
 template <typename Derived, typename T, bool Enabled>
-[[nodiscard]] int zero::ProxyFastCompPolicy<Derived, T, Enabled>::get_num_tab_async(
-    auto* ctx,
-    [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept
+[[nodiscard]] int
+zero::ProxyFastCompPolicy<Derived, T, Enabled>::get_num_tab_async(auto*                               ctx,
+                                                                  [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept
 {
     // The context's num_tab, captured at enqueue: the one the replay proxy
     // is armed with (make_proxy_with_info), without a registry scan per
