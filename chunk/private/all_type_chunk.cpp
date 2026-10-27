@@ -59,6 +59,7 @@ AllTypeChunk::AllTypeChunk()
 void AllTypeChunk::ensure_ready()
 {
     static std::once_flag once;
+
     std::call_once(once,
                    []
                    {
@@ -232,6 +233,7 @@ void finalize_parallel_phase()
     // phase first, so the flush and the compression below run on teams of
     // the std backend (nothing otherwise).
     pmp::leave_application_phase();
+
     if constexpr (phase_guard::tracked)
     {
         phase_guard::next_phase();
@@ -343,6 +345,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
     int team = 0;
+
     pmp::team(pmp::Options{},
               [&](pmp::Team& /*team*/)
               {
@@ -356,6 +359,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
                       elm->sweep_rank(thr, apply);
                   }
               });
+
     for (auto* elm : work)
     {
         if (elm->sweep_mops_up(apply))
@@ -390,7 +394,6 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
     return std::ranges::any_of(get_list_type_chunk(),
                                [max_thr](const auto* elm) { return elm->have_chunk_to_compress_potentially(max_thr); });
 }
-
 
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(bool in_parallel) const
