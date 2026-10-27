@@ -105,7 +105,7 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
 
     /// @brief Build an array holding the elements of @p il.
     /// @param il Source values.
-    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
+    explicit Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /// @brief Release the storage, then the registry entry (ArrayImpl::destroy_storage()).
     ~Array()
