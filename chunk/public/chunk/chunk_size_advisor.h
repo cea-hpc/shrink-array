@@ -75,7 +75,7 @@
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 #include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
 #include "chunk/internal/print.h"              // shrink_array::println
-#include "chunk/chunk_traits.h"               // has_motif_state_v (pattern::Array's motif chunks)
+#include "chunk/chunk_traits.h"                // has_motif_state_v (pattern::Array's motif chunks)
 #include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
 
 namespace shrink_array
@@ -134,8 +134,8 @@ template <typename Arr>
     using ChunkT = typename Arr::ChunkType;
     using T      = typename Arr::value_type;
     static thread_local std::array<std::vector<T>, 2> buffers;
-    std::vector<T>&      scratch = buffers[static_cast<std::size_t>(which)];
-    const T* const       vals    = tab.chunk_list_[idx].values_load();
+    std::vector<T>&                                   scratch = buffers[static_cast<std::size_t>(which)];
+    const T* const                                    vals    = tab.chunk_list_[idx].values_load();
     if (!ChunkT::is_motif_ptr(vals))
     {
         return vals;
@@ -780,15 +780,16 @@ struct ChunkSizeAdvisor
                                         {
                                             if constexpr (has_motif_state_v<typename Arr::ChunkType>)
                                             {
-                                                ok = uniform_range(internal::motif_chunk_data(tab, cc, 1),
-                                                                   static_cast<std::size_t>(p0 - (cc * chunk_sz)),
-                                                                   static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                                ok =
+                                                    uniform_range(internal::motif_chunk_data(tab, cc, 1),
+                                                                  static_cast<std::size_t>(p0 - (cc * chunk_sz)),
+                                                                  static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
                                             }
                                             else
                                             {
-                                                ok = uniform_range(ch.values_load(),
-                                                                   static_cast<std::size_t>(p0 - (cc * chunk_sz)),
-                                                                   static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                                ok = uniform_range(
+                                                    ch.values_load(), static_cast<std::size_t>(p0 - (cc * chunk_sz)),
+                                                    static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
                                             }
                                         }
                                         if (ok && has_v)

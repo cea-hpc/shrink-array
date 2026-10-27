@@ -107,7 +107,7 @@
 #include "chunk/chunk_traits.h"       // forward decls + default IntType = int
 #include "chunk/zero_any_array.h"     // zero_any::Array (H)
 #include "chunk/pattern_array.h"      // pattern::Array, pattern::MotifRegion
-#include "chunk/chunk_size_advisor.h"  // ChunkSizeAdvisor (R)
+#include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor (R)
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/zero_chunk.h"         // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"             // chunk_config::use_zero_any, build_config::has_not_ompt
@@ -712,9 +712,9 @@ static void advisor_agrees(const char* tname, long nch)
     write_range(parr, ref, 0, n);
     write_range(zarr, ref, 0, n);
     expect_true("R  pattern has motif chunks", motif_chunks(parr, nch) > 0);
-    const ChunkSizeReport pr = ChunkSizeAdvisor<T>::analyze(parr);
-    const ChunkSizeReport zr = ChunkSizeAdvisor<T>::analyze(zarr);
-    bool same = pr.table.size() == zr.table.size() && !pr.table.empty();
+    const ChunkSizeReport pr   = ChunkSizeAdvisor<T>::analyze(parr);
+    const ChunkSizeReport zr   = ChunkSizeAdvisor<T>::analyze(zarr);
+    bool                  same = pr.table.size() == zr.table.size() && !pr.table.empty();
     for (std::size_t i = 0; same && i < pr.table.size(); ++i)
     {
         const auto& a = pr.table[i];

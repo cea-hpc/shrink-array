@@ -257,7 +257,7 @@ class MotifRegion
     ///        carved is in segment_ids()).
     struct Segment
     {
-        std::atomic<std::size_t> count{0};  ///< Elements per entry; 0: not handed out. Read lock-free (find()).
+        std::atomic<std::size_t> count{0};   ///< Elements per entry; 0: not handed out. Read lock-free (find()).
         std::size_t              bytes  = 0; ///< Bytes per entry (cache-line rounded).
         std::size_t              carved = 0; ///< Slots carved.
     };
@@ -265,9 +265,9 @@ class MotifRegion
     /// @brief One entry size: its open segment and its reclaimed identifiers. Under #mutex_.
     struct SizeClass
     {
-        std::size_t                count = 0;           ///< Elements per entry.
+        std::size_t                count = 0;             ///< Elements per entry.
         std::size_t                open  = segment_count; ///< The segment being carved; segment_count: none.
-        std::vector<std::uint32_t> free_ids;            ///< Reclaimed identifiers of this size.
+        std::vector<std::uint32_t> free_ids;              ///< Reclaimed identifiers of this size.
     };
 
     /// @brief The segment @p ptr (inside the region) lies in.
@@ -320,22 +320,25 @@ class MotifRegion
         return generations_storage_.value;
     }
 
-    static inline std::mutex                 mutex_;          ///< Serialises registrations and reclaims.
-    static inline std::atomic<std::byte*>    begin_{nullptr}; ///< Start of the reservation; null before the first.
-    static inline std::atomic<std::size_t>   next_id_{1};     ///< The next identifier carved.
-    static inline std::size_t                segments_used_ = 0; ///< Segments handed out. Under #mutex_.
-    static inline constinit std::array<Segment, segment_count> segments_{}; ///< The segments.
-    static inline std::atomic<IndexTable*>   index_{nullptr}; ///< The current index generation.
-    static inline std::atomic<std::size_t>   entries_{0};     ///< Live entries.
-    static inline std::atomic<std::size_t>   registered_{0};  ///< MotifStats::registered.
-    static inline std::atomic<std::size_t>   first_seen_{0};  ///< MotifStats::first_seen.
-    static inline std::atomic<std::size_t>   reclaims_{0};    ///< MotifStats::reclaims.
-    static inline std::atomic<std::size_t>   freed_{0};       ///< MotifStats::freed.
-    static inline std::atomic<std::size_t>   full_{0};        ///< MotifStats::full.
-    static inline std::atomic<std::size_t>   sizes_{0};       ///< MotifStats::sizes.
-    static inline std::array<std::atomic<std::uint16_t>, std::size_t{1} << probation_bits> probation_{}; ///< First sightings.
-    static inline constinit internal::Immortal<std::vector<std::uint8_t>> live_storage_{};   ///< Live flag per identifier.
-    static inline constinit internal::Immortal<std::vector<const T*>> entry_by_id_storage_{}; ///< Entry of each identifier.
+    static inline std::mutex               mutex_;             ///< Serialises registrations and reclaims.
+    static inline std::atomic<std::byte*>  begin_{nullptr};    ///< Start of the reservation; null before the first.
+    static inline std::atomic<std::size_t> next_id_{1};        ///< The next identifier carved.
+    static inline std::size_t              segments_used_ = 0; ///< Segments handed out. Under #mutex_.
+    static inline constinit std::array<Segment, segment_count> segments_{};     ///< The segments.
+    static inline std::atomic<IndexTable*>                     index_{nullptr}; ///< The current index generation.
+    static inline std::atomic<std::size_t>                     entries_{0};     ///< Live entries.
+    static inline std::atomic<std::size_t>                     registered_{0};  ///< MotifStats::registered.
+    static inline std::atomic<std::size_t>                     first_seen_{0};  ///< MotifStats::first_seen.
+    static inline std::atomic<std::size_t>                     reclaims_{0};    ///< MotifStats::reclaims.
+    static inline std::atomic<std::size_t>                     freed_{0};       ///< MotifStats::freed.
+    static inline std::atomic<std::size_t>                     full_{0};        ///< MotifStats::full.
+    static inline std::atomic<std::size_t>                     sizes_{0};       ///< MotifStats::sizes.
+    static inline std::array<std::atomic<std::uint16_t>, std::size_t{1} << probation_bits>
+        probation_{}; ///< First sightings.
+    static inline constinit internal::Immortal<std::vector<std::uint8_t>>
+        live_storage_{}; ///< Live flag per identifier.
+    static inline constinit internal::Immortal<std::vector<const T*>>
+        entry_by_id_storage_{}; ///< Entry of each identifier.
     static inline constinit internal::Immortal<std::vector<SizeClass>> size_classes_storage_{}; ///< One per entry size.
     static inline constinit internal::Immortal<std::vector<std::vector<std::uint32_t>>>
         segment_ids_storage_{}; ///< Per segment, the identifier of each slot carved.

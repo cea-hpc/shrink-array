@@ -205,9 +205,9 @@ T* pattern::MotifRegion<T>::take_slot(std::size_t count)
         {
             return nullptr;
         }
-        cls.open      = segments_used_++;
-        Segment& seg  = segments_[cls.open];
-        seg.bytes     = bytes;
+        cls.open     = segments_used_++;
+        Segment& seg = segments_[cls.open];
+        seg.bytes    = bytes;
         // Before any entry of the segment is published (index_publish's release).
         seg.count.store(count, std::memory_order_relaxed);
     }
