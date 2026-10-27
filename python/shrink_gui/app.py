@@ -6,7 +6,7 @@ import time
 
 from PySide6.QtCore import QItemSelectionModel, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCursor
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu, QPlainTextEdit,
                                QPushButton, QScrollArea, QSplitter, QStyle, QSystemTrayIcon, QTabWidget,
                                QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget)
@@ -25,7 +25,7 @@ from shrink_gui.tab_errors import ErrorsTab
 from shrink_gui.tab_speedup_chart import SpeedupChart
 from shrink_gui.tab_summary import SummaryTab
 from shrink_gui.tooltips import Tooltips
-from shrink_gui.widgets import DurationBox, LogView, OptionsForm, TLabel
+from shrink_gui.widgets import DurationBox, LogView, OptionsForm, RowVisibleFormLayout, TLabel
 
 
 class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab, BenchChart, ErrorsTab,
@@ -134,7 +134,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.repo = QLineEdit(self._mget("repo"))
         self.runs_dir = QLineEdit(self._mget("runs_dir"))
         self.local_dir = QLineEdit(self._get("local_dir"))
-        where = QFormLayout()
+        where = RowVisibleFormLayout()     # setRowVisible(): machine_panel, Qt < 6.4 too
         self.where = where
         where.addRow("Partition", self.preset)
         where.addRow("Soumission", self.mode)

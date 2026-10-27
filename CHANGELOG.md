@@ -52,6 +52,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- shrink_gui runs on PySide6 6.2 and 6.3: QFormLayout's setRowVisible() / isRowVisible() came
+  with Qt 6.4, and the window stopped at start-up without them (AttributeError in
+  machine_panel). `widgets.RowVisibleFormLayout` provides them on every 6.x -- Qt's own from
+  6.4, the row's widgets hidden one by one before (a hidden row then keeps its vertical spacing).
 - shrink_gui: the Log pane shows, as soon as a job is submitted, the run directory, the
   program's command line and the submission command (`cd <run> && ccc_msub job.sh`, with the
   batch system's answer); until now it stayed empty while the job waited in the queue, since
