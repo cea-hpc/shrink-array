@@ -50,6 +50,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
     auto& tab_mask      = bench_arr.tab_mask;
+    auto& tab_conn      = bench_arr.tab_conn;
 
     [[maybe_unused]] auto& bench_arrays = bench_arr;
 
@@ -78,6 +79,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     tab_point.clear();
     tab_cell.clear();
     tab_mask.clear();
+    tab_conn.clear();
 
     // Chunk instrumentation counters (CHUNK_STATS). Printed HERE, after the
     // tab_*.clear() above: clear() runs clear_core(), which is what feeds

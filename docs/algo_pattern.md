@@ -157,6 +157,16 @@ pass compresses each candidate at its own size.
 
 ## 9. Results
 
+`shrink_bench` carries a mesh connectivity, `tab_conn` (`examples/shrink_bench/bench_phase_conn.cpp`,
+`--no_conn` to leave it out): about `sz` ints, whole rows of 256 hexahedral cells; each iteration
+gathers one band of rows in 16 and renumbers it (the node order rotated, or put back), so the
+pass compresses a band to another shared motif at every iteration. It is a `pattern::Array<int>`
+in the `zero_one_value` and `zero_any` builds (its machinery is `zero_any`'s, header-only: it
+lives in either library), a `zero::Array<int>` in a `zero` build, a vector in the baseline; its
+checksums are checked against the baseline's at every checkpoint, like every other array. On a
+check run (`--divisor 50 --iter_max 40`, 4 threads), 384 of its 385 chunks are compressed in both
+builds (1,536 of 1,537 at the dynamic size 64); the `zero` build compresses one.
+
 `examples/access_cost/access_cost_pattern.cpp` (`access_cost_pattern_<size>`) times a
 `std::vector<long>`, a `zero_any::Array<long>` and a `pattern::Array<long>` in the same binary,
 and prints the memory of the connectivity of a structured hexahedral mesh (256 cells wide, 8

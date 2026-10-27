@@ -201,6 +201,19 @@ void bench_phase_mask_fill(BenchArrays& bench_arr);
 void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count);
 
 /**
+ * @brief tab_conn's starting mesh (bench_phase_conn.cpp): every row in its first
+ *        numbering. Its own region, after bench_phase_fill.
+ */
+void bench_phase_conn_fill(BenchArrays& bench_arr);
+
+/**
+ * @brief tab_conn's iteration @p iter: band iter % bench_conn_bands read into
+ *        @p conn_sum (the gather), then renumbered (its node order rotated, or
+ *        put back).
+ */
+void bench_phase_conn_compute(BenchArrays& bench_arr, Int iter, long& conn_sum);
+
+/**
  * @brief Stress (a): a team one thread SHORT of the default, over [beg_s, end_s).
  * @details Moved verbatim. Runs on ~1/5 of iterations (disjoint k-modulo gate in
  *          main()), enough to surface rare bugs without dominating the baseline.

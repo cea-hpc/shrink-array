@@ -100,6 +100,7 @@ de dépréciation.
 | `BENCH_SCHED_BLOCK` | taille des blocs d'ordonnancement des phases du banc (64 ; 0 = tranches contiguës) |
 | `NO_IO`, `COMPRESS` | équivalents de `--no_io` et `--compress` |
 | `--no_mask`, `--mask_scale <x>` | sans `tab_mask` ; ou sa taille, `x × sz` (défaut 1/32) |
+| `--no_conn` | sans `tab_conn`, la connectivité de maillage (`pattern::Array` dans les builds `zero_one_value` et `zero_any`) |
 | `--no_struct` | sans les tableaux de structures (`Point3`, `Cell`) |
 
 ## 5. Macros de compilation

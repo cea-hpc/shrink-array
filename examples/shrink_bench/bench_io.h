@@ -429,9 +429,12 @@ void read_check_binary_file(Int                ind,
 
             const bool is_val1 = chunk_t.is_cst_val1();
 
-            // false everywhere but zero_one_value, exactly as the #else branch gave.
+            // false everywhere but zero_one_value, exactly as the #else branch gave --
+            // and for a zero_any-family array in a zero_one_value build (tab_conn's
+            // pattern::Array): as in a zero_any build.
             bool is_val2 = false;
-            if constexpr (chunk_config::use_zero_one_value)
+            if constexpr (chunk_config::use_zero_one_value &&
+                          !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
             {
                 static constexpr bool is_bool     = shrink_array::is_bool_like_v<T>; // bool, Bit
                 static constexpr bool is_not_bool = !is_bool;
@@ -898,8 +901,10 @@ void read_check_binary_file(Int                ind,
                     else if (
                         [&]
                         {
-                            // bool / Bit: one second value, no index.
-                            if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T>)
+                            // bool / Bit: one second value, no index; a zero_any-family
+                            // array (tab_conn's pattern::Array) has none either.
+                            if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T> &&
+                                          !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
                             {
                                 return chunk_t.is_cst_val2(data_check.get_ind_second_value());
                             }

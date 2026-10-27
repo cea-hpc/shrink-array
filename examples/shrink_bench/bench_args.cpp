@@ -83,6 +83,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     bool   test_prealloc = false;      // --test_prealloc: alloc_chunk before a partial loop
     bool   no_struct     = false;      // --no_struct: no Point3 / Cell arrays (bench_args.h)
     bool   no_mask       = false;      // --no_mask: no tab_mask (bench_args.h)
+    bool   no_conn       = false;      // --no_conn: no tab_conn (bench_args.h)
     double mask_scale    = 1.0 / 32.0; // --mask_scale: tab_mask's size / sz (bench_args.h)
 
     // Nouveaux facteurs
@@ -141,6 +142,10 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             else if (arg == "--no_mask")
             {
                 no_mask = true;
+            }
+            else if (arg == "--no_conn")
+            {
+                no_conn = true;
             }
             else if (arg == "--mask_scale")
             {
@@ -216,6 +221,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     args.test_prealloc   = test_prealloc;
     args.no_struct       = no_struct;
     args.no_mask         = no_mask;
+    args.no_conn         = no_conn;
     args.mask_scale      = mask_scale;
     args.multiply_factor = multiply_factor;
     args.divisor_factor  = divisor_factor;

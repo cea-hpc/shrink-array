@@ -75,7 +75,7 @@
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 #include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
 #include "chunk/internal/print.h"              // shrink_array::println
-#include "chunk/chunk_traits.h"                // has_motif_state_v (pattern::Array's motif chunks)
+#include "chunk/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v (pattern::Array)
 #include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
 
 namespace shrink_array
@@ -219,11 +219,13 @@ struct ChunkSizeAdvisor
             // bool / Bit: one second value, `true`, no index --
             // get_ind_second_value() aborts for them; classify() below asks
             // the unindexed is_cst_val2().
-            if constexpr (chunk_config::use_zero_one_value && !is_bool_like_v<T>)
+            // A zero_any-family array in a zero_one_value build (pattern::Array):
+            // no index, the zero_any branches below.
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<typename Arr::ChunkType> && !is_bool_like_v<T>)
             {
                 return tab.get_ind_second_value();
             }
-            else if constexpr (chunk_config::use_zero_one_value)
+            else if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<typename Arr::ChunkType>)
             {
                 return 0;
             }
@@ -240,7 +242,7 @@ struct ChunkSizeAdvisor
         const InT<T> cst1_value = Arr::ChunkType::first_value;
         bool         has_cst2   = false;
         T            cst2_value = cst1_value;
-        if constexpr ((chunk_config::use_zero_one_value || chunk_config::use_zero_any) &&
+        if constexpr ((chunk_config::use_zero_one_value || is_zero_any_family_v<typename Arr::ChunkType>) &&
                       requires { tab.get_second_value(); })
         {
             cst2_value = tab.get_second_value();
@@ -253,7 +255,8 @@ struct ChunkSizeAdvisor
             // below to it: the finer rows would miss every other uniform
             // sub-block, and a costly coarsening could never look worse than
             // refining back.
-            if constexpr (chunk_config::use_zero_any)
+            // The family, not the build: pattern::Array in a zero_one_value build too.
+            if constexpr (is_zero_any_family_v<typename Arr::ChunkType>)
             {
                 return true;
             }
@@ -286,7 +289,8 @@ struct ChunkSizeAdvisor
                     return 2;
                 }
             }
-            if constexpr (chunk_config::use_zero_any)
+            // The family, not the build (as compressible_value).
+            if constexpr (is_zero_any_family_v<typename Arr::ChunkType>)
             {
                 if (chunk.is_cst_val2())
                 {

@@ -167,6 +167,18 @@ et la passe compresse chaque candidat à sa propre taille.
 
 ## 9. Résultats
 
+`shrink_bench` porte une connectivité de maillage, `tab_conn`
+(`examples/shrink_bench/bench_phase_conn.cpp`, `--no_conn` pour l'omettre) : environ `sz` entiers,
+des rangées entières de 256 mailles hexaédriques ; chaque itération lit une bande de rangées sur 16
+et la renumérote (l'ordre des nœuds tourné, ou rétabli), si bien que la passe recompresse une bande
+vers un autre motif partagé à chaque itération. C'est un `pattern::Array<int>` dans les builds
+`zero_one_value` et `zero_any` (sa mécanique est celle de `zero_any`, en en-têtes : il vit dans
+l'une ou l'autre bibliothèque), un `zero::Array<int>` dans un build `zero`, un vecteur dans la
+référence ; ses checksums sont comparés à ceux de la référence à chaque point de contrôle, comme
+pour tous les tableaux. Sur un run de contrôle (`--divisor 50 --iter_max 40`, 4 threads), 384 de
+ses 385 chunks sont compressés dans les deux builds (1 536 sur 1 537 à la taille dynamique 64) ;
+le build `zero` en compresse un.
+
 `examples/access_cost/access_cost_pattern.cpp` (`access_cost_pattern_<taille>`) chronomètre un
 `std::vector<long>`, un `zero_any::Array<long>` et un `pattern::Array<long>` dans le même binaire,
 et affiche la mémoire de la connectivité d'un maillage hexaédrique structuré (256 mailles de

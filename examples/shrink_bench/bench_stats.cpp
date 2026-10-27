@@ -54,6 +54,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
     auto& tab_mask      = bench_arr.tab_mask;
+    auto& tab_conn      = bench_arr.tab_conn;
 
     auto lbd_fill_values = [&](const std::string& name, const auto& tab, auto sec_val)
     {
@@ -121,7 +122,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         const Int  nb     = census[2];
 
         // Over the array's own size: tab_float and tab_char hold 2 * sz
-        // elements, tab_short sz / 2, tab_mask mask_scale * sz.
+        // elements, tab_short sz / 2, tab_mask mask_scale * sz, tab_conn whole rows.
         const double pc  = double(nb) / double(ssz);
         const double pcz = double(nbz) / double(ssz);
         const double pcv = double(nbv) / double(ssz);
@@ -250,6 +251,10 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
             {
                 lbd_fill_values("tab_mask", tab_mask, second_value_b);
             }
+            if (bench_arr.with_conn) // --no_conn
+            {
+                lbd_fill_values("tab_conn", tab_conn, second_value_i);
+            }
             if (bench_arr.with_struct) // --no_struct
             {
                 lbd_fill_values("tab_point", tab_point, second_value_p);
@@ -281,6 +286,10 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                 if (bench_arr.with_mask)
                 {
                     lbd_fill_chunk("tab_mask", tab_mask);
+                }
+                if (bench_arr.with_conn)
+                {
+                    lbd_fill_chunk("tab_conn", tab_conn);
                 }
                 if (bench_arr.with_struct)
                 {
@@ -329,6 +338,7 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
     auto& tab_quant     = bench_arr.tab_quant;
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
+    auto& tab_conn      = bench_arr.tab_conn;
 
     const auto lbd_check_sum = [&]
     {
@@ -345,6 +355,11 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
             if (bench_arr.with_struct) // --no_struct
             {
                 print_checksums(names.data() + 15, tab_point, tab_cell);
+            }
+            if (bench_arr.with_conn) // --no_conn
+            {
+                static constexpr std::array<const char*, 1> conn_name{"tab_conn"};
+                print_checksums(conn_name.data(), tab_conn);
             }
         }
     };
