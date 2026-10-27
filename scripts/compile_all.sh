@@ -195,6 +195,12 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
   --no-hardening   Do not add -DCHUNK_GLIBCXX_ASSERTIONS=ON to Debug/sanitizer builds,
                    nor -DCHUNK_UBSAN=ON to the address-sanitizer builds (default: added).
   --llvm-cs=<N>    Also build an llvm RelWithDebInfo variant with CHUNK_SIZE=N (power of two).
+  --pool=<id>      Share the configurations with the other runs given the same
+                   <id> (one batch job per node; shrink_gui's "Nodes" field):
+                   each run builds those it claims first, in the usual order,
+                   and skips the others' (functions_for_compile.sh, pool_init).
+                   <id>: a name (under \$CHUNK_BUILD_REP/.pools) or a directory
+                   on a file system all the nodes share. A new id per submission.
   -h, --help    Show this help.
 
 The std threading backend (CHUNK_THREADS=std) is built next to the OpenMP one,
@@ -257,6 +263,12 @@ for arg in "$@"; do
             shift ;;
         --target=*)
             export CHUNK_BUILD_TARGET="${arg#*=}"
+            shift
+            ;;
+        --pool=*)
+            # Checked and created by pool_init, once build_rep is known.
+            export CHUNK_POOL="${arg#*=}"
+            [ -n "$CHUNK_POOL" ] || { echo "ERROR: --pool= (expected a name or a directory)" >&2; exit 2; }
             shift
             ;;
         --exec=*)
@@ -387,6 +399,7 @@ build_rep="$CHUNK_BUILD_REP"
 run_cmd "echo $build_rep"
 
 run_cmd "create_build_rep"
+pool_init
 
 # The gnu family runs FIRST: nothing of ours is in flight yet, so the drain
 # below waits for nothing, and the builds it leaves running are handed over to
@@ -936,6 +949,7 @@ fi
 echo -e '\n─── Waiting for remaining builds ───\n'
 wait_all
 rc=$?
+pool_summary
 # A --target / --exec that let nothing through is an error, not a quiet "OK".
 if ! check_arg_epilogue; then
     echo -e "\nend — nothing built\n"

@@ -27,7 +27,7 @@
 #include <utility>     // std::pair (the clear() summary)
 #include <vector>      // std::vector
 
-#include "chunk/zero_any_array.h"                       // zero_any::Array, the class these bodies belong to
+#include "chunk/zero_any_array.h"                       // zero_any::ArrayImpl, the class these bodies belong to
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled (the size prediction's gate)
@@ -48,8 +48,8 @@
 namespace shrink_array
 {
 
-template <ArrayChunkElement T, typename IntType>
-void zero_any::Array<T, IntType>::rebuild_storage(IntType sz)
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
 {
     if (sz)
     {
@@ -76,7 +76,7 @@ void zero_any::Array<T, IntType>::rebuild_storage(IntType sz)
             // old=0: full (re)build of the metadata tables. Correct because every
             // entry is reinitialised just below, BEFORE any refill, so no proxy
             // holds a cached ptr_second_value into a table being reallocated.
-            Proxy<T>::resize_tab_is_int(num_tab_, 0, nb_chunk_);
+            ProxyType::resize_tab_is_int(num_tab_, 0, nb_chunk_);
             this->assign_alloc_key(); // own slabs if large enough (see alloc_key_)
 
             // Per-chunk init: every iteration writes slot i of tables sized just
@@ -87,9 +87,9 @@ void zero_any::Array<T, IntType>::rebuild_storage(IntType sz)
             // parallel_storage_init::parallel_init_min_chunks.
             const auto init_chunk = [&](int num_chunk)
             {
-                Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab_, num_chunk, 0);
-                Proxy<T>::tab_type_cst_val[num_tab_][num_chunk] = CstSlot::first;
-                Proxy<T>::BaseSpec::set(num_tab_, num_chunk, T{});
+                ProxyType::Base::set_tab_is_inside_chunk_list_to_compress(num_tab_, num_chunk, 0);
+                ProxyType::tab_type_cst_val[num_tab_][num_chunk] = CstSlot::first;
+                ProxyType::BaseSpec::set(num_tab_, num_chunk, T{});
                 this->construct_chunk(num_chunk).init_after_constructor();
             };
             parallel_storage_init::for_each_chunk(nb_chunk_, init_chunk);
@@ -107,8 +107,8 @@ void print_type_name(int nb_val2)
     std::println("{:<30} → Number of compression values : {}", "Type: " + type_name<T>(), nb_val2);
 }
 
-template <ArrayChunkElement T, typename IntType>
-void zero_any::Array<T, IntType>::print_compression_stats(std::ostream& os) const
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::print_compression_stats(std::ostream& os) const
 {
     if (nb_chunk_ == 0)
     {
@@ -145,18 +145,18 @@ void zero_any::Array<T, IntType>::print_compression_stats(std::ostream& os) cons
                 {
                     return;
                 }
-                ++acc[*v0 == Chunk<T>::first_value ? 0 : 1];
+                ++acc[*v0 == ChunkType::first_value ? 0 : 1];
                 return;
             }
-            const CstSlot ct = Proxy<T>::tab_type_cst_val[num_tab_][j];
+            const CstSlot ct = ProxyType::tab_type_cst_val[num_tab_][j];
             ++acc[ct == CstSlot::first ? 0 : 1];
         });
     const int n_t1         = counts[1];
     const int n_compressed = counts[0] + n_t1;
     if constexpr (chunk_config::stats)
     {
-        add_chunk_still_compressed_at_exit<Chunk<T>>(n_compressed);
-        record_chunk_size_at_exit<Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
+        add_chunk_still_compressed_at_exit<ChunkType>(n_compressed);
+        record_chunk_size_at_exit<ChunkType>(static_cast<unsigned int>(this->size_policy_.size()));
     }
 
     // Shared layout/colours/verdict: see chunk_stats_printer.h.
@@ -165,8 +165,8 @@ void zero_any::Array<T, IntType>::print_compression_stats(std::ostream& os) cons
                                 /*n_cross=*/-1, /*cross_name=*/"", /*bool_elements=*/std::is_same_v<T, bool>);
 }
 
-template <ArrayChunkElement T, typename IntType>
-void zero_any::Array<T, IntType>::clear()
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::clear()
 {
     this->invalidate_proxies();
     // Chunk-size predictor (log only, no re-chunk; any_check only): scans the
@@ -187,13 +187,22 @@ void zero_any::Array<T, IntType>::clear()
                                   const auto& ck = chunk_list_[j];
                                   if (!ck.written())
                                   {
+                                      if constexpr (has_motif_state_v<ChunkType>)
+                                      {
+                                          // A motif chunk is no constant (stage 1: no advice on motifs).
+                                          if (ChunkType::is_motif_ptr(ck.values_load()))
+                                          {
+                                              summary[static_cast<std::size_t>(j)] = {false, T{}};
+                                              return;
+                                          }
+                                      }
                                       summary[static_cast<std::size_t>(j)] = {true, ck.read_value_scan(0)};
                                       return;
                                   }
                                   const auto v0                        = ck.constant_value(csz);
                                   summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
                               });
-            const auto& sh_inf    = *Proxy<T>::share_info_array;
+            const auto& sh_inf    = *ProxyType::share_info_array;
             const int   tab_index = sh_inf.get_num_tab(this->registry_key());
             report_size_prediction<T>(summary, csz, tab_index, "zero_any",
                                       sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
@@ -205,8 +214,8 @@ void zero_any::Array<T, IntType>::clear()
     clear_core();
 }
 
-template <ArrayChunkElement T, typename IntType>
-void zero_any::Array<T, IntType>::clear_core()
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::clear_core()
 {
     // Pin the ambient size to THIS array's own geometry before the sweep
     // below. Same rule as zero_one_value::Array::clear_core() -- see that
@@ -256,16 +265,16 @@ void zero_any::Array<T, IntType>::clear_core()
         m_size_ = 0;
 
         chunk_list_.clear();
-        Proxy<T>::clear_tab_is_int(num_tab_);
+        ProxyType::clear_tab_is_int(num_tab_);
 
         return;
     }
 
-    ManagerChunk<Chunk, T>::decrem_somme_chunk_create(nb_chunk_);
+    ManagerChunk2A::decrem_somme_chunk_create(nb_chunk_);
     // Recompute what derives from the total -- see zero::Array::clear_core():
     // otherwise a re-chunk leaves the threshold sized for the geometry it just left.
-    ManagerChunk<Chunk, T>::compute_size_buffer_reuse();
-    ManagerChunk<Chunk, T>::compute_size_max_number_of_chunk_to_check_compress();
+    ManagerChunk2A::compute_size_buffer_reuse();
+    ManagerChunk2A::compute_size_max_number_of_chunk_to_check_compress();
 
     if constexpr (chunk_config::not_use_compression_with_ompt)
     {
@@ -310,7 +319,7 @@ void zero_any::Array<T, IntType>::clear_core()
             if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
             {
                 const auto  csz           = static_cast<unsigned int>(this->size_policy_.size());
-                const auto& inside        = Proxy<T>::get_tab_is_inside_list_to_compress(num_tab_);
+                const auto& inside        = ProxyType::get_tab_is_inside_list_to_compress(num_tab_);
                 std::size_t missed_first  = 0;
                 std::size_t missed_second = 0;
                 std::size_t missed_other  = 0;
@@ -334,11 +343,11 @@ void zero_any::Array<T, IntType>::clear_core()
                     {
                         continue;
                     }
-                    if (*cst == static_cast<T>(Chunk<T>::first_value))
+                    if (*cst == static_cast<T>(ChunkType::first_value))
                     {
                         ++missed_first;
                     }
-                    else if (*cst == Proxy<T>::BaseSpec::get_tab_second_value(num_tab_, j).get())
+                    else if (*cst == ProxyType::BaseSpec::get_tab_second_value(num_tab_, j).get())
                     {
                         ++missed_second;
                     }
@@ -370,10 +379,10 @@ void zero_any::Array<T, IntType>::clear_core()
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<Chunk<T>>();
+                    increm_chunk_teardown_clear<ChunkType>();
                 }
-                chunk_list_[j].clear_st(&Proxy<T>::tab_type_cst_val[num_tab_][j],
-                                        Proxy<T>::BaseSpec::get_tab_second_value(num_tab_, j));
+                chunk_list_[j].clear_st(&ProxyType::tab_type_cst_val[num_tab_][j],
+                                        ProxyType::BaseSpec::get_tab_second_value(num_tab_, j));
             }
         }
 
@@ -383,7 +392,7 @@ void zero_any::Array<T, IntType>::clear_core()
         if (holds_cst2_registry_)
         {
             int nb_val2 = 0;
-            Chunk<T>::Holder::clear(nb_val2); // single thread here
+            ChunkType::Holder::clear(nb_val2); // single thread here
             holds_cst2_registry_ = false;
             if (nb_val2 != 0)
             {
@@ -400,7 +409,7 @@ void zero_any::Array<T, IntType>::clear_core()
             {
                 const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_);
 
-                std::vector<Chunk<T>*> ll_chunk_loc;
+                std::vector<ChunkType*> ll_chunk_loc;
                 ll_chunk_loc.reserve(nb_chunk0);
 
                 team.for_static<int>(
@@ -411,10 +420,10 @@ void zero_any::Array<T, IntType>::clear_core()
                         {
                             if constexpr (chunk_config::stats)
                             {
-                                increm_chunk_teardown_clear<Chunk<T>>();
+                                increm_chunk_teardown_clear<ChunkType>();
                                 // Released below without a compression: out of the live figures.
-                                add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                                    static_cast<long>(this->size_policy_.size()));
+                                add_chunk_released<ChunkType>(1, static_cast<long>(sizeof(T)) *
+                                                                     static_cast<long>(this->size_policy_.size()));
                             }
                             ll_chunk_loc.push_back(&chunk_list_[j]);
                         }
@@ -447,7 +456,7 @@ void zero_any::Array<T, IntType>::clear_core()
                         // buffer again (double-free). With cst_val1 stored, every compress
                         // path short-circuits (the CAS reads values == cst_val1 and
                         // returns nullptr). Mirrors the non-OMP clear_st path.
-                        ll_chunk_loc[k]->values_store(ChunkBase<T, Chunk<T>>::get_cst_val1());
+                        ll_chunk_loc[k]->values_store(ChunkBase<T, ChunkType>::get_cst_val1());
                     }
                 }
 
@@ -463,7 +472,7 @@ void zero_any::Array<T, IntType>::clear_core()
                         // Only the reference this array took (acquire_cst2_registry).
                         if (holds_cst2_registry_)
                         {
-                            Chunk<T>::Holder::clear(acc[0]);
+                            ChunkType::Holder::clear(acc[0]);
                             holds_cst2_registry_ = false;
                         }
                     });
@@ -479,7 +488,7 @@ void zero_any::Array<T, IntType>::clear_core()
 
     this->release_chunk_list(); // required by the allocator (a re-chunk keeps the buffer)
 
-    Proxy<T>::clear_tab_is_int(num_tab_);
+    ProxyType::clear_tab_is_int(num_tab_);
 
     nb_chunk_ = 0;
 
@@ -491,12 +500,12 @@ void zero_any::Array<T, IntType>::clear_core()
     // region. Key 0 (shared pool): nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        ManagerChunk<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
+        ManagerChunk2A::drain_reuse_list_for_size(this->size_policy_.size());
     }
 }
 
-template <ArrayChunkElement T, typename IntType>
-void zero_any::Array<T, IntType>::compress_int(pmp::Team& team)
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::compress_int(pmp::Team& team)
 {
     // Pin the ambient size to THIS array's geometry: the frees below route on
     // thread_chunk_size(), not on the buffer (see clear_core()); left to the
@@ -523,12 +532,12 @@ void zero_any::Array<T, IntType>::compress_int(pmp::Team& team)
             // Through SecondValueRef::get(), not the raw slot: under
             // CHUNK_SECOND_VALUE_INDEXED a slot holds the value's IDENTIFIER, and
             // `const T v = slot` would silently convert that integer into a T.
-            const T second_value = Proxy<T>::BaseSpec::get_tab_second_value(num_tab_, j).get();
+            const T second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab_, j).get();
 
             if (chunk.written())
             {
                 // second_value == first_value comes back as `first` only.
-                const auto scan = chunk.scan_constants(Chunk<T>::first_value, second_value,
+                const auto scan = chunk.scan_constants(ChunkType::first_value, second_value,
                                                        static_cast<unsigned int>(this->size_policy_.size()));
                 if (scan.first)
                 {
@@ -575,19 +584,19 @@ void zero_any::Array<T, IntType>::compress_int(pmp::Team& team)
     report(tab_nb2, "the second value");
 }
 
-template <ArrayChunkElement T, typename IntType>
-void zero_any::Array<T, IntType>::make_block_compression()
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::make_block_compression()
 {
     // Every rank's list, drained serially by the caller (no region opened
     // here, no writer handshake: nullptr proxy).
     for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
     {
-        Chunk<T>::make_block_compression(thr, nullptr);
+        ChunkType::make_block_compression(thr, nullptr);
     }
 }
 
-template <ArrayChunkElement T, typename IntType>
-void zero_any::Array<T, IntType>::release_chunk_range(int first, int last)
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::release_chunk_range(int first, int last)
 {
     if (first >= last)
     {
@@ -603,17 +612,17 @@ void zero_any::Array<T, IntType>::release_chunk_range(int first, int last)
     {
         // Before Proxy::resize_tab_is_int() truncates the per-chunk type
         // table: clear_st() reads tab_type_cst_val[num_tab][j].
-        const int num_tab = Proxy<T>::share_info_array->get_num_tab(this->registry_key());
+        const int num_tab = ProxyType::share_info_array->get_num_tab(this->registry_key());
         for (int j = first; j < last; ++j)
         {
             if (chunk_list_[j].written())
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<Chunk<T>>();
+                    increm_chunk_teardown_clear<ChunkType>();
                 }
-                chunk_list_[j].clear_st(&Proxy<T>::tab_type_cst_val[num_tab][j],
-                                        Proxy<T>::BaseSpec::get_tab_second_value(num_tab, j));
+                chunk_list_[j].clear_st(&ProxyType::tab_type_cst_val[num_tab][j],
+                                        ProxyType::BaseSpec::get_tab_second_value(num_tab, j));
             }
         }
     }
@@ -632,54 +641,54 @@ void zero_any::Array<T, IntType>::release_chunk_range(int first, int last)
                 {
                     if constexpr (chunk_config::stats)
                     {
-                        increm_chunk_teardown_clear<Chunk<T>>();
+                        increm_chunk_teardown_clear<ChunkType>();
                         // The size read here, not captured: stats builds only use it.
-                        add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
-                                                            static_cast<long>(this->size_policy_.size()));
+                        add_chunk_released<ChunkType>(1, static_cast<long>(sizeof(T)) *
+                                                             static_cast<long>(this->size_policy_.size()));
                     }
                     T* values_loc = chunk_list_[j].values_;
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
                     lbf.push_back(values_loc);
                     // Neutralise, as clear_core(): the buffer belongs to the
                     // reuse list now.
-                    chunk_list_[j].values_store(ChunkBase<T, Chunk<T>>::get_cst_val1());
+                    chunk_list_[j].values_store(ChunkBase<T, ChunkType>::get_cst_val1());
                 }
             });
     }
 }
 
-template <ArrayChunkElement T, typename IntType>
-void zero_any::Array<T, IntType>::resize(const IntType newsz)
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::resize(this Derived& self, const IntType newsz)
 {
-    this->invalidate_proxies();
-    const auto& sh_inf = *Proxy<T>::share_info_array;
+    self.invalidate_proxies();
+    const auto& sh_inf = *ProxyType::share_info_array;
 
-    const int     num_tab      = sh_inf.get_num_tab(this->registry_key());
-    const int     old_nb_chunk = nb_chunk_;
-    const IntType old_size     = this->m_size_; // the stale-tail reset at the end
+    const int     num_tab      = sh_inf.get_num_tab(self.registry_key());
+    const int     old_nb_chunk = self.nb_chunk_;
+    const IntType old_size     = self.m_size_; // the stale-tail reset at the end
 
-    Base2::resize_common(newsz);
-    if (nb_chunk_ > 0)
+    self.Base2::resize_common(newsz);
+    if (self.nb_chunk_ > 0)
     {
-        acquire_cst2_registry(); // an array built empty gets its chunks here
+        self.acquire_cst2_registry(); // an array built empty gets its chunks here
     }
 
-    Proxy<T>::resize_tab_is_int(num_tab, old_nb_chunk, nb_chunk_);
+    ProxyType::resize_tab_is_int(num_tab, old_nb_chunk, self.nb_chunk_);
 
     // The new chunks [old_nb_chunk, nb_chunk) and their table slots: a team of
     // its own outside a region, the calling thread inside one. Never an
     // orphaned `omp for`: inside a region it would construct only 1/N of a
     // thread's own array. Each iteration writes slot i of tables sized above.
-    parallel_storage_init::for_each_chunk(nb_chunk_ - old_nb_chunk,
-                                          [this, old_nb_chunk, num_tab](int k)
+    parallel_storage_init::for_each_chunk(self.nb_chunk_ - old_nb_chunk,
+                                          [&self, old_nb_chunk, num_tab](int k)
                                           {
                                               const int num_chunk = old_nb_chunk + k;
-                                              this->construct_chunk(num_chunk).init_after_constructor();
-                                              Proxy<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab,
-                                                                                                       num_chunk, 0);
-                                              Proxy<T>::tab_type_cst_val[num_tab][num_chunk] = CstSlot::first;
+                                              self.construct_chunk(num_chunk).init_after_constructor();
+                                              ProxyType::Base::set_tab_is_inside_chunk_list_to_compress(num_tab,
+                                                                                                        num_chunk, 0);
+                                              ProxyType::tab_type_cst_val[num_tab][num_chunk] = CstSlot::first;
                                               // T{}: the struct elements have no conversion from 0
-                                              Proxy<T>::BaseSpec::set(num_tab, num_chunk, T{});
+                                              ProxyType::BaseSpec::set(num_tab, num_chunk, T{});
                                           });
 
     // std::vector semantics for the regrown range [old_size, newsz): it reads
@@ -690,7 +699,7 @@ void zero_any::Array<T, IntType>::resize(const IntType newsz)
     // `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
-        const auto csz = static_cast<IntType>(this->chunk_size());
+        const auto csz = static_cast<IntType>(self.chunk_size());
         // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
         // the last element, so when old_size falls on a chunk boundary that
         // spare chunk holds stale values too.
@@ -700,9 +709,174 @@ void zero_any::Array<T, IntType>::resize(const IntType newsz)
         const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
         for (IntType i = old_size; i < stale_end; ++i)
         {
-            (*this)[i] = T{};
+            self[i] = T{};
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ArrayImpl<Derived>
+// ---------------------------------------------------------------------------
+
+template <typename Derived>
+bool zero_any::ArrayImpl<Derived>::operator==(this const Derived& self, const Derived& other) noexcept
+{
+    if (self.m_size_ != other.m_size_)
+    {
+        return false;
+    }
+    if (self.m_size_ == 0)
+    {
+        return true;
+    }
+    const auto  csz = static_cast<long long>(self.chunk_size());
+    std::atomic differ{false};
+    parallel_storage_init::for_each_chunk(
+        self.chunk_index_of(self.m_size_ - 1) + 1,
+        [&](int c)
+        {
+            if (differ.load(std::memory_order_relaxed))
+            {
+                return;
+            }
+            const long long lo = static_cast<long long>(c) * csz;
+            const long long hi = std::min(lo + csz, static_cast<long long>(self.m_size_));
+            for (long long i = lo; i < hi; ++i)
+            {
+                if (self.read_value(static_cast<IntType>(i)) != other.read_value(static_cast<IntType>(i)))
+                {
+                    differ.store(true, std::memory_order_relaxed);
+                    return;
+                }
+            }
+        });
+    return !differ.load(std::memory_order_relaxed);
+}
+
+template <typename Derived>
+std::expected<std::size_t, ReclaimRefusal> zero_any::ArrayImpl<Derived>::try_reclaim_second_values()
+{
+    if constexpr (std::is_same_v<T, bool>)
+    {
+        return 0; // one shared constant array, no registry (TabCstVal2Holder<bool>)
+    }
+    else
+    {
+        using Gvh = GlobalVecHolder<T>;
+        // Each refusal counted by cause as well (second_value_stats()).
+        if (CHUNK_PMP_IN_PARALLEL_REGION)
+        {
+            Gvh::refused_parallel.fetch_add(1, std::memory_order_relaxed);
+            return std::unexpected(ReclaimRefusal::parallel_region);
+        }
+        if (g_in_rechunk_rebuild.load(std::memory_order_acquire))
+        {
+            Gvh::refused_rechunk.fetch_add(1, std::memory_order_relaxed);
+            return std::unexpected(ReclaimRefusal::rechunk_in_progress);
+        }
+        if (Gvh::index_degraded.load(std::memory_order_relaxed))
+        {
+            Gvh::refused_degraded.fetch_add(1, std::memory_order_relaxed);
+            return std::unexpected(ReclaimRefusal::degraded_index);
+        }
+        // Check builds: no lookup or registration in flight from here to the
+        // end of reclaim_unmarked() -- the mark included, since a slot found
+        // before it and recorded after it would be freed (GlobalVecHolder's
+        // "Reclaim contract").
+        const typename Gvh::ReclaimScope scope;
+        Gvh::reclaim_runs.fetch_add(1, std::memory_order_relaxed);
+        const std::size_t handed_out = Gvh::ids_handed_out();
+        if (handed_out == 0)
+        {
+            return 0;
+        }
+        std::vector<std::uint8_t> referenced(handed_out + 1, 0);
+
+        // What every member of the family sharing the registry still names.
+        Gvh::mark_all(referenced);
+
+        const std::size_t freed = Gvh::reclaim_unmarked(referenced);
+        Gvh::reclaim_freed.fetch_add(freed, std::memory_order_relaxed);
+        return freed;
+    }
+}
+
+template <typename Derived>
+std::size_t zero_any::ArrayImpl<Derived>::reclaim_second_values()
+{
+    const auto freed = try_reclaim_second_values();
+    if (!freed && freed.error() == ReclaimRefusal::degraded_index)
+    {
+        static std::atomic<bool> warned{false};
+        if (!warned.exchange(true, std::memory_order_relaxed))
+        {
+            CHUNK_LOG(warn, compress,
+                      "reclaim_second_values() refused: the second-value index is degraded, a value unfindable by "
+                      "value could be freed. Nothing is reclaimed for this type until its last array is destroyed.");
+        }
+    }
+    return freed.value_or(0);
+}
+
+template <typename Derived>
+[[nodiscard]] SecondValueStats zero_any::ArrayImpl<Derived>::second_value_stats() noexcept
+{
+    if constexpr (std::is_same_v<T, bool>)
+    {
+        return {};
+    }
+    else
+    {
+        return GlobalVecHolder<T>::stats();
+    }
+}
+
+template <typename Derived>
+inline void zero_any::ArrayImpl<Derived>::acquire_cst2_registry()
+{
+    if (!holds_cst2_registry_)
+    {
+        if constexpr (!std::is_same_v<T, bool>)
+        {
+            GlobalVecHolder<T>::register_marker(&mark_second_values<T, ProxyType, ChunkType>);
+        }
+        ChunkType::Holder::create();
+        holds_cst2_registry_ = true;
+    }
+}
+
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::gc_collect_live(std::unordered_set<const void*>& live)
+{
+    ProxyType::share_info_array->for_each_key(
+        [&](ArrayKey<ChunkType> arr)
+        {
+            // The key is the array's core, whatever its index type.
+            const int nc = arr->chunk_count();
+            for (int j = 0; j < nc; ++j)
+            {
+                const auto& ch = arr->chunk_ref(static_cast<std::size_t>(j));
+                if (ch.is_cst_val2())
+                {
+                    live.insert(static_cast<const void*>(ch.values_load()));
+                }
+            }
+        });
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::Array<T, IntType>
+// ---------------------------------------------------------------------------
+
+template <ArrayChunkElement T, typename IntType>
+zero_any::Array<T, IntType>& zero_any::Array<T, IntType>::operator=(Array&& other) noexcept
+{
+    if (this != &other)
+    {
+        this->clear();
+        this->swap_storage_and_identity(other);
+    }
+    return *this;
 }
 
 } // namespace shrink_array

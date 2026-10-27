@@ -370,31 +370,7 @@ class Team
      * @param wait_mode WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
-    void for_static(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait)
-    {
-        static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-    #ifdef _OPENMP
-        if (wait_mode == WaitMode::nowait)
-        {
-        #pragma omp for schedule(static) nowait
-            for (Index i = first; i < last; ++i)
-            {
-                body(i);
-            }
-            return;
-        }
-        #pragma omp for schedule(static)
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #else
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #endif
-    }
+    void for_static(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait);
 
     /**
      * @brief for_static() as `omp for simd schedule(static)`: the same share,
@@ -406,31 +382,7 @@ class Team
      * @param wait_mode WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
-    void for_static_simd(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait)
-    {
-        static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-    #ifdef _OPENMP
-        if (wait_mode == WaitMode::nowait)
-        {
-        #pragma omp for simd schedule(static) nowait
-            for (Index i = first; i < last; ++i)
-            {
-                body(i);
-            }
-            return;
-        }
-        #pragma omp for simd schedule(static)
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #else
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #endif
-    }
+    void for_static_simd(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait);
 
     /**
      * @brief Share [@p first, @p last) out over the team in blocks of
@@ -450,32 +402,7 @@ class Team
                            Index                     last,
                            int                       chunk,
                            Body&&                    body,
-                           [[maybe_unused]] WaitMode wait_mode = WaitMode::wait)
-    {
-        static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-        [[maybe_unused]] const int step = chunk > 0 ? chunk : 1;
-    #ifdef _OPENMP
-        if (wait_mode == WaitMode::nowait)
-        {
-        #pragma omp for schedule(static, step) nowait
-            for (Index i = first; i < last; ++i)
-            {
-                body(i);
-            }
-            return;
-        }
-        #pragma omp for schedule(static, step)
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #else
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #endif
-    }
+                           [[maybe_unused]] WaitMode wait_mode = WaitMode::wait);
 
     /**
      * @brief for_static_chunks() as `omp for simd schedule(static, chunk)`:
@@ -489,32 +416,7 @@ class Team
                                 Index                     last,
                                 int                       chunk,
                                 Body&&                    body,
-                                [[maybe_unused]] WaitMode wait_mode = WaitMode::wait)
-    {
-        static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-        [[maybe_unused]] const int step = chunk > 0 ? chunk : 1;
-    #ifdef _OPENMP
-        if (wait_mode == WaitMode::nowait)
-        {
-        #pragma omp for simd schedule(static, step) nowait
-            for (Index i = first; i < last; ++i)
-            {
-                body(i);
-            }
-            return;
-        }
-        #pragma omp for simd schedule(static, step)
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #else
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #endif
-    }
+                                [[maybe_unused]] WaitMode wait_mode = WaitMode::wait);
 
     /**
      * @brief Share [@p first, @p last) out over the team in blocks of
@@ -528,32 +430,7 @@ class Team
      */
     template <typename Index, typename Body>
     void
-    for_dynamic(Index first, Index last, int chunk, Body&& body, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait)
-    {
-        static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-        [[maybe_unused]] const int step = chunk > 0 ? chunk : 1;
-    #ifdef _OPENMP
-        if (wait_mode == WaitMode::nowait)
-        {
-        #pragma omp for schedule(dynamic, step) nowait
-            for (Index i = first; i < last; ++i)
-            {
-                body(i);
-            }
-            return;
-        }
-        #pragma omp for schedule(dynamic, step)
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #else
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #endif
-    }
+    for_dynamic(Index first, Index last, int chunk, Body&& body, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait);
 
     /**
      * @brief Share [@p first, @p last) out over the team with the calling
@@ -566,31 +443,7 @@ class Team
      * @param wait_mode WaitMode::nowait: no barrier at the end.
      */
     template <typename Index, typename Body>
-    void for_runtime(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait)
-    {
-        static_assert(std::is_integral_v<Index>, "the loop index is an integer");
-    #ifdef _OPENMP
-        if (wait_mode == WaitMode::nowait)
-        {
-        #pragma omp for schedule(runtime) nowait
-            for (Index i = first; i < last; ++i)
-            {
-                body(i);
-            }
-            return;
-        }
-        #pragma omp for schedule(runtime)
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #else
-        for (Index i = first; i < last; ++i)
-        {
-            body(i);
-        }
-    #endif
-    }
+    void for_runtime(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait);
 
     /// @brief Wait until every thread of the team gets here (`omp barrier`).
     void barrier() noexcept
@@ -608,33 +461,11 @@ class Team
      *          end; nowait: they go on.
      */
     template <typename F>
-    void single(F&& func, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait)
-    {
-    #ifdef _OPENMP
-        if (wait_mode == WaitMode::nowait)
-        {
-        #pragma omp single nowait
-            func();
-            return;
-        }
-        #pragma omp single
-        func();
-    #else
-        func();
-    #endif
-    }
+    void single(F&& func, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait);
 
     /// @brief Run @p func on the team's rank 0 only, no barrier (`omp masked`).
     template <typename F>
-    void masked(F&& func)
-    {
-    #ifdef _OPENMP
-        #pragma omp masked
-        func();
-    #else
-        func();
-    #endif
-    }
+    void masked(F&& func);
 };
 
 /// @brief The team the calling thread runs in: inside a region, that region's
@@ -732,3 +563,5 @@ template <typename Body>
 // clang-format off
 #endif // FAST_ALLOC_PMP_BACKEND_STD
 // clang-format on
+
+#include "fast_allocators/internal/pmp_loops_inline.h" // the template bodies

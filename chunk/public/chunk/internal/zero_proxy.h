@@ -77,19 +77,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    [[nodiscard]] int get_num_tab(Key key) const noexcept
-    {
-        for (const auto& [entry_key, tab] : vec_)
-        {
-            if (entry_key == key)
-            {
-                return tab;
-            }
-        }
-
-        CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
-                               key);
-    }
+    [[nodiscard]] int get_num_tab(Key key) const noexcept;
 
     /**
      * @brief Swap the table numbers registered for two existing keys.
@@ -190,16 +178,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Resolve and cache this proxy's table number from ptr_on_array.
      */
-    void set_num_tab() noexcept
-    {
-        // Armed by the array's operator[] (see zero_any::Proxy::set_num_tab): the
-        // registry lookup only for a proxy armed otherwise.
-        if (num_tab_ >= 0) [[likely]]
-        {
-            return;
-        }
-        num_tab_ = Derived::get_num_tab(ptr_on_array_);
-    }
+    void set_num_tab() noexcept;
 
     /**
      * @brief Post-write entry point for callers that already have both the
@@ -240,22 +219,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param ptr The array the context was enqueued from.
      * @return The table number @p ptr belongs to.
      */
-    [[nodiscard]] static int get_num_tab_async(auto* ctx, [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept
-    {
-        // The context's num_tab, captured at enqueue: the one the replay proxy
-        // is armed with (make_proxy_with_info), without a registry scan per
-        // replayed op. Check builds compare it with the registry while the
-        // array is still registered.
-        if constexpr (build_config::any_check)
-        {
-            if (Derived::share_info_array->exists(ptr) && Derived::share_info_array->get_num_tab(ptr) != ctx->num_tab)
-            {
-                CHUNK_INVARIANT_FAILED("[Proxy get_num_tab_async] ctx num_tab={} but the registry says {} for {}",
-                                       ctx->num_tab, Derived::share_info_array->get_num_tab(ptr), ptr);
-            }
-        }
-        return ctx->num_tab;
-    }
+    [[nodiscard]] static int get_num_tab_async(auto* ctx, [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept;
 
     /**
      * @brief Async-context counterpart of execute_inplace_operation().
@@ -493,17 +457,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Materialise the owning chunk (allocate + init), pinning the
      *        active chunk size for this array first in dynamic builds.
      */
-    void create_value() const noexcept
-    {
-        if constexpr (build_config::chunk_dynamic)
-        {
-            // Route this (possibly worker-thread) allocation to the allocator
-            // for THIS array's chunk size before materializing.
-            shrink_array::set_thread_chunk_size(this->chunk_size());
-            shrink_array::set_thread_alloc_key(this->alloc_key());
-        }
-        chunk_.create_value();
-    }
+    void create_value() const noexcept;
 
     /**
      * @brief Materialise the owning chunk only if `need_alloc` is true (the
@@ -527,18 +481,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @return Whatever Base::write_with_optional_lock_impl() returns.
      */
     template <typename WriteFn>
-    CHUNK_FORCE_INLINE bool write_with_optional_lock(WriteFn write_fn) noexcept
-    {
-        const auto lbd_info = [this]
-        {
-            if constexpr (chunk_config::use_fast_block_compression)
-            {
-                set_info_on_chunk();
-            }
-        };
-
-        return Base::write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
-    }
+    CHUNK_FORCE_INLINE bool write_with_optional_lock(WriteFn write_fn) noexcept;
     /**
      * @brief Perform the actual write: install `v` at this proxy's index,
      *        materialising the chunk first if it is currently compressed.
@@ -715,23 +658,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *          compression: the pass folds the chunk).
      * @return true when the chunk was folded: its buffer is gone.
      */
-    [[nodiscard]] bool fold_if_full_zero() const
-    {
-        if constexpr (chunk_config::use_compression_with_counter)
-        {
-            if (chunk_.is_not_cst_val1() && chunk_.is_full_zero(this->chunk_size()))
-            {
-                if constexpr (build_config::chunk_dynamic)
-                {
-                    shrink_array::set_thread_chunk_size(this->chunk_size());
-                    shrink_array::set_thread_alloc_key(this->alloc_key());
-                }
-                this->manage_full_zero();
-                return true;
-            }
-        }
-        return false;
-    }
+    [[nodiscard]] bool fold_if_full_zero() const;
 
     /**
      * @brief Add `v` to this element in place.
@@ -832,37 +759,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *          set by the deferred-enqueue path, so a clear bit means the fast
      *          read stands. Folds to constant false in serial builds.
      */
-    operator T() const noexcept
-    {
-        this->check_not_stale();
-        if constexpr (chunk_config::stats)
-        {
-            increm_chunk_read<ChunkType>();
-        }
-
-        if constexpr (build_config::threaded)
-        {
-            // chunk_size_frozen_ != 0: a replay proxy whose ptr_on_array may
-            // dangle (see ProxyBase::chunk_size_frozen_) -- never dereference it;
-            // it runs inside a flush, so go straight to the gated read.
-            if (chunk_size_frozen_ == 0U && ptr_on_array_ != nullptr) [[likely]]
-            {
-                if (!ptr_on_array_->is_chunk_dirty(num_chunk_)) [[likely]]
-                {
-                    // A pure read, like element_at: inside a ReadSection, or a
-                    // pass in the region may release the buffer between the
-                    // pointer load and the element load (read_reclaim.h).
-                    const read_reclaim::ReadSection section;
-                    // raw-read: inside a read_reclaim::ReadSection
-                    return values_[num_];
-                }
-            }
-            return Base::read_pure();
-        }
-
-        // raw-read: serial build (no OpenMP, no concurrent pass)
-        return values_[num_];
-    }
+    operator T() const noexcept;
 
     // No address, and do not add operator T&(): `tab[nc] = val` would route
     // through it and materialise blocks for nothing. Hence foo(T&) rejects a[i].

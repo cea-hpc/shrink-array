@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> October 2026, `shrink_gui` 0.13 (prototype). A window on the laptop to submit
+> October 2026, `shrink_gui` 0.14 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `omp_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
@@ -27,13 +27,14 @@ A **run** is a directory on the cluster, `<runs directory>/<id>/`:
 | `launch.sh` | detached mode: `ccc_mprun <options> bash run.sh` |
 | `out.log` | everything the job printed |
 | `jobid` | (`ccc_msub`) the batch id, for `squeue` and `ccc_mdel` |
+| `submit.log` | (`ccc_msub`) the submission command (`$ ccc_msub job.sh`) and what the batch system answered |
 | `start_time` | when the run started on the node (seconds since the epoch), for the Duration column |
 | `exit_code` | written when the command returns |
 | `events.jsonl` | (`bench_and_test.py`) structured progress: phases, k/N |
 
 ## 2. Requirements and start
 
-- On the laptop: Python 3.9 or later and **PySide6** (`pip install PySide6`).
+- On the laptop: Python 3.9 or later and **PySide6** 6.2 or later (`pip install PySide6`).
 - On the cluster: Python 3.6 or later, the shrink-array repository cloned, and the site's
   submit command for the batch mode (`ccc_msub` on inti; see §6).
 - An ssh master connection, opened once per session:
@@ -68,6 +69,7 @@ runs again by itself.
 | Submission | `ccc_msub` (batch, the default) or `ccc_mprun` detached from the login node |
 | Max time (-T) | takes `2 d`, `1 h 30`, `90 min`, `1-00:00:00` |
 | QoS (-Q) | "auto" picks the QoS from the duration, by the limits `ccc_mqinfo` reports |
+| Nodes | `compile_all.sh` in batch mode: the number of one-node jobs that share the compilation (below) |
 | Start | after a `compile_all.sh` run not finished yet (Slurm dependency `afterok`/`afterany`), and/or not before a given time |
 | Builds up to date | before the command, `ninja -n` on the builds used: refuse (code 96), warn, or skip |
 | Directives, Launcher (job) | the `#MSUB` lines and the launcher on the node; per partition, remembered |
@@ -93,6 +95,22 @@ turns this check off for a program.
 `compile_all.sh` only runs as a batch job, never on the login node. Its `--target` and
 `--exec` fields have a "Choose…" button listing the configurations and executables found on
 the cluster.
+
+**Compiling on several nodes.** With "Nodes" N > 1, "Submit" makes N batch jobs, one node
+each, with the same directives and the same command plus `--pool=<the submission's id>`.
+They show in the table as `compile_all.sh [k/N]`, runs `<id>-n1` to `<id>-nN`. Each job walks
+the configurations in the usual order and builds a configuration only if it is the first to
+claim it (an atomic `mkdir` in `$CHUNK_BUILD_REP/.pools/<id>/`); it skips those another job
+claimed. The load balances itself: a job claims its next configuration once its node has a build slot
+for the one before (one claimed ahead at most), whatever the builds cost, and nothing needs to
+know beforehand which configurations this architecture builds. A job that starts once the others have claimed
+everything ends at once, with code 0. Each log ends with
+`[POOL] n configuration(s) built by this run, m by the other runs of pool <id>`.
+"Start: after" then offers the submission as one entry, "after `<id>` (N nodes)": the job waits
+for all N (`--dependency=afterok:j1:…:jN`). "Reuse its options" makes a new pool: the form's
+values never hold the `--pool` the window added. The field is hidden in detached mode and for
+the other programs. `--pool` can also be given by hand, to a `compile_all.sh` run from a shell
+(`--help`).
 
 `omp_speedup.py` (OpenMP speedup curves of shrink_bench executables on one target: `--target`,
 `--exec` or `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) likewise runs as a
@@ -122,7 +140,7 @@ tabs follow the current row.
 
 | tab | contents |
 |---|---|
-| Log | the selected run's log, followed live; search with Ctrl+F |
+| Log | the selected run's log, followed live; search with Ctrl+F. At submission, before the job's own log exists, the run directory, the program's command line and the submission command (`cd <run> && ccc_msub job.sh`, with the batch system's answer) |
 | Summary | `multi_launch_stress.py`: per build (runs, failures, times); `bench_and_test.py`: its phases (duration, errors) or its `bench_summary.csv` |
 | Chart | `multi_launch_stress.py`: each run's time against the thread count, filtered by build and variant; "Compare with" overlays another run. `bench_and_test.py`: its `bench_summary.csv`, one line per variant against the thread count for one config (time, peak memory or speedup); "Compare with" overlays another run of the same architecture, dashed, and gives the B / A ratio (geometric mean over the common points, and the worst point) |
 | Errors | the error log read in the output directory: `bench_errors.log` for `bench_and_test.py` (one entry per failure, as soon as it happens), the failed runs' `error_*.txt` for `multi_launch_stress.py`; the tab turns red when there are errors. For `bench_and_test.py`, the list on the left gives each failure (`failed_cases.jsonl`); a click shows its complete output (`run_logs/`). "Rerun failures…" submits a `--rerun-failed --rerun-repeat N` run of the run shown, same partition and options, its logs apart in `run_logs/rerun-<date>` |
@@ -161,6 +179,11 @@ not depend on the window: closing it leaves the run going, as a batch job would.
 "Submit". Then program `bench_and_test.py`, "Start: after" that build run, "if it succeeds",
 "Submit". The second job waits for the first in the Slurm queue; if the first fails, the
 second stays pending and the interface says so.
+
+**Build on three nodes, then test.** Program `compile_all.sh`, mode `ccc_msub`, "Nodes" 3,
+"Submit": three jobs share the configurations. Then `bench_and_test.py`, "Start: after"
+the submission ("after `<id>` (3 nodes)"), "if it succeeds", "Submit": the bench starts when
+the three jobs have ended without a failure.
 
 **A stress campaign on x86.** Partition `milan-bxi`, program `multi_launch_stress.py`,
 "Architecture defaults" (8 to 64 threads, the builds of `build_x86_64.txt`), "Submit". The
@@ -245,6 +268,10 @@ They are skipped when PySide6 is not installed.
 - A prototype, written for the TGCC machines; another site writes its site file (§6). The
   scheduler must be Slurm underneath (`squeue`, `--dependency`, `--begin`).
 - One connection at a time. The interface does not open the master connection itself.
+- Several nodes (§3): the build directory `$CHUNK_BUILD_REP` must be on a file system that all
+  the nodes share (the claims are directories there). Every job asks for the same time
+  (-T) as one would. A job that fails lets the others go on; its configurations are not
+  taken back by them.
 - This machine from Windows (`wsl.exe`) is not covered by the tests (they run on Linux).
   WSL may stop a distribution once no window of it is left open: keep one open while a
   run goes.

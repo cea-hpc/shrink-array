@@ -97,7 +97,10 @@ class RechunkHooks<Derived, true>
      * @param new_size the chunk size the array is moving to
      * @details The buffers parked there were sized for an older geometry.
      */
-    void rechunk_drain_reuse_list(this Derived& self, unsigned int new_size);
+    void rechunk_drain_reuse_list(this Derived& /*self*/, unsigned int new_size)
+    {
+        ManagerType::drain_reuse_list_for_size(new_size);
+    }
 
     /**
      * @brief Swap registry identity with the fresh array built at the new geometry.
@@ -112,41 +115,11 @@ class RechunkHooks<Derived, true>
 
   private:
     /// @brief The manager's per-rank candidate lists of this variant (OpenMP builds).
-    [[nodiscard]] static auto& candidate_lists_thr() noexcept
-    {
-        if constexpr (is_zero_any_family)
-        {
-            return ManagerType::chunk2a_to_compress_potentially_thr;
-        }
-        else
-        {
-            return ManagerType::chunk_to_compress_potentially_thr;
-        }
-    }
+    [[nodiscard]] static auto& candidate_lists_thr() noexcept;
     /// @brief The manager's single candidate list of this variant (serial builds).
-    [[nodiscard]] static auto& candidate_list() noexcept
-    {
-        if constexpr (is_zero_any_family)
-        {
-            return ManagerType::chunk2a_to_compress_potentially;
-        }
-        else
-        {
-            return ManagerType::chunk_to_compress_potentially;
-        }
-    }
+    [[nodiscard]] static auto& candidate_list() noexcept;
     /// @brief Remove every candidate of the array @p num_tab from this variant's lists.
-    static void remove_candidates_of_tab(int num_tab) noexcept
-    {
-        if constexpr (is_zero_any_family)
-        {
-            ManagerType::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
-        }
-        else
-        {
-            ManagerType::remove_from_compress_list_chunk_by_num_tab(num_tab);
-        }
-    }
+    static void remove_candidates_of_tab(int num_tab) noexcept;
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────

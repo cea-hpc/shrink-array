@@ -18,12 +18,16 @@ Rules, on chunk/, fast_allocators/ and examples/ (.h, .hpp, .cpp), comment and
    std::println / std::print instead (fprintf stays where nothing may
    allocate). Exceptions, as decided when the library moved to println
    (def53af7): ring_log_debug (a SEGV-hunt tool), the std::cout reports of
-   param_chunk.h and tab_cst_val2_holder.h, and print_compression_stats'
+   param_chunk.h and tab_cst_val2_holder.h (and its _inline.h, where the
+   bodies moved), and print_compression_stats'
    `std::ostream& os = std::cout` default argument.
 2. No derived(): the CRTP helper is gone, members take `this Derived& self`.
 3. static_cast<Derived&>(*this) only where a comment says why (the policies
    called as Base:: from sibling policies, whose *this is not a Derived):
-   chunk_base.h and array_chunk_base.h.
+   chunk_base.h and array_chunk_base.h, and their _inline.h where the bodies
+   moved; proxy_base_inline.h, whose read_pure() / read_values_at() reach the
+   pattern proxy's motif_offset_slot() but are called from ProxyBase's own
+   implicit-object members.
 4. No editor or merge leftovers tracked anywhere: *.sa, *.orig, *.rej, *.bak,
    *~.
 5. No C stdout printing: printf / std::printf / vprintf. std::println instead;
@@ -53,6 +57,7 @@ IOSTREAM_FILES = {
     "chunk/public/chunk/ring_log_debug.h",
     "chunk/public/chunk/param_chunk.h",
     "chunk/public/chunk/internal/tab_cst_val2_holder.h",
+    "chunk/public/chunk/internal/tab_cst_val2_holder_inline.h",
 }
 IOSTREAM_LINE_OK = re.compile(r"std::ostream&\s*\w+\s*=\s*std::cout\b")
 
@@ -61,6 +66,9 @@ DOWNCAST = re.compile(r"static_cast<\s*(const\s+)?Derived\s*&>\(\s*\*this\s*\)")
 DOWNCAST_FILES = {
     "chunk/public/chunk/internal/chunk_base.h",
     "chunk/public/chunk/internal/array_chunk_base.h",
+    "chunk/public/chunk/internal/chunk_base_inline.h",
+    "chunk/public/chunk/internal/array_chunk_base_inline.h",
+    "chunk/public/chunk/internal/proxy_base_inline.h",
 }
 
 C_PRINTF = re.compile(r"(?<![\w:])(std::)?v?printf\s*\(")

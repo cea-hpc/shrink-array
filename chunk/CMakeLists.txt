@@ -362,6 +362,8 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/zero_any_array_inline.h
         public/chunk/internal/zero_any_array_parallel.h
         public/chunk/internal/zero_any_array_parallel_inline.h
+        public/chunk/internal/pattern_proxy.h
+        public/chunk/internal/motif_region.h
         public/chunk/internal/second_value_array_base.h
         public/chunk/internal/zero_one_value_array_inline.h
         public/chunk/internal/zero_one_value_array_parallel.h
@@ -448,6 +450,8 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/zero_array.h
         public/chunk/zero_one_value_array.h
         public/chunk/zero_any_array.h
+        public/chunk/pattern_array.h
+        public/chunk/pattern_chunk.h
         public/chunk/array_chunk.h   # deprecated: zero_array.h
         public/chunk/array_chunk2.h  # deprecated: zero_one_value_array.h
         public/chunk/array_chunk2A.h # deprecated: zero_any_array.h
@@ -759,7 +763,7 @@ endforeach()
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).
 # fast_allocators/CMakeLists.txt, configured after this file, checks it against
 # its own ALLOCATORS_VERSION through this global property.
-set(CHUNK_FAST_ALLOCATORS_VERSION 2.2.0)
+set(CHUNK_FAST_ALLOCATORS_VERSION 2.3.0)
 set_property(GLOBAL PROPERTY CHUNK_FAST_ALLOCATORS_VERSION ${CHUNK_FAST_ALLOCATORS_VERSION})
 
 install(TARGETS ${_chunk_install_targets}

@@ -35,7 +35,7 @@
 #include <print>     // std::println (the CHUNK_STATS report)
 #include <string>    // std::string (the CHUNK_STATS_JSON line)
 #include <utility>   // std::cmp_greater
-#include <unistd.h>  // sysconf(_SC_PAGESIZE): page-aware slab floor
+#include <unistd.h>  // sysconf(_SC_PAGESIZE): CHUNK_SLAB_MIN_PAGES
 
 #include "chunk/config.h"                              // build_config::chunk_dynamic, threaded
 #include "chunk/singleton.h"                           // SingletonChk
@@ -48,6 +48,7 @@
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
 #include "chunk/all_type_chunk.h"                      // AllTypeChunk
 #include "chunk/log.h"                                 // CHUNK_LOG
+#include "chunk/internal/env_parse.h"                  // env_number (CHUNK_SLAB_MIN_PAGES)
 
 namespace shrink_array
 {
@@ -79,7 +80,9 @@ template struct ParamChunkParallelInterface<build_config::threaded, AllTypeChunk
  * @copydoc ParamChunk::init_indexes
  *
  * @details Block size = 2 MiB (15 MiB with @p big_chunk_block) divided by the
- *          thread count, floored at 240 KiB and at sixteen pages.
+ *          thread count, floored at 240 KiB (and at CHUNK_SLAB_MIN_PAGES pages
+ *          when set). Each element type scales it to its width and floors it at
+ *          one page (value_slab_request).
  *
  * @warning A chunk larger than one block cannot be allocated; only a warning,
  *          as the caller cannot fix the compile-time geometry at run time.
@@ -99,13 +102,20 @@ void ParamChunk::init_indexes(bool big_chunk_block)
     sz /= CHUNK_PMP_MAX_THREADS; // taking into account the number of threads
 
     sz = std::max(sz_min, sz);
-    // Page-aware floor. An emptied slab keeps its last page (trailing
-    // back-pointer), so with few pages per slab the retained share is large
-    // (a quarter with 256 KiB slabs on 64 KiB pages). Sixteen pages cap it at
-    // ~6%; the cost is one partly-filled slab per (rank, array, size).
-    if (const long ps = ::sysconf(_SC_PAGESIZE); ps > 0)
+    // No floor in pages by default. There was one, at sixteen pages, while an
+    // emptied slab kept its last page (the trailing back-pointer): it capped
+    // that retained share at ~6%. A sweep now gives the slab back whole
+    // (EmptySlabSweep), so the floor only cost memory -- on 64 KiB pages it
+    // made the slabs 1 MiB at 64 threads instead of 256 KiB: a partly-used
+    // slab per (rank, element type, array, size), and a slab kept resident by
+    // its last few live buffers. CHUNK_SLAB_MIN_PAGES=16 restores it (A/B).
+    if (const int min_pages = env_number<int>("CHUNK_SLAB_MIN_PAGES", 0); min_pages > 0)
     {
-        sz = std::max(sz, static_cast<int>(16 * ps));
+        if (const long ps = ::sysconf(_SC_PAGESIZE); ps > 0)
+        {
+            const long long floor_bytes = std::min(static_cast<long long>(min_pages) * ps, 1LL << 30);
+            sz                          = std::max(sz, static_cast<int>(floor_bytes));
+        }
     }
 
     set_block_size(sz);

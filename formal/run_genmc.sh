@@ -121,7 +121,7 @@ run error "MUT_NO_RECHECK, isolation"                        -- -DSTRICT_SCAN -D
 run error "MUT_CHECK_FIRST, isolation"                       -- -DSTRICT_SCAN -DTO_FIRST -DMUT_CHECK_FIRST $M4
 run error "MUT_NO_WINDOW, isolation"                         -- -DSTRICT_SCAN -DTO_FIRST -DMUT_NO_WINDOW $M4
 run error "MUT_NO_FENCE, isolation"                          -- -DSTRICT_SCAN -DTO_FIRST -DMUT_NO_FENCE $M4
-echo "-- the same mutations under P1-P3 alone, and the orders readers would need: must still pass (7.6) --"
+echo "-- the same mutations under P1-P3 alone, and the orders readers would need: must still pass (8.7) --"
 run ok    "MUT_NO_RECHECK, P1-P3"                            -- -DTO_FIRST -DMUT_NO_RECHECK $M4
 run ok    "MUT_CHECK_FIRST, P1-P3"                           -- -DTO_FIRST -DMUT_CHECK_FIRST $M4
 run ok    "MUT_NO_WINDOW, P1-P3"                             -- -DTO_FIRST -DMUT_NO_WINDOW $M4
@@ -133,5 +133,26 @@ run error "MUT_NO_BUF_CHECK on a materialised chunk (buffer lost)" -- -DINIT_BUF
 run error "SECOND_MATERIALISER: the span's precondition broken"    -- -DSECOND_MATERIALISER $M4
 run ok    "SECOND_MATERIALISER, switch by CAS (not taken)"   -- -DSECOND_MATERIALISER -DSWITCH_CAS $M4
 run ok    "switch by CAS, first value, materialised"         -- -DSWITCH_CAS -DTO_FIRST -DINIT_BUF $M4
+M5=motif_offset.c
+echo "== handshake 4: motif readers <-> rewrites of the offset slot ($M5) =="
+run ok    "source, another motif"                            --check-liveness -- $M5
+run ok    "source, the same motif (ABA)"                     --check-liveness -- -DTARGET_SAME_MOTIF $M5
+run ok    "source, first constant"                           --check-liveness -- -DTARGET_CST1 $M5
+run ok    "source, second constant"                          --check-liveness -- -DTARGET_CST2 $M5
+run ok    "source, 3 reads"                                  --check-liveness -- -DNREADS=3 $M5
+run ok    "source, 2 readers x 2 reads"                      --check-liveness -- -DNREADERS=2 -DNREADS=2 $M5
+run ok    "source, 3 readers"                                --check-liveness -- -DNREADERS=3 $M5
+echo "-- mutations: each must be refused --"
+run error "MUT_SLOT_LOAD_RELAXED (the re-check needs acquire)" -- -DMUT_SLOT_LOAD_RELAXED $M5
+run error "MUT_SLOT_STORE_RELAXED (the pass's store must be release)" -- -DMUT_SLOT_STORE_RELAXED $M5
+run error "MUT_CAS_BEFORE_SLOT (algo_pattern.md section 6: the slot first)" -- -DMUT_CAS_BEFORE_SLOT $M5
+run error "MUT_NO_GRACE (calibration)"                       -- -DMUT_NO_GRACE $M5
+echo "-- the behaviours the model changed in the source (F5) --"
+run error "MUT_NO_RECHECK, another motif (F5, before)"       -- -DMUT_NO_RECHECK $M5
+run error "MUT_NO_RECHECK, first constant (F5, before)"      -- -DMUT_NO_RECHECK -DTARGET_CST1 $M5
+run error "MUT_NO_RECHECK, second constant (F5, before)"     -- -DMUT_NO_RECHECK -DTARGET_CST2 $M5
+run ok    "MUT_NO_RECHECK, the same motif: harmless"         -- -DMUT_NO_RECHECK -DTARGET_SAME_MOTIF $M5
+run error "MUT_SLOT_STORE_PLAIN, first constant (F5, before: reset())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST1 $M5
+run error "MUT_SLOT_STORE_PLAIN, second constant (F5, before: set_from_array())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST2 $M5
 
 exit $fail

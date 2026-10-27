@@ -6,9 +6,9 @@ import time
 
 from PySide6.QtCore import QItemSelectionModel, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QTextCursor
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu, QPlainTextEdit,
-                               QPushButton, QScrollArea, QSplitter, QStyle, QSystemTrayIcon, QTabWidget,
+                               QPushButton, QScrollArea, QSpinBox, QSplitter, QStyle, QSystemTrayIcon, QTabWidget,
                                QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget)
 
 from shrink_gui import i18n, qos
@@ -25,7 +25,7 @@ from shrink_gui.tab_errors import ErrorsTab
 from shrink_gui.tab_speedup_chart import SpeedupChart
 from shrink_gui.tab_summary import SummaryTab
 from shrink_gui.tooltips import Tooltips
-from shrink_gui.widgets import DurationBox, LogView, OptionsForm, TLabel
+from shrink_gui.widgets import DurationBox, LogView, OptionsForm, RowVisibleFormLayout, TLabel
 
 
 class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab, BenchChart, ErrorsTab,
@@ -100,6 +100,12 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         qrow = QHBoxLayout()
         qrow.addWidget(self.qos)
         qrow.addWidget(self.qos_note, 1)
+        # Nodes: a program that can share its work (PROGRAMS[...]["pool_opt"],
+        # compile_all.sh --pool) submitted as that many batch jobs of one node.
+        self.nodes = QSpinBox()
+        self.nodes.setRange(1, 32)
+        self.nodes.setValue(int(self.settings.value("nodes", 1)))
+        self.nodes.valueChanged.connect(self.update_preview)
         # Start: after a compile run (Slurm dependency, or a wait in the
         # detached mode), not before a delay; the builds checked on the node.
         self.after = QComboBox()
@@ -134,13 +140,14 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.repo = QLineEdit(self._mget("repo"))
         self.runs_dir = QLineEdit(self._mget("runs_dir"))
         self.local_dir = QLineEdit(self._get("local_dir"))
-        where = QFormLayout()
+        where = RowVisibleFormLayout()     # setRowVisible(): machine_panel, Qt < 6.4 too
         self.where = where
         where.addRow("Partition", self.preset)
         where.addRow("Soumission", self.mode)
         where.addRow("Durée max (-T)", self.time_s)
         self.qos_row = qrow
         where.addRow("QoS (-Q)", qrow)
+        where.addRow("Nœuds", self.nodes)
         where.addRow("Démarrage", arow)
         where.addRow("Builds à jour", self.check_builds)
         where.addRow("Directives", self.directives)
@@ -447,6 +454,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.settings.setValue("after_cond", self.after_cond.currentData())
         self.settings.setValue("delay_s", self.delay.value())
         self.settings.setValue("check_builds", self.check_builds.currentData())
+        self.settings.setValue("nodes", self.nodes.value())
         if not self.is_local():      # this machine has a single partition and mode
             self.settings.setValue("preset", self.preset.currentData())
             self.settings.setValue("mode", self.mode.currentData())
@@ -517,7 +525,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
             self.table.setRowCount(len(self.runs))
             for i, run in enumerate(self.runs):
                 commit, commit_tip = self.commit_text(run)
-                vals = [run["id"], run["meta"].get("program", ""), run["meta"].get("partition", ""),
+                vals = [run["id"], self.program_text(run), run["meta"].get("partition", ""),
                         commit, run.get("jobid", ""), status_short(run), T(self.progress_text(run)),
                         self.errors_text(run), self.duration_text(run), run["last"]]
                 for j, v in enumerate(vals):
@@ -562,6 +570,14 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
                 self.select()
 
         self.remote.helper("list", [self.runs_dir.text().strip()], done)
+
+    @staticmethod
+    def program_text(run):
+        """The Programme column: one of the jobs of a submission over several
+        nodes says which (compile_all.sh [2/3])."""
+        meta = run["meta"]
+        prog = meta.get("program", "")
+        return f"{prog} [{meta['node']}/{meta['nodes']}]" if meta.get("nodes") else prog
 
     def selected_runs(self):
         """The selected runs, in the table's order."""

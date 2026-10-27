@@ -31,6 +31,7 @@
 #include <vector> // std::vector
 
 #include "bench_array.h" // BenchArrays
+#include "bench_par.h"   // bench_par::region_ends_phase
 
 // Guarded inline wrappers around the OMPT phase transitions. Semantics are
 // strictly identical to the manual `if constexpr (build_config::has_not_ompt)
@@ -38,9 +39,12 @@
 // time, so under `has_ompt` the body is elided and the call becomes a no-op
 // that the optimizer folds away. Kept in an anonymous namespace so linkage
 // is local and no library header change is required.
+//
+// The TBB bench (bench_par::region_ends_phase): bench_par::region() begins and
+// ends the phase itself, as OMPT does; the wrappers are no-ops there too.
 inline void begin_parallel_phase_g()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::has_not_ompt && !bench_par::region_ends_phase)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -53,7 +57,7 @@ inline void begin_parallel_phase_g()
 ///          (finalize_parallel_phase_after_flush_g()).
 inline void finalize_parallel_phase_only_flush_g()
 {
-    if constexpr (build_config::has_not_ompt && build_config::use_openmp)
+    if constexpr (build_config::has_not_ompt && build_config::use_openmp && !bench_par::region_ends_phase)
     {
         shrink_array::finalize_parallel_phase_only_flush();
     }
@@ -65,7 +69,11 @@ inline void finalize_parallel_phase_only_flush_g()
 ///          queue itself, after the region's team has joined.
 inline void finalize_parallel_phase_after_flush_g()
 {
-    if constexpr (build_config::has_not_ompt && build_config::use_openmp)
+    if constexpr (bench_par::region_ends_phase)
+    {
+        // bench_par::region() has ended the phase.
+    }
+    else if constexpr (build_config::has_not_ompt && build_config::use_openmp)
     {
         shrink_array::finalize_parallel_phase_after_flush();
     }
@@ -199,6 +207,19 @@ void bench_phase_mask_fill(BenchArrays& bench_arr);
  *        the blocks written into @p mask_count.
  */
 void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count);
+
+/**
+ * @brief tab_conn's starting mesh (bench_phase_conn.cpp): every row in its first
+ *        numbering. Its own region, after bench_phase_fill.
+ */
+void bench_phase_conn_fill(BenchArrays& bench_arr);
+
+/**
+ * @brief tab_conn's iteration @p iter: band iter % bench_conn_bands read into
+ *        @p conn_sum (the gather), then renumbered (its node order rotated, or
+ *        put back).
+ */
+void bench_phase_conn_compute(BenchArrays& bench_arr, Int iter, long& conn_sum);
 
 /**
  * @brief Stress (a): a team one thread SHORT of the default, over [beg_s, end_s).

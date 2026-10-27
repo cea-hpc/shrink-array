@@ -245,6 +245,9 @@ void check_parse()
 
     auto spec = parse_spec("", default_max);
     check(spec.n_bad == 0 && spec.max == default_max, "parse: empty spec keeps the base");
+    check(default_max[ix(Channel::rechunk)] == Level::info && default_max[ix(Channel::memory)] == Level::warn &&
+              default_max[ix(Channel::general)] == Level::warn,
+          "default: rechunk at info (the applied re-chunks), every other channel at warn");
 
     spec = parse_spec("debug", default_max);
     check(spec.max[ix(Channel::env)] == Level::debug && spec.max[ix(Channel::advisor)] == Level::debug,

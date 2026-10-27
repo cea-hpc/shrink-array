@@ -124,6 +124,62 @@ class LogView(QPlainTextEdit):
         if at_end:
             bar.setValue(bar.maximum())
 
+class RowVisibleFormLayout(QFormLayout):
+    """A QFormLayout with setRowVisible() / isRowVisible() on every PySide6 6.x.
+
+    Qt has them from 6.4, and they are used as they are there. Before (PySide6
+    6.2, 6.3) the row's widgets -- its label, its field, the widgets of a field
+    that is a layout -- are shown or hidden one by one: the row then takes no
+    room but its vertical spacing (6 px per hidden row with the default
+    style). @p row is a row number, a widget or a layout of the row, as for
+    Qt's own."""
+
+    NATIVE = hasattr(QFormLayout, "setRowVisible")
+
+    def _row_of(self, row):
+        if isinstance(row, int):
+            return row
+        if isinstance(row, QWidget):
+            return self.getWidgetPosition(row)[0]
+        return self.getLayoutPosition(row)[0]
+
+    @staticmethod
+    def _item_widgets(item):
+        """The widgets of a layout item: itself, or those of its layout, nested."""
+        if item is None:
+            return []
+        if item.widget() is not None:
+            return [item.widget()]
+        lay = item.layout()
+        if lay is None:
+            return []
+        out = []
+        for i in range(lay.count()):
+            out += RowVisibleFormLayout._item_widgets(lay.itemAt(i))
+        return out
+
+    def _row_widgets(self, r):
+        out = []
+        for role in (QFormLayout.LabelRole, QFormLayout.FieldRole, QFormLayout.SpanningRole):
+            out += self._item_widgets(self.itemAt(r, role))
+        return out
+
+    def setRowVisible(self, row, on):  # noqa: N802 -- Qt's name
+        if self.NATIVE:
+            QFormLayout.setRowVisible(self, row, on)
+            return
+        r = self._row_of(row)
+        if r >= 0:
+            for w in self._row_widgets(r):
+                w.setVisible(on)
+
+    def isRowVisible(self, row):  # noqa: N802 -- Qt's name
+        if self.NATIVE:
+            return QFormLayout.isRowVisible(self, row)
+        r = self._row_of(row)
+        # isHidden(): hidden explicitly, whatever the window's own state.
+        return r >= 0 and any(not w.isHidden() for w in self._row_widgets(r))
+
 class TLabel(QLabel):
     """A QLabel whose setText() translates (status lines set at run time)."""
 
@@ -140,7 +196,7 @@ class OptionsForm(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.lay = QFormLayout(self)
+        self.lay = RowVisibleFormLayout(self)
         self.lay.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         self.widgets = {}   # dest -> (action, widget, label)
         self.schema = None

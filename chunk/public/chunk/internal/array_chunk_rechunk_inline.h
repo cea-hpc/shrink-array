@@ -50,8 +50,8 @@
 #include "chunk/log.h"                          // CHUNK_LOG, logging::enabled (the traces)
 #include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
 #include "chunk/vector_range_ops.h"             // assume_drained
-#include "chunk/config.h"                       // build_config::threaded, chunk_config::use_zero_any
-#include "chunk/chunk_traits.h"                 // zero_any::Proxy<T>
+#include "chunk/config.h"                       // build_config::threaded, chunk_config::use_zero*
+#include "chunk/chunk_traits.h"                 // is_zero_any_family_v
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 #include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED (refill bulk read check)
@@ -640,7 +640,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // is_not_bool) would fail to compile the condition itself.
         [[maybe_unused]] const int ind_old2 = [&]
         {
-            if constexpr (chunk_config::use_zero_one_value)
+            // A zero_any-family array in a zero_one_value build (pattern::Array): no index.
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkType>)
             {
                 if constexpr (Derived::is_not_bool)
                 {
@@ -658,7 +659,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         }();
         [[maybe_unused]] const auto inf_new2 = [&]
         {
-            if constexpr (chunk_config::use_zero_one_value)
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkType>)
             {
                 if constexpr (Derived::is_not_bool)
                 {
@@ -722,7 +723,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             for (int oc = old_first; oc <= old_last; ++oc)
             {
                 const auto& och = self.chunk_list_[static_cast<std::size_t>(oc)];
-                if constexpr (chunk_config::use_zero_any)
+                if constexpr (is_zero_any_family_v<ChunkType>)
                 {
                     if (och.is_cst_val1())
                     {
@@ -732,8 +733,17 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 if (!och.is_cst_val1())
                 {
                     all_cst1 = false;
-                    if constexpr (chunk_config::use_zero_any)
+                    if constexpr (is_zero_any_family_v<ChunkType>)
                     {
+                        if constexpr (has_motif_state_v<ChunkType>)
+                        {
+                            // A motif chunk (pattern::Array): is_cst_val2() for the write
+                            // engine, but no constant -- its elements are motif + offset.
+                            if (ChunkType::is_motif_ptr(och.values_load()))
+                            {
+                                all_folded = false;
+                            }
+                        }
                         if (!och.is_cst_val2())
                         {
                             all_folded = false;
@@ -786,7 +796,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // second-value slot, type table, values pointer), minus the buffer;
             // tmp's chunk is reachable by no other thread until the swap, so no
             // CAS.
-            if constexpr (chunk_config::use_zero_any && !std::is_same_v<T, bool>)
+            if constexpr (is_zero_any_family_v<ChunkType> && !std::is_same_v<T, bool>)
             {
                 if (all_folded && same_cst2 && !any_cst1_src && cst2_src != nullptr)
                 {
@@ -796,8 +806,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     // would be looked up even in a discarded branch.
                     const T    value = static_cast<T>(std::as_const(self)[base]);
                     auto&      nch   = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
-                    const auto psv   = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
-                    CstSlot*   ptc   = &zero_any::Proxy<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
+                    const auto psv   = ProxyType::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
+                    CstSlot*   ptc   = &ProxyType::tab_type_cst_val[tmp.num_tab_][new_chunk];
                     (void)nch.find_or_set_ind_cst_val2(value, psv);
                     ChunkType::set_cst_val_to_cst_val2(ptc);
                     nch.init_values_cst_val(ptc, psv);
@@ -843,12 +853,27 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     const auto     len     = static_cast<std::size_t>(hi - lo);
                     const auto     off     = static_cast<std::size_t>(lo - oc_base);
                     const T* const vals    = och.values_load();
-                    if constexpr (chunk_config::use_zero_any)
+                    if constexpr (is_zero_any_family_v<ChunkType>)
                     {
                         if (och.is_cst_val2_ptr_of(vals))
                         {
                             std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(pos), len,
                                         och.second_value_from_ptr(vals));
+                            pos += len;
+                            continue;
+                        }
+                    }
+                    if constexpr (has_motif_state_v<ChunkType>)
+                    {
+                        // A motif chunk: motif + its offset, from its second-value slot
+                        // (quiescent source: the slot is stable, no re-check needed).
+                        if (ChunkType::is_motif_ptr(vals))
+                        {
+                            const T offset = internal::load_element_relaxed(self.motif_offset_slot(oc));
+                            for (std::size_t k = 0; k < len; ++k)
+                            {
+                                buf[pos + k] = ChunkType::motif_value(vals, static_cast<int>(off + k), offset);
+                            }
                             pos += len;
                             continue;
                         }
@@ -994,7 +1019,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // Wired for zero_any (compress() by num_chunk, num_tab) and zero_one_value (by the
             // array's inf_array record). bool registers no second value
             // (get_ind_second_value aborts) and is bit-packed: never this path.
-            if constexpr (chunk_config::use_zero_any)
+            if constexpr (is_zero_any_family_v<ChunkType>)
             {
                 if (all_folded)
                 {
@@ -1451,7 +1476,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             {
                 const auto& ch         = tmp.chunk_list_[static_cast<std::size_t>(c)];
                 bool        compressed = ch.is_cst_val1();
-                if constexpr (chunk_config::use_zero_any)
+                if constexpr (is_zero_any_family_v<ChunkType>)
                 {
                     compressed = compressed || ch.is_cst_val2();
                 }
@@ -1502,6 +1527,27 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::RechunkSupport<Derived, true>
+// ---------------------------------------------------------------------------
+
+template <typename Derived>
+void RechunkSupport<Derived, true>::rechunk_all_to(unsigned int new_size)
+{
+    ProxyType::share_info_array->for_each_key(
+        [new_size](ArrayKey<ChunkType> key)
+        {
+            if (key != nullptr)
+            {
+                // The key is an array's core, and the arrays of this
+                // element type may differ in index type: reach each one's
+                // own rechunk_to() through the core (the registry hands out
+                // const keys; a re-chunk rebuilds the array).
+                const_cast<ArrayChunkCore<ChunkType>*>(key)->rechunk_erased(new_size);
+            }
+        });
 }
 
 } // namespace shrink_array

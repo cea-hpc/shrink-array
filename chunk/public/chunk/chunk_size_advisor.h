@@ -57,6 +57,7 @@
 // ============================================================================
 
 #include <algorithm> // std::sort, std::unique, std::upper_bound, std::ranges::min_element (best)
+#include <array>     // std::array (motif_chunk_data's buffers)
 #include <atomic>    // std::atomic_ref (the per-thread counts merged)
 #include <bit>       // std::bit_width, std::countr_zero
 #include <cmath>     // std::lround (the extrapolated materialised count)
@@ -74,6 +75,8 @@
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 #include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
 #include "chunk/internal/print.h"              // shrink_array::println
+#include "chunk/chunk_traits.h"                // is_zero_any_family_v, has_motif_state_v (pattern::Array)
+#include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
 
 namespace shrink_array
 {
@@ -110,6 +113,43 @@ struct ChunkSizeReport
     int                            best = -1;         ///< index into table (-1: none)
     int                            cur  = -1;         ///< index of current size (-1: none)
 };
+
+namespace internal
+{
+/**
+ * @brief The data of chunk @p idx of @p tab, a member with the motif state
+ *        (pattern::Array): its buffer; for a motif chunk, its motif plus its
+ *        offset, written into this thread's scratch buffer @p which (0 or 1:
+ *        the analysis holds two chunks' data at once).
+ * @details For ChunkSizeAdvisor::analyze(), at a quiescent point: the slot is
+ *          stable. A function template of its own, with its own buffers, called
+ *          from discarded branches for the other variants: their code -- the
+ *          analysis lambdas and what they capture -- is unchanged. GCC orders a
+ *          lambda's captures by first appearance, discarded branches included:
+ *          the callers name nothing the lambdas did not already name first.
+ */
+template <typename Arr>
+[[nodiscard]] const typename Arr::value_type* motif_chunk_data(const Arr& tab, int64_t idx, int which)
+{
+    using ChunkT = typename Arr::ChunkType;
+    using T      = typename Arr::value_type;
+    static thread_local std::array<std::vector<T>, 2> buffers;
+    std::vector<T>&                                   scratch = buffers[static_cast<std::size_t>(which)];
+    const T* const                                    vals    = tab.chunk_list_[idx].values_load();
+    if (!ChunkT::is_motif_ptr(vals))
+    {
+        return vals;
+    }
+    const T        off      = load_element_relaxed(tab.motif_offset_slot(static_cast<int>(idx)));
+    const uint32_t chunk_sz = tab.chunk_size();
+    scratch.resize(chunk_sz);
+    for (uint32_t i = 0; i < chunk_sz; ++i)
+    {
+        scratch[i] = ChunkT::motif_value(vals, static_cast<int>(i), off);
+    }
+    return scratch.data();
+}
+} // namespace internal
 
 /// @brief Estimates an array's model memory at other chunk sizes without re-chunking (see the header comment).
 /// @tparam T Element type.
@@ -164,7 +204,10 @@ struct ChunkSizeAdvisor
         rep.elem_bytes =
             chunk_sz != 0 ? static_cast<double>(Arr::ChunkType::storage_units(chunk_sz)) * sizeof(T) / chunk_sz : 0.;
 
-        if (nc <= 0)
+        // No chunk, or no geometry (never on a live array: every setter refuses
+        // a zero size): nothing to analyse. Every division below is by
+        // chunk_sz or by a candidate derived from it, hence this test first.
+        if (nc <= 0 || chunk_sz == 0)
         {
             return rep;
         }
@@ -176,11 +219,14 @@ struct ChunkSizeAdvisor
             // bool / Bit: one second value, `true`, no index --
             // get_ind_second_value() aborts for them; classify() below asks
             // the unindexed is_cst_val2().
-            if constexpr (chunk_config::use_zero_one_value && !is_bool_like_v<T>)
+            // A zero_any-family array in a zero_one_value build (pattern::Array):
+            // no index, the zero_any branches below.
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<typename Arr::ChunkType> &&
+                          !is_bool_like_v<T>)
             {
                 return tab.get_ind_second_value();
             }
-            else if constexpr (chunk_config::use_zero_one_value)
+            else if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<typename Arr::ChunkType>)
             {
                 return 0;
             }
@@ -197,7 +243,7 @@ struct ChunkSizeAdvisor
         const InT<T> cst1_value = Arr::ChunkType::first_value;
         bool         has_cst2   = false;
         T            cst2_value = cst1_value;
-        if constexpr ((chunk_config::use_zero_one_value || chunk_config::use_zero_any) &&
+        if constexpr ((chunk_config::use_zero_one_value || is_zero_any_family_v<typename Arr::ChunkType>) &&
                       requires { tab.get_second_value(); })
         {
             cst2_value = tab.get_second_value();
@@ -210,7 +256,8 @@ struct ChunkSizeAdvisor
             // below to it: the finer rows would miss every other uniform
             // sub-block, and a costly coarsening could never look worse than
             // refining back.
-            if constexpr (chunk_config::use_zero_any)
+            // The family, not the build: pattern::Array in a zero_one_value build too.
+            if constexpr (is_zero_any_family_v<typename Arr::ChunkType>)
             {
                 return true;
             }
@@ -233,7 +280,18 @@ struct ChunkSizeAdvisor
             {
                 return 0;
             }
-            if constexpr (chunk_config::use_zero_any)
+            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+            {
+                // A motif chunk (pattern::Array): is_cst_val2() for the write engine,
+                // but no constant. Its data -- motif + offset, data_of() below -- is
+                // read as a materialised chunk's (no motif forecast: never optimistic).
+                if (Arr::ChunkType::is_motif_ptr(chunk.values_load()))
+                {
+                    return 2;
+                }
+            }
+            // The family, not the build (as compressible_value).
+            if constexpr (is_zero_any_family_v<typename Arr::ChunkType>)
             {
                 if (chunk.is_cst_val2())
                 {
@@ -569,6 +627,7 @@ struct ChunkSizeAdvisor
                     std::vector<uint32_t> seg_start; // the picked chunk's runs of equal values ...
                     std::vector<T>        seg_val;   // ... and their values
 
+
                     // Element index of a materialised buffer, and whether [first, last)
                     // of it is uniform (its value in `val`).
                     const auto value_of = [](const T* vals, std::size_t index) -> T
@@ -614,6 +673,10 @@ struct ChunkSizeAdvisor
                         {
                             const int64_t chunk_idx = picks[static_cast<std::size_t>(pick)];
                             const T*      vj        = tab.chunk_list_[chunk_idx].values_load();
+                            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+                            {
+                                vj = internal::motif_chunk_data(tab, chunk_idx, 0); // pattern::Array
+                            }
 
                             // Chunk chunk_idx's runs of equal values: [b, e) of it is uniform iff
                             // b and e - 1 fall in the same run.
@@ -720,9 +783,19 @@ struct ChunkSizeAdvisor
                                         }
                                         else
                                         {
-                                            ok = uniform_range(ch.values_load(),
-                                                               static_cast<std::size_t>(p0 - (cc * chunk_sz)),
-                                                               static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+                                            {
+                                                ok =
+                                                    uniform_range(internal::motif_chunk_data(tab, cc, 1),
+                                                                  static_cast<std::size_t>(p0 - (cc * chunk_sz)),
+                                                                  static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                            }
+                                            else
+                                            {
+                                                ok = uniform_range(
+                                                    ch.values_load(), static_cast<std::size_t>(p0 - (cc * chunk_sz)),
+                                                    static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                            }
                                         }
                                         if (ok && has_v)
                                         {

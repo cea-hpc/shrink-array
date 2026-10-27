@@ -146,6 +146,7 @@ class MachinePanel:
             "-p MemoryMax=16G -p MemorySwapMax=0" if self.mode.currentData() == "local"
             else "vide : la commande tourne directement dans le job"))
         self.apply_arch_defaults()
+        self.update_nodes_row()
         if hasattr(self, "qos_note"):
             self.update_qos()
 

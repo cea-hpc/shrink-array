@@ -32,13 +32,14 @@
 #include "chunk/vendor/ankerl/unordered_dense.h" // zero_any::PointerMap::big
 
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
+#include "chunk/chunk_traits.h"               // ChunkTraits<ChunkT>::ManagerType (ProxyImpl)
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
 #include "chunk/internal/cst_slot.h"          // CstSlot (tab_type_cst_val)
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/tab_cst_val2_holder.h"          // SecondValueRef
-#include "chunk/internal/TChunk.h"                       // TChunk2AComp
+#include "chunk/internal/TChunk.h"                       // TChunk2ACompOf
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"      // SecondValueProxyBase
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
@@ -60,7 +61,7 @@ class ManagerChunk;
 namespace zero_any
 {
 
-// Used by zero_any::Proxy and zero_any::PointerMap.
+// Used by zero_any::Proxy.
 template <typename T>
 class Chunk;
 
@@ -68,15 +69,16 @@ class Chunk;
  * @brief Registry mapping array keys (pointers) to their table number, for
  *        zero_any: a linear-scan vector while small, switching once and for all
  *        to a hash map past SmallN entries.
- * @tparam T Element type: the keys are arrays of zero_any::Chunk<T>.
+ * @tparam ChunkT Chunk type of the registered arrays: the keys are arrays of
+ *         ChunkT (zero_any::Chunk<T>, or another member of the zero_any family).
  * @tparam SmallN Entry count past which the hash map is used.
  */
-template <typename T, size_t SmallN = 16>
+template <typename ChunkT, size_t SmallN = 16>
 class PointerMap
 {
   public:
     /// @brief The key: the array's identity.
-    using Key = ArrayKey<Chunk<T>>;
+    using Key = ArrayKey<ChunkT>;
 
     PointerMap()                                 = default;
     ~PointerMap()                                = default;
@@ -91,28 +93,7 @@ class PointerMap
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    [[nodiscard]] int get_num_tab(Key key) const noexcept
-    {
-        if (!using_big_)
-        {
-            for (const auto& [entry_key, tab] : small_)
-            {
-                if (entry_key == key)
-                {
-                    return tab;
-                }
-            }
-            CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}", this,
-                                   small_.size(), key);
-        }
-
-        if (const auto it = big_.find(key); it != big_.end())
-        {
-            return it->second;
-        }
-        CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_num_tab] key NOT FOUND: this={} size={} key={}", this,
-                               big_.size(), key);
-    }
+    [[nodiscard]] int get_num_tab(Key key) const noexcept;
 
     /**
      * @brief Remove the entry for `key`, if present. Idempotent. Must be called
@@ -122,33 +103,7 @@ class PointerMap
      *        tab's metadata.
      * @param key Key to remove.
      */
-    void erase(Key key) noexcept
-    {
-        if (!using_big_)
-        {
-            for (auto it = small_.begin(); it != small_.end(); ++it)
-            {
-                if (it->first == key)
-                {
-                    small_.erase(it);
-                    return;
-                }
-            }
-        }
-        else
-        {
-            // ankerl's erase throws on a key it finds changed; ~zero_any::Array
-            // calls this and is noexcept: fail with the key instead.
-            try
-            {
-                big_.erase(key);
-            }
-            catch (const std::exception& e)
-            {
-                CHUNK_INVARIANT_FAILED("[zero_any::PointerMap erase] failed: {} (this={} key={})", e.what(), this, key);
-            }
-        }
-    }
+    void erase(Key key) noexcept;
 
     /**
      * @brief Register a new key -> num_tab mapping; past SmallN entries, migrates
@@ -156,28 +111,7 @@ class PointerMap
      * @param key Key to register.
      * @param num_tab Table number to associate with `key`.
      */
-    void insert(Key key, int num_tab)
-    {
-        if (!using_big_)
-        {
-            small_.emplace_back(key, num_tab);
-
-            if (small_.size() > SmallN)
-            {
-                using_big_ = true;
-                big_.reserve(small_.size());
-                for (const auto& [key, tab] : small_)
-                {
-                    big_[key] = tab;
-                }
-                small_.clear();
-            }
-        }
-        else
-        {
-            big_[key] = num_tab;
-        }
-    }
+    void insert(Key key, int num_tab);
 
     /**
      * @brief Re-map an EXISTING key to a new num_tab, in place. Do not use insert()
@@ -187,29 +121,7 @@ class PointerMap
      * @param new_num_tab New table number.
      * @return false if the key was not present (caller error); true otherwise.
      */
-    bool set_num_tab(Key key, int new_num_tab) noexcept
-    {
-        if (!using_big_)
-        {
-            for (auto& [k, tab] : small_)
-            {
-                if (k == key)
-                {
-                    tab = new_num_tab;
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        const auto it = big_.find(key);
-        if (it == big_.end())
-        {
-            return false;
-        }
-        it->second = new_num_tab;
-        return true;
-    }
+    bool set_num_tab(Key key, int new_num_tab) noexcept;
 
     /**
      * @brief Swap the num_tab values of two existing keys (rechunk_to's array swap,
@@ -218,54 +130,7 @@ class PointerMap
      * @param key_b Second key.
      * @return true if both keys were found (and swapped); false otherwise.
      */
-    bool swap_keys(Key key_a, Key key_b) noexcept
-    {
-        int  na = 0;
-        int  nb = 0;
-        bool fa = false;
-        bool fb = false;
-        if (!using_big_)
-        {
-            for (const auto& [key, tab] : small_)
-            {
-                if (key == key_a)
-                {
-                    na = tab;
-                    fa = true;
-                }
-                if (key == key_b)
-                {
-                    nb = tab;
-                    fb = true;
-                }
-            }
-            if (!fa || !fb)
-            {
-                return false;
-            }
-            for (auto& [key, tab] : small_)
-            {
-                if (key == key_a)
-                {
-                    tab = nb;
-                }
-                else if (key == key_b)
-                {
-                    tab = na;
-                }
-            }
-            return true;
-        }
-
-        const auto ia = big_.find(key_a);
-        const auto ib = big_.find(key_b);
-        if (ia == big_.end() || ib == big_.end())
-        {
-            return false;
-        }
-        std::swap(ia->second, ib->second);
-        return true;
-    }
+    bool swap_keys(Key key_a, Key key_b) noexcept;
 
     /**
      * @brief Call `func` with each registered key.
@@ -273,23 +138,7 @@ class PointerMap
      * @param func Callback to invoke for every key.
      */
     template <typename F>
-    void for_each_key(F&& func) const
-    {
-        if (!using_big_)
-        {
-            for (const auto& [key, tab] : small_)
-            {
-                func(key);
-            }
-        }
-        else
-        {
-            for (const auto& [key, tab] : big_)
-            {
-                func(key);
-            }
-        }
-    }
+    void for_each_key(F&& func) const;
 
   private:
     std::vector<std::pair<Key, int>>       small_;
@@ -330,11 +179,11 @@ namespace zero_any
 {
 
 /// @brief Per-table, per-chunk second-value storage used by zero_any::Proxy (see the description above realloc_unique).
-template <typename T, typename Derived>
-class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
+template <typename T, typename Derived, typename ChunkT>
+class ProxySpec : public SecondValueProxyBase<Derived, T, ChunkT>
 {
   public:
-    using Base2 = SecondValueProxyBase<Derived, T, Chunk<T>>;
+    using Base2 = SecondValueProxyBase<Derived, T, ChunkT>;
 
     /// @brief What a slot holds: the value, or for a wide T the identifier
     ///        of its shared array (SecondValueTraits) -- 4 bytes per chunk
@@ -402,34 +251,13 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * \param nb_chunk_old Number of chunks before the resize.
      * \param nb_chunk New number of chunks in the tab.
      */
-    static void resize(int nb_tab, int nb_chunk_old, int nb_chunk)
-    {
-        auto&     row  = tab_second_value[static_cast<std::size_t>(nb_tab)];
-        const int held = static_cast<int>(row.size());
-        // Keeps [0, min(old, new)); new slots value-initialised (by a team for a large array).
-        parallel_storage_init::resize_filled(row, static_cast<std::size_t>(nb_chunk), SecondValueSlotT{});
-        // Clear from the OLD count too: the row may hold more than nb_chunk_old entries.
-        // Only up to what it held: resize_filled() initialised the rest.
-        for (int k = nb_chunk_old; k < std::min(held, nb_chunk); ++k)
-        {
-            row[static_cast<std::size_t>(k)] = SecondValueSlotT{};
-        }
-    }
+    static void resize(int nb_tab, int nb_chunk_old, int nb_chunk);
 
     /*!
      * \brief Clears all second values in a specific tab.
      * \param num_tab Index of the tab to clear.
      */
-    static void clear([[maybe_unused]] int num_tab)
-    {
-        // Released, not just emptied: a re-chunk destroys the old storage under its own
-        // num_tab, so a row left allocated leaks at every re-chunk. Swap with an empty
-        // row: `= {}` would keep the capacity.
-        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
-        {
-            SecondValueRowT().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
-        }
-    }
+    static void clear([[maybe_unused]] int num_tab);
 
     SecondValueRef<T> ptr_second_value_; ///< this chunk's slot in tab_second_value[num_tab]
 
@@ -452,11 +280,11 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 namespace zero_any
 {
 
-template <typename Derived>
-class ProxySpec<bool, Derived> : public SecondValueProxyBase<Derived, bool, Chunk<bool>>
+template <typename Derived, typename ChunkT>
+class ProxySpec<bool, Derived, ChunkT> : public SecondValueProxyBase<Derived, bool, ChunkT>
 {
   public:
-    using ChunkType = Chunk<bool>;
+    using ChunkType = ChunkT;
 
     using Base2 = SecondValueProxyBase<Derived, bool, ChunkType>;
 
@@ -516,17 +344,7 @@ class ProxySpec<bool, Derived> : public SecondValueProxyBase<Derived, bool, Chun
      * \param nb_chunk_old Old number of chunks in the tab.
      * \param nb_chunk New number of chunks in the tab.
      */
-    static void resize(int nb_tab, int nb_chunk_old, int nb_chunk)
-    {
-        realloc_unique(tab_second_value[nb_tab], nb_chunk_old, nb_chunk);
-
-        // realloc_unique leaves the new tail indeterminate: fill it here.
-        if (nb_chunk > nb_chunk_old)
-        {
-            std::ranges::fill(tab_second_value[nb_tab].get() + nb_chunk_old, tab_second_value[nb_tab].get() + nb_chunk,
-                              false);
-        }
-    }
+    static void resize(int nb_tab, int nb_chunk_old, int nb_chunk);
 
     /*!
      * \brief Clears all second values in a specific tab.
@@ -561,10 +379,10 @@ namespace zero_any
 {
 
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-class ProxyFastCompPolicy : public ProxySpec<T, Derived>
+class ProxyFastCompPolicy : public ProxySpec<T, Derived, ChunkT>
 {
   public:
-    using BaseSpec = ProxySpec<T, Derived>;
+    using BaseSpec = ProxySpec<T, Derived, ChunkT>;
 
     using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
@@ -588,7 +406,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& operand, Body lbd) const;
 
     /// @brief Rank @p thr's zero_any candidate list.
-    TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+    TChunk2ACompOf<ChunkT>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially_thr(thr);
     }
@@ -597,7 +415,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     ///        "already queued" flag pointer.
     void set_num_tab_ptr_is_inside_chunk(this Derived& self) noexcept
     {
-        self.set_num_tab(); // zero_any::Proxy's no-arg overload (looks the table up)
+        self.set_num_tab(); // zero_any::ProxyImpl's no-arg overload (looks the table up)
         self.Base::set_ptr_is_inside_chunk_list_to_compress();
     }
 
@@ -611,10 +429,10 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
  * @brief Specialization for Disabled Fast Compression (Zero Overhead).
  */
 template <typename Derived, typename T, typename ChunkT>
-class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Derived>
+class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Derived, ChunkT>
 {
   public:
-    using BaseSpec = ProxySpec<T, Derived>;
+    using BaseSpec = ProxySpec<T, Derived, ChunkT>;
 
     using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
@@ -624,7 +442,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
     using BaseSpec::BaseSpec;
 
     /// @brief The single candidate list of a serial build (zero_any::ChunkThreadPolicy<false>).
-    TChunk2AComp<Chunk, T>& get_vec_tuple_to_compress_potentially() const noexcept
+    TChunk2ACompOf<ChunkT>& get_vec_tuple_to_compress_potentially() const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially();
     }
@@ -636,34 +454,39 @@ namespace zero_any
 {
 
 /**
- * @brief Proxy to one element of a zero_any::Chunk<T> chunk.
+ * @brief Body of the proxy to one element of a zero_any-family chunk
+ *        (zero_any::Proxy, and later pattern::Proxy).
  *
- * Reads/writes one slot of a zero_any::Chunk<T>, with fast-path/slow-path locking around
+ * Reads/writes one slot of a ChunkT, with fast-path/slow-path locking around
  * compression, and manages the per-chunk metadata (second values, type-of-constant
- * flags, compression bookkeeping).
+ * flags, compression bookkeeping). The tables are static members: one set per
+ * instantiation, so per member of the family.
  *
  * @tparam T Element type.
+ * @tparam Derived The final proxy type (CRTP), e.g. zero_any::Proxy<T>.
+ * @tparam ChunkT The chunk type, e.g. zero_any::Chunk<T>.
  */
-template <typename T>
+template <typename T, typename Derived, typename ChunkT>
 // no move assignment on purpose -- assigning a proxy
 // WRITES the element (see its operator=); a defaulted move would rebind it instead.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::use_fast_block_compression>
+class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::use_fast_block_compression>
 {
   public:
     /// @brief Stream output of the element's value (defined below).
     template <typename U>
     friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
 
-    using ChunkType          = Chunk<T>;
-    using Base2              = SecondValueProxyBase<Proxy, T, ChunkType>;
-    using Base               = ProxyBase<Proxy, T, ChunkType>;
-    using BaseFastCompPolicy = ProxyFastCompPolicy<Proxy, T, ChunkType, chunk_config::use_fast_block_compression>;
-    using BaseSpec           = ProxySpec<T, Proxy>;
+    using ChunkType          = ChunkT;
+    using Base2              = SecondValueProxyBase<Derived, T, ChunkType>;
+    using Base               = ProxyBase<Derived, T, ChunkType>;
+    using BaseFastCompPolicy = ProxyFastCompPolicy<Derived, T, ChunkType, chunk_config::use_fast_block_compression>;
+    using BaseSpec           = ProxySpec<T, Derived, ChunkType>;
 
     friend Base;
     friend Base2;
     friend BaseFastCompPolicy;
+    friend Derived; // pattern::Proxy widens pre_check_mark_for_compression() (its completion rule)
 
     // Qualified: an unqualified friend template would declare a new
     // zero_any::ProxyBaseFastCompPolicy, and make_proxy_with_info's requires
@@ -672,50 +495,43 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     friend class shrink_array::ProxyBaseFastCompPolicy;
 
     /**
-     * @brief Construct a zero_any::Proxy for OpenMP build (atomic reference to values).
-     * @param values reference to array pointer (atomic)
+     * @brief Construct the proxy of element @p num of @p chunk.
+     * @param values reference to array pointer (atomic in OpenMP builds)
      * @param num index within array
      * @param chunk owning chunk
      */
-    explicit Proxy(BaseFastCompPolicy::ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept
-        : ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>(values, num, chunk)
+    explicit ProxyImpl(BaseFastCompPolicy::ValuesTypeRef values, int num, ChunkT& chunk) noexcept
+        : BaseFastCompPolicy(values, num, chunk)
     {
     }
 
     /** @brief Clean path for safe assignments (small operand, by value). */
     template <typename U>
         requires IsCleanAssignment<T, U>
-    T operator=(const U& operand) noexcept
+    T operator=(this Derived& self, const U& operand) noexcept
     {
-        return assign_impl<U>(operand);
+        return self.template assign_impl<U>(operand);
     }
 
     /** @brief Trap path for risky assignments (e.g., float = 1.01). */
     template <typename U>
         requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
     [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
-    T operator=(const U& operand) noexcept
+    T operator=(this Derived& self, const U& operand) noexcept
     {
-        return assign_impl<T>(static_cast<T>(operand));
+        return self.template assign_impl<T>(static_cast<T>(operand));
     }
 
     /**
      * @brief Proxy-to-proxy assignment, `a[i] = b[j]`: read @p from's value
      *        through operator T() (the gated read), then write it through
-     *        assign_impl() -- Proxy::operator='s meaning.
+     *        assign_impl() -- Proxy::operator='s meaning. The final class
+     *        forwards its own copy assignment here.
      * @param from Proxy to read the value from.
      * @return *this.
      */
-    const Proxy& operator=(const Proxy& from) noexcept
-    {
-        if (std::addressof(from) != this) // operator& is deleted
-        {
-            const InT<T> value = static_cast<T>(from); // complete before the write starts
-            assign_impl<T>(value);
-        }
-        return *this;
-    }
-    Proxy(const Proxy& other) = default;
+    const ProxyImpl& operator=(this Derived& self, const ProxyImpl& from) noexcept;
+    ProxyImpl(const ProxyImpl& other) = default;
 
     /**
      * @brief Address-of operator is disabled to prevent unsafe access.
@@ -726,25 +542,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /**
      * @brief Compute and store num_tab using share_info_array and ptr_on_array.
      */
-    void set_num_tab() noexcept
-    {
-        // Armed by the array's operator[]: nothing to look up. A proxy armed otherwise
-        // (replay reconstruction, only the array pointer set) resolves it through the registry.
-        if (num_tab_ >= 0) [[likely]]
-        {
-            if constexpr (build_config::any_check)
-            {
-                if (num_tab_ != share_info_array->get_num_tab(ptr_on_array_))
-                {
-                    CHUNK_INVARIANT_FAILED(
-                        "zero_any::Proxy::set_num_tab: armed num_tab {} differs from the registry's for array {}",
-                        num_tab_, ptr_on_array_);
-                }
-            }
-            return;
-        }
-        num_tab_ = share_info_array->get_num_tab(ptr_on_array_);
-    }
+    void set_num_tab() noexcept;
 
     /**
      * @brief Initialize per-chunk pointers for this proxy (must call set_num_tab first).
@@ -753,6 +551,16 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     /// @brief Arm ptr_second_value from num_tab / num_chunk (no-op for bool).
     void set_ptr_second_value() noexcept;
+
+    /// @brief The second-value slot of this proxy's chunk, where a motif chunk
+    ///        keeps its offset (has_motif_state_v members only). Does not arm
+    ///        anything: num_tab is looked up when the proxy has not resolved it.
+    [[nodiscard]] const T* motif_offset_slot() const noexcept
+        requires has_motif_state_v<ChunkT>
+    {
+        const int tab = num_tab_ >= 0 ? num_tab_ : share_info_array->get_num_tab(ptr_on_array_);
+        return BaseSpec::get_tab_second_value(tab, num_chunk_).slot;
+    }
 
     /// @brief This proxy's array index (ProxyBase::get_num_tab(), re-exported
     ///        past the policy layers).
@@ -782,15 +590,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @brief Clear per-chunk arrays for a tab.
      * @param num_tab tab index
      */
-    static void clear_tab_is_int(int num_tab)
-    {
-        BaseSpec::clear(num_tab);
-        // Released, not just emptied (clear() keeps the capacity): every re-chunk would
-        // leave one byte per old chunk behind.
-        parallel_storage_init::NoInitVector<CstSlot>().swap(tab_type_cst_val[num_tab]);
-        // Same for the candidate flags.
-        Base::release_tab_is_int(num_tab);
-    }
+    static void clear_tab_is_int(int num_tab);
 
     /**
      * @brief Per-tab array of flags indicating the type of constant value used.
@@ -803,10 +603,10 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /**
      * @brief Mapping from pointer to tab information for chunk lookup.
      */
-    static inline constinit internal::LazyImmortal<PointerMap<T>> share_info_array; ///< pointer->tab mapping
+    static inline constinit internal::LazyImmortal<PointerMap<ChunkT>> share_info_array; ///< pointer->tab mapping
 
   private:
-    using ManagerChunk2A = ManagerChunk<Chunk, T>;
+    using ManagerChunk2A = typename ChunkTraits<ChunkT>::ManagerType;
 
     using Base::read_values;
     using Base::values_;
@@ -847,55 +647,23 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *       mark_for_compression_if_needed_with_value() when the caller already
      *       holds it, so no concurrent writer can be read in between.
      */
-    void mark_for_compression_if_needed(InT<T> new_value, const T* vals) const;
+    void mark_for_compression_if_needed(this const Derived& self, InT<T> new_value, const T* vals);
 
     /**
      * @brief Marks chunk for potential compression with explicit old value
      * @param old_value Previous value
      * @param new_value New value being written
      */
-    void mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const;
+    void mark_for_compression_if_needed_with_value(this const Derived& self, InT<T> old_value, InT<T> new_value);
 
     /// @brief Materialise this proxy's chunk with the constant it was compressed to
     ///        (first value, or @p ptr_second_value). Not for bool.
     /// @note Dynamic geometry: allocates from THIS array's chunk-size pool, whatever
     ///       the calling thread's ambient size.
-    void create_value(SecondValueRef<T> ptr_second_value) const noexcept
-    {
-        if constexpr (build_config::chunk_dynamic)
-        {
-            // Set the per-thread active size from THIS array right before materialising, so a
-            // write on any worker allocates from the right size pool.
-            shrink_array::set_thread_chunk_size(this->chunk_size());
-            shrink_array::set_thread_alloc_key(this->alloc_key());
-        }
-        if constexpr (is_not_bool)
-        {
-            chunk_.create_value(is_cst_val2(), ptr_second_value);
-        }
-        else
-        {
-            static_assert(false, "create_value(..., second value) is for non-bool elements: use create_value_bool()");
-        }
-    }
+    void create_value(SecondValueRef<T> ptr_second_value) const noexcept;
 
     /// @brief create_value() for bool, whose second value is the chunk flag itself.
-    void create_value_bool() const noexcept
-    {
-        if constexpr (build_config::chunk_dynamic)
-        {
-            shrink_array::set_thread_chunk_size(this->chunk_size());
-            shrink_array::set_thread_alloc_key(this->alloc_key());
-        }
-        if constexpr (is_bool)
-        {
-            chunk_.create_value_bool(is_cst_val2());
-        }
-        else
-        {
-            static_assert(false, "create_value_bool() is for bool elements: use create_value(..., second value)");
-        }
-    }
+    void create_value_bool() const noexcept;
 
     inline void trigger_compression_if_needed(int thr_rank);
 
@@ -930,31 +698,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     [[nodiscard]] bool should_mark_for_compression(InT<T> old_value,
                                                    InT<T> new_value,
                                                    InT<T> second_value,
-                                                   InT<T> first_value) const noexcept
-    {
-        if (CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value,
-                                                                          first_value))
-        {
-            return true;
-        }
-        const bool discover = (second_value == first_value && new_value != first_value);
-        const bool change   = (second_value != first_value && new_value != second_value && !(new_value == old_value));
-        if (!discover && !change)
-        {
-            return false;
-        }
-        if constexpr (chunk_config::use_fast_block_compression)
-        {
-            // Already queued: add_to_compression_list() is a no-op. One relaxed load; the
-            // filter's reads are only paid once the pass has reset the flag.
-            if (this->ptr_is_inside_chunk_list_to_compress_ != nullptr &&
-                this->ptr_is_inside_chunk_list_to_compress_->load(std::memory_order_relaxed) != 0)
-            {
-                return true;
-            }
-        }
-        return may_become_uniform(new_value);
-    }
+                                                   InT<T> first_value) const noexcept;
 
     /// @brief Could the chunk be uniform at @p value once this write lands?
     /// @details NECESSARY condition: two other elements of the chunk (the first
@@ -969,26 +713,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     ///          elements belong to other writers, so both sides are relaxed atomics
     ///          (relaxed_element.h; the stores in store_value()). A type that cannot
     ///          take them (the aggregates) skips the filter and always queues.
-    [[nodiscard]] bool may_become_uniform(InT<T> value) const noexcept
-    {
-        if constexpr (!internal::relaxed_element_access_v<T>)
-        {
-            return true;
-        }
-        else
-        {
-            const int chunk_sz = static_cast<int>(this->chunk_size());
-            if (chunk_sz < 3) [[unlikely]]
-            {
-                return true;
-            }
-            const int offset = this->num_;
-            const int r0     = (offset == 0) ? 1 : 0;
-            const int r1     = (offset == chunk_sz - 1) ? chunk_sz - 2 : chunk_sz - 1;
-            return this->chunk_.read_value_scan_relaxed(r0) == value &&
-                   this->chunk_.read_value_scan_relaxed(r1) == value;
-        }
-    }
+    [[nodiscard]] bool may_become_uniform(InT<T> value) const noexcept;
 
     /**
      * @brief zero_any-specific fast pre-check guarding the marking path.
@@ -1028,17 +753,17 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     void ensure_writable_storage();
 
     template <typename ModifyFn>
-    void execute_simple_operation(ModifyFn modify_fn);
+    void execute_simple_operation(this Derived& self, ModifyFn modify_fn);
 
     template <typename Op, typename ModifyFn, typename U>
-    void execute_arithmetic_compound_operation(Op op, const U& operand, ModifyFn modify_fn);
+    void execute_arithmetic_compound_operation(this Derived& self, Op op, const U& operand, ModifyFn modify_fn);
 
     template <typename ModifyFn>
-    void execute_inplace_operation(ModifyFn modify_fn);
+    void execute_inplace_operation(this Derived& self, ModifyFn modify_fn);
 
-    inline void handle_bool_assignment(InT<T> value);
+    inline void handle_bool_assignment(this Derived& self, InT<T> value);
 
-    inline void handle_no_bool_assignment(InT<T> value);
+    inline void handle_no_bool_assignment(this Derived& self, InT<T> value);
 
     /**
      * @brief Assigns a value to the proxy element.
@@ -1048,15 +773,44 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     template <typename U>
     // InT<U>, not const U&: the write engine is the one frame not inlined into the caller,
     // so a small type crosses the call in a register. Non-deducible: call assign_impl<U>(v).
-    T assign_impl(InT<U> value) noexcept;
+    T assign_impl(this Derived& self, InT<U> value) noexcept;
 
     // ========================================================================
     // COMPOUND ARITHMETIC OPERATORS
     // ========================================================================
     template <typename U, typename Op>
-    void apply_compound_operation(Op op, InT<U> operand) noexcept; // InT: see assign_impl
+    void apply_compound_operation(this Derived& self, Op op, InT<U> operand) noexcept; // InT: see assign_impl
 
     CstSlot* ptr_type_cst_ = nullptr; ///< pointer into tab_type_cst_val[num_tab]
+};
+
+/**
+ * @brief Proxy to one element of a zero_any::Chunk<T> chunk: ProxyImpl with
+ *        itself as the proxy type and zero_any::Chunk<T> as the chunk type.
+ *
+ * @tparam T Element type.
+ */
+template <typename T>
+// no move assignment on purpose -- assigning a proxy
+// WRITES the element (see its operator=); a defaulted move would rebind it instead.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
+class Proxy : public ProxyImpl<T, Proxy<T>, Chunk<T>>
+{
+    using Impl = ProxyImpl<T, Proxy<T>, Chunk<T>>;
+
+  public:
+    using Impl::Impl;
+    using Impl::operator=; // the value assignments (clean and trap paths)
+
+    /// @brief Proxy-to-proxy assignment, `a[i] = b[j]`: a WRITE of @p from's
+    ///        value (ProxyImpl::operator=), not a rebinding.
+    /// @return *this.
+    const Proxy& operator=(const Proxy& from) noexcept
+    {
+        Impl::operator=(from);
+        return *this;
+    }
+    Proxy(const Proxy& other) = default;
 };
 
 } // namespace zero_any

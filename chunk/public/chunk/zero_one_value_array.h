@@ -176,7 +176,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /// @brief Build an array holding the elements of @p il.
     /// @param il Source values.
-    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
+    explicit Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /**
      * @brief Release the array's storage, then drop both registry entries.
@@ -195,16 +195,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *            non-bool only; rechunk_to() re-points its value onto the
      *            survivor first, so only entries we still own go.
      */
-    ~Array()
-    {
-        clear();
-        Proxy<T>::share_info_array->erase(this->registry_key());
-
-        if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
-        {
-            Proxy<T>::share_info_array->erase_inf_array_by_ptr(&inf_array_);
-        }
-    }
+    ~Array();
 
     /**
      * @brief Move-assign: this array's own contents are released (clear()),
@@ -214,27 +205,11 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *          chunks keep their metadata rows (num_tab). Sequential context.
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    Array& operator=(Array&& other) noexcept
-    {
-        if (this != &other)
-        {
-            clear();
-            this->swap_storage_and_identity(other);
-        }
-        return *this;
-    }
+    Array& operator=(Array&& other) noexcept;
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op.
-    Array& operator=(const Array& from)
-    {
-        if (this != &from)
-        {
-            copy_second_value_from(from);
-            this->copy_from(from);
-        }
-        return *this;
-    }
+    Array& operator=(const Array& from);
 
     /**
      * @brief Set the array-wide second constant.
@@ -253,17 +228,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief The array-wide second constant, read from the shared registry.
      * @return the registered second value; always true for bool
      */
-    [[nodiscard]] T get_second_value() const noexcept
-    {
-        if constexpr (!is_bool_like_v<T>)
-        {
-            return Proxy<T>::share_info_array->get_second_value(this->registry_key());
-        }
-        else
-        {
-            return true;
-        }
-    }
+    [[nodiscard]] T get_second_value() const noexcept;
 
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
     [[nodiscard]] InfArrayT get_info_second_value() const noexcept
@@ -273,18 +238,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /// @brief Index of this array's second value in the shared value table.
     /// @warning Aborts for bool, which registers no second value.
-    [[nodiscard]] int get_ind_second_value() const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return get_info_second_value().ind;
-        }
-        else
-        {
-            CHUNK_INVARIANT_FAILED(
-                "zero_one_value::Array<bool>::get_ind_second_value(): bool registers no second value");
-        }
-    }
+    [[nodiscard]] int get_ind_second_value() const noexcept;
 
     /**
      * @brief Has the chunk holding element @p index been materialised?
@@ -303,17 +257,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @note zero_one_value::Chunk::written() needs the array's second-value index: see
      *       has_chunk_written_v (array_chunk_base.h).
      */
-    [[nodiscard]] bool chunk_written(int num_chunk) const
-    {
-        if constexpr (is_not_bool)
-        {
-            return chunk_list_[num_chunk].written(get_ind_second_value());
-        }
-        else
-        {
-            return chunk_list_[num_chunk].written();
-        }
-    }
+    [[nodiscard]] bool chunk_written(int num_chunk) const;
 
     /**
      * @brief Resize the array, preserving the elements that still fit.
@@ -340,7 +284,14 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @details clear_core() plus the pre-drain compression stats.
      * @see clear_core
      */
-    void clear() post(this->empty());
+    void clear() post(this->empty())
+    {
+        // clear() and clear_core() are currently the same teardown; the split exists so
+        // rechunk_to() can release its temporary array through clear_core() without
+        // going through the public entry point.
+        this->invalidate_proxies();
+        clear_core();
+    }
 
     /**
      * @brief Audit pass: report the constant chunks the incremental compression missed.
@@ -366,7 +317,12 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief Public entry point for the audit pass.
      * @see compress_int, which this forwards to.
      */
-    void compress();
+    void compress()
+    {
+        // Plain forwarder. Do not add an in-parallel-region test here: it hit an LLVM
+        // OpenMP runtime bug.
+        compress_int();
+    }
 
     /// @brief Read-only access to the underlying chunk list.
     [[nodiscard]] const Base::ChunkListType& get_chunk_list() const noexcept
@@ -429,17 +385,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// @brief Declare @p from's second value on this array, when it has one
     ///        (T{} means none: rechunk_seed_fresh's rule) and this array has
     ///        not declared it yet.
-    void copy_second_value_from(const Array& from)
-    {
-        if constexpr (!is_bool_like_v<T>)
-        {
-            const InT<T> sv = from.get_second_value();
-            if (sv != T{} && get_second_value() != sv)
-            {
-                set_second_value(sv, false);
-            }
-        }
-    }
+    void copy_second_value_from(const Array& from);
 
     /// @brief Address of the registry mirror, for ArrayChunkBase to arm write
     ///        proxies with (zero_one_value::ProxySpec::arm_inf_array).
@@ -459,32 +405,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// @brief Make the T{} key drainable: its tuple in map_inf_array and a
     ///        candidate list per rank, if this type has none yet. Idempotent;
     ///        fast-block builds only (the serial path has no lists).
-    void register_no_second_value_key()
-    {
-        if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
-        {
-            auto& sh_inf = *Proxy<T>::share_info_array;
-            if (sh_inf.find_inf_array(T{}) == nullptr)
-            {
-                sh_inf.insert(T{}, &inf_array_none);
-                // The between-phase pass drains only the values of THIS map: T{}
-                // must be in it, at the sentinel index (so set_second_value(T{})
-                // still sees it unregistered and builds a real block).
-                sh_inf.insert_map_ind_cst_val2(T{}, chunk_config::no_second_value_index);
-            }
-            if constexpr (build_config::threaded)
-            {
-                for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
-                {
-                    auto& slot = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
-                    if (!slot)
-                    {
-                        slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();
-                    }
-                }
-            }
-        }
-    }
+    void register_no_second_value_key();
 
     /**
      * @brief The identity step of swap(): the registry tuple (second value,
@@ -494,25 +415,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *          points each second value at an array's inf_array MEMBER, which
      *          now holds the other tuple: both values are re-pointed.
      */
-    void swap_identity(Array& other)
-    {
-        auto& sh_inf = *Proxy<T>::share_info_array;
-        sh_inf.swap_entries(this->registry_key(), other.registry_key());
-        std::swap(ind_cst_val2_, other.ind_cst_val2_);
-        sync_registry_mirror();
-        other.sync_registry_mirror();
-        if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
-        {
-            for (Array* arr : {this, &other})
-            {
-                const T value = arr->inf_array_.second_value;
-                if (value != T{})
-                {
-                    sh_inf.insert(value, &arr->inf_array_);
-                }
-            }
-        }
-    }
+    void swap_identity(Array& other);
 
     /// This array's (second value, index, num_tab) tuple: a MIRROR of its entry
     /// in zero_one_value::Proxy<T>::share_info_array, complete in every build mode.

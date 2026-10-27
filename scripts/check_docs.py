@@ -55,8 +55,6 @@ ENGLISH_ONLY = {
     # the threads branch's working plan, status and decisions: it goes with the
     # branch, not into a release
     "threading_backends.md",
-    # the plan of the pattern::Array variant: replaced by algo_ documents when it exists
-    "pattern_design.md",
 }
 
 # Real names that are not defined in this tree.
@@ -89,7 +87,7 @@ ALLOWED = {
     "sort", "data", "capacity", "reserve", "resize", "clear", "assign", "swap", "front", "back", "at",
     "size", "empty", "complex", "array", "vector", "deque", "string", "operator==", "operator<",
     "operator<=>", "_GLIBCXX_ASSERTIONS", "__FAST_MATH__", "_OPENMP", "__GLIBC__", "__GNUC__",
-    "__NVCOMPILER", "auto", "const", "static_assert",
+    "__NVCOMPILER", "__has_cpp_attribute", "auto", "const", "static_assert",
     # OpenMP, OMPT
     "omp_get_max_threads", "omp_get_num_procs", "omp_get_thread_num", "omp_get_thread_limit",
     "omp_get_ancestor_thread_num", "omp_set_num_threads", "omp_in_parallel", "ompt_start_tool",

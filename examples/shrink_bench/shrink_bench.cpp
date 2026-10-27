@@ -76,7 +76,7 @@ namespace shrink_array
 ///        chunked build only. The objects exist in every build so the loop
 ///        reads the same; RechunkDecider::consider() is itself a no-op when
 ///        !chunk_dynamic, and this flag gates the rest with `if constexpr`.
-inline constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_config::chunk_dynamic;
+constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_config::chunk_dynamic;
 
 template <typename T>
 using Array = ActiveArray<T>;
@@ -246,6 +246,7 @@ int main(int argc, char* argv[])
     const bool      test_stl        = bench_args.test_stl;
     const bool      no_struct       = bench_args.no_struct;
     const bool      no_mask         = bench_args.no_mask;
+    const bool      no_conn         = bench_args.no_conn;
     const double    mask_scale      = bench_args.mask_scale; // tab_mask's size / sz
     const double    multiply_factor = bench_args.multiply_factor;
     const double    divisor_factor  = bench_args.divisor_factor;
@@ -564,12 +565,25 @@ int main(int argc, char* argv[])
         std::println("tab_mask: {} elements (--mask_scale {})", mask_sz, mask_scale);
     }
 
-    // Handle on the eighteen arrays, passed to the extracted phases. References,
+    // A mesh connectivity (bench_phase_conn.cpp): pattern::Array<int> in the
+    // zero_one_value and zero_any builds, zero::Array<int> in a zero build, a vector
+    // in the baseline (BenchConnArray). About sz ints, whole rows of
+    // bench_conn_row; size 1 under --no_conn (BenchArrays::with_conn) or when sz is
+    // smaller than one row.
+    const Int      conn_sz     = sz / bench_conn_row * bench_conn_row;
+    const bool     no_tab_conn = no_conn || conn_sz == 0;
+    BenchConnArray tab_conn(no_tab_conn ? 1 : conn_sz);
+    if (!no_tab_conn)
+    {
+        std::println("tab_conn: {} elements ({} rows of {} cells)", conn_sz, conn_sz / bench_conn_row, bench_conn_nx);
+    }
+
+    // Handle on the nineteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
-    BenchArrays bench_arrays{tab1,     tab2,          tab3,        tab4,      tab5,      tab_int,
-                             tab_bool, tab_bool_bits, tab_complex, tab_float, tab_short, tab_char,
-                             tab_long, tab_ulong,     tab_quant,   tab_point, tab_cell,  tab_mask,
-                             sz,       interval,      !no_struct,  !no_mask};
+    BenchArrays bench_arrays{tab1,          tab2,        tab3,        tab4,      tab5,     tab_int,  tab_bool,
+                             tab_bool_bits, tab_complex, tab_float,   tab_short, tab_char, tab_long, tab_ulong,
+                             tab_quant,     tab_point,   tab_cell,    tab_mask,  tab_conn, sz,       interval,
+                             !no_struct,    !no_mask,    !no_tab_conn};
 
     // The end-of-life stats print these next to the table number.
     maybe_set_debug_name(tab1, "tab1");
@@ -590,6 +604,7 @@ int main(int argc, char* argv[])
     maybe_set_debug_name(tab_point, "tab_point");
     maybe_set_debug_name(tab_cell, "tab_cell");
     maybe_set_debug_name(tab_mask, "tab_mask");
+    maybe_set_debug_name(tab_conn, "tab_conn");
 
     SingletonChk<GlobalStatsChunkList>::get_ref().print();
 
@@ -609,6 +624,7 @@ int main(int argc, char* argv[])
     bench_phase_fill(bench_arrays, start, end, elapsed_seconds);
     bench_phase_struct_fill(bench_arrays);
     bench_phase_mask_fill(bench_arrays);
+    bench_phase_conn_fill(bench_arrays);
 
     // Verification pass (writing or reading back the reference files):
     // lbd_check and lbd_check_all, in bench_checks.cpp.
@@ -682,6 +698,7 @@ int main(int argc, char* argv[])
     long          long_val_sum = 0;
     double        point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
     long          mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
+    long          conn_sum     = 0; // tab_conn's gather (bench_phase_conn.cpp)
     double        v_real       = 0;
     double        v_im         = 0;
 
@@ -786,6 +803,10 @@ int main(int argc, char* argv[])
                 if (!no_struct)
                 {
                     rechunk_decider.consider<Cell>(tab_cell, tick, iter, "tab_cell");
+                }
+                if (!no_tab_conn)
+                {
+                    rechunk_decider.consider<int>(tab_conn, tick, iter, "tab_conn");
                 }
             }
             // tab_mask: an ArrayChunkBits in a zero_one_value build, whose advisor
@@ -946,6 +967,8 @@ int main(int argc, char* argv[])
             bench_phase_struct_compute(bench_arrays, k, start0, end0, tab_nba1, tab_nba2, point_sum);
             // tab_mask's update, its own region (bench_phase_mask.cpp).
             bench_phase_mask_compute(bench_arrays, k, mask_count);
+            // tab_conn's renumbering, its own region (bench_phase_conn.cpp).
+            bench_phase_conn_compute(bench_arrays, k, conn_sum);
         }
 
         // ─── STRESS TESTS ──────────────────────────────────────────────────
@@ -1090,9 +1113,10 @@ int main(int argc, char* argv[])
                 !std::isfinite(val_sum) || !std::isfinite(cv_val_sum.real()) || !std::isfinite(cv_val_sum.imag());
             if (k % ksum_period == 0 || k == 0 || k == iter_max - 1 || ksum_bad)
             {
-                std::println(
-                    "k : {} val_sum = {} long_val_sum = {} cv_val_sum = ({},{}) point_sum = {} mask_count = {}", k,
-                    val_sum, long_val_sum, cv_val_sum.real(), cv_val_sum.imag(), point_sum, mask_count);
+                std::println("k : {} val_sum = {} long_val_sum = {} cv_val_sum = ({},{}) point_sum = {} mask_count = "
+                             "{} conn_sum = {}",
+                             k, val_sum, long_val_sum, cv_val_sum.real(), cv_val_sum.imag(), point_sum, mask_count,
+                             conn_sum);
                 std::fflush(stdout);
             }
         }
@@ -1198,6 +1222,7 @@ int main(int argc, char* argv[])
     std::fflush(stdout);
     std::println("\npoint_sum  = {}", point_sum);
     std::println("mask_count = {}", mask_count);
+    std::println("conn_sum   = {}", conn_sum);
 
     bench_print_checksums(bench_arrays, check_sum);
 

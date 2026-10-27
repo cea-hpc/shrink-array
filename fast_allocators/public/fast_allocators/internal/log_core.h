@@ -32,7 +32,8 @@
  *     CHUNK_LOG_POW2(warn, recycle, "dropped FOREIGN block {}", ptr);
  *     CHUNK_LOG_ALWAYS(pool, "{} size {}: {} block(s)", label, size, n); // a report asked for
  *
- * - Filtering: CHUNK_LOG=warn (the default), CHUNK_LOG=warn,rechunk=debug,
+ * - Filtering: CHUNK_LOG=warn,rechunk=info (the default: a re-chunk the
+ *   decider applies says so), CHUNK_LOG=warn,rechunk=debug,
  *   CHUNK_LOG=off. Items apply left to right: a bare level sets every
  *   channel, `channel=level` one. Read once, at the first message;
  *   configure() applies a specification on top of it. The switches of the
@@ -390,11 +391,16 @@ struct Spec
     return out;
 }
 
-/// @brief Every channel at warn: what a program logs with CHUNK_LOG unset.
+/// @brief What a program logs with CHUNK_LOG unset: every channel at warn,
+///        rechunk at info -- the line of each re-chunk the decider applies
+///        (one per move, a sequential point), as before the log existed. The
+///        channel's other info lines need their switch (CHUNK_FORCE_RECHUNK,
+///        CHUNK_RECHUNK_CHURN). A bare level in CHUNK_LOG sets rechunk too.
 inline constexpr std::array<Level, n_channels> default_max = []
 {
     std::array<Level, n_channels> levels{};
     levels.fill(Level::warn);
+    levels[static_cast<std::size_t>(Channel::rechunk)] = Level::info;
     return levels;
 }();
 

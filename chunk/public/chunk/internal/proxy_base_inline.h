@@ -1285,4 +1285,270 @@ void ProxyBase<Derived, T, ChunkT>::apply_inplace_operation(this Derived&       
     }
 }
 
+// ---------------------------------------------------------------------------
+// shrink_array::ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>
+// ---------------------------------------------------------------------------
+
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::resize_tab_is_int(int num_tab, int nb_chunk)
+{
+    // Check builds: the row is REALLOCATED, so every flag goes back to 0.
+    // A chunk still flagged here still sits in a candidate list: its entry
+    // outlives the caller's chunk_list realloc, and the cleared flag lets
+    // the chunk be queued twice. The callers' compression pass (resize,
+    // after its deferred-op drain) must empty the lists first; this checks
+    // it. Mirrors zero_any::Proxy::resize_tab_is_int(num_tab, old, nb).
+    if constexpr (build_config::any_check)
+    {
+        if (static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+        {
+            const auto& row = tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)];
+            for (std::size_t j = 0; j < row.size(); ++j)
+            {
+                if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
+                {
+                    CHUNK_INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                                           "flag row is reallocated ({} -> {} chunks)",
+                                           num_tab, j, row.size(), nb_chunk);
+                }
+            }
+        }
+    }
+    // Every flag 0, constructed by a team for a large array.
+    tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
+        parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(nb_chunk), char{0});
+}
+
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+[[nodiscard]] inline T ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::read_values_async(auto* ctx) noexcept
+{
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        // The replays materialise a chunk before they read it: a motif here is a
+        // replay reading a chunk it has not materialised, which would miss the offset.
+        if (ChunkT::is_motif_ptr(ctx->chunk.values_load())) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("read_values_async: a motif chunk read by a replay before its "
+                                   "materialisation (chunk={}, num={})",
+                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+        }
+    }
+    return internal::element_of(ctx->chunk.values_load(), static_cast<std::size_t>(ctx->num));
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ProxyBase<Derived, T, ChunkT>
+// ---------------------------------------------------------------------------
+
+template <typename Derived, typename T, typename ChunkT>
+[[nodiscard]] T ProxyBase<Derived, T, ChunkT>::raw_elem() const noexcept
+{
+    // Only the serial counter mode reads through this: no pass runs
+    // concurrently there. A build with in-region passes must read through
+    // the write session, element_at, or read_values_outside_session.
+    static_assert(chunk_config::use_compression_with_counter || sizeof(T) == 0,
+                  "raw_elem(): serial counter mode only -- no concurrent pass may release the buffer");
+    // raw-read: serial counter mode (no fast block compression, no concurrent pass)
+    return elem_get(static_cast<const T*>(values_), static_cast<std::size_t>(num_));
+}
+
+template <typename Derived, typename T, typename ChunkT>
+void ProxyBase<Derived, T, ChunkT>::store_value_at(T* const vals, InT<T> value) const noexcept
+{
+    // The chunk must not be COMMITTED to a compressor here: a writer on a
+    // marked chunk is sent to the slow path by must_defer_write(), and a
+    // compressor commits its claims only once its window is shut -- no
+    // writer flagged on a marked chunk. Do not test "merely marked" (1):
+    // the compressor may have marked it after this writer's check #2 and
+    // be waiting on the flag (false positive). If this fires, the
+    // compressor passed its window with this writer's flag up: suspect the
+    // ordering of the gate's read, not the propagation of the mark (this
+    // write then races scan_constants()/read_value_scan()).
+    if constexpr (build_config::any_check && chunk_config::use_chunk_steal_mark)
+    {
+        if (chunk_.steal_committed()) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num_);
+        }
+    }
+    // zero_any: the marking filter of another writer may be reading this
+    // element -- relaxed atomic store, see relaxed_element.h.
+    if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
+    {
+        internal::store_element_relaxed(vals + num_, static_cast<T>(value));
+    }
+    else
+    {
+        // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
+        elem_set(vals, static_cast<std::size_t>(num_), static_cast<T>(value));
+    }
+}
+
+template <typename Derived, typename T, typename ChunkT>
+[[nodiscard]] T ProxyBase<Derived, T, ChunkT>::read_values() const noexcept
+{
+    // WRITE-PATH helper ONLY (v_old capture + mark_for_compression new value
+    // in execute_simple_operation / arithmetic_assign). It must NOT sync:
+    // syncing re-flushes from inside a write (begin_write held) and, when
+    // pending_ops_>0, wait_for_availability's replay reallocates `values`
+    // under the in-flight writer. Same-offset visibility on the write path
+    // is handled by the WAW erase before the write body; pure reads use
+    // read_pure(). Not raw for a zero_any second constant (see
+    // internal::element_of()): the compression decision must see the
+    // constant, not 0.
+    return read_values_at(values_);
+}
+
+template <typename Derived, typename T, typename ChunkT>
+void ProxyBase<Derived, T, ChunkT>::check_not_stale() const noexcept
+{
+    if constexpr (build_config::any_check)
+    {
+        if (stale_guard_.gen != nullptr && *stale_guard_.gen != stale_guard_.seen) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
+                                   "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
+                                   "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
+                                   ptr_on_array_, num_chunk_, num_);
+        }
+    }
+}
+
+template <typename Derived, typename T, typename ChunkT>
+[[nodiscard]] inline T ProxyBase<Derived, T, ChunkT>::read_values_at(const T* const vals) const noexcept
+{
+    // TEST KNOB (test_hooks.h), as in ChunkBase::element_at: widens
+    // the load -> dereference window. Compiled out by default.
+    test_hooks::maybe_read_delay();
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        // motif_offset_slot() is the pattern proxy's; the callers are ProxyBase's own
+        // implicit-object members, so no `this const Derived&` here.
+        const auto& self = static_cast<const Derived&>(*this);
+        // A motif chunk: motif[num] + the offset its second-value slot holds, if
+        // the chunk still points at that motif; else the chunk as it is now (F5).
+        if (ChunkT::is_motif_ptr(vals)) [[unlikely]]
+        {
+            T off{};
+            if (chunk_.motif_offset(vals, self.motif_offset_slot(), off)) [[likely]]
+            {
+                return ChunkT::motif_value(vals, num_, off);
+            }
+            return read_values_at(chunk_.values_load());
+        }
+    }
+    return internal::element_of(vals, static_cast<std::size_t>(num_));
+}
+
+template <typename Derived, typename T, typename ChunkT>
+[[nodiscard]] inline T ProxyBase<Derived, T, ChunkT>::read_pure() const noexcept
+{
+    check_not_stale();
+    chunk_.reader_sync(num_);
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        // motif_offset_slot() is the pattern proxy's; the callers are ProxyBase's own
+        // implicit-object members, so no `this const Derived&` here.
+        const auto& self = static_cast<const Derived&>(*this);
+        return chunk_.read_value(num_, self.motif_offset_slot()); // a motif chunk's offset
+    }
+    else
+    {
+        return chunk_.read_value(num_); // read_value accounts the read in stats
+    }
+}
+
+template <typename Derived, typename T, typename ChunkT>
+template <typename U>
+Derived ProxyBase<Derived, T, ChunkT>::operator^=(this auto&& self, const U& operand) noexcept
+    requires is_packed_bit_v<T> && bit_operand_v<U>
+{
+    if (static_cast<bool>(operand))
+    {
+        const bool cur = static_cast<bool>(self.read_pure()); // synchronised read, as operator bool()
+        self           = !cur;
+    }
+    return self;
+}
+
+template <typename Derived, typename T, typename ChunkT>
+Derived ProxyBase<Derived, T, ChunkT>::operator++(this auto&& self) noexcept
+    requires ElementIncrementable<T>
+{
+    const auto inc_operation = [&self] { self.execute_inplace_operation([](T& elem) { ++elem; }); };
+
+    const auto inc_operation_async = [](auto* ctx, auto& proxy)
+    { proxy.execute_inplace_operation_async(ctx, [](T& elem) { ++elem; }); };
+
+    self.apply_inplace_operation(inc_operation, inc_operation_async);
+
+    // Return the proxy, not a value. Never read `values[num]` here: `values`
+    // is the ctor-time snapshot, and the call above may have materialised
+    // the chunk (snapshot stale, possibly the cst sentinel) or DEFERRED the
+    // op (cell not yet updated, another rank's replay may be writing it).
+    // The returned proxy's operator T() is read_pure(): `y = ++a[i]` gets
+    // the right value, and the synchronised read is only paid when used.
+    return self;
+}
+
+template <typename Derived, typename T, typename ChunkT>
+Derived ProxyBase<Derived, T, ChunkT>::operator--(this auto&& self) noexcept
+    requires ElementIncrementable<T>
+{
+    const auto dec_operation = [&self] { self.execute_inplace_operation([](T& elem) { --elem; }); };
+
+    const auto dec_operation_async = [](auto* ctx, auto& proxy)
+    { proxy.execute_inplace_operation_async(ctx, [](T& elem) { --elem; }); };
+
+    self.apply_inplace_operation(dec_operation, dec_operation_async);
+
+    // Return the proxy, not a value: see operator++().
+    return self;
+}
+
+template <typename Derived, typename T, typename ChunkT>
+T ProxyBase<Derived, T, ChunkT>::operator++(this auto&& self, int) noexcept
+    requires ElementIncrementable<T>
+{
+    T temp(self);
+
+    const auto inc_operation = [&self] { self.execute_inplace_operation([](T& elem) { elem++; }); };
+
+    const auto inc_operation_async = [](auto* ctx, auto& proxy)
+    { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem++; }); };
+
+    self.apply_inplace_operation(inc_operation, inc_operation_async);
+    return temp;
+}
+
+template <typename Derived, typename T, typename ChunkT>
+T ProxyBase<Derived, T, ChunkT>::operator--(this auto&& self, int) noexcept
+    requires ElementIncrementable<T>
+{
+    T          temp(self);
+    const auto dec_operation = [&self] { self.execute_inplace_operation([](T& elem) { elem--; }); };
+
+    const auto dec_operation_async = [](auto* ctx, auto& proxy)
+    { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem--; }); };
+
+    self.apply_inplace_operation(dec_operation, dec_operation_async);
+    return temp;
+}
+
+template <typename Derived, typename T, typename ChunkT>
+template <typename WriteFn>
+[[nodiscard]] CHUNK_FORCE_INLINE bool ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_info(this Derived& self,
+                                                                                                   WriteFn write_fn)
+{
+    const auto lbd_info = [&self]
+    {
+        if constexpr (chunk_config::use_fast_block_compression)
+        {
+            self.set_info_on_chunk();
+        }
+    };
+
+    return self.write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
+}
+
 } // namespace shrink_array

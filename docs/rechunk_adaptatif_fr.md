@@ -146,9 +146,10 @@ avoir son **propre jeu d'allocateurs** (une clé d'affinité), par rang et par t
 tampons ne partagent alors aucun slab avec un autre tableau : quand il est reconstruit ou
 détruit, ses slabs se vident entièrement et sont rendus au système.
 
-Le prix : un slab entamé par couple (rang, tableau, taille). Avec des slabs de 1 Mio (16 pages
-de 64 Kio, pour ne retenir qu'une page par slab rendu), c'est ~780 Mio sur les 16 tableaux du
-banc à 64 threads.
+Le prix : un slab entamé par couple (rang, tableau, taille). Avec les slabs de 1 Mio de l'ancien
+plancher de seize pages (pages de 64 Kio), c'était ~780 Mio sur les 16 tableaux du banc à 64 threads ;
+les slabs y font maintenant 256 Kio, le quart (`CHUNK_SLAB_MIN_PAGES=16` rétablit le plancher, voir
+[reglages_developpeur_fr.md](reglages_developpeur_fr.md)).
 
 D'où deux modes, dont le choix par défaut dépend de la variante :
 

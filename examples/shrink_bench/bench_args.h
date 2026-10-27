@@ -61,6 +61,11 @@ struct BenchArgs
     /// --multiply). Default 1/32 (bench_mask_default_scale, bench_array.h);
     /// 8 is the size tab_mask was created with.
     double mask_scale = 1.0 / 32.0;
+    /// --no_conn: leave out tab_conn, the mesh connectivity (bench_phase_conn.cpp)
+    /// -- for a run that must compare with the campaigns made before it existed.
+    /// Its array is then of size 1 and its phases, check and compression are
+    /// skipped.
+    bool no_conn = false;
 
     double multiply_factor = 1.0; ///< --multiply (a real factor)
     double divisor_factor  = 1.0; ///< --divisor (a real factor, like --multiply)

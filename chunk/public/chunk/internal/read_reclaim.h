@@ -137,58 +137,9 @@ class ReadSection
 {
   public:
     /// @brief Enter: the slot's sequence goes odd, then the light fence.
-    ReadSection() noexcept
-    {
-        if constexpr (enabled)
-        {
-            ReaderSlot* slot = t_slot;
-            if (slot == nullptr) [[unlikely]]
-            {
-                slot = claim_slot();
-            }
-            if (slot != nullptr) [[likely]]
-            {
-                slot_ = slot;
-                seq_  = slot->seq.load(std::memory_order_relaxed) + 1; // odd
-                // RELEASE, not relaxed: the reclaimer, having seen this slot odd, waits
-                // for it to MOVE, and the value it then reads may be THIS store -- the
-                // next read's entry. Release orders the previous read's element load
-                // before it; relaxed, by C++20 (no release sequence through a later
-                // relaxed store of the same thread), it would order nothing, and only
-                // the AArch64 / x86 mappings would keep that load before the free. An
-                // stlr instead of an str: +1.9 % on access_cost's worst read case at 1
-                // thread on Grace, within its spread, nothing measurable at 64
-                // (formal/reader_reclaim.c, MUT_ENTER_RELAXED; docs/formal_models.md F3).
-                slot->seq.store(seq_, std::memory_order_release);
-                light_fence();
-            }
-            else
-            {
-                g_overflow_readers.fetch_add(1, std::memory_order_seq_cst);
-                // The announce needs its light side like the slot path: a seq_cst
-                // RMW followed by the acquire load of `values` is not a Dekker
-                // announce in C11 (store buffering against the reclaimer's acquire
-                // load of the counter), though it is on the AArch64 and x86
-                // mappings (formal/reader_reclaim.c, MUT_OVERFLOW_NO_FENCE).
-                light_fence();
-            }
-        }
-    }
+    ReadSection() noexcept;
     /// @brief Leave: the sequence goes even, released after the element load.
-    ~ReadSection()
-    {
-        if constexpr (enabled)
-        {
-            if (slot_ != nullptr) [[likely]]
-            {
-                slot_->seq.store(seq_ + 1, std::memory_order_release); // even: the element load is done
-            }
-            else
-            {
-                g_overflow_readers.fetch_sub(1, std::memory_order_release);
-            }
-        }
-    }
+    ~ReadSection();
     // A scope: neither copied nor moved.
     ReadSection(const ReadSection&)            = delete;
     ReadSection& operator=(const ReadSection&) = delete;
@@ -270,47 +221,9 @@ class PassScope
 {
   public:
     /// @brief Open the batch, unless an enclosing scope already did.
-    PassScope() noexcept
-    {
-        if constexpr (enabled)
-        {
-            if (t_batch == nullptr)
-            {
-                owner_ = true;
-                storage().clear();
-                t_batch = &storage();
-            }
-        }
-    }
+    PassScope() noexcept;
     /// @brief The outermost scope: wait for the readers, then release the batch.
-    ~PassScope()
-    {
-        if constexpr (enabled)
-        {
-            if (!owner_)
-            {
-                return;
-            }
-            t_batch     = nullptr;
-            auto& batch = storage();
-            if (batch.empty())
-            {
-                return;
-            }
-            wait_for_readers();
-            const unsigned int saved_size = t_active_chunk_size;
-            const unsigned int saved_key  = t_alloc_key;
-            for (const Deferred& deferred : batch)
-            {
-                t_active_chunk_size = deferred.chunk_size;
-                t_alloc_key         = deferred.alloc_key;
-                deferred.release(deferred.chunk, deferred.thr, deferred.block);
-            }
-            t_active_chunk_size = saved_size;
-            t_alloc_key         = saved_key;
-            batch.clear();
-        }
-    }
+    ~PassScope();
     // A scope: neither copied nor moved.
     PassScope(const PassScope&)            = delete;
     PassScope& operator=(const PassScope&) = delete;
@@ -348,3 +261,5 @@ inline bool defer_release(void (*release)(void*, int, void*) noexcept, void* chu
 }
 
 } // namespace shrink_array::read_reclaim
+
+#include "chunk/internal/read_reclaim_inline.h" // the template bodies

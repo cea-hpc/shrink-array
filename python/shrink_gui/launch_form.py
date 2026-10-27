@@ -33,6 +33,7 @@ class LaunchForm:
         cached = self.settings.value(f"schema/{self.program.currentText()}")
         self.form.pickers = {d: self.pick for d in PROGRAMS[prog].get("pickers", {})}
         self.check_builds.setEnabled("builds_opt" in PROGRAMS[prog])
+        self.update_nodes_row()
         self.form.build(json.loads(cached) if cached else None)
         self.form.filter(self.opt_filter.text())
         self.apply_arch_defaults()
@@ -83,18 +84,57 @@ class LaunchForm:
     # ------------------------------------------------- start conditions
     def fill_after(self):
         """What a submission can wait for: the compile_all.sh runs not
-        finished yet (a finished one needs no waiting)."""
+        finished yet (a finished one needs no waiting). The jobs of a
+        submission over several nodes (meta "pool") are one entry, the
+        submission's: its data is the pool, and after_spec() waits for them all."""
         keep = self.after.currentData() if self.after.count() else ""
         self.after.blockSignals(True)
         self.after.clear()
         self.after.addItem(T("dès la soumission"), "")
+        pools = set()
         for r in self.runs:
             if (r["meta"].get("program") == "compile_all.sh"
                     and (r["status"] in self.ACTIVE or r["status"].startswith("en attente"))):
-                self.after.addItem(T(f"après {r['id']}"), r["id"])
+                pool = r["meta"].get("pool")
+                if not pool:
+                    self.after.addItem(T(f"après {r['id']}"), r["id"])
+                elif pool not in pools:
+                    pools.add(pool)
+                    self.after.addItem(T(f"après {pool} ({len(self.pool_runs(pool))} nœuds)"), pool)
         self.after.setCurrentIndex(max(0, self.after.findData(keep)))
         self.after.blockSignals(False)
         self.after_cond.setEnabled(bool(self.after.currentData()))
+
+    def pool_runs(self, pool):
+        """The run ids of the jobs of submission @p pool, first node first."""
+        return sorted((r["id"] for r in self.runs if r["meta"].get("pool") == pool),
+                      key=lambda rid: next(r["meta"].get("node", 0) for r in self.runs if r["id"] == rid))
+
+    def after_spec(self):
+        """The start condition chosen: {"run", "runs", "cond"} -- "runs" all
+        the runs to wait for (the jobs of a submission over several nodes),
+        "run" the first of them -- or None."""
+        chosen = self.after.currentData() or ""
+        if not chosen:
+            return None
+        runs = self.pool_runs(chosen) or [chosen]
+        return {"run": runs[0], "runs": runs, "cond": self.after_cond.currentData()}
+
+    # ------------------------------------------------------ several nodes
+    def pool_opt(self):
+        """The option that shares a program's work between jobs (compile_all.sh:
+        --pool), or None when it cannot be split, or not in this mode."""
+        if not hasattr(self, "mode") or self.mode.currentData() != "msub":
+            return None
+        return PROGRAMS.get(self.program.currentText(), {}).get("pool_opt")
+
+    def nodes_wanted(self):
+        """How many batch jobs a submission makes: the "Nœuds" field, or 1."""
+        return self.nodes.value() if hasattr(self, "nodes") and self.pool_opt() else 1
+
+    def update_nodes_row(self):
+        if hasattr(self, "nodes") and hasattr(self, "where"):
+            self.where.setRowVisible(self.nodes, bool(self.pool_opt()))
 
     def form_value(self, dest):
         """The value option @p dest will have: the form's, else the script's
@@ -171,7 +211,9 @@ class LaunchForm:
     def update_preview(self, *_):
         self.apply_time_by_mode()
         if hasattr(self, "preview"):
-            self.preview.setPlainText(self.command())
+            n = self.nodes_wanted()
+            self.preview.setPlainText(self.command() + (
+                f" {self.pool_opt()}=<{T('la soumission')}>\n# {T(f'{n} jobs, un nœud chacun')}" if n > 1 else ""))
 
     def time_by_mode(self):
         """The -T the program's "time_by_mode" gives for the chosen mode and
@@ -349,12 +391,65 @@ class LaunchForm:
 
     def submit(self, prog, pkey, mode, qname, cmd, extra, rerun_of):
         """The second half of launch(): the run directory, its scripts, the job."""
-        after_id = self.after.currentData() or ""
-        after = {"run": after_id, "cond": self.after_cond.currentData()} if after_id else None
+        after = self.after_spec()
         delay_s = self.delay.value() if self.delay_on.isChecked() else 0
         check = self.build_check()
         rid = time.strftime("%Y%m%d-%H%M%S") + "-" + prog.split(".")[0].split("_")[0] + "-" + pkey
-        spec = {
+        nodes = self.nodes_wanted()
+        if nodes > 1 and re.search(r"(^|\s)%s(=|\s|$)" % re.escape(self.pool_opt()), cmd):
+            self.error(f"{self.pool_opt()} est ajouté par le champ « Nœuds » : retirez-le de la commande")
+            return
+        if nodes > 1:
+            # One batch job per node, the same command and --pool=<rid>: the
+            # program shares its work between them (compile_all.sh: each
+            # configuration built by the first job that claims it). The form's
+            # values stay without it: "Reprendre ses options" makes a new pool.
+            pool = rid
+            jobs = [(f"{rid}-n{k}", f"{cmd} {self.pool_opt()}={pool}",
+                     {"pool": pool, "node": k, "nodes": nodes}) for k in range(1, nodes + 1)]
+        else:
+            jobs = [(rid, cmd, {})]
+        specs = [(job_rid, self.job_spec(prog, pkey, mode, qname, job_cmd, extra, rerun_of, after, delay_s,
+                                         check, job_meta))
+                 for job_rid, job_cmd, job_meta in jobs]
+        submitted, answers = [], []
+
+        def next_job(r=False):
+            if r is None:          # refused: the status bar says why
+                if len(submitted) > 1:
+                    self.refresh(select=submitted[0])
+                return
+            if r:
+                answers.append(r)
+            if specs:
+                job_rid, spec = specs.pop(0)
+                submitted.append(job_rid)
+                blob = base64.b64encode(json.dumps(spec).encode()).decode()
+                self.remote.helper("launch", [self.runs_dir.text().strip(), job_rid, blob], next_job)
+                return
+            self.info(f"soumis : {len(submitted)} jobs, un nœud chacun" if len(submitted) > 1 else
+                      f"soumis : job {r['jobid']}" if "jobid" in r else f"lancé : {r['run_dir']}")
+            self.current, self.offset = submitted[0], -1     # -1: the end of the log first (act_tail)
+            self.log.clear()
+            # What was just run, at once (the first job's, the one shown): the
+            # job's own log (run.sh's "[gui] command:" line) only starts with
+            # the job, on the node.
+            first = answers[0]
+            head = [f"[gui] run {first['run_dir']}", f"[gui] commande : {jobs[0][1]}"]
+            if first.get("launched"):
+                head.append(f"[gui] soumission : {first['launched']}")
+            if first.get("submit_out"):
+                head.append(first["submit_out"])
+            self.log.append_raw("".join(T(line) + "\n" for line in head))
+            self.refresh(select=submitted[0])
+
+        next_job()
+
+    def job_spec(self, prog, pkey, mode, qname, cmd, extra, rerun_of, after, delay_s, check, job_meta):
+        """What remote_helper's launch needs for one job; @p job_meta: what the
+        job of a submission over several nodes adds to its meta.json."""
+        name = f"{prog.split('.')[0]}_{pkey}" + (f"_{job_meta['node']}" if job_meta else "")
+        return {
             "mode": mode,
             "run.sh": make_run_sh(self.repo.text().strip(), PROGRAMS[prog]["cwd"], cmd, check),
             "msub": self.directives.toPlainText() if mode == "msub" else "",
@@ -368,7 +463,7 @@ class LaunchForm:
             "qos": qname or "",
             "batch": BATCH,
             "after": after, "delay_s": delay_s,
-            "name": re.sub(r"[^A-Za-z0-9_.-]", "_", f"{prog.split('.')[0]}_{pkey}")[:40],
+            "name": re.sub(r"[^A-Za-z0-9_.-]", "_", name)[:40],
             "time_s": self.time_s.value(),
             "meta": {"program": prog, "partition": pkey, "arch": self.arch(), "mode": mode,
                      "launcher": self.launcher.text().strip() if mode in ("msub", "local") else "",
@@ -381,18 +476,8 @@ class LaunchForm:
                      "check_builds": check["mode"] if check else "off",
                      "created": time.strftime("%F %T"),
                      **({"rerun_of": rerun_of} if rerun_of else {}),
+                     **job_meta,
                      **{k: PROGRAMS[prog][k] for k in ("out_re", "out_files", "progress_re",
                                                        "eta_re", "summary", "summary_file")},
                      **({"chart": PROGRAMS[prog]["chart"]} if PROGRAMS[prog].get("chart") else {})},
         }
-        blob = base64.b64encode(json.dumps(spec).encode()).decode()
-
-        def done(r):
-            if r is None:
-                return
-            self.info(f"soumis : job {r['jobid']}" if "jobid" in r else f"lancé : {r['run_dir']}")
-            self.current, self.offset = rid, -1     # -1: the end of the log first (act_tail)
-            self.log.clear()
-            self.refresh(select=rid)
-
-        self.remote.helper("launch", [self.runs_dir.text().strip(), rid, blob], done)

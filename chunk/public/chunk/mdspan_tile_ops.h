@@ -156,40 +156,10 @@ class TileBuffer
         is_static ? 1 : (sizeof(T) >= 8192 ? std::size_t{1} : 8192 / sizeof(T)); // dyn: inline capacity
 
   public:
-    explicit TileBuffer(const View& f)
-    {
-        if constexpr (!is_static)
-        {
-            n_ = static_cast<std::size_t>(f.mapping().tile_elements());
-            if (n_ > inline_n)
-            {
-                heap_.resize(n_);
-            }
-        }
-    }
-    T* data() noexcept
-    {
-        if constexpr (is_static)
-        {
-            return fixed_.data();
-        }
-        else
-        {
-            return n_ > inline_n ? heap_.data() : small_.data();
-        }
-    }
-    std::size_t size() const noexcept
-    {
-        if constexpr (is_static)
-        {
-            return fixed_.size();
-        }
-        else
-        {
-            return n_;
-        }
-    }
-    T& operator[](std::size_t i) noexcept
+    explicit TileBuffer(const View& f);
+    T*          data() noexcept;
+    std::size_t size() const noexcept;
+    T&          operator[](std::size_t i) noexcept
     {
         return data()[i];
     }
@@ -366,32 +336,10 @@ struct RangeWriter
     bool       drained   = false;
 
     template <typename T>
-    void fill(std::size_t lo, std::size_t hi, const T& v)
-    {
-        if (in_region)
-        {
-            fill_range_mt(a, lo, hi, v);
-        }
-        else
-        {
-            fill_range(a, lo, hi, v, !drained);
-            drained = true;
-        }
-    }
+    void fill(std::size_t lo, std::size_t hi, const T& v);
 
     template <typename T>
-    void copy(std::size_t lo, std::size_t hi, const T* src)
-    {
-        if (in_region)
-        {
-            copy_range_mt(a, lo, hi, src);
-        }
-        else
-        {
-            copy_range(a, lo, hi, src, !drained);
-            drained = true;
-        }
-    }
+    void copy(std::size_t lo, std::size_t hi, const T* src);
 };
 
 /// @brief Consecutive storage runs merged into one fill: one range op per run.
@@ -403,17 +351,7 @@ struct RunFiller
     std::size_t         lo = 0;
     std::size_t         hi = 0;
 
-    void add(std::size_t a, std::size_t b)
-    {
-        if (a == hi && hi != lo)
-        {
-            hi = b;
-            return;
-        }
-        flush();
-        lo = a;
-        hi = b;
-    }
+    void add(std::size_t a, std::size_t b);
     void flush()
     {
         if (hi > lo)
@@ -820,15 +758,7 @@ struct WholeBox
 {
     template <typename Index, std::size_t R>
     std::pair<std::size_t, std::size_t>
-    operator()(const std::array<Index, R>& lo, const std::array<Index, R>& hi, bool) const
-    {
-        std::size_t W = 1;
-        for (std::size_t r = 0; r < R; ++r)
-        {
-            W *= static_cast<std::size_t>(hi[r] - lo[r]);
-        }
-        return {0, W};
-    }
+    operator()(const std::array<Index, R>& lo, const std::array<Index, R>& hi, bool) const;
 };
 
 /// @brief The calling thread's share of the box (strided_share()), its
@@ -1231,27 +1161,7 @@ class TileCache
     }
 
     /// @brief The tile of coordinates @p c (in tiles), read.
-    Entry& fetch(const std::array<Index, View::rank()>& c)
-    {
-        Index k = 0;
-        for (std::size_t r = 0; r < View::rank(); ++r)
-        {
-            k = k * dims_[r] + c[r];
-        }
-        for (auto& x : e_)
-        {
-            if (x.k == k)
-            {
-                return x;
-            }
-        }
-        Entry& x     = e_[next_];
-        next_        = (next_ + 1) % e_.size();
-        const auto t = tile_at(f_, dims_, k);
-        x.uniform    = gather(*f_.data_handle(), tile_storage(f_, t), x.buf, x.cst, /*lazy=*/true);
-        x.k          = k;
-        return x;
-    }
+    Entry& fetch(const std::array<Index, View::rank()>& c);
 
     const std::array<Index, View::rank()>& dims() const noexcept
     {
@@ -2322,3 +2232,5 @@ void copy_box_in_mt(const View&                        f,
 }
 
 } // namespace shrink_array::md
+
+#include "chunk/internal/mdspan_tile_ops_inline.h" // the template bodies

@@ -481,23 +481,7 @@ class SoaArray
 
     /// The column whose path is the members @p path (no array index); n_columns_ when none.
     template <std::size_t N>
-    static consteval std::size_t index_of(const std::array<std::meta::info, N>& path)
-    {
-        for (std::size_t k = 0; k < n_columns_; ++k)
-        {
-            bool same = leaves_[k].count == N;
-            for (std::size_t d = 0; same && d < N; ++d)
-            {
-                const soa_detail::Step s = steps_[leaves_[k].first + d];
-                same                     = s.index < 0 && s.member == path[d];
-            }
-            if (same)
-            {
-                return k;
-            }
-        }
-        return n_columns_;
-    }
+    static consteval std::size_t index_of(const std::array<std::meta::info, N>& path);
 
     template <std::size_t Id>
     struct Part; // the nested structs of Ref, defined by reflection
@@ -528,25 +512,7 @@ class SoaArray
     /// The part of @p v that column @p K stores (v.pos.x, v.v[2], ...),
     /// const if @p v is.
     template <std::size_t K, std::size_t D = 0, typename V>
-    static constexpr decltype(auto) field(V& v) noexcept
-    {
-        if constexpr (D == leaves_[K].count)
-        {
-            return (v);
-        }
-        else
-        {
-            constexpr soa_detail::Step s = steps_[leaves_[K].first + D];
-            if constexpr (s.index < 0)
-            {
-                return field<K, D + 1>(v.[:s.member:]);
-            }
-            else
-            {
-                return field<K, D + 1>(v[s.index]);
-            }
-        }
-    }
+    static constexpr decltype(auto) field(V& v) noexcept;
 
     /// @p n elements, every value T{}'s (no buffer allocated; a soa::plain
     /// column is a std::vector of n V{}).
@@ -577,15 +543,7 @@ class SoaArray
     }
 
     /// Element @p i, gathered from the columns.
-    [[nodiscard]] T get(size_type i) const
-    {
-        T v{};
-        template for (constexpr std::size_t k : std::views::iota(0uz, n_columns_))
-        {
-            field<k>(v) = std::as_const(std::get<k>(columns_))[i];
-        }
-        return v;
-    }
+    [[nodiscard]] T get(size_type i) const;
 
     /// Write every value of @p v at @p i.
     void set(size_type i, const T& v)
@@ -810,3 +768,5 @@ OutIt read_range(const SoaArray<T, Column>& a, std::size_t first, std::size_t la
 }
 
 } // namespace shrink_array
+
+#include "chunk/internal/soa_array_inline.h" // the template bodies

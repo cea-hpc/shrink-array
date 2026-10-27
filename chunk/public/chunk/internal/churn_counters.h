@@ -74,42 +74,14 @@ class Materialisations
     };
 
     /// @brief One materialisation of array @p key on rank @p thr (rank-local).
-    static void note(int thr, unsigned key) noexcept
-    {
-        ensure();
-        if (thr < 0 || static_cast<std::size_t>(thr) >= slots_.size())
-        {
-            return;
-        }
-        ++slots_[static_cast<std::size_t>(thr)].n[key % key_slots];
-    }
+    static void note(int thr, unsigned key) noexcept;
 
     /// @brief All ranks' materialisations of array @p key (quiescent point).
-    [[nodiscard]] static long total(unsigned key) noexcept
-    {
-        if (key == 0)
-        {
-            return 0;
-        }
-        long sum = 0;
-        for (const RankSlot& slot : slots_)
-        {
-            sum += slot.n[key % key_slots];
-        }
-        return sum;
-    }
+    [[nodiscard]] static long total(unsigned key) noexcept;
 
   private:
     /// @brief Size slots_ once to CHUNK_PMP_MAX_THREADS entries (at least 1), zero-initialised.
-    static void ensure() noexcept
-    {
-        std::call_once(once_,
-                       []
-                       {
-                           const int nthreads = CHUNK_PMP_MAX_THREADS;
-                           slots_.resize(static_cast<std::size_t>(nthreads > 0 ? nthreads : 1)); // value-initialised: 0
-                       });
-    }
+    static void ensure() noexcept;
 
     static inline std::vector<RankSlot> slots_; ///< one per rank, sized once (ensure)
     static inline std::once_flag        once_;  ///< guards the one sizing of slots_
@@ -130,3 +102,5 @@ inline void note_materialisation([[maybe_unused]] int thr, [[maybe_unused]] unsi
 }
 
 } // namespace shrink_array::churn
+
+#include "chunk/internal/churn_counters_inline.h" // the template bodies

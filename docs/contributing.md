@@ -62,6 +62,7 @@ The source checks run with the others (`ctest -R check_`):
 |---|---|
 | `check_includes` | every `#include` says why it is there; system and project headers are not mixed in one block |
 | `check_naming` | the naming convention of section 3, as far as a line shows it: snake_case constants, enumerators, functions and variables, PascalCase types, aliases and template parameters, no reserved `__` name |
+| `check_inline_bodies` | no member function body longer than 5 lines inside a class of `chunk/` or `fast_allocators/`: the body is in the header's `<header>_inline.h` companion |
 | `check_headers` | every C++ file opens with the Apache license header (years up to date) and carries no IDE `Created by` stamp; scripts and build files (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) carry `# Copyright ... CEA` and `# SPDX-License-Identifier: Apache-2.0`; the vendored headers, their upstream SPDX line; `scripts/check_headers.py --fix` repairs |
 | `check_raw_reads` | every raw read of a chunk buffer in the library says why it is safe |
 | `check_tracked` | every file the sources name (a quoted `#include`, a relative Python import, a CMake source or harness, a Markdown link) is tracked by git, not only present on the disk |
@@ -99,6 +100,11 @@ The source checks run with the others (`ctest -R check_`):
   that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`
   checks the rest (the member suffix, the parameters) with `scripts/clang_tidy_naming.yaml`.
+- **Long bodies go to the `<header>_inline.h` companion.** A member function whose body exceeds 5
+  lines is declared in the class and defined in `internal/<header>_inline.h`, included at the
+  end of the header; the Doxygen comment stays on the declaration. Accessors of a few lines
+  stay in the class. `check_inline_bodies` enforces it;
+  `scripts/check_inline_bodies.py --apply` moves what it lists (then clang-format the files).
 - **No preprocessor where `if constexpr` works.** The rules that decide which `#ifdef` can go,
   and the ones that must stay, are written at the top of `examples/shrink_bench/bench_config.h`.
 - **Comments state the rule, not the story.** Write why the code is the way it is, and what

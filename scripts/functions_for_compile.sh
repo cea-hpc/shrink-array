@@ -162,6 +162,14 @@ run_cmd() {
                 __PENDING_HEADER=""   # this block says nothing at all
                 return 0
             fi
+            # --pool: another run configures and builds it (launch_build says so).
+            if [ -n "$_tdir" ] && [ -n "${CHUNK_POOL:-}" ]; then
+                local _pn=${_tdir#"${build_rep:-}"/}; _pn=${_pn%%/*}; _pn=${_pn#cmake-build-}
+                if ! __pool_claim "$_pn"; then
+                    __PENDING_HEADER=""
+                    return 0
+                fi
+            fi
             ;;
     esac
     __flush_header
@@ -253,6 +261,99 @@ __first_unmatched() {  # <list> <names...>
 __dir_wants() {  # <build-dir> -> 0 build it, 1 skip it
     local __n=${1#"${build_rep:-}"/}; __n=${__n%%/*}; __n=${__n#cmake-build-}
     __target_wants "$__n"
+}
+
+# ─── Shared configuration pool (--pool=<id>) ─────────────────────────────────
+# Several compile_all.sh runs given the same --pool -- one batch job per node,
+# submitted together by shrink_gui -- share ONE list of configurations. Each
+# walks it in the usual order and builds a configuration only if it is the
+# first to claim it, by an atomic mkdir in the pool directory (atomic on a
+# cluster's shared file systems, NFS and Lustre included); the others skip it.
+# The load balances itself: a node claims the next free configuration when it
+# reaches it, which a full slot pool delays (launch_build waits for a slot
+# before the walk goes on), whatever the builds cost. A run whose job starts
+# once the others have claimed everything builds nothing and ends with rc 0.
+#
+# The pool is $build_rep/.pools/<id> for a name, or the directory given when it
+# holds a /. A claim is the directory <pool>/<config>; its owner file names the
+# run that made it (CHUNK_POOL_ME: host and pid of the top-level script,
+# inherited by compile_all_gnu.sh, so that the two count as one run). --dryrun
+# claims nothing. One id per submission: in a pool where everything is
+# claimed, a new run builds nothing.
+# __HOST also tells apart the names this run makes in the shared build_rep
+# (.build-slots.<host>.<pid>, logs/<date>-<host>-<pid>): two nodes can run a
+# script under the same pid at the same second.
+__HOST=$(uname -n | cut -d. -f1)
+: "${CHUNK_POOL_ME:=$__HOST.$$${SLURM_JOB_ID:+.job$SLURM_JOB_ID}}"
+export CHUNK_POOL_ME
+
+__pool_dir() {
+    case "$CHUNK_POOL" in
+        */*) printf '%s' "$CHUNK_POOL" ;;
+        *)   printf '%s' "${build_rep:-$CHUNK_BUILD_REP}/.pools/$CHUNK_POOL" ;;
+    esac
+}
+
+# Checked and created once, after build_rep is known: a pool that cannot be
+# written to would otherwise read as "every configuration taken".
+pool_init() {
+    [ -n "${CHUNK_POOL:-}" ] || return 0
+    case "$CHUNK_POOL" in
+        */*) ;;
+        .|..|*[!A-Za-z0-9._-]*)
+            echo "ERROR: --pool=$CHUNK_POOL (a name of letters, digits, '.', '_', '-', or a directory)" >&2
+            exit 2 ;;
+    esac
+    if [ "${DRYRUN:-false}" = true ]; then
+        [ "${CHUNK_ARGS_CHECKED_BY_PARENT:-}" = 1 ] ||
+            echo "[POOL] $CHUNK_POOL: --dryrun, nothing claimed (every configuration is printed)"
+        return 0
+    fi
+    local p; p="$(__pool_dir)"
+    if ! mkdir -p "$p" 2>/dev/null || [ ! -w "$p" ]; then
+        echo "ERROR: --pool=$CHUNK_POOL: cannot create or write $p" >&2
+        exit 2
+    fi
+    # The pools of earlier submissions: nobody claims there a week later.
+    if [ "${CHUNK_ARGS_CHECKED_BY_PARENT:-}" != 1 ]; then
+        find "${build_rep:-$CHUNK_BUILD_REP}/.pools" -mindepth 1 -maxdepth 1 -type d -mtime +7 \
+             -exec rm -rf {} + 2>/dev/null
+        echo "[POOL] $CHUNK_POOL: configurations shared with the other runs of the pool ($p);" \
+             "this run is $CHUNK_POOL_ME"
+    fi
+}
+
+__pool_claim() {  # <name> [say] -> 0 this run builds it, 1 another run of the pool does
+    [ -n "${CHUNK_POOL:-}" ] || return 0
+    [ "${DRYRUN:-false}" = true ] && return 0
+    local c who
+    c="$(__pool_dir)/$1"
+    if mkdir "$c" 2>/dev/null; then
+        printf '%s\n' "$CHUNK_POOL_ME" > "$c/owner"
+        printf '%s\n' "$1" >> "$(__slot_dir)/pool-mine"
+        echo "[POOL] $1: claimed by this run"
+        return 0
+    fi
+    # Not created here: another run's, even when its owner file is not
+    # written yet (an empty read), unless an earlier call of this run made it.
+    who=$(cat "$c/owner" 2>/dev/null)
+    [ "$who" = "$CHUNK_POOL_ME" ] && return 0
+    if [ -n "${2:-}" ]; then
+        echo "[POOL] $1: taken by ${who:-another run} of pool $CHUNK_POOL, skipped here"
+        printf '%s\n' "$1" >> "$(__slot_dir)/pool-others"
+    fi
+    return 1
+}
+
+# How the configurations were shared, at the end of the top-level script.
+pool_summary() {
+    [ -n "${CHUNK_POOL:-}" ] && [ "${DRYRUN:-false}" != true ] || return 0
+    [ "${CHUNK_ARGS_CHECKED_BY_PARENT:-}" = 1 ] && return 0
+    local d mine=0 others=0; d="$(__slot_dir)"
+    [ -f "$d/pool-mine" ] && mine=$(wc -l < "$d/pool-mine")
+    [ -f "$d/pool-others" ] && others=$(wc -l < "$d/pool-others")
+    printf '[POOL] %d configuration(s) built by this run, %d by the other runs of pool %s\n' \
+           "$mine" "$others" "$CHUNK_POOL"
 }
 
 # Deferred block title. compile_all.sh announces a configuration before it knows
@@ -390,7 +491,12 @@ check_arg_epilogue() {
         echo "       (family disabled by --no-<c>/--only=<c>, --debug-only, or not built on this architecture?)" >&2
         rc=1
     fi
-    if [ -n "${CHUNK_BUILD_EXEC:-}" ] && [ "${DRYRUN:-false}" != true ] && [ ! -f "$d/exec-matched" ]; then
+    if [ -n "${CHUNK_BUILD_EXEC:-}" ] && [ "${DRYRUN:-false}" != true ] && [ ! -f "$d/exec-matched" ] \
+       && [ -s "$d/pool-others" ]; then
+        # The other runs of the pool built the other dirs: theirs is the verdict.
+        echo "[WARN] --exec=$CHUNK_BUILD_EXEC matches no target in the build dirs of this run" \
+             "(the other runs of pool $CHUNK_POOL had the others)"
+    elif [ -n "${CHUNK_BUILD_EXEC:-}" ] && [ "${DRYRUN:-false}" != true ] && [ ! -f "$d/exec-matched" ]; then
         echo "ERROR: --exec=$CHUNK_BUILD_EXEC matches no target in any selected build dir" >&2
         if [ -s "$d/exec-candidates" ]; then
             local _cands=()   # the targets of the dirs where it was looked up
@@ -691,6 +797,10 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     fi
     __TARGET_KEPT=$(( __TARGET_KEPT + 1 ))
     : > "$(__slot_dir)/target-matched"   # seen by check_arg_epilogue
+    if ! __pool_claim "$name" say; then   # --pool: another run builds it
+        __PENDING_HEADER=""
+        return 0
+    fi
     __flush_header
     if [ "$DRYRUN" = true ]; then
         # Trailing shell comment: the echoed line stays copy-pastable as-is.
@@ -793,7 +903,7 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     __wait_for_slot
 
     if [ -z "$LOG_DIR" ]; then
-        LOG_DIR="$build_rep/logs/$(date +%Y%m%d-%H%M%S)-$$"
+        LOG_DIR="$build_rep/logs/$(date +%Y%m%d-%H%M%S)-$__HOST-$$"
         mkdir -p "$LOG_DIR"
         echo "[INFO] build logs → $LOG_DIR"
     fi
@@ -999,7 +1109,7 @@ __reap_one() {
 # exported so the child script joins the SAME pool instead of opening its own.
 __slot_dir() {
     if [ -z "${CHUNK_SLOT_DIR:-}" ]; then
-        CHUNK_SLOT_DIR="${build_rep:-/tmp}/.build-slots.$$"
+        CHUNK_SLOT_DIR="${build_rep:-/tmp}/.build-slots.$__HOST.$$"
         export CHUNK_SLOT_DIR
     fi
     mkdir -p "$CHUNK_SLOT_DIR" 2>/dev/null
@@ -1016,9 +1126,10 @@ __slot_dir() {
 # still held by a live process keeps the dir.
 if [ -z "${CHUNK_SLOT_DIR:-}" ]; then
     __slot_dir_cleanup() {
-        local d="${CHUNK_SLOT_DIR:-${build_rep:-/tmp}/.build-slots.$$}"
+        local d="${CHUNK_SLOT_DIR:-${build_rep:-/tmp}/.build-slots.$__HOST.$$}"
         [ -d "$d" ] || return 0
-        rm -f "$d/target-matched" "$d/exec-matched" "$d/exec-candidates" 2>/dev/null
+        rm -f "$d/target-matched" "$d/exec-matched" "$d/exec-candidates" \
+              "$d/pool-mine" "$d/pool-others" 2>/dev/null
         # Our own tokens first: still alive here, __slots_gc would keep them.
         local tok
         for tok in "$d"/slot-*; do
@@ -1311,6 +1422,11 @@ compile_with_cmake() {
     local __name=${build_dir#"$build_rep"/}; __name=${__name%%/*}; __name=${__name#cmake-build-}
     if ! __target_wants "$__name"; then
         return 0   # counted and summarised by launch_build / target_filter_summary
+    fi
+    # --pool: another run configures and builds it; launch_build counts and says so.
+    if ! __pool_claim "$__name"; then
+        launch_build "$build_dir"
+        return 0
     fi
 
     echo -e "\nCompiling $build_name:\n"

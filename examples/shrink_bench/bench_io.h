@@ -419,9 +419,12 @@ void read_check_binary_file(Int                ind,
 
             const bool is_val1 = chunk_t.is_cst_val1();
 
-            // false everywhere but zero_one_value, exactly as the #else branch gave.
+            // false everywhere but zero_one_value, exactly as the #else branch gave --
+            // and for a zero_any-family array in a zero_one_value build (tab_conn's
+            // pattern::Array): as in a zero_any build.
             bool is_val2 = false;
-            if constexpr (chunk_config::use_zero_one_value)
+            if constexpr (chunk_config::use_zero_one_value &&
+                          !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
             {
                 static constexpr bool is_bool     = shrink_array::is_bool_like_v<T>; // bool, Bit
                 static constexpr bool is_not_bool = !is_bool;
@@ -706,6 +709,9 @@ void read_check_binary_file(Int                ind,
         constexpr T zero{};
 
         constexpr bool is_complex = std::is_same_v<T, ComplexDouble>;
+        // Only these types accept a value within a relative tolerance (ok3); for the
+        // others ok3 stays false and nn 0, so its branches are compiled out.
+        constexpr bool has_tolerance = std::is_same_v<T, double> || std::is_same_v<T, float> || is_complex;
 
         for (Int k = 0; k < sz; ++k)
         {
@@ -856,8 +862,10 @@ void read_check_binary_file(Int                ind,
                     else if (
                         [&]
                         {
-                            // bool / Bit: one second value, no index.
-                            if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T>)
+                            // bool / Bit: one second value, no index; a zero_any-family
+                            // array (tab_conn's pattern::Array) has none either.
+                            if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T> &&
+                                          !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
                             {
                                 return chunk_t.is_cst_val2(data_check.get_ind_second_value());
                             }
@@ -934,17 +942,23 @@ void read_check_binary_file(Int                ind,
                 trace_file_write.close();
                 std::abort();
             }
-            else if (!ok1 && ok3)
+            else if constexpr (has_tolerance)
             {
-                nn++;
+                if (!ok1 && ok3)
+                {
+                    nn++;
+                }
             }
         }
 
-        if (nn)
+        if constexpr (has_tolerance)
         {
-            std::println(stderr, "{} : values are not perfectly equal ! : error max = {:e}", nn, ratio_max);
+            if (nn)
+            {
+                std::println(stderr, "{} : values are not perfectly equal ! : error max = {:e}", nn, ratio_max);
+            }
         }
-        else if (!read_trace)
+        if (nn == 0 && !read_trace)
         {
             std::println("no data error (but checksum error...)");
         }

@@ -20,6 +20,7 @@
 #include <algorithm>   // std::max (name_padding)
 #include <complex>     // operator== on ComplexDouble
 #include <cstddef>     // std::size_t
+#include <cstdint>     // std::uint8_t (ChecksumGroup)
 #include <meta>        // std::meta (the arrays of BenchArrays, print_checksums)
 #include <string>      // std::string
 #include <string_view> // std::string_view (the arrays' names)
@@ -55,6 +56,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
     auto& tab_mask      = bench_arr.tab_mask;
+    auto& tab_conn      = bench_arr.tab_conn;
 
     auto lbd_fill_values = [&](const std::string& name, const auto& tab, auto sec_val)
     {
@@ -121,7 +123,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         const Int  nb     = census[2];
 
         // Over the array's own size: tab_float and tab_char hold 2 * sz
-        // elements, tab_short sz / 2, tab_mask mask_scale * sz.
+        // elements, tab_short sz / 2, tab_mask mask_scale * sz, tab_conn whole rows.
         const double pc  = double(nb) / double(ssz);
         const double pcz = double(nbz) / double(ssz);
         const double pcv = double(nbv) / double(ssz);
@@ -230,6 +232,10 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
             {
                 lbd_fill_values("tab_mask", tab_mask, second_value_b);
             }
+            if (bench_arr.with_conn) // --no_conn
+            {
+                lbd_fill_values("tab_conn", tab_conn, second_value_i);
+            }
             if (bench_arr.with_struct) // --no_struct
             {
                 lbd_fill_values("tab_point", tab_point, second_value_p);
@@ -262,6 +268,10 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                 {
                     lbd_fill_chunk("tab_mask", tab_mask);
                 }
+                if (bench_arr.with_conn)
+                {
+                    lbd_fill_chunk("tab_conn", tab_conn);
+                }
                 if (bench_arr.with_struct)
                 {
                     lbd_fill_chunk("tab_point", tab_point);
@@ -292,23 +302,34 @@ consteval std::vector<std::meta::info> bench_array_members()
     return members;
 }
 
-/// tab_point and tab_cell: the arrays of an aggregate element (--no_struct leaves them out).
-constexpr bool is_struct_array(std::string_view name)
+/// The checksum groups, printed in this order, each under its own switch.
+enum class ChecksumGroup : std::uint8_t
 {
-    return name == "tab_point" || name == "tab_cell";
+    plain,   ///< every array but the two below
+    structs, ///< tab_point, tab_cell: the aggregate elements (--no_struct leaves them out)
+    conn,    ///< tab_conn: the mesh connectivity (--no_conn leaves it out)
+};
+
+/// The group of the array member named @p name.
+constexpr ChecksumGroup checksum_group(std::string_view name)
+{
+    if (name == "tab_point" || name == "tab_cell")
+    {
+        return ChecksumGroup::structs;
+    }
+    return name == "tab_conn" ? ChecksumGroup::conn : ChecksumGroup::plain;
 }
 
-/// `name check_sum = <hex>` for every array member of @p bench_arr, under its
-/// identifier, of the aggregate elements (@p structs) or of the others; then a
-/// newline. tab_mask is not summed.
-void print_checksums(const BenchArrays& bench_arr, bool structs)
+/// `name check_sum = <hex>` for every array member of @p bench_arr in
+/// @p group, under its identifier; then a newline. tab_mask is not summed.
+void print_checksums(const BenchArrays& bench_arr, ChecksumGroup group)
 {
     template for (constexpr std::meta::info member : std::define_static_array(bench_array_members()))
     {
         constexpr std::string_view name = std::define_static_string(std::meta::identifier_of(member));
         if constexpr (name != "tab_mask")
         {
-            if (is_struct_array(name) == structs)
+            if (checksum_group(name) == group)
             {
                 std::print("\n{} check_sum = {:x}", name, calculate_checksum(bench_arr.[:member:]));
             }
@@ -325,13 +346,18 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
     {
         // Every array of BenchArrays under its member's name, in declaration
         // order (reflection: an array added there is summed here); tab_point
-        // and tab_cell after the others, and only with the structs.
+        // and tab_cell after the others, only with the structs, then tab_conn,
+        // only with it.
         // tab_bool_bits' checksum equals tab_bool's: a Bit is one byte
         // holding 0 or 1, as a bool.
-        print_checksums(bench_arr, /*structs=*/false);
+        print_checksums(bench_arr, ChecksumGroup::plain);
         if (bench_arr.with_struct) // --no_struct
         {
-            print_checksums(bench_arr, /*structs=*/true);
+            print_checksums(bench_arr, ChecksumGroup::structs);
+        }
+        if (bench_arr.with_conn) // --no_conn
+        {
+            print_checksums(bench_arr, ChecksumGroup::conn);
         }
     }
 }

@@ -30,7 +30,7 @@
 #include <cstddef>      // std::size_t
 #include <cstdio>       // std::fopen, std::fscanf (the huge page size)
 #include <cstdlib>      // std::getenv
-#include <cstring>      // std::strlen
+#include <cstring>      // std::strlen, std::strcmp (env_switch)
 #include <system_error> // std::errc
 
 #include <sys/mman.h> // madvise, MADV_HUGEPAGE / MADV_NOHUGEPAGE (advise_thp_region)
@@ -120,6 +120,61 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
     }();
     return min_slabs;
 }
+
+/**
+ * @brief A 0/1 switch from the environment.
+ * @return @p fallback when @p name is unset or empty; false for `0`, true for
+ *         `1`; anything else is a warning and @p fallback.
+ */
+inline bool env_switch(const char* name, bool fallback) noexcept
+{
+    const char* env = std::getenv(name);
+    if (env == nullptr || env[0] == '\0')
+    {
+        return fallback;
+    }
+    if (std::strcmp(env, "0") == 0)
+    {
+        return false;
+    }
+    if (std::strcmp(env, "1") == 0)
+    {
+        return true;
+    }
+    CHUNK_LOG(warn, env, "{}=\"{}\" is not a valid value (0 or 1): ignored", name, env);
+    return fallback;
+}
+
+/**
+ * @brief CHUNK_RECLAIM_PARTIAL: does a sweep also give back the free pages of
+ *        the value slabs still in use? Read once; on unless `0`.
+ * @details A slab goes back whole only once every buffer in it is freed, so a
+ *          few survivors keep it resident. A value slab keeps its free-list
+ *          links aside (FreeLinks::side_array) and never writes into a free
+ *          element: a page covered by free elements only can be dropped, and
+ *          comes back zero-filled when an element in it is handed out again --
+ *          what malloc_trim() does inside glibc's heaps. See
+ *          TCSlab::advise_free_pages().
+ */
+inline bool reclaim_partial_slabs() noexcept
+{
+    static const bool on = env_switch("CHUNK_RECLAIM_PARTIAL", true);
+    return on;
+}
+
+/**
+ * @brief CHUNK_SLAB_FULLEST_FIRST: does a sweep re-chain the value slabs with
+ *        room fullest first? Read once; on unless `0`.
+ * @details The next allocations then fill the dense slabs and leave the sparse
+ *          ones to drain, and an empty slab is given back whole. See
+ *          TCTypeCAllocator::order_fullest_first().
+ */
+inline bool slab_fullest_first() noexcept
+{
+    static const bool on = env_switch("CHUNK_SLAB_FULLEST_FIRST", true);
+    return on;
+}
+
 
 /**
  * @brief CHUNK_THP: advise transparent huge pages on the slab arenas and the
