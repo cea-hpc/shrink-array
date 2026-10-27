@@ -375,16 +375,20 @@ void GlobalVecHolder<T>::install_head()
 
     region_init();
 
-    // Install the initial segment, once.
+    // Install the initial segment, once. The CAS is the transfer: once it
+    // succeeds #head owns the segment (clear_if_last(), reclaim_unmarked()
+    // and cleanup_all() free the chain). A plain new, as in
+    // append_segment(), rather than a unique_ptr released after the CAS:
+    // the dropped release() hid the transfer from static analysis
+    // (Coverity CID 661140).
     if (head.load(std::memory_order_relaxed) == nullptr)
     {
-        auto        seg      = std::make_unique<Segment<T>>();
-        Segment<T>* null_ptr = nullptr;
-        if (head.compare_exchange_strong(null_ptr, seg.get(), std::memory_order_release, std::memory_order_relaxed))
+        auto*       seg      = new Segment<T>();
+        Segment<T>* expected = nullptr;
+        if (!head.compare_exchange_strong(expected, seg, std::memory_order_release, std::memory_order_relaxed))
         {
-            seg.release(); // CAS won: seg is now owned by head
+            delete seg; // another thread installed the first segment
         }
-        // If CAS lost: another thread installed a segment first — seg destroyed
     }
 }
 
