@@ -146,9 +146,10 @@ have its **own set of allocators** (an affinity key), per rank and per size. Its
 buffers then share no slab with any other array: when it is rebuilt or
 destroyed, its slabs empty completely and are returned to the system.
 
-The price: one partly used slab per (rank, array, size) triple. With 1 MiB slabs (16 pages
-of 64 KiB, so as to retain only one page per returned slab), this is ~780 MiB over the 16 arrays of the
-benchmark at 64 threads.
+The price: one partly used slab per (rank, array, size) triple. With the 1 MiB slabs of the
+former sixteen-page floor (64 KiB pages), this was ~780 MiB over the 16 arrays of the benchmark at
+64 threads; the slabs are 256 KiB there now, a quarter of it (`CHUNK_SLAB_MIN_PAGES=16` restores the
+floor, see [developer_settings.md](developer_settings.md)).
 
 Hence two modes, whose default depends on the variant:
 

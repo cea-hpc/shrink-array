@@ -30,6 +30,7 @@
 #include "chunk/internal/freepath_counters.h"          // CHUNK_FREEPATH_INC
 #include "chunk/internal/invariant_check.h"            // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h"               // read_reclaim::defer_release
+#include "chunk/internal/value_slab.h"                 // value_slab_request (the value slabs' size)
 #include "fast_allocators/internal/svalloc.h"          // svfree
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy
 
@@ -508,13 +509,15 @@ void ChunkDynamicAllocPolicy<T, Derived, true>::register_chunk_size(unsigned int
     // Built whole (an allocator is not movable); moving the vector into the
     // map moves its buffer, not the allocators.
     std::vector<TCTypeCAllocator<T>> arr(static_cast<std::size_t>(max_thr));
-    constexpr int                    per_word = std::max(static_cast<int>(8 / sizeof(T)), 1);
+    // One slab rule for every allocator of T, whatever its chunk size (value_slab.h).
+    const auto slab_bytes = static_cast<uintptr_t>(
+        value_slab_request<T>(block_size, Derived::storage_units(cst_buffer_size) * sizeof(T)));
     for (int thr = 0; thr < max_thr; ++thr)
     {
         auto& allocator = arr[static_cast<std::size_t>(thr)];
         allocator.set_rank(thr); // stamped into every slab as owner_rank
         allocator.set_key(key);  // ... and owner_key
-        allocator.init(static_cast<int>(Derived::storage_units(size)), block_size / per_word, -1);
+        allocator.init(static_cast<int>(Derived::storage_units(size)), slab_bytes, -1);
     }
     allocator_pool_->emplace(pool_key(key, size), std::move(arr));
 }

@@ -34,7 +34,8 @@
 #include "chunk/log.h"                        // CHUNK_LOG, CHUNK_LOG_FIRST_N
 #include "fast_allocators/internal/svalloc.h" // svfree
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS, pmp::team / team_any / current_team
-#include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count
+#include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count, cst_buffer_size
+#include "chunk/internal/value_slab.h"           // value_slab_request (the value slabs' size)
 #include "chunk/internal/compression_manager.h"  // CompressionManager (the barrier flushes)
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
@@ -612,7 +613,9 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]]
         // and register_alloc_key() needs the slab budget.
         Mgr::registered_block_size_ = block_size;
 
-        constexpr int per_word = std::max(static_cast<int>(8 / sizeof(T)), 1);
+        // One slab rule for every allocator of T (value_slab.h).
+        const auto slab_bytes = static_cast<uintptr_t>(
+            value_slab_request<T>(block_size, ChunkT<T>::storage_units(shrink_array::cst_buffer_size) * sizeof(T)));
 
         for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
         {
@@ -621,7 +624,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]]
             // are long-lived, so the retained memory is modest.
             auto& allocator = ChunkT<T>::get_chunk_allocator(thr_rank);
             allocator.set_rank(thr_rank); // stamped into every slab as owner_rank
-            allocator.init(ChunkT<T>::storage_units(shrink_array::alloc_chunk_count()), block_size / per_word, -1);
+            allocator.init(ChunkT<T>::storage_units(shrink_array::alloc_chunk_count()), slab_bytes, -1);
         }
     }
 }

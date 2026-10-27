@@ -52,6 +52,8 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `CHUNK_SLAB_MIN_PAGES` (developer setting): a floor in pages for the value slabs' size; `16`
+  restores the former default, for an A/B (see Changed).
 - shrink_gui runs on PySide6 6.2 and 6.3: QFormLayout's setRowVisible() / isRowVisible() came
   with Qt 6.4, and the window stopped at start-up without them (AttributeError in
   machine_panel). `widgets.RowVisibleFormLayout` provides them on every 6.x -- Qt's own from
@@ -103,6 +105,12 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Fast allocator: the value slabs are no longer floored at sixteen pages. The floor capped the
+  last page an emptied slab used to keep; a sweep now gives the slab back whole, and the floor
+  only made the slabs larger on 64 KiB-page nodes -- 1 MiB at 64 threads instead of 256 KiB --
+  hence a larger partly-used slab per (rank, element type, array, size), and more memory kept
+  resident by a slab's last few live buffers. Each element type's slab is floored at one page
+  and at its largest buffer instead (`value_slab.h`). Unchanged on 4 KiB pages.
 - The three array classes live in a namespace each, named after what they compress:
   `zero::Array` (was `ArrayChunk`), `zero_one_value::Array` (was `ArrayChunk2`),
   `zero_any::Array` (was `ArrayChunk2A`). The chunk and proxy classes, the CMake targets and

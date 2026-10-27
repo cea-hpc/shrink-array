@@ -36,6 +36,7 @@
 | `CHUNK_RECHUNK_SLICES` | 16 | nombre de tranches de la reconstruction de `zero` |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
 | `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()` |
+| `CHUNK_SLAB_MIN_PAGES` | non défini | plancher de la taille des slabs de valeurs, en pages ; non défini : aucun (le slab de chaque type d'élément fait tout de même au moins une page). `16` est l'ancien défaut : des slabs de 1 Mio à 64 threads sur pages de 64 Kio au lieu de 256 Kio, pour un A/B de la mémoire résidente. *Retrait prévu : 31/12/2026.* |
 | `CHUNK_RECHUNK_RECYCLE` | actif | reconstruction de `zero` : les slabs qu'une tranche vient de vider vont à la tranche suivante au lieu d'être rendus au système ; `0` le désactive. *Retrait prévu : 31/12/2026.* |
 | `CHUNK_RECHUNK_KEEP_RECYCLED_MB` | 0 | reconstruction de `zero` : à sa fin, jusqu'à ce nombre de Mio par arène des slabs recyclés qu'aucune tranche n'a repris restent résidents (répartis à parts égales entre les rangs) pour les allocations suivantes, au lieu d'être rendus au système ; `0` : tous sont rendus |
 | `CHUNK_RECHUNK_KEEP_RECYCLED` | inactif | `1` : idem, sans plafond (le RSS garde chaque reliquat jusqu'à sa réutilisation) |
