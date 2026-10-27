@@ -119,6 +119,12 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The re-chunks are on screen again by default: the `rechunk` log channel
+  starts at `info` (`CHUNK_LOG` unset means `warn,rechunk=info`), so each
+  re-chunk the decider applies writes its `decide <array>: re-chunk S=..
+  -> S'=.. [APPLIED]` line, as `[RECHUNK-DECIDE]` did before the log. Since
+  the log, the channel started at `warn` with the others and nothing was
+  shown. `CHUNK_LOG=warn` (a bare level sets every channel) hides it.
 - Fast allocator: the value slabs are no longer floored at sixteen pages. The floor capped the
   last page an emptied slab used to keep; a sweep now gives the slab back whole, and the floor
   only made the slabs larger on 64 KiB-page nodes -- 1 MiB at 64 threads instead of 256 KiB --
