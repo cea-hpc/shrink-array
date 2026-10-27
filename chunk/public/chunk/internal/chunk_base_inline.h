@@ -826,29 +826,38 @@ void ChunkBase<T, Derived>::read_block(this const Derived& self,
     requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
-    const T* const                  vals = self.values_load();
-    test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-    if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+    for (;;)
     {
-        const T value = self.second_value_from_ptr(vals);
+        const T* const vals = self.values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+        {
+            const T value = self.second_value_from_ptr(vals);
+            for (int j = 0; j < count; ++j)
+            {
+                out[j] = value;
+            }
+            return;
+        }
+        if (Derived::is_motif_ptr(vals)) [[unlikely]]
+        {
+            T off{};
+            if (!self.motif_offset(vals, offset_slot, off)) [[unlikely]]
+            {
+                continue; // the pointer moved: the slot may hold another state's value (F5)
+            }
+            for (int j = 0; j < count; ++j)
+            {
+                out[j] = Derived::motif_value(vals, first + j, off);
+            }
+            return;
+        }
         for (int j = 0; j < count; ++j)
         {
-            out[j] = value;
+            // raw-read: read_block -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
         }
         return;
-    }
-    if (Derived::is_motif_ptr(vals)) [[unlikely]]
-    {
-        for (int j = 0; j < count; ++j)
-        {
-            out[j] = Derived::motif_value(vals, first + j, offset_slot);
-        }
-        return;
-    }
-    for (int j = 0; j < count; ++j)
-    {
-        // raw-read: read_block -- under its own ReadSection
-        out[j] = load_at<false>(vals, first + j);
     }
 }
 
@@ -862,33 +871,41 @@ bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
     requires has_motif_state_v<Derived>
 {
     const read_reclaim::ReadSection section;
-    const T* const                  vals = self.values_load();
-    test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-    if (is_cst_val1(vals))
+    for (;;)
     {
-        // raw-read: read_block_or_constant -- the shared first-constant buffer
-        cst = load_at<false>(vals, 0);
-        return true;
-    }
-    if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
-    {
-        cst = self.second_value_from_ptr(vals);
-        return true;
-    }
-    if (Derived::is_motif_ptr(vals)) [[unlikely]]
-    {
+        const T* const vals = self.values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if (is_cst_val1(vals))
+        {
+            // raw-read: read_block_or_constant -- the shared first-constant buffer
+            cst = load_at<false>(vals, 0);
+            return true;
+        }
+        if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+        {
+            cst = self.second_value_from_ptr(vals);
+            return true;
+        }
+        if (Derived::is_motif_ptr(vals)) [[unlikely]]
+        {
+            T off{};
+            if (!self.motif_offset(vals, offset_slot, off)) [[unlikely]]
+            {
+                continue; // the pointer moved: the slot may hold another state's value (F5)
+            }
+            for (int j = 0; j < count; ++j)
+            {
+                out[j] = Derived::motif_value(vals, first + j, off);
+            }
+            return false;
+        }
         for (int j = 0; j < count; ++j)
         {
-            out[j] = Derived::motif_value(vals, first + j, offset_slot);
+            // raw-read: read_block_or_constant -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
         }
         return false;
     }
-    for (int j = 0; j < count; ++j)
-    {
-        // raw-read: read_block_or_constant -- under its own ReadSection
-        out[j] = load_at<false>(vals, first + j);
-    }
-    return false;
 }
 
 template <typename T, typename Derived>
@@ -1195,21 +1212,29 @@ template <bool Relaxed>
 ChunkBase<T, Derived>::element_at_unguarded(this const Derived& self, int offset, const T* offset_slot) noexcept
     requires has_motif_state_v<Derived>
 {
-    const T* const vals = self.values_load();
-    if constexpr (!Relaxed)
+    for (;;)
     {
-        test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
+        const T* const vals = self.values_load();
+        if constexpr (!Relaxed)
+        {
+            test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
+        }
+        if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+        {
+            return self.second_value_from_ptr(vals);
+        }
+        if (Derived::is_motif_ptr(vals)) [[unlikely]]
+        {
+            T off{};
+            if (self.motif_offset(vals, offset_slot, off)) [[likely]]
+            {
+                return Derived::motif_value(vals, offset, off);
+            }
+            continue; // the pointer moved: the slot may hold another state's value (F5)
+        }
+        // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
+        return load_at<Relaxed>(vals, offset);
     }
-    if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
-    {
-        return self.second_value_from_ptr(vals);
-    }
-    if (Derived::is_motif_ptr(vals)) [[unlikely]]
-    {
-        return Derived::motif_value(vals, offset, offset_slot);
-    }
-    // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
-    return load_at<Relaxed>(vals, offset);
 }
 
 template <typename T, typename Derived>

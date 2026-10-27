@@ -34,7 +34,7 @@ A **run** is a directory on the cluster, `<runs directory>/<id>/`:
 
 ## 2. Requirements and start
 
-- On the laptop: Python 3.9 or later and **PySide6** (`pip install PySide6`).
+- On the laptop: Python 3.9 or later and **PySide6** 6.2 or later (`pip install PySide6`).
 - On the cluster: Python 3.6 or later, the shrink-array repository cloned, and the site's
   submit command for the batch mode (`ccc_msub` on inti; see §6).
 - An ssh master connection, opened once per session:

@@ -34,7 +34,7 @@ Un **run** est un dossier sur le calculateur, `<dossier des runs>/<id>/` :
 
 ## 2. Prérequis et lancement
 
-- Sur le portable : Python 3.9 ou plus récent et **PySide6** (`pip install PySide6`).
+- Sur le portable : Python 3.9 ou plus récent et **PySide6** 6.2 ou plus récent (`pip install PySide6`).
 - Sur le calculateur : Python 3.6 ou plus récent, le dépôt shrink-array cloné, et la commande de
   soumission du site pour le mode batch (`ccc_msub` sur inti ; voir §6).
 - Une connexion maître ssh ouverte, une fois par session :

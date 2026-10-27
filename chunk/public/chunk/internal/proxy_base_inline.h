@@ -1425,10 +1425,16 @@ template <typename Derived, typename T, typename ChunkT>
         // motif_offset_slot() is the pattern proxy's; the callers are ProxyBase's own
         // implicit-object members, so no `this const Derived&` here.
         const auto& self = static_cast<const Derived&>(*this);
-        // A motif chunk: motif[num] + the offset its second-value slot holds.
+        // A motif chunk: motif[num] + the offset its second-value slot holds, if
+        // the chunk still points at that motif; else the chunk as it is now (F5).
         if (ChunkT::is_motif_ptr(vals)) [[unlikely]]
         {
-            return ChunkT::motif_value(vals, num_, self.motif_offset_slot());
+            T off{};
+            if (chunk_.motif_offset(vals, self.motif_offset_slot(), off)) [[likely]]
+            {
+                return ChunkT::motif_value(vals, num_, off);
+            }
+            return read_values_at(chunk_.values_load());
         }
     }
     return internal::element_of(vals, static_cast<std::size_t>(num_));

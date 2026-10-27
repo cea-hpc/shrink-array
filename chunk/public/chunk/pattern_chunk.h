@@ -92,15 +92,40 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
     }
 
     /**
-     * @brief Element @p j of a chunk whose values pointer is @p motif.
-     * @param motif       The chunk's values pointer, loaded by the caller (is_motif_ptr()).
-     * @param j           Offset in the chunk.
-     * @param offset_slot The chunk's second-value slot, which holds its offset.
+     * @brief Element @p j of a chunk whose values pointer is @p motif and whose
+     *        offset is @p offset (motif_offset()).
+     * @param motif  The chunk's values pointer, loaded by the caller (is_motif_ptr()).
+     * @param j      Offset in the chunk.
+     * @param offset The chunk's offset.
      * @return motif[j] + offset, wrapping.
      */
-    [[nodiscard]] static T motif_value(const T* motif, int j, const T* offset_slot) noexcept
+    [[nodiscard]] static T motif_value(const T* motif, int j, T offset) noexcept
     {
-        return wrapping_add(motif[j], internal::load_element_relaxed(offset_slot));
+        // raw-read: motif_value -- a registered motif is never written while a chunk points at it
+        return wrapping_add(motif[j], offset);
+    }
+
+    /**
+     * @brief The offset of this chunk, whose values pointer the caller loaded as
+     *        @p motif: valid only if the pointer has not moved meanwhile.
+     * @details The slot is rewritten by a compression pass (to another motif, or to a
+     *          constant: its second value) while a reader may still hold the motif
+     *          pointer loaded before a writer materialised the chunk; the read section
+     *          protects the buffer the pass frees, not the slot it rewrites. So: the
+     *          slot loaded with acquire (it pairs with the pass's release store, made
+     *          after the pass saw the materialised buffer), then the values pointer
+     *          again. Unchanged: the offset is that of the state the two loads
+     *          bracket. Moved: the caller starts over (docs/formal_models.md, F5;
+     *          formal/motif_offset.c).
+     * @param motif       The values pointer the caller loaded (is_motif_ptr()).
+     * @param offset_slot The chunk's second-value slot.
+     * @param offset      Receives the offset.
+     * @return false if the values pointer moved: @p offset is then meaningless.
+     */
+    [[nodiscard]] bool motif_offset(const T* motif, const T* offset_slot, T& offset) const noexcept
+    {
+        offset = internal::load_element_acquire(offset_slot);
+        return this->values_load() == motif;
     }
 
     /// @brief A chunk the pass found equal to a registered motif plus an offset:

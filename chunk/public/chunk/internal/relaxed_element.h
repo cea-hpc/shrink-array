@@ -81,6 +81,17 @@ template <typename T>
     return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_relaxed);
 }
 
+/// @brief Load @p *ptr through an acquire std::atomic_ref: the offset slot of a
+///        pattern::Array motif chunk (docs/formal_models.md, F5).
+/// @param ptr Element to read.
+template <typename T>
+[[nodiscard]] T load_element_acquire(const T* ptr) noexcept
+{
+    static_assert(relaxed_element_access_v<T>);
+    // atomic_ref<const T> is C++26; a load never writes through the reference.
+    return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_acquire);
+}
+
 /// @brief Store @p value to @p *ptr through a relaxed std::atomic_ref.
 /// @param ptr Element to write.
 /// @param value Value to store.

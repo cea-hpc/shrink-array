@@ -164,7 +164,10 @@ struct ChunkSizeAdvisor
         rep.elem_bytes =
             chunk_sz != 0 ? static_cast<double>(Arr::ChunkType::storage_units(chunk_sz)) * sizeof(T) / chunk_sz : 0.;
 
-        if (nc <= 0)
+        // No chunk, or no geometry (never on a live array: every setter refuses
+        // a zero size): nothing to analyse. Every division below is by
+        // chunk_sz or by a candidate derived from it, hence this test first.
+        if (nc <= 0 || chunk_sz == 0)
         {
             return rep;
         }

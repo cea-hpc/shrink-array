@@ -59,8 +59,12 @@ namespace zero_one_value
 {
 
 template <typename T, typename Derived>
-// ind is set by load_inf_array() before
-// any use; left unset here on purpose, the proxy is built on every element access.
+// second_value_ and ind_ are left unset on purpose: the proxy is built on every element
+// access, and each is written before its first read -- both by set_info_on_chunk() and
+// set_info_second_value_ind(...), second_value_ alone by set_second_value() -- from the
+// array's record (the armed mirror, else load_inf_array()). No default initialiser either:
+// T is any element type, and `T second_value_{}` would require it default-constructible and
+// build one per access.
 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
 class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 {

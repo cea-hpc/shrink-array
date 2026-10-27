@@ -309,7 +309,16 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
                 const SecondValueRef<T> ptr_second_value =
                     ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
 
-                T* new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                T* new_cst_val2_ptr = nullptr;
+                if constexpr (has_motif_state_v<Derived>)
+                {
+                    // A reader of the chunk's former motif may load the slot (F5).
+                    new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2_release(second_v, ptr_second_value);
+                }
+                else
+                {
+                    new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                }
 
                 chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr, new_cst_val2_ptr);
             }
@@ -457,7 +466,15 @@ void zero_any::ChunkImpl<T, Derived>::compress(this Derived&         self,
             compact2                                 = scan.second;
             if (compact2)
             {
-                new_cst_val2_ptr = self.find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                if constexpr (has_motif_state_v<Derived>)
+                {
+                    // A reader of the chunk's former motif may load the slot (F5).
+                    new_cst_val2_ptr = self.find_or_set_ind_cst_val2_release(second_v, ptr_second_value);
+                }
+                else
+                {
+                    new_cst_val2_ptr = self.find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                }
             }
         }
         else
@@ -857,12 +874,13 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(this Derived
             T* const motif = self.SecondValueChunkBase<T, Derived>::values_load();
             if (Derived::is_motif_ptr(motif)) [[unlikely]]
             {
-                const T* const slot = ptr_second_value.slot;
-                const auto     fill = [motif, slot](T* ptr)
+                // The slot is stable: wait_before_materialise() keeps the pass away.
+                const T    off  = internal::load_element_relaxed(ptr_second_value.slot);
+                const auto fill = [motif, off](T* ptr)
                 {
                     for (unsigned int j = 0; j < shrink_array::alloc_chunk_count(); ++j)
                     {
-                        ptr[j] = Derived::motif_value(motif, static_cast<int>(j), slot);
+                        ptr[j] = Derived::motif_value(motif, static_cast<int>(j), off);
                     }
                 };
                 T* const values_loc = self.SecondValueChunkBase<T, Derived>::allocate_chunk_internal(thr_rank, fill);
@@ -963,12 +981,12 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value(this Derived& 
         const T* const motif = self.values_;
         if (Derived::is_motif_ptr(motif)) [[unlikely]]
         {
-            const T* const slot = ptr_second_value.slot;
-            const auto     fill = [motif, slot](T* ptr)
+            const T    off  = *ptr_second_value.slot; // serial: no other thread
+            const auto fill = [motif, off](T* ptr)
             {
                 for (unsigned int j = 0; j < alloc_chunk_count(); ++j)
                 {
-                    ptr[j] = Derived::motif_value(motif, static_cast<int>(j), slot);
+                    ptr[j] = Derived::motif_value(motif, static_cast<int>(j), off);
                 }
             };
             self.values_ = self.SecondValueChunkBase<T, Derived>::allocate_chunk_internal(0, fill);

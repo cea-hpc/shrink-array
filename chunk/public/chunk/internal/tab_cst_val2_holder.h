@@ -181,6 +181,14 @@ struct SecondValueRef
     {
         *slot = SlotT{};
     }
+    /// @brief reset() as an atomic release store: the slot of a member with the motif
+    ///        state, which a reader of the chunk's motif may load meanwhile (F5).
+    void reset_release() const noexcept
+    {
+        std::atomic_ref<SlotT>(*slot).store(SlotT{}, std::memory_order_release);
+    }
+    /// @brief set_from_array() as an atomic release store (see reset_release()).
+    void                   set_from_array_release(const T* src) const noexcept;
     [[nodiscard]] explicit operator bool() const noexcept
     {
         return slot != nullptr;
@@ -828,6 +836,10 @@ class TabCstVal2Holder
      * @note The O(N) chain scan runs only behind GlobalVecHolder::index_degraded.
      */
     [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value);
+
+    /// @brief find_or_set_ind_cst_val2() recording the slot by a release store
+    ///        (SecondValueRef::set_from_array_release()): a member with the motif state.
+    [[nodiscard]] T* find_or_set_ind_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value);
 
     /// @brief Is @p ptr one of this type's second-value slots?
     /// @note `is_cst_val2()` of zero_any: one relaxed load of the region base
