@@ -168,7 +168,8 @@ et la passe compresse chaque candidat à sa propre taille.
 ## 9. Résultats
 
 `shrink_bench` porte une connectivité de maillage, `tab_conn`
-(`examples/shrink_bench/bench_phase_conn.cpp`, `--no_conn` pour l'omettre) : environ `sz` entiers,
+(`examples/shrink_bench/bench_phase_conn.cpp`, `--no_conn` pour l'omettre) : environ `sz / 32` entiers
+par défaut (`--conn_scale`),
 des rangées entières de 256 mailles hexaédriques ; chaque itération lit une bande de rangées sur 16
 et la renumérote (l'ordre des nœuds tourné, ou rétabli), si bien que la passe recompresse une bande
 vers un autre motif partagé à chaque itération. C'est un `pattern::Array<int>` dans les builds

@@ -158,7 +158,8 @@ pass compresses each candidate at its own size.
 ## 9. Results
 
 `shrink_bench` carries a mesh connectivity, `tab_conn` (`examples/shrink_bench/bench_phase_conn.cpp`,
-`--no_conn` to leave it out): about `sz` ints, whole rows of 256 hexahedral cells; each iteration
+`--no_conn` to leave it out): about `sz / 32` ints by default (`--conn_scale`), whole rows of 256
+hexahedral cells; each iteration
 gathers one band of rows in 16 and renumbers it (the node order rotated, or put back), so the
 pass compresses a band to another shared motif at every iteration. It is a `pattern::Array<int>`
 in the `zero_one_value` and `zero_any` builds (its machinery is `zero_any`'s, header-only: it
