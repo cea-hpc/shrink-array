@@ -78,51 +78,7 @@ class ChunkConcurrentOps
     /// @param num_compress_value 0 for the first constant, 1 for the second.
     /// @param cst2_ptr The shared array to install when @p num_compress_value
     ///        is 1 (find_or_set_ind_cst_val2's result); ignored for 0.
-    [[nodiscard]] T* try_mark_cst_and_get_old(this Derived& self, int num_compress_value, T* cst2_ptr) noexcept
-    {
-        T* old = self.values_load();
-        if (old == Base::get_cst_val1() || Holder::is_cst_val2_ptr(old))
-        {
-            return nullptr;
-        }
-
-        T* new_ptr  = (num_compress_value == 0) ? Base::get_cst_val1() : cst2_ptr;
-        T* expected = old;
-
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            const uint32_t chunk_id = self.ring_chunk_id();
-            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), EventCode::compress_attempt, info);
-        }
-
-        if (!self.values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
-                                                  std::memory_order_acquire))
-        {
-            return nullptr;
-        }
-
-        if constexpr (build_config::any_check)
-        {
-            T* observed = self.values_load();
-            if (observed != new_ptr && observed != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(observed))
-            {
-                invariant_failed(std::source_location::current(),
-                                 "try_mark_cst_and_get_old: post-CAS values={} not in expected set "
-                                 "(new_ptr={}, cst1={}, a cst2 array)",
-                                 static_cast<const void*>(observed), static_cast<const void*>(new_ptr),
-                                 static_cast<const void*>(Base::get_cst_val1()));
-            }
-        }
-
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            const uint32_t chunk_id = self.ring_chunk_id();
-            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), EventCode::cas_values_to_cst, info);
-        }
-        return old;
-    }
+    [[nodiscard]] T* try_mark_cst_and_get_old(this Derived& self, int num_compress_value, T* cst2_ptr) noexcept;
 
   protected:
     /// @brief Publish @p values_loc as this chunk's buffer, expecting the
@@ -131,63 +87,7 @@ class ChunkConcurrentOps
     /// @return true when the swap FAILED (someone else materialised the chunk
     ///         first; the caller recycles @p values_loc), the convention of
     ///         ChunkBase::compare_and_swap_gen().
-    [[nodiscard]] bool compare_and_swap(this Derived& self, T* values_loc, bool expected_is_cst_val2) noexcept
-    {
-        // A chunk's second constant IS its values pointer (no per-chunk copy). The CAS must
-        // still expect a CONSTANT, never "whatever values holds now": if another thread
-        // materialised the chunk since the caller looked, values is its buffer, and a CAS
-        // expecting it would replace that buffer -- and its write -- by ours (a lost write).
-        // So if the loaded pointer is not in the second-value region, report failure without
-        // attempting the CAS; the caller recycles our buffer.
-        T* expected = nullptr;
-        if constexpr (is_not_bool)
-        {
-            if (expected_is_cst_val2)
-            {
-                expected = self.values_load();
-                if (!Holder::is_cst_val2_ptr(expected))
-                {
-                    return true; // failed: someone else materialised it first
-                }
-            }
-            else
-            {
-                expected = Base::get_cst_val1();
-            }
-        }
-        else
-        {
-            expected = expected_is_cst_val2 ? Holder::m_ptr.data() : Base::get_cst_val1();
-        }
-
-        // Spelled out, not self.Base::: name lookup in `self` finds zero_any::Chunk's own
-        // private Base alias first (clang rejects it).
-        const bool failed = self.SecondValueChunkBase<T, Derived>::compare_and_swap_gen(values_loc, expected);
-
-        if constexpr (build_config::any_check)
-        {
-            if (!failed)
-            {
-                T* current = self.values_load();
-                if (current != values_loc && current != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(current))
-                {
-                    invariant_failed(std::source_location::current(),
-                                     "post-create_value CAS: values={}, expected one of "
-                                     "{{values_loc={}, cst1={}, a cst2 array}}",
-                                     static_cast<const void*>(current), static_cast<const void*>(values_loc),
-                                     static_cast<const void*>(Base::get_cst_val1()));
-                }
-            }
-        }
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            const uint32_t chunk_id = self.ring_chunk_id();
-            const uint32_t info =
-                (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24U);
-            ring_log(get_tid(), failed ? EventCode::cas_values_fail : EventCode::cas_values_from_cst, info);
-        }
-        return failed;
-    }
+    [[nodiscard]] bool compare_and_swap(this Derived& self, T* values_loc, bool expected_is_cst_val2) noexcept;
 
   private:
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
@@ -213,35 +113,14 @@ class ChunkStateQueries
 
     /// @brief Is the chunk compressed to a second value (its values pointer
     ///        lies in the second-value region; for bool, IS the flag block)?
-    [[nodiscard]] bool is_cst_val2(this const Derived& self) noexcept
-    {
-        const T* current_value = self.values_load();
-        if constexpr (is_not_bool)
-        {
-            return Holder::is_cst_val2_ptr(current_value); // a range test on the region
-        }
-        else
-        {
-            return current_value == Holder::m_ptr.data();
-        }
-    }
+    [[nodiscard]] bool is_cst_val2(this const Derived& self) noexcept;
 
     /// @brief is_cst_val2() asked of a pointer the caller already loaded.
     /// @details element_at() must test and read the SAME load: asking the chunk
     ///          loads `values` a second time, and a compressor claiming it in
     ///          between swaps that pointer for a region identifier, which the
     ///          read then indexes as a buffer.
-    [[nodiscard]] static bool is_cst_val2_ptr_of(const T* ptr) noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return Holder::is_cst_val2_ptr(ptr);
-        }
-        else
-        {
-            return ptr == Holder::m_ptr.data();
-        }
-    }
+    [[nodiscard]] static bool is_cst_val2_ptr_of(const T* ptr) noexcept;
 
     /**
      * @brief The constant a chunk whose values pointer is @p ptr stands for,
@@ -252,36 +131,12 @@ class ChunkStateQueries
      *          an identifier, not a buffer): id_of_ptr() is arithmetic, value_of_id()
      *          one load of the value table.
      */
-    [[nodiscard]] static T second_value_from_ptr(const T* ptr) noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return Holder::value_of_id(Holder::id_of_ptr(ptr));
-        }
-        else
-        {
-            return true;
-        }
-    }
+    [[nodiscard]] static T second_value_from_ptr(const T* ptr) noexcept;
 
     /// @brief Is @p ptr one of the constant arrays (first or a second one)?
     /// @note For a values pointer the caller already loaded -- the pre-store
     ///       guards of the proxy -- where is_cst_val() would load it again.
-    [[nodiscard]] static bool is_constant_ptr(const T* ptr) noexcept
-    {
-        if (ptr == Base::get_cst_val1())
-        {
-            return true;
-        }
-        if constexpr (is_not_bool)
-        {
-            return Holder::is_cst_val2_ptr(ptr);
-        }
-        else
-        {
-            return ptr == Holder::m_ptr.data();
-        }
-    }
+    [[nodiscard]] static bool is_constant_ptr(const T* ptr) noexcept;
 
     /// @brief Materialised (owns a buffer, i.e. compressed to neither constant)?
     [[nodiscard]] bool written(this const Derived& self) noexcept
@@ -600,32 +455,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     ///        point at when the type says cst_val2 is found by value in the
     ///        registry (there is no per-chunk copy of it). May be null when
     ///        the type is cst_val1.
-    void init_values_cst_val(const CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value) noexcept
-    {
-        if (*ptr_type_cst == CstSlot::first)
-        {
-            Base::values_ = Base::get_cst_val1();
-            return;
-        }
-        if constexpr (is_not_bool)
-        {
-            T* cst_val2_ptr = Holder::find_cst_val2_ptr(ptr_second_value.get());
-            if constexpr (build_config::any_check)
-            {
-                if (cst_val2_ptr == nullptr)
-                {
-                    invariant_failed(std::source_location::current(),
-                                     "init_values_cst_val: type says cst_val2 but no array is registered for the "
-                                     "chunk's second value");
-                }
-            }
-            Base::values_ = cst_val2_ptr;
-        }
-        else
-        {
-            Base::values_ = Holder::m_ptr.data();
-        }
-    }
+    void init_values_cst_val(const CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value) noexcept;
 
     /// @brief Get reference to the chunk manager (static access)
     /// @return Reference to the ManagerChunk2A static instance
@@ -648,59 +478,13 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     ///        constant; a no-op otherwise (already materialised).
     /// @param ptr_second_value The second value to fill from, when that is
     ///        the constant it holds.
-    void alloc_chunk(this Derived& self, SecondValueRef<T> ptr_second_value)
-    {
-        if (self.is_cst_val())
-        {
-            // bool has its own materialiser (the second value is the flag).
-            if constexpr (is_not_bool)
-            {
-                self.create_value(false, ptr_second_value);
-            }
-            else
-            {
-                self.create_value_bool(false);
-            }
-        }
-    }
+    void alloc_chunk(this Derived& self, SecondValueRef<T> ptr_second_value);
 
     /// @brief alloc_chunk(), per-thread variant.
     /// @param ptr_second_value The second value to fill from.
     /// @param thr_rank Calling thread's rank (OpenMP builds; ignored in serial
     ///        builds).
-    void alloc_chunk(this Derived& self, SecondValueRef<T> ptr_second_value, [[maybe_unused]] int thr_rank)
-    {
-        if (self.is_cst_val())
-        {
-            if constexpr (chunk_config::stats)
-            {
-                increm_chunk_write<ChunkType>();
-            }
-
-            if constexpr (build_config::threaded)
-            {
-                if constexpr (is_not_bool)
-                {
-                    self.create_value(false, ptr_second_value, thr_rank);
-                }
-                else
-                {
-                    self.create_value_bool(false, thr_rank);
-                }
-            }
-            else
-            {
-                if constexpr (is_not_bool)
-                {
-                    self.create_value(false, ptr_second_value);
-                }
-                else
-                {
-                    self.create_value_bool(false);
-                }
-            }
-        }
-    }
+    void alloc_chunk(this Derived& self, SecondValueRef<T> ptr_second_value, [[maybe_unused]] int thr_rank);
 
     void compress(this Derived& self, int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
 
@@ -738,17 +522,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
 
     /// @brief Is every rank's candidate list empty (the calling thread's, in a
     ///        serial build)?
-    [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
-    {
-        if constexpr (build_config::threaded)
-        {
-            return ManagerChunk2A::is_chunk2a_to_compress_potentially_empty();
-        }
-        else
-        {
-            return ManagerChunk2A::get_chunk2a_to_compress_potentially().empty();
-        }
-    }
+    [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept;
 
     static void compress_chunk_to_compress_in_par(int thr, bool apply);
 

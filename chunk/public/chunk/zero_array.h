@@ -204,15 +204,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /// @brief clear() the array, then erase its entry from Proxy<T>::share_info_array.
-    ~Array()
-    {
-        clear();
-        // Drop our (this -> num_tab) registry entry so a later array at this
-        // address does not inherit our stale num_tab via zero::PointerMap's
-        // first-match lookup (required for rechunk_to's tmp). Must run AFTER
-        // clear(), which still needs get_num_tab(registry_key()).
-        Proxy<T>::share_info_array->erase(this->registry_key());
-    }
+    ~Array();
 
     /**
      * @brief Move-assign: this array's own contents are released (clear()),
@@ -224,15 +216,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
      *          @p other is left with nb_chunk 0. Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    Array& operator=(Array&& other) noexcept
-    {
-        if (this != &other)
-        {
-            clear();
-            this->swap_storage_and_identity(other);
-        }
-        return *this;
-    }
+    Array& operator=(Array&& other) noexcept;
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op.
@@ -299,22 +283,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     }
 
     /// @brief Compress every chunk that is constant at the first value now.
-    void compress(bool verbose = false)
-    {
-        const bool in_parr = CHUNK_PMP_IN_PARALLEL_REGION;
-
-        if (in_parr)
-        {
-            // Inside the caller's region: other threads may be reading, so
-            // the buffers released wait for a grace period (read_reclaim.h).
-            const read_reclaim::PassScope pass_scope;
-            compress_int(verbose);
-        }
-        else
-        {
-            pmp::team(pmp::Options{}, [&](pmp::Team& team) { compress_int(team, verbose); });
-        }
-    }
+    void compress(bool verbose = false);
 
     /// @brief Read-only access to the underlying chunk list.
     [[nodiscard]] const Base::ChunkListType& get_chunk_list() const noexcept

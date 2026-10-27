@@ -172,4 +172,167 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// fast_alloc::InfoFreeElt
+// ---------------------------------------------------------------------------
+
+inline bool InfoFreeElt::push_back(void* ptr, int sz, int thr_rank)
+{
+    int& ref_compt = compt[thr_rank];
+
+    if ((ref_compt < max_free_elt && somme_sz_[thr_rank] < 4 * 1024 * 1024))
+    {
+        tab_ptr[thr_rank][ref_compt] = ptr;
+        tab_sz[thr_rank][ref_compt]  = sz;
+
+        somme_sz_[thr_rank] += sz;
+
+        ref_compt++;
+        return false;
+    }
+
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// fast_alloc::BlkAllocator
+// ---------------------------------------------------------------------------
+
+inline void* BlkAllocator::alloc_block(size_t size)
+{
+    if constexpr (alloc_config::use_std_alloc)
+    {
+        return int_alloc(size);
+    }
+    else
+    {
+        // Compared in size_t BEFORE narrowing to unsigned int (4 GiB + 64
+        // would become 64).
+        void* ptr = size <= max_const_block_size ? get_block_alloc(static_cast<unsigned int>(size)) : nullptr;
+
+        if (ptr == nullptr)
+        {
+            ptr = int_alloc(size);
+        }
+
+        return ptr;
+    }
+}
+
+inline void BlkAllocator::free_block(void* ptr, size_t size)
+{
+    if (ptr == nullptr)
+    {
+        return;
+    }
+
+    if constexpr (alloc_config::use_std_alloc)
+    {
+        int_free(ptr);
+    }
+    else
+    {
+        // false: not a ladder size, so it came from int_alloc(). Test in
+        // size_t first: static_cast<int> alone turns [2 GiB, 4 GiB) negative.
+        if (size <= max_const_block_size && try_free_block(static_cast<int>(size), ptr))
+        {
+            return;
+        }
+
+        int_free(ptr);
+    }
+}
+
+inline void* BlkAllocator::alloc_tab(size_t size)
+{
+    // size_t header: an int one would wrap past INT_MAX.
+    static_assert(fast_alloc::alignment >= sizeof(std::size_t), "alloc_tab: the header must hold a size_t");
+    // size + header must not wrap: near SIZE_MAX it would route to a small
+    // ladder block that the caller then writes past.
+    if (size > static_cast<std::size_t>(-1) - fast_alloc::alignment) [[unlikely]]
+    {
+        fast_alloc::out_of_memory("alloc_tab", size, 1, 0);
+    }
+    const std::size_t total = size + fast_alloc::alignment;
+
+    auto* ptr = static_cast<std::byte*>(
+        total <= max_const_block_size ? get_block_alloc(static_cast<unsigned int>(total)) : nullptr);
+
+    if (ptr == nullptr)
+    {
+        ptr = static_cast<std::byte*>(int_alloc_align(total));
+    }
+
+    fast_alloc::store_to_bytes(ptr, size); // the header: the requested size
+
+    return ptr + fast_alloc::alignment;
+}
+
+inline void BlkAllocator::free_tab(void* user_ptr)
+{
+    if (user_ptr == nullptr)
+    {
+        return;
+    }
+
+    std::byte* const m_ptr = static_cast<std::byte*>(user_ptr) - fast_alloc::alignment;
+
+    const std::size_t total = fast_alloc::load_from_bytes<std::size_t>(m_ptr) + fast_alloc::alignment;
+
+    // Same routing as alloc_tab(), decided in size_t.
+    if (total > max_const_block_size || !try_free_block(static_cast<int>(total), m_ptr))
+    {
+        int_free_align(m_ptr);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// fast_alloc::FixedSizeAllocator<ElemT>
+// ---------------------------------------------------------------------------
+
+template <typename ElemT>
+void* FixedSizeAllocator<ElemT>::alloc_block()
+{
+    if constexpr (alloc_config::use_std_alloc)
+    {
+        return int_alloc(sizeof(ElemT));
+    }
+    else
+    {
+        void* ptr = get_block_alloc(static_cast<unsigned int>(sizeof(ElemT)));
+
+        if (ptr == nullptr)
+        {
+            return int_alloc(sizeof(ElemT));
+        }
+
+        return ptr;
+    }
+}
+
+template <typename ElemT>
+void FixedSizeAllocator<ElemT>::free_block(void* ptr)
+{
+    if (ptr == nullptr)
+    {
+        return;
+    }
+
+    if constexpr (alloc_config::use_std_alloc)
+    {
+        int_free(ptr);
+    }
+    else
+    {
+        // try_free_block() returns false for a size the ladder does not serve:
+        // the block came from int_alloc().
+        if (try_free_block(static_cast<int>(sizeof(ElemT)), ptr))
+        {
+            return;
+        }
+
+        int_free(ptr);
+    }
+}
+
 } // namespace fast_alloc

@@ -63,17 +63,7 @@ class PointerMapLinear
      *
      * @param key the array address to drop.
      */
-    void erase(Key key)
-    {
-        for (auto it = vec_.begin(); it != vec_.end(); ++it)
-        {
-            if (it->first == key)
-            {
-                vec_.erase(it);
-                return;
-            }
-        }
-    }
+    void erase(Key key);
 
     /**
      * @brief Exchange the payloads of two registered keys.
@@ -87,28 +77,7 @@ class PointerMapLinear
      * @return true when both keys were present and their payloads swapped;
      *         false, with nothing changed, when either is missing.
      */
-    bool swap_entries(Key key_a, Key key_b) noexcept
-    {
-        Payload* pa = nullptr;
-        Payload* pb = nullptr;
-        for (auto& item : vec_)
-        {
-            if (item.first == key_a)
-            {
-                pa = &item.second;
-            }
-            else if (item.first == key_b)
-            {
-                pb = &item.second;
-            }
-        }
-        if (pa == nullptr || pb == nullptr)
-        {
-            return false;
-        }
-        std::swap(*pa, *pb);
-        return true;
-    }
+    bool swap_entries(Key key_a, Key key_b) noexcept;
 
     /**
      * @brief Whether @p key is currently registered.
@@ -144,17 +113,7 @@ class PointerMapLinear
      *
      * @details FIRST match only, like every lookup here (see erase()).
      */
-    [[nodiscard]] const Payload* find_payload(Key key) const noexcept
-    {
-        for (const auto& item : vec_)
-        {
-            if (item.first == key)
-            {
-                return &item.second;
-            }
-        }
-        return nullptr;
-    }
+    [[nodiscard]] const Payload* find_payload(Key key) const noexcept;
 
     /// The (key, payload) pairs, in insertion order. Derived registries read it
     /// directly for the lookups that are specific to them.
@@ -162,3 +121,5 @@ class PointerMapLinear
 };
 
 } // namespace shrink_array
+
+#include "chunk/internal/pointer_map_linear_inline.h" // the template bodies

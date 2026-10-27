@@ -1249,4 +1249,143 @@ void zero_one_value::Array<T, IntType>::resize(IntType newsz)
     }
 }
 
+// ---------------------------------------------------------------------------
+// shrink_array::Array<T, IntType>
+// ---------------------------------------------------------------------------
+
+template <ArrayChunkElement T, typename IntType>
+zero_one_value::Array<T, IntType>::~Array()
+{
+    clear();
+    Proxy<T>::share_info_array->erase(this->registry_key());
+
+    if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
+    {
+        Proxy<T>::share_info_array->erase_inf_array_by_ptr(&inf_array_);
+    }
+}
+
+template <ArrayChunkElement T, typename IntType>
+zero_one_value::Array<T, IntType>& zero_one_value::Array<T, IntType>::operator=(Array&& other) noexcept
+{
+    if (this != &other)
+    {
+        clear();
+        this->swap_storage_and_identity(other);
+    }
+    return *this;
+}
+
+template <ArrayChunkElement T, typename IntType>
+zero_one_value::Array<T, IntType>& zero_one_value::Array<T, IntType>::operator=(const Array& from)
+{
+    if (this != &from)
+    {
+        copy_second_value_from(from);
+        this->copy_from(from);
+    }
+    return *this;
+}
+
+template <ArrayChunkElement T, typename IntType>
+[[nodiscard]] T zero_one_value::Array<T, IntType>::get_second_value() const noexcept
+{
+    if constexpr (!is_bool_like_v<T>)
+    {
+        return Proxy<T>::share_info_array->get_second_value(this->registry_key());
+    }
+    else
+    {
+        return true;
+    }
+}
+
+template <ArrayChunkElement T, typename IntType>
+[[nodiscard]] int zero_one_value::Array<T, IntType>::get_ind_second_value() const noexcept
+{
+    if constexpr (is_not_bool)
+    {
+        return get_info_second_value().ind;
+    }
+    else
+    {
+        CHUNK_INVARIANT_FAILED("zero_one_value::Array<bool>::get_ind_second_value(): bool registers no second value");
+    }
+}
+
+template <ArrayChunkElement T, typename IntType>
+[[nodiscard]] bool zero_one_value::Array<T, IntType>::chunk_written(int num_chunk) const
+{
+    if constexpr (is_not_bool)
+    {
+        return chunk_list_[num_chunk].written(get_ind_second_value());
+    }
+    else
+    {
+        return chunk_list_[num_chunk].written();
+    }
+}
+
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::copy_second_value_from(const Array& from)
+{
+    if constexpr (!is_bool_like_v<T>)
+    {
+        const InT<T> sv = from.get_second_value();
+        if (sv != T{} && get_second_value() != sv)
+        {
+            set_second_value(sv, false);
+        }
+    }
+}
+
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::register_no_second_value_key()
+{
+    if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
+    {
+        auto& sh_inf = *Proxy<T>::share_info_array;
+        if (sh_inf.find_inf_array(T{}) == nullptr)
+        {
+            sh_inf.insert(T{}, &inf_array_none);
+            // The between-phase pass drains only the values of THIS map: T{}
+            // must be in it, at the sentinel index (so set_second_value(T{})
+            // still sees it unregistered and builds a real block).
+            sh_inf.insert_map_ind_cst_val2(T{}, chunk_config::no_second_value_index);
+        }
+        if constexpr (build_config::threaded)
+        {
+            for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
+            {
+                auto& slot = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
+                if (!slot)
+                {
+                    slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();
+                }
+            }
+        }
+    }
+}
+
+template <ArrayChunkElement T, typename IntType>
+void zero_one_value::Array<T, IntType>::swap_identity(Array& other)
+{
+    auto& sh_inf = *Proxy<T>::share_info_array;
+    sh_inf.swap_entries(this->registry_key(), other.registry_key());
+    std::swap(ind_cst_val2_, other.ind_cst_val2_);
+    sync_registry_mirror();
+    other.sync_registry_mirror();
+    if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
+    {
+        for (Array* arr : {this, &other})
+        {
+            const T value = arr->inf_array_.second_value;
+            if (value != T{})
+            {
+                sh_inf.insert(value, &arr->inf_array_);
+            }
+        }
+    }
+}
+
 } // namespace shrink_array

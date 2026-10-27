@@ -1100,4 +1100,210 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
     }
 }
 
+// ---------------------------------------------------------------------------
+// shrink_array::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>
+// ---------------------------------------------------------------------------
+
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+[[nodiscard]] auto zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_second_value() const noexcept
+{
+    if constexpr (is_not_bool)
+    {
+        return second_value_;
+    }
+    else
+    {
+        return true;
+    }
+}
+
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+VectorTuple4ChunkInt2<zero_one_value::Chunk, T>&
+zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_to_compress_potentially_thr(
+    int thr) const noexcept
+{
+    const auto second_value = get_second_value();
+    // find(), not operator[]: operator[] INSERTS a null entry for a missing
+    // key, which have_chunk_to_compress() would dereference later.
+    auto&      candidates = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
+    const auto it         = candidates.find(second_value);
+    if (it == candidates.end() || it->second == nullptr) [[unlikely]]
+    {
+        chunk2_missing_candidate_list(thr);
+    }
+    return *it->second;
+}
+
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+VectorTuple4ChunkInt2<zero_one_value::Chunk, T>&
+zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_to_compress_potentially_async_thr(
+    auto* ctx,
+    int   thr) const
+{
+    const auto second_value = get_second_value(ctx);
+    // find(), not operator[]: operator[] INSERTS a null entry for a missing
+    // key, which have_chunk_to_compress() would dereference later.
+    auto&      candidates = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
+    const auto it         = candidates.find(second_value);
+    if (it == candidates.end() || it->second == nullptr) [[unlikely]]
+    {
+        chunk2_missing_candidate_list(thr);
+    }
+    return *it->second;
+}
+
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+[[nodiscard]] auto
+zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_second_value(auto* ctx) noexcept
+{
+    if constexpr (is_not_bool)
+    {
+        return ctx->second_value;
+    }
+    else
+    {
+        return true;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ProxyFastCompPolicy<Derived, T, ChunkT, false>
+// ---------------------------------------------------------------------------
+
+template <typename Derived, typename T, typename ChunkT>
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full_first_value() const
+{
+    // Pin the ambient chunk size before the free chain (clear_st -> ... ->
+    // get_chunk_allocator(thr_rank).free_elt_pow2()): get_chunk_allocator() routes by the
+    // ambient thread_chunk_size(), not by the buffer. A stale ambient (left by another
+    // array's write) selects the wrong pool, which then removes a node it does not own.
+    // Fast-alloc only: std-alloc's svfree() does not route by ambient.
+    if constexpr (build_config::chunk_dynamic)
+    {
+        shrink_array::set_thread_chunk_size(this->chunk_size());
+    }
+    if constexpr (is_not_bool)
+    {
+        chunk_.clear_st(0, this->ind_);
+    }
+    else
+    {
+        chunk_.clear_st(0, 0); // bool: ind ignored by bool-aware clear_int_st
+    }
+    chunk_.values_ = static_cast<T*>(chunk_.get_cst_val1());
+}
+
+template <typename Derived, typename T, typename ChunkT>
+void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full_second_value() const
+{
+    // Same rule as manage_full_first_value(): see that function's comment.
+    if constexpr (build_config::chunk_dynamic)
+    {
+        shrink_array::set_thread_chunk_size(this->chunk_size());
+    }
+    if constexpr (is_not_bool)
+    {
+        chunk_.clear_st(1, this->ind_);
+    }
+    else
+    {
+        chunk_.clear_st(1, 0); // bool: ind ignored by bool-aware clear_int_st
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::Proxy<T>
+// ---------------------------------------------------------------------------
+
+template <typename T>
+void zero_one_value::Proxy<T>::create_value(bool is_cst2) const noexcept
+{
+    if constexpr (build_config::chunk_dynamic)
+    {
+        // Route this (possibly worker-thread) allocation to the pool of THIS array's chunk
+        // size: set the per-thread active size right before materialising.
+        shrink_array::set_thread_chunk_size(this->chunk_size());
+    }
+    if constexpr (is_not_bool)
+    {
+        chunk_.create_value(is_cst2, inf_array_);
+    }
+    else
+    {
+        chunk_.create_value_bool(is_cst2);
+    }
+}
+
+template <typename T>
+const zero_one_value::Proxy<T>& zero_one_value::Proxy<T>::operator=(const Proxy& from) noexcept
+{
+    if (std::addressof(from) != this) // operator& is deleted
+    {
+        const InT<T> value = static_cast<T>(from); // complete before the write starts
+        static_cast<void>(assign_impl<T>(value));  // the value written: not needed here
+    }
+    return *this;
+}
+
+template <typename T>
+[[nodiscard]] bool zero_one_value::Proxy<T>::is_cst_val2(int ind) const noexcept
+{
+    if constexpr (is_not_bool)
+    {
+        return chunk_.is_cst_val2(ind);
+    }
+    else
+    {
+        static_assert(false, "is_cst_val2(int ind) is for non-bool elements: use is_cst_val2()");
+    }
+}
+
+template <typename T>
+[[nodiscard]] bool zero_one_value::Proxy<T>::is_cst_val2() const noexcept
+{
+    if constexpr (is_not_bool)
+    {
+        return chunk_.is_cst_val2(BaseSpec::ind_);
+    }
+    else
+    {
+        return chunk_.is_cst_val2();
+    }
+}
+
+template <typename T>
+[[nodiscard]] bool zero_one_value::Proxy<T>::is_cst_val2_at(const T* vals) const noexcept
+{
+    if constexpr (is_not_bool)
+    {
+        return vals == chunk_.get_cst_val2(BaseSpec::ind_);
+    }
+    else
+    {
+        return vals == chunk_.get_cst_val2();
+    }
+}
+
+template <typename T>
+[[nodiscard]] bool zero_one_value::Proxy<T>::has_candidate_list(InT<T> second_val) noexcept
+{
+    if constexpr (build_config::threaded && chunk_config::use_fast_block_compression)
+    {
+        const auto& per_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr;
+        const int   thr     = get_thr_rank_fast();
+        if (thr < 0 || static_cast<std::size_t>(thr) >= per_thr.size()) [[unlikely]]
+        {
+            return false;
+        }
+        const auto& candidates = per_thr[thr];
+        const auto  it         = candidates.find(second_val);
+        return it != candidates.end() && it->second != nullptr;
+    }
+    else
+    {
+        (void)second_val;
+        return true;
+    }
+}
+
 } // namespace shrink_array

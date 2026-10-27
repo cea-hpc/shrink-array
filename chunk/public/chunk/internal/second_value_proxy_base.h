@@ -246,15 +246,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @param new_value The new boolean value
      * @note Uses false and true as constant values for comparison
      */
-    void mark_for_compression_if_needed(this const Derived& self, bool new_value)
-    {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
-        // Base::read_values() (qualified: dependent base), never values[num]:
-        // it is the write path's read entry and the only one that resolves a
-        // compressed chunk's constant (an unbacked identifier slot); indexing
-        // reads a zero page and the decision below is taken against 0.
-        self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, false, true);
-    }
+    void mark_for_compression_if_needed(this const Derived& self, bool new_value);
 
     /**
      * @brief Marks block for compression with custom constant values
@@ -290,21 +282,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
                                            InT<T>              second_val,
                                            InT<T>              new_value,
                                            InT<T>              first_value,
-                                           const T*            vals)
-    {
-        // isv false makes the whole test a no-op: skip the read of the old
-        // value too, which mark_for_compression_core() would not look at.
-        if (!self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val))
-        {
-            return;
-        }
-        const T old = self.Base::read_values_at(vals);
-        if (self.should_mark_for_compression(old, new_value, second_val, first_value) ||
-            (self.Base::read_values_at(vals) != old)) [[unlikely]]
-        {
-            self.add_to_compression_list();
-        }
-    }
+                                           const T*            vals);
 
     /**
      * @brief Marks block for compression with an explicit old boolean value
@@ -347,26 +325,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      */
     template <typename WriteFn>
     [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_with_set_ptr(this Derived& self,
-                                                                                WriteFn       write_fn) noexcept
-    {
-        const auto lbd_info = [&self]
-        {
-            if constexpr (chunk_config::use_fast_block_compression)
-            {
-                self.set_num_tab_ptr_is_inside_chunk(); // common initialization required for the fast-path
-            }
-            else
-            {
-                // The capture exists for the branch above only. A SERIAL build
-                // never instantiates it and clang reports the capture as unused
-                // (-Wunused-lambda-capture). Discarding `self` here keeps the
-                // capture explicit; do not switch to [&], which hides the intent.
-                static_cast<void>(self);
-            }
-        };
-
-        return self.write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
-    }
+                                                                                WriteFn       write_fn) noexcept;
 
     /**
      * @brief Static entry point for async callers that only have a proxy
@@ -405,20 +364,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     [[nodiscard]] bool is_cst_val_new_value_is_other_cst_val(this const Derived& self,
                                                              InT<T>              new_value,
                                                              InT<T>              first_value,
-                                                             InT<T>              second_val) noexcept
-    {
-        // CRTP dispatch: each variant owns its fast pre-check. zero_one_value keeps the
-        // "a constant is written" test below; zero_any widens it (see
-        // zero_any::Proxy::pre_check_mark_for_compression) because its
-        // should_mark_for_compression() accepts a case this test would reject.
-        //
-        // INVARIANT: pre_check_mark_for_compression() must never return false
-        // for a write that should_mark_for_compression() would accept. `isv` is
-        // only a performance filter; if it rejects a qualifying write the chunk
-        // is silently never queued for compression and its buffer is never
-        // returned to the reuse list.
-        return self.pre_check_mark_for_compression(new_value, first_value, second_val);
-    }
+                                                             InT<T>              second_val) noexcept;
 
     /**
      * @brief Default pre-check hook (zero_one_value behaviour).

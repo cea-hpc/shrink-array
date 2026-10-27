@@ -130,23 +130,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
      * @param cas_fn A lambda that returns TRUE if the swap failed (pointer already changed).
      */
     template <typename CasFunc>
-    void apply_cas_or_recup(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept
-    {
-        if constexpr (chunk_config::use_fast_block_compression)
-        {
-            // true: the installation lost the race.
-            if (std::forward<CasFunc>(cas_fn)(values_loc))
-            {
-                // Publish the init before recycling the lost block (ARM).
-                std::atomic_thread_fence(std::memory_order_release);
-                Base::recup_value(values_loc, thr_rank);
-            }
-        }
-        else
-        {
-            Base::recup_value(values_loc, 0);
-        }
-    }
+    void apply_cas_or_recup(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept;
 
     /// @brief Check-only teardown guard: a chunk about to have its buffer freed
     ///        must not be compressed to either constant (the buffer would be the
@@ -156,77 +140,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     ///        bool, whose second value is not table-indexed.
     void check_not_constant_before_clear(this const Derived& self,
                                          int                 num_compress_value,
-                                         std::optional<int>  ind_opt) noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            const void* chunk_ptr  = static_cast<const void*>(&self);
-            const void* values_ptr = static_cast<const void*>(self.values_load());
-            const int   thr        = get_thr_rank_fast();
-
-            // --- 1. Check primary constant (cst_val1) ---
-            if (self.Base::is_cst_val1())
-            {
-                invariant_failed(std::source_location::current(),
-                                 "Critical State Violation: Attempted to free 'cst_val1' inside clear. "
-                                 "Index: {} | Type: {} | Chunk: {} | Values: {} | Cst1: {} | Thr: {}",
-                                 num_compress_value, type_name<T>(), chunk_ptr, values_ptr,
-                                 static_cast<const void*>(Derived::Base::get_cst_val1()), thr);
-            }
-
-            // --- 2. Check secondary constant (cst_val2) ---
-            bool        is_violating = false;
-            const void* cst2_ptr     = nullptr;
-
-            if (ind_opt.has_value())
-            {
-                // Path for zero_one_value (Table indexed)
-                if constexpr (is_chunk2_derived)
-                {
-                    const int ind = *ind_opt;
-                    if constexpr (is_bool)
-                    {
-                        is_violating = self.is_cst_val2();
-                        cst2_ptr     = static_cast<const void*>(Derived::BaseSpec::get_cst_val2());
-                    }
-                    else
-                    {
-                        is_violating = self.is_cst_val2(ind);
-                        cst2_ptr     = static_cast<const void*>(Derived::BaseSpec::get_cst_val2(ind));
-                    }
-                }
-            }
-            else
-            {
-                // Path for the zero_any family or Bool (Non-indexed)
-                if constexpr (is_bool || is_zero_any_family_derived)
-                {
-                    is_violating = self.is_cst_val2();
-                    if constexpr (is_zero_any_family_derived)
-                    {
-                        // A chunk compressed to a second constant reads from it
-                        // through its values pointer; there is no other handle.
-                        if (is_violating)
-                        {
-                            cst2_ptr = static_cast<const void*>(self.values_load());
-                        }
-                    }
-                    else
-                    {
-                        cst2_ptr = static_cast<const void*>(Derived::BaseSpec::get_cst_val2());
-                    }
-                }
-            }
-
-            if (is_violating)
-            {
-                invariant_failed(std::source_location::current(),
-                                 "Critical State Violation: Attempted to free 'cst_val2' inside clear. "
-                                 "Index: {} | Type: {} | Chunk: {} | Values: {} | Cst2: {} | Thr: {}",
-                                 num_compress_value, type_name<T>(), chunk_ptr, values_ptr, cst2_ptr, thr);
-            }
-        }
-    }
+                                         std::optional<int>  ind_opt) noexcept;
 
   private:
     static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;
@@ -252,41 +166,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
      */
     void assert_writable_buffer(this Derived&              self,
                                 const T*                   target_ptr,
-                                const std::source_location loc = std::source_location::current()) noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            const auto* c1 = static_cast<const void*>(SecondValueChunkBase::get_cst_val1());
-
-            const void* c2 = nullptr;
-
-            // zero_any: the secondary constants live in one region -- the test is
-            // a range test on the target, not a pointer to compare with.
-            bool target_in_cst2_region = false;
-            if constexpr (requires { self.tab_cst_val2_holder::is_cst_val2_ptr(target_ptr); })
-            {
-                target_in_cst2_region = self.tab_cst_val2_holder::is_cst_val2_ptr(target_ptr);
-                if (target_in_cst2_region)
-                {
-                    c2 = static_cast<const void*>(target_ptr);
-                }
-            }
-            else if constexpr (requires { self.get_cst_val2(); })
-            {
-                // zero_one_value::Chunk bool: one shared second constant.
-                c2 = static_cast<const void*>(self.get_cst_val2());
-            }
-
-            if (target_ptr == c1 || (c2 != nullptr && target_ptr == c2)) [[unlikely]]
-            {
-                invariant_failed(loc,
-                                 "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
-                                 "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
-                                 type_name<T>(), static_cast<const SecondValueChunkBase*>(std::addressof(self)),
-                                 static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
-            }
-        }
-    }
+                                const std::source_location loc = std::source_location::current()) noexcept;
 };
 
 } // namespace shrink_array
