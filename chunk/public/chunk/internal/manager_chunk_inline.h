@@ -53,18 +53,6 @@
 #include "chunk/internal/chunk_func.h"           // load_balance_list_block_free_thr
 #include "chunk/singleton.h"                     // SingletonChk
 
-namespace shrink_array
-{
-// Forward declarations breaking the include cycle chunk_func.h -> zero_chunk.h -> zero_proxy.h ->
-// manager_chunk.h -> THIS file -> chunk_func.h: when chunk_func.h is the entry point, its
-// templates are not yet declared here (#pragma once skips it), and the explicit
-// load_balance_list_block_free_thr<T>() calls below need a declaration. Defined in chunk_func.h.
-template <typename T>
-bool need_load_balance_list_block_free_thr();
-template <typename T>
-void load_balance_list_block_free_thr();
-} // namespace shrink_array
-
 /**
  * @file manager_chunk_inline.h
  * @brief Out-of-line bodies of ManagerChunk, the per-type chunk manager.
@@ -700,23 +688,6 @@ void ManagerChunkDynImpl<ChunkT, T, true>::register_chunk_size(unsigned int size
 }
 
 /**
- * @brief Destroy this type's single chunk allocator (serial build).
- */
-template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, false>::delete_chunk_allocator()
-{
-    // std-alloc: allocator_data is NullValueAllocator, destroy() is a no-op.
-    ChunkT<T>::allocator_data->destroy();
-}
-
-template <template <typename> typename ChunkT, typename T>
-void ManagerChunk<ChunkT, T>::init_static_state()
-{
-    CompressionManager<T, ChunkT<T>>::ensure_initialised();
-    (void)ChunkT<T>::get_manager(); // built now, outside any parallel region of the type
-}
-
-/**
  * @brief Release this type's allocation blocks.
  * @note Serial builds only. Under OpenMP the per-thread allocators own the
  *       blocks and are torn down through their own path, so the body is empty
@@ -731,18 +702,6 @@ void ManagerChunk<ChunkT, T>::destroy_block_chunk()
     {
         ChunkT<T>::allocator_data->destroy();
     }
-}
-
-/**
- * @brief Redistribute released buffers across the per-thread free-lists.
- *
- * A thread that frees far more than it allocates would otherwise hoard buffers
- * its neighbours need. Delegates to the free function that owns the policy.
- */
-template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::load_balance_list_block_free()
-{
-    load_balance_list_block_free_thr<T>();
 }
 
 // Teardown of the reuse lists, in four phases inside ONE parallel region
@@ -1149,16 +1108,6 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::delete_list_block_chunk_free_its
     {
         ChunkT<T>::Manager::get_list_block_free_thr(0).clear();
     }
-}
-
-/**
- * @brief Is the imbalance between per-thread free-lists worth a redistribution pass?
- * @return True when load_balance_list_block_free() would be worth calling.
- */
-template <template <typename> typename ChunkT, typename T>
-bool ManagerChunkParallelImpl<ChunkT, T, true>::need_load_balance_list_block_free() const
-{
-    return need_load_balance_list_block_free_thr<T>();
 }
 
 template <template <typename> typename ChunkT, typename T>

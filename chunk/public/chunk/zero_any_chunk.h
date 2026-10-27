@@ -36,8 +36,9 @@
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
 #include "chunk/internal/chunk_stats.h"             // increm_chunk_write
 
-#include "chunk/internal/TChunk.h"   // TChunk2ACompOf, VectorTuple4ChunkInt2
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/TChunk.h"          // TChunk2ACompOf, VectorTuple4ChunkInt2
+#include "chunk/internal/immortal.h"        // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (init_chunks_cst_val)
 
 
 namespace shrink_array
@@ -223,10 +224,16 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
     void create_value_bool(this Derived& self, bool need_set_second_value, int thr_rank);
 
     /// @brief create_value() on the calling thread's rank.
-    void create_value(this Derived& self, bool need_set_second_value, SecondValueRef<T> ptr_second_value);
+    void create_value(this Derived& self, bool need_set_second_value, SecondValueRef<T> ptr_second_value)
+    {
+        self.create_value(need_set_second_value, ptr_second_value, get_thr_rank_fast());
+    }
 
     /// @brief create_value_bool() on the calling thread's rank.
-    void create_value_bool(this Derived& self, bool need_set_second_value);
+    void create_value_bool(this Derived& self, bool need_set_second_value)
+    {
+        self.create_value_bool(need_set_second_value, get_thr_rank_fast());
+    }
 
     /*!
      * \brief Compress this chunk back to a constant, if it is materialised.
@@ -234,7 +241,10 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
      * \param ptr_second_value The chunk's second-value slot.
      * \param thr_rank         Rank whose pool receives the released buffer.
      */
-    void clear(this Derived& self, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
+    void clear(this Derived& self, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank)
+    {
+        self.SecondValueChunkBase<T, Derived>::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
+    }
 
     /*!
      * \brief Release this chunk's buffer and point it back at a constant --
@@ -286,7 +296,10 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Shared by the three
     ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Derived* chunks, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Derived* chunks, std::size_t count) noexcept
+    {
+        chunk_array_new::init_chunks(chunks, count, [](Derived& chunk) { chunk.init_after_constructor(); });
+    }
 };
 
 /**
@@ -444,8 +457,15 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     {
         *ptr_type_cst = CstSlot::second;
     }
-
-    static void set_cst_val_to_cst_val(int num_compress_value, CstSlot* ptr_type_cst) noexcept;
+    /**
+     * @brief Records which of the two constants this chunk is being compressed to.
+     * @param num_compress_value 0 for the first constant, anything else for the second.
+     * @param ptr_type_cst Slot of the per-chunk type table to write.
+     */
+    static void set_cst_val_to_cst_val(int num_compress_value, CstSlot* ptr_type_cst) noexcept
+    {
+        *ptr_type_cst = cst_slot_of(num_compress_value);
+    }
 
     /**
      * @brief Initialize values depending on constant type

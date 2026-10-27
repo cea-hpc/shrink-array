@@ -22,7 +22,6 @@
 
 #include "chunk/config.h"                        // build_config::chunk_dynamic, chunk_config::OMPTcc
 #include "chunk/PMP_CHUNK.h"                     // CHUNK_PMP_*, pmp::team
-#include "chunk/internal/chunk_array_new.h"      // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"    // ChunkElems, set_thread_chunk_size
 #include "chunk/internal/in_t.h"                 // InT<T>
 #include "chunk/zero_one_value_chunk.h"          // zero_one_value::Chunk, the class these bodies belong to
@@ -97,14 +96,6 @@ template <typename T, typename Derived, bool Enabled>
     ::operator delete(ptr);
 }
 
-template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero_one_value::Chunk<T>* chunks,
-                                                                                 std::size_t count) noexcept
-{
-    chunk_array_new::init_chunks(chunks, count,
-                                 [](zero_one_value::Chunk<T>& chunk) { chunk.init_after_constructor(); });
-}
-
 
 // ---------------------------------------------------------------------------
 // zero_one_value::ChunkFastCompPolicy<T, Derived, true>: the queue-driven compression.
@@ -137,31 +128,6 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_comp
     self.fill_list_to_compress_impl(
         ll_compt1, ll_compt2, num_chunk, num_tab, [&second_v]() -> InT<T> { return second_v; },
         self.is_not_cst_val2(inf_array.ind), n_elems);
-}
-
-/**
- * @brief Bool twin of fill_list_to_compress().
- *
- * The second value is `true` with no index to look up, so the value supplier is
- * a constant and no @c inf_array is needed.
- *
- * @param ll_compt1  Output list of chunks compressible to first_value.
- * @param ll_compt2  Output list of chunks compressible to `true`.
- * @param num_chunk  Index of this chunk in its array.
- * @param num_tab    Table number of the owning array.
- * @param n_elems    This chunk's own element count, captured when it was queued.
- */
-template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_bool(
-    this Derived&        self,
-    VecTupleChunk2pInt2& ll_compt1,
-    VecTupleChunk2pInt2& ll_compt2,
-    int                  num_chunk,
-    int                  num_tab,
-    unsigned int         n_elems)
-{
-    self.fill_list_to_compress_impl(
-        ll_compt1, ll_compt2, num_chunk, num_tab, [] { return true; }, self.is_not_cst_val2(), n_elems);
 }
 
 /**
@@ -1109,15 +1075,6 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::create_value_bool(thi
 }
 
 /**
- * @brief Compresses this chunk back to first_value, if it is materialised.
- */
-template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear(this Derived& self, int ind, int thr_rank)
-{
-    self.Base::clear_impl(ind, thr_rank);
-}
-
-/**
  * @brief Compresses this chunk to first_value without testing `written()` (serial build).
  *
  * For callers that have already established the chunk is materialised; the test
@@ -1177,22 +1134,6 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::block_clear(this Deri
     {
         self.reset_nb_val_eq_value();
     }
-}
-
-/**
- * @brief Compresses this chunk to the named constant, after an invariant check.
- * @pre The chunk is materialised — compressing an already-constant chunk would
- *      release a shared constant block. Checked by
- *      check_not_constant_before_clear().
- */
-template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(this Derived& self,
-                                                                          int           num_compress_value,
-                                                                          int           ind,
-                                                                          int           thr_rank)
-{
-    self.Base::check_not_constant_before_clear(num_compress_value, ind);
-    self.block_clear(num_compress_value, ind, thr_rank);
 }
 
 /**

@@ -526,6 +526,9 @@ void TCTypeAllocator<ElemT>::add_allocated_size(size_t& sum_used_size,
     alloc_sz += s_blocks;
 }
 
+// The class exists only in threaded builds (tc_allocator.h): its bodies too.
+#if FAST_ALLOC_PMP_THREADED
+
 // ---------------------------------------------------------------------------
 // fast_alloc::TCTypeCAllocator<ElemT>
 // ---------------------------------------------------------------------------
@@ -563,6 +566,8 @@ std::size_t TCTypeCAllocator<ElemT>::collect_empty_slabs([[maybe_unused]] SlabSw
         return collected;
     }
 }
+
+#endif // FAST_ALLOC_PMP_THREADED
 
 // ---------------------------------------------------------------------------
 // fast_alloc::TCAllocatorEB<ElementBytes, BlockBytes>

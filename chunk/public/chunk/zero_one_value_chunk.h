@@ -42,6 +42,7 @@
 #include "chunk/internal/TChunk.h"                              // VectorTuple4ChunkInt2 (the candidate lists)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
+#include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (init_chunks_cst_val)
 
 namespace shrink_array
 {
@@ -398,8 +399,14 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
      * \param num_compress_value 0 for the first constant, non-zero for the second at `ind`.
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
+     * \pre The chunk is materialised -- compressing an already-constant chunk would
+     *      release a shared constant block. Checked by check_not_constant_before_clear().
      */
-    void clear_int_st(this Derived& self, int num_compress_value, int ind, int thr_rank);
+    void clear_int_st(this Derived& self, int num_compress_value, int ind, int thr_rank)
+    {
+        self.Base::check_not_constant_before_clear(num_compress_value, ind);
+        self.block_clear(num_compress_value, ind, thr_rank);
+    }
 
     /*!
      * \brief Bool counterpart of the 3-arg clear_int_st().
@@ -424,7 +431,10 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
     ///          one it stays on the calling thread: only that thread allocates, and an
     ///          orphaned `omp for` would hang waiting for the others. Shared by the
     ///          variants (chunk_array_new::init_chunks).
-    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept
+    {
+        chunk_array_new::init_chunks(chunks, count, [](Chunk<T>& chunk) { chunk.init_after_constructor(); });
+    }
 
     /**
      * \brief Shared body of create_value() and create_value_bool().
@@ -446,7 +456,10 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
      * \param ind Index of the second constant to compress to.
      * \param thr_rank Calling thread's rank.
      */
-    void clear(this Derived& self, int ind, int thr_rank);
+    void clear(this Derived& self, int ind, int thr_rank)
+    {
+        self.Base::clear_impl(ind, thr_rank);
+    }
 };
 
 /**
@@ -819,7 +832,11 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
                                     VecTupleChunk2pInt2& ll_compt2,
                                     int                  num_chunk,
                                     int                  num_tab,
-                                    unsigned int         n_elems);
+                                    unsigned int         n_elems)
+    {
+        self.fill_list_to_compress_impl(
+            ll_compt1, ll_compt2, num_chunk, num_tab, [] { return true; }, self.is_not_cst_val2(), n_elems);
+    }
 };
 
 /// @brief zero_one_value::ChunkFastCompPolicy with fast block compression compiled out:

@@ -717,6 +717,24 @@ ChunkBase<T, Derived>::is_constant_to(this const Derived& self, InT<T> value, un
 }
 
 template <typename T, typename Derived>
+[[nodiscard]] T ChunkBase<T, Derived>::read_value(this const Derived& self, int offset, const T* offset_slot) noexcept
+    requires has_motif_state_v<Derived>
+{
+    if constexpr (chunk_config::stats)
+    {
+        if (self.is_cst_val1())
+        {
+            increm_chunk_read_cst<Derived>();
+        }
+        else
+        {
+            increm_chunk_read<Derived>();
+        }
+    }
+    return self.element_at(offset, offset_slot);
+}
+
+template <typename T, typename Derived>
 [[nodiscard]] T ChunkBase<T, Derived>::read_value(this const Derived& self, int offset) noexcept
 {
     if constexpr (chunk_config::stats)
@@ -767,6 +785,14 @@ T ChunkBase<T, Derived>::operator[](this const Derived& self, int offset) noexce
 template <typename T, typename Derived>
 void ChunkBase<T, Derived>::read_block(this const Derived& self, int first, int count, T* out) noexcept
 {
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // A motif chunk needs its offset slot: read_block(first, count, out, slot).
+        if (Derived::is_motif_ptr(self.values_load())) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("read_block: a motif chunk read without its offset slot");
+        }
+    }
     const read_reclaim::ReadSection section;
     const T* const                  vals = self.values_load();
     test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
@@ -792,12 +818,94 @@ void ChunkBase<T, Derived>::read_block(this const Derived& self, int first, int 
 }
 
 template <typename T, typename Derived>
+void ChunkBase<T, Derived>::read_block(this const Derived& self,
+                                       int                 first,
+                                       int                 count,
+                                       T*                  out,
+                                       const T*            offset_slot) noexcept
+    requires has_motif_state_v<Derived>
+{
+    const read_reclaim::ReadSection section;
+    const T* const                  vals = self.values_load();
+    test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+    if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+    {
+        const T value = self.second_value_from_ptr(vals);
+        for (int j = 0; j < count; ++j)
+        {
+            out[j] = value;
+        }
+        return;
+    }
+    if (Derived::is_motif_ptr(vals)) [[unlikely]]
+    {
+        for (int j = 0; j < count; ++j)
+        {
+            out[j] = Derived::motif_value(vals, first + j, offset_slot);
+        }
+        return;
+    }
+    for (int j = 0; j < count; ++j)
+    {
+        // raw-read: read_block -- under its own ReadSection
+        out[j] = load_at<false>(vals, first + j);
+    }
+}
+
+template <typename T, typename Derived>
+bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
+                                                   int                 first,
+                                                   int                 count,
+                                                   T*                  out,
+                                                   T&                  cst,
+                                                   const T*            offset_slot) noexcept
+    requires has_motif_state_v<Derived>
+{
+    const read_reclaim::ReadSection section;
+    const T* const                  vals = self.values_load();
+    test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+    if (is_cst_val1(vals))
+    {
+        // raw-read: read_block_or_constant -- the shared first-constant buffer
+        cst = load_at<false>(vals, 0);
+        return true;
+    }
+    if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+    {
+        cst = self.second_value_from_ptr(vals);
+        return true;
+    }
+    if (Derived::is_motif_ptr(vals)) [[unlikely]]
+    {
+        for (int j = 0; j < count; ++j)
+        {
+            out[j] = Derived::motif_value(vals, first + j, offset_slot);
+        }
+        return false;
+    }
+    for (int j = 0; j < count; ++j)
+    {
+        // raw-read: read_block_or_constant -- under its own ReadSection
+        out[j] = load_at<false>(vals, first + j);
+    }
+    return false;
+}
+
+template <typename T, typename Derived>
 bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
                                                    int                 first,
                                                    int                 count,
                                                    T*                  out,
                                                    T&                  cst) noexcept
 {
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // A motif chunk needs its offset slot: the overload above.
+        if (Derived::is_motif_ptr(self.values_load())) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("read_block_or_constant: a motif chunk read without its offset slot");
+        }
+    }
     const read_reclaim::ReadSection section;
     const T* const                  vals = self.values_load();
     test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
@@ -1067,6 +1175,45 @@ template <bool Relaxed>
 
 template <typename T, typename Derived>
 template <bool Relaxed>
+[[nodiscard]] T ChunkBase<T, Derived>::element_at(this const Derived& self, int offset, const T* offset_slot) noexcept
+    requires has_motif_state_v<Derived>
+{
+    if constexpr (Relaxed)
+    {
+        return self.template element_at_unguarded<true>(offset, offset_slot);
+    }
+    else
+    {
+        const read_reclaim::ReadSection section;
+        return self.template element_at_unguarded<false>(offset, offset_slot);
+    }
+}
+
+template <typename T, typename Derived>
+template <bool Relaxed>
+[[nodiscard]] T
+ChunkBase<T, Derived>::element_at_unguarded(this const Derived& self, int offset, const T* offset_slot) noexcept
+    requires has_motif_state_v<Derived>
+{
+    const T* const vals = self.values_load();
+    if constexpr (!Relaxed)
+    {
+        test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
+    }
+    if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+    {
+        return self.second_value_from_ptr(vals);
+    }
+    if (Derived::is_motif_ptr(vals)) [[unlikely]]
+    {
+        return Derived::motif_value(vals, offset, offset_slot);
+    }
+    // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
+    return load_at<Relaxed>(vals, offset);
+}
+
+template <typename T, typename Derived>
+template <bool Relaxed>
 [[nodiscard]] T ChunkBase<T, Derived>::element_at_unguarded(this const Derived& self, int offset) noexcept
 {
     // The one branch identifiers cost: a compressed-to-second-constant
@@ -1110,6 +1257,23 @@ template <bool Relaxed>
         if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
         {
             return self.second_value_from_ptr(vals);
+        }
+        if constexpr (has_motif_state_v<Derived>)
+        {
+            // A motif chunk: its elements are motif[j] + an offset kept in its
+            // second-value slot, which only the caller can name -- the
+            // element_at(offset, slot) overload below. Without it a scan reads
+            // the motif alone (the marking filter's hint, never a value); a
+            // read is a caller that forgot the slot.
+            if (Derived::is_motif_ptr(vals)) [[unlikely]]
+            {
+                if constexpr (!Relaxed)
+                {
+                    CHUNK_INVARIANT_FAILED("element_at({}): a motif chunk read without its offset slot", offset);
+                }
+                // raw-read: element_at_unguarded -- the motif alone, for a relaxed scan
+                return load_at<Relaxed>(vals, offset);
+            }
         }
         // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
         return load_at<Relaxed>(vals, offset);

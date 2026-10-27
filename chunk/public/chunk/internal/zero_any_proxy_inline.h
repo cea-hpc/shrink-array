@@ -485,6 +485,24 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
 
     const bool is_cst2 = chunk_.is_cst_val2_ptr_of(vals);
 
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        // A motif chunk: its elements are motif + offset, and its slot holds the
+        // offset, not a second value. None of the shortcuts below applies (they
+        // read the slot as a second value, the element raw): materialise from
+        // the motif, then store.
+        if (ChunkT::is_motif_ptr(vals)) [[unlikely]]
+        {
+            if constexpr (chunk_config::stats)
+            {
+                increm_chunk_write<ChunkType>(value);
+            }
+            materialise();
+            Base::store_value_at(vals, value);
+            return;
+        }
+    }
+
     if constexpr (is_not_bool)
     {
         if (value == static_cast<T>(BaseSpec::ptr_second_value_.get()))
@@ -1259,11 +1277,11 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::apply_compound_operation(this Deri
 }
 
 // ---------------------------------------------------------------------------
-// shrink_array::PointerMap<T, SmallN>
+// shrink_array::PointerMap<ChunkT, SmallN>
 // ---------------------------------------------------------------------------
 
-template <typename T, size_t SmallN>
-[[nodiscard]] int zero_any::PointerMap<T, SmallN>::get_num_tab(Key key) const noexcept
+template <typename ChunkT, size_t SmallN>
+[[nodiscard]] int zero_any::PointerMap<ChunkT, SmallN>::get_num_tab(Key key) const noexcept
 {
     if (!using_big_)
     {
@@ -1286,8 +1304,8 @@ template <typename T, size_t SmallN>
                            big_.size(), key);
 }
 
-template <typename T, size_t SmallN>
-void zero_any::PointerMap<T, SmallN>::erase(Key key) noexcept
+template <typename ChunkT, size_t SmallN>
+void zero_any::PointerMap<ChunkT, SmallN>::erase(Key key) noexcept
 {
     if (!using_big_)
     {
@@ -1315,8 +1333,8 @@ void zero_any::PointerMap<T, SmallN>::erase(Key key) noexcept
     }
 }
 
-template <typename T, size_t SmallN>
-void zero_any::PointerMap<T, SmallN>::insert(Key key, int num_tab)
+template <typename ChunkT, size_t SmallN>
+void zero_any::PointerMap<ChunkT, SmallN>::insert(Key key, int num_tab)
 {
     if (!using_big_)
     {
@@ -1339,8 +1357,8 @@ void zero_any::PointerMap<T, SmallN>::insert(Key key, int num_tab)
     }
 }
 
-template <typename T, size_t SmallN>
-bool zero_any::PointerMap<T, SmallN>::set_num_tab(Key key, int new_num_tab) noexcept
+template <typename ChunkT, size_t SmallN>
+bool zero_any::PointerMap<ChunkT, SmallN>::set_num_tab(Key key, int new_num_tab) noexcept
 {
     if (!using_big_)
     {
@@ -1364,8 +1382,8 @@ bool zero_any::PointerMap<T, SmallN>::set_num_tab(Key key, int new_num_tab) noex
     return true;
 }
 
-template <typename T, size_t SmallN>
-bool zero_any::PointerMap<T, SmallN>::swap_keys(Key key_a, Key key_b) noexcept
+template <typename ChunkT, size_t SmallN>
+bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexcept
 {
     int  na = 0;
     int  nb = 0;
@@ -1414,9 +1432,9 @@ bool zero_any::PointerMap<T, SmallN>::swap_keys(Key key_a, Key key_b) noexcept
     return true;
 }
 
-template <typename T, size_t SmallN>
+template <typename ChunkT, size_t SmallN>
 template <typename F>
-void zero_any::PointerMap<T, SmallN>::for_each_key(F&& func) const
+void zero_any::PointerMap<ChunkT, SmallN>::for_each_key(F&& func) const
 {
     if (!using_big_)
     {
@@ -1578,6 +1596,15 @@ zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_
     if (CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value, first_value))
     {
         return true;
+    }
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        // The completion rule (docs/pattern_design.md, section 8): a write of the chunk's
+        // first or last element queues it; the pass's scan tells a motif from the rest.
+        if (static_cast<const Derived*>(this)->is_completion_write())
+        {
+            return true;
+        }
     }
     const bool discover = (second_value == first_value && new_value != first_value);
     const bool change   = (second_value != first_value && new_value != second_value && !(new_value == old_value));

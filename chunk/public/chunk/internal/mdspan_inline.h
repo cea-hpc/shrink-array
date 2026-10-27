@@ -99,6 +99,7 @@ constexpr void md::detail::TiledMappingBase<Derived, Extents>::init(this Derived
     }
 }
 
+#if SHRINK_ARRAY_HAS_SUBMDSPAN
 template <typename Derived, typename Extents>
 template <typename... Slices>
 constexpr std::pair<typename md::detail::TiledMappingBase<Derived, Extents>::grid_type, std::size_t>
@@ -135,6 +136,7 @@ md::detail::TiledMappingBase<Derived, Extents>::sub_view(this const Derived& sel
     }
     return {size, static_cast<std::size_t>(which) * static_cast<std::size_t>(self.tile_elements())};
 }
+#endif
 
 // ---------------------------------------------------------------------------
 // shrink_array::layout_tiled_dyn<Rank>::mapping<Extents>

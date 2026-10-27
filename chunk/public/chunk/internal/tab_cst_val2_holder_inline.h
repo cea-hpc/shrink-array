@@ -208,6 +208,34 @@ std::size_t GlobalVecHolder<T>::reclaim_unmarked(const std::vector<std::uint8_t>
 }
 
 template <typename T>
+void GlobalVecHolder<T>::register_marker(MarkFn mark) noexcept
+{
+    for (auto& slot : markers)
+    {
+        MarkFn expected = nullptr;
+        if (slot.compare_exchange_strong(expected, mark, std::memory_order_acq_rel) || expected == mark)
+        {
+            return;
+        }
+    }
+    CHUNK_INVARIANT_FAILED("GlobalVecHolder::register_marker: more than {} members of the zero_any family "
+                           "share the second-value registry",
+                           max_markers);
+}
+
+template <typename T>
+void GlobalVecHolder<T>::mark_all(std::vector<std::uint8_t>& referenced)
+{
+    for (const auto& slot : markers)
+    {
+        if (const MarkFn mark = slot.load(std::memory_order_acquire); mark != nullptr)
+        {
+            mark(referenced);
+        }
+    }
+}
+
+template <typename T>
 [[nodiscard]] T* GlobalVecHolder<T>::take_free_slot() noexcept
 {
     if (free_ids.empty())
@@ -345,16 +373,20 @@ void GlobalVecHolder<T>::install_head()
 
     region_init();
 
-    // Install the initial segment, once.
+    // Install the initial segment, once. The CAS is the transfer: once it
+    // succeeds #head owns the segment (clear_if_last(), reclaim_unmarked()
+    // and cleanup_all() free the chain). A plain new, as in
+    // append_segment(), rather than a unique_ptr released after the CAS:
+    // the dropped release() hid the transfer from static analysis
+    // (Coverity CID 661140).
     if (head.load(std::memory_order_relaxed) == nullptr)
     {
-        auto        seg      = std::make_unique<Segment<T>>();
-        Segment<T>* null_ptr = nullptr;
-        if (head.compare_exchange_strong(null_ptr, seg.get(), std::memory_order_release, std::memory_order_relaxed))
+        auto*       seg      = new Segment<T>();
+        Segment<T>* expected = nullptr;
+        if (!head.compare_exchange_strong(expected, seg, std::memory_order_release, std::memory_order_relaxed))
         {
-            seg.release(); // CAS won: seg is now owned by head
+            delete seg; // another thread installed the first segment
         }
-        // If CAS lost: another thread installed a segment first — seg destroyed
     }
 }
 

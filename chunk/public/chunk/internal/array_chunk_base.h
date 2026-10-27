@@ -57,6 +57,7 @@
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
 #include "chunk/internal/element_ref.h"         // ElementRef: what operator[] returns
 #include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
+#include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools -- shrink_to_fit()
 
 namespace shrink_array
 {
@@ -311,12 +312,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
          * @brief Read the element under the cursor.
          * @return the element VALUE (no reference exists in a compressed store)
          */
-        [[nodiscard]] reference operator*() const noexcept
-        {
-            // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[num].
-            check_no_write_since_entry();
-            return (*chunk_)[num_];
-        }
+        [[nodiscard]] reference operator*() const noexcept;
 
         /** @brief Advance one element, entering (and syncing) the next chunk on overflow. */
         const_iterator& operator++() noexcept;
@@ -687,7 +683,11 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          and rank, not per array), so this serves every array. Size and
      *          capacity do not change. Sequential context.
      */
-    void shrink_to_fit();
+    void shrink_to_fit()
+    {
+        invalidate_proxies();
+        compress_now_and_trim_pools();
+    }
 
     /**
      * @brief Checked read access.
@@ -731,7 +731,11 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(this Derived& self, IndType count, T val); // T, not InT<T>: val may be a(i) -- resize() can free it
+    void assign(this Derived& self, IndType count, T val) // T, not InT<T>: val may be a(i) -- resize() can free it
+    {
+        self.resize(count);
+        self.write_range_by_chunks(0, count, [&val](IndType) { return val; });
+    }
 
     /**
      * @brief assign(): the elements of [first, last), in order.
@@ -767,16 +771,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param index global element index (unchecked)
      * @return the element value, after the read gate has been honoured
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(this const Derived& self, IndType index) noexcept
-    {
-        const int   num_chunk = self.chunk_index_of(index);
-        const int   num       = self.offset_in_chunk(index);
-        const auto& chunk_t   = self.chunk_list_[num_chunk];
-
-        self.sync_chunk(chunk_t, num_chunk, num);
-
-        return chunk_t.read_value(num);
-    }
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(this const Derived& self, IndType index) noexcept;
 
     /**
      * @brief Raw reference access: arr(i) = value.
@@ -997,6 +992,23 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     ///        sync_chunk, as the iterator does on chunk entry.
     template <typename Fn>
     void for_each_chunk_span(IndType first, IndType last, Fn&& fn) const;
+
+    /// @brief The second-value slot of chunk @p num_chunk, where a motif chunk
+    ///        keeps its offset (has_motif_state_v members only).
+    [[nodiscard]] const T* motif_offset_slot(int num_chunk) const noexcept
+        requires has_motif_state_v<ChunkType>
+    {
+        return ProxyType::BaseSpec::get_tab_second_value(this->num_tab_, num_chunk).slot;
+    }
+
+    /// @brief ch.read_block(), with chunk @p num_chunk's offset slot for a
+    ///        member with the motif state.
+    void read_chunk_block(const ChunkType& ch, int num_chunk, int first, int count, T* out) const noexcept;
+
+    /// @brief ch.read_block_or_constant(), with chunk @p num_chunk's offset
+    ///        slot for a member with the motif state.
+    bool read_chunk_block_or_constant(const ChunkType& ch, int num_chunk, int first, int count, T* out, T& cst)
+        const noexcept;
 
     /// @brief Check builds, precise read gate: nothing was deferred onto
     ///        the chunk since its sync -- the iterator's check, per block.

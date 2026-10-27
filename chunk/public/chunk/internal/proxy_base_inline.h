@@ -1319,6 +1319,23 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::resize_tab_is_int(int
         parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(nb_chunk), char{0});
 }
 
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+[[nodiscard]] inline T ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::read_values_async(auto* ctx) noexcept
+{
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        // The replays materialise a chunk before they read it: a motif here is a
+        // replay reading a chunk it has not materialised, which would miss the offset.
+        if (ChunkT::is_motif_ptr(ctx->chunk.values_load())) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("read_values_async: a motif chunk read by a replay before its "
+                                   "materialisation (chunk={}, num={})",
+                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+        }
+    }
+    return internal::element_of(ctx->chunk.values_load(), static_cast<std::size_t>(ctx->num));
+}
+
 // ---------------------------------------------------------------------------
 // shrink_array::ProxyBase<Derived, T, ChunkT>
 // ---------------------------------------------------------------------------
@@ -1394,6 +1411,44 @@ void ProxyBase<Derived, T, ChunkT>::check_not_stale() const noexcept
                                    "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
                                    ptr_on_array_, num_chunk_, num_);
         }
+    }
+}
+
+template <typename Derived, typename T, typename ChunkT>
+[[nodiscard]] inline T ProxyBase<Derived, T, ChunkT>::read_values_at(const T* const vals) const noexcept
+{
+    // TEST KNOB (test_hooks.h), as in ChunkBase::element_at: widens
+    // the load -> dereference window. Compiled out by default.
+    test_hooks::maybe_read_delay();
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        // motif_offset_slot() is the pattern proxy's; the callers are ProxyBase's own
+        // implicit-object members, so no `this const Derived&` here.
+        const auto& self = static_cast<const Derived&>(*this);
+        // A motif chunk: motif[num] + the offset its second-value slot holds.
+        if (ChunkT::is_motif_ptr(vals)) [[unlikely]]
+        {
+            return ChunkT::motif_value(vals, num_, self.motif_offset_slot());
+        }
+    }
+    return internal::element_of(vals, static_cast<std::size_t>(num_));
+}
+
+template <typename Derived, typename T, typename ChunkT>
+[[nodiscard]] inline T ProxyBase<Derived, T, ChunkT>::read_pure() const noexcept
+{
+    check_not_stale();
+    chunk_.reader_sync(num_);
+    if constexpr (has_motif_state_v<ChunkT>)
+    {
+        // motif_offset_slot() is the pattern proxy's; the callers are ProxyBase's own
+        // implicit-object members, so no `this const Derived&` here.
+        const auto& self = static_cast<const Derived&>(*this);
+        return chunk_.read_value(num_, self.motif_offset_slot()); // a motif chunk's offset
+    }
+    else
+    {
+        return chunk_.read_value(num_); // read_value accounts the read in stats
     }
 }
 

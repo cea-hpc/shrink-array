@@ -362,6 +362,8 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/zero_any_array_inline.h
         public/chunk/internal/zero_any_array_parallel.h
         public/chunk/internal/zero_any_array_parallel_inline.h
+        public/chunk/internal/pattern_proxy.h
+        public/chunk/internal/motif_region.h
         public/chunk/internal/second_value_array_base.h
         public/chunk/internal/zero_one_value_array_inline.h
         public/chunk/internal/zero_one_value_array_parallel.h
@@ -448,6 +450,8 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/zero_array.h
         public/chunk/zero_one_value_array.h
         public/chunk/zero_any_array.h
+        public/chunk/pattern_array.h
+        public/chunk/pattern_chunk.h
         public/chunk/array_chunk.h   # deprecated: zero_array.h
         public/chunk/array_chunk2.h  # deprecated: zero_one_value_array.h
         public/chunk/array_chunk2A.h # deprecated: zero_any_array.h

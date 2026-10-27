@@ -21,7 +21,6 @@
 #include <optional>  // std::nullopt (the clears)
 
 #include "chunk/internal/in_t.h"            // InT<T>: the element snapshots
-#include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (steal-mark check)
 
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
@@ -96,24 +95,6 @@ template <typename T, typename Derived, bool Enabled>
     ::operator delete(ptr);
 }
 
-template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(Derived* chunks, std::size_t count) noexcept
-{
-    chunk_array_new::init_chunks(chunks, count, [](Derived& chunk) { chunk.init_after_constructor(); });
-}
-
-/**
- * @brief Records which of the two constants this chunk is being compressed to.
- *
- * @param num_compress_value 0 for the first constant, anything else for the second.
- * @param ptr_type_cst Slot of the per-chunk type table to write.
- */
-template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::set_cst_val_to_cst_val(int num_compress_value, CstSlot* ptr_type_cst) noexcept
-{
-    *ptr_type_cst = cst_slot_of(num_compress_value);
-}
-
 /**
  * @brief Scans this chunk and sorts it into one of the two compression lists.
  *
@@ -183,6 +164,15 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(this Derived&       
         if (scan.second)
         {
             ll_compt2.emplace_back(std::make_tuple(&self, second_v, num_chunk, num_tab, size));
+        }
+        if constexpr (has_motif_state_v<Derived>)
+        {
+            // Neither constant: a registered motif plus an offset? (pattern::Chunk queues it
+            // for its own commit, Derived::compress_motif_candidates().)
+            if (!scan.first && !scan.second)
+            {
+                self.classify_motif(num_chunk, num_tab, size);
+            }
         }
     }
 }
@@ -338,6 +328,12 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
+    }
+
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // The chunks found equal to a registered motif plus an offset.
+        Derived::compress_motif_candidates(thr);
     }
 
     for (int k = 0; k < sz; ++k)
@@ -751,11 +747,24 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
 
             const auto n1 = ll_compt1.size();
             const auto n2 = ll_compt2.size();
-            chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
-            // Not selected: nothing will be stolen, release it to the writers now.
-            if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
+            if constexpr (has_motif_state_v<Derived>)
             {
-                chunk_t->steal_unmark();
+                // A motif candidate is stolen too (compress_motif_candidates()): it keeps its claim.
+                const auto n3 = Derived::motif_candidate_count();
+                chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
+                if (ll_compt1.size() == n1 && ll_compt2.size() == n2 && Derived::motif_candidate_count() == n3)
+                {
+                    chunk_t->steal_unmark();
+                }
+            }
+            else
+            {
+                chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
+                // Not selected: nothing will be stolen, release it to the writers now.
+                if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
+                {
+                    chunk_t->steal_unmark();
+                }
             }
         }
     }
@@ -839,6 +848,31 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(this Derived
         // Exclude a concurrent steal of this chunk: see wait_before_materialise().
         wait_before_materialise<T>(self, thr_rank);
 
+        if constexpr (has_motif_state_v<Derived>)
+        {
+            // A motif chunk: fill from its motif plus the offset its slot holds,
+            // and publish against THAT motif pointer (a lost CAS recycles the
+            // buffer, as below). The offset stays in the slot: a reader that
+            // loaded the motif pointer may still be reading it.
+            T* const motif = self.SecondValueChunkBase<T, Derived>::values_load();
+            if (Derived::is_motif_ptr(motif)) [[unlikely]]
+            {
+                const T* const slot = ptr_second_value.slot;
+                const auto     fill = [motif, slot](T* ptr)
+                {
+                    for (unsigned int j = 0; j < shrink_array::alloc_chunk_count(); ++j)
+                    {
+                        ptr[j] = Derived::motif_value(motif, static_cast<int>(j), slot);
+                    }
+                };
+                T* const values_loc = self.SecondValueChunkBase<T, Derived>::allocate_chunk_internal(thr_rank, fill);
+                self.SecondValueChunkBase<T, Derived>::apply_cas_or_recup(
+                    values_loc, thr_rank,
+                    [&self, motif](T* new_ptr) { return self.compare_and_swap_gen(new_ptr, motif); });
+                return;
+            }
+        }
+
         const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
         {
             if (!need_set_second_value)
@@ -908,22 +942,6 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(this De
     }
 }
 
-/// @brief create_value() on the calling thread's rank.
-template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(this Derived&     self,
-                                                                    bool              need_set_second_value,
-                                                                    SecondValueRef<T> ptr_second_value)
-{
-    self.create_value(need_set_second_value, ptr_second_value, get_thr_rank_fast());
-}
-
-/// @brief create_value_bool() on the calling thread's rank.
-template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self, bool need_set_second_value)
-{
-    self.create_value_bool(need_set_second_value, get_thr_rank_fast());
-}
-
 // ---------------------------------------------------------------------------
 // zero_any::ChunkThreadPolicy<T, Derived, false>: materialise and clear, serial mode.
 // ---------------------------------------------------------------------------
@@ -939,6 +957,25 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value(this Derived& 
                                                                   bool              need_set_second_value,
                                                                   SecondValueRef<T> ptr_second_value)
 {
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // A motif chunk: fill from its motif plus the offset its slot holds.
+        const T* const motif = self.values_;
+        if (Derived::is_motif_ptr(motif)) [[unlikely]]
+        {
+            const T* const slot = ptr_second_value.slot;
+            const auto     fill = [motif, slot](T* ptr)
+            {
+                for (unsigned int j = 0; j < alloc_chunk_count(); ++j)
+                {
+                    ptr[j] = Derived::motif_value(motif, static_cast<int>(j), slot);
+                }
+            };
+            self.values_ = self.SecondValueChunkBase<T, Derived>::allocate_chunk_internal(0, fill);
+            return;
+        }
+    }
+
     const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
     {
         if (!need_set_second_value)
@@ -968,22 +1005,6 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value_bool(this Deri
     // (Base::init_block() is the `false` fill).
     static T k_second_value = static_cast<T>(true); // a slot the handle can point at; never written
     self.create_value(need_set_second_value, SecondValueRef<T>{&k_second_value});
-}
-
-/**
- * @brief Compresses this chunk back to a constant, if it is materialised.
- *
- * @param ptr_type_cst     Slot of the per-chunk type table to update.
- * @param ptr_second_value The chunk's second-value slot.
- * @param thr_rank         Rank whose pool receives the released buffer.
- */
-template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear(this Derived&     self,
-                                                             CstSlot*          ptr_type_cst,
-                                                             SecondValueRef<T> ptr_second_value,
-                                                             int               thr_rank)
-{
-    self.SecondValueChunkBase<T, Derived>::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
 }
 
 /**
@@ -1262,7 +1283,15 @@ template <typename T, typename Derived>
 [[nodiscard]] bool zero_any::ChunkStateQueries<T, Derived>::is_cst_val2(this const Derived& self) noexcept
 {
     const T* current_value = self.values_load();
-    if constexpr (is_not_bool)
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // A motif chunk is compressed too, to no second value: for the write
+        // engine a constant to materialise (create_value() fills it from its
+        // motif). is_cst_val2_ptr_of() stays the registry test alone: the
+        // reads and the second-value shortcuts must not see a motif there.
+        return Holder::is_cst_val2_ptr(current_value) || Derived::is_motif_ptr(current_value);
+    }
+    else if constexpr (is_not_bool)
     {
         return Holder::is_cst_val2_ptr(current_value); // a range test on the region
     }
@@ -1305,7 +1334,11 @@ template <typename T, typename Derived>
     {
         return true;
     }
-    if constexpr (is_not_bool)
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        return Holder::is_cst_val2_ptr(ptr) || Derived::is_motif_ptr(ptr); // a motif is shared memory
+    }
+    else if constexpr (is_not_bool)
     {
         return Holder::is_cst_val2_ptr(ptr);
     }
@@ -1327,6 +1360,15 @@ void zero_any::ChunkImpl<T, Derived>::init_values_cst_val(const CstSlot*    ptr_
     {
         Base::values_ = Base::get_cst_val1();
         return;
+    }
+    if constexpr (has_motif_state_v<Derived>)
+    {
+        // A motif chunk's pointer is in no table (its slot holds an offset, not a second
+        // value): nothing rebuilds it from the type. A path that gets here lost the motif.
+        if (*ptr_type_cst == CstSlot::motif) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("init_values_cst_val: a motif chunk cannot be rebuilt from its type");
+        }
     }
     if constexpr (is_not_bool)
     {

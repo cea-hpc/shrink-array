@@ -547,16 +547,6 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                 /*n_cross=*/n_would_be_2a, /*cross_name=*/"zero_any");
 }
 
-// clear() and clear_core() are currently the same teardown; the split exists so
-// rechunk_to() can release its temporary array through clear_core() without
-// going through the public entry point.
-template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::clear()
-{
-    this->invalidate_proxies();
-    clear_core();
-}
-
 // Teardown order is load-bearing (each step below says why): pin the geometry,
 // drain deferred ops, snapshot the stats, drop this array's compression
 // candidates by num_tab, then release the chunks.
@@ -1117,14 +1107,6 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             report(tab_nb2, "the second value true", true);
         }
     }
-}
-
-// Plain forwarder. Do not add an in-parallel-region test here: it hit an LLVM
-// OpenMP runtime bug.
-template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::compress()
-{
-    compress_int();
 }
 
 // old_nb_chunk is sampled BEFORE resize_common() updates nb_chunk, so the loop

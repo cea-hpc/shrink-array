@@ -139,6 +139,13 @@
 #                           identifier limit reaches its end), and across a
 #                           re-chunk (dyn). zero_any only, default static
 #                           size and dyn.
+#   pattern_validation      pattern::Array against std::vector (zero, uniform,
+#                           shifted-motif and random chunks; copy, move,
+#                           resize, assign), and the second-value registry it
+#                           shares with zero_any::Array (a reclaim on either
+#                           keeps what both name). Its own executable
+#                           (pattern_validation_zero_any_<size>), default static
+#                           size (pattern::Array is static only).
 #   std_thread_validation   std builds: arrays written from the application's
 #                           own std::threads -- new ones every phase, then
 #                           long-lived ones on a barrier -- each with a rank
@@ -497,6 +504,19 @@ foreach(_geom IN LISTS _rt_geometries)
     endforeach()
   endforeach()
 endforeach()
+
+# --- pattern_validation: pattern::Array, a member of the zero_any family,
+# against std::vector, and the second-value registry it shares with
+# zero_any::Array. Its own executable, outside the zero_any group: it
+# instantiates pattern::Array and zero_any::Array for four element types (about
+# 2 GB of compiler memory alone, at -O3 -g), which took the group's unity TU
+# past 7 GB. At the default static size: pattern::Array is static only.
+if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+  set(_tgt pattern_validation_zero_any_${CHUNK_DEFAULT_SIZE})
+  validation_harness_executable(${_tgt} chunk_zero_any CHUNK_VARIANT_ZERO_ANY ${CHUNK_DEFAULT_SIZE}
+                                pattern_validation)
+  validation_add_test(${_tgt} ${_tgt} pattern_validation "1;8")
+endif()
 
 # --- element_ref_validation: what operator[] accepts and refuses
 # (chunk/internal/element_ref.h), in every build that has the harnesses.

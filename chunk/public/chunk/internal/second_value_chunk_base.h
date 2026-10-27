@@ -55,6 +55,16 @@ class Proxy;
 
 } // namespace zero_any
 
+namespace pattern
+{
+
+template <typename T>
+class Chunk;
+template <typename T>
+class Proxy;
+
+} // namespace pattern
+
 // Specialisation for zero_one_value
 template <typename T>
 struct ProxyTypeTrait<zero_one_value::Chunk<T>>
@@ -67,6 +77,13 @@ template <typename T>
 struct ProxyTypeTrait<zero_any::Chunk<T>>
 {
     using Type = zero_any::Proxy<T>;
+};
+
+// Specialisation for pattern
+template <typename T>
+struct ProxyTypeTrait<pattern::Chunk<T>>
+{
+    using Type = pattern::Proxy<T>;
 };
 
 // ============================================================================

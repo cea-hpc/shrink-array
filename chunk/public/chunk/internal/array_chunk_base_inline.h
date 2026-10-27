@@ -26,7 +26,6 @@
 #include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h"   // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
-#include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools -- shrink_to_fit()
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
 #include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
@@ -205,13 +204,6 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(this Derived& self, IndType 
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::assign(this Derived& self, IndType count, T val)
-{
-    self.resize(count);
-    self.write_range_by_chunks(0, count, [&val](IndType) { return val; });
-}
-
-template <typename Derived>
 template <std::forward_iterator It>
 void ArrayChunkBase<Derived>::assign(this Derived& self, It first, It last)
 {
@@ -252,13 +244,6 @@ void ArrayChunkBase<Derived>::copy_from(this Derived& self, const Derived& from)
     // Const reads of @p from (through its gate) from every thread of the team:
     // nothing writes it meanwhile.
     self.write_range_by_chunks(0, from_size, [&from](IndType i) { return std::as_const(from)[i]; });
-}
-
-template <typename Derived>
-void ArrayChunkBase<Derived>::shrink_to_fit()
-{
-    invalidate_proxies();
-    compress_now_and_trim_pools();
 }
 
 template <typename Derived>
@@ -324,6 +309,22 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back(this Derived& s
 // ---------------------------------------------------------------------------
 // shrink_array::ArrayChunkBase<Derived>::const_iterator
 // ---------------------------------------------------------------------------
+
+template <typename Derived>
+[[nodiscard]] inline ArrayChunkBase<Derived>::const_iterator::reference
+ArrayChunkBase<Derived>::const_iterator::operator*() const noexcept
+{
+    // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[num].
+    check_no_write_since_entry();
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        return chunk_->read_value(num_, owner_->motif_offset_slot(num_chunk_));
+    }
+    else
+    {
+        return (*chunk_)[num_];
+    }
+}
 
 template <typename Derived>
 ArrayChunkBase<Derived>::const_iterator& ArrayChunkBase<Derived>::const_iterator::operator++() noexcept
@@ -433,7 +434,7 @@ void ArrayChunkBase<Derived>::for_each_value(IndType first, IndType last, F&& fu
                                 for (int j = lo; j < hi; j += bulk_block)
                                 {
                                     const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                    ch.read_block(j, len, buf.data());
+                                    read_chunk_block(ch, num_chunk, j, len, buf.data());
                                     check_no_write_during_bulk_read(ch, num_chunk, j);
                                     for (int k = 0; k < len; ++k)
                                     {
@@ -484,7 +485,7 @@ void ArrayChunkBase<Derived>::for_each_span(IndType first, IndType last, F&& fun
                                         // A compressed chunk stays so for the rest of the
                                         // call (no writer): the constant covers [j, hi).
                                         T cst{};
-                                        if (ch.read_block_or_constant(j, len, buf.data(), cst))
+                                        if (read_chunk_block_or_constant(ch, num_chunk, j, len, buf.data(), cst))
                                         {
                                             check_no_write_during_bulk_read(ch, num_chunk, j);
                                             func(std::as_const(cst), static_cast<std::size_t>(hi - j));
@@ -493,7 +494,7 @@ void ArrayChunkBase<Derived>::for_each_span(IndType first, IndType last, F&& fun
                                     }
                                     else
                                     {
-                                        ch.read_block(j, len, buf.data());
+                                        read_chunk_block(ch, num_chunk, j, len, buf.data());
                                     }
                                     check_no_write_during_bulk_read(ch, num_chunk, j);
                                     func(std::span<const T>(buf.data(), static_cast<std::size_t>(len)));
@@ -532,7 +533,7 @@ OutIt ArrayChunkBase<Derived>::read_range(IndType first, IndType last, OutIt out
                                 for (int j = lo; j < hi; j += bulk_block)
                                 {
                                     const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                    ch.read_block(j, len, out);
+                                    read_chunk_block(ch, num_chunk, j, len, out);
                                     check_no_write_during_bulk_read(ch, num_chunk, j);
                                     out += len;
                                 }
@@ -567,6 +568,26 @@ void ArrayChunkBase<Derived>::swap(this Derived& self, Derived& other) noexcept
 
 template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
+ArrayChunkBase<Derived>::operator()(this const Derived& self, IndType index) noexcept
+{
+    const int   num_chunk = self.chunk_index_of(index);
+    const int   num       = self.offset_in_chunk(index);
+    const auto& chunk_t   = self.chunk_list_[num_chunk];
+
+    self.sync_chunk(chunk_t, num_chunk, num);
+
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        return chunk_t.read_value(num, self.motif_offset_slot(num_chunk));
+    }
+    else
+    {
+        return chunk_t.read_value(num);
+    }
+}
+
+template <typename Derived>
+CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
 ArrayChunkBase<Derived>::operator[](this const Derived& self, IndType index) noexcept
 {
     const int num_chunk = self.chunk_index_of(index);
@@ -581,7 +602,14 @@ ArrayChunkBase<Derived>::operator[](this const Derived& self, IndType index) noe
 
     self.sync_chunk(chunk_t, num_chunk, num);
 
-    return chunk_t[num];
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        return chunk_t.read_value(num, self.motif_offset_slot(num_chunk));
+    }
+    else
+    {
+        return chunk_t[num];
+    }
 }
 
 template <typename Derived>
@@ -680,6 +708,38 @@ void ArrayChunkBase<Derived>::for_each_chunk_span(IndType first, IndType last, F
         // sync_chunk takes the derived array (deducing this).
         static_cast<const Derived&>(*this).sync_chunk(ch, c, lo);
         fn(ch, c, lo, hi);
+    }
+}
+
+template <typename Derived>
+void ArrayChunkBase<Derived>::read_chunk_block(const ChunkType& ch, int num_chunk, int first, int count, T* out)
+    const noexcept
+{
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        ch.read_block(first, count, out, motif_offset_slot(num_chunk));
+    }
+    else
+    {
+        ch.read_block(first, count, out);
+    }
+}
+
+template <typename Derived>
+bool ArrayChunkBase<Derived>::read_chunk_block_or_constant(const ChunkType& ch,
+                                                           int              num_chunk,
+                                                           int              first,
+                                                           int              count,
+                                                           T*               out,
+                                                           T&               cst) const noexcept
+{
+    if constexpr (has_motif_state_v<ChunkType>)
+    {
+        return ch.read_block_or_constant(first, count, out, cst, motif_offset_slot(num_chunk));
+    }
+    else
+    {
+        return ch.read_block_or_constant(first, count, out, cst);
     }
 }
 

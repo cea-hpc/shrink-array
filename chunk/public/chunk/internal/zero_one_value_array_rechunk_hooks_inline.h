@@ -68,13 +68,6 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates(this D
 }
 
 template <typename Derived>
-void zero_one_value::RechunkHooks<Derived, true>::rechunk_drain_reuse_list(this const Derived& /*self*/,
-                                                                           unsigned int new_size)
-{
-    ManagerType::drain_reuse_list_for_size(new_size);
-}
-
-template <typename Derived>
 zero_one_value::RechunkHooks<Derived, true>::value_type
 zero_one_value::RechunkHooks<Derived, true>::rechunk_capture_state(this const Derived& self)
 {
