@@ -578,7 +578,7 @@ int main(int argc, char* argv[])
     // in the baseline (BenchConnArray). About sz ints, whole rows of
     // bench_conn_row; size 1 under --no_conn (BenchArrays::with_conn) or when sz is
     // smaller than one row.
-    const Int      conn_sz = sz / bench_conn_row * bench_conn_row;
+    const Int      conn_sz     = sz / bench_conn_row * bench_conn_row;
     const bool     no_tab_conn = no_conn || conn_sz == 0;
     BenchConnArray tab_conn(no_tab_conn ? 1 : conn_sz);
     if (!no_tab_conn)
@@ -589,10 +589,10 @@ int main(int argc, char* argv[])
 
     // Handle on the nineteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
-    BenchArrays bench_arrays{tab1,     tab2,          tab3,        tab4,       tab5,      tab_int,  tab_bool,
-                             tab_bool_bits,           tab_complex, tab_float,  tab_short, tab_char, tab_long,
-                             tab_ulong, tab_quant,    tab_point,   tab_cell,   tab_mask,  tab_conn, sz,
-                             interval, !no_struct,    !no_mask,    !no_tab_conn};
+    BenchArrays bench_arrays{tab1,          tab2,        tab3,        tab4,      tab5,     tab_int,  tab_bool,
+                             tab_bool_bits, tab_complex, tab_float,   tab_short, tab_char, tab_long, tab_ulong,
+                             tab_quant,     tab_point,   tab_cell,    tab_mask,  tab_conn, sz,       interval,
+                             !no_struct,    !no_mask,    !no_tab_conn};
 
     // The end-of-life stats print these next to the table number.
     maybe_set_debug_name(tab1, "tab1");

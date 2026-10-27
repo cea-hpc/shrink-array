@@ -510,8 +510,8 @@ void ChunkDynamicAllocPolicy<T, Derived, true>::register_chunk_size(unsigned int
     // map moves its buffer, not the allocators.
     std::vector<TCTypeCAllocator<T>> arr(static_cast<std::size_t>(max_thr));
     // One slab rule for every allocator of T, whatever its chunk size (value_slab.h).
-    const auto slab_bytes = static_cast<uintptr_t>(
-        value_slab_request<T>(block_size, Derived::storage_units(cst_buffer_size) * sizeof(T)));
+    const auto slab_bytes =
+        static_cast<uintptr_t>(value_slab_request<T>(block_size, Derived::storage_units(cst_buffer_size) * sizeof(T)));
     for (int thr = 0; thr < max_thr; ++thr)
     {
         auto& allocator = arr[static_cast<std::size_t>(thr)];

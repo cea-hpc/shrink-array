@@ -46,7 +46,7 @@
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
 #include "chunk/all_type_chunk.h"                      // AllTypeChunk
 #include "chunk/log.h"                                 // CHUNK_LOG
-#include "chunk/internal/env_parse.h"                   // env_number (CHUNK_SLAB_MIN_PAGES)
+#include "chunk/internal/env_parse.h"                  // env_number (CHUNK_SLAB_MIN_PAGES)
 
 namespace shrink_array
 {

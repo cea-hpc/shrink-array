@@ -75,7 +75,7 @@
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 #include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
 #include "chunk/internal/print.h"              // shrink_array::println
-#include "chunk/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v (pattern::Array)
+#include "chunk/chunk_traits.h"                // is_zero_any_family_v, has_motif_state_v (pattern::Array)
 #include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
 
 namespace shrink_array
@@ -221,7 +221,8 @@ struct ChunkSizeAdvisor
             // the unindexed is_cst_val2().
             // A zero_any-family array in a zero_one_value build (pattern::Array):
             // no index, the zero_any branches below.
-            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<typename Arr::ChunkType> && !is_bool_like_v<T>)
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<typename Arr::ChunkType> &&
+                          !is_bool_like_v<T>)
             {
                 return tab.get_ind_second_value();
             }

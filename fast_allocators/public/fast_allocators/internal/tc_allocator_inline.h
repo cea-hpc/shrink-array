@@ -240,7 +240,7 @@ std::size_t TCSlab<Links>::advise_free_pages(std::size_t page, std::vector<unsig
         const std::size_t end_of_elements = n * es;
         const std::size_t last_page       = (bytes / page) - 1; // the back-pointer's: kept
         std::size_t       advised         = 0;
-        std::size_t       run_begin       = last_page;          // none open
+        std::size_t       run_begin       = last_page; // none open
         const auto        close_run       = [&](std::size_t run_end) noexcept
         {
             if (run_begin < run_end)
@@ -256,7 +256,7 @@ std::size_t TCSlab<Links>::advise_free_pages(std::size_t page, std::vector<unsig
         };
         for (std::size_t pg = 0; pg < last_page; ++pg)
         {
-            const std::size_t b0      = pg * page;
+            const std::size_t b0       = pg * page;
             bool              all_free = true;
             if (b0 < end_of_elements)
             {
