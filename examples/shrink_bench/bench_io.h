@@ -718,6 +718,9 @@ void read_check_binary_file(Int                ind,
         constexpr T zero{};
 
         constexpr bool is_complex = std::is_same_v<T, ComplexDouble>;
+        // Only these types accept a value within a relative tolerance (ok3); for the
+        // others ok3 stays false and nn 0, so its branches are compiled out.
+        constexpr bool has_tolerance = std::is_same_v<T, double> || std::is_same_v<T, float> || is_complex;
 
         for (Int k = 0; k < sz; ++k)
         {
@@ -973,19 +976,24 @@ void read_check_binary_file(Int                ind,
                 trace_file_write.close();
                 std::abort();
             }
-            else if (!ok1 && ok3)
+            else if constexpr (has_tolerance)
             {
-                nn++;
+                if (!ok1 && ok3)
+                {
+                    nn++;
+                }
             }
         }
 
-        if (nn)
+        if constexpr (has_tolerance)
         {
-            std::cerr << nn << " : values are not perfectly equal ! : error max = ";
-            std::cerr << std::scientific << ratio_max << "\n";
-            std::cerr << std::defaultfloat;
+            if (nn)
+            {
+                // std::format, not std::scientific: leaves std::cerr's flags alone
+                std::cerr << std::format("{} : values are not perfectly equal ! : error max = {:e}\n", nn, ratio_max);
+            }
         }
-        else if (!read_trace)
+        if (nn == 0 && !read_trace)
         {
             std::cout << "no data error (but checksum error...)\n";
         }
