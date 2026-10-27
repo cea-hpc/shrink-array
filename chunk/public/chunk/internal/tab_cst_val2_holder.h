@@ -188,7 +188,7 @@ struct SecondValueRef
         std::atomic_ref<SlotT>(*slot).store(SlotT{}, std::memory_order_release);
     }
     /// @brief set_from_array() as an atomic release store (see reset_release()).
-    void set_from_array_release(const T* src) const noexcept;
+    void                   set_from_array_release(const T* src) const noexcept;
     [[nodiscard]] explicit operator bool() const noexcept
     {
         return slot != nullptr;

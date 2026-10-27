@@ -1191,7 +1191,8 @@ template <bool Relaxed>
 
 template <typename T, typename Derived>
 template <bool Relaxed>
-[[nodiscard]] T ChunkBase<T, Derived>::element_at_unguarded(int offset, const T* offset_slot) const noexcept requires has_motif_state_v<Derived>
+[[nodiscard]] T ChunkBase<T, Derived>::element_at_unguarded(int offset, const T* offset_slot) const noexcept
+    requires has_motif_state_v<Derived>
 {
     for (;;)
     {

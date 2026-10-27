@@ -21,7 +21,7 @@
 namespace shrink_array
 {
 
-std::atomic g_need_flush_deferred{true};
+std::atomic<bool> g_need_flush_deferred{true};
 
 // This TU holds only the non-template global state. Method bodies are in
 // chunk/internal/manager_chunk_inline.h; there is no explicit instantiation: each
