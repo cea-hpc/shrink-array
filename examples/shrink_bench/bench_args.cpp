@@ -85,6 +85,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     bool   no_mask       = false;      // --no_mask: no tab_mask (bench_args.h)
     bool   no_conn       = false;      // --no_conn: no tab_conn (bench_args.h)
     double mask_scale    = 1.0 / 32.0; // --mask_scale: tab_mask's size / sz (bench_args.h)
+    double conn_scale    = 1.0 / 32.0; // --conn_scale: tab_conn's size / sz (bench_args.h)
 
     // Nouveaux facteurs
     double multiply_factor = 1.0;
@@ -146,6 +147,10 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             else if (arg == "--no_conn")
             {
                 no_conn = true;
+            }
+            else if (arg == "--conn_scale")
+            {
+                conn_scale = parse_positive_real_arg("--conn_scale", next_value());
             }
             else if (arg == "--mask_scale")
             {
@@ -223,6 +228,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     args.no_mask         = no_mask;
     args.no_conn         = no_conn;
     args.mask_scale      = mask_scale;
+    args.conn_scale      = conn_scale;
     args.multiply_factor = multiply_factor;
     args.divisor_factor  = divisor_factor;
     args.iter_max_arg    = iter_max_arg;

@@ -282,6 +282,10 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `shrink_bench`: `tab_conn` holds about `sz / 32` ints by default, `--conn_scale <x>` sets it
+  (`x × sz`, whole rows). At `sz` its dense gather and renumbering took ~87% of a run (zero_any,
+  8 threads, `--divisor 2`: 64.8 s with it, 8.4 s without with GCC 16, 140 s against 19 s with
+  icpx) and hid every other phase -- what looked like a regression of the bench.
 - The re-chunks are on screen again by default: the `rechunk` log channel
   starts at `info` (`CHUNK_LOG` unset means `warn,rechunk=info`), so each
   re-chunk the decider applies writes its `decide <array>: re-chunk S=..
@@ -383,6 +387,15 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `shrink_to_fit()` and `ParamChunk::force_compression()` left uniform `zero_any` chunks
+  materialised in a serial build (OpenMP off): a serial `zero_any` queues its compression
+  candidates and folds them in batches of half the list from the write path, and both swept the
+  last, partial batch only in the OpenMP builds. Up to that many chunks kept a buffer -- right
+  values, memory not given back (the cpp26 branch's second-value registry test saw 1750 second
+  values for 2000). They sweep in every build now; `shrink_to_fit_validation` checks it In the threaded builds,
+  `shrink_to_fit()` also folds every rank's candidates now, not the calling thread's alone: with the
+  end-of-phase pass off (`CHUNK_AGGRESSIVE_COMPRESSION=1`), 44 of 100 uniform chunks kept their
+  buffer at 8 threads (`shrink_to_fit_validation_*_aggressive_8thr`).
 - `compile_all.sh`: the slot pool (`.build-slots.<host>.<pid>`) and the log directory
   (`logs/<date>-<host>-<pid>`) of a run carry the host name. In a `$CHUNK_BUILD_REP` shared by
   several nodes, two runs with the same pid used the same slot pool.

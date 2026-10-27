@@ -89,6 +89,9 @@
 #                           resize's release) and zero_any's operator== equal a
 #                           std::vector's, with the phase bracketed; inside a
 #                           region they stay on the calling thread.
+#   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
+#                           keeps a buffer, in every build (a serial zero_any
+#                           left its last partial batch of candidates).
 #   compound_ops_validation `*=`, `/=`, `%=` read back what std::vector would
 #                           (results landing on zero included), `double /= 0.0`
 #                           gives inf, set_second_value(0) declares nothing;
@@ -263,7 +266,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         fill_range_constant_validation copy_range_constant_validation
-                        constant_switch_validation)
+                        constant_switch_validation shrink_to_fit_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.
@@ -485,6 +488,12 @@ foreach(_geom IN LISTS _rt_geometries)
         else()
           validation_add_test(${_base} ${_exe} ${_h} "1;8")
         endif()
+      elseif (_h STREQUAL "shrink_to_fit_validation")
+        validation_add_test(${_base} ${_exe} ${_h} "1;8")
+        # With the end-of-phase pass off, shrink_to_fit() alone must fold every
+        # rank's candidates (it folded the calling rank's only).
+        validation_add_test(${_base}_aggressive ${_exe} ${_h} "8")
+        set_property(TEST ${_base}_aggressive_8thr APPEND PROPERTY ENVIRONMENT CHUNK_AGGRESSIVE_COMPRESSION=1)
       elseif (_h STREQUAL "deferred_path_validation")
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
       elseif (_h STREQUAL "phase_protocol_validation")

@@ -147,13 +147,10 @@ void ParamChunk::init_indexes(bool big_chunk_block)
 /// @copydoc ParamChunk::force_compression
 void ParamChunk::force_compression()
 {
-    // Declared in every build; a no-op without fast block compression.
-    if constexpr (chunk_config::use_fast_block_compression)
-    {
-        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
-
-        ens_type_chunk.force_chunk_to_compress();
-    }
+    // Every build: a serial zero_any queues its candidates too (see
+    // compress_now_and_trim_pools()).
+    const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+    ens_type_chunk.force_chunk_to_compress();
 }
 
 #if CHUNK_OPT_STATS

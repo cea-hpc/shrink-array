@@ -100,7 +100,7 @@ still work: each sets the level it stands for, with a deprecation warning.
 | `BENCH_SCHED_BLOCK` | size of the scheduling blocks of the benchmark phases (64; 0 = contiguous slices) |
 | `NO_IO`, `COMPRESS` | equivalents of `--no_io` and `--compress` |
 | `--no_mask`, `--mask_scale <x>` | without `tab_mask`; or its size, `x × sz` (default 1/32) |
-| `--no_conn` | without `tab_conn`, the mesh connectivity (`pattern::Array` in the `zero_one_value` and `zero_any` builds) |
+| `--no_conn`, `--conn_scale <x>` | without `tab_conn`, the mesh connectivity (`pattern::Array` in the `zero_one_value` and `zero_any` builds); or its size, about `x × sz` in whole rows (default 1/32) |
 | `--no_struct` | without the arrays of structures (`Point3`, `Cell`) |
 
 ## 5. Compilation macros

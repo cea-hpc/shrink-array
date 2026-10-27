@@ -248,6 +248,7 @@ int main(int argc, char* argv[])
     const bool      no_mask         = bench_args.no_mask;
     const bool      no_conn         = bench_args.no_conn;
     const double    mask_scale      = bench_args.mask_scale; // tab_mask's size / sz
+    const double    conn_scale      = bench_args.conn_scale; // tab_conn's size / sz
     const double    multiply_factor = bench_args.multiply_factor;
     const double    divisor_factor  = bench_args.divisor_factor;
     const Int       iter_max_arg    = bench_args.iter_max_arg;
@@ -567,15 +568,21 @@ int main(int argc, char* argv[])
 
     // A mesh connectivity (bench_phase_conn.cpp): pattern::Array<int> in the
     // zero_one_value and zero_any builds, zero::Array<int> in a zero build, a vector
-    // in the baseline (BenchConnArray). About sz ints, whole rows of
-    // bench_conn_row; size 1 under --no_conn (BenchArrays::with_conn) or when sz is
-    // smaller than one row.
-    const Int      conn_sz     = sz / bench_conn_row * bench_conn_row;
-    const bool     no_tab_conn = no_conn || conn_sz == 0;
-    BenchConnArray tab_conn(no_tab_conn ? 1 : conn_sz);
+    // in the baseline (BenchConnArray). About conn_scale * sz ints (--conn_scale,
+    // default 1/32), whole rows of bench_conn_row, computed in 64 bits and capped
+    // at the build's Int as tab_mask; size 1 under --no_conn
+    // (BenchArrays::with_conn) or when that is less than one row.
+    const long long conn_rows_want =
+        std::llround(conn_scale * static_cast<double>(sz)) / static_cast<long long>(bench_conn_row);
+    const long long conn_rows_max = static_cast<long long>(std::numeric_limits<Int>::max()) / bench_conn_row;
+    const Int       conn_sz       = static_cast<Int>((conn_rows_want < conn_rows_max ? conn_rows_want : conn_rows_max) *
+                                                     static_cast<long long>(bench_conn_row));
+    const bool      no_tab_conn   = no_conn || conn_sz == 0;
+    BenchConnArray  tab_conn(no_tab_conn ? 1 : conn_sz);
     if (!no_tab_conn)
     {
-        std::println("tab_conn: {} elements ({} rows of {} cells)", conn_sz, conn_sz / bench_conn_row, bench_conn_nx);
+        std::println("tab_conn: {} elements ({} rows of {} cells, --conn_scale {})", conn_sz, conn_sz / bench_conn_row,
+                     bench_conn_nx, conn_scale);
     }
 
     // Handle on the nineteen arrays, passed to the extracted phases. References,
