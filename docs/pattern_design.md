@@ -127,13 +127,20 @@ A reader loads the pointer and then the offset; they are two words. The sequence
   only after the chunk went `Q -> buffer -> (slot rewritten) -> Q'`. It would add the new value
   of the slot to `Q`. With the offset in the slot, two writes rewrite it: a compression to a new
   motif (a new offset), and `zero_any`'s compression of the chunk to a constant (its second
-  value, registered by the pass). Both happen in the compression pass only. The pass already
-  waits for a **grace period** (readers announced before the pass have left their read section)
-  before it recycles a buffer: the slot is rewritten only in that pass, after that wait, and only
-  on chunks that were materialised **before the pass began**. A reader of the old motif pointer
-  began before the materialisation, hence before the wait ends. This needs the same argument as
-  the buffer reclaim handshake, and **a fourth reduced GenMC model** (`formal/`), covering both
-  rewrites of the slot, with its mutation oracles, before the variant is called correct.
+  value, or 0). Both happen in the compression pass, **before** its CAS; its grace period comes
+  after the CAS and protects the buffer it frees, not the slot. This note first argued the
+  hazard away on that grace period; the reduced model (`formal/motif_offset.c`,
+  `docs/formal_models.md` section 7) found it in two executions (F5, section 8.6 there).
+- **The rule, as implemented.** The reader loads the slot with **acquire**, then the pointer
+  **again** (`Chunk::motif_offset()`): unchanged, the offset belongs to the state the two loads
+  bracket; moved, it starts over. Every rewrite of the slot of a chunk of a member with the
+  motif state is a **release** atomic store (never the plain store `zero_any` keeps: a reader
+  may load the slot meanwhile), made after the pass saw the materialised buffer: a reader that
+  sees the new slot cannot see the old pointer again. The ABA -- a pass compressing back to the
+  same motif -- is harmless: pointer and slot then describe the new state together. Checked
+  with up to 3 readers and 3 reads, for every target, under RC11 and IMM; each part of the rule
+  is load-bearing (the model's mutations). Cost: one acquire load and a second load of the
+  pointer, from the same cache line, on the read of a motif chunk only.
 
 ## 7. The motif registry
 
@@ -213,9 +220,10 @@ explicit entry point stays possible and costs nothing in the design.
 2. **Compression and the registry**: scan, hash, admission, the CAS commit, materialisation on
    write; the OpenMP and std backends; the check-mode builds. *Done for the OpenMP backend at the
    static size* (`pattern_validation`, cases M to P, at 1 and 8 threads; `zero_any`'s library
-   objects unchanged); the std backend is still to run.
+   objects unchanged); the std and serial backends pass too.
 3. **The model**: the GenMC handshake of §6 and its mutations; the findings are applied to the
-   sources before the variant is announced.
+   sources before the variant is announced. *Done*: `formal/motif_offset.c`, one finding (F5,
+   the reader's re-check and the release stores of the slot, §6), applied.
 4. **Dynamic geometry, rechunk, advisor**: motifs per size; the advisor counts a sub-block as
    compressible when it matches a motif.
 5. **Bench and docs**: a mesh-connectivity case in `shrink_bench`, `access_cost` for the

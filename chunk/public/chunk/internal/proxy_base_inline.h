@@ -1465,10 +1465,16 @@ template <typename Derived, typename T, typename ChunkT>
     test_hooks::maybe_read_delay();
     if constexpr (has_motif_state_v<ChunkT>)
     {
-        // A motif chunk: motif[num] + the offset its second-value slot holds.
+        // A motif chunk: motif[num] + the offset its second-value slot holds, if
+        // the chunk still points at that motif; else the chunk as it is now (F5).
         if (ChunkT::is_motif_ptr(vals)) [[unlikely]]
         {
-            return ChunkT::motif_value(vals, num_, derived().motif_offset_slot());
+            T off{};
+            if (chunk_.motif_offset(vals, derived().motif_offset_slot(), off)) [[likely]]
+            {
+                return ChunkT::motif_value(vals, num_, off);
+            }
+            return read_values_at(chunk_.values_load());
         }
     }
     return internal::element_of(vals, static_cast<std::size_t>(num_));

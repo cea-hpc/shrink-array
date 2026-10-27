@@ -70,6 +70,14 @@ void SecondValueRef<T>::set_from_array(const T* src) const noexcept
     }
 }
 
+template <typename T>
+void SecondValueRef<T>::set_from_array_release(const T* src) const noexcept
+{
+    // pattern::Array only, whose element types have a plain slot (static_assert there).
+    static_assert(!SecondValueTraits<T>::indexed, "set_from_array_release: an indexed slot holds an identifier");
+    std::atomic_ref<SlotT>(*slot).store(GlobalVecHolder<T>::value_of_ptr(src), std::memory_order_release);
+}
+
 // ---------------------------------------------------------------------------
 // shrink_array::GlobalVecHolder<T>
 // ---------------------------------------------------------------------------
@@ -589,6 +597,15 @@ template <typename T>
     const typename VecHolder::LookupGuard in_flight;
     T*                                    buf = find_or_register(second_v);
     ptr_second_value.set_from_array(buf);
+    return buf;
+}
+
+template <typename T>
+[[nodiscard]] T* TabCstVal2Holder<T>::find_or_set_ind_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value)
+{
+    const typename VecHolder::LookupGuard in_flight; // as find_or_set_ind_cst_val2()
+    T*                                    buf = find_or_register(second_v);
+    ptr_second_value.set_from_array_release(buf);
     return buf;
 }
 

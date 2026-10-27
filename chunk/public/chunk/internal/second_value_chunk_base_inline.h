@@ -40,7 +40,14 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  n
         // 1. Update the metadata BEFORE the CAS.
         if (num_compress_value == 0)
         {
-            ptr_second_value.reset();
+            if constexpr (has_motif_state_v<Derived>)
+            {
+                ptr_second_value.reset_release(); // a reader of the old motif may load the slot (F5)
+            }
+            else
+            {
+                ptr_second_value.reset();
+            }
             derived().set_cst_val_to_cst_val1(ptr_type_cst);
         }
         else

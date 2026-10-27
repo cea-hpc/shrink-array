@@ -105,4 +105,26 @@ run ok    "MUT_ENTER_RELAXED, 1 read: the hole needs back-to-back reads" -- -DMU
 run ok    "MUT_WAIT_FOR_EVEN, 2 reads (the pass-side way out, not taken)" --check-liveness -- -DNREADS=2 -DMUT_WAIT_FOR_EVEN $M3
 run error "MUT_OVERFLOW_NO_FENCE (F4, before)"               -- -DOVERFLOW_READER -DMUT_OVERFLOW_NO_FENCE $M3
 
+M4=motif_offset.c
+echo "== handshake 4: motif readers <-> rewrites of the offset slot ($M4) =="
+run ok    "source, another motif"                            --check-liveness -- $M4
+run ok    "source, the same motif (ABA)"                     --check-liveness -- -DTARGET_SAME_MOTIF $M4
+run ok    "source, first constant"                           --check-liveness -- -DTARGET_CST1 $M4
+run ok    "source, second constant"                          --check-liveness -- -DTARGET_CST2 $M4
+run ok    "source, 3 reads"                                  --check-liveness -- -DNREADS=3 $M4
+run ok    "source, 2 readers x 2 reads"                      --check-liveness -- -DNREADERS=2 -DNREADS=2 $M4
+run ok    "source, 3 readers"                                --check-liveness -- -DNREADERS=3 $M4
+echo "-- mutations: each must be refused --"
+run error "MUT_SLOT_LOAD_RELAXED (the re-check needs acquire)" -- -DMUT_SLOT_LOAD_RELAXED $M4
+run error "MUT_SLOT_STORE_RELAXED (the pass's store must be release)" -- -DMUT_SLOT_STORE_RELAXED $M4
+run error "MUT_CAS_BEFORE_SLOT (pattern_design.md section 6: the slot first)" -- -DMUT_CAS_BEFORE_SLOT $M4
+run error "MUT_NO_GRACE (calibration)"                       -- -DMUT_NO_GRACE $M4
+echo "-- the behaviours the model changed in the source (F5) --"
+run error "MUT_NO_RECHECK, another motif (F5, before)"       -- -DMUT_NO_RECHECK $M4
+run error "MUT_NO_RECHECK, first constant (F5, before)"      -- -DMUT_NO_RECHECK -DTARGET_CST1 $M4
+run error "MUT_NO_RECHECK, second constant (F5, before)"     -- -DMUT_NO_RECHECK -DTARGET_CST2 $M4
+run ok    "MUT_NO_RECHECK, the same motif: harmless"         -- -DMUT_NO_RECHECK -DTARGET_SAME_MOTIF $M4
+run error "MUT_SLOT_STORE_PLAIN, first constant (F5, before: reset())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST1 $M4
+run error "MUT_SLOT_STORE_PLAIN, second constant (F5, before: set_from_array())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST2 $M4
+
 exit $fail
