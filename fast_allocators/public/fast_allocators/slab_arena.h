@@ -136,6 +136,27 @@ inline std::atomic<std::size_t>& reclaim_entered() noexcept
 }
 ///@}
 
+/// @brief Free pages given back from slabs still in use
+///        (TCSlab::advise_free_pages, CHUNK_RECLAIM_PARTIAL): bytes, madvise()
+///        calls, and slabs in use scanned.
+///@{
+inline std::atomic<std::size_t>& reclaim_partial_bytes() noexcept
+{
+    static std::atomic<std::size_t> count{0};
+    return count;
+}
+inline std::atomic<std::size_t>& reclaim_partial_syscalls() noexcept
+{
+    static std::atomic<std::size_t> count{0};
+    return count;
+}
+inline std::atomic<std::size_t>& reclaim_partial_scanned() noexcept
+{
+    static std::atomic<std::size_t> count{0};
+    return count;
+}
+///@}
+
 /// @brief A global counter alone on its cache lines.
 /// @details Do not use a bare `static std::atomic` for a hot counter: the linker
 ///          packs it next to other globals (e.g. the head of
@@ -732,6 +753,10 @@ inline void report_all_arenas(const char* when) noexcept
         reclaim_skip_small().load(std::memory_order_relaxed),
         static_cast<double>(reclaim_sweep_ns().load(std::memory_order_relaxed)) * 1e-6,
         reclaim_sweeps().load(std::memory_order_relaxed), detail::reclaim_sweep_threads());
+    CHUNK_LOG_ALWAYS(arena, "partial {:<16} madvise_calls={}  advised={} MiB  (slabs in use scanned={})", when,
+                     reclaim_partial_syscalls().load(std::memory_order_relaxed),
+                     reclaim_partial_bytes().load(std::memory_order_relaxed) >> 20U,
+                     reclaim_partial_scanned().load(std::memory_order_relaxed));
     CHUNK_LOG_ALWAYS(arena, "freepath {:<15} freed={}  parked_own={}  parked_foreign={}  kept_no_migrate={}", when,
                      freepath_freed().load(std::memory_order_relaxed),
                      freepath_park_own().load(std::memory_order_relaxed),

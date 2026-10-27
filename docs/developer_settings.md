@@ -34,6 +34,8 @@
 | `CHUNK_RECHUNK_SLICES` | 16 | number of slices in the `zero` rebuild |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | a sweep gives empty slabs back to the system only if there are at least this many |
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()` |
+| `CHUNK_RECLAIM_PARTIAL` | 1 | a sweep (`trim_reuse_pools`, `CHUNK_RECLAIM_PHASE_KEEP`) also gives back the free pages of the value slabs still in use, as `malloc_trim` does in glibc's heaps (the last page of each slab, its back-pointer, is kept); `0`: only the empty slabs, as before. `CHUNK_ARENA_REPORT` prints them on its `partial` line |
+| `CHUNK_SLAB_FULLEST_FIRST` | 1 | a sweep re-chains the value slabs with room fullest first, so the next allocations fill the dense slabs and the sparse ones drain; `0`: the order is left as it is |
 | `CHUNK_SLAB_MIN_PAGES` | unset | floor of the value slabs' size, in pages; unset: none (each element type's slab is still at least one page). `16` is the former default: 1 MiB slabs at 64 threads on 64 KiB pages instead of 256 KiB, for an A/B of the resident memory. *Removal planned: 2026-12-31.* |
 | `CHUNK_RECHUNK_RECYCLE` | on | `zero` rebuild: the slabs a slice has just emptied go to the next slice instead of back to the system; `0` turns it off. *Removal planned: 2026-12-31.* |
 | `CHUNK_RECHUNK_KEEP_RECYCLED_MB` | 0 | `zero` rebuild: at its end, up to this many MiB per arena of the recycled slabs no slice took stay resident (split evenly over the ranks) for the next allocations, instead of going back to the system; `0`: all go back |

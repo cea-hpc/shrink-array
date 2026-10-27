@@ -18,7 +18,7 @@ add_library(fast_allocators)
 add_library(fast_allocators::fast_allocators ALIAS fast_allocators)
 
 set(ALLOCATORS_MAJOR_VERSION 2)  # inc. when incompatible change (reset to 0 others)
-set(ALLOCATORS_MINOR_VERSION 2)  # inc. when compatible change (also reset patch vers.)
+set(ALLOCATORS_MINOR_VERSION 3)  # inc. when compatible change (also reset patch vers.)
 set(ALLOCATORS_PATCH_VERSION 0)  # inc. when just fixing bug
 
 set(ALLOCATORS_VERSION

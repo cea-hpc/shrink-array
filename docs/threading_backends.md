@@ -447,10 +447,16 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      `Team` is the bench's own -- rank, size, `single(nowait)` and
      `for_dynamic(nowait)` on per-region slots, no `barrier()`. The loop
      macros share by the virtual rank, as under the std backend.
-   - The phase protocol is the bench's own calls, unchanged: each task begins
-     the phase (`begin_parallel_phase()`, again for a thread that runs a
-     second rank, which the phase guard allows), and the serial
-     `finalize_parallel_phase()` after the region.
+   - The phase protocol is `region()`'s, as OMPT's is around an OpenMP region:
+     each task begins the phase (`begin_parallel_phase()` through the adaptor's
+     `phase_body()`, again for a thread that runs a second rank, which the
+     phase guard allows), and the serial `finalize_parallel_phase()` once the
+     arena call has returned. TBB has no region hook of its own (a
+     `task_scheduler_observer` sees a thread join the arena, not a
+     `parallel_for` end), so `region()`, the one place that knows both ends,
+     holds them; every region ends a phase, as every top-level OpenMP region
+     does under OMPT, and the bench's own `begin_parallel_phase_g()` /
+     `finalize_*_g()` are no-ops in this build (`bench_par::region_ends_phase`).
    - The compression phase: a team region calls `compress()` on every thread,
      a team-wide pass. TBB tasks are no team of the library, so there each
      array is compressed once, at the serial point, where the pass runs on

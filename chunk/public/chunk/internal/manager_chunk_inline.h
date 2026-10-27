@@ -21,7 +21,7 @@
 // (ChunkT, T) the consumer uses auto-instantiates at its use site.
 
 #include <atomic>        // std::atomic, std::memory_order
-#include <algorithm>     // std::max, std::ranges::sort, std::ranges::push_heap
+#include <algorithm>     // std::max, std::ranges::sort, std::ranges::push_heap, std::find
 #include <functional>    // std::less
 #include <tuple>         // std::tuple (the memory estimate)
 #include <type_traits>   // std::decay_t, std::conditional_t
@@ -1460,14 +1460,24 @@ std::size_t ManagerChunk<ChunkT, T>::sweep_empty_slabs([[maybe_unused]] std::siz
 
         typename AllocT::SlabSweep sweep;
         const unsigned int         saved_sz = thread_chunk_size();
+        std::vector<const void*>   tidied; // the instances already tidied (see below)
         for (const auto& [size, key] : sets)
         {
             set_thread_chunk_size(size);
             for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
             {
+                auto& allocator = ChunkT<T>::get_chunk_allocator(r, key);
+                // The slabs still in use: fullest first, free pages given back
+                // (CHUNK_SLAB_FULLEST_FIRST, CHUNK_RECLAIM_PARTIAL). Once per
+                // instance: an unregistered (key, size) routes to key 0.
+                if (std::find(tidied.begin(), tidied.end(), &allocator) == tidied.end())
+                {
+                    tidied.push_back(&allocator);
+                    (void)allocator.tidy_slabs_in_use();
+                }
                 // An unregistered (key, size) routes to key 0: the sweep
                 // drops the slabs reached twice.
-                collected += ChunkT<T>::get_chunk_allocator(r, key).collect_empty_slabs(sweep, keep_empty);
+                collected += allocator.collect_empty_slabs(sweep, keep_empty);
             }
         }
         sweep.flush();

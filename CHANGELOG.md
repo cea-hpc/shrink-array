@@ -54,6 +54,16 @@ the tag's checksum to the recipe.
 
 - `CHUNK_SLAB_MIN_PAGES` (developer setting): a floor in pages for the value slabs' size; `16`
   restores the former default, for an A/B (see Changed).
+- Fast allocator: a sweep (`trim_reuse_pools()`, `CHUNK_RECLAIM_PHASE_KEEP`) also gives back the
+  free pages of the value slabs still in use (`TCSlab::advise_free_pages`), as `malloc_trim`
+  does inside glibc's heaps: a slab no longer stays resident whole for its last few live buffers.
+  The value slabs keep their free-list links aside, so a free element is never written to; the
+  last page, the back-pointer's, is kept. `CHUNK_RECLAIM_PARTIAL=0` turns it off; the
+  `CHUNK_ARENA_REPORT` `partial` line counts it.
+- Fast allocator: the same sweep re-chains the value slabs with room fullest first
+  (`TCTypeCAllocator::order_fullest_first`), so the next allocations fill the dense slabs and
+  the sparse ones drain, to be given back whole. `CHUNK_SLAB_FULLEST_FIRST=0` turns it off.
+- fast_allocators 2.3.0 (the two above); `CHUNK_FAST_ALLOCATORS_VERSION` follows.
 - shrink_gui runs on PySide6 6.2 and 6.3: QFormLayout's setRowVisible() / isRowVisible() came
   with Qt 6.4, and the window stopped at start-up without them (AttributeError in
   machine_panel). `widgets.RowVisibleFormLayout` provides them on every 6.x -- Qt's own from
