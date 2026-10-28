@@ -210,6 +210,41 @@ library you link: `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
 [docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) how reads, writes and compression run side by side.
 
+**Integers that repeat with a shift: `pattern::Array`.** A mesh connectivity is never uniform,
+yet cell `c + 1` holds the node numbers of cell `c` plus one. `pattern::Array<T>`, for integer
+types, comes with the `zero_any` libraries: it does everything `zero_any::Array` does, and also
+compresses such a chunk to a **motif plus an offset**. Element `j` reads `motif[j] + offset`;
+the motif is shared by every chunk of that shape, and the offset sits in the chunk's metadata:
+
+```cpp
+#include "chunk/pattern_array.h"   // shrink_array::pattern::Array
+
+const int nx = 4096, ny = 1024;           // nx x ny quad cells, (nx + 1) x (ny + 1) nodes
+sa::pattern::Array<int> conn(4 * nx * ny);   // the 4 nodes of each cell, cell after cell
+
+for (int j = 0; j < ny; ++j)
+    for (int i = 0; i < nx; ++i)
+    {
+        const int c = j * nx + i;             // the cell
+        const int n = j * (nx + 1) + i;       // its first node
+        conn[4 * c + 0] = n;
+        conn[4 * c + 1] = n + 1;
+        conn[4 * c + 2] = n + nx + 2;
+        conn[4 * c + 3] = n + nx + 1;
+    }
+conn.shrink_to_fit();
+
+std::printf("chunks holding a buffer: %.1f %%\n", conn.stats());   // 0.0 %: one motif for 16.8 M ints
+```
+
+With chunks of 256 elements (64 cells, `nx` a multiple of 64), every chunk is the same motif
+with an offset of its own: one motif is registered for the whole array, and every chunk but one
+keeps no buffer (a motif is admitted the second time it is seen, by another chunk). A chunk is
+examined when its first or last element is written, so a connectivity filled in order
+compresses as it is written; a write into a motif chunk gives it a buffer again.
+[docs/algo_pattern.md](docs/algo_pattern.md) explains the motif registry, the compression and
+the reads.
+
 **Lock-free, and checked rather than only tested.** No thread ever takes a lock to read or
 write an element. Writers, the compression pass that takes a chunk's buffer back, the flush of
 deferred writes and the readers coordinate through atomics and fences only: Dekker-style
@@ -385,6 +420,7 @@ Spack version (`spack install shrink-array@cpp23`).
 | know why the write path needs no lock | [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) |
 | check a handshake with a model checker | [docs/formal_models.md](docs/formal_models.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |
+| compress a mesh connectivity (`pattern::Array`) | [docs/algo_pattern.md](docs/algo_pattern.md) |
 | measure memory and time reliably | [docs/performance_measurement.md](docs/performance_measurement.md) |
 | submit and follow runs on the cluster from a window | [docs/shrink_gui.md](docs/shrink_gui.md) |
 | contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
