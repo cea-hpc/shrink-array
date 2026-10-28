@@ -63,6 +63,8 @@ ALLOWED = {
     "FAST_ALLOC_MAX_CONST_BLOCK_SIZE", "internal/static_const_array_define.h",
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
+    # the developer settings fixed after the Milan measurements, and CHUNK_THP's functions
+    "CHUNK_RECHUNK_KEEP_RECYCLED_MB", "alloc_config::thp_advise", "thp_never", "advise_thp_region",
     # the rechunk decider's former environment variables (now RechunkPolicy fields and
     # shrink_bench options) and the trace variables CHUNK_LOG replaced
     "CHUNK_RECHUNK_DRY_RUN", "CHUNK_RECHUNK_MAX_COARSEN", "CHUNK_ADVISOR_MIN_GAIN_MB", "CHUNK_ADVISOR_GRID_BITS",

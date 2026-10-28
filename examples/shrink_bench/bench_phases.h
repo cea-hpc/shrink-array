@@ -104,7 +104,8 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& end,
                       std::chrono::duration<double>&         elapsed_seconds);
 
-/// @brief Store sqrt(@p value) at index @p index of @p tab. For a zero::Array, the raw reference tab(index) is used only
+/// @brief Store sqrt(@p value) at index @p index of @p tab. For a zero::Array, the raw reference tab(index) is used
+/// only
 ///        when the chunk is written, operator[] otherwise.
 /// @param tab Destination array.
 /// @param index Element index.
