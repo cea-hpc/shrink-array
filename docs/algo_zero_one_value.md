@@ -517,7 +517,7 @@ keeping it on the element-by-element path:
   adding the chunk (`set_info_on_chunk()`), since `zero_one_value`'s lists are indexed by
   it. Without that, the chunks landed in the list of `T{}`, which no pass drains;
 - in counter mode (the serial builds), a direct store must **recount** the chunk's two
-  counters, `nb_val_eq_first_value` and `nb_val_eq_second_value`, which zero_one_value::Proxy otherwise
+  counters, `nb_val_eq_first_value_` and `nb_val_eq_second_value_`, which zero_one_value::Proxy otherwise
   keeps up to date one write at a time (`internal::resync_counters`, as for `zero`'s count of
   zeros).
 

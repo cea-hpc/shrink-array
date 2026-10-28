@@ -57,6 +57,16 @@ ENGLISH_ONLY = {
     "threading_backends.md",
 }
 
+# Design documents: they describe code that does not exist yet -- planned
+# files, the APIs of the platforms it will target -- so their names are not
+# looked up in the tree (their links are), and they may stay in one language
+# until the design settles.
+DESIGN = {
+    # the GPU backend, before any prototype; its English version (gpu_design.md)
+    # is written once the design is stable
+    "conception_gpu_fr.md",
+}
+
 # Real names that are not defined in this tree.
 ALLOWED = {
     # removed names that CHANGELOG.md records as removed
@@ -256,7 +266,7 @@ def check_pairs(root):
     for fr in sorted(d.glob("*_fr.md")):
         stem = fr.name[:-6] + ".md"
         en = next((e for e, f in PAIRS.items() if f == fr.name), stem)
-        if not (d / en).exists():
+        if not (d / en).exists() and fr.name not in DESIGN:
             bad.append("docs/%s: no English version (%s)" % (fr.name, en))
     # The top-level README and its French version.
     en, fr = root / "README.md", root / "README_fr.md"
@@ -323,7 +333,7 @@ def main() -> int:
     comments = list(comment_lines(root, files))
     sections = [
         ("links", check_links(root, md_files)),
-        ("names", check_names(root, md_files, words, names, verbose)),
+        ("names", check_names(root, [f for f in md_files if f.name not in DESIGN], words, names, verbose)),
         ("French / English pairs", check_pairs(root)),
         ("history markers", check_history(root, comments)),
         ("paths in comments", check_cited_paths(root, comments)),

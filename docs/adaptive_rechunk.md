@@ -214,7 +214,7 @@ is limited to the rebuilds.
   Measured again in October 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
   2,000 iterations, `diag_zero_rechunk_slowdown.py`): +17% per
   iteration after the switch to 1,024. Unchanged by one slice, a static rebuild
-  schedule, no slab recycling, no `chunk_list` reuse, lazy affinity; the NUMA
+  schedule, no slab recycling, no `chunk_list_` reuse, lazy affinity; the NUMA
   placement is balanced like the static run's. Most of it was the advisor: its
   analyses went on at every tick once the geometry had settled, and their serial
   parts kept the other threads waiting (__kmp_fork_barrier). With

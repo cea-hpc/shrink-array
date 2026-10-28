@@ -518,7 +518,7 @@ le laisser sur le chemin élément par élément :
   d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de `zero_one_value` sont indexées par
   elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
 - en mode compteur (les builds serial), une écriture directe doit **recompter** les deux
-  compteurs du chunk, `nb_val_eq_first_value` et `nb_val_eq_second_value`, que zero_one_value::Proxy tient
+  compteurs du chunk, `nb_val_eq_first_value_` et `nb_val_eq_second_value_`, que zero_one_value::Proxy tient
   sinon à jour écriture par écriture (`internal::resync_counters`, comme le compte des zéros de
   `zero`).
 

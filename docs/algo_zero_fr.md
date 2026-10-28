@@ -54,7 +54,7 @@ L'écriture passe par le proxy `Proxy<T>` :
 ## 4. Quand un chunk devient candidat à la compression
 
 **Builds séquentiels** : chaque chunk tient un **compteur de zéros**
-(`ChunkCounterPolicy`, `nb_val_eq_zero`). Quand il atteint le nombre d'éléments du chunk, le
+(`ChunkCounterPolicy`, `nb_val_eq_zero_`). Quand il atteint le nombre d'éléments du chunk, le
 chunk est compressé tout de suite (`manage_full_zero`). Ce compteur doit être exactement
 synchronisé avec le contenu : un compteur désynchronisé compresserait un chunk qui ne l'est
 pas, d'où le soin mis à le propager dans les copies.

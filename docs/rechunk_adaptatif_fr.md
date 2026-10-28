@@ -215,7 +215,7 @@ se limite aux reconstructions.
   2 000 itérations, `diag_zero_rechunk_slowdown.py`) : +17 % par itération après le
   passage à 1 024. Inchangé avec une seule tranche, une reconstruction en
   ordonnancement statique, sans recyclage des slabs, sans réutilisation de
-  `chunk_list`, en affinité lazy ; le placement NUMA est équilibré comme celui du
+  `chunk_list_`, en affinité lazy ; le placement NUMA est équilibré comme celui du
   statique. L'essentiel venait de l'advisor : ses analyses continuaient à chaque
   passage une fois la géométrie stabilisée, et leurs parties séquentielles
   faisaient attendre les autres threads (__kmp_fork_barrier). Avec

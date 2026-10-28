@@ -734,7 +734,7 @@ were internal.
   replay: the proxy's armed `num_tab` is captured in the context, and the replay reads it
   back (`Proxy::get_num_tab_cached`, `get_num_tab_async`); check builds compare it with the
   registry.
-- `chunk_list` (the chunks of an array) no longer has its new chunks value-initialised by
+- `chunk_list_` (the chunks of an array) no longer has its new chunks value-initialised by
   `std::vector::resize` on the calling thread: its allocator (`NoInitAllocator`,
   `internal/array_chunk_core.h`) leaves them unconstructed, and the init loops of `create`
   and `resize` construct each chunk (`construct_chunk`) on the thread that initialises it.

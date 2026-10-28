@@ -54,7 +54,7 @@ The write goes through the `Proxy<T>` proxy:
 ## 4. When a chunk becomes a compression candidate
 
 **Sequential builds**: each chunk keeps a **zero counter**
-(`ChunkCounterPolicy`, `nb_val_eq_zero`). When it reaches the chunk's number of elements, the
+(`ChunkCounterPolicy`, `nb_val_eq_zero_`). When it reaches the chunk's number of elements, the
 chunk is compressed at once (`manage_full_zero`). This counter must be exactly
 in sync with the content: an out-of-sync counter would compress a chunk that is not
 uniform, hence the care taken to propagate it in copies.
