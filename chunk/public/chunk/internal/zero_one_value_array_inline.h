@@ -1109,10 +1109,6 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
     }
 }
 
-// old_nb_chunk is sampled BEFORE resize_common() updates nb_chunk, so the loop
-// below initialises only the chunks that were just added. On a shrink
-// resize_common() returns early and nb_chunk <= old_nb_chunk, which leaves that
-// loop empty -- the array reports the smaller size but keeps its storage.
 template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
 {
@@ -1185,6 +1181,10 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
     }
 }
 
+// old_nb_chunk is sampled BEFORE resize_common() updates nb_chunk, so the loop
+// below constructs only the chunks just added. On a shrink resize_common() has
+// already released the dropped chunks (release_chunk_range()) and nb_chunk <=
+// old_nb_chunk leaves that loop empty.
 template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::resize(IntType newsz)
 {
