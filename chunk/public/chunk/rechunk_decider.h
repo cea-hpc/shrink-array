@@ -108,7 +108,7 @@ struct RechunkPolicy
                                         ///< it was a fixed cost for nothing (shrink_bench
                                         ///< zero dyn, 64 threads: ~9% of an iteration).
                                         ///< 1 or 0 disables.
-    int advisor_grid_bits = 2;          ///< the advisor's candidate sizes between the
+    int    advisor_grid_bits   = 2;     ///< the advisor's candidate sizes between the
                                         ///< powers of two (ChunkSizeAdvisor::Options::
                                         ///< grid_bits): the multiples of 64 whose C/64 has
                                         ///< at most this many significant bits; 0: none.

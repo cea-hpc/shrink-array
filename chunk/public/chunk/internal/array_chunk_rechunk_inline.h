@@ -471,8 +471,8 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         tmp.exit_census_ = false;
         // Its chunk_list (the OLD geometry's) is freed with it.
     }
-    const auto t5                                      = t_now(); // tmp destroyed
-    r_teardown                                         = rss_now();
+    const auto t5 = t_now(); // tmp destroyed
+    r_teardown    = rss_now();
 
     // Free the OLD-geometry blocks tmp just parked into the old-size reuse
     // list. Nothing pops them again (the array has moved off old_size), so

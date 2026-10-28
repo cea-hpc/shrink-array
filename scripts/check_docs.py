@@ -63,6 +63,13 @@ ALLOWED = {
     "FAST_ALLOC_MAX_CONST_BLOCK_SIZE", "internal/static_const_array_define.h",
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
+    # the rechunk decider's former environment variables (now RechunkPolicy fields and
+    # shrink_bench options) and the trace variables CHUNK_LOG replaced
+    "CHUNK_RECHUNK_DRY_RUN", "CHUNK_RECHUNK_MAX_COARSEN", "CHUNK_ADVISOR_MIN_GAIN_MB", "CHUNK_ADVISOR_GRID_BITS",
+    "CHUNK_ADVISOR_BACKOFF_MAX", "CHUNK_COARSEN_MIN_META_MB", "CHUNK_COARSEN_MIN_META_RATE", "CHUNK_FORCE_RECHUNK",
+    "CHUNK_FORCE_RECHUNK_AT", "CHUNK_FORCE_RECHUNK_TOGGLE", "CHUNK_FORCE_RECHUNK_ALT", "CHUNK_ADVISOR_PERIOD",
+    "SHRINK_BENCH_ADVISE_ALL", "CHUNK_RECHUNK_TRACE", "CHUNK_RECHUNK_TRACE_SLICES", "CHUNK_RECHUNK_MEMTRACE",
+    "CHUNK_RECHUNK_TRACE_MEM", "CHUNK_AFFINITY_TRACE", "ArrayChunkCore::spare_chunk_list_",
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)
