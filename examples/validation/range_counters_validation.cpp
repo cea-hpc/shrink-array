@@ -132,6 +132,18 @@ void compress_in_region(Arr& arr)
     end_phase();
 }
 
+/// @brief Serial zero_any has no between-region pass: the writers' pass folds
+///        the uniform chunks (as pattern_validation's end_phase). A template, so
+///        that the other builds do not see the call.
+template <typename Arr>
+void writers_pass()
+{
+    if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
+    {
+        Arr::make_block_compression();
+    }
+}
+
 constexpr double plain_value  = 1.0; ///< neither constant
 constexpr double second_value = 2.0; ///< the arrays' second value
 
@@ -275,12 +287,7 @@ int run_fill_constant_case()
     arr[static_cast<int>(3 * csz)]         = 0.0;
     ref[static_cast<std::size_t>(3 * csz)] = 0.0;
     compress_in_region(arr);
-    // Serial zero_any has no between-region pass: the writers' pass folds the
-    // uniform chunks (as pattern_validation's end_phase).
-    if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
-    {
-        Array<double>::make_block_compression();
-    }
+    writers_pass<Array<double>>();
     check("setup");
     expect_constant(0, "setup");
     if (second_applies)
