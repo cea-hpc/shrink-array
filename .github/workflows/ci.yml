@@ -17,7 +17,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, threads, cpp23]
+    branches: [main, develop, threads, cpp23, cpp26]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
@@ -98,7 +98,12 @@ jobs:
           fi
           echo "no fixup commit in $range"
 
+  # cpp26 needs C++26 static reflection and contracts: GCC 16, which the
+  # runners do not have (gcc16-cpp26 below builds it); GCC 14 stops at its
+  # configure step. This file is the same on every branch -- it reaches cpp23
+  # and cpp26 through the merges -- so the branch is told apart here.
   build-test:
+    if: github.ref_name != 'cpp26'
     name: gcc 14, ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -187,6 +192,7 @@ jobs:
   # the TBB adaptor on top): ThreadSanitizer sees those as it does not see OpenMP's.
   # The check target builds and runs std_thread_validation and tbb_validation too.
   std-tsan:
+    if: github.ref_name != 'cpp26'
     name: std backend, ThreadSanitizer
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -226,4 +232,50 @@ jobs:
       # The _1thr tests run in the other jobs: one thread, no race for
       # ThreadSanitizer to see, and its cost all the same.
       - name: Run the validation harnesses (check target)
+        run: cmake --build build --target check
+
+  # The cpp26 branch, in the official gcc image: GCC 16 (-freflection, the
+  # contracts) on Debian. OpenMP and serial only: ThreadSanitizer needs the
+  # host's vm.mmap_rnd_bits lowered, which a container cannot do, and the
+  # other jobs' targets (AArch64, std + TBB, GenMC) have nothing of C++26 to
+  # check that develop and cpp23 do not already cover.
+  gcc16-cpp26:
+    if: github.ref_name == 'cpp26'
+    name: gcc 16, cpp26, ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: gcc:16.2.0-trixie
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: OpenMP
+            cmake_args: -DOMP=ON
+          - name: serial
+            cmake_args: -DOMP=OFF
+    env:
+      # The unity harnesses, as build-test: two at a time fit the runner's 16 GB.
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          apt-get update -q
+          apt-get install -y -q cmake ninja-build libbz2-dev
+          g++ --version
+          cmake --version
+          # The container runs as root, the checkout belongs to the runner's
+          # user: without this, git refuses the tree and the build stamp
+          # (git describe) has no revision.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          ${{ matrix.cmake_args }}
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
