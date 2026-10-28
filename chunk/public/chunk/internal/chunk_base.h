@@ -742,7 +742,8 @@ class ChunkBase : public CRTPSupport<Derived>,
      * @brief One walk over the materialised buffer against two constants.
      *
      * @details Tracks "all @p first_v" and "all @p second_v" together and stops
-     *          as soon as both are disproved. When the two constants coincide a
+     *          as soon as both are disproved; once one is, the rest of the walk
+     *          compares against the other only. When the two constants coincide a
      *          constant run satisfies both; it is reported as `first` ONLY --
      *          which is what every caller wants (fill_list_to_compress files it
      *          once, compress_int must not clear it twice). Loads the values
@@ -1136,6 +1137,19 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///        A quarter of a 256-element chunk: four early-exit points, and a
     ///        block long enough for the vector loop to matter.
     static constexpr unsigned int scan_block = 64;
+
+    /// @brief Where walk_constant() stopped, and whether the run held.
+    struct ConstantWalk
+    {
+        bool         holds = true; ///< elements [from, count) all equal the value
+        unsigned int end   = 0;    ///< the walk's end: count, or the end of the block that disproved it
+    };
+
+    /// @brief The constant walk of is_constant_to(), from element @p from:
+    ///        branch-free blocks of scan_block, an exit between them.
+    /// @pre Not packed (Bit): @p vals is an array of T.
+    [[nodiscard]] static ConstantWalk
+    walk_constant(const T* vals, InT<T> value, unsigned int from, unsigned int count) noexcept;
 
     /// @brief Whether this chunk is currently materialised (not compressed
     ///        to a constant), at the granularity Derived supports.

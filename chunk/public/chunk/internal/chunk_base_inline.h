@@ -661,6 +661,16 @@ ChunkBase<T, Derived>::scan_constants(InT<T> first_v, InT<T> second_v, unsigned 
         {
             break;
         }
+        if (scan.first != scan.second)
+        {
+            // One hypothesis left (zero_any: from the first block, its second_v
+            // being element 0): one compare per element for the rest, not two.
+            const ConstantWalk rest = walk_constant(vals, scan.first ? first_v : second_v, i, count);
+            i                       = rest.end;
+            scan.first              = scan.first && rest.holds;
+            scan.second             = scan.second && rest.holds;
+            break;
+        }
     }
     if constexpr (chunk_config::stats)
     {
@@ -685,9 +695,20 @@ template <typename T, typename Derived>
         return bits::scan_words(internal::as_words(values_load()), count) ==
                (static_cast<bool>(value) ? bits::Uniform::all_true : bits::Uniform::all_false);
     }
+    const ConstantWalk walk = walk_constant(values_load(), value, 0, count);
+    if constexpr (chunk_config::stats)
+    {
+        add_chunk_scan_read<Derived>(static_cast<long>(walk.end)); // block granularity
+    }
+    return walk.holds;
+}
+
+template <typename T, typename Derived>
+[[nodiscard]] typename ChunkBase<T, Derived>::ConstantWalk
+ChunkBase<T, Derived>::walk_constant(const T* vals, InT<T> value, unsigned int from, unsigned int count) noexcept
+{
     // Same shape as scan_constants(): branch-free blocks, exit between them.
-    const T*     vals = values_load();
-    unsigned int i    = 0;
+    unsigned int i = from;
     while (i < count)
     {
         const unsigned int block_end = std::min(count, i + scan_block);
@@ -700,18 +721,10 @@ template <typename T, typename Derived>
         i = block_end;
         if (bad != 0)
         {
-            if constexpr (chunk_config::stats)
-            {
-                add_chunk_scan_read<Derived>(static_cast<long>(i));
-            }
-            return false;
+            return ConstantWalk{false, i};
         }
     }
-    if constexpr (chunk_config::stats)
-    {
-        add_chunk_scan_read<Derived>(static_cast<long>(count));
-    }
-    return true;
+    return ConstantWalk{true, count};
 }
 
 template <typename T, typename Derived>
