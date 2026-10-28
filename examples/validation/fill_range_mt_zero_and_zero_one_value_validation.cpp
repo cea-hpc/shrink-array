@@ -100,7 +100,7 @@ static long materialised(const Arr& arr, long nchunks)
     return count;
 }
 
-/// @brief One parallel phase running @p body over [0, n), then the flush and
+/// @brief One parallel phase running @p body over [0, @p count), then the flush and
 ///        the compression pass -- the manual phase calls of manage_ompt.h.
 template <typename Fn>
 static void phase(long count, Fn&& body)

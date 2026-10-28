@@ -82,7 +82,7 @@ constexpr const char* variant_name()
     }
 }
 
-/// @brief Elements of [b, e) that do not read @p want.
+/// @brief Elements of [@p first, @p last) that do not read @p want.
 long mismatches(const Arr& arr, int first, int last, double want)
 {
     long bad = 0;

@@ -1258,8 +1258,8 @@ void for_each_value(const Arr& arr, F&& func)
 }
 
 /**
- * @brief for_each_span() on a chunked array: f(std::span<const T>) block by
- *        block, and f(v, count) on a compressed chunk when f accepts it
+ * @brief for_each_span() on a chunked array: @p func(std::span<const T>) block by
+ *        block, and func(value, count) on a compressed chunk when func accepts it
  *        (ArrayChunkBase::for_each_span).
  * @warning No other thread may write @p arr during the call (the iterator's
  *          contract). Callable from a parallel region on disjoint slices.

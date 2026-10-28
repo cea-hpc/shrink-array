@@ -353,7 +353,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *          the binary was not built with, rather than ignoring it silently.
      *
      * @param value the chunk size the caller wanted; only compared, never applied
-     * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=v`
+     * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=<value>`
      *          (a power of two or a multiple of 64).
      */
     static void set_chunk_size(int value)

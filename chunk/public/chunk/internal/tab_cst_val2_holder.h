@@ -540,7 +540,7 @@ class GlobalVecHolder
      * @brief The value the slot @p ptr stands for.
      *
      * @details The one way to recover a value from a slot (probe revalidations,
-     *          rehash, degraded scans). Never `p[0]`: nothing is stored at a slot, so
+     *          rehash, degraded scans). Never `ptr[0]`: nothing is stored at a slot, so
      *          that reads a zero page (without MM_PROTECT), no value is ever found
      *          again and every registration takes the lock.
      *
@@ -559,7 +559,7 @@ class GlobalVecHolder
      * @brief Look @p value up in the index, lock-free. This is the hot path.
      * @return Its slot, or null -- meaning "not found HERE", never
      *         "not registered". The caller must fall back.
-     * @details A hit is revalidated (value_of_ptr(p) == v) whatever the
+     * @details A hit is revalidated (value_of_ptr(slot) == @p value) whatever the
      *          concurrency: open addressing probes across collisions, so the
      *          slot reached may belong to another value.
      */

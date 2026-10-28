@@ -245,14 +245,14 @@ struct StaticChunkSize
         return static_chunk_mask;
     }
 
-    /// @brief The chunk of element @p index (>= 0): i / size(). Unsigned: a signed
+    /// @brief The chunk of element @p index (>= 0): index / size(). Unsigned: a signed
     ///        division would add a fix-up for negative values.
     template <typename I>
     [[nodiscard]] static constexpr I chunk_of(I index) noexcept
     {
         return static_cast<I>(static_cast<std::make_unsigned_t<I>>(index) / size());
     }
-    /// @brief Element @p index's (>= 0) offset in its chunk: i % size() (a mask
+    /// @brief Element @p index's (>= 0) offset in its chunk: index % size() (a mask
     ///        for a power of two).
     template <typename I>
     [[nodiscard]] static constexpr I offset_of(I index) noexcept
@@ -294,13 +294,13 @@ class DynamicChunkSize
         return modulo_;
     }
 
-    /// @brief The chunk of element @p index (>= 0): i / size(), without a division.
+    /// @brief The chunk of element @p index (>= 0): index / size(), without a division.
     ///        32-bit index: one 64x64->128 multiplication (Lemire, Kaser & Kurz
     ///        2019, exact for every 32-bit dividend). 64-bit: Granlund &
     ///        Montgomery's round-down method (libdivide's branch-free path).
     template <typename I>
     [[nodiscard]] I chunk_of(I index) const noexcept;
-    /// @brief Element @p index's (>= 0) offset in its chunk: i % size().
+    /// @brief Element @p index's (>= 0) offset in its chunk: index % size().
     template <typename I>
     [[nodiscard]] I offset_of(I index) const noexcept;
 

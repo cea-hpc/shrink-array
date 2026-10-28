@@ -38,7 +38,7 @@
 namespace
 {
 
-/// @brief Is tab_mask[i] flipped at iteration @p iter? ~1 element in 61 of the
+/// @brief Is tab_mask[@p index] flipped at iteration @p iter? ~1 element in 61 of the
 ///        mixed segments, a different set each iteration.
 constexpr bool mask_flips(Int index, Int iter) noexcept
 {

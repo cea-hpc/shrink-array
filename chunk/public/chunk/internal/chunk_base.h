@@ -1156,7 +1156,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @param offset Element offset; used only when Derived distinguishes
     ///          writtenness per-offset (e.g. zero_one_value/zero_any's second-value
     ///          slot); ignored otherwise (falls back to derived().written()).
-    /// @return true if the chunk (or offset j) holds real, materialised data.
+    /// @return true if the chunk (or @p offset) holds real, materialised data.
     [[nodiscard]] bool is_written_at(int offset) const noexcept;
 
     /**

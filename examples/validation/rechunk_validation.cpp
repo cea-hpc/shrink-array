@@ -110,7 +110,7 @@ void drain_compression_backlog()
 // ── Serial or parallel passes ────────────────────────────────────────────────
 bool g_parallel = false; ///< --mode: the pass being run
 
-/// @brief f(i) for i in [0, N): a plain loop, or a work-shared parallel
+/// @brief @p func(i) for i in [0, @p count): a plain loop, or a work-shared parallel
 ///        region (static schedule) followed by the phase-end drain.
 template <typename F>
 void for_each_index(long count, F&& func)
@@ -138,7 +138,7 @@ void for_each_index(long count, F&& func)
     drain_compression_backlog();
 }
 
-/// @brief How many i in [0, N) satisfy bad(i) -- the checks, in the same
+/// @brief How many i in [0, @p nindex) satisfy @p bad(i) -- the checks, in the same
 ///        serial or parallel pass. Details are then printed by a serial scan.
 template <typename F>
 long count_if_index(long nindex, F&& bad)

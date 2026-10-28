@@ -75,7 +75,7 @@ int static_owner(long long index, long long count, int size)
     return static_cast<int>(rem + ((index - (rem * (quot + 1))) / quot));
 }
 
-/// @brief The rank schedule(static, c) gives iteration @p index (offset from first).
+/// @brief The rank schedule(static, @p chunk) gives iteration @p index (offset from first).
 int chunks_owner(long long index, int chunk, int size)
 {
     return static_cast<int>((index / chunk) % size);

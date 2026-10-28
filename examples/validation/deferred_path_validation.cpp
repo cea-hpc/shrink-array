@@ -198,7 +198,7 @@ static bool same_bits(const T& lhs, const T& rhs)
     return std::memcmp(&lhs, &rhs, sizeof(T)) == 0;
 }
 
-/// @brief Apply @p op to c[i] -- a compound operator whose result @p op
+/// @brief Apply @p op to arr[index] -- a compound operator whose result @p op
 ///        converts to T -- and check that result against a fresh read of the
 ///        element. @return 1 on a mismatch, 0 otherwise.
 /// @note Sound under a static schedule only: each thread re-reads an element
@@ -216,7 +216,7 @@ constexpr bool is_complex_v = false;
 template <typename V>
 constexpr bool is_complex_v<std::complex<V>> = true;
 
-/// @brief Every compound operator of T on c[i], each result used and checked.
+/// @brief Every compound operator of T on arr[index], each result used and checked.
 ///        Values stay small: no overflow, no shift past the width, no division
 ///        by zero. @return the number of results that were not the stored value.
 template <typename T, typename C>

@@ -327,13 +327,13 @@ double convert_memory(double memory_value);
 void memory_consumption(const std::string& msg);
 
 /// @brief Linear map of @p index from [0, sz] to [0, sz1].
-/// @return (sz1 / sz) * i, truncated to Int.
+/// @return (sz1 / sz) * index, truncated to Int.
 Int linear_correlation(Int index, Int sz, Int sz1);
 /// @brief Power-law map of @p index from [0, sz] to [0, sz1].
-/// @return sz1 * (i / sz)^p, truncated to Int.
+/// @return sz1 * (index / sz)^rate, truncated to Int.
 Int exponential_correlation(Int index, Int sz, Int sz1, double rate);
 /// @brief Square-root map of @p index from [0, sz] to [0, sz1].
-/// @return sz1 * sqrt(i / sz), truncated to Int.
+/// @return sz1 * sqrt(index / sz), truncated to Int.
 Int interpolation(Int index, Int sz, Int sz1);
 
 /// @brief Edit distance between @p lhs and @p rhs (insertions, deletions, substitutions).

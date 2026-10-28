@@ -165,7 +165,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      *          (one decision per chunk, not per element). Everything else goes
      *          through operator[].
      *
-     * @param index chunk index; the caller guarantees 0 <= i < nb_chunk
+     * @param index chunk index; the caller guarantees 0 <= index < nb_chunk
      */
     [[nodiscard]] ChunkType& chunk_ref(std::size_t index) noexcept
     {

@@ -229,7 +229,7 @@ template <typename T, typename... Args>
 /**
  * @brief Resize @p vec to @p count; the elements it gains are copies of @p value,
  *        constructed by a team when there are many (construct_range).
- * @details Keeps [0, min(old size, n)), as std::vector::resize(n, value). A
+ * @details Keeps [0, min(old size, count)), as std::vector::resize(count, value). A
  *          reallocation copies the kept elements on the calling thread; a row
  *          filled from empty (every storage build) has none.
  */

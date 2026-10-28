@@ -104,7 +104,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& end,
                       std::chrono::duration<double>&         elapsed_seconds);
 
-/// @brief Store sqrt(@p value) at index @p index of @p tab. For a zero::Array, the raw reference tab(i) is used only
+/// @brief Store sqrt(@p value) at index @p index of @p tab. For a zero::Array, the raw reference tab(index) is used only
 ///        when the chunk is written, operator[] otherwise.
 /// @param tab Destination array.
 /// @param index Element index.
@@ -139,12 +139,12 @@ void neutral_sqrt_assign(Arr& tab, Int index, T value)
 /**
  * @brief One iteration of the main compute loop, over [start0, end0).
  *
- * @param bench_arr      the arrays.
- * @param iter      the iteration index; the workload varies its pattern with k % 16.
+ * @param bench_arr the arrays.
+ * @param iter the iteration index; the workload varies its pattern with iter % 16.
  * @param start0 start of the window this iteration writes.
  * @param end0 end of that window.
  * @param tab_nba1 the per-iteration thresholds main() precomputed; read at
- *        [k], never written here.
+ *        [iter], never written here.
  * @param tab_nba2 see tab_nba1.
  * @param val_sum the running accumulators (val_sum, long_val_sum, v_real,
  *        v_im), ADDED TO.
