@@ -22,18 +22,20 @@ def run_rechunk_phase(args, extra_ldpath, errors):
     advisor -> decider -> rechunk_to pipeline works end to end in the live loop.
 
       * no --compress            : quiescent between-phase path (no in-loop compr).
-      * CHUNK_ADVISOR_PERIOD=4    : tick often so a verdict lands within the run.
-      * CHUNK_COARSEN_MIN_META_MB : the floor of a coarsening's metadata gain;
-                                    0 here so the move fires on the shrunk
+      * --advisor_period 4       : tick often so a verdict lands within the run.
+      * --rechunk_coarsen_min_meta_mb 0 : the floor of a coarsening's metadata
+                                    gain, off so the move fires on the shrunk
                                     arrays this test uses.
-      * CHUNK_COARSEN_MIN_META_RATE : its other gate, MB per second of
+      * --rechunk_coarsen_min_meta_rate 0 : its other gate, MB per second of
                                     estimated rebuild; scale-free, so it would
                                     pass anyway, but 0 keeps the test about
                                     the pipeline, not the policy.
-      * CHUNK_ADVISOR_MIN_GAIN_MB : the absolute deadband (8 MB by policy); 0
-                                    here for the same reason -- at --divisor 200
+      * --rechunk_min_gain_mb 0  : the absolute deadband (8 MB by policy), off
+                                    for the same reason -- at --divisor 200
                                     the 64 -> 128 metadata gain is ~0.7 MB, and
                                     the deadband alone refused every tick.
+        (shrink_bench options, not environment variables: the library reads
+        none of these from the environment.)
       * check stage              : --mode check reads the oracle (data_<tab>_<k>
                                    .bin, written once by the baseline run of
                                    the correctness phase in output_dir), so it
@@ -58,22 +60,22 @@ def run_rechunk_phase(args, extra_ldpath, errors):
         print(dim("   (no chunk-family variants selected — skipped)"))
         return 0, 0
 
+    # The advisor's period, and the gates of a coarsening off: the metadata
+    # floor and rate, and the absolute deadband of the data branch (the
+    # ~0.7 MB gain of the arrays --divisor leaves must fire).
+    rechunk_args = ["--advisor_period", "4",
+                    "--rechunk_coarsen_min_meta_mb", "0",
+                    "--rechunk_coarsen_min_meta_rate", "0",
+                    "--rechunk_min_gain_mb", "0"]
     stage_extra_args = {
-        "check": ["--mode", "check"],
-        "perf":  ["--mode", "perf", "--divisor", "200", "--iter_max", "40"],
+        "check": ["--mode", "check"] + rechunk_args,
+        "perf":  ["--mode", "perf", "--divisor", "200", "--iter_max", "40"] + rechunk_args,
     }
     env_common = {
         "OMP_NUM_THREADS":      str(args.check_threads),
         # The applied moves this phase looks for ("[APPLIED]") are log
         # messages of level info, not written by default.
         "CHUNK_LOG":            "warn,rechunk=info",
-        "CHUNK_ADVISOR_PERIOD": "4",
-        # The gates of a coarsening, off: the metadata floor and rate, and the
-        # absolute deadband of the data branch (the ~0.7 MB gain of the
-        # arrays --divisor leaves must fire).
-        "CHUNK_COARSEN_MIN_META_MB": "0",
-        "CHUNK_COARSEN_MIN_META_RATE": "0",
-        "CHUNK_ADVISOR_MIN_GAIN_MB": "0",
     }
 
     def _oracle_ok(cfg):
@@ -127,8 +129,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                     _entry = (
                         f"RECHUNK_FEATURE_FAIL: {exe} "
                         f"{' '.join(stage_extra_args[stage])} stage={stage} code={code}\n"
-                        f"  (expected '[APPLIED]'; env CHUNK_ADVISOR_PERIOD=4 "
-                        f"CHUNK_COARSEN_MIN_META_MB=0 CHUNK_COARSEN_MIN_META_RATE=0 CHUNK_ADVISOR_MIN_GAIN_MB=0)\n"
+                        f"  (expected '[APPLIED]')\n"
                         f"  reproduce: {repro_line([exe] + stage_extra_args[stage], run_env, rdir)}\n"
                         f"  stderr_tail:\n    " + err_tail.replace('\n', '\n    ')
                     )

@@ -23,7 +23,7 @@
 #include <array>     // std::array (CHUNK_ADVISOR_TABLE title)
 #include <cstddef>   // std::size_t
 #include <cstdio>    // std::fprintf, std::fflush (the advisor table, print_rechunk_log)
-#include <cstdlib>   // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks
+#include <cstdlib>   // std::getenv -- CHUNK_RECHUNK_CHURN, CHUNK_ADVISOR_TABLE
 #include <cstring>   // std::strcmp (CHUNK_ADVISOR_TABLE)
 #include <format>    // std::format_to_n (CHUNK_ADVISOR_TABLE title)
 #include <string>    // std::string
@@ -31,7 +31,6 @@
 #include "chunk/rechunk_decider.h"             // the declarations these bodies belong to
 #include "chunk/chunk_size_advisor.h"          // ChunkSizeAdvisor, ChunkSizeReport
 #include "chunk/config.h"                      // build_config::chunk_dynamic
-#include "chunk/internal/env_parse.h"          // env_number / env_flag (checked, not atoi)
 #include "chunk/log.h"                         // CHUNK_LOG, logging::enabled
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
 #include "chunk/internal/churn_counters.h"     // CHUNK_RECHUNK_CHURN
@@ -40,19 +39,6 @@
 
 namespace shrink_array
 {
-
-/// @brief CHUNK_RECHUNK_DRY_RUN=1 (read once): analyse and log, never apply a
-///        move, whatever the policy says -- the way to measure the analyses'
-///        cost on the same binary.
-inline bool rechunk_env_dry_run() noexcept
-{
-    static const bool dry_run = []
-    {
-        const char* env = std::getenv("CHUNK_RECHUNK_DRY_RUN");
-        return env != nullptr && env[0] != '\0' && env[0] != '0';
-    }();
-    return dry_run;
-}
 
 // Cap a coarsening move to at most pol_.max_coarsen_factor x cur_size per
 // rechunk. A large coarsening leans on the least reliable part of the model
@@ -63,24 +49,7 @@ inline bool rechunk_env_dry_run() noexcept
 // no cap applies).
 inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool banned) const
 {
-    // CHUNK_RECHUNK_MAX_COARSEN=<n> overrides the policy's factor (1 = no
-    // cap), read once: tests whether larger steps are safe without a rebuild.
-    static const unsigned env_factor = []() -> unsigned
-    {
-        const char* env = std::getenv("CHUNK_RECHUNK_MAX_COARSEN");
-        if (env == nullptr || env[0] == '\0')
-        {
-            return 0u; // unset: keep the policy
-        }
-        unsigned count = 0;
-        if (!shrink_array::parse_number(env, count) || count == 0)
-        {
-            shrink_array::warn_invalid_env("CHUNK_RECHUNK_MAX_COARSEN", env);
-            return 0u; // invalid: keep the policy
-        }
-        return count;
-    }();
-    const unsigned max_factor = env_factor != 0 ? env_factor : pol_.max_coarsen_factor;
+    const unsigned max_factor = pol_.max_coarsen_factor;
 
     if (rep.best < 0 || rep.cur < 0 || max_factor <= 1)
     {
@@ -174,25 +143,9 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // and a fraction of the current memory. On a large array a fixed deadband
     // is cleared by noise; the relative gate stops chasing sub-percent "gains"
     // (thrashing). Coarsening faces a higher bar (model optimism, above).
-    // CHUNK_ADVISOR_MIN_GAIN_MB overrides the absolute deadband, in MB; 0
-    // disables it. Read once. The feature test (python/bench_and_test.py) needs
-    // it: its shrunk arrays (--divisor) fall under the default.
-    static const std::size_t env_min_gain = []
-    {
-        const char* env = std::getenv("CHUNK_ADVISOR_MIN_GAIN_MB");
-        if (env == nullptr || env[0] == '\0')
-        {
-            return static_cast<std::size_t>(-1); // unset: keep the policy
-        }
-        double mb = 0.;
-        if (!shrink_array::parse_number(env, mb))
-        {
-            shrink_array::warn_invalid_env("CHUNK_ADVISOR_MIN_GAIN_MB", env);
-            return static_cast<std::size_t>(-1); // not a number: keep the policy
-        }
-        return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
-    }();
-    const std::size_t min_gain = env_min_gain == static_cast<std::size_t>(-1) ? pol_.min_gain_bytes : env_min_gain;
+    // min_gain_bytes = 0 disables the absolute deadband (the feature test of
+    // python/bench_and_test.py does: its shrunk arrays fall under the default).
+    const std::size_t min_gain = pol_.min_gain_bytes;
 
     const auto  rel_gate  = static_cast<std::size_t>(pol_.min_gain_frac * static_cast<double>(cur_e.mem_bytes));
     std::size_t data_gate = std::max(min_gain, rel_gate);
@@ -213,44 +166,11 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         // The metadata branch has its own gates, both required: a floor (is the
         // gain measurable?) and a rate (is it worth a rebuild?). An exact gain
         // too small to pay for its rebuild is still a bad move, and refusing it
-        // keeps the decision where the data forecast is sound.
-        // CHUNK_COARSEN_MIN_META_MB overrides the floor, in MB, and
-        // CHUNK_COARSEN_MIN_META_RATE the rate, in MB per second of estimated
-        // rebuild; 0 disables either. Read once. The feature test needs them:
-        // it shrinks its arrays on purpose and still wants the move to fire.
-        static const std::size_t env_meta_floor = []() -> std::size_t
-        {
-            const char* env = std::getenv("CHUNK_COARSEN_MIN_META_MB");
-            if (env == nullptr || env[0] == '\0')
-            {
-                return static_cast<std::size_t>(-1); // unset: keep the policy
-            }
-            double mb = 0.;
-            if (!shrink_array::parse_number(env, mb))
-            {
-                shrink_array::warn_invalid_env("CHUNK_COARSEN_MIN_META_MB", env);
-                return static_cast<std::size_t>(-1); // not a number: keep the policy
-            }
-            return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
-        }();
-        static const double env_meta_rate = []() -> double
-        {
-            const char* env = std::getenv("CHUNK_COARSEN_MIN_META_RATE");
-            if (env == nullptr || env[0] == '\0')
-            {
-                return -1.; // unset: keep the policy
-            }
-            double rate = 0.;
-            if (!shrink_array::parse_number(env, rate) || rate < 0.)
-            {
-                shrink_array::warn_invalid_env("CHUNK_COARSEN_MIN_META_RATE", env);
-                return -1.; // not a number: keep the policy
-            }
-            return rate;
-        }();
-        const std::size_t meta_floor =
-            env_meta_floor == static_cast<std::size_t>(-1) ? pol_.coarsen_min_meta_gain_bytes : env_meta_floor;
-        const double min_rate = env_meta_rate < 0. ? pol_.coarsen_min_meta_rate : env_meta_rate;
+        // keeps the decision where the data forecast is sound. 0 disables
+        // either (the feature test does: it shrinks its arrays on purpose and
+        // still wants the move to fire).
+        const std::size_t meta_floor = pol_.coarsen_min_meta_gain_bytes;
+        const double      min_rate   = pol_.coarsen_min_meta_rate;
         // A zero-cost estimate (empty array) passes.
         const bool rate_ok = min_rate <= 0. || est_cost_ms <= 0. || meta_rate >= min_rate;
         clears_gate =
@@ -303,9 +223,8 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // analysis (capped); anything else -- a move, a cooldown, a best still
     // stabilising, an anti-reversal hold -- looks again at the next tick.
     // consider() skips the analysis until next_look_tick.
-    static const int backoff_env = shrink_array::env_number<int>("CHUNK_ADVISOR_BACKOFF_MAX", -1);
-    const int        backoff_max = backoff_env >= 0 ? backoff_env : pol_.max_backoff_ticks;
-    const bool       settled =
+    const int  backoff_max = pol_.max_backoff_ticks;
+    const bool settled =
         !act && (std::strcmp(reason, "already optimal") == 0 || std::strcmp(reason, "gain below deadband") == 0);
     if (settled && backoff_max > 1)
     {
@@ -322,7 +241,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // rechunk=debug: the verdicts that wait as well.
     if (act)
     {
-        const bool dry = pol_.dry_run || rechunk_env_dry_run();
+        const bool dry = pol_.dry_run;
         CHUNK_LOG(info, rechunk,
                   "decide {}: {} S={} -> S'={} (gain {:.1f} MB = meta {:.1f} + data {:.1f}, stable {} ticks, est. cost "
                   "{:.0f} ms, {:.0f} MB/s, chunks {} mat {}){}",
@@ -386,22 +305,14 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
     }
     else
     {
-        // DEBUG: CHUNK_FORCE_RECHUNK=<size> forces every array to rechunk_to
-        // <size> once, bypassing the advisor and the policy, to exercise the
-        // rechunk path. 0/unset disables. Read once.
-        static const unsigned force_sz = shrink_array::env_number<unsigned>("CHUNK_FORCE_RECHUNK", 0u);
-        // CHUNK_FORCE_RECHUNK_AT=<iter> delays the forced rechunk until iter >=
-        // this (default 0): a later iter rechunks POPULATED arrays with pending
-        // deferred ops.
-        static const int force_at = shrink_array::env_number<int>("CHUNK_FORCE_RECHUNK_AT", 0);
-        // CHUNK_FORCE_RECHUNK_TOGGLE=1 rechunks at EVERY tick (iter>=force_at),
-        // alternating force_sz <-> CHUNK_FORCE_RECHUNK_ALT (default 64).
-        static const unsigned force_alt    = shrink_array::env_number<unsigned>("CHUNK_FORCE_RECHUNK_ALT", 64u);
-        static const bool     force_toggle = shrink_array::env_number<int>("CHUNK_FORCE_RECHUNK_TOGGLE", 0) != 0;
-        if (force_sz != 0u && !(pol_.dry_run || rechunk_env_dry_run()) && iter >= force_at)
+        // Forced re-chunk (RechunkPolicy::force_size, tests): every array to
+        // force_size once, bypassing the advisor and the policy, to exercise
+        // the rechunk path; force_toggle alternates with force_alt at every tick.
+        if (pol_.force_size != 0u && !pol_.dry_run && iter >= pol_.force_at)
         {
             const unsigned cur_sz = arr.chunk_size();
-            const unsigned tgt    = force_toggle ? (cur_sz == force_sz ? force_alt : force_sz) : force_sz;
+            const unsigned tgt =
+                pol_.force_toggle ? (cur_sz == pol_.force_size ? pol_.force_alt : pol_.force_size) : pol_.force_size;
             if (cur_sz != tgt)
             {
                 CHUNK_LOG(info, rechunk, "force {}: {} -> {}", name, cur_sz, tgt);
@@ -413,7 +324,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             return false;
         }
 
-        // memory=info (or CHUNK_RECHUNK_MEMTRACE): once per tick, the process
+        // memory=info: once per tick, the process
         // memory split into the chunk value arena (resident pages, mincore)
         // and the rest. MiB, like the re-chunk's "rss" line (rss_mib_now), so
         // the two traces add up.
@@ -456,7 +367,9 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             return false;
         }
 
-        const ChunkSizeReport& rep = ChunkSizeAdvisor<T>::analyze(arr);
+        typename ChunkSizeAdvisor<T>::Options opt;
+        opt.grid_bits              = pol_.advisor_grid_bits;
+        const ChunkSizeReport& rep = ChunkSizeAdvisor<T>::analyze(arr, opt);
 
         // CHUNK_RECHUNK_CHURN=1 (every array) or =<name>: the per-phase
         // transient the snapshot above cannot see (churn_counters.h).
@@ -561,7 +474,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         }
 
         const bool act = observe(&arr, tick, rep, name);
-        if (act && !(pol_.dry_run || rechunk_env_dry_run()) && rep.best >= 0)
+        if (act && !pol_.dry_run && rep.best >= 0)
         {
             const int      eff_best = capped_best_index(rep, hist_[&arr].coarsen_banned);
             const auto&    cur_e    = rep.table[static_cast<std::size_t>(rep.cur)];

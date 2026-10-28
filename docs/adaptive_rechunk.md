@@ -36,7 +36,7 @@ memory (metadata + materialised data).
 
 The candidates: the powers-of-two ratios (S×2 to S×16, S÷2 and S÷4), and between those
 bounds every multiple of 64 whose C / 64 has at most `Options::grid_bits` significant bits
-(`CHUNK_ADVISOR_GRID_BITS`; 2 by default: 192, 384, 768, 1536...: steps of 50% at most; 3 adds
+(`RechunkPolicy::advisor_grid_bits`, `--rechunk_grid_bits` in the benchmark; 2 by default: 192, 384, 768, 1536...: steps of 50% at most; 3 adds
 320, 448, 640, 896...: steps of 25%).
 Each row cuts the array into windows of C elements, read from the current chunks:
 
@@ -69,30 +69,34 @@ They now cost ~0.7 s on an 8.4 s `zero_one_value` run.
 ## 3. The decider: when and where to
 
 `RechunkDecider::consider()` (`rechunk_decider.h`, `internal/rechunk_decider_inline.h`) is
-called at each **tick**: every `CHUNK_ADVISOR_PERIOD` iterations in the benchmark
+called at each **tick**: every `--advisor_period` iterations in the benchmark
 (by default `max(10, iter_max / 20)`, i.e. 100 for 2,000 iterations; 0 disables it). It
-takes the best size from the table, then applies the policy (`RechunkPolicy`):
+takes the best size from the table, then applies the policy (`RechunkPolicy`). The library reads
+none of these settings from the environment: a program sets the fields; the benchmark exposes
+them as options (in brackets):
 
 | setting | default | role |
 |---|---|---|
 | `stability_ticks` | 3 | the best size must stay the same for 3 ticks |
 | `cooldown_ticks` | 5 | at least 5 ticks between two rechunks of the same array |
 | `anti_reversal_ticks` | 30 | no return to a size left less than 30 ticks ago |
-| `max_coarsen_factor` | **4** | a coarsening multiplies the size by 4 at most (`CHUNK_RECHUNK_MAX_COARSEN`) |
-| `min_gain_bytes`, `min_gain_frac` | 8 MB, 15% | data-side gain thresholds (`CHUNK_ADVISOR_MIN_GAIN_MB`) |
+| `max_coarsen_factor` | **4** | a coarsening multiplies the size by 4 at most (`--rechunk_max_coarsen`) |
+| `min_gain_bytes`, `min_gain_frac` | 8 MB, 15% | data-side gain thresholds (`--rechunk_min_gain_mb`) |
 | `coarsen_gain_multiple` | 3 | a coarsening judged on data must gain 3 times the threshold |
-| `coarsen_min_meta_gain_bytes` | 1 MB | minimum metadata-side gain (`CHUNK_COARSEN_MIN_META_MB`) |
-| `coarsen_min_meta_rate` | 250 MB/s | metadata gain per second of estimated rebuild time (`CHUNK_COARSEN_MIN_META_RATE`) |
+| `coarsen_min_meta_gain_bytes` | 1 MB | minimum metadata-side gain (`--rechunk_coarsen_min_meta_mb`) |
+| `coarsen_min_meta_rate` | 250 MB/s | metadata gain per second of estimated rebuild time (`--rechunk_coarsen_min_meta_rate`) |
 | `coarsen_trust_ratio` | 0.5 | learning: a coarsening that returned less than half of its forecast forbids the following ones |
-| `dry_run` | `true` | apply nothing (the benchmark sets it to `false`; `CHUNK_RECHUNK_DRY_RUN=1` forces it) |
-| `max_backoff_ticks` | 8 | an array whose verdict is a settled "no move" (already optimal, gain below the threshold) is analysed again after 2, 4, then up to 8 ticks; any other verdict brings it back to every tick (`CHUNK_ADVISOR_BACKOFF_MAX`, 0 or 1 disables) |
+| `dry_run` | `true` | apply nothing (the benchmark sets it to `false`; `--rechunk_dry_run` keeps it) |
+| `max_backoff_ticks` | 8 | an array whose verdict is a settled "no move" (already optimal, gain below the threshold) is analysed again after 2, 4, then up to 8 ticks; any other verdict brings it back to every tick (`--rechunk_backoff_max`, 0 or 1 disables) |
+| `advisor_grid_bits` | 2 | the advisor's candidate sizes between the powers of two, see §2 (`--rechunk_grid_bits`) |
+| `force_size`, `force_at`, `force_toggle`, `force_alt` | 0, 0, off, 64 | tests: re-chunk every array to `force_size` from iteration `force_at`, whatever the advisor says; `force_toggle` alternates with `force_alt` at every tick (`--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`) |
 
 A coarsening is accepted if **either** of two branches passes: the
 **metadata** branch (metadata gain above its floor, and enough throughput given
 the cost estimated by `rechunk_cost_ms()`), or the **data** branch (total gain above the
-multiplied threshold). Since this "gain per cost" criterion, `CHUNK_ADVISOR_MIN_GAIN_MB` is no longer
+multiplied threshold). Since this "gain per cost" criterion, `min_gain_bytes` is no longer
 enough to block coarsenings: to measure the cost of the analyses alone, use
-`CHUNK_RECHUNK_DRY_RUN=1`.
+`dry_run` (`--rechunk_dry_run`).
 
 Learning measures the gain of a coarsening **at unchanged data**: at the next
 tick, the row of the old size in the table (finer rows) gives the memory
@@ -180,7 +184,7 @@ match the actual geometry again.
 ## 7. Results
 
 Memory (GB) on `shrink_bench`, 64 threads, all arrays handed to the decider (the
-benchmark default; `SHRINK_BENCH_ADVISE_ALL=0` goes back to the five historical arrays):
+benchmark default; `--advise_five` goes back to the five historical arrays):
 
 | variant | static 64 (end) | dynamic without advisor (end) | **dynamic with advisor (end)** | static 256 (end) |
 |---|---|---|---|---|
@@ -192,8 +196,8 @@ Time cost of the advisor, measured on **the same binary** (averages over 3 round
 
 | dynamic `zero_one_value` | time | cost |
 |---|---|---|
-| without advisor (`CHUNK_ADVISOR_PERIOD=0`) | 8.38 s | — |
-| analyses only (`CHUNK_RECHUNK_DRY_RUN=1`) | 9.07 s | +0.69 s |
+| without advisor (`--advisor_period 0`) | 8.38 s | — |
+| analyses only (`--rechunk_dry_run`) | 9.07 s | +0.69 s |
 | analyses and rechunks (30) | 11.43 s | +2.36 s |
 
 For `zero_any`, the cost of the rechunks (33) ranges from 1 to 3.5 s depending on the measurement series. For

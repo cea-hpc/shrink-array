@@ -59,12 +59,6 @@ void ArrayChunkCore<ChunkT>::assign_alloc_key()
 template <typename ChunkT>
 void ArrayChunkCore<ChunkT>::acquire_chunk_list(std::size_t count)
 {
-    if (alloc_affinity_detail::g_building_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
-        chunk_list_.capacity() == 0 && spare_chunk_list_.capacity() >= count &&
-        spare_chunk_list_.capacity() - count <= count / 8)
-    {
-        chunk_list_.swap(spare_chunk_list_); // spare left empty, without a buffer
-    }
     // Only reserves (NoInitAllocator): the caller's init loop (static schedule) is the
     // first touch, page faults and NUMA placement included.
     chunk_list_.resize(count);
@@ -74,12 +68,6 @@ template <typename ChunkT>
 void ArrayChunkCore<ChunkT>::release_chunk_list()
 {
     chunk_list_.clear();
-    if (alloc_affinity_detail::g_releasing_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
-        chunk_list_.capacity() > spare_chunk_list_.capacity())
-    {
-        chunk_list_.swap(spare_chunk_list_);
-        ChunkListType().swap(chunk_list_); // frees the smaller one
-    }
 }
 
 } // namespace shrink_array

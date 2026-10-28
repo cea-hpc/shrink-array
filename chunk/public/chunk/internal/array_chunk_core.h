@@ -104,28 +104,6 @@ struct RechunkStorageScope
     RechunkStorageScope(RechunkStorageScope&&)                 = delete;
     RechunkStorageScope& operator=(RechunkStorageScope&&)      = delete;
 };
-
-/// CHUNK_RECHUNK_REUSE_LIST (read once, default OFF; 1 = on): a re-chunk's
-/// dying storage hands its chunk_list buffer to the next re-chunk's new
-/// storage (ArrayChunkCore::acquire_chunk_list / release_chunk_list) instead of
-/// freeing it. Off = a fresh vector per re-chunk, the old one freed.
-///
-/// Off by default because the spare outlives the re-chunk (one static per
-/// chunk type) and a coarsening needs a SMALLER list: 64 -> 256 took the old
-/// 64 buffer, four times too large, and kept it resident whole. The re-chunk
-/// then gave almost none of the old geometry's chunk_list back (16 bytes per
-/// chunk: 250 MB per 10^9-element array at S=64), and the zero_any_dyn bench
-/// ended ~50% above static 256 instead of ~6%.
-inline const bool g_reuse_chunk_list = []() noexcept
-{
-    const char* env = std::getenv("CHUNK_RECHUNK_REUSE_LIST");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
-
-/// True while rechunk_to() destroys its temporary, which by then holds the OLD
-/// storage: its clear_core() keeps the chunk_list buffer for the next
-/// re-chunk. Set and reset at a quiescent serial point, around one destructor.
-inline bool g_releasing_rechunk_storage = false;
 } // namespace alloc_affinity_detail
 
 // chunk_list's allocator is NoInitAllocator (parallel_storage_init.h): resize() only
@@ -231,19 +209,14 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     void assign_alloc_key();
 
     /**
-     * @brief Size chunk_list to @p count chunks, from the spare a previous
-     *        re-chunk left when this is a re-chunk's new storage.
+     * @brief Size chunk_list to @p count chunks (reserve only: see construct_chunk()).
      *
-     * @details Every re-chunk builds a new chunk_list and frees the old one; at a
-     *          small geometry that is hundreds of MB faulted in, then unmapped (a
-     *          TLB shootdown on every CPU). The spare is the previous old storage's
-     *          buffer, pages still resident: taken when it holds @p count chunks
-     *          with at most 1/8 to spare -- the whole capacity stays resident, so a
-     *          larger spare (a coarsening's old list) would pin memory the new
-     *          geometry does not use. Only with CHUNK_RECHUNK_REUSE_LIST=1 (off by
-     *          default), only for the storage rechunk_to() builds (quiescent,
-     *          serial) and only into an empty list, so no live chunk address
-     *          ever moves.
+     * @details Always a buffer of its own: a re-chunk's new storage no longer takes
+     *          the buffer the previous re-chunk's old storage left. That spare (the
+     *          former CHUNK_RECHUNK_REUSE_LIST) outlived the re-chunk, one per chunk
+     *          type, and a coarsening -- which needs a SMALLER list -- took a buffer
+     *          up to four times too large and kept it resident whole: the old
+     *          geometry's chunk_list never came back.
      * @param count the chunk count
      */
     void acquire_chunk_list(std::size_t count);
@@ -261,10 +234,8 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     }
 
     /**
-     * @brief Empty chunk_list at the end of a teardown; a re-chunk's old storage
-     *        keeps its buffer as the spare for the next re-chunk.
-     * @details The larger of the two buffers is kept (more re-chunks fit in
-     *          it), the other one freed. At most one spare per chunk type.
+     * @brief Empty chunk_list at the end of a teardown (its chunks destroyed;
+     *        the buffer goes with the vector).
      */
     void release_chunk_list();
 
@@ -294,10 +265,6 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     /// @brief Source of affinity keys, shared by every array of this element type
     ///        whatever its index type (keys of the per-T manager).
     static inline std::atomic<unsigned int> next_alloc_key_{1};
-
-    /// The chunk_list buffer a re-chunk's old storage left (empty, capacity
-    /// only), for the next re-chunk's new storage. See acquire_chunk_list().
-    static inline ChunkListType spare_chunk_list_{};
 
     /// @brief The derived array's rechunk_to(), installed by ArrayChunkBase.
     void (*rechunk_fn_)(ArrayChunkCore&, unsigned int) = nullptr;

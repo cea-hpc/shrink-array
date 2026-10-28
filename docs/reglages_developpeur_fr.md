@@ -22,16 +22,15 @@
 
 ***
 
-## 1. Réglage du décideur, de la reconstruction et des allocateurs
+## 1. Réglage de la reconstruction et des allocateurs
+
+Les seuils du décideur (`RechunkPolicy`) ne sont pas des variables d'environnement : un
+programme renseigne les champs, et `shrink_bench` les expose en options (§4). Voir
+[rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §3.
 
 | variable | défaut | effet |
 |---|---|---|
 | `CHUNK_ALLOC_AFFINITY_EAGER` | selon la variante | `1` : chaque gros tableau a son jeu d'allocateurs dès sa création (défaut de `zero`) ; `0` : seulement au premier rechunk (défaut de `zero_one_value` et `zero_any`). Voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5 |
-| `CHUNK_RECHUNK_MAX_COARSEN` | 4 | facteur maximal d'un grossissement (1 = sans limite) |
-| `CHUNK_ADVISOR_MIN_GAIN_MB` | 8 | seuil absolu de gain côté données, en Mo (0 le supprime) |
-| `CHUNK_ADVISOR_GRID_BITS` | 2 | les tailles candidates de l'advisor entre les puissances de deux : les multiples de 64 dont C / 64 a au plus ce nombre de bits significatifs (2 : 192, 384, 768... ; 3 : aussi 320, 448, 640 ; 1 : puissances de deux seules). Voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §2 |
-| `CHUNK_COARSEN_MIN_META_MB` | 1 | gain minimal de métadonnées d'un grossissement, en Mo |
-| `CHUNK_COARSEN_MIN_META_RATE` | 250 | gain de métadonnées minimal par seconde de reconstruction estimée, en Mo/s |
 | `CHUNK_RECHUNK_SCHEDULE` | `guided,16` | ordonnancement OpenMP de la reconstruction (`kind[,chunk]`) |
 | `CHUNK_RECHUNK_SLICES` | 16 | nombre de tranches de la reconstruction de `zero` |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
@@ -42,7 +41,6 @@
 | `CHUNK_RECHUNK_RECYCLE` | actif | reconstruction de `zero` : les slabs qu'une tranche vient de vider vont à la tranche suivante au lieu d'être rendus au système ; `0` le désactive. *Retrait prévu : 31/12/2026.* |
 | `CHUNK_RECHUNK_KEEP_RECYCLED_MB` | 0 | reconstruction de `zero` : à sa fin, jusqu'à ce nombre de Mio par arène des slabs recyclés qu'aucune tranche n'a repris restent résidents (répartis à parts égales entre les rangs) pour les allocations suivantes, au lieu d'être rendus au système ; `0` : tous sont rendus |
 | `CHUNK_RECHUNK_KEEP_RECYCLED` | inactif | `1` : idem, sans plafond (le RSS garde chaque reliquat jusqu'à sa réutilisation) |
-| `CHUNK_RECHUNK_REUSE_LIST` | inactif | `1` : un rechunk réutilise le tampon de la liste de chunks du rechunk précédent (pages déjà résidentes) s'il tient la nouvelle liste à 1/8 près ; absent ou `0` : un nouveau à chaque fois, l'ancien libéré. Inactif par défaut : le tampon gardé survivait au rechunk et un grossissement (64 -> 256) gardait résidente une liste quatre fois trop grande. *Retrait prévu : 31/12/2026.* |
 | `CHUNK_THP` | 0 | non défini : le mode THP du noyau décide. `never` : pas de huge pages transparentes sur les arènes de slabs (`MADV_NOHUGEPAGE`) -- en mode `always`, un slab devient sinon résident en entier dès qu'il est touché ; comparer les deux avec le RSS et AnonHugePages de `smaps_rollup`. Expérimental : `1` les demande (`MADV_HUGEPAGE`) sur les arènes de slabs et la région cst2. Ignoré, avec un message, quand la huge page dépasse 2 Mio (noyau à pages de 64 Kio : 512 Mio). Coût : un slab entamé devient résident en entier. *Retrait prévu : 31/12/2026.* |
 | `CHUNK_REUSE_SHARE_DIV` | 50 | allocateur rapide : un rang garde de côté jusqu'à chunks / (ce nombre × threads) tampons libérés par type d'élément (par tableau pour un tableau qui a ses propres allocateurs) ; les chunks comptés incluent les compressés |
 | `CHUNK_REUSE_FLOOR_KB` | non défini | plancher de ce budget en Kio par rang, converti en tampons selon la taille de chunk ; non défini : 500 tampons (100 pour un tableau qui a ses propres allocateurs), quelle que soit leur taille ; `0` : pas de plancher |
@@ -53,8 +51,10 @@
 
 Les traces sont des messages du journal de la bibliothèque, choisis par `CHUNK_LOG` (voir
 [variables_environnement_fr.md](variables_environnement_fr.md)). Les variables des anciennes
-traces marchent toujours : chacune règle le niveau qui lui correspond, avec un avertissement
-de dépréciation.
+traces (`CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`, `CHUNK_RECHUNK_MEMTRACE`,
+`CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`) ne sont plus lues ;
+seule `FAST_ALLOC_TRACE` règle encore le niveau qui lui correspond, avec un avertissement de
+dépréciation.
 
 | réglage | ce qu'il affiche |
 |---|---|
@@ -79,18 +79,27 @@ de dépréciation.
 
 ## 3. Rechunks forcés (tests)
 
-| variable | effet |
+`RechunkPolicy::force_size` et ses compagnons ; dans `shrink_bench`, les options :
+
+| option | effet |
 |---|---|
-| `CHUNK_FORCE_RECHUNK=<taille>` | force un rechunk vers cette taille, même si le décideur ne le ferait pas |
-| `CHUNK_FORCE_RECHUNK_AT=<itération>` | retarde ce rechunk forcé jusqu'à cette itération |
-| `CHUNK_FORCE_RECHUNK_TOGGLE=1` | rechunk à chaque passage, en alternant avec `CHUNK_FORCE_RECHUNK_ALT` (64 par défaut) |
+| `--force_rechunk <taille>` | force un rechunk vers cette taille, même si le décideur ne le ferait pas |
+| `--force_rechunk_at <itération>` | retarde ce rechunk forcé jusqu'à cette itération |
+| `--force_rechunk_toggle` | rechunk à chaque passage, en alternant avec `--force_rechunk_alt <taille>` (64 par défaut) |
 
 ## 4. Le banc `shrink_bench`
 
 | variable ou option | effet |
 |---|---|
-| `CHUNK_ADVISOR_PERIOD` | période des passages de l'advisor, en itérations (défaut `max(10, iter_max / 20)` ; 0 le désactive) |
-| `SHRINK_BENCH_ADVISE_ALL` | défaut : tous les tableaux sauf `tab_bool` sont confiés au décideur ; `0` : les cinq tableaux historiques |
+| `--advisor_period <n>` | période des passages de l'advisor, en itérations (défaut `max(10, iter_max / 20)` ; 0 le désactive) |
+| `--advise_five` | seuls les cinq tableaux historiques sont confiés au décideur (défaut : tous les tableaux sauf `tab_bool` et `tab_bool_bits`) |
+| `--rechunk_dry_run` | le décideur analyse et journalise, mais n'applique aucun rechunk (`RechunkPolicy::dry_run`) |
+| `--rechunk_max_coarsen <n>` | facteur maximal d'un grossissement (`max_coarsen_factor`, 4 ; 1 = sans limite) |
+| `--rechunk_min_gain_mb <x>` | seuil absolu de gain côté données, en Mo (`min_gain_bytes`, 8 ; 0 le supprime) |
+| `--rechunk_grid_bits <n>` | les tailles candidates de l'advisor entre les puissances de deux : les multiples de 64 dont C / 64 a au plus ce nombre de bits significatifs (`advisor_grid_bits`, 2 : 192, 384, 768... ; 3 : aussi 320, 448, 640 ; 1 : puissances de deux seules). Voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §2 |
+| `--rechunk_coarsen_min_meta_mb <x>` | gain minimal de métadonnées d'un grossissement, en Mo (`coarsen_min_meta_gain_bytes`, 1 ; 0 le supprime) |
+| `--rechunk_coarsen_min_meta_rate <x>` | gain de métadonnées minimal par seconde de reconstruction estimée, en Mo/s (`coarsen_min_meta_rate`, 250 ; 0 le supprime) |
+| `--rechunk_backoff_max <n>` | plus long espacement des analyses d'un tableau stabilisé, en passages (`max_backoff_ticks`, 8 ; 0 ou 1 le désactive) |
 | `SHRINK_BENCH_EXACT_RSS` | `1` : toutes les lignes de mémoire sont exactes (coûteux) |
 | `SHRINK_BENCH_RSS_SAMPLE_MS` | période d'échantillonnage du pic exact, en ms (désactivé par défaut) |
 | `CHUNK_BENCH_MEM_PERIOD` | période de la ligne de mémoire, en itérations |

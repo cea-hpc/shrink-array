@@ -45,6 +45,7 @@
 //
 // Exit status 0 when every check passes.
 
+#include <algorithm>   // std::ranges::find
 #include <array>       // std::array
 #include <atomic>      // std::atomic
 #include <complex>     // std::complex (check 9)
@@ -211,8 +212,11 @@ void check_environment()
     check(!logging::enabled(Channel::rechunk, Level::trace), "env: rechunk stops at debug");
     check(logging::enabled(Channel::pool, Level::warn), "env: the bare level warn applies to pool");
     check(!logging::enabled(Channel::pool, Level::info), "env: pool stops at warn");
-    check(logging::enabled(Channel::memory, Level::debug), "env: CHUNK_RECHUNK_TRACE_MEM=1 raises memory to debug");
-    check(!logging::enabled(Channel::rechunk, Level::trace), "env: CHUNK_RECHUNK_TRACE_SLICES=0 is not set");
+    check(logging::enabled(Channel::alloc, Level::trace), "env: FAST_ALLOC_TRACE=1 raises alloc to trace");
+    const auto& switches = logging::detail::legacy_switches;
+    const auto  churn =
+        std::ranges::find(switches, std::string_view{"CHUNK_RECHUNK_CHURN"}, &logging::detail::LegacySwitch::name);
+    check(churn != switches.end() && !logging::detail::is_set(*churn), "env: CHUNK_RECHUNK_CHURN=0 is not set");
 
     CHUNK_LOG(warn, general, "first line through the default sink");
     const auto lines             = read_lines(g_log_path);
@@ -223,8 +227,7 @@ void check_environment()
     {
         deprecated |=
             line.starts_with("[shrink_array][env][W][") &&
-            line.ends_with("] CHUNK_RECHUNK_TRACE_MEM is deprecated: it means CHUNK_LOG=memory=debug, which it now "
-                           "sets");
+            line.ends_with("] FAST_ALLOC_TRACE is deprecated: it means CHUNK_LOG=alloc=trace, which it now sets");
         bad_item_reported |=
             line.starts_with("[shrink_array][env][W][") && line.find("\"verbose\"") != std::string::npos;
         first_line |=
@@ -591,7 +594,7 @@ void check_fatal(const char* self)
 
     run = run_child(self, 3);
     // The first record the sink sees is the deprecation warning of
-    // CHUNK_RECHUNK_TRACE_MEM (inherited from main), written while the
+    // FAST_ALLOC_TRACE (inherited from main), written while the
     // configuration is read: the failure must not wait on that read.
     check(run.status == abort_status && run.out.find("failure inside the sink, on \"") != std::string::npos,
           "fatal: a failure inside the sink stops, even during the configuration (no deadlock: timeout 60 s)");
@@ -632,8 +635,8 @@ int main(int argc, char** argv)
     g_log_path            = dir + "/shrink_log_validation." + std::to_string(::getpid()) + ".log";
     std::remove(g_log_path.c_str());
     setenv("CHUNK_LOG", "warn, rechunk=debug, verbose", 1);
-    setenv("CHUNK_RECHUNK_TRACE_MEM", "1", 1);    // a legacy switch: raises memory to debug
-    setenv("CHUNK_RECHUNK_TRACE_SLICES", "0", 1); // "0": not set
+    setenv("FAST_ALLOC_TRACE", "1", 1);    // a deprecated legacy switch: raises alloc to trace
+    setenv("CHUNK_RECHUNK_CHURN", "0", 1); // "0": not set
     setenv("CHUNK_LOG_FILE", (dir + "/shrink_log_validation.%p.log").c_str(), 1);
 
     check_environment();

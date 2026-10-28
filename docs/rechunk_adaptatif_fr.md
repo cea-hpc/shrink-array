@@ -36,7 +36,7 @@ estimée (métadonnées + données matérialisées).
 
 Les candidates : les rapports en puissances de deux (S×2 à S×16, S÷2 et S÷4), et entre ces
 bornes tout multiple de 64 dont C / 64 a au plus `Options::grid_bits` bits significatifs
-(`CHUNK_ADVISOR_GRID_BITS` ; 2 par défaut : 192, 384, 768, 1536... : des pas de 50 % au plus ;
+(`RechunkPolicy::advisor_grid_bits`, `--rechunk_grid_bits` dans le banc ; 2 par défaut : 192, 384, 768, 1536... : des pas de 50 % au plus ;
 3 ajoute 320, 448, 640, 896... : des pas de 25 %). Chaque ligne découpe le tableau en fenêtres de C éléments, lues sur les chunks actuels :
 
 - une fenêtre **dans une suite de chunks compressés à la même constante** est compressée :
@@ -69,30 +69,34 @@ Elles coûtent maintenant ~0,7 s sur un run de `zero_one_value` de 8,4 s.
 ## 3. Le décideur : quand et vers où
 
 `RechunkDecider::consider()` (`rechunk_decider.h`, `internal/rechunk_decider_inline.h`) est
-appelé à chaque **passage** : toutes les `CHUNK_ADVISOR_PERIOD` itérations dans le banc
+appelé à chaque **passage** : toutes les `--advisor_period` itérations dans le banc
 (par défaut `max(10, iter_max / 20)`, soit 100 pour 2 000 itérations ; 0 désactive). Il
-prend la meilleure taille de la table, puis applique la politique (`RechunkPolicy`) :
+prend la meilleure taille de la table, puis applique la politique (`RechunkPolicy`). La
+bibliothèque ne lit aucun de ces réglages dans l'environnement : un programme renseigne les
+champs ; le banc les expose en options (entre parenthèses) :
 
 | réglage | défaut | rôle |
 |---|---|---|
 | `stability_ticks` | 3 | la meilleure taille doit rester la même pendant 3 passages |
 | `cooldown_ticks` | 5 | au moins 5 passages entre deux rechunks d'un même tableau |
 | `anti_reversal_ticks` | 30 | pas de retour vers une taille quittée depuis moins de 30 passages |
-| `max_coarsen_factor` | **4** | un grossissement multiplie la taille par 4 au plus (`CHUNK_RECHUNK_MAX_COARSEN`) |
-| `min_gain_bytes`, `min_gain_frac` | 8 Mo, 15 % | seuils de gain côté données (`CHUNK_ADVISOR_MIN_GAIN_MB`) |
+| `max_coarsen_factor` | **4** | un grossissement multiplie la taille par 4 au plus (`--rechunk_max_coarsen`) |
+| `min_gain_bytes`, `min_gain_frac` | 8 Mo, 15 % | seuils de gain côté données (`--rechunk_min_gain_mb`) |
 | `coarsen_gain_multiple` | 3 | un grossissement jugé sur les données doit gagner 3 fois le seuil |
-| `coarsen_min_meta_gain_bytes` | 1 Mo | gain minimal côté métadonnées (`CHUNK_COARSEN_MIN_META_MB`) |
-| `coarsen_min_meta_rate` | 250 Mo/s | gain de métadonnées par seconde de reconstruction estimée (`CHUNK_COARSEN_MIN_META_RATE`) |
+| `coarsen_min_meta_gain_bytes` | 1 Mo | gain minimal côté métadonnées (`--rechunk_coarsen_min_meta_mb`) |
+| `coarsen_min_meta_rate` | 250 Mo/s | gain de métadonnées par seconde de reconstruction estimée (`--rechunk_coarsen_min_meta_rate`) |
 | `coarsen_trust_ratio` | 0,5 | apprentissage : un grossissement qui a rendu moins de la moitié de sa prévision interdit les suivants |
-| `dry_run` | `true` | ne rien appliquer (le banc le met à `false` ; `CHUNK_RECHUNK_DRY_RUN=1` le force) |
-| `max_backoff_ticks` | 8 | un tableau dont le verdict est un « pas de mouvement » établi (déjà optimal, gain sous le seuil) n'est réanalysé qu'après 2, 4, puis jusqu'à 8 passages ; tout autre verdict le ramène à chaque passage (`CHUNK_ADVISOR_BACKOFF_MAX`, 0 ou 1 désactive) |
+| `dry_run` | `true` | ne rien appliquer (le banc le met à `false` ; `--rechunk_dry_run` le garde) |
+| `max_backoff_ticks` | 8 | un tableau dont le verdict est un « pas de mouvement » établi (déjà optimal, gain sous le seuil) n'est réanalysé qu'après 2, 4, puis jusqu'à 8 passages ; tout autre verdict le ramène à chaque passage (`--rechunk_backoff_max`, 0 ou 1 désactive) |
+| `advisor_grid_bits` | 2 | les tailles candidates de l'advisor entre les puissances de deux, voir §2 (`--rechunk_grid_bits`) |
+| `force_size`, `force_at`, `force_toggle`, `force_alt` | 0, 0, non, 64 | tests : rechunk de chaque tableau vers `force_size` à partir de l'itération `force_at`, quoi que dise l'advisor ; `force_toggle` alterne avec `force_alt` à chaque passage (`--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`) |
 
 Un grossissement est accepté si **l'une** des deux branches passe : la branche
 **métadonnées** (gain de métadonnées au-dessus de son plancher, et débit suffisant au regard
 du coût estimé par `rechunk_cost_ms()`), ou la branche **données** (gain total au-dessus du
-seuil multiplié). Depuis ce critère « gain par coût », `CHUNK_ADVISOR_MIN_GAIN_MB` ne suffit
+seuil multiplié). Depuis ce critère « gain par coût », `min_gain_bytes` ne suffit
 plus à bloquer les grossissements : pour mesurer le coût des seules analyses, utiliser
-`CHUNK_RECHUNK_DRY_RUN=1`.
+`dry_run` (`--rechunk_dry_run`).
 
 L'apprentissage mesure le gain d'un grossissement **à données constantes** : au passage
 suivant, la ligne de l'ancienne taille dans la table (lignes plus fines) donne la mémoire
@@ -180,7 +184,7 @@ correspondent de nouveau à la géométrie réelle.
 ## 7. Résultats
 
 Mémoire (Go) sur `shrink_bench`, 64 threads, tous les tableaux confiés au décideur (le
-défaut du banc ; `SHRINK_BENCH_ADVISE_ALL=0` revient aux cinq tableaux historiques) :
+défaut du banc ; `--advise_five` revient aux cinq tableaux historiques) :
 
 | variante | statique 64 (fin) | dynamique sans advisor (fin) | **dynamique avec advisor (fin)** | statique 256 (fin) |
 |---|---|---|---|---|
@@ -192,8 +196,8 @@ Coût en temps de l'advisor, mesuré sur **un même binaire** (moyennes sur 3 to
 
 | `zero_one_value` dynamique | temps | coût |
 |---|---|---|
-| sans advisor (`CHUNK_ADVISOR_PERIOD=0`) | 8,38 s | — |
-| analyses seules (`CHUNK_RECHUNK_DRY_RUN=1`) | 9,07 s | +0,69 s |
+| sans advisor (`--advisor_period 0`) | 8,38 s | — |
+| analyses seules (`--rechunk_dry_run`) | 9,07 s | +0,69 s |
 | analyses et rechunks (30) | 11,43 s | +2,36 s |
 
 Pour `zero_any`, le coût des rechunks (33) va de 1 à 3,5 s selon les séries de mesures. Pour

@@ -22,8 +22,8 @@
 //
 // Consumes a ChunkSizeReport (advisor: predicted best size + memory gain) and a
 // rechunk cost estimate, and decides whether a re-chunk is worthwhile;
-// consider() then performs it (rechunk_to) unless Policy::dry_run or
-// CHUNK_RECHUNK_DRY_RUN asks it only to log its verdict.
+// consider() then performs it (rechunk_to) unless Policy::dry_run asks it only
+// to log its verdict.
 //
 // State is per-array, persists across advisor ticks, and is keyed by a stable
 // identifier from the caller (the array's address). Hysteresis, three layers:
@@ -33,8 +33,11 @@
 //   * Cooldown (min ticks between actions): a cheap last-resort frequency floor;
 //     0 disables.
 //
-// Thresholds are fields on Policy. The rebuild's cost is weighed in the gain gates
-// (rechunk_cost_model.h); hysteresis here is about avoiding OSCILLATION.
+// Thresholds are fields on Policy, and only there: the decider reads no
+// environment variable (a program exposes the fields it wants to tune, as
+// shrink_bench does with its --rechunk_* options). The rebuild's cost is weighed
+// in the gain gates (rechunk_cost_model.h); hysteresis here is about avoiding
+// OSCILLATION.
 
 #include <array>         // std::array (Hist's visited ring)
 #include <cstddef>       // std::size_t
@@ -64,8 +67,7 @@ struct RechunkPolicy
                                                         ///< (kills 512<->1024 oscillation). 0=off.
     unsigned    max_coarsen_factor          = 4;        ///< cap a coarsening step to this factor x
                                                         ///< cur_size per rechunk; 1 disables (fining
-                                                        ///< is never capped). CHUNK_RECHUNK_MAX_COARSEN
-                                                        ///< overrides it at run time. 4 gave the
+                                                        ///< is never capped). 4 gave the
                                                         ///< lowest end memory. Not higher: the old
                                                         ///< size must stay within the advisor's two
                                                         ///< finer levels, so the next tick measures
@@ -105,8 +107,24 @@ struct RechunkPolicy
                                         ///< array's data, so once the geometry has settled
                                         ///< it was a fixed cost for nothing (shrink_bench
                                         ///< zero dyn, 64 threads: ~9% of an iteration).
-                                        ///< 1 or 0 disables. CHUNK_ADVISOR_BACKOFF_MAX
-                                        ///< overrides it at run time.
+                                        ///< 1 or 0 disables.
+    int advisor_grid_bits = 2;          ///< the advisor's candidate sizes between the
+                                        ///< powers of two (ChunkSizeAdvisor::Options::
+                                        ///< grid_bits): the multiples of 64 whose C/64 has
+                                        ///< at most this many significant bits; 0: none.
+
+    /// @name Forced re-chunks (tests)
+    /// Exercise the re-chunk path whatever the advisor says: with force_size != 0,
+    /// consider() re-chunks every array it is given to force_size once, from
+    /// iteration force_at on, and analyses nothing. Ignored under dry_run.
+    /// @{
+    unsigned force_size   = 0;     ///< target chunk size; 0: no forced re-chunk
+    int      force_at     = 0;     ///< first iteration that forces (a later one re-chunks
+                                   ///< POPULATED arrays with pending deferred ops)
+    bool     force_toggle = false; ///< re-chunk at EVERY tick, alternating force_size
+                                   ///< and force_alt
+    unsigned force_alt    = 64;    ///< force_toggle's other size
+    /// @}
 };
 
 /// @brief Decides, per array, whether a re-chunk is worthwhile from ChunkSizeReport ticks and a RechunkPolicy.

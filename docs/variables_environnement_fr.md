@@ -23,7 +23,6 @@
 | `CHUNK_LOG_FILE` | stderr | fichier où les messages sont ajoutés ; `%p` est remplacé par le numéro du processus |
 | `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cœurs, 256) | nombre de rangs pour lequel les structures par thread sont dimensionnées ; ne peut qu'augmenter le défaut (sursouscription). Un rang qui l'atteint ou la dépasse arrête le programme avec un message qui nomme cette variable |
 | `CHUNK_REQUIRE_OMPT` | — | builds OMPT : `1` arrête le programme si l'outil OMPT n'a pas été chargé par le runtime (sinon, un avertissement du journal), puisque les fins de phase n'auraient alors jamais lieu |
-| `CHUNK_RECHUNK_DRY_RUN` | — | `1` : le décideur du rechunk adaptatif analyse et journalise ce qu'il ferait (niveau info du canal `rechunk` du journal, qu'elle active), mais n'applique aucun rechunk (voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md)) |
 
 ## 2. Options CMake
 
