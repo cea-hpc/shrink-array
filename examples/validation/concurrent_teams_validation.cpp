@@ -161,7 +161,10 @@ static long check(const Array<int>& arr, int rounds, int who)
         }
         std::fclose(file);
     }
-    std::remove(log.c_str());
+    if (std::remove(log.c_str()) != 0)
+    {
+        println("[concurrent] note: could not remove {}", log);
+    }
 
     const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     const bool message = out.find("top-level") != std::string::npos;

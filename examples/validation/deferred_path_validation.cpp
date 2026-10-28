@@ -801,7 +801,14 @@ int run(int argc, char** argv)
 {
     // The forced-deferral hook (test_hooks.h), on for this harness only: one
     // write in 7 of every thread, unless a whole-tree build fixed another N.
-    test_hooks::force_defer_every = build_config::force_defer_every > 0 ? build_config::force_defer_every : 7U;
+    if constexpr (build_config::force_defer_every != 0U)
+    {
+        test_hooks::force_defer_every = build_config::force_defer_every;
+    }
+    else
+    {
+        test_hooks::force_defer_every = 7U;
+    }
     if constexpr (!build_config::use_openmp)
     {
         println("[deferred_path] note: serial build, no deferred path to force");
