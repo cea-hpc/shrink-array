@@ -117,6 +117,9 @@ extern void destroy_block_chunk();
 
 // Build-agnostic free functions over the policy above, declared and defined
 // (chunk_std.cpp) in EVERY build, so calling any of them links in both models.
+// The teardown ones (delete_chunk_allocator, clear_all_list_block_free_thr,
+// delete_list_block_chunk_free_itself) are sequential points, as
+// release_chunk_pools() says.
 /// @brief ChunkPoolParallelInterface<>::delete_chunk_allocator() of this build.
 extern void delete_chunk_allocator();
 /// @brief ChunkPoolParallelInterface<>::clear_all_list_block_free_thr() of this build.
@@ -141,6 +144,13 @@ extern bool need_load_balance_list_block_free();
  *       this only empties the free lists, and destroy_block_chunk(),
  *       delete_list_block_chunk_free_itself() and delete_chunk_allocator() do
  *       nothing: the array parks its buffers there when it dies.
+ * @warning Sequential point: call it once, after the last parallel region. From
+ *          inside a region (OpenMP's, the std backend's team or application
+ *          phase) a check build aborts; any other build says so on stderr and
+ *          does nothing. Every thread of the team would otherwise empty the
+ *          same pools at once. The same holds for destroy_block_chunk(),
+ *          delete_chunk_allocator(), clear_all_list_block_free_thr(),
+ *          delete_list_block_chunk_free_itself() and an array's shrink_to_fit().
  */
 extern void release_chunk_pools();
 

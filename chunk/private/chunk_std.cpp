@@ -16,6 +16,7 @@
 
 #include <array>   // g_chunk_stats (CHUNK_STATS only)
 #include <cstddef> // std::size_t
+#include <cstdio>  // std::fprintf (teardown_outside_region)
 
 #include "chunk/all_type_chunk.h"           // AllTypeChunk
 #include "chunk/zero_chunk.h"               // the declarations defined here (ChunkPoolParallelInterface)
@@ -113,6 +114,31 @@ template struct ChunkPoolParallelInterface<build_config::threaded, AllTypeChunk>
 
 using ChunkPools = ChunkPoolParallelInterface<>;
 
+namespace
+{
+/// @brief The teardown verbs, and shrink_to_fit()'s pool trim, are sequential
+///        points: called from a parallel region, every thread of the team would
+///        empty the same pools at once (double frees, broken lists). Check
+///        builds abort; the others say so on stderr and skip the verb, every
+///        time (a cold path: one in_parallel() per call).
+/// @return true when the verb may run.
+[[nodiscard]] bool teardown_outside_region(const char* verb)
+{
+    if (!CHUNK_PMP_IN_PARALLEL_REGION) [[likely]]
+    {
+        return true;
+    }
+    if constexpr (build_config::any_check)
+    {
+        CHUNK_INVARIANT_FAILED("{}() called inside a parallel region: call it once, after the last region", verb);
+    }
+    std::fprintf(stderr,
+                 "shrink_array: %s() called inside a parallel region, skipped: call it once, after the last region\n",
+                 verb);
+    return false;
+}
+} // namespace
+
 bool need_load_balance_list_block_free()
 {
     return ChunkPools::need_load_balance_list_block_free();
@@ -125,6 +151,10 @@ void load_balance_list_block_free()
 
 void clear_all_list_block_free_thr()
 {
+    if (!teardown_outside_region("clear_all_list_block_free_thr"))
+    {
+        return;
+    }
     ChunkPools::clear_all_list_block_free_thr();
 }
 
@@ -137,6 +167,10 @@ void clear_all_list_block_free_thr()
 
 void delete_list_block_chunk_free_itself()
 {
+    if (!teardown_outside_region("delete_list_block_chunk_free_itself"))
+    {
+        return;
+    }
     if (internal::live_array_count() > 0)
     {
         return;
@@ -146,6 +180,10 @@ void delete_list_block_chunk_free_itself()
 
 void delete_chunk_allocator()
 {
+    if (!teardown_outside_region("delete_chunk_allocator"))
+    {
+        return;
+    }
     if (internal::live_array_count() > 0)
     {
         return;
@@ -153,27 +191,13 @@ void delete_chunk_allocator()
     ChunkPools::delete_chunk_allocator();
 }
 
-namespace
-{
-/// @brief Check builds: the teardown verbs are sequential points; called from
-///        a parallel region, every thread of the team would empty the same
-///        pools at once.
-void teardown_outside_region(const char* verb)
-{
-    if constexpr (build_config::any_check)
-    {
-        if (CHUNK_PMP_IN_PARALLEL_REGION) [[unlikely]]
-        {
-            CHUNK_INVARIANT_FAILED("{}() called inside a parallel region: call it once, after the last region", verb);
-        }
-    }
-}
-} // namespace
-
 /// @copydoc shrink_array::release_chunk_pools
 void release_chunk_pools()
 {
-    teardown_outside_region("release_chunk_pools");
+    if (!teardown_outside_region("release_chunk_pools"))
+    {
+        return;
+    }
     if (internal::live_array_count() > 0)
     {
         ChunkPools::clear_all_list_block_free_thr(); // the parked buffers only
@@ -185,6 +209,10 @@ void release_chunk_pools()
 /// @copydoc shrink_array::compress_now_and_trim_pools
 std::size_t compress_now_and_trim_pools()
 {
+    if (!teardown_outside_region("compress_now_and_trim_pools"))
+    {
+        return 0;
+    }
     const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
     // Every rank's candidates (the threaded builds; outside a region, one region
     // in which each rank sweeps its own list): the pass that ends a phase, which
@@ -205,7 +233,10 @@ std::size_t compress_now_and_trim_pools()
 
 void destroy_block_chunk()
 {
-    teardown_outside_region("destroy_block_chunk");
+    if (!teardown_outside_region("destroy_block_chunk"))
+    {
+        return;
+    }
     // Not part of the thread-model split: destroy_block_chunk() is a verb of
     // ManagerChunkInt, present in every build, so it stays a plain function.
     if constexpr (build_config::use_fast_alloc)

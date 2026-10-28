@@ -556,6 +556,12 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- The teardown verbs (`release_chunk_pools()`, `destroy_block_chunk()`, `delete_chunk_allocator()`,
+  `clear_all_list_block_free_thr()`, `delete_list_block_chunk_free_itself()`) and
+  `shrink_to_fit()`'s pool trim refused a call from inside a parallel region in check builds
+  only, and four of them not even there. In a release build every thread of the team emptied the
+  same pools at once (double frees, broken lists). All six refuse it in every build now: a check
+  build aborts, the others print one line on stderr and skip the call.
 - Re-chunk: the old geometry's chunk list came back to the system. `CHUNK_RECHUNK_REUSE_LIST`
   (on by default) kept a dying storage's chunk list buffer for the next re-chunk of the same
   chunk type, and took it whenever it was at most 4x too large: a coarsening 64 -> 256 kept the
