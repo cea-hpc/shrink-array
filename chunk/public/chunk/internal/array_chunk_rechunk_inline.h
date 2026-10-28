@@ -743,16 +743,16 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     const IndType  lo      = base > oc_base ? base : oc_base;
                     const IndType  oc_end  = oc_base + static_cast<IndType>(old_size);
                     const IndType  hi      = end < oc_end ? end : oc_end;
-                    const auto     len     = static_cast<std::size_t>(hi - lo);
+                    const auto     src_len = static_cast<std::size_t>(hi - lo);
                     const auto     off     = static_cast<std::size_t>(lo - oc_base);
                     const T* const vals    = och.values_load();
                     if constexpr (is_zero_any_family_v<ChunkType>)
                     {
                         if (och.is_cst_val2_ptr_of(vals))
                         {
-                            std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(pos), len,
+                            std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(pos), src_len,
                                         och.second_value_from_ptr(vals));
-                            pos += len;
+                            pos += src_len;
                             continue;
                         }
                     }
@@ -763,17 +763,17 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         if (ChunkType::is_motif_ptr(vals))
                         {
                             const T offset = internal::load_element_relaxed(self().motif_offset_slot(oc));
-                            for (std::size_t k = 0; k < len; ++k)
+                            for (std::size_t k = 0; k < src_len; ++k)
                             {
                                 buf[pos + k] = ChunkType::motif_value(vals, static_cast<int>(off + k), offset);
                             }
-                            pos += len;
+                            pos += src_len;
                             continue;
                         }
                     }
                     // raw-read: refill bulk read -- quiescent source, see above
-                    std::memcpy(buf.data() + pos, vals + off, len * sizeof(T));
-                    pos += len;
+                    std::memcpy(buf.data() + pos, vals + off, src_len * sizeof(T));
+                    pos += src_len;
                 }
                 // Check builds: the bulk read must agree with the per-element
                 // path. Sampled (first, last, every 64th): this is a check, not
