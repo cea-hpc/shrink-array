@@ -224,6 +224,14 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Re-chunk: the old geometry's chunk list came back to the system. `CHUNK_RECHUNK_REUSE_LIST`
+  (on by default) kept a dying storage's chunk list buffer for the next re-chunk of the same
+  chunk type, and took it whenever it was at most 4x too large: a coarsening 64 -> 256 kept the
+  64 list resident whole for a list a quarter of it, and the last spare of each type was never
+  freed (16 bytes per chunk: 250 MB per 10^9-element array at S=64). `zero_any_dyn`
+  (`--mode perf --divisor 10`) ended at 1165 MB against 761 MB for static 256; 807 MB now. The
+  setting is off by default, and when turned on (`1`) takes a spare only within 1/8 of the new
+  list.
 - `shrink_to_fit()` and `ParamChunk::force_compression()` left uniform `zero_any` chunks
   materialised in a serial build (OpenMP off): a serial `zero_any` queues its compression
   candidates and folds them in batches of half the list from the write path, and both swept the

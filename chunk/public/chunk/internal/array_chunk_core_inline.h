@@ -61,7 +61,7 @@ void ArrayChunkCore<ChunkT>::acquire_chunk_list(std::size_t count)
 {
     if (alloc_affinity_detail::g_building_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
         chunk_list_.capacity() == 0 && spare_chunk_list_.capacity() >= count &&
-        spare_chunk_list_.capacity() / 4 <= count)
+        spare_chunk_list_.capacity() - count <= count / 8)
     {
         chunk_list_.swap(spare_chunk_list_); // spare left empty, without a buffer
     }
