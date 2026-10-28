@@ -32,11 +32,10 @@ Part 1 -- A/B on the rebuild's state (always). shrink_bench_zero_1024
     dyn_norecycle  CHUNK_RECHUNK_RECYCLE=0       no slab recycling between
                    slices (recycled slabs keep the OLD geometry's pages, and
                    their NUMA placement)
-    dyn_noreuse    CHUNK_RECHUNK_REUSE_LIST=0    no chunk_list buffer reuse
     dyn_lazy       CHUNK_ALLOC_AFFINITY_EAGER=0  per-array slab sets at the
                    first re-chunk, not at creation
-    dyn_dryrun     CHUNK_RECHUNK_DRY_RUN=1   the advisor analyses, never moves
-    dyn_noadvisor  CHUNK_ADVISOR_PERIOD=0    no advisor (stays at 64)
+    dyn_dryrun     --rechunk_dry_run         the advisor analyses, never moves
+    dyn_noadvisor  --advisor_period 0        no advisor (stays at 64)
                    these two have no re-chunk: compare them with each other
                    (the analyses' cost) and with dyn over the same iterations
   The time per iteration comes from the timestamps of the "iter <k> : time"
@@ -80,17 +79,17 @@ ITER_RE = re.compile(r"^iter (\d+) : time : ")
 RECHUNK_RE = re.compile(r"^(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\]) (\d+) -> (\d+) phases")
 FREEPATH_RE = re.compile(r"\[FREEPATH\] (\S+)\s+freed=(\d+)\s+parked_own=(\d+)\s+parked_foreign=(\d+)")
 
+# (name, executable, environment, extra shrink_bench arguments)
 CONFIGS = [
-    ("static", "shrink_bench_zero_1024", {}),
-    ("dyn", "shrink_bench_zero_dyn", {}),
-    ("dyn_1slice", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1"}),
-    ("dyn_static1", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1", "CHUNK_RECHUNK_SCHEDULE": "static"}),
-    ("dyn_norecycle", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_RECYCLE": "0"}),
-    ("dyn_noreuse", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_REUSE_LIST": "0"}),
-    ("dyn_lazy", "shrink_bench_zero_dyn", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}),
+    ("static", "shrink_bench_zero_1024", {}, []),
+    ("dyn", "shrink_bench_zero_dyn", {}, []),
+    ("dyn_1slice", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1"}, []),
+    ("dyn_static1", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1", "CHUNK_RECHUNK_SCHEDULE": "static"}, []),
+    ("dyn_norecycle", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_RECYCLE": "0"}, []),
+    ("dyn_lazy", "shrink_bench_zero_dyn", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}, []),
     # the advisor's own share: analyses without any re-chunk, and none at all
-    ("dyn_dryrun", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_DRY_RUN": "1"}),
-    ("dyn_noadvisor", "shrink_bench_zero_dyn", {"CHUNK_ADVISOR_PERIOD": "0"}),
+    ("dyn_dryrun", "shrink_bench_zero_dyn", {}, ["--rechunk_dry_run"]),
+    ("dyn_noadvisor", "shrink_bench_zero_dyn", {}, ["--advisor_period", "0"]),
 ]
 
 
@@ -245,7 +244,7 @@ def main():
     if "--iter_max" not in args:
         args += ["--iter_max", "2000"]
     wanted = set(a.configs.split(","))
-    missing = sorted({exe for name, exe, _ in CONFIGS if name in wanted and not (bindir / exe).is_file()})
+    missing = sorted({exe for name, exe, *_ in CONFIGS if name in wanted and not (bindir / exe).is_file()})
     if missing:
         print(f"error: not found in {bindir}: {', '.join(missing)}", file=sys.stderr)
         return 1
@@ -256,11 +255,11 @@ def main():
     # ---- part 1
     runs = {}
     for rep in range(a.reps):
-        for name, exe, env in CONFIGS:
+        for name, exe, env, extra in CONFIGS:
             if name not in wanted:
                 continue
             print(f"[part 1] {name} (rep {rep + 1}/{a.reps})", flush=True)
-            r = Run(f"{name}_r{rep}", str(bindir / exe), env, args, out, a.threads).run()
+            r = Run(f"{name}_r{rep}", str(bindir / exe), env, args + extra, out, a.threads).run()
             if r.rc != 0:
                 print(f"  {name}: exit code {r.rc}, see {r.dir / 'run.log'}", file=sys.stderr)
             runs.setdefault(name, []).append(r)
@@ -285,7 +284,7 @@ def main():
     summary.append("\n## Part 1: iteration wall time after the last re-chunk (vs static 1024, same iterations;"
                    " best of the repetitions)\n")
     summary.append(f"{'config':16s} {'last rechunk':>12s} {'intervals':>9s} {'s/iter':>9s} {'static':>9s} {'ratio':>7s}")
-    for name, _, _ in CONFIGS:
+    for name, *_ in CONFIGS:
         if name not in runs:
             continue
         it = best_times(runs[name])
@@ -310,16 +309,16 @@ def main():
             probe_iter = (lr + 1) if lr is not None and lr + 1 < n else (3 * n) // 4
         summary.append(f"\n## Part 2: probes from iteration {probe_iter}, {a.window} s window\n")
         for name in ("static", "dyn"):
-            exe, env = next((e, v) for n_, e, v in CONFIGS if n_ == name)
+            exe, env, extra = next((e, v, x) for n_, e, v, x in CONFIGS if n_ == name)
             print(f"[part 2] {name}: probes", flush=True)
-            r = Run(f"{name}_probe", str(bindir / exe), env, args, out, a.threads, probe_iter,
+            r = Run(f"{name}_probe", str(bindir / exe), env, args + extra, out, a.threads, probe_iter,
                     ["numastat", "stat", "c2c", "record"], a.window).run()
             perf_reports(r)
             summary.append(f"{name:8s} {stat_summary(r) or '(no perf stat)'}   -> {r.dir}")
             print(f"[part 2] {name}: allocator counters (CHUNK_ARENA_REPORT=1)", flush=True)
             env2 = dict(env)
             env2["CHUNK_ARENA_REPORT"] = "1"
-            r2 = Run(f"{name}_freepath", str(bindir / exe), env2, args, out, a.threads).run()
+            r2 = Run(f"{name}_freepath", str(bindir / exe), env2, args + extra, out, a.threads).run()
             if r2.freepath:
                 # cumulative counters: take the per-iteration increase of parked_foreign
                 per_iter = {}

@@ -574,8 +574,8 @@ The full list, with the macros and the CMake options, is in
 | `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | scheduling of the rechunk rebuild (`guided,16` by default) |
 | `CHUNK_LOG=rechunk=debug` | rechunk phase times (`memory=debug`: foldings) |
 | `CHUNK_OMPT_STATS=1` | statistics of synchronisation regions (OMPT build) |
-| `CHUNK_RECHUNK_DRY_RUN=1` | the decider analyses and logs, but applies no rechunk (to measure the cost of the analyses) |
-| `CHUNK_RECHUNK_MAX_COARSEN=<n>` | maximum coarsening factor (4 by default) |
+| `shrink_bench --rechunk_dry_run` | the decider analyses and logs, but applies no rechunk (to measure the cost of the analyses; `RechunkPolicy::dry_run`) |
+| `shrink_bench --rechunk_max_coarsen <n>` | maximum coarsening factor (4 by default; `RechunkPolicy::max_coarsen_factor`) |
 | `CHUNK_ALLOC_AFFINITY_EAGER=1` | per-array allocator set from its creation (lazy by default for `zero_one_value`) |
 
 For validation, the "forced deferred writes" test hook

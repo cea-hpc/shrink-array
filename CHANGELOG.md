@@ -282,6 +282,15 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The re-chunk decider reads no environment variable: its thresholds and its test hooks are
+  `RechunkPolicy` fields only, which a program sets. New fields: `advisor_grid_bits` (the
+  advisor's grid between the powers of two, 2), and the forced re-chunk of the tests,
+  `force_size`, `force_at`, `force_toggle`, `force_alt`. `shrink_bench` exposes them as options:
+  `--rechunk_dry_run`, `--rechunk_max_coarsen`, `--rechunk_min_gain_mb`, `--rechunk_grid_bits`,
+  `--rechunk_coarsen_min_meta_mb`, `--rechunk_coarsen_min_meta_rate`, `--rechunk_backoff_max`,
+  `--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`, plus
+  `--advisor_period` and `--advise_five` for its own schedule. `bench_and_test.py`'s re-chunk
+  phase and `diag_zero_rechunk_slowdown.py` pass them.
 - `shrink_bench`: `tab_conn` holds about `sz / 32` ints by default, `--conn_scale <x>` sets it
   (`x × sz`, whole rows). At `sz` its dense gather and renumbering took ~87% of a run (zero_any,
   8 threads, `--divisor 2`: 64.8 s with it, 8.4 s without with GCC 16, 140 s against 19 s with
@@ -382,11 +391,35 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- `CHUNK_RECHUNK_DRY_RUN` (a user setting of `docs/environment_variables.md`): set
+  `RechunkPolicy::dry_run` (`shrink_bench --rechunk_dry_run`).
+- The decider's developer variables `CHUNK_RECHUNK_MAX_COARSEN`, `CHUNK_ADVISOR_MIN_GAIN_MB`,
+  `CHUNK_ADVISOR_GRID_BITS`, `CHUNK_ADVISOR_BACKOFF_MAX`, `CHUNK_COARSEN_MIN_META_MB`,
+  `CHUNK_COARSEN_MIN_META_RATE`, `CHUNK_FORCE_RECHUNK`, `CHUNK_FORCE_RECHUNK_AT`,
+  `CHUNK_FORCE_RECHUNK_TOGGLE` and `CHUNK_FORCE_RECHUNK_ALT`, and the benchmark's
+  `CHUNK_ADVISOR_PERIOD` and `SHRINK_BENCH_ADVISE_ALL`: the `RechunkPolicy` fields and
+  `shrink_bench` options of Changed. Set, they are ignored without a message.
+- `ChunkSizeAdvisor<T>::default_grid_bits()` (it read `CHUNK_ADVISOR_GRID_BITS`):
+  `Options::grid_bits` defaults to 2.
+- The deprecated trace switches `CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`,
+  `CHUNK_RECHUNK_MEMTRACE`, `CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE` and
+  `CHUNK_RECYCLE_TRACE`: `CHUNK_LOG` (`rechunk=debug`, `rechunk=trace`, `memory=info`,
+  `memory=debug`, `affinity=debug`, `recycle=trace`). `FAST_ALLOC_TRACE` stays, deprecated.
+- `CHUNK_RECHUNK_REUSE_LIST` and the chunk list buffer a re-chunk kept for the next one
+  (`ArrayChunkCore::spare_chunk_list_`): see Fixed.
 - Two internal headers nothing included: `chunk/internal/diag_mutex.h` (the lock of the
   diagnostic reports, which are `CHUNK_LOG` lines now) and `chunk/internal/nano_sleeper.h`.
 
 ### Fixed
 
+- Re-chunk: the old geometry's chunk list came back to the system. `CHUNK_RECHUNK_REUSE_LIST`
+  (on by default) kept a dying storage's chunk list buffer for the next re-chunk of the same
+  chunk type, and took it whenever it was at most 4x too large: a coarsening 64 -> 256 kept the
+  64 list resident whole for a list a quarter of it, and the last spare of each type was never
+  freed (16 bytes per chunk: 250 MB per 10^9-element array at S=64). `zero_any_dyn`
+  (`--mode perf --divisor 10`) ended at 1165 MB against 761 MB for static 256; 807 MB now
+  (64 threads, full size: 7895 MB -> 5138 MB, static 256: 5088 MB). The reuse is gone, setting
+  and code (see Removed).
 - `shrink_to_fit()` and `ParamChunk::force_compression()` left uniform `zero_any` chunks
   materialised in a serial build (OpenMP off): a serial `zero_any` queues its compression
   candidates and folds them in batches of half the list from the write path, and both swept the

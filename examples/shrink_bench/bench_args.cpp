@@ -66,6 +66,31 @@ double parse_positive_real_arg(const char* opt, const char* text)
     std::println(stderr, "error: {} expects a real > 0 (got \"{}\")", opt, text);
     std::exit(1);
 }
+
+/// @brief The whole of @p text as a finite real >= 0, or exit(1) naming @p opt.
+double parse_non_negative_real_arg(const char* opt, const char* text)
+{
+    char*        end   = nullptr;
+    const double value = std::strtod(text, &end);
+    if (end != text && *end == '\0' && std::isfinite(value) && value >= 0.0)
+    {
+        return value;
+    }
+    std::cerr << "error: " << opt << " expects a real >= 0 (got \"" << text << "\")\n";
+    std::exit(1);
+}
+
+/// @brief The whole of @p text as an integer >= @p min, or exit(1) naming @p opt.
+Int parse_int_at_least_arg(const char* opt, const char* text, Int min)
+{
+    const Int value = parse_int_arg(opt, text);
+    if (value < min)
+    {
+        std::cerr << "error: " << opt << " expects an integer >= " << min << " (got " << value << ")\n";
+        std::exit(1);
+    }
+    return value;
+}
 } // namespace
 
 BenchArgs parse_bench_args(int argc, char* argv[])
@@ -197,6 +222,61 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                     std::println(stderr, "error: --iter_max must be a positive integer (got {})", iter_max_arg);
                     std::exit(1);
                 }
+            }
+            // The adaptive re-chunk (bench_args.h): written straight into args.
+            else if (arg == "--advisor_period")
+            {
+                args.advisor_period = parse_int_at_least_arg("--advisor_period", next_value(), 0);
+            }
+            else if (arg == "--advise_five")
+            {
+                args.advise_five = true;
+            }
+            else if (arg == "--rechunk_dry_run")
+            {
+                args.rechunk_dry_run = true;
+            }
+            else if (arg == "--rechunk_min_gain_mb")
+            {
+                args.rechunk_min_gain_mb = parse_non_negative_real_arg("--rechunk_min_gain_mb", next_value());
+            }
+            else if (arg == "--rechunk_coarsen_min_meta_mb")
+            {
+                args.rechunk_coarsen_min_meta_mb =
+                    parse_non_negative_real_arg("--rechunk_coarsen_min_meta_mb", next_value());
+            }
+            else if (arg == "--rechunk_coarsen_min_meta_rate")
+            {
+                args.rechunk_coarsen_min_meta_rate =
+                    parse_non_negative_real_arg("--rechunk_coarsen_min_meta_rate", next_value());
+            }
+            else if (arg == "--rechunk_max_coarsen")
+            {
+                args.rechunk_max_coarsen = parse_int_at_least_arg("--rechunk_max_coarsen", next_value(), 1);
+            }
+            else if (arg == "--rechunk_grid_bits")
+            {
+                args.rechunk_grid_bits = parse_int_at_least_arg("--rechunk_grid_bits", next_value(), 0);
+            }
+            else if (arg == "--rechunk_backoff_max")
+            {
+                args.rechunk_backoff_max = parse_int_at_least_arg("--rechunk_backoff_max", next_value(), 0);
+            }
+            else if (arg == "--force_rechunk")
+            {
+                args.force_rechunk = parse_int_at_least_arg("--force_rechunk", next_value(), 0);
+            }
+            else if (arg == "--force_rechunk_at")
+            {
+                args.force_rechunk_at = parse_int_at_least_arg("--force_rechunk_at", next_value(), 0);
+            }
+            else if (arg == "--force_rechunk_alt")
+            {
+                args.force_rechunk_alt = parse_int_at_least_arg("--force_rechunk_alt", next_value(), 1);
+            }
+            else if (arg == "--force_rechunk_toggle")
+            {
+                args.force_rechunk_toggle = true;
             }
             else if (arg == "--help")
             {

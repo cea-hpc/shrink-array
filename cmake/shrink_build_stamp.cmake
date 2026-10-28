@@ -21,8 +21,9 @@
 # differs, so an unchanged tree recompiles and relinks nothing.
 #
 # `check`: builds every executable of those directories, then runs
-# `ctest -L validation --output-on-failure -j ${CHUNK_CHECK_JOBS}`. A bare
-# `ctest` rebuilds nothing: a binary older than its source is tested as is.
+# `ctest -L validation --output-on-failure -j ${CHUNK_CHECK_JOBS}`, less the
+# tests matching CHUNK_CHECK_EXCLUDE (ctest -E) when set. A bare `ctest`
+# rebuilds nothing: a binary older than its source is tested as is.
 #
 # Usage: include() this file before add_subdirectory(examples); call
 # shrink_stamp_directory_targets() at the end of each directory that
@@ -128,12 +129,18 @@ endfunction()
 
 # --- `check` ------------------------------------------------------------------
 set(CHUNK_CHECK_JOBS 4 CACHE STRING "ctest -j for the `check` target")
+# The ThreadSanitizer CI job sets `_1thr$`: a one-thread test has no race to show.
+set(CHUNK_CHECK_EXCLUDE "" CACHE STRING "ctest -E regex of the tests the `check` target leaves out (empty: none)")
 
 function(shrink_add_check_target)
   get_property(_deps GLOBAL PROPERTY SHRINK_CHECK_TARGETS)
+  set(_exclude "")
+  if(CHUNK_CHECK_EXCLUDE)
+    set(_exclude -E "${CHUNK_CHECK_EXCLUDE}")
+  endif()
   add_custom_target(check
     COMMAND ${CMAKE_COMMAND} -E cat "${PROJECT_BINARY_DIR}/build_stamp.txt"
-    COMMAND ${CMAKE_CTEST_COMMAND} -L validation --output-on-failure -j ${CHUNK_CHECK_JOBS}
+    COMMAND ${CMAKE_CTEST_COMMAND} -L validation --output-on-failure -j ${CHUNK_CHECK_JOBS} ${_exclude}
     WORKING_DIRECTORY "${PROJECT_BINARY_DIR}"
     COMMENT "Build the validation executables, then ctest -L validation"
     USES_TERMINAL

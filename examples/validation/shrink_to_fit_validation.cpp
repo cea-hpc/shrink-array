@@ -39,6 +39,7 @@
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 #include "chunk/manage_ompt.h"          // parallel_phase
 #include "chunk/config.h"               // chunk_config::use_zero*
+#include "chunk/PMP_CHUNK.h"            // pmp::current_team
 #include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
@@ -94,18 +95,20 @@ int one_case(int n_chunks)
     const int chunk_size = static_cast<int>(arr.chunk_size());
     const int count      = n_chunks * chunk_size;
     arr.resize(count);
+    // The team's worksharing, not `omp for`: the std backend has no OpenMP, the
+    // pragma would vanish and every rank would write every chunk.
     parallel_phase(
         [&]
         {
-#pragma omp for
-            for (int chunk = 0; chunk < n_chunks; ++chunk)
-            {
-                const double value = chunk_value(chunk);
-                for (int offset = 0; offset < chunk_size; ++offset)
-                {
-                    arr[(chunk * chunk_size) + offset] = value;
-                }
-            }
+            pmp::current_team().for_static(0, n_chunks,
+                                           [&](int chunk)
+                                           {
+                                               const double value = chunk_value(chunk);
+                                               for (int offset = 0; offset < chunk_size; ++offset)
+                                               {
+                                                   arr[(chunk * chunk_size) + offset] = value;
+                                               }
+                                           });
         });
     arr.shrink_to_fit();
 

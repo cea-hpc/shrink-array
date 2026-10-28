@@ -50,7 +50,7 @@ What to run, by what the change touches:
 | write engine, Dekker handshake, compression manager, deferred writes | `deferred_path_validation`, `read_reclaim_validation` (also with `CHUNK_TEST_READ_DELAY_EVERY`, and under ASan in a std-alloc build), the TSan builds, `multi_launch_stress.py` |
 | compression marking, the passes | `mark_path_validation`, `compress_roundtrip`, the benchmark in check mode |
 | allocators, reuse lists, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, the ledger build (`--with-ledger`), ASan in a std-alloc build |
-| re-chunk, dynamic geometry | `rechunk_validation`, `dyn_geometry_validation`, the benchmark with `CHUNK_FORCE_RECHUNK_TOGGLE=1` |
+| re-chunk, dynamic geometry | `rechunk_validation`, `dyn_geometry_validation`, the benchmark with `--force_rechunk <size> --force_rechunk_toggle` |
 | range operations | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_one_value_validation`, `range_counters_validation` |
 | thread ranks, regions | `thread_growth_validation`, `nested_region_validation` |
 | container interface | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
