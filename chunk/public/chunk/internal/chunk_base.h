@@ -30,6 +30,7 @@
 #include <optional>    // std::optional (constant_value)
 #include <sys/mman.h>  // mmap, mprotect, PROT_READ
 
+#include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE (element_at)
 #include "chunk/chunk_traits.h"                         // is_zero_any_family_v (element_at variant gate)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
@@ -1175,7 +1176,7 @@ class ChunkBase : public CRTPSupport<Derived>,
      *         element another thread may be writing (relaxed_element.h).
      */
     template <bool Relaxed = false>
-    [[nodiscard]] T element_at(int offset) const noexcept;
+    [[nodiscard]] CHUNK_FORCE_INLINE T element_at(int offset) const noexcept;
 
     /**
      * @brief element_at() for a member with the motif state, given the chunk's

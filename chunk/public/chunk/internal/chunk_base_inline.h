@@ -1172,7 +1172,7 @@ template <typename T, typename Derived>
 
 template <typename T, typename Derived>
 template <bool Relaxed>
-[[nodiscard]] T ChunkBase<T, Derived>::element_at(int offset) const noexcept
+[[nodiscard]] CHUNK_FORCE_INLINE T ChunkBase<T, Derived>::element_at(int offset) const noexcept
 {
     // A pure read is bracketed by a ReadSection (read_reclaim.h): a
     // compression pass running in the same region waits for it before it
