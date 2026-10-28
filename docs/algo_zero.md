@@ -105,7 +105,7 @@ frequency of the passes.
 The general sequence is the one in [adaptive_rechunk.md](adaptive_rechunk.md) §4. Two
 specifics come from the volume of data in `zero`:
 
-- **the rebuild in slices** (16 by default, `CHUNK_RECHUNK_SLICES`): each slice
+- **the rebuild in slices** (16): each slice
   frees the old chunks it has copied, and between two slices, the reserves of the
   old size are drained and the emptied slabs given back to the system. Peak of the
   rebuild at 64 threads: +6.9 GB in one pass, +1.7 GB in 16 slices;

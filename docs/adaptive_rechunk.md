@@ -135,7 +135,7 @@ measurement at unchanged data and the ability to go back.
 6. **old-pool drain**: drain the pools of the old size and return the
    slabs that have become empty to the system.
 
-**`zero`** rebuilds **in slices** (16 by default, `CHUNK_RECHUNK_SLICES`) and frees
+**`zero`** rebuilds **in slices** (16) and frees
 each old chunk as soon as it has been copied. Between two slices, the pools of the old
 size are drained and the emptied slabs returned to the system, including in the **shared
 pool** when the old storage lives there: without this, the memory of the old storage

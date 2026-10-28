@@ -116,7 +116,7 @@ class RechunkSupport<Derived, true>
      *          chunks its span covers, in parallel over the new chunks (schedule
      *          guided,16) and, for zero with the fast allocator
      *          under OpenMP, in slices with a drain between them
-     *          (CHUNK_RECHUNK_SLICES). A span whose sources are all cst1 stays
+     *          (16). A span whose sources are all cst1 stays
      *          compressed; a zero_any span whose sources are all the same second
      *          constant gets that constant installed without a buffer; the others
      *          are read from *this at OLD and filled through copy_range() at NEW,

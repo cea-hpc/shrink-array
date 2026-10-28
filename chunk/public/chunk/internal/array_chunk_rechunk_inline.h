@@ -22,7 +22,7 @@
 // the heavy includes below (compression manager, stats) stay out of the
 // container declaration itself.
 
-#include <algorithm>   // std::min / std::max (CHUNK_RECHUNK_SLICES)
+#include <algorithm>   // std::min / std::max (the slice count)
 #include <array>       // std::array (the rebuild schedule's text)
 #include <atomic>      // std::atomic<long> n_folded (the memory census)
 #include <chrono>      // the rechunk=debug phase timers
@@ -44,7 +44,6 @@
 #include "chunk/internal/cst_slot.h"            // CstSlot (zero_any's type-of-constant slot)
 #include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast, pmp::team
-#include "chunk/internal/env_parse.h"           // env_number / env_flag (checked, not atoi)
 #include "chunk/log.h"                          // CHUNK_LOG, logging::enabled (the traces)
 #include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
 #include "chunk/vector_range_ops.h"             // assume_drained
@@ -988,8 +987,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // their pages back BEFORE the next slice materialises: peak ~ old +
         // new/slices.
         //
-        // CHUNK_RECHUNK_SLICES sets the count (default 16; 1 = one pass). zero +
-        // fast alloc + OpenMP only: zero_one_value/zero_any do not release their source
+        // 16 slices, zero + fast alloc + OpenMP only: zero_one_value/zero_any do not release their source
         // chunks during the copy (their clear_st carries compression state this
         // loop has no business synthesising), so they have nothing to give back
         // between slices and the extra regions would be pure cost.
@@ -1000,9 +998,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // more slices gain little. The remainder is the two geometries
             // coexisting at slab granularity, insensitive to slicing. Index
             // order is already nearly slab-local (slab-order rebuild gains
-            // nothing).
+            // nothing). Measured on Milan (zero_dyn, recycled slabs kept, five
+            // runs each): at 64 threads 32, 64 and 128 slices are 1.3%, 5.2%
+            // and 6.5% slower, 8 is 1.8% faster but +0.5% of memory; at 32
+            // threads all are within 0.7%, 64 excepted (+1.7%). Fixed: the
+            // former CHUNK_RECHUNK_SLICES is gone.
             n_slices = 16;
-            n_slices = std::max(1, shrink_array::env_number<int>("CHUNK_RECHUNK_SLICES", n_slices));
             // Not worth slicing an array too small to empty a slab per slice.
             n_slices = std::min(n_slices, std::max(1, n_new / 4096));
         }
@@ -1329,15 +1330,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 {
                     compressed = compressed || ch.is_cst_val2();
                 }
-                else if constexpr (chunk_config::use_zero_one_value)
+                else if constexpr (chunk_config::use_zero_one_value && Derived::is_not_bool)
                 {
                     // Nested, like the four sites above: `&&` short-circuits
                     // evaluation, never name lookup, so Derived::is_not_bool is
                     // still looked up for a zero Derived that has no such member.
-                    if constexpr (Derived::is_not_bool)
-                    {
-                        compressed = compressed || ch.is_cst_val2(inf_new2.ind);
-                    }
+
+                    compressed = compressed || ch.is_cst_val2(inf_new2.ind);
                 }
                 if (!compressed)
                 {

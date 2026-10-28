@@ -135,7 +135,7 @@ mesure à données constantes et la possibilité de revenir en arrière.
 6. **old-pool drain** : vider les réserves de l'ancienne taille et rendre au système les
    slabs devenus vides.
 
-**`zero`** reconstruit **par tranches** (16 par défaut, `CHUNK_RECHUNK_SLICES`) et libère
+**`zero`** reconstruit **par tranches** (16) et libère
 chaque ancien chunk dès qu'il est recopié. Entre deux tranches, les réserves de l'ancienne
 taille sont vidées et les slabs vidés rendus au système, y compris dans la **réserve
 partagée** quand l'ancien stockage s'y trouve : sans ça, la mémoire de l'ancien stockage

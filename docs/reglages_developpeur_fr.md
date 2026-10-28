@@ -31,7 +31,6 @@ programme renseigne les champs, et `shrink_bench` les expose en options (§4). V
 | variable | défaut | effet |
 |---|---|---|
 | `CHUNK_ALLOC_AFFINITY_EAGER` | selon la variante | `1` : chaque gros tableau a son jeu d'allocateurs dès sa création (défaut de `zero`) ; `0` : seulement au premier rechunk (défaut de `zero_one_value` et `zero_any`). Voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5 |
-| `CHUNK_RECHUNK_SLICES` | 16 | nombre de tranches de la reconstruction de `zero` |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
 | `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()` |
 | `CHUNK_RECLAIM_PARTIAL` | 1 | un balayage (`trim_reuse_pools`, `CHUNK_RECLAIM_PHASE_KEEP`) rend aussi les pages libres des slabs de valeurs encore utilisés, comme `malloc_trim` dans les tas de glibc (la dernière page de chaque slab, son pointeur arrière, est gardée) ; `0` : seulement les slabs vides, comme avant. `CHUNK_ARENA_REPORT` les compte sur sa ligne `partial` |

@@ -241,8 +241,10 @@ the tag's checksum to the recipe.
   `CHUNK_RECHUNK_KEEP_RECYCLED` and `CHUNK_RECHUNK_KEEP_RECYCLED_MB` (see Changed),
   `CHUNK_RECHUNK_SCHEDULE` (`guided,16`: `static` and `dynamic,64` within 1% except
   `zero_one_value`, where `static` is 7.6% slower), `CHUNK_THP` (the kernel's THP mode decides:
-  `never` and `1` changed neither time nor memory) and `CHUNK_SLAB_MIN_PAGES` (no measurable
-  effect; its removal was planned). `alloc_config::thp_advise()`, `thp_never()` and
+  `never` and `1` changed neither time nor memory), `CHUNK_SLAB_MIN_PAGES` (no measurable
+  effect; its removal was planned) and `CHUNK_RECHUNK_SLICES` (16: with the recycled slabs kept,
+  32, 64 and 128 slices are 1.3%, 5.2% and 6.5% slower at 64 threads, five runs each; 8 is 1.8%
+  faster for +0.5% of memory). `alloc_config::thp_advise()`, `thp_never()` and
   `advise_thp_region()` go with `CHUNK_THP`. `scripts/bench_recycle.sh` loses its recycling
   dimension, and `diag_zero_rechunk_slowdown.py` its `dyn_static1` and `dyn_norecycle` runs.
 - `CHUNK_RECHUNK_DRY_RUN` (a user setting of `docs/environment_variables.md`): set

@@ -29,7 +29,6 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | variable | default | effect |
 |---|---|---|
 | `CHUNK_ALLOC_AFFINITY_EAGER` | depends on the variant | `1`: each large array has its own set of allocators from its creation (default for `zero`); `0`: only from its first rechunk (default for `zero_one_value` and `zero_any`). See [adaptive_rechunk.md](adaptive_rechunk.md) §5 |
-| `CHUNK_RECHUNK_SLICES` | 16 | number of slices in the `zero` rebuild |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | a sweep gives empty slabs back to the system only if there are at least this many |
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()` |
 | `CHUNK_RECLAIM_PARTIAL` | 1 | a sweep (`trim_reuse_pools`, `CHUNK_RECLAIM_PHASE_KEEP`) also gives back the free pages of the value slabs still in use, as `malloc_trim` does in glibc's heaps (the last page of each slab, its back-pointer, is kept); `0`: only the empty slabs, as before. `CHUNK_ARENA_REPORT` prints them on its `partial` line |

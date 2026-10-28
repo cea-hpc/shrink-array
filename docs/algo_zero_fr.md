@@ -105,7 +105,7 @@ fréquence des passes.
 Le déroulé général est celui de [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §4. Deux
 particularités viennent du volume de données de `zero` :
 
-- **la reconstruction par tranches** (16 par défaut, `CHUNK_RECHUNK_SLICES`) : chaque tranche
+- **la reconstruction par tranches** (16) : chaque tranche
   libère les anciens chunks qu'elle a recopiés, et entre deux tranches, les réserves de
   l'ancienne taille sont vidées et les slabs vidés rendus au système. Pic de la
   reconstruction à 64 threads : +6,9 Go en une passe, +1,7 Go en 16 tranches ;

@@ -17,7 +17,7 @@
 #                  bench_and_test.py does; off = no numactl; "auto off" = both
 #   ENVS ["-"]: environment sets to compare, each tag:VAR=VAL[,VAR=VAL...] or "-"
 #               for none; the tag (no "_", "@" or ":") is appended to the label.
-#               e.g. ENVS="- 1slice:CHUNK_RECHUNK_SLICES=1 lazy:CHUNK_ALLOC_AFFINITY_EAGER=0"
+#               e.g. ENVS="- lazy:CHUNK_ALLOC_AFFINITY_EAGER=0 share25:CHUNK_REUSE_SHARE_DIV=25"
 #               (the decider's settings are shrink_bench options, not variables)
 set -u
 export LC_ALL=C   # printf %.2f and awk read and write "1.23" whatever the user locale
