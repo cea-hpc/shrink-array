@@ -61,6 +61,10 @@ struct BenchArgs
     /// --multiply). Default 1/32 (bench_mask_default_scale, bench_array.h);
     /// 8 is the size tab_mask was created with.
     double mask_scale = 1.0 / 32.0;
+    /// --conn_scale: tab_conn holds about conn_scale * sz ints, whole rows (a
+    /// real factor). Default 1/32 (bench_conn_default_scale, bench_array.h); 1
+    /// is the size tab_conn came in with.
+    double conn_scale = 1.0 / 32.0;
     /// --no_conn: leave out tab_conn, the mesh connectivity (bench_phase_conn.cpp)
     /// -- for a run that must compare with the campaigns made before it existed.
     /// Its array is then of size 1 and its phases, check and compression are
@@ -72,6 +76,42 @@ struct BenchArgs
 
     /// --iter_max. 2000 by default.
     Int iter_max_arg = 2000;
+
+    /// @name Adaptive re-chunk (dyn builds; the others ignore them)
+    /// The advisor's schedule and the RechunkPolicy fields the bench exposes.
+    /// The library reads none of them from the environment: a program sets the
+    /// policy, and these options are how this one does.
+    /// @{
+    /// --advisor_period: iterations between two advisor passes; 0: no advisor;
+    /// -1 (not given): max(10, iter_max / 20).
+    Int advisor_period = -1;
+    /// --advise_five: hand the decider only the five historical arrays (tab1,
+    /// tab2, tab_short, tab_complex, tab_point), for runs that must compare with
+    /// the campaigns made before the others were advised.
+    bool advise_five     = false;
+    bool rechunk_dry_run = false; ///< --rechunk_dry_run: analyse and log, never move
+    /// --rechunk_min_gain_mb: absolute deadband of the data-side gain, MB (0
+    /// removes it); < 0 (not given): the policy's.
+    double rechunk_min_gain_mb = -1.0;
+    /// --rechunk_coarsen_min_meta_mb: floor of a coarsening's metadata gain, MB
+    /// (0 removes it); < 0: the policy's.
+    double rechunk_coarsen_min_meta_mb = -1.0;
+    /// --rechunk_coarsen_min_meta_rate: metadata MB per second of estimated
+    /// rebuild a coarsening must reach (0 removes it); < 0: the policy's.
+    double rechunk_coarsen_min_meta_rate = -1.0;
+    /// --rechunk_max_coarsen: largest coarsening factor (1: no cap); 0: the policy's.
+    Int rechunk_max_coarsen = 0;
+    /// --rechunk_grid_bits: the advisor's grid between powers of two; < 0: the policy's.
+    Int rechunk_grid_bits = -1;
+    /// --rechunk_backoff_max: longest back-off, in ticks (0 or 1: none); < 0: the policy's.
+    Int rechunk_backoff_max = -1;
+    /// --force_rechunk <size>: every advised array re-chunked to this size,
+    /// whatever the advisor says (tests); 0: never.
+    Int  force_rechunk        = 0;
+    Int  force_rechunk_at     = 0;     ///< --force_rechunk_at: first iteration that forces
+    Int  force_rechunk_alt    = 64;    ///< --force_rechunk_alt: --force_rechunk_toggle's other size
+    bool force_rechunk_toggle = false; ///< --force_rechunk_toggle: force at every pass, alternating
+    /// @}
 };
 
 /**

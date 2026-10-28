@@ -16,11 +16,12 @@
 
 #pragma once
 
-#include <cstddef> // std::size_t
-#include <map>     // std::map
-#include <string>  // std::string
-#include <format>  // std::format (format_memory)
-#include <print>   // std::println (print)
+#include <algorithm> // std::max
+#include <cstddef>   // std::size_t
+#include <map>       // std::map
+#include <string>    // std::string
+#include <format>    // std::format (format_memory)
+#include <print>     // std::println (print)
 
 #include "chunk/term_color.h" // tc (TermColor)
 #include "chunk/PMP_CHUNK.h"  // CHUNK_PMP_* macros — used HERE, not via includers
@@ -56,11 +57,17 @@ class GlobalStatsChunkList
             return;
         }
 
-        constexpr int col_type    = 50;
+        // The type column fits the longest name (zero_one_value::Chunk<std::complex<double> > is 57).
+        std::size_t longest_name = 0;
+        for (const auto& entry : all_stats_)
+        {
+            longest_name = std::max(longest_name, entry.first.size());
+        }
+        const int     col_type    = std::max(50, static_cast<int>(longest_name) + 2);
         constexpr int col_data    = 18;
         constexpr int col_list    = 20;
         constexpr int col_mem     = 18;
-        constexpr int total_width = col_type + col_data + col_list + col_mem;
+        const int     total_width = col_type + col_data + col_list + col_mem;
 
         long double total_metadata_mem = 0;
         const int   nb_threads         = CHUNK_PMP_MAX_THREADS;

@@ -25,6 +25,9 @@ target_compile_definitions(simple_array_chunk PRIVATE CHUNK_VARIANT_ZERO=1)
 add_test(NAME simple_array_chunk COMMAND simple_array_chunk)
 set_property(TEST simple_array_chunk PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 set_property(TEST simple_array_chunk PROPERTY LABELS examples)
+# check builds it (cmake/shrink_build_stamp.cmake), as it builds the harnesses: ctest -L examples
+# finds it.
+set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS simple_array_chunk)
 
 # Not labelled `examples`: one std::vector of 10^9 doubles per array, more
 # memory than a CI runner has (simple_array_chunk is the same program compressed).

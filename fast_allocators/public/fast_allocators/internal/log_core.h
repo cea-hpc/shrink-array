@@ -394,8 +394,9 @@ struct Spec
 /// @brief What a program logs with CHUNK_LOG unset: every channel at warn,
 ///        rechunk at info -- the line of each re-chunk the decider applies
 ///        (one per move, a sequential point), as before the log existed. The
-///        channel's other info lines need their switch (CHUNK_FORCE_RECHUNK,
-///        CHUNK_RECHUNK_CHURN). A bare level in CHUNK_LOG sets rechunk too.
+///        channel's other info lines need their switch (CHUNK_RECHUNK_CHURN) or
+///        their policy field (RechunkPolicy::force_size). A bare level in
+///        CHUNK_LOG sets rechunk too.
 inline constexpr std::array<Level, n_channels> default_max = []
 {
     std::array<Level, n_channels> levels{};
@@ -598,7 +599,7 @@ inline void report_bad_items(const Spec& spec, std::string_view who) noexcept
 
 /// @brief An environment switch that raises a channel to a level: a trace
 ///        of before the log (deprecated: its use is warned about), or a
-///        setting whose point is what it logs (CHUNK_RECHUNK_DRY_RUN).
+///        setting whose point is what it logs (CHUNK_RECHUNK_CHURN).
 struct LegacySwitch
 {
     std::string_view name;
@@ -610,16 +611,8 @@ struct LegacySwitch
 /// @brief The switches, applied after CHUNK_LOG and raising only: setting
 ///        one shows what it showed before, whatever CHUNK_LOG says.
 ///        Set = non-empty and not starting with '0'.
-inline constexpr std::array<LegacySwitch, 10> legacy_switches{{
-    {"CHUNK_RECHUNK_TRACE", Channel::rechunk, Level::debug, true},
-    {"CHUNK_RECHUNK_TRACE_SLICES", Channel::rechunk, Level::trace, true},
-    {"CHUNK_RECHUNK_TRACE_MEM", Channel::memory, Level::debug, true},
-    {"CHUNK_RECHUNK_MEMTRACE", Channel::memory, Level::info, true},
-    {"CHUNK_RECHUNK_DRY_RUN", Channel::rechunk, Level::info, false},
+inline constexpr std::array<LegacySwitch, 2> legacy_switches{{
     {"CHUNK_RECHUNK_CHURN", Channel::rechunk, Level::info, false},
-    {"CHUNK_FORCE_RECHUNK", Channel::rechunk, Level::info, false},
-    {"CHUNK_AFFINITY_TRACE", Channel::affinity, Level::debug, true},
-    {"CHUNK_RECYCLE_TRACE", Channel::recycle, Level::trace, true},
     {"FAST_ALLOC_TRACE", Channel::alloc, Level::trace, true},
 }};
 

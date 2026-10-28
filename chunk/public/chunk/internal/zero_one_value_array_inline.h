@@ -753,7 +753,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
 
     m_size_ = 0;
 
-    this->release_chunk_list(); // Mandatory with the new allocator (a re-chunk keeps the buffer)
+    this->release_chunk_list(); // Mandatory with the new allocator
 
     nb_chunk_ = 0;
 

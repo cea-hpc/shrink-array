@@ -133,6 +133,44 @@ is that program, which then compares the two arrays element by element. It needs
 build: it does not compile against a library built with GCC's libgomp, where the phases would
 never be marked.
 
+**With TBB: `shrink_array::tbb::parallel_for`.** Built with the std backend
+(`-DCHUNK_THREADS=std`, Spack `threads=std`), the library takes writes from TBB's threads.
+`chunk/tbb_adaptor.h` is `oneapi::tbb::parallel_for` with the same arguments and the phase
+marked for you: `begin_parallel_phase()` before every piece a thread runs,
+`finalize_parallel_phase()` once every task is done (also when the body throws):
+
+```cpp
+#include <oneapi/tbb/blocked_range.h>
+#include "chunk/tbb_adaptor.h"       // shrink_array::tbb::parallel_for
+
+const long                  n = 1L << 24;
+sa::zero_any::Array<double> a(n);
+
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n / 2),
+                      [&](const oneapi::tbb::blocked_range<long>& r) {
+                          for (long i = r.begin(); i != r.end(); ++i)
+                              a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+                      });
+sa::tbb::parallel_for(n / 2, n, [&](long i) { a[i] = 2.0; });   // the index form
+
+a.shrink_to_fit();                   // the phase is closed: a serial point
+```
+
+Partitioners and `task_arena`s work as with TBB itself; an arena wider than the machine needs
+`CHUNK_THREAD_CAPACITY`. A `oneapi::tbb::parallel_for` nested in the body takes
+`sa::tbb::phase_body(inner)`. The header comes with the library, which does not depend on TBB:
+the program links it.
+
+```cmake
+find_package(chunk 0.1 REQUIRED)
+find_package(TBB REQUIRED)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
+```
+
+An OpenMP build refuses the adaptor at compile time: OpenMP numbers only its own threads.
+`std::thread`s and thread pools of your own:
+[docs/getting_started.md](docs/getting_started.md#5-threads-the-rules).
+
 Link it with `chunk::chunk_zero_any` (see [Install](#install)). The complete version, which checks
 what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp);
 [docs/getting_started.md](docs/getting_started.md) walks through it, then through the rules
@@ -171,6 +209,41 @@ The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are 
 library you link: `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
 [docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) how reads, writes and compression run side by side.
+
+**Integers that repeat with a shift: `pattern::Array`.** A mesh connectivity is never uniform,
+yet cell `c + 1` holds the node numbers of cell `c` plus one. `pattern::Array<T>`, for integer
+types, comes with the `zero_any` libraries: it does everything `zero_any::Array` does, and also
+compresses such a chunk to a **motif plus an offset**. Element `j` reads `motif[j] + offset`;
+the motif is shared by every chunk of that shape, and the offset sits in the chunk's metadata:
+
+```cpp
+#include "chunk/pattern_array.h"   // shrink_array::pattern::Array
+
+const int nx = 4096, ny = 1024;           // nx x ny quad cells, (nx + 1) x (ny + 1) nodes
+sa::pattern::Array<int> conn(4 * nx * ny);   // the 4 nodes of each cell, cell after cell
+
+for (int j = 0; j < ny; ++j)
+    for (int i = 0; i < nx; ++i)
+    {
+        const int c = j * nx + i;             // the cell
+        const int n = j * (nx + 1) + i;       // its first node
+        conn[4 * c + 0] = n;
+        conn[4 * c + 1] = n + 1;
+        conn[4 * c + 2] = n + nx + 2;
+        conn[4 * c + 3] = n + nx + 1;
+    }
+conn.shrink_to_fit();
+
+std::printf("chunks holding a buffer: %.1f %%\n", conn.stats());   // 0.0 %: one motif for 16.8 M ints
+```
+
+With chunks of 256 elements (64 cells, `nx` a multiple of 64), every chunk is the same motif
+with an offset of its own: one motif is registered for the whole array, and every chunk but one
+keeps no buffer (a motif is admitted the second time it is seen, by another chunk). A chunk is
+examined when its first or last element is written, so a connectivity filled in order
+compresses as it is written; a write into a motif chunk gives it a buffer again.
+[docs/algo_pattern.md](docs/algo_pattern.md) explains the motif registry, the compression and
+the reads.
 
 **Lock-free, and checked rather than only tested.** No thread ever takes a lock to read or
 write an element. Writers, the compression pass that takes a chunk's buffer back, the flush of
@@ -350,6 +423,7 @@ Spack version (`spack install shrink-array@cpp23`).
 | check a handshake with a model checker | [docs/formal_models.md](docs/formal_models.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |
 | index an array in 2D or 3D (`mdspan`), in tiles that compress | [docs/mdspan.md](docs/mdspan.md) |
+| compress a mesh connectivity (`pattern::Array`) | [docs/algo_pattern.md](docs/algo_pattern.md) |
 | measure memory and time reliably | [docs/performance_measurement.md](docs/performance_measurement.md) |
 | submit and follow runs on the cluster from a window | [docs/shrink_gui.md](docs/shrink_gui.md) |
 | contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |

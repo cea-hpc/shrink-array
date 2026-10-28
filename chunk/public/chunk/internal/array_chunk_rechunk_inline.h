@@ -59,7 +59,7 @@
 
 namespace shrink_array::internal
 {
-/// @brief CHUNK_LOG=rechunk=debug (or CHUNK_RECHUNK_TRACE): the per-phase
+/// @brief CHUNK_LOG=rechunk=debug: the per-phase
 ///        timings of every re-chunk, its rebuild schedule and the split of the
 ///        slice regions' wall time. Read by each re-chunk, at its start.
 [[nodiscard]] inline bool rechunk_trace_on() noexcept
@@ -67,7 +67,7 @@ namespace shrink_array::internal
     return logging::enabled(logging::Channel::rechunk, logging::Level::debug);
 }
 
-/// @brief CHUNK_LOG=memory=debug (or CHUNK_RECHUNK_TRACE_MEM): the MEMORY side
+/// @brief CHUNK_LOG=memory=debug: the MEMORY side
 ///        of the trace -- exact RSS at the phase boundaries (a page-table walk
 ///        per read), the new geometry's occupancy, the allocator census. A
 ///        channel of its own so the phase times are not measured with these
@@ -455,13 +455,10 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         // and parks its OLD-geometry blocks by size. Without the end-of-life
         // census: tmp's death is not an exit (ArrayChunkBase::exit_census_).
         tmp.exit_census_ = false;
-        // ... and its chunk_list buffer becomes the next re-chunk's (see
-        // ArrayChunkCore::release_chunk_list), reset right after the brace.
-        alloc_affinity_detail::g_releasing_rechunk_storage = true;
+        // Its chunk_list (the OLD geometry's) is freed with it.
     }
-    alloc_affinity_detail::g_releasing_rechunk_storage = false;
-    const auto t5                                      = t_now(); // tmp destroyed
-    r_teardown                                         = rss_now();
+    const auto t5 = t_now(); // tmp destroyed
+    r_teardown    = rss_now();
 
     // Free the OLD-geometry blocks tmp just parked into the old-size reuse
     // list. Nothing pops them again (the array has moved off old_size), so

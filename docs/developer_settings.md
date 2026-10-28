@@ -20,16 +20,15 @@
 
 ***
 
-## 1. Tuning of the decider, the rebuild and the allocators
+## 1. Tuning of the rebuild and the allocators
+
+The decider's thresholds (`RechunkPolicy`) are not environment variables: a program sets the
+fields, and `shrink_bench` exposes them as options (§4). See
+[adaptive_rechunk.md](adaptive_rechunk.md) §3.
 
 | variable | default | effect |
 |---|---|---|
 | `CHUNK_ALLOC_AFFINITY_EAGER` | depends on the variant | `1`: each large array has its own set of allocators from its creation (default for `zero`); `0`: only from its first rechunk (default for `zero_one_value` and `zero_any`). See [adaptive_rechunk.md](adaptive_rechunk.md) §5 |
-| `CHUNK_RECHUNK_MAX_COARSEN` | 4 | maximum factor of a coarsening (1 = no limit) |
-| `CHUNK_ADVISOR_MIN_GAIN_MB` | 8 | absolute threshold for the data-side gain, in MB (0 removes it) |
-| `CHUNK_ADVISOR_GRID_BITS` | 2 | the advisor's candidate sizes between the powers of two: the multiples of 64 whose C / 64 has at most this many significant bits (2: 192, 384, 768...; 3: 320, 448, 640 too; 1: powers of two only). See [adaptive_rechunk.md](adaptive_rechunk.md) §2 |
-| `CHUNK_COARSEN_MIN_META_MB` | 1 | minimum metadata gain of a coarsening, in MB |
-| `CHUNK_COARSEN_MIN_META_RATE` | 250 | minimum metadata gain per second of estimated rebuild time, in MB/s |
 | `CHUNK_RECHUNK_SCHEDULE` | `guided,16` | OpenMP schedule of the rebuild (`kind[,chunk]`) |
 | `CHUNK_RECHUNK_SLICES` | 16 | number of slices in the `zero` rebuild |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | a sweep gives empty slabs back to the system only if there are at least this many |
@@ -40,7 +39,6 @@
 | `CHUNK_RECHUNK_RECYCLE` | on | `zero` rebuild: the slabs a slice has just emptied go to the next slice instead of back to the system; `0` turns it off. *Removal planned: 2026-12-31.* |
 | `CHUNK_RECHUNK_KEEP_RECYCLED_MB` | 0 | `zero` rebuild: at its end, up to this many MiB per arena of the recycled slabs no slice took stay resident (split evenly over the ranks) for the next allocations, instead of going back to the system; `0`: all go back |
 | `CHUNK_RECHUNK_KEEP_RECYCLED` | off | `1`: the same, with no cap (the RSS keeps every leftover until reused) |
-| `CHUNK_RECHUNK_REUSE_LIST` | on | a rechunk reuses the previous rechunk's chunk list buffer (pages already resident); `0`: a new one each time. *Removal planned: 2026-12-31.* |
 | `CHUNK_THP` | 0 | unset: the kernel's THP mode decides. `never`: no transparent huge pages on the slab arenas (`MADV_NOHUGEPAGE`) -- under the mode `always` a slab otherwise becomes resident whole at its first touch; compare the two with the RSS and AnonHugePages of `smaps_rollup`. Experimental: `1` requests them (`MADV_HUGEPAGE`) on the slab arenas and the cst2 region. Ignored, with a message, when the huge page is larger than 2 MiB (kernel with 64 KiB pages: 512 MiB). Cost: a slab that has been started becomes fully resident. *Removal planned: 2026-12-31.* |
 | `CHUNK_REUSE_SHARE_DIV` | 50 | fast allocator: a rank keeps parked for reuse up to chunks / (this × threads) freed buffers per element type (per array for an array with its own allocators); the chunks counted include the compressed ones |
 | `CHUNK_REUSE_FLOOR_KB` | unset | floor of that budget in KiB per rank, converted to buffers at the chunk size; unset: 500 buffers (100 for an array with its own allocators), whatever their size; `0`: no floor |
@@ -51,7 +49,9 @@
 
 The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
 [environment_variables.md](environment_variables.md)). The variables of the former traces
-still work: each sets the level it stands for, with a deprecation warning.
+(`CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`, `CHUNK_RECHUNK_MEMTRACE`,
+`CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`) are no longer read; only
+`FAST_ALLOC_TRACE` still sets the level it stands for, with a deprecation warning.
 
 | setting | what it prints |
 |---|---|
@@ -76,18 +76,27 @@ still work: each sets the level it stands for, with a deprecation warning.
 
 ## 3. Forced rechunks (tests)
 
-| variable | effect |
+`RechunkPolicy::force_size` and its companions; in `shrink_bench`, the options:
+
+| option | effect |
 |---|---|
-| `CHUNK_FORCE_RECHUNK=<size>` | forces a rechunk to this size, even if the decider would not do it |
-| `CHUNK_FORCE_RECHUNK_AT=<iteration>` | delays this forced rechunk until this iteration |
-| `CHUNK_FORCE_RECHUNK_TOGGLE=1` | rechunk at each pass, alternating with `CHUNK_FORCE_RECHUNK_ALT` (64 by default) |
+| `--force_rechunk <size>` | forces a rechunk to this size, even if the decider would not do it |
+| `--force_rechunk_at <iteration>` | delays this forced rechunk until this iteration |
+| `--force_rechunk_toggle` | rechunk at each pass, alternating with `--force_rechunk_alt <size>` (64 by default) |
 
 ## 4. The `shrink_bench` benchmark
 
 | variable or option | effect |
 |---|---|
-| `CHUNK_ADVISOR_PERIOD` | period of the advisor passes, in iterations (default `max(10, iter_max / 20)`; 0 disables it) |
-| `SHRINK_BENCH_ADVISE_ALL` | default: all arrays except `tab_bool` are handed to the decider; `0`: the five historical arrays |
+| `--advisor_period <n>` | period of the advisor passes, in iterations (default `max(10, iter_max / 20)`; 0 disables it) |
+| `--advise_five` | only the five historical arrays are handed to the decider (default: all arrays except `tab_bool` and `tab_bool_bits`) |
+| `--rechunk_dry_run` | the decider analyses and logs, but applies no rechunk (`RechunkPolicy::dry_run`) |
+| `--rechunk_max_coarsen <n>` | maximum factor of a coarsening (`max_coarsen_factor`, 4; 1 = no limit) |
+| `--rechunk_min_gain_mb <x>` | absolute threshold for the data-side gain, in MB (`min_gain_bytes`, 8; 0 removes it) |
+| `--rechunk_grid_bits <n>` | the advisor's candidate sizes between the powers of two: the multiples of 64 whose C / 64 has at most this many significant bits (`advisor_grid_bits`, 2: 192, 384, 768...; 3: 320, 448, 640 too; 1: powers of two only). See [adaptive_rechunk.md](adaptive_rechunk.md) §2 |
+| `--rechunk_coarsen_min_meta_mb <x>` | minimum metadata gain of a coarsening, in MB (`coarsen_min_meta_gain_bytes`, 1; 0 removes it) |
+| `--rechunk_coarsen_min_meta_rate <x>` | minimum metadata gain per second of estimated rebuild time, in MB/s (`coarsen_min_meta_rate`, 250; 0 removes it) |
+| `--rechunk_backoff_max <n>` | longest back-off of a settled array, in passes (`max_backoff_ticks`, 8; 0 or 1 disables it) |
 | `SHRINK_BENCH_EXACT_RSS` | `1`: all memory lines are exact (expensive) |
 | `SHRINK_BENCH_RSS_SAMPLE_MS` | sampling period of the exact peak, in ms (disabled by default) |
 | `CHUNK_BENCH_MEM_PERIOD` | period of the memory line, in iterations |
@@ -100,7 +109,7 @@ still work: each sets the level it stands for, with a deprecation warning.
 | `BENCH_SCHED_BLOCK` | size of the scheduling blocks of the benchmark phases (64; 0 = contiguous slices) |
 | `NO_IO`, `COMPRESS` | equivalents of `--no_io` and `--compress` |
 | `--no_mask`, `--mask_scale <x>` | without `tab_mask`; or its size, `x × sz` (default 1/32) |
-| `--no_conn` | without `tab_conn`, the mesh connectivity (`pattern::Array` in the `zero_one_value` and `zero_any` builds) |
+| `--no_conn`, `--conn_scale <x>` | without `tab_conn`, the mesh connectivity (`pattern::Array` in the `zero_one_value` and `zero_any` builds); or its size, about `x × sz` in whole rows (default 1/32) |
 | `--no_struct` | without the arrays of structures (`Point3`, `Cell`) |
 
 ## 5. Compilation macros

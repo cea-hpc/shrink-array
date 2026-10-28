@@ -44,10 +44,14 @@ bool debug_flag = false;
 // "--test_stl" must be listed here: the filter below (ranges::find over
 // valid_args) runs FIRST and rejects an unknown flag, so a flag missing from
 // this list never reaches main()'s branch for it.
-const std::vector<std::string> valid_args = {"--no_io",      "--compress",      "--write_trace",   "--read_trace",
-                                             "--multiply",   "--divisor",       "--iter_max",      "--mode",
-                                             "--test_stl",   "--test_prealloc", "--no_struct",     "--no_mask",
-                                             "--mask_scale", "--no_conn",       "--checksum_only", "--help"};
+const std::vector<std::string> valid_args = {
+    "--no_io", "--compress", "--write_trace", "--read_trace", "--multiply", "--divisor", "--iter_max", "--mode",
+    "--test_stl", "--test_prealloc", "--no_struct", "--no_mask", "--mask_scale", "--no_conn", "--conn_scale",
+    "--checksum_only", "--help",
+    // The adaptive re-chunk (dyn builds), bench_args.h.
+    "--advisor_period", "--advise_five", "--rechunk_dry_run", "--rechunk_min_gain_mb", "--rechunk_coarsen_min_meta_mb",
+    "--rechunk_coarsen_min_meta_rate", "--rechunk_max_coarsen", "--rechunk_grid_bits", "--rechunk_backoff_max",
+    "--force_rechunk", "--force_rechunk_at", "--force_rechunk_alt", "--force_rechunk_toggle"};
 
 // -----------------------------------------------------------------------------
 // Seed persistence.

@@ -304,9 +304,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *          known point (a measurement, a checkpoint) rather than at whatever
      *          moment the next sweep happens.
      *
-     * @note An empty no-op unless the build has fast block compression
-     *       (chunk_config::use_fast_block_compression, OpenMP builds), so call
-     *       sites need no guard.
+     * @note Every build, so call sites need no guard: the OpenMP builds'
+     *       candidates, and a serial zero_any's (it queues them too); a serial
+     *       zero or zero_one_value compresses on the write and has none.
      */
     static void force_compression();
 

@@ -93,14 +93,15 @@ dans des répertoires neufs avec la même configuration, alterner, et se méfier
 
 | comparer… | interrupteur |
 |---|---|
-| sans advisor / analyses seules / avec rechunks | `CHUNK_ADVISOR_PERIOD=0` / `CHUNK_RECHUNK_DRY_RUN=1` / rien |
+| sans advisor / analyses seules / avec rechunks | `--advisor_period 0` / `--rechunk_dry_run` / rien |
 | affinité paresseuse / immédiate | `CHUNK_ALLOC_AFFINITY_EAGER=0` / `=1` |
-| taille maximale d'un pas de grossissement | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
+| taille maximale d'un pas de grossissement | `--rechunk_max_coarsen <n>` |
 | ordonnancement de la reconstruction | `CHUNK_RECHUNK_SCHEDULE=…` |
 
 La liste complète est dans [reglages_developpeur_fr.md](reglages_developpeur_fr.md).
-Attention : `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` ne bloque plus les grossissements depuis le
-critère « gain par coût » ; utiliser `CHUNK_RECHUNK_DRY_RUN=1`.
+Les réglages du décideur sont des options de `shrink_bench` (la bibliothèque ne les lit dans
+aucune variable). Attention : `--rechunk_min_gain_mb 1000000` ne bloque plus les grossissements
+depuis le critère « gain par coût » ; utiliser `--rechunk_dry_run`.
 
 ## 3. Recettes
 
@@ -109,8 +110,13 @@ critère « gain par coût » ; utiliser `CHUNK_RECHUNK_DRY_RUN=1`.
 ```
 rm -f /tmp/modes.txt
 for r in 1 2 3; do
-  for mode in "CHUNK_ADVISOR_PERIOD=0" "CHUNK_RECHUNK_DRY_RUN=1" "X_NORMAL=1"; do
-    t=$(env $mode OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io 2>/dev/null \
+  for mode in no_advisor dry_run normal; do
+    case $mode in
+      no_advisor) opt="--advisor_period 0" ;;
+      dry_run)    opt="--rechunk_dry_run" ;;
+      normal)     opt="" ;;
+    esac
+    t=$(OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io $opt 2>/dev/null \
         | grep -oE "Elapsed time computation : [0-9.]+" | awk '{print $NF}')
     echo "$mode $t" >> /tmp/modes.txt
   done

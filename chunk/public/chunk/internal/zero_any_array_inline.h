@@ -486,7 +486,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
 
     m_size_ = 0;
 
-    this->release_chunk_list(); // required by the allocator (a re-chunk keeps the buffer)
+    this->release_chunk_list(); // required by the allocator
 
     ProxyType::clear_tab_is_int(num_tab_);
 

@@ -248,6 +248,7 @@ int main(int argc, char* argv[])
     const bool      no_mask         = bench_args.no_mask;
     const bool      no_conn         = bench_args.no_conn;
     const double    mask_scale      = bench_args.mask_scale; // tab_mask's size / sz
+    const double    conn_scale      = bench_args.conn_scale; // tab_conn's size / sz
     const double    multiply_factor = bench_args.multiply_factor;
     const double    divisor_factor  = bench_args.divisor_factor;
     const Int       iter_max_arg    = bench_args.iter_max_arg;
@@ -567,15 +568,21 @@ int main(int argc, char* argv[])
 
     // A mesh connectivity (bench_phase_conn.cpp): pattern::Array<int> in the
     // zero_one_value and zero_any builds, zero::Array<int> in a zero build, a vector
-    // in the baseline (BenchConnArray). About sz ints, whole rows of
-    // bench_conn_row; size 1 under --no_conn (BenchArrays::with_conn) or when sz is
-    // smaller than one row.
-    const Int      conn_sz     = sz / bench_conn_row * bench_conn_row;
-    const bool     no_tab_conn = no_conn || conn_sz == 0;
-    BenchConnArray tab_conn(no_tab_conn ? 1 : conn_sz);
+    // in the baseline (BenchConnArray). About conn_scale * sz ints (--conn_scale,
+    // default 1/32), whole rows of bench_conn_row, computed in 64 bits and capped
+    // at the build's Int as tab_mask; size 1 under --no_conn
+    // (BenchArrays::with_conn) or when that is less than one row.
+    const long long conn_rows_want =
+        std::llround(conn_scale * static_cast<double>(sz)) / static_cast<long long>(bench_conn_row);
+    const long long conn_rows_max = static_cast<long long>(std::numeric_limits<Int>::max()) / bench_conn_row;
+    const Int       conn_sz       = static_cast<Int>((conn_rows_want < conn_rows_max ? conn_rows_want : conn_rows_max) *
+                                                     static_cast<long long>(bench_conn_row));
+    const bool      no_tab_conn   = no_conn || conn_sz == 0;
+    BenchConnArray  tab_conn(no_tab_conn ? 1 : conn_sz);
     if (!no_tab_conn)
     {
-        std::println("tab_conn: {} elements ({} rows of {} cells)", conn_sz, conn_sz / bench_conn_row, bench_conn_nx);
+        std::println("tab_conn: {} elements ({} rows of {} cells, --conn_scale {})", conn_sz, conn_sz / bench_conn_row,
+                     bench_conn_nx, conn_scale);
     }
 
     // Handle on the nineteen arrays, passed to the extracted phases. References,
@@ -727,7 +734,7 @@ int main(int argc, char* argv[])
     }
 
     // ── Chunk-size advisor (STEP 0: observation only, dyn+zero_any builds) ──
-    // Every CHUNK_ADVISOR_PERIOD iterations (env, default 500, 0 = disabled),
+    // Every --advisor_period iterations (0 = disabled),
     // estimate each representative array's memory across candidate chunk
     // sizes and print the table + the analysis cost. Runs at this SERIAL
     // point of the loop (quiescent enough for observation; states may still
@@ -744,8 +751,9 @@ int main(int argc, char* argv[])
     // first move lands around a tenth of the way in, where the geometric gains
     // are largest, and the tick count stays bounded. The floor of 10 stops a
     // very short run from examining every other iteration.
-    // CHUNK_ADVISOR_PERIOD overrides; 0 still disables.
-    const Int advisor_period = shrink_array::env_number<Int>("CHUNK_ADVISOR_PERIOD", std::max<Int>(10, iter_max / 20));
+    // --advisor_period overrides; 0 disables.
+    const Int advisor_period =
+        bench_args.advisor_period >= 0 ? bench_args.advisor_period : std::max<Int>(10, iter_max / 20);
     // Phase-3A decider (dry-run): persists across ticks, keyed by array address.
     // `advisor_call` increments once per advisor_tick so cooldown/stability count
     // in ticks, not iterations. Policy defaults: 3 stable ticks, 8 MB deadband,
@@ -754,7 +762,44 @@ int main(int argc, char* argv[])
     // advisor on the array, applies the memory + hysteresis policy, and re-chunks
     // it when worthwhile. dry_run=false makes it act (rechunk is now parallel and
     // cheap, so we gate purely on memory gain + hysteresis, not CPU cost).
-    RechunkDecider rechunk_decider{RechunkPolicy{.dry_run = false}};
+    // The --rechunk_* / --force_rechunk* options set the policy's fields: the
+    // library reads none of them from the environment.
+    const RechunkPolicy rechunk_policy = [&bench_args]
+    {
+        constexpr double mib = 1024.0 * 1024.0;
+        RechunkPolicy    pol;
+        pol.dry_run = bench_args.rechunk_dry_run;
+        if (bench_args.rechunk_min_gain_mb >= 0.0)
+        {
+            pol.min_gain_bytes = static_cast<std::size_t>(bench_args.rechunk_min_gain_mb * mib);
+        }
+        if (bench_args.rechunk_coarsen_min_meta_mb >= 0.0)
+        {
+            pol.coarsen_min_meta_gain_bytes = static_cast<std::size_t>(bench_args.rechunk_coarsen_min_meta_mb * mib);
+        }
+        if (bench_args.rechunk_coarsen_min_meta_rate >= 0.0)
+        {
+            pol.coarsen_min_meta_rate = bench_args.rechunk_coarsen_min_meta_rate;
+        }
+        if (bench_args.rechunk_max_coarsen > 0)
+        {
+            pol.max_coarsen_factor = static_cast<unsigned>(bench_args.rechunk_max_coarsen);
+        }
+        if (bench_args.rechunk_grid_bits >= 0)
+        {
+            pol.advisor_grid_bits = static_cast<int>(bench_args.rechunk_grid_bits);
+        }
+        if (bench_args.rechunk_backoff_max >= 0)
+        {
+            pol.max_backoff_ticks = static_cast<int>(bench_args.rechunk_backoff_max);
+        }
+        pol.force_size   = static_cast<unsigned>(bench_args.force_rechunk);
+        pol.force_at     = static_cast<int>(bench_args.force_rechunk_at);
+        pol.force_alt    = static_cast<unsigned>(bench_args.force_rechunk_alt);
+        pol.force_toggle = bench_args.force_rechunk_toggle;
+        return pol;
+    }();
+    RechunkDecider rechunk_decider{rechunk_policy};
     Int            advisor_call = 0;
     const auto     advisor_tick = [&](Int k_iter)
     {
@@ -780,16 +825,11 @@ int main(int argc, char* argv[])
             // starts like the static S=64 build and ends below the static S=256
             // one (zero_any, 64 threads: 6.57 GB against 7.26 GB; with only the
             // five arrays above advised, the other ten stay at S=64, ~12.5 GB).
-            // SHRINK_BENCH_ADVISE_ALL=0 advises only the five, for runs that
-            // must compare with earlier campaigns. tab_bool and tab_bool_bits
-            // excepted: both stay at their birth geometry, so the two bool
-            // containers are compared as they are, not after a re-chunk.
-            static const bool advise_all = []
-            {
-                const char* env = std::getenv("SHRINK_BENCH_ADVISE_ALL");
-                return env == nullptr || env[0] == '\0' || env[0] != '0';
-            }();
-            if (advise_all)
+            // --advise_five advises only the five, for runs that must compare
+            // with earlier campaigns. tab_bool and tab_bool_bits excepted: both
+            // stay at their birth geometry, so the two bool containers are
+            // compared as they are, not after a re-chunk.
+            if (!bench_args.advise_five)
             {
                 rechunk_decider.consider<double>(tab3, tick, iter, "tab3");
                 rechunk_decider.consider<double>(tab4, tick, iter, "tab4");

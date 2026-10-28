@@ -93,14 +93,15 @@ in fresh directories with the same configuration, alternate, and be wary.
 
 | compare… | switch |
 |---|---|
-| without advisor / analyses only / with rechunks | `CHUNK_ADVISOR_PERIOD=0` / `CHUNK_RECHUNK_DRY_RUN=1` / nothing |
+| without advisor / analyses only / with rechunks | `--advisor_period 0` / `--rechunk_dry_run` / nothing |
 | lazy / eager affinity | `CHUNK_ALLOC_AFFINITY_EAGER=0` / `=1` |
-| maximum size of a coarsening step | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
+| maximum size of a coarsening step | `--rechunk_max_coarsen <n>` |
 | scheduling of the rebuild | `CHUNK_RECHUNK_SCHEDULE=…` |
 
 The full list is in [developer_settings.md](developer_settings.md).
-Beware: `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` no longer blocks coarsenings since the
-"gain per cost" criterion; use `CHUNK_RECHUNK_DRY_RUN=1`.
+The decider's settings are `shrink_bench` options (the library reads them from no variable).
+Beware: `--rechunk_min_gain_mb 1000000` no longer blocks coarsenings since the
+"gain per cost" criterion; use `--rechunk_dry_run`.
 
 ## 3. Recipes
 
@@ -109,8 +110,13 @@ Beware: `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` no longer blocks coarsenings since t
 ```
 rm -f /tmp/modes.txt
 for r in 1 2 3; do
-  for mode in "CHUNK_ADVISOR_PERIOD=0" "CHUNK_RECHUNK_DRY_RUN=1" "X_NORMAL=1"; do
-    t=$(env $mode OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io 2>/dev/null \
+  for mode in no_advisor dry_run normal; do
+    case $mode in
+      no_advisor) opt="--advisor_period 0" ;;
+      dry_run)    opt="--rechunk_dry_run" ;;
+      normal)     opt="" ;;
+    esac
+    t=$(OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io $opt 2>/dev/null \
         | grep -oE "Elapsed time computation : [0-9.]+" | awk '{print $NF}')
     echo "$mode $t" >> /tmp/modes.txt
   done

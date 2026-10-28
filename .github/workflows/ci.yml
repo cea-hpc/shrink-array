@@ -213,5 +213,8 @@ jobs:
           -DCHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
+          -DCHUNK_CHECK_EXCLUDE=_1thr$
+      # The _1thr tests run in the other jobs: one thread, no race for
+      # ThreadSanitizer to see, and its cost all the same.
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check

@@ -73,7 +73,6 @@
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
 #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
-#include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
 #include "chunk/internal/print.h"              // shrink_array::println
 #include "chunk/chunk_traits.h"                // is_zero_any_family_v, has_motif_state_v (pattern::Array)
 #include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
@@ -156,27 +155,23 @@ template <typename Arr>
 template <typename T>
 struct ChunkSizeAdvisor
 {
-    /// @brief Options::grid_bits' default: CHUNK_ADVISOR_GRID_BITS, read once, else 2.
-    /// @details 1 and 2 give about the same footprint, 3 a few % more: at 3 the
-    ///          cheapest size is often a small step (256 -> 384) that the
-    ///          decider's rate gate refuses, with no fallback to the next best.
-    [[nodiscard]] static int default_grid_bits() noexcept
-    {
-        static const int bits = env_number<int>("CHUNK_ADVISOR_GRID_BITS", 2);
-        return bits;
-    }
-
     /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.
     struct Options
     {
-        int coarser_levels = 4;                   ///< evaluate S*2 .. S*2^levels
-        int finer_levels   = 2;                   ///< evaluate S/2 .. S/2^levels (data sampled)
-        int grid_bits      = default_grid_bits(); ///< also every multiple of 64 between
-                                                  ///< S/2^finer_levels and S*2^coarser_levels whose
-                                                  ///< C/64 has at most this many significant bits
-                                                  ///< (2: 192, 384, 768...: steps of at most 50%;
-                                                  ///< 3: 320, 448, 640...: 25%); 0: none
-        int64_t max_mat_scans = 65536;            ///< cap on materialized chunks whose DATA is read
+        int coarser_levels = 4;        ///< evaluate S*2 .. S*2^levels
+        int finer_levels   = 2;        ///< evaluate S/2 .. S/2^levels (data sampled)
+        int grid_bits      = 2;        ///< also every multiple of 64 between
+                                       ///< S/2^finer_levels and S*2^coarser_levels whose
+                                       ///< C/64 has at most this many significant bits
+                                       ///< (2: 192, 384, 768...: steps of at most 50%;
+                                       ///< 3: 320, 448, 640...: 25%); 0: none. 1 and 2
+                                       ///< give about the same footprint, 3 a few % more:
+                                       ///< at 3 the cheapest size is often a small step
+                                       ///< (256 -> 384) that the decider's rate gate
+                                       ///< refuses, with no fallback to the next best.
+                                       ///< RechunkPolicy::advisor_grid_bits sets it for
+                                       ///< RechunkDecider::consider().
+        int64_t max_mat_scans = 65536; ///< cap on materialized chunks whose DATA is read
         /// Per-chunk metadata beyond sizeof(chunk): tracking-list entry (~0.8 B,
         /// see the GLOBAL COMPRESSION LISTS monitoring table: List Memory /
         /// Allocated Chunks) + dirty bitset (128 B / 64 chunks = 2 B) + slack.
