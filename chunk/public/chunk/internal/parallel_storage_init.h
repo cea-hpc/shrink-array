@@ -47,15 +47,51 @@
 
 #include <cstddef>     // std::size_t
 #include <memory>      // std::allocator, std::construct_at
+#include <new>         // std::bad_alloc
 #include <type_traits> // std::is_trivially_destructible_v
 #include <utility>     // std::forward
 #include <vector>      // std::vector
+#include <sys/mman.h>  // mmap, munmap: the large per-chunk vectors
+#include <unistd.h>    // sysconf(_SC_PAGESIZE)
 
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION, pmp loops
 #include "chunk/config.h"    // build_config::threaded
 
 namespace shrink_array
 {
+namespace no_init_alloc_detail
+{
+/// @brief From this many bytes, NoInitAllocator maps the storage itself.
+/// @details glibc serves an allocation below its mmap threshold from its heap,
+///          and that threshold grows (up to 32 MiB) each time a mapped block is
+///          freed: after a re-chunk freed one list, the next lists of up to
+///          32 MiB went to the heap, and the heap kept them resident once freed
+///          (zero_any_dyn at --divisor 10: ~580 MB still resident at the end of
+///          the run that a fixed glibc threshold gave back). Mapped here, a
+///          per-chunk vector's pages always return to the system when it is
+///          freed. Below this size the heap's retention is negligible and a
+///          mapping per vector not worth it.
+inline constexpr std::size_t mapped_min_bytes = std::size_t{1} << 20U;
+
+/// @brief The system page size, read once.
+[[nodiscard]] inline std::size_t page_bytes() noexcept
+{
+    static const std::size_t page = []
+    {
+        const long size = ::sysconf(_SC_PAGESIZE);
+        return size > 0 ? static_cast<std::size_t>(size) : std::size_t{4096};
+    }();
+    return page;
+}
+
+/// @brief @p bytes rounded up to whole pages: the length mapped and unmapped.
+[[nodiscard]] inline std::size_t mapped_length(std::size_t bytes) noexcept
+{
+    const std::size_t page = page_bytes();
+    return (bytes + page - 1) / page * page;
+}
+} // namespace no_init_alloc_detail
+
 /**
  * @brief std::allocator whose argument-less construct() does nothing.
  * @details A default-inserted element is left unconstructed, for the thread
@@ -70,6 +106,58 @@ template <typename T>
 struct NoInitAllocator : std::allocator<T>
 {
     using value_type = T; ///< Element type.
+
+    /// @brief Whether @p n elements are mapped (mmap) rather than taken from the heap.
+    /// @details Decided by the size alone, so deallocate() takes the same path as
+    ///          allocate() did. The mapping is page-aligned; an element type
+    ///          aligned beyond a page stays on the heap.
+    [[nodiscard]] static bool mapped(std::size_t n) noexcept
+    {
+        return alignof(T) <= no_init_alloc_detail::page_bytes() &&
+               n >= no_init_alloc_detail::mapped_min_bytes / sizeof(T);
+    }
+
+    /// @brief Storage for @p n elements: mapped from mapped_min_bytes on (see
+    ///        no_init_alloc_detail::mapped_min_bytes), from the heap below.
+    /// @details The pages are not touched here: the first write -- the caller's
+    ///          init loop -- places them (NUMA), as glibc's own large blocks.
+    /// @throws std::bad_alloc when the mapping fails.
+    [[nodiscard]] T* allocate(std::size_t n)
+    {
+        if (!mapped(n))
+        {
+            return std::allocator<T>::allocate(n);
+        }
+        void* const ptr = ::mmap(nullptr, no_init_alloc_detail::mapped_length(n * sizeof(T)), PROT_READ | PROT_WRITE,
+                                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (ptr == MAP_FAILED)
+        {
+            throw std::bad_alloc{};
+        }
+        return static_cast<T*>(ptr);
+    }
+
+#if defined(__cpp_lib_allocate_at_least)
+    /// @brief C++23: std::allocator's allocate_at_least() would take the heap
+    ///        path whatever the size, and deallocate() then unmap a heap block.
+    ///        Exactly @p n, through allocate().
+    [[nodiscard]] std::allocation_result<T*, std::size_t> allocate_at_least(std::size_t n)
+    {
+        return {allocate(n), n};
+    }
+#endif
+
+    /// @brief Release what allocate(@p n) returned: unmapped, its pages back to
+    ///        the system at once, or returned to the heap.
+    void deallocate(T* ptr, std::size_t n) noexcept
+    {
+        if (!mapped(n))
+        {
+            std::allocator<T>::deallocate(ptr, n);
+            return;
+        }
+        (void)::munmap(ptr, no_init_alloc_detail::mapped_length(n * sizeof(T)));
+    }
 
     NoInitAllocator() noexcept = default;
     /// @brief Rebinding copy (allocator requirements).

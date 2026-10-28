@@ -274,6 +274,13 @@ the tag's checksum to the recipe.
   only, and four of them not even there. In a release build every thread of the team emptied the
   same pools at once (double frees, broken lists). All six refuse it in every build now: a check
   build aborts, the others print one line on stderr and skip the call.
+- The per-chunk vectors (the chunk list, `zero_any`'s second-value and constant-type rows, the
+  candidate flags, the dirty bitset) are mapped by their allocator (`NoInitAllocator`) from
+  1 MiB on, and unmapped when freed. They came from glibc's heap below its mmap threshold, which
+  grows up to 32 MiB each time a mapped block is freed: after a re-chunk freed one list, the
+  next ones went to the heap, which kept them resident once freed. `zero_any_dyn`
+  (`--divisor 10`, default glibc settings): 1387 MB at iteration 1990, 815 MB now; peak 1389 MB,
+  1076 MB now. At 10^9 elements the lists exceed 32 MiB and were already mapped.
 - Re-chunk: the old geometry's chunk list came back to the system. `CHUNK_RECHUNK_REUSE_LIST`
   (on by default) kept a dying storage's chunk list buffer for the next re-chunk of the same
   chunk type, and took it whenever it was at most 4x too large: a coarsening 64 -> 256 kept the
