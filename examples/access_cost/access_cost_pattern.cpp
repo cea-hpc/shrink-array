@@ -146,7 +146,7 @@ struct Mesh
     }
 };
 
-/// A fixed pseudo-random index sequence (splitmix64), every index in [0, n).
+/// A fixed pseudo-random index sequence (splitmix64), every index in [0, count).
 std::vector<int> random_indices(long count)
 {
     std::vector<int> idx(static_cast<std::size_t>(count));

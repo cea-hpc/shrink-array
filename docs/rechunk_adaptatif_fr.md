@@ -124,7 +124,7 @@ mesure à données constantes et la possibilité de revenir en arrière.
 1. **prologue** : à l'ancienne géométrie, vider les écritures différées du tableau, puis
    compresser ses candidats en attente avant de les retirer des listes ;
 2. **tmp create** : construire le nouveau stockage, à la nouvelle taille ;
-3. **refill** : le remplir en parallèle (`CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut).
+3. **refill** : le remplir en parallèle (ordonnancement `guided,16`).
    Un nouveau chunk dont toutes les sources sont à la première valeur est sauté. Un nouveau
    chunk dont toutes les sources étaient compressées est **replié** tout de suite. Pour
    **`zero_any`**, si toutes ses sources sont à la **même** seconde constante, elle est
@@ -135,7 +135,7 @@ mesure à données constantes et la possibilité de revenir en arrière.
 6. **old-pool drain** : vider les réserves de l'ancienne taille et rendre au système les
    slabs devenus vides.
 
-**`zero`** reconstruit **par tranches** (16 par défaut, `CHUNK_RECHUNK_SLICES`) et libère
+**`zero`** reconstruit **par tranches** (16) et libère
 chaque ancien chunk dès qu'il est recopié. Entre deux tranches, les réserves de l'ancienne
 taille sont vidées et les slabs vidés rendus au système, y compris dans la **réserve
 partagée** quand l'ancien stockage s'y trouve : sans ça, la mémoire de l'ancien stockage
@@ -152,8 +152,7 @@ détruit, ses slabs se vident entièrement et sont rendus au système.
 
 Le prix : un slab entamé par couple (rang, tableau, taille). Avec les slabs de 1 Mio de l'ancien
 plancher de seize pages (pages de 64 Kio), c'était ~780 Mio sur les 16 tableaux du banc à 64 threads ;
-les slabs y font maintenant 256 Kio, le quart (`CHUNK_SLAB_MIN_PAGES=16` rétablit le plancher, voir
-[reglages_developpeur_fr.md](reglages_developpeur_fr.md)).
+les slabs y font maintenant 256 Kio, le quart.
 
 D'où deux modes, dont le choix par défaut dépend de la variante :
 
@@ -216,7 +215,7 @@ se limite aux reconstructions.
   2 000 itérations, `diag_zero_rechunk_slowdown.py`) : +17 % par itération après le
   passage à 1 024. Inchangé avec une seule tranche, une reconstruction en
   ordonnancement statique, sans recyclage des slabs, sans réutilisation de
-  `chunk_list`, en affinité lazy ; le placement NUMA est équilibré comme celui du
+  `chunk_list_`, en affinité lazy ; le placement NUMA est équilibré comme celui du
   statique. L'essentiel venait de l'advisor : ses analyses continuaient à chaque
   passage une fois la géométrie stabilisée, et leurs parties séquentielles
   faisaient attendre les autres threads (__kmp_fork_barrier). Avec

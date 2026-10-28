@@ -98,7 +98,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @details Retrieves (second_value, ind, num_tab) record from share_info_array
      *          using ptr_on_array as key. Also initializes compression flag pointer.
      * @pre ptr_on_array must point to valid array
-     * @post second_value, ind, num_tab, and ptr_is_inside_chunk_list_to_compress are valid
+     * @post second_value, ind, num_tab, and ptr_is_inside_chunk_list_to_compress_ are valid
      * @note For bool specialization, this is a no-op as metadata is fixed
      */
 
@@ -788,13 +788,13 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     // ========================================================================
 
     /**
-     * @brief Core implementation behind operator=(): writes `v` at this
+     * @brief Core implementation behind operator=(): writes @p value at this
      *        proxy's index.
      * @details
      * Synchronous fast-path flow:
-     * 1. Fast-path: If v == first_value and chunk is cst_val1, no-op.
+     * 1. Fast-path: If value == first_value and chunk is cst_val1, no-op.
      * 2. Load metadata (set_info_second_value_ind()) if needed.
-     * 3. Fast-path: if v == second_value and chunk is already at/equal to
+     * 3. Fast-path: if value == second_value and chunk is already at/equal to
      *    it, no-op.
      * 4. Decompress chunk if compressed, write value, mark for compression.
      * There is also a slower asynchronous path (deferred/lock-contended
@@ -816,11 +816,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     /**
      * @brief Read-modify-write behind the compound operators (`+=`, `-=`...):
-     *        `values[num] = op(values[num], v)`, with the second-value
+     *        `values[num] = op(values[num], operand)`, with the second-value
      *        bookkeeping of a write (a slot leaving or reaching the second
      *        value updates the chunk's counter, a full chunk folds).
      * @tparam U Type of the operand.
-     * @tparam Op Binary operator applied to (current, v).
+     * @tparam Op Binary operator applied to (current, operand).
      * @param operand Operand.
      * @param op The operator.
      * @note A result equal to the first value is counted as one, and a chunk
@@ -951,7 +951,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @brief Initialize both tab number and compression flag pointer
      * @details Convenience method combining set_num_tab() and
      *          set_ptr_is_inside_chunk_list_to_compress()
-     * @post Both num_tab and ptr_is_inside_chunk_list_to_compress are valid
+     * @post Both num_tab and ptr_is_inside_chunk_list_to_compress_ are valid
      *
      * @note No build-mode guard: the sole caller
      *       (SecondValueProxyBase::write_with_optional_lock_with_set_ptr) is under

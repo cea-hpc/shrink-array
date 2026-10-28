@@ -35,7 +35,6 @@
 #include <print>     // std::println (the CHUNK_STATS report)
 #include <string>    // std::string (the CHUNK_STATS_JSON line)
 #include <utility>   // std::cmp_greater
-#include <unistd.h>  // sysconf(_SC_PAGESIZE): CHUNK_SLAB_MIN_PAGES
 
 #include "chunk/config.h"                              // build_config::chunk_dynamic, threaded
 #include "chunk/singleton.h"                           // SingletonChk
@@ -48,7 +47,6 @@
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
 #include "chunk/all_type_chunk.h"                      // AllTypeChunk
 #include "chunk/log.h"                                 // CHUNK_LOG
-#include "chunk/internal/env_parse.h"                  // env_number (CHUNK_SLAB_MIN_PAGES)
 
 namespace shrink_array
 {
@@ -80,9 +78,8 @@ template struct ParamChunkParallelInterface<build_config::threaded, AllTypeChunk
  * @copydoc ParamChunk::init_indexes
  *
  * @details Block size = 2 MiB (15 MiB with @p big_chunk_block) divided by the
- *          thread count, floored at 240 KiB (and at CHUNK_SLAB_MIN_PAGES pages
- *          when set). Each element type scales it to its width and floors it at
- *          one page (value_slab_request).
+ *          thread count, floored at 240 KiB. Each element type scales it to its
+ *          width and floors it at one page (value_slab_request).
  *
  * @warning A chunk larger than one block cannot be allocated; only a warning,
  *          as the caller cannot fix the compile-time geometry at run time.
@@ -108,15 +105,8 @@ void ParamChunk::init_indexes(bool big_chunk_block)
     // (EmptySlabSweep), so the floor only cost memory -- on 64 KiB pages it
     // made the slabs 1 MiB at 64 threads instead of 256 KiB: a partly-used
     // slab per (rank, element type, array, size), and a slab kept resident by
-    // its last few live buffers. CHUNK_SLAB_MIN_PAGES=16 restores it (A/B).
-    if (const int min_pages = env_number<int>("CHUNK_SLAB_MIN_PAGES", 0); min_pages > 0)
-    {
-        if (const long ps = ::sysconf(_SC_PAGESIZE); ps > 0)
-        {
-            const long long floor_bytes = std::min(static_cast<long long>(min_pages) * ps, 1LL << 30);
-            sz                          = std::max(sz, static_cast<int>(floor_bytes));
-        }
-    }
+    // its last few live buffers. (The A/B switch CHUNK_SLAB_MIN_PAGES is gone:
+    // on x86 a floor of 16 pages changed nothing measurable.)
 
     set_block_size(sz);
 
@@ -204,6 +194,13 @@ void ParamChunk::chunk_stats()
                    "                 path (deferred ops had to be flushed first)\n"
                    "    cross-rank   of those, the ones that needed the expensive walk\n"
                    "                 across every rank rather than just their own\n");
+    }
+    if (all.dirty_gate != 0)
+    {
+        std::print("   dirty         accesses on a chunk whose dirty bit was set, so the\n"
+                   "                 precise read gate was tested\n"
+                   "    open         of those, the gate open: no deferred op left on the\n"
+                   "                 chunk, the bit stayed set (it is cleared per phase)\n");
     }
     std::print("  read/write     reads per write: the access profile of the run\n"
                "  create         chunks materialised (a buffer was attached)\n"
@@ -316,6 +313,21 @@ void ParamChunk::chunk_stats()
             }
             std::println("     cross-rank  = {}  ({:.1f}% of sync)", stats.read_sync_cross,
                          pct(stats.read_sync_cross, stats.read_sync));
+        }
+        // Accesses on a dirty chunk, and of those the ones its sticky bit cost for nothing.
+        if (stats.dirty_gate != 0)
+        {
+            if (reads_all != 0)
+            {
+                std::println("    dirty        = {}  ({:.1f}% of reads)", stats.dirty_gate,
+                             pct(stats.dirty_gate, reads_all));
+            }
+            else
+            {
+                std::println("    dirty        = {}", stats.dirty_gate);
+            }
+            std::println("     open        = {}  ({:.1f}% of dirty)", stats.dirty_open,
+                         pct(stats.dirty_open, stats.dirty_gate));
         }
         if (stats.write != 0)
         {

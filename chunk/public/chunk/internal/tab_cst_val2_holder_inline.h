@@ -483,15 +483,6 @@ void GlobalVecHolder<T>::region_init()
         CHUNK_INVARIANT_FAILED("[cst_val2] cannot reserve the second-value region ({} MiB): {}", region_usable >> 20U,
                                std::strerror(errno));
     }
-    // CHUNK_THP (experimental, off by default): advice only. Not under
-    // MM_PROTECT, where the region stays PROT_NONE.
-    if constexpr (!build_config::use_mm_protect)
-    {
-        if (cst2_thp_advise())
-        {
-            (void)madvise(raw, region_usable, MADV_HUGEPAGE);
-        }
-    }
     // Every slot is carved at a multiple of region_stride (id_stride),
     // which is what turns a slot pointer into a small identifier and back
     // (TabCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored

@@ -227,8 +227,8 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, ChunkT>
     /*!
      * \brief Sets a specific second value in a tab and chunk.
      * \param num_tab Index of the tab.
-     * \param i Index of the chunk within the tab.
-     * \param v Value to assign.
+     * \param num_chunk Index of the chunk within the tab.
+     * \param value Value to assign.
      */
     static void set(int num_tab, int num_chunk, InT<T> value)
     {
@@ -320,8 +320,8 @@ class ProxySpec<bool, Derived, ChunkT> : public SecondValueProxyBase<Derived, bo
     /*!
      * \brief Sets a specific second value in a tab and chunk.
      * \param num_tab Index of the tab.
-     * \param i Index of the chunk within the tab.
-     * \param v Value to assign.
+     * \param num_chunk Index of the chunk within the tab.
+     * \param value Value to assign.
      */
     static void set(int num_tab, int num_chunk, bool value) noexcept
     {

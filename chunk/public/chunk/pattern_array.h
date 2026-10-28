@@ -21,13 +21,13 @@
  * @brief pattern::Array: a chunked integer array for runs of zeros and motifs
  *        repeated with a shift (docs/algo_pattern.md).
  *
- * @details Being written, in the stages of the design note. Today a member of
- *          the zero_any family with zero_any's behaviour: a chunk compresses to
- *          zero or to any one value, through zero_any's machinery
- *          (zero_any::ArrayImpl, zero_any::ChunkImpl, zero_any::ProxyImpl), with
- *          tables and candidate lists of its own. The motif state comes next.
- *          Integers only; static chunk sizes only (no CHUNK_DYNAMIC build, no
- *          re-chunk): the motifs are per chunk size (section 7).
+ * @details A member of the zero_any family: a chunk compresses to zero or to
+ *          any one value through zero_any's machinery (zero_any::ArrayImpl,
+ *          zero_any::ChunkImpl, zero_any::ProxyImpl), with tables and
+ *          candidate lists of its own -- and, besides, to a motif shared by
+ *          every chunk of the same shape plus an offset of its own (element
+ *          j reads motif[j] + offset). Integers only; static or dynamic
+ *          geometry, the motifs registered per chunk size (sections 3 and 8).
  *
  *          It shares zero_any's second-value registry of its element type: a
  *          zero_any::Array<T> and a pattern::Array<T> draw their constants from
@@ -53,7 +53,7 @@ namespace pattern
 {
 
 /**
- * @brief Chunked integer array of the zero_any family, to become the array of
+ * @brief Chunked integer array of the zero_any family that also compresses
  *        shifted motifs (docs/algo_pattern.md). All of it is zero_any::ArrayImpl's;
  *        this class adds the constructors, the destructor and the assignments.
  *
@@ -129,9 +129,9 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     }
 
     /**
-     * @brief TEST ENTRY, until the compression to motifs exists (stage 2 of the
-     *        design note): put chunk @p num_chunk in the motif state for the
-     *        elements @p elems, chunk_size() of them.
+     * @brief TEST ENTRY: put chunk @p num_chunk directly in the motif state for
+     *        the elements @p elems, chunk_size() of them, without the write path
+     *        and the pass that compress to motifs (pattern_validation, I to L).
      * @details The normalised motif (elems[j] - elems[0], wrapping) is
      *          registered in MotifRegion<T> (or found there), the offset
      *          elems[0] goes to the chunk's second-value slot, then the values

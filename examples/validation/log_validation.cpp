@@ -240,10 +240,22 @@ void check_environment()
 }
 
 // --- 2 ----------------------------------------------------------------------
+/// @brief @p text as the parser gets CHUNK_LOG: a value known at run time only.
+/// @details GCC 16 in C++26 mode folds parse_spec(literal, default_max) -- both
+///          arguments constants -- at compile time and gets it wrong
+///          ("warn,rechunk=trace" rejects its second item); a run-time spec, a
+///          copy of the base, a constexpr evaluation and C++23 mode all read it
+///          right. The library parses getenv("CHUNK_LOG"), a run-time value.
+[[gnu::noinline]] std::string_view run_time(const char* text) noexcept
+{
+    return text;
+}
+
 void check_parse()
 {
     using logging::detail::default_max;
-    using logging::detail::parse_spec;
+    const auto parse_spec = [](const char* text, const auto& base)
+    { return logging::detail::parse_spec(run_time(text), base); };
     constexpr auto ix = [](Channel chan) { return static_cast<std::size_t>(chan); };
 
     auto spec = parse_spec("", default_max);

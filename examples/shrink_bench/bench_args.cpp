@@ -76,7 +76,7 @@ double parse_non_negative_real_arg(const char* opt, const char* text)
     {
         return value;
     }
-    std::cerr << "error: " << opt << " expects a real >= 0 (got \"" << text << "\")\n";
+    std::println(stderr, "error: {} expects a real >= 0 (got \"{}\")", opt, text);
     std::exit(1);
 }
 
@@ -86,7 +86,7 @@ Int parse_int_at_least_arg(const char* opt, const char* text, Int min)
     const Int value = parse_int_arg(opt, text);
     if (value < min)
     {
-        std::cerr << "error: " << opt << " expects an integer >= " << min << " (got " << value << ")\n";
+        std::println(stderr, "error: {} expects an integer >= {} (got {})", opt, min, value);
         std::exit(1);
     }
     return value;

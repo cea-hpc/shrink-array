@@ -149,7 +149,7 @@ double varied2(long index)
     return static_cast<double>((index % 89) + 1) * 0.5;
 }
 
-/// A fixed pseudo-random index sequence (splitmix64), every index in [0, n).
+/// A fixed pseudo-random index sequence (splitmix64), every index in [0, count).
 std::vector<int> random_indices(long count)
 {
     std::vector<int> idx(static_cast<std::size_t>(count));

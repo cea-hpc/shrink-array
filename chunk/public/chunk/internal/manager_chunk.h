@@ -937,13 +937,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @brief Drop every queued zero_any candidate pointing into [@p lo, @p hi).
      *
      * @details Teardown removal by CHUNK-POINTER RANGE: candidates hold
-     *          &chunk_list[j], so filtering on the array's chunk_list span
+     *          &chunk_list_[j], so filtering on the array's chunk_list_ span
      *          guarantees no pointer into it survives teardown. The by-num_tab
      *          form can MISS entries whose num_tab a rechunk identity swap
      *          shifted; the dangling zero_any::Chunk* would then be double-freed by a
      *          later compression pass.
      *
-     * @param lo first address of the array's chunk_list span
+     * @param lo first address of the array's chunk_list_ span
      * @param hi one past its last address
      * @note In plain fast-block-compression builds (GNU, no OMPT) this cleanup is
      *       the ONLY one: the built-in vec_tup.clear() runs only under OMPT.

@@ -110,7 +110,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
   public:
     using Traits      = Base::Traits;      ///< ArrayChunkTraits<zero::Array>.
-    using ChunkType   = Base::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list.
+    using ChunkType   = Base::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list_.
     using ManagerType = Base::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
     using ProxyType   = Base::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
     using value_type  = T;                 ///< Stored element type.
@@ -253,7 +253,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     ///        compressed and the deferred ops drained first.
     /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
     ///       freed serially, parked in the geometry's reuse list under OpenMP);
-    ///       chunk_list keeps its capacity.
+    ///       chunk_list_ keeps its capacity.
     void resize(const IntType newsz) pre(newsz >= 0) post(this->size() == newsz);
 
   private:

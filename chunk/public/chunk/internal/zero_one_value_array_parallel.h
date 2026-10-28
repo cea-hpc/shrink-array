@@ -100,7 +100,7 @@ class FastBlockSupport<Derived, true>
 {
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
 
     /**
      * @brief Compress every chunk of this array currently queued as a candidate.

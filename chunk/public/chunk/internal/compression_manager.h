@@ -173,7 +173,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
 
         /**
          * @brief Release the context and the op itself, exactly once.
-         * @see destroyed for why the once-only guarantee is required
+         * @see destroyed_ for why the once-only guarantee is required
          */
         void destroy() noexcept override;
 

@@ -40,7 +40,7 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
         // access check on the alias.
         using CM = CompressionManager<value_type, ChunkType>;
         // force: drain every rank regardless of the pending counter. Used by
-        // rechunk_to() before it swaps chunk_list out -- an op left on an
+        // rechunk_to() before it swaps chunk_list_ out -- an op left on an
         // old-geometry chunk would outlive its chunk and be replayed against a
         // recycled address of the wrong size. Do not gate this path on the
         // counter: it can read 0 while ops are still queued.

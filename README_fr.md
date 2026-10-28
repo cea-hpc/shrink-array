@@ -306,8 +306,8 @@ droite idéale jusqu'à 16 threads (un speedup de 14, puis 26 à 28 à 32), atte
 
 Sur x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cœurs), Intel oneAPI, à la taille de référence
 (`--multiply 1`) : même tableau. Toutes les variantes restent sur la droite idéale jusqu'à 16
-threads et atteignent 43 à 80 à 128, là où `std::vector` plafonne vers 28 à 64 threads et
-retombe vers 18 à 128.
+threads et atteignent 46 à 80 à 128, là où `std::vector` plafonne vers 32 à 64 threads et
+retombe vers 20 à 128.
 
 ![Speedup OpenMP sur AMD EPYC 7763 (Milan, 2 × 64 cœurs), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
 

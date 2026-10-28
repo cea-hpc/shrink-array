@@ -1294,7 +1294,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::resize_tab_is_int(int
 {
     // Check builds: the row is REALLOCATED, so every flag goes back to 0.
     // A chunk still flagged here still sits in a candidate list: its entry
-    // outlives the caller's chunk_list realloc, and the cleared flag lets
+    // outlives the caller's chunk_list_ realloc, and the cleared flag lets
     // the chunk be queued twice. The callers' compression pass (resize,
     // after its deferred-op drain) must empty the lists first; this checks
     // it. Mirrors zero_any::Proxy::resize_tab_is_int(num_tab, old, nb).

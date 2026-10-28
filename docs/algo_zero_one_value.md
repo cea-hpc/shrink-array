@@ -447,8 +447,8 @@ from the state of the chunks). The steps:
 2. drain the reuse lists and prepare the pools for the new size;
 3. build a **temporary array** at the new size (chunk initialisation in
    parallel);
-4. **fill it in parallel** by slices (`rechunk_refill`, scheduling tunable with
-   `CHUNK_RECHUNK_SCHEDULE`, `guided,16` by default): a slice whose sources are all
+4. **fill it in parallel** by slices (`rechunk_refill`, scheduling
+   `guided,16`): a slice whose sources are all
    at the first value is skipped; otherwise the values are read then rewritten by
    `copy_range`, and a new chunk whose sources were all compressed is
    **folded** immediately (the variant's `compress()` on this chunk, which refuses if the
@@ -532,7 +532,7 @@ keeping it on the element-by-element path:
   adding the chunk (`set_info_on_chunk()`), since `zero_one_value`'s lists are indexed by
   it. Without that, the chunks landed in the list of `T{}`, which no pass drains;
 - in counter mode (the serial builds), a direct store must **recount** the chunk's two
-  counters, `nb_val_eq_first_value` and `nb_val_eq_second_value`, which zero_one_value::Proxy otherwise
+  counters, `nb_val_eq_first_value_` and `nb_val_eq_second_value_`, which zero_one_value::Proxy otherwise
   keeps up to date one write at a time (`internal::resync_counters`, as for `zero`'s count of
   zeros).
 
@@ -571,7 +571,6 @@ The full list, with the macros and the CMake options, is in
 
 | variable | effect |
 |---|---|
-| `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | scheduling of the rechunk rebuild (`guided,16` by default) |
 | `CHUNK_LOG=rechunk=debug` | rechunk phase times (`memory=debug`: foldings) |
 | `CHUNK_OMPT_STATS=1` | statistics of synchronisation regions (OMPT build) |
 | `shrink_bench --rechunk_dry_run` | the decider analyses and logs, but applies no rechunk (to measure the cost of the analyses; `RechunkPolicy::dry_run`) |

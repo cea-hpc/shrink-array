@@ -54,7 +54,7 @@ The write goes through the `Proxy<T>` proxy:
 ## 4. When a chunk becomes a compression candidate
 
 **Sequential builds**: each chunk keeps a **zero counter**
-(`ChunkCounterPolicy`, `nb_val_eq_zero`). When it reaches the chunk's number of elements, the
+(`ChunkCounterPolicy`, `nb_val_eq_zero_`). When it reaches the chunk's number of elements, the
 chunk is compressed at once (`manage_full_zero`). This counter must be exactly
 in sync with the content: an out-of-sync counter would compress a chunk that is not
 uniform, hence the care taken to propagate it in copies.
@@ -105,7 +105,7 @@ frequency of the passes.
 The general sequence is the one in [adaptive_rechunk.md](adaptive_rechunk.md) §4. Two
 specifics come from the volume of data in `zero`:
 
-- **the rebuild in slices** (16 by default, `CHUNK_RECHUNK_SLICES`): each slice
+- **the rebuild in slices** (16): each slice
   frees the old chunks it has copied, and between two slices, the reserves of the
   old size are drained and the emptied slabs given back to the system. Peak of the
   rebuild at 64 threads: +6.9 GB in one pass, +1.7 GB in 16 slices;

@@ -112,7 +112,7 @@ void drain_compression_backlog()
 // ── Serial or parallel passes ────────────────────────────────────────────────
 bool g_parallel = false; ///< --mode: the pass being run
 
-/// @brief f(i) for i in [0, N): a plain loop, or a work-shared parallel
+/// @brief @p func(i) for i in [0, @p count): a plain loop, or a work-shared parallel
 ///        region (static schedule) followed by the phase-end drain.
 template <typename F>
 void for_each_index(long count, F&& func)
@@ -140,7 +140,7 @@ void for_each_index(long count, F&& func)
     drain_compression_backlog();
 }
 
-/// @brief How many i in [0, N) satisfy bad(i) -- the checks, in the same
+/// @brief How many i in [0, @p nindex) satisfy @p bad(i) -- the checks, in the same
 ///        serial or parallel pass. Details are then printed by a serial scan.
 template <typename F>
 long count_if_index(long nindex, F&& bad)
@@ -212,7 +212,8 @@ constexpr const char* variant_name()
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
+    // bool's second value is true, always: zero_one_value warns on the call.
+    if constexpr (!std::is_same_v<Val, bool> && requires(Arr probe) { probe.set_second_value(value); })
     {
         arr.set_second_value(value);
     }
@@ -812,6 +813,21 @@ int check_multiple_of_64_chain(const char* label)
 namespace
 {
 /// @brief One case: its name (--case), the geometry it starts from, its body.
+/// bool content for the bool cases: runs of false, runs of true, and varied
+/// spans, 3000 elements each.
+bool bool_runs(long i)
+{
+    switch ((i / 3000) % 3)
+    {
+        case 0:
+            return false;
+        case 1:
+            return true;
+        default:
+            return i % 3 == 0;
+    }
+}
+
 struct Case
 {
     const char*          name;
@@ -954,10 +970,24 @@ static int run_body(int argc, char** argv)
         // only from 8192 new chunks on (n_new / 4096 slices, up to 16), which
         // no case above reaches. Every slice boundary drains the old geometry's
         // parked blocks and recycles the slabs they empty into the next slice's
-        // allocations (CHUNK_RECHUNK_RECYCLE): stale buffers that must come
+        // allocations (always, since CHUNK_RECHUNK_RECYCLE is gone): stale buffers that must come
         // back zero-filled where the data is zero, and exact elsewhere. Mostly
         // distinct values (no constant chunk to fold) with zero spans; grown
         // (4 slices) and shrunk (8 slices), then rewritten and recompressed.
+        // bool, one byte per element: the refill's bulk read (memcpy per source
+        // chunk, zero_any's shared array of true filled as a constant). Runs of
+        // false, runs of true and varied spans; grown, shrunk, and to a size the
+        // old one does not divide (768), whose new chunks straddle old ones.
+        {"bool-grow", 512,
+         []
+         {
+             return check_invariance<bool>("bool-grow-512-to-2048", 1000000L, 2048, bool_runs, /*sv_value=*/true,
+                                           /*post_rounds=*/1);
+         }},
+        {"bool-shrink", 512,
+         [] { return check_invariance<bool>("bool-shrink-512-to-64", 1000000L, 64, bool_runs, /*sv_value=*/true); }},
+        {"bool-uneven", 512,
+         [] { return check_invariance<bool>("bool-uneven-512-to-768", 1000000L, 768, bool_runs, /*sv_value=*/true); }},
         {"sliced-grow", 64,
          []
          {

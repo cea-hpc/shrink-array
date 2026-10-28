@@ -59,11 +59,11 @@ inline constexpr std::size_t alignment = FAST_ALLOC_SIMD_SZ;
 /**
  * @brief Report a failed allocation and stop -- the library's policy on
  *        allocation failure, in every build.
- * @param what the allocating function, for the message
- * @param count    elements requested
- * @param elem bytes per element
- * @param err  the error (errno, or posix_memalign's result); 0 when n * elem
- *             overflows size_t
+ * @param what  the allocating function, for the message
+ * @param count elements requested
+ * @param elem  bytes per element
+ * @param err   the error (errno, or posix_memalign's result); 0 when count * elem
+ *              overflows size_t
  */
 [[noreturn]] [[gnu::cold]] [[gnu::noinline]] inline void
 out_of_memory(const char* what, std::size_t count, std::size_t elem, int err) noexcept

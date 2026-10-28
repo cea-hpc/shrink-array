@@ -66,7 +66,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression(thi
 
         // The passes above drain this array's CURRENT second-value key only. Writes queued
         // before a set_second_value() (or a copy-assignment) sit under an EARLIER key; left
-        // there, resize() reallocates chunk_list under them (dangling &chunk_list[j]). Sweep
+        // there, resize() reallocates chunk_list_ under them (dangling &chunk_list_[j]). Sweep
         // every rank and key: compress this array's leftovers against the current value,
         // clear their flags, drop them by num_tab (as rechunk_drop_candidates()).
         // Sequential point: outside a region only.

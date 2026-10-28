@@ -33,6 +33,7 @@
 #include <print>       // std::println
 #include <sys/mman.h>  // mmap, mprotect, PROT_READ
 
+#include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE (element_at)
 #include "chunk/chunk_traits.h"                         // is_zero_any_family_v (element_at variant gate)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
@@ -742,7 +743,8 @@ class ChunkBase : public DeferredReadGate<Derived>,
      * @brief One walk over the materialised buffer against two constants.
      *
      * @details Tracks "all @p first_v" and "all @p second_v" together and stops
-     *          as soon as both are disproved. When the two constants coincide a
+     *          as soon as both are disproved; once one is, the rest of the walk
+     *          compares against the other only. When the two constants coincide a
      *          constant run satisfies both; it is reported as `first` ONLY --
      *          which is what every caller wants (fill_list_to_compress files it
      *          once, compress_int must not clear it twice). Loads the values
@@ -1132,12 +1134,25 @@ class ChunkBase : public DeferredReadGate<Derived>,
     ///        block long enough for the vector loop to matter.
     static constexpr unsigned int scan_block = 64;
 
+    /// @brief Where walk_constant() stopped, and whether the run held.
+    struct ConstantWalk
+    {
+        bool         holds = true; ///< elements [from, count) all equal the value
+        unsigned int end   = 0;    ///< the walk's end: count, or the end of the block that disproved it
+    };
+
+    /// @brief The constant walk of is_constant_to(), from element @p from:
+    ///        branch-free blocks of scan_block, an exit between them.
+    /// @pre Not packed (Bit): @p vals is an array of T.
+    [[nodiscard]] static ConstantWalk
+    walk_constant(const T* vals, InT<T> value, unsigned int from, unsigned int count) noexcept;
+
     /// @brief Whether this chunk is currently materialised (not compressed
     ///        to a constant), at the granularity Derived supports.
     /// @param offset Element offset; used only when Derived distinguishes
     ///          writtenness per-offset (e.g. zero_one_value/zero_any's second-value
     ///          slot); ignored otherwise (falls back to derived().written()).
-    /// @return true if the chunk (or offset j) holds real, materialised data.
+    /// @return true if the chunk (or @p offset) holds real, materialised data.
     [[nodiscard]] bool is_written_at(this const Derived& self, int offset) noexcept;
 
 
@@ -1157,7 +1172,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
      *         element another thread may be writing (relaxed_element.h).
      */
     template <bool Relaxed = false>
-    [[nodiscard]] T element_at(this const Derived& self, int offset) noexcept;
+    [[nodiscard]] CHUNK_FORCE_INLINE T element_at(this const Derived& self, int offset) noexcept;
 
     /**
      * @brief element_at() for a member with the motif state, given the chunk's

@@ -32,7 +32,7 @@
 //      constant if compressed (!written()) or if all its elements are equal.
 //   2. For k in {1,2,4,8,...} (S' = k * S), a simulated block of k adjacent
 //      chunks is constant iff all k chunks are constant AND share one value
-//      (chunk_list is in logical order: chunk j covers [j*S,(j+1)*S)). The last
+//      (chunk_list_ is in logical order: chunk j covers [j*S,(j+1)*S)). The last
 //      block may be partial.
 //   3. Predicted memory = (non-constant blocks) * S' * sizeof(T)   [buffers]
 //                       + (blocks) * meta_per_block.               [records]

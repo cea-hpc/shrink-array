@@ -22,18 +22,16 @@
 // the heavy includes below (compression manager, stats) stay out of the
 // container declaration itself.
 
-#include <algorithm>   // std::min / std::max (CHUNK_RECHUNK_SLICES)
-#include <array>       // std::array (CHUNK_RECHUNK_SCHEDULE text buffers)
+#include <algorithm>   // std::min / std::max (the slice count)
+#include <array>       // std::array (the rebuild schedule's text)
 #include <atomic>      // std::atomic<long> n_folded (the memory census)
 #include <chrono>      // the rechunk=debug phase timers
 #include <ratio>       // std::milli (the same timers)
 #include <cstddef>     // std::size_t
-#include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstring>     // std::memcpy / std::memcmp (refill bulk read)
-#include <cstdlib>     // std::getenv (CHUNK_RECHUNK_RECYCLE, CHUNK_RECHUNK_SCHEDULE)
-#include <optional>    // the affinity scope around tmp, the parsed schedule kind
+#include <optional>    // the affinity scope around tmp
 #include <type_traits> // std::is_same_v, the zero bool guard
-#include <string_view> // CHUNK_RECHUNK_SCHEDULE parsing
+#include <string_view> // the rebuild schedule's text, in the trace
 #include <utility>     // std::swap (the array swap)
 #include <vector>      // the refill buffers
 
@@ -46,7 +44,6 @@
 #include "chunk/internal/cst_slot.h"            // CstSlot (zero_any's type-of-constant slot)
 #include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast, pmp::team
-#include "chunk/internal/env_parse.h"           // env_number / env_flag (checked, not atoi)
 #include "chunk/log.h"                          // CHUNK_LOG, logging::enabled (the traces)
 #include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
 #include "chunk/vector_range_ops.h"             // assume_drained
@@ -55,7 +52,6 @@
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 #include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED (refill bulk read check)
-#include "chunk/internal/enum_name.h"           // enum_from_name, enum_names_joined (CHUNK_RECHUNK_SCHEDULE)
 
 namespace shrink_array::internal
 {
@@ -76,52 +72,6 @@ namespace shrink_array::internal
 {
     return logging::enabled(logging::Channel::memory, logging::Level::debug);
 }
-
-/// CHUNK_RECHUNK_RECYCLE (default on; 0 = off): at the zero refill's slice
-/// boundaries, hand the slabs the old geometry has just emptied to the value
-/// arena for the next slice (TCSlabPool::recycle_empty_slabs), instead of
-/// madvise'ing them. Off = plain madvise sweep, for comparison.
-inline const bool g_rechunk_recycle = []() noexcept
-{
-    const char* env = std::getenv("CHUNK_RECHUNK_RECYCLE");
-    return env == nullptr || env[0] == '\0' || env[0] != '0';
-}();
-
-/// CHUNK_RECHUNK_KEEP_RECYCLED (default off; 1 = on): at the end of the zero
-/// refill, KEEP the recycled slabs no slice took on the arena's recycled lists,
-/// resident, instead of advising them away (SlabArena::advise_recycled: one
-/// MADV_DONTNEED per run, in practice per 1 MiB slab). SlabArena::allocate()
-/// takes them first, so the next re-chunk and the next writes reuse their pages
-/// instead of faulting fresh ones -- at 128 threads on Grace a fault costs ~4x
-/// what it does at 64. Cost: those slabs stay in the RSS until reused.
-inline const bool g_rechunk_keep_recycled = []() noexcept
-{
-    const char* env = std::getenv("CHUNK_RECHUNK_KEEP_RECYCLED");
-    const bool  on  = env != nullptr && env[0] != '\0' && env[0] != '0';
-    if (on)
-    {
-        CHUNK_LOG(info, env, "CHUNK_RECHUNK_KEEP_RECYCLED=1: the refill's leftover recycled slabs stay resident");
-    }
-    return on;
-}();
-
-/// CHUNK_RECHUNK_KEEP_RECYCLED_MB (default 0; MiB): the bounded form of
-/// CHUNK_RECHUNK_KEEP_RECYCLED -- at the end of the zero refill, leave up to this
-/// much of the leftover recycled slabs resident per arena, split evenly over the
-/// ranks, and advise the rest away as before (SlabArena::advise_recycled).
-/// 0 = advise them all. Ignored when CHUNK_RECHUNK_KEEP_RECYCLED=1 (keep all).
-inline const std::size_t g_rechunk_keep_recycled_bytes = []() noexcept
-{
-    const auto mb = env_number<std::size_t>("CHUNK_RECHUNK_KEEP_RECYCLED_MB", 0);
-    if (mb != 0)
-    {
-        CHUNK_LOG(info, env,
-                  "CHUNK_RECHUNK_KEEP_RECYCLED_MB={}: up to {} MiB of the refill's leftover recycled slabs stay "
-                  "resident per arena",
-                  mb, mb);
-    }
-    return mb << 20U;
-}();
 
 /// rechunk_trace_on(): the zero refill's inter-slice costs for the re-chunk in
 /// progress (ms), reset by rechunk_to() and printed in its phases line.
@@ -161,65 +111,23 @@ inline long rss_mib_now() noexcept
     return kib >= 0 ? kib / 1024 : -1;
 }
 
-/// @brief The rebuild loop's schedule: CHUNK_RECHUNK_SCHEDULE="kind[,chunk]"
-///        (static|dynamic|guided|auto, chunk >= 1 or omitted), read once;
-///        guided,16 when unset or malformed (slightly faster than dynamic,64;
-///        large dynamic chunks are much slower on small re-chunks).
-///        Serial builds parse it too; chunk_pmp_set_schedule() is then a no-op.
+/// @brief The rebuild loop's schedule: guided,16. Slightly faster than
+///        dynamic,64 on Grace, and large dynamic chunks are much slower on
+///        small re-chunks; on Milan (64 threads) guided,16, static and
+///        dynamic,64 are within 1% for zero and zero_any, static is 7.6%
+///        slower for zero_one_value. Fixed: the former CHUNK_RECHUNK_SCHEDULE
+///        is gone. A serial build ignores it (chunk_pmp_set_schedule() is then
+///        a no-op).
 struct RebuildSchedule
 {
     ChunkPmpSchedule     schedule{.kind = ChunkPmpSched::sched_guided, .chunk = 16};
     std::array<char, 32> text{"guided,16"};
 };
 
-/// @brief The kinds CHUNK_RECHUNK_SCHEDULE names: ChunkPmpSched's enumerators
-///        without "sched_" ("static|dynamic|guided|auto").
-inline constexpr const char* sched_kinds = enum_names_joined<ChunkPmpSched>("sched_", "|");
-
-/// @brief The rebuild loop's schedule, parsed once from CHUNK_RECHUNK_SCHEDULE ("kind[,chunk]").
-/// @return The parsed schedule, or the default guided,16 when the variable is unset or not understood.
+/// @brief The rebuild loop's schedule (see RebuildSchedule).
 inline const RebuildSchedule& rebuild_schedule() noexcept
 {
-    static const RebuildSchedule schedule = []
-    {
-        RebuildSchedule parsed;
-        const char*     env = std::getenv("CHUNK_RECHUNK_SCHEDULE");
-        if (env == nullptr || env[0] == '\0')
-        {
-            return parsed;
-        }
-        // "kind" or "kind,chunk": the chunk, when given, must be ALL of what
-        // follows the comma (parse_number: std::from_chars, no trailing text).
-        const std::string_view spec(env);
-        const std::size_t      comma = spec.find(',');
-        const std::string_view kv    = spec.substr(0, comma);
-        int                    chunk = 0;
-        ChunkPmpSched          sched = ChunkPmpSched::sched_static;
-        bool                   ok    = true;
-        if (comma != std::string_view::npos)
-        {
-            const auto parsed_chunk = parse_number<int>(env + comma + 1);
-            ok                      = parsed_chunk.has_value() && *parsed_chunk >= 0;
-            chunk                   = ok ? *parsed_chunk : 0;
-        }
-        if (ok)
-        {
-            const std::optional<ChunkPmpSched> kind = enum_from_name<ChunkPmpSched>(kv, "sched_");
-            ok                                      = kind.has_value();
-            sched                                   = kind.value_or(sched);
-        }
-        if (!ok)
-        {
-            CHUNK_LOG(warn, env,
-                      "CHUNK_RECHUNK_SCHEDULE=\"{}\" not understood (kind[,chunk], kind = {}): keeping guided,16", env,
-                      sched_kinds);
-            return parsed;
-        }
-        parsed.schedule    = {.kind = sched, .chunk = chunk}; // chunk 0: the runtime's default for this kind
-        const auto written = std::format_to_n(parsed.text.data(), parsed.text.size() - 1, "{},{}", kv, chunk);
-        *written.out       = '\0';
-        return parsed;
-    }();
+    static const RebuildSchedule schedule{};
     return schedule;
 }
 } // namespace shrink_array::internal
@@ -382,7 +290,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         // variants scan and compress at that size.
         //
         // What makes keeping them correct across the swap below:
-        //  - the tuples point into tmp.chunk_list's storage, which the
+        //  - the tuples point into tmp.chunk_list_'s storage, which the
         //    std::swap hands to *this unchanged (buffer swap, no move);
         //  - they carry tmp's num_tab, and rechunk_swap_identity() makes that
         //    *this's identity (member swap for zero/zero_any, registry swap for
@@ -390,12 +298,12 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         //    num_chunk) lands on the row allocated for tmp at new_size;
         //  - tmp's own destruction removes candidates by ITS post-swap num_tab
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()
-        //    above) and, for zero_any, by the OLD chunk_list's pointer range --
+        //    above) and, for zero_any, by the OLD chunk_list_'s pointer range --
         //    neither touches these.
         // The next end-of-phase sweep folds the constant ones back.
 
         // Re-drain THIS array's deferred ops before swapping storage out.
-        // FORCED: the ops are keyed by the OLD chunk_list's addresses, about to
+        // FORCED: the ops are keyed by the OLD chunk_list_'s addresses, about to
         // be destroyed with tmp, and any_pending_ops() can read 0 while ops are
         // still queued -- left behind, they would be replayed against a
         // recycled, wrong-size chunk. Flush while the old geometry is in place.
@@ -432,7 +340,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         (void)ok;
 
         // Variant finalisation after the swap (zero_one_value re-owns its
-        // map_inf_array entry so it does not dangle when tmp dies).
+        // map_inf_array_ entry so it does not dangle when tmp dies).
         self.rechunk_reown_after_swap(tmp, state);
 
         // Restore the active geometry BEFORE tmp is destroyed, so tmp (now
@@ -455,7 +363,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         // and parks its OLD-geometry blocks by size. Without the end-of-life
         // census: tmp's death is not an exit (ArrayChunkBase::exit_census_).
         tmp.exit_census_ = false;
-        // Its chunk_list (the OLD geometry's) is freed with it.
+        // Its chunk_list_ (the OLD geometry's) is freed with it.
     }
     const auto t5 = t_now(); // tmp destroyed
     r_teardown    = rss_now();
@@ -847,16 +755,16 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     const IndType  lo      = base > oc_base ? base : oc_base;
                     const IndType  oc_end  = oc_base + static_cast<IndType>(old_size);
                     const IndType  hi      = end < oc_end ? end : oc_end;
-                    const auto     len     = static_cast<std::size_t>(hi - lo);
+                    const auto     src_len = static_cast<std::size_t>(hi - lo);
                     const auto     off     = static_cast<std::size_t>(lo - oc_base);
                     const T* const vals    = och.values_load();
                     if constexpr (is_zero_any_family_v<ChunkType>)
                     {
                         if (och.is_cst_val2_ptr_of(vals))
                         {
-                            std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(pos), len,
+                            std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(pos), src_len,
                                         och.second_value_from_ptr(vals));
-                            pos += len;
+                            pos += src_len;
                             continue;
                         }
                     }
@@ -867,17 +775,17 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                         if (ChunkType::is_motif_ptr(vals))
                         {
                             const T offset = internal::load_element_relaxed(self.motif_offset_slot(oc));
-                            for (std::size_t k = 0; k < len; ++k)
+                            for (std::size_t k = 0; k < src_len; ++k)
                             {
                                 buf[pos + k] = ChunkType::motif_value(vals, static_cast<int>(off + k), offset);
                             }
-                            pos += len;
+                            pos += src_len;
                             continue;
                         }
                     }
                     // raw-read: refill bulk read -- quiescent source, see above
-                    std::memcpy(buf.data() + pos, vals + off, len * sizeof(T));
-                    pos += len;
+                    std::memcpy(buf.data() + pos, vals + off, src_len * sizeof(T));
+                    pos += src_len;
                 }
                 // Check builds: the bulk read must agree with the per-element
                 // path. Sampled (first, last, every 64th): this is a check, not
@@ -1091,8 +999,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // their pages back BEFORE the next slice materialises: peak ~ old +
         // new/slices.
         //
-        // CHUNK_RECHUNK_SLICES sets the count (default 16; 1 = one pass). zero +
-        // fast alloc + OpenMP only: zero_one_value/zero_any do not release their source
+        // 16 slices, zero + fast alloc + OpenMP only: zero_one_value/zero_any do not release their source
         // chunks during the copy (their clear_st carries compression state this
         // loop has no business synthesising), so they have nothing to give back
         // between slices and the extra regions would be pure cost.
@@ -1103,9 +1010,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // more slices gain little. The remainder is the two geometries
             // coexisting at slab granularity, insensitive to slicing. Index
             // order is already nearly slab-local (slab-order rebuild gains
-            // nothing).
+            // nothing). Measured on Milan (zero_dyn, recycled slabs kept, five
+            // runs each): at 64 threads 32, 64 and 128 slices are 1.3%, 5.2%
+            // and 6.5% slower, 8 is 1.8% faster but +0.5% of memory; at 32
+            // threads all are within 0.7%, 64 excepted (+1.7%). Fixed: the
+            // former CHUNK_RECHUNK_SLICES is gone.
             n_slices = 16;
-            n_slices = std::max(1, shrink_array::env_number<int>("CHUNK_RECHUNK_SLICES", n_slices));
             // Not worth slicing an array too small to empty a slab per slice.
             n_slices = std::min(n_slices, std::max(1, n_new / 4096));
         }
@@ -1118,7 +1028,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // team drain's scratch lives across them, and so do the trace timers.
         using ManagerT = Traits::ManagerType;
         typename ManagerT::TeamDrainScratch team_drain;
-        // Slab recycling at the slice boundaries (internal::g_rechunk_recycle):
+        // Slab recycling at the slice boundaries:
         // the ranks the team holds (each recycles its own slabs, one thread
         // the others'), and an address buffer per rank, reused. Sized at the
         // first boundary.
@@ -1207,10 +1117,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                           // so the bypassed gate guards nothing. Per-thread
                           // (thread_local), so it lives inside the region.
                           const typename CompressionManager<T, ChunkType>::FlushReplayGuard rechunk_replay_guard;
-                          std::vector<T> buf(static_cast<std::size_t>(new_size));
-                          RebuildTally   tally; // this thread's fold counts for this slice
-                                                // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                                                // (internal::rebuild_schedule).
+                          std::vector<T>               buf(static_cast<std::size_t>(new_size));
+                          RebuildTally                 tally; // this thread's fold counts for this slice
+                                                              // schedule(runtime): guided,16
+                                                              // (internal::rebuild_schedule).
                           const SliceClock::time_point sp_w0 = sp_on ? SliceClock::now() : SliceClock::time_point{};
                           // nowait + the explicit barrier below: the same closing barrier,
                           // with each thread's loop end observable (rechunk=debug).
@@ -1267,130 +1177,92 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                                       });
                                   ManagerT::drain_reuse_list_for_size_team(team, static_cast<unsigned int>(old_size),
                                                                            team_drain);
-                                  if (internal::g_rechunk_recycle)
-                                  {
-                                      // The slabs this drain emptied go to the value
-                                      // arena for the next slice, which allocates about
-                                      // as much at the new size (same slab size): their
-                                      // resident pages are reused, where a madvise gave
-                                      // them to the kernel and the next slice faulted
-                                      // fresh zero pages back. Each rank recycles its
-                                      // own slabs -- the drain's owner discipline -- and
-                                      // the arena hands a rank its own back first (NUMA).
-                                      // The set and the safety argument are the sweep's
-                                      // (the else branch): the old storage's set, a
-                                      // quiescent point, a slab found empty is empty.
-                                      // The trace books the recycling as "collect" and
-                                      // the leftovers' madvise as "madvise".
-                                      team.single(
-                                          [&]
-                                          {
-                                              const auto sc0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
-                                              if (trace_on)
-                                              {
-                                                  internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
-                                              }
-                                              const auto n_ranks = static_cast<std::size_t>(CHUNK_PMP_RANK_BOUND);
-                                              if (recycle_held.size() != n_ranks)
-                                              {
-                                                  recycle_held.assign(n_ranks, 0);
-                                                  recycle_scratch.resize(n_ranks);
-                                              }
-                                              std::ranges::fill(recycle_held, static_cast<unsigned char>(0));
-                                              // The previous boundary's slabs this slice did
-                                              // not take wait for the end of the refill (one
-                                              // pass, below the slice loop): they hold memory
-                                              // the OLD geometry released, so the RSS bound is
-                                              // the same as advising them between slices, and
-                                              // the per-slice serial madvise passes (a TLB
-                                              // shootdown on every CPU each) become one.
-                                              if (trace_on)
-                                              {
-                                                  slice_t1 = SliceClock::now();
-                                                  internal::g_slice_madvise_ms += slice_ms(sc0, slice_t1);
-                                              }
-                                          }); // implicit barrier: recycle_held is clear
+                                  // The slabs this drain emptied go to the value
+                                  // arena for the next slice, which allocates about
+                                  // as much at the new size (same slab size): their
+                                  // resident pages are reused, where a madvise gave
+                                  // them to the kernel and the next slice faulted
+                                  // fresh zero pages back. Each rank recycles its
+                                  // own slabs -- the drain's owner discipline -- and
+                                  // the arena hands a rank its own back first (NUMA).
+                                  // The set and the safety argument are the final
+                                  // sweep's (rechunk_to()): the old storage's set, a
+                                  // quiescent point, a slab found empty is empty.
+                                  // The trace books the recycling as "collect".
+                                  // Always on: without it (the former
+                                  // CHUNK_RECHUNK_RECYCLE=0, a madvise sweep per
+                                  // boundary) zero_dyn ran 29% slower on Milan.
+                                  team.single(
+                                      [&]
                                       {
-                                          // Each thread unlinks its own rank's empty
-                                          // slabs, in parallel and without the arena's
-                                          // lock; the single below hands them over (do
-                                          // not call recycle_batch() from every thread:
-                                          // the whole team queues on that one mutex).
-                                          const int me = CHUNK_PMP_THREAD_RANK;
-                                          if (me >= 0 && static_cast<std::size_t>(me) < recycle_held.size())
+                                          const auto sc0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
+                                          if (trace_on)
                                           {
-                                              recycle_held[static_cast<std::size_t>(me)] = 1;
-                                              const unsigned int saved_sz =
-                                                  thread_chunk_size(); // this thread's, as the slice left it
-                                              set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                                              ChunkType::get_chunk_allocator(me, old_key_refill)
-                                                  .detach_empty_slabs(recycle_scratch[static_cast<std::size_t>(me)]);
-                                              set_thread_chunk_size(saved_sz);
+                                              internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
                                           }
-                                      }
-                                      team.barrier();
-                                      team.single(
-                                          [&]
+                                          const auto n_ranks = static_cast<std::size_t>(CHUNK_PMP_RANK_BOUND);
+                                          if (recycle_held.size() != n_ranks)
                                           {
-                                              set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                                              for (std::size_t r = 0; r < recycle_held.size(); ++r)
-                                              {
-                                                  auto& allocator = ChunkType::get_chunk_allocator(static_cast<int>(r),
-                                                                                                   old_key_refill);
-                                                  if (recycle_held[r] == 0)
-                                                  {
-                                                      // A rank no team member holds (a
-                                                      // smaller team than the rank bound).
-                                                      allocator.detach_empty_slabs(recycle_scratch[r]);
-                                                  }
-                                                  // One uncontended lock per rank, each
-                                                  // rank's slabs under its own rank (NUMA).
-                                                  allocator.recycle_detached(recycle_scratch[r]);
-                                              }
-                                              set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                                              if (trace_on)
-                                              {
-                                                  internal::g_slice_collect_ms += slice_ms(slice_t1, SliceClock::now());
-                                              }
-                                          }); // implicit barrier: the next slice allocates from the recycled slabs
-                                  }
-                                  else
+                                              recycle_held.assign(n_ranks, 0);
+                                              recycle_scratch.resize(n_ranks);
+                                          }
+                                          std::ranges::fill(recycle_held, static_cast<unsigned char>(0));
+                                          // The previous boundary's slabs this slice did
+                                          // not take wait for the end of the refill (one
+                                          // pass, below the slice loop): they hold memory
+                                          // the OLD geometry released, so the RSS bound is
+                                          // the same as advising them between slices, and
+                                          // the per-slice serial madvise passes (a TLB
+                                          // shootdown on every CPU each) become one.
+                                          if (trace_on)
+                                          {
+                                              slice_t1 = SliceClock::now();
+                                              internal::g_slice_madvise_ms += slice_ms(sc0, slice_t1);
+                                          }
+                                      }); // implicit barrier: recycle_held is clear
                                   {
-                                      team.single(
-                                          [&]
-                                          {
-                                              const auto sc0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
-                                              if (trace_on)
-                                              {
-                                                  internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
-                                              }
-                                              set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                                              // The old storage's allocator set -- the shared
-                                              // pool (key 0) too when it lives there, which is
-                                              // every first re-chunk under lazy affinity
-                                              // (skipped, every released block's slab stays
-                                              // until the final sweep). Safe for the final
-                                              // sweep's reason: a serial, quiescent point, so
-                                              // a slab found empty is empty.
-                                              // One sweep across ranks: one madvise per
-                                              // contiguous run.
-                                              typename std::remove_reference_t<decltype(ChunkType::get_chunk_allocator(
-                                                  0, 0u))>::SlabSweep sweep;
-                                              for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
-                                              {
-                                                  ChunkType::get_chunk_allocator(r, old_key_refill)
-                                                      .collect_empty_slabs(sweep);
-                                              }
-                                              const auto sc1 = trace_on ? SliceClock::now() : SliceClock::time_point{};
-                                              sweep.flush();
-                                              if (trace_on)
-                                              {
-                                                  internal::g_slice_collect_ms += slice_ms(sc0, sc1);
-                                                  internal::g_slice_madvise_ms += slice_ms(sc1, SliceClock::now());
-                                              }
-                                              set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                                          }); // implicit barrier: the next slice starts on emptied slabs
+                                      // Each thread unlinks its own rank's empty
+                                      // slabs, in parallel and without the arena's
+                                      // lock; the single below hands them over (do
+                                      // not call recycle_batch() from every thread:
+                                      // the whole team queues on that one mutex).
+                                      const int me = CHUNK_PMP_THREAD_RANK;
+                                      if (me >= 0 && static_cast<std::size_t>(me) < recycle_held.size())
+                                      {
+                                          recycle_held[static_cast<std::size_t>(me)] = 1;
+                                          const unsigned int saved_sz =
+                                              thread_chunk_size(); // this thread's, as the slice left it
+                                          set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                                          ChunkType::get_chunk_allocator(me, old_key_refill)
+                                              .detach_empty_slabs(recycle_scratch[static_cast<std::size_t>(me)]);
+                                          set_thread_chunk_size(saved_sz);
+                                      }
                                   }
+                                  team.barrier();
+                                  team.single(
+                                      [&]
+                                      {
+                                          set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                                          for (std::size_t r = 0; r < recycle_held.size(); ++r)
+                                          {
+                                              auto& allocator =
+                                                  ChunkType::get_chunk_allocator(static_cast<int>(r), old_key_refill);
+                                              if (recycle_held[r] == 0)
+                                              {
+                                                  // A rank no team member holds (a
+                                                  // smaller team than the rank bound).
+                                                  allocator.detach_empty_slabs(recycle_scratch[r]);
+                                              }
+                                              // One uncontended lock per rank, each
+                                              // rank's slabs under its own rank (NUMA).
+                                              allocator.recycle_detached(recycle_scratch[r]);
+                                          }
+                                          set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                                          if (trace_on)
+                                          {
+                                              internal::g_slice_collect_ms += slice_ms(slice_t1, SliceClock::now());
+                                          }
+                                      }); // implicit barrier: the next slice allocates from the recycled slabs
                               }
                           }
                           team.masked(
@@ -1433,25 +1305,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             CHUNK_LOG(trace, rechunk, "slice {}/{} end         rss={} MB  ({:+} since start)", n_slices, n_slices,
                       rss_mib, rss_mib - rss_start);
         }
-        if constexpr (build_config::use_fast_alloc && build_config::threaded)
-        {
-            // The last boundary's recycled slabs the last slice did not take:
-            // back to the kernel, as the sweep would have done.
-            // CHUNK_RECHUNK_KEEP_RECYCLED: leave them on the recycled lists, resident,
-            // for the next allocations (SlabArena::allocate() takes them first).
-            if (internal::g_rechunk_recycle && n_slices > 1 && !internal::g_rechunk_keep_recycled)
-            {
-                const auto a0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
-                set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                ChunkType::get_chunk_allocator(0, old_key_refill)
-                    .advise_recycled_slabs(internal::g_rechunk_keep_recycled_bytes);
-                set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                if (trace_on)
-                {
-                    internal::g_slice_madvise_ms += slice_ms(a0, SliceClock::now());
-                }
-            }
-        }
+        // The last boundary's recycled slabs the last slice did not take stay
+        // on the arena's recycled lists, resident: SlabArena::allocate() takes
+        // them first, so the next writes and the next re-chunk reuse their
+        // pages instead of faulting fresh ones. Measured on Milan (zero_dyn,
+        // 64 threads): 11% faster than advising them away, for +0.1% of
+        // memory at the end of the run. (The former CHUNK_RECHUNK_KEEP_RECYCLED
+        // and _MB chose between the two.)
         g_in_rechunk_rebuild.store(false, std::memory_order_release);
         chunk_pmp_set_schedule(caller_schedule); // the caller's, untouched
         if (trace_mem_on)                        // a serial count inside the refill phase

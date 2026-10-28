@@ -124,7 +124,7 @@ measurement at unchanged data and the ability to go back.
 1. **prologue**: at the old geometry, flush the array's deferred writes, then
    compress its pending candidates before removing them from the lists;
 2. **tmp create**: build the new storage, at the new size;
-3. **refill**: fill it in parallel (`CHUNK_RECHUNK_SCHEDULE`, `guided,16` by default).
+3. **refill**: fill it in parallel (schedule `guided,16`).
    A new chunk whose sources are all at the first value is skipped. A new
    chunk whose sources were all compressed is **folded** right away. For
    **`zero_any`**, if all its sources are at the **same** second constant, that constant is
@@ -135,7 +135,7 @@ measurement at unchanged data and the ability to go back.
 6. **old-pool drain**: drain the pools of the old size and return the
    slabs that have become empty to the system.
 
-**`zero`** rebuilds **in slices** (16 by default, `CHUNK_RECHUNK_SLICES`) and frees
+**`zero`** rebuilds **in slices** (16) and frees
 each old chunk as soon as it has been copied. Between two slices, the pools of the old
 size are drained and the emptied slabs returned to the system, including in the **shared
 pool** when the old storage lives there: without this, the memory of the old storage
@@ -152,8 +152,7 @@ destroyed, its slabs empty completely and are returned to the system.
 
 The price: one partly used slab per (rank, array, size) triple. With the 1 MiB slabs of the
 former sixteen-page floor (64 KiB pages), this was ~780 MiB over the 16 arrays of the benchmark at
-64 threads; the slabs are 256 KiB there now, a quarter of it (`CHUNK_SLAB_MIN_PAGES=16` restores the
-floor, see [developer_settings.md](developer_settings.md)).
+64 threads; the slabs are 256 KiB there now, a quarter of it.
 
 Hence two modes, whose default depends on the variant:
 
@@ -215,7 +214,7 @@ is limited to the rebuilds.
   Measured again in October 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
   2,000 iterations, `diag_zero_rechunk_slowdown.py`): +17% per
   iteration after the switch to 1,024. Unchanged by one slice, a static rebuild
-  schedule, no slab recycling, no `chunk_list` reuse, lazy affinity; the NUMA
+  schedule, no slab recycling, no `chunk_list_` reuse, lazy affinity; the NUMA
   placement is balanced like the static run's. Most of it was the advisor: its
   analyses went on at every tick once the geometry had settled, and their serial
   parts kept the other threads waiting (__kmp_fork_barrier). With

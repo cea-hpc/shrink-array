@@ -168,7 +168,7 @@ void zero::Array<T, IntType>::clear_core()
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
     }
 
-    // Drain deferred writes before chunk_list is freed. force: the pending-op
+    // Drain deferred writes before chunk_list_ is freed. force: the pending-op
     // counter can read 0 while ops are queued (array_chunk_parallel_common_inline.h),
     // so a point that frees chunks must not trust it.
     this->flush_pending_deferred_ops(/*force=*/true);
@@ -427,7 +427,7 @@ void zero::Array<T, IntType>::resize(const IntType newsz)
 {
     this->invalidate_proxies();
 
-    // Drain the deferred ops on the CURRENT chunks before chunk_list and the
+    // Drain the deferred ops on the CURRENT chunks before chunk_list_ and the
     // dirty bitset are reallocated: a queued op holds a reference to its chunk.
     // And BEFORE the compression pass (as SecondValueArrayBase::resize_common()): a
     // replayed write can queue its chunk again, and the realloc and

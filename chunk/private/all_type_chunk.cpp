@@ -32,6 +32,7 @@
 #include "chunk/all_type_chunk.h"          // the declarations defined here
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
+
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/env_parse.h"        // env_number (CHUNK_RECLAIM_PHASE_KEEP)
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
@@ -200,12 +201,10 @@ void finalize_parallel_phase_after_flush()
         ens_type_chunk.destroy_after_flush(false);
 
         reset_all();
-        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        if (!chunk_config::aggressive_compression() && ens_type_chunk.have_chunk_to_compress_potentially())
+        // run-time switch: chunk/config.h
         {
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
-            {
-                ens_type_chunk.compress_chunk_to_compress_potentially(true);
-            }
+            ens_type_chunk.compress_chunk_to_compress_potentially(true);
         }
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
@@ -249,14 +248,13 @@ void finalize_parallel_phase()
         // in this phase; their ops were just replayed (deferred_op_pool.h).
         retire_exited_thread_pools();
 
-        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        if (!chunk_config::aggressive_compression() && ens_type_chunk.have_chunk_to_compress_potentially())
+        // run-time switch: chunk/config.h
         {
             // Drain the deferred-compression backlog here, between parallel
             // phases: parallel, with no concurrent writers (no start() barrier).
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
-            {
-                ens_type_chunk.compress_chunk_to_compress_potentially(true);
-            }
+
+            ens_type_chunk.compress_chunk_to_compress_potentially(true);
         }
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.

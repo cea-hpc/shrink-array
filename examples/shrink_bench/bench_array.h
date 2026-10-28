@@ -299,7 +299,7 @@ enum class BenchMaskKind
     return BenchMaskKind::scattered;
 }
 
-/// @brief The starting value of tab_mask[i].
+/// @brief The starting value of tab_mask[@p index].
 [[nodiscard]] constexpr bool bench_mask_initial(Int index) noexcept
 {
     const auto hash = bench_mask_hash(static_cast<std::uint64_t>(index));

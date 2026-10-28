@@ -78,6 +78,8 @@ struct alignas(64) ChunkStatsThr
     long read_cst        = 0; ///< reads served straight from the constant (compressed chunk)
     long read_sync       = 0; ///< accesses that had to enter the slow sync path
     long read_sync_cross = 0; ///< of those, the ones needing the cross-rank walk
+    long dirty_gate      = 0; ///< accesses on a chunk whose dirty bit is set: the precise gate is tested
+    long dirty_open      = 0; ///< of those, the gate open: the (sticky) bit outlived the chunk's deferred ops
     long create          = 0;
     long list            = 0;
     long bytes_alloc     = 0; ///< bytes from FRESH allocations (alloc events)
@@ -182,6 +184,15 @@ template <typename C>
 void increm_chunk_read_sync_cross() noexcept
 {
     chunk_stats_slot(C::stat_variant).read_sync_cross++;
+}
+/// @brief Count one access on a dirty chunk (ArrayChunkBase::sync_chunk); @p open:
+///        its precise gate let it through, nothing pending to wait for.
+template <typename C>
+void increm_chunk_dirty_gate(bool open) noexcept
+{
+    auto& slot = chunk_stats_slot(C::stat_variant);
+    slot.dirty_gate++;
+    slot.dirty_open += open ? 1 : 0;
 }
 /// @brief Count one chunk creation.
 template <typename C>
@@ -506,6 +517,10 @@ void increm_chunk_read_sync() noexcept
 }
 template <typename C>
 void increm_chunk_read_sync_cross() noexcept
+{
+}
+template <typename C>
+void increm_chunk_dirty_gate(bool /*open*/) noexcept
 {
 }
 template <typename C>

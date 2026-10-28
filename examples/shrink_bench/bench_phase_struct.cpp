@@ -104,7 +104,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
 
 // ─── Compute ─────────────────────────────────────────────────────────────────
 // On the iteration's window [start0, end0): a run of null elements up to
-// tab_nba1[k], a run of the second value up to tab_nba2[k], and the rest
+// tab_nba1[iter], a run of the second value up to tab_nba2[iter], and the rest
 // updated from its current value -- so that every iteration re-creates runs
 // the pass can take AND overwrites some it took. Then a read-only sweep of
 // the window into point_sum, twice the reads of the writes, as the other
