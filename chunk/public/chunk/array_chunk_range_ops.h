@@ -65,8 +65,8 @@
 #include "chunk/internal/conditional_counter.h" // CounterValueT
 #include "chunk/config.h"                       // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* (used directly, not via compression_manager.h)
-#include "chunk/chunk_traits.h"                 // zero / zero_one_value / is_zero_any_family_v: the type traits below
-#include "chunk/vector_range_ops.h"             // internal::ChunkedArray + the std::vector fallback
+#include "chunk/chunk_traits.h" // zero / zero_one_value / is_zero_any_family_v, has_motif_state_v: the type traits below
+#include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/relaxed_element.h"            // fill_range_mt: zero_any's shared elements
 
@@ -366,6 +366,44 @@ template <typename Arr, typename ChunkClass>
 }
 
 /**
+ * @brief Is this chunk compressed to a second constant equal to @p value?
+ *
+ * @details zero_one_value: at the array's second value (@p ind2), and @p value
+ *          is it. zero_any family: its values pointer is a second-value slot,
+ *          and the slot's value is @p value -- each chunk has its own. A motif
+ *          chunk (pattern::Array) is no constant, whatever its pointer: false.
+ *          zero, bool, Bit: false (not asked on those paths).
+ */
+template <typename Arr, typename ChunkClass>
+[[nodiscard]] bool at_second_constant(const Arr&                    arr,
+                                      const ChunkClass&             ch,
+                                      [[maybe_unused]] int          ind2,
+                                      InT<typename Arr::value_type> value) noexcept
+{
+    using T = Arr::value_type;
+    if constexpr (is_v2a_family_v<Arr> && !is_bool_like_v<T>)
+    {
+        const T* const vals = ch.values_load();
+        if constexpr (has_motif_state_v<ChunkClass>)
+        {
+            if (ChunkClass::is_motif_ptr(vals))
+            {
+                return false;
+            }
+        }
+        return ch.is_cst_val2_ptr_of(vals) && ch.second_value_from_ptr(vals) == value;
+    }
+    else if constexpr (has_second_value_v<Arr>)
+    {
+        return ch.is_cst_val2(ind2) && value == static_cast<T>(arr.get_second_value());
+    }
+    else
+    {
+        return false;
+    }
+}
+
+/**
  * @brief Queue the chunk holding element @p index for the next compression pass.
  *
  * @details The raw stores of the bulk paths below go straight into a
@@ -493,8 +531,9 @@ void packed_chunk_store(Arr&         arr,
  *          - fully covered and @p fill_value is the compressible constant: make the
  *            chunk constant outright. A materialised chunk releases its buffer;
  *            an already-constant one costs nothing. No allocation either way.
- *          - already at the first value and @p fill_value is that value, over
- *            all of it or part: nothing to write, one test for the chunk.
+ *          - already at a constant and @p fill_value is that constant (the
+ *            first value, or the chunk's second one), over all of it or part:
+ *            nothing to write, one test for the chunk.
  *          - otherwise: arm the chunk with real proxy writes until it
  *            materialises, then store the remainder straight into its buffer
  *            and restore the zero counter the bulk store bypassed.
@@ -631,12 +670,15 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // constant and nothing is left to do. "Materialises" is written(),
             // not !is_cst_val1(): see internal::materialised.
             //
-            // Already at the first value and filled with it: every one of those
-            // writes would take the proxy's early-out
-            // (is_cst_val1_and_v_equal_first_value), so none is made -- whole
-            // chunk or part of one. Not while an op is pending: an older op
-            // would replay over the fill, the proxy's own condition.
-            if (value_is_cst1 && ch.is_cst_val1() && !ch.pending_any())
+            // Already at the fill value, first or second constant: every one of
+            // those writes would take the proxy's early-out
+            // (is_cst_val1_and_v_equal_first_value; for the second constant,
+            // zero_one_value's assign_impl, zero_any's handle_no_bool_assignment),
+            // so none is made -- whole chunk or part of one. Not while an op is
+            // pending: an older op would replay over the fill, the proxy's own
+            // condition.
+            const bool at_value = value_is_cst1 ? ch.is_cst_val1() : internal::at_second_constant(arr, ch, ind2, value);
+            if (at_value && !ch.pending_any())
             {
                 continue;
             }
