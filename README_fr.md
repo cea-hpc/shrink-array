@@ -135,6 +135,45 @@ est ce programme, qui compare ensuite les deux tableaux élément par élément.
 OMPT : il ne compile pas contre une bibliothèque construite avec la libgomp de GCC, où les phases
 ne seraient jamais marquées.
 
+**Avec TBB : `shrink_array::tbb::parallel_for`.** Construite avec le backend std
+(`-DCHUNK_THREADS=std`, Spack `threads=std`), la bibliothèque accepte les écritures des threads
+de TBB. `chunk/tbb_adaptor.h` est `oneapi::tbb::parallel_for` avec les mêmes arguments et la
+phase marquée pour vous : `begin_parallel_phase()` avant chaque morceau qu'un thread exécute,
+`finalize_parallel_phase()` une fois toutes les tâches terminées (aussi quand le corps lève une
+exception) :
+
+```cpp
+#include <oneapi/tbb/blocked_range.h>
+#include "chunk/tbb_adaptor.h"       // shrink_array::tbb::parallel_for
+
+const long                  n = 1L << 24;
+sa::zero_any::Array<double> a(n);
+
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n / 2),
+                      [&](const oneapi::tbb::blocked_range<long>& r) {
+                          for (long i = r.begin(); i != r.end(); ++i)
+                              a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+                      });
+sa::tbb::parallel_for(n / 2, n, [&](long i) { a[i] = 2.0; });   // la forme par indice
+
+a.shrink_to_fit();                   // la phase est close : un point séquentiel
+```
+
+Les partitionneurs et les `task_arena` s'utilisent comme avec TBB lui-même ; une arène plus
+large que la machine demande `CHUNK_THREAD_CAPACITY`. Un `oneapi::tbb::parallel_for` imbriqué
+dans le corps prend `sa::tbb::phase_body(inner)`. L'en-tête est fourni avec la bibliothèque, qui
+ne dépend pas de TBB : c'est le programme qui le lie.
+
+```cmake
+find_package(chunk 0.1 REQUIRED)
+find_package(TBB REQUIRED)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
+```
+
+Un build OpenMP refuse l'adaptateur à la compilation : OpenMP ne numérote que ses propres
+threads. Les `std::thread` et vos propres pools de threads :
+[docs/getting_started_fr.md](docs/getting_started_fr.md#5-threads--les-règles).
+
 Le lier à `chunk::chunk_zero_any` (voir [Installer](#installer)). La version complète, qui vérifie
 ce qu'elle relit, est [examples/getting_started](examples/getting_started/getting_started.cpp) ;
 [docs/getting_started_fr.md](docs/getting_started_fr.md) la commente pas à pas, puis les règles

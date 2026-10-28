@@ -133,6 +133,44 @@ is that program, which then compares the two arrays element by element. It needs
 build: it does not compile against a library built with GCC's libgomp, where the phases would
 never be marked.
 
+**With TBB: `shrink_array::tbb::parallel_for`.** Built with the std backend
+(`-DCHUNK_THREADS=std`, Spack `threads=std`), the library takes writes from TBB's threads.
+`chunk/tbb_adaptor.h` is `oneapi::tbb::parallel_for` with the same arguments and the phase
+marked for you: `begin_parallel_phase()` before every piece a thread runs,
+`finalize_parallel_phase()` once every task is done (also when the body throws):
+
+```cpp
+#include <oneapi/tbb/blocked_range.h>
+#include "chunk/tbb_adaptor.h"       // shrink_array::tbb::parallel_for
+
+const long                  n = 1L << 24;
+sa::zero_any::Array<double> a(n);
+
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n / 2),
+                      [&](const oneapi::tbb::blocked_range<long>& r) {
+                          for (long i = r.begin(); i != r.end(); ++i)
+                              a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+                      });
+sa::tbb::parallel_for(n / 2, n, [&](long i) { a[i] = 2.0; });   // the index form
+
+a.shrink_to_fit();                   // the phase is closed: a serial point
+```
+
+Partitioners and `task_arena`s work as with TBB itself; an arena wider than the machine needs
+`CHUNK_THREAD_CAPACITY`. A `oneapi::tbb::parallel_for` nested in the body takes
+`sa::tbb::phase_body(inner)`. The header comes with the library, which does not depend on TBB:
+the program links it.
+
+```cmake
+find_package(chunk 0.1 REQUIRED)
+find_package(TBB REQUIRED)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
+```
+
+An OpenMP build refuses the adaptor at compile time: OpenMP numbers only its own threads.
+`std::thread`s and thread pools of your own:
+[docs/getting_started.md](docs/getting_started.md#5-threads-the-rules).
+
 Link it with `chunk::chunk_zero_any` (see [Install](#install)). The complete version, which checks
 what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp);
 [docs/getting_started.md](docs/getting_started.md) walks through it, then through the rules
