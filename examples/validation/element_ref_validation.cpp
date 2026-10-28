@@ -33,7 +33,8 @@
 // Run by ctest; the variant comes from the CHUNK_VARIANT_* macro of the target.
 
 #include <complex>     // std::complex<double>
-#include <cstdio>      // std::printf
+#include <cstdio>      // std::printf, std::fprintf
+#include <exception>   // std::exception (main)
 #include <sstream>     // std::ostringstream (os << a[i])
 #include <type_traits> // std::conditional_t, std::is_same_v
 #include <utility>     // std::move
@@ -201,11 +202,18 @@ void misuse()
 
 #ifndef ELEMENT_REF_CASE
 int main()
+try
 {
     ParamChunk::init_indexes(true);
     const int rc = usage();
     release_chunk_pools();
     destroy_block_chunk();
     return rc;
+}
+catch (const std::exception& e)
+{
+    // A failed std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "element_ref_validation: %s\n", e.what());
+    return 1;
 }
 #endif

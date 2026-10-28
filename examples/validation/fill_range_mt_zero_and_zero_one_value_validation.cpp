@@ -54,6 +54,9 @@
  */
 
 
+#include <cstdio>    // std::fprintf (main)
+#include <exception> // std::exception (main)
+
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range_mt
@@ -165,6 +168,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double value, long
 }
 
 int main(int argc, char** argv)
+try
 {
     const long nchunks = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
     ParamChunk::init_indexes(true);
@@ -212,4 +216,10 @@ int main(int argc, char** argv)
 
     println("=== {} ===", fails ? "FILL_RANGE_MT_V1V2 FAILED" : "FILL_RANGE_MT_V1V2 OK");
     return fails ? 1 : 0;
+}
+catch (const std::exception& e)
+{
+    // A failed std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "fill_range_mt_zero_and_zero_one_value_validation: %s\n", e.what());
+    return 1;
 }
