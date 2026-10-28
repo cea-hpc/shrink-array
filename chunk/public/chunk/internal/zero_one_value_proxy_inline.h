@@ -383,7 +383,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
                 chunk_.set_nb_val_eq_second_value(this->chunk_size() - 1);
                 // The write that leaves cst_val2 skipped the first-value block
                 // at the top (it only counts on a materialised chunk), and
-                // create_value's crossed reset just zeroed nb_val_eq_first_value:
+                // create_value's crossed reset just zeroed nb_val_eq_first_value_:
                 // count a first_value written here. Otherwise a chunk that went
                 // all-second then all-first stops at size - 1 and never
                 // compresses back (serial builds: the counters are the only path).

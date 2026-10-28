@@ -23,7 +23,7 @@
  *
  * @details Like RechunkHooks for zero, but zero_one_value overrides all SIX hooks: it
  *          resolves num_tab from the registry, carries the array-level second
- *          value across the swap, and re-owns its map_inf_array entry. They run
+ *          value across the swap, and re-owns its map_inf_array_ entry. They run
  *          only under RechunkSupport<Derived, true>::rechunk_to(); the static
  *          specialisation keeps the signatures as no-ops so zero_one_value::Array's
  *          using-declarations stay valid in both modes.
@@ -98,7 +98,7 @@ class RechunkHooks<Derived, true>
     bool rechunk_swap_identity(this Derived& self, Derived& tmp);
 
     /**
-     * @brief Re-own the map_inf_array entry after the identity swap.
+     * @brief Re-own the map_inf_array_ entry after the identity swap.
      * @param tmp   scratch array the storage came from
      * @param state value returned by rechunk_capture_state()
      * @details Re-points the shared entry at the SURVIVOR's inf_array member, so

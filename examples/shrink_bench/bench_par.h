@@ -374,7 +374,7 @@ void region(int num_threads, Body&& body)
 #endif
 
 /// @brief The calling thread's share [lo, hi) of [@p first, @p last) under
-///        `schedule(static)`: libgomp's split, the first (e - b) % size ranks
+///        `schedule(static)`: libgomp's split, the first (last - first) % size ranks
 ///        one iteration more.
 [[nodiscard]] inline Int static_lo(const Team& team, Int first, Int last) noexcept
 {
@@ -403,7 +403,7 @@ void region(int num_threads, Body&& body)
     return static_lo(team, first, last) + (count / nt) + (rank < count % nt ? 1 : 0);
 }
 
-/// @brief v += x, atomically, whatever the backend: std::atomic_ref is atomic
+/// @brief @p target += @p delta, atomically, whatever the backend: std::atomic_ref is atomic
 ///        against OpenMP's threads as against the std backend's (it compiles
 ///        to the same instruction as `omp atomic`).
 template <typename T>
@@ -430,7 +430,7 @@ inline void atomic_add(T& target, T delta) noexcept
  *        thread's partial for its share of [@p first, @p last) under `schedule(static)`,
  *        then the partial goes into @p sum atomically. No barrier: @p sum is whole
  *        after the next barrier or the end of the region.
- * @details Not a `reduction(+ : v)` clause (an orphaned `omp for reduction` on
+ * @details Not a `reduction(+ : sum)` clause (an orphaned `omp for reduction` on
  *          a lambda's capture is refused by clang), not pmp::team_sum (a region
  *          of its own, where the bench's phases are one barrier-free region).
  */

@@ -420,7 +420,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
         // ── Preserve concurrent re-enqueues ──────────────────────────────────
         // An op enqueued into *op_map AFTER the swap (a writer still active on rank r) is a
         // pending write NOT yet replayed. Never clear() the live map: that would drop it
-        // unapplied and leave pending_ops wrong (dec counts only the batch). Erase the
+        // unapplied and leave pending_ops_ wrong (dec counts only the batch). Erase the
         // chunk entry ONLY when nothing was re-enqueued; otherwise leave it (and the
         // dangerous-list membership) for the next flush.
         if (op_map->empty())

@@ -85,7 +85,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
-     * @brief Multiply this element by `v` in place.
+     * @brief Multiply this element by @p operand in place.
      * @tparam U Type of the operand.
      * @param operand Multiplier.
      * @return This proxy. Converting it to T reads the resulting value,
@@ -119,9 +119,9 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
-     * @brief Divide this element by `v` in place.
+     * @brief Divide this element by @p operand in place.
      * @tparam U Type of the operand.
-     * @param operand Divisor. Integer element: check builds stop on v == 0
+     * @param operand Divisor. Integer element: check builds stop on operand == 0
      *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
@@ -154,9 +154,9 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
-     * @brief Compute this element modulo `v` in place.
+     * @brief Compute this element modulo @p operand in place.
      * @tparam U Type of the operand.
-     * @param operand Modulus. Check builds stop on v == 0
+     * @param operand Modulus. Check builds stop on operand == 0
      *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,

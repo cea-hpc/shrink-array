@@ -435,8 +435,7 @@ class Team
     /**
      * @brief Share [@p first, @p last) out over the team with the calling
      *        task's run-time schedule (`omp for schedule(runtime)`: OMP_SCHEDULE,
-     *        or what omp_set_schedule set -- the rechunk refill's
-     *        CHUNK_RECHUNK_SCHEDULE).
+     *        or what omp_set_schedule set -- the rechunk refill's guided,16).
      * @param first first index
      * @param last  one past the last index
      * @param body  called as body(i), once per index

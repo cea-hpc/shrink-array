@@ -505,10 +505,8 @@ inline void SlabArena::grow(std::size_t min_bytes)
         const int err = errno;
         FAST_ALLOC_FATAL("arena {}: mmap of {} bytes failed ({})", name_, want, std::strerror(err));
     }
-    // CHUNK_THP: `1` advises huge pages (the slabs are 2 MiB and aligned
-    // on it, a huge page each), `never` forbids them, unset leaves the
-    // kernel's mode. Advice only: a failure is ignored.
-    alloc_config::advise_thp_region(base, want);
+    // No huge-page advice: the kernel's THP mode decides (the former
+    // CHUNK_THP changed neither time nor memory on Milan).
     auto region_begin = fast_alloc::address_bits(base);
     regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
     region_base_ = static_cast<std::byte*>(base);

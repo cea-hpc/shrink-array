@@ -278,7 +278,7 @@ struct ChunkSizeAdvisor
             if constexpr (has_motif_state_v<typename Arr::ChunkType>)
             {
                 // A motif chunk (pattern::Array): is_cst_val2() for the write engine,
-                // but no constant. Its data -- motif + offset, data_of() below -- is
+                // but no constant. Its data -- motif + offset, internal::motif_chunk_data() -- is
                 // read as a materialised chunk's (no motif forecast: never optimistic).
                 if (Arr::ChunkType::is_motif_ptr(chunk.values_load()))
                 {

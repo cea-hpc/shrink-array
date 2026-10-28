@@ -137,8 +137,6 @@ inline void* map_anonymous(size_t size)
         FAST_ALLOC_FATAL("mmap of {} bytes failed: errno = {} ({})", size, err, std::strerror(err));
     }
 
-    alloc_config::advise_thp_region(tmp, size); // CHUNK_THP, as the slab arenas
-
     return tmp;
 }
 

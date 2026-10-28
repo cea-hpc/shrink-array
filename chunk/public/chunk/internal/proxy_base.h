@@ -457,7 +457,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Set up pointer to this chunk's compression tracking flag
      * @pre num_tab and num_chunk must be valid
-     * @post ptr_is_inside_chunk_list_to_compress points to correct atomic flag
+     * @post ptr_is_inside_chunk_list_to_compress_ points to correct atomic flag
      */
     void set_ptr_is_inside_chunk_list_to_compress() noexcept
     {
@@ -476,7 +476,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        (element_access.h). No sync, no check.
     [[nodiscard]] T raw_elem() const noexcept;
 
-    /// @brief This element, written raw: `values[num] = v`, or an atomic RMW
+    /// @brief This element, written raw: `values[num] = value`, or an atomic RMW
     ///        of its word for Bit. No sync, no check.
     void raw_elem_set(InT<T> value) const noexcept
     {
@@ -934,7 +934,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Compound bitwise AND operator
      *
      * @tparam U Type of the value (must be integral)
-     * @param v Value to use for the AND operation
+     * @param operand Value to use for the AND operation
      * @return This proxy (see operator+=).
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
@@ -952,7 +952,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Compound bitwise OR operator
      *
      * @tparam U Type of the value (must be integral)
-     * @param v Value to use for the OR operation
+     * @param operand Value to use for the OR operation
      * @return This proxy (see operator+=).
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
@@ -970,7 +970,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Compound bitwise XOR operator
      *
      * @tparam U Type of the value (must be integral)
-     * @param v Value to use for the XOR operation
+     * @param operand Value to use for the XOR operation
      * @return This proxy (see operator+=).
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed

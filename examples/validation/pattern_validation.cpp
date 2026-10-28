@@ -60,8 +60,8 @@
  *          names any more, and only that: the values of the other array
  *          still read back after the freed identifiers are handed out again.
  *
- *          Then the motif state, chunks put in it by install_motif_for_test()
- *          (the compression to motifs is stage 2 of the note), every third chunk
+ *          Then the motif state, chunks put in it directly by
+ *          install_motif_for_test() (the compression to motifs is M to Q), every third chunk
  *          the same motif with an offset of its own (negative ones, and for
  *          short past the type's range: the arithmetic wraps), for int, long,
  *          unsigned and short:
@@ -74,6 +74,9 @@
  *            K  reads through the write proxy: right, and nothing materialised;
  *            L  a compound += on motif chunks (the old value read through the
  *               proxy), then the same comparison.
+ *          M  fill_range over motif chunks (int, short): part of one with its
+ *             own first element, all of one with a uniform chunk's value; the
+ *             fill and the motif around it read back.
  *
  *          Then the compression to motifs, by the write path (a chunk is queued
  *          when its first or last element is written) and the pass (a motif is
@@ -99,22 +102,23 @@
  *          Usage: pattern_validation [chunks]
  */
 
-#include <algorithm> // std::copy (the motif chunks)
+#include <algorithm> // std::copy (the motif chunks), std::fill (M)
 #include <cstdint>   // std::uint64_t (the random values)
 #include <utility>   // std::as_const, std::move, std::pair (the motif writes)
 #include <vector>    // std::vector, the reference
 
-#include "chunk/chunk_traits.h"       // forward decls + default IntType = int
-#include "chunk/zero_any_array.h"     // zero_any::Array (H)
-#include "chunk/pattern_array.h"      // pattern::Array, pattern::MotifRegion
-#include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor (R)
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"         // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"             // chunk_config::use_zero_any, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/chunk_traits.h"          // forward decls + default IntType = int
+#include "chunk/zero_any_array.h"        // zero_any::Array (H)
+#include "chunk/pattern_array.h"         // pattern::Array, pattern::MotifRegion
+#include "chunk/array_chunk_range_ops.h" // fill_range (M)
+#include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor (R)
+#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"                // chunk_config::use_zero_any, build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"        // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -562,6 +566,65 @@ static void motif_state(const char* tname, long nch)
 
 /// @brief Cases M to P on pattern::Array<T> (see the file comment): the
 ///        compression to motifs, by the write path and the pass.
+/// @brief fill_range over motif chunks: a motif chunk is no constant, whatever
+///        its values pointer resembles. Each one filled -- part of it with its
+///        own first element, all of it with the value of a uniform chunk
+///        elsewhere -- must read back the fill, and the rest of it its motif.
+template <typename T>
+static void fill_over_motifs(const char* tname, long nch)
+{
+    using Arr      = pattern::Array<T, long>;
+    using Ch       = pattern::Chunk<T>;
+    const long csz = static_cast<long>(Arr(0).chunk_size());
+    const long n   = nch * csz;
+    println("--- pattern::Array<{}>  fill_range over motif chunks", tname);
+
+    std::vector<T> ref(static_cast<std::size_t>(n), T{});
+    Arr            arr(n);
+    const T        uniform = static_cast<T>(7);
+    // Chunk 1 uniform (its second constant once the pass ran), every third
+    // chunk from 0 a motif.
+    std::fill(ref.begin() + csz, ref.begin() + 2 * csz, uniform);
+    write_range(arr, ref, csz, 2 * csz);
+    for (long c = 0; c < nch; c += 3)
+    {
+        std::vector<T> vals(static_cast<std::size_t>(csz));
+        for (long j = 0; j < csz; ++j)
+        {
+            vals[static_cast<std::size_t>(j)] =
+                Ch::wrapping_add(static_cast<T>((j * j) % 13 + j / 3), static_cast<T>(c));
+        }
+        if (!arr.install_motif_for_test(static_cast<int>(c), vals.data()))
+        {
+            println("  install_motif_for_test refused chunk {}  <-- WRONG", c);
+            ++fails;
+        }
+        std::copy(vals.begin(), vals.end(), ref.begin() + c * csz);
+    }
+    expect_same("M  motifs installed", arr, ref);
+
+    for (long c = 0; c < nch; c += 3)
+    {
+        const long base = c * csz;
+        if ((c / 3) % 2 == 0)
+        {
+            const T own = ref[static_cast<std::size_t>(base)];
+            shrink_array::fill_range(arr, static_cast<std::size_t>(base + 1), static_cast<std::size_t>(base + csz - 2),
+                                     own);
+            std::fill(ref.begin() + base + 1, ref.begin() + base + csz - 2, own);
+        }
+        else
+        {
+            shrink_array::fill_range(arr, static_cast<std::size_t>(base), static_cast<std::size_t>(base + csz),
+                                     uniform);
+            std::fill(ref.begin() + base, ref.begin() + base + csz, uniform);
+        }
+    }
+    expect_same("M  after the fills", arr, ref);
+    write_range(arr, ref, 0, 0); // a pass: the filled chunks may compress
+    expect_same("M  after a pass", arr, ref);
+}
+
 template <typename T>
 static void motif_compression(const char* tname, long nch)
 {
@@ -791,6 +854,8 @@ int run(int argc, char** argv)
     motif_state<long>("long", nch);
     motif_state<unsigned>("unsigned", nch);
     motif_state<short>("short", nch);
+    fill_over_motifs<int>("int", nch);
+    fill_over_motifs<short>("short", nch);
     motif_compression<int>("int", nch);
     motif_compression<long>("long", nch);
     motif_compression<unsigned>("unsigned", nch);

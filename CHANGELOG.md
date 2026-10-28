@@ -282,6 +282,11 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `zero` re-chunk: the recycled slabs the last slice of the rebuild did not take stay resident
+  for the next allocations, instead of being given back to the system (the former
+  `CHUNK_RECHUNK_KEEP_RECYCLED=1`, now the only behaviour). Milan, `zero_dyn`, 64 threads, three
+  runs each: 11.7 s against 13.2 s of computation, for +0.1% of memory at the end of the run and
+  +0.3% at the peak.
 - The re-chunk decider reads no environment variable: its thresholds and its test hooks are
   `RechunkPolicy` fields only, which a program sets. New fields: `advisor_grid_bits` (the
   advisor's grid between the powers of two, 2), and the forced re-chunk of the tests,
@@ -393,6 +398,18 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- Developer settings measured on Milan (64 threads, `zero`, `zero_any` and `zero_one_value`
+  dyn, three runs each) and fixed at the value that won or that changed nothing:
+  `CHUNK_RECHUNK_RECYCLE` (recycling is always on: 29% slower without),
+  `CHUNK_RECHUNK_KEEP_RECYCLED` and `CHUNK_RECHUNK_KEEP_RECYCLED_MB` (see Changed),
+  `CHUNK_RECHUNK_SCHEDULE` (`guided,16`: `static` and `dynamic,64` within 1% except
+  `zero_one_value`, where `static` is 7.6% slower), `CHUNK_THP` (the kernel's THP mode decides:
+  `never` and `1` changed neither time nor memory), `CHUNK_SLAB_MIN_PAGES` (no measurable
+  effect; its removal was planned) and `CHUNK_RECHUNK_SLICES` (16: with the recycled slabs kept,
+  32, 64 and 128 slices are 1.3%, 5.2% and 6.5% slower at 64 threads, five runs each; 8 is 1.8%
+  faster for +0.5% of memory). `alloc_config::thp_advise()`, `thp_never()` and
+  `advise_thp_region()` go with `CHUNK_THP`. `scripts/bench_recycle.sh` loses its recycling
+  dimension, and `diag_zero_rechunk_slowdown.py` its `dyn_static1` and `dyn_norecycle` runs.
 - `CHUNK_RECHUNK_DRY_RUN` (a user setting of `docs/environment_variables.md`): set
   `RechunkPolicy::dry_run` (`shrink_bench --rechunk_dry_run`).
 - The decider's developer variables `CHUNK_RECHUNK_MAX_COARSEN`, `CHUNK_ADVISOR_MIN_GAIN_MB`,
@@ -420,6 +437,13 @@ the tag's checksum to the recipe.
   only, and four of them not even there. In a release build every thread of the team emptied the
   same pools at once (double frees, broken lists). All six refuse it in every build now: a check
   build aborts, the others print one line on stderr and skip the call.
+- The per-chunk vectors (the chunk list, `zero_any`'s second-value and constant-type rows, the
+  candidate flags, the dirty bitset) are mapped by their allocator (`NoInitAllocator`) from
+  1 MiB on, and unmapped when freed. They came from glibc's heap below its mmap threshold, which
+  grows up to 32 MiB each time a mapped block is freed: after a re-chunk freed one list, the
+  next ones went to the heap, which kept them resident once freed. `zero_any_dyn`
+  (`--divisor 10`, default glibc settings): 1387 MB at iteration 1990, 815 MB now; peak 1389 MB,
+  1076 MB now. At 10^9 elements the lists exceed 32 MiB and were already mapped.
 - Re-chunk: the old geometry's chunk list came back to the system. `CHUNK_RECHUNK_REUSE_LIST`
   (on by default) kept a dying storage's chunk list buffer for the next re-chunk of the same
   chunk type, and took it whenever it was at most 4x too large: a coarsening 64 -> 256 kept the
@@ -962,7 +986,7 @@ were internal.
   replay: the proxy's armed `num_tab` is captured in the context, and the replay reads it
   back (`Proxy::get_num_tab_cached`, `get_num_tab_async`); check builds compare it with the
   registry.
-- `chunk_list` (the chunks of an array) no longer has its new chunks value-initialised by
+- `chunk_list_` (the chunks of an array) no longer has its new chunks value-initialised by
   `std::vector::resize` on the calling thread: its allocator (`NoInitAllocator`,
   `internal/array_chunk_core.h`) leaves them unconstructed, and the init loops of `create`
   and `resize` construct each chunk (`construct_chunk`) on the thread that initialises it.

@@ -297,8 +297,8 @@ stays between 43 and 66 up to 288, where `std::vector` falls back to about 26.
 
 On x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cores), Intel oneAPI, at the reference size
 (`--multiply 1`): the same picture. Every variant stays on the ideal line up to 16 threads
-and reaches 43 to 80 at 128, while `std::vector` peaks near 28 at 64 threads and falls back
-to about 18 at 128.
+and reaches 46 to 80 at 128, while `std::vector` peaks near 32 at 64 threads and falls back
+to about 20 at 128.
 
 ![OpenMP speedup on AMD EPYC 7763 (Milan, 2 × 64 cores), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
 

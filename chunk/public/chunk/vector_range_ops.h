@@ -224,7 +224,7 @@ void transform_range_mt(C& container, std::size_t first, std::size_t last, It sr
  * @param container source container
  * @param first     first index, inclusive (clamped to container.size())
  * @param last      last index, exclusive (clamped to container.size())
- * @param func         called as f(value); its return value is ignored
+ * @param func      called as func(value); its return value is ignored
  */
 template <typename C, typename F>
     requires(!internal::ChunkedArray<C>)
@@ -258,12 +258,12 @@ void for_each_value(const C& container, F&& func)
  * @brief Call @p func(std::span<const T>) on [@p first, @p last): a contiguous
  *        container is handed over as one span.
  * @details The chunked overload (array_chunk_range_ops.h) hands over blocks,
- *          and compressed chunks as f(v, count) when f accepts it: code
+ *          and compressed chunks as func(value, count) when func accepts it: code
  *          written for it runs unchanged on a std::vector.
  * @param container source container (std::vector<bool> is not contiguous)
  * @param first     first index, inclusive (clamped to container.size())
  * @param last      last index, exclusive (clamped to container.size())
- * @param func         called as f(std::span<const T>); its return value is ignored
+ * @param func      called as func(std::span<const T>); its return value is ignored
  */
 template <typename C, typename F>
     requires(!internal::ChunkedArray<C> && std::ranges::contiguous_range<const C>)

@@ -69,7 +69,7 @@ class RechunkSupport<Derived, true>
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T         = Traits::value_type;        ///< Stored element type.
     using IndType   = Traits::IndexType;         ///< Signed global index type.
-    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
     using ProxyType = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
 
   protected:
@@ -99,7 +99,7 @@ class RechunkSupport<Derived, true>
      *          - rechunk_swap_identity(tmp) -> bool — swap num_tab member (if any)
      *            + registry entry (swap_keys/entries)
      *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_one_value
-     *            re-owns its map_inf_array entry so it doesn't dangle when tmp dies)
+     *            re-owns its map_inf_array_ entry so it doesn't dangle when tmp dies)
      *
      * @param new_size the new chunk size (a power of two or a multiple of 64)
      * @warning Restores the previously active geometry on exit; see
@@ -130,9 +130,9 @@ class RechunkSupport<Derived, true>
      *
      * @details Chunk-level rebuild: each new chunk is rebuilt from the old
      *          chunks its span covers, in parallel over the new chunks (schedule
-     *          from CHUNK_RECHUNK_SCHEDULE) and, for zero with the fast allocator
+     *          guided,16) and, for zero with the fast allocator
      *          under OpenMP, in slices with a drain between them
-     *          (CHUNK_RECHUNK_SLICES). A span whose sources are all cst1 stays
+     *          (16). A span whose sources are all cst1 stays
      *          compressed; a zero_any span whose sources are all the same second
      *          constant gets that constant installed without a buffer; the others
      *          are read from *this at OLD and filled through copy_range() at NEW,
@@ -221,7 +221,7 @@ class RechunkSupport<Derived, false>
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T         = Traits::value_type;        ///< Stored element type.
-    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
 
   protected:
     /** @brief No-op: the geometry is fixed at compile time. */

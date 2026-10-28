@@ -117,12 +117,12 @@ class ChunkSpec
 
   protected:
     /*!
-     * \brief Whether `v` is ANY of the registered second-constant pointers,
+     * \brief Whether `vals` is ANY of the registered second-constant pointers,
      *        regardless of index. For teardown, where the chunk's own index is not
-     *        to hand: is_cst_val2(v, ind) with a wrong index would read the marker
+     *        to hand: is_cst_val2(vals, ind) with a wrong index would read the marker
      *        of a chunk compressed at another index as a live buffer.
-     * \param v Pointer to test.
-     * \return True if v matches the second constant at some index.
+     * \param vals Pointer to test.
+     * \return True if vals matches the second constant at some index.
      */
     [[nodiscard]] static bool is_cst_val2_any(const T* vals) noexcept;
 
@@ -231,7 +231,7 @@ class ChunkCounterPolicy
     ///        constant (the chunk is a candidate for type-2 compression).
     /// @param size Chunk geometry; defaults to the compile-time size (callers that know the
     ///             runtime geometry, e.g. under DynamicChunkSize, pass it).
-    /// @return true if nb_val_eq_second_value == size.
+    /// @return true if nb_val_eq_second_value_ == size.
     [[nodiscard]] bool is_full_second_value(unsigned int size = static_chunk_size) const noexcept
     {
         return nb_val_eq_second_value_ == size;
@@ -281,7 +281,7 @@ class ChunkCounterPolicy
     /// @brief Whether every element in the chunk currently equals the first
     ///        constant (the chunk is a candidate for type-1 compression).
     /// @param size Chunk geometry; see is_full_second_value().
-    /// @return true if nb_val_eq_first_value == size.
+    /// @return true if nb_val_eq_first_value_ == size.
     [[nodiscard]] bool is_full_first_value(unsigned int size = static_chunk_size) const noexcept
     {
         return nb_val_eq_first_value_ == size;

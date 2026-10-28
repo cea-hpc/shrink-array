@@ -507,7 +507,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /// @brief Copy the zero-counter base and the `values` pointer of @p other.
     ///
     /// The ChunkCounterPolicy base must be copied explicitly: a user-defined
-    /// copy ctor otherwise DEFAULT-constructs it, resetting nb_val_eq_zero, and
+    /// copy ctor otherwise DEFAULT-constructs it, resetting nb_val_eq_zero_, and
     /// manage_full_zero() later re-compresses a chunk that is not all-zero.
     /// ChunkFastCompPolicy holds the atomic `values` (non-copyable), copied by
     /// hand below.

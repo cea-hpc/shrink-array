@@ -483,7 +483,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename WriteFn>
     CHUNK_FORCE_INLINE bool write_with_optional_lock(WriteFn write_fn) noexcept;
     /**
-     * @brief Perform the actual write: install `v` at this proxy's index,
+     * @brief Perform the actual write: install @p value at this proxy's index,
      *        materialising the chunk first if it is currently compressed.
      * @param vals The chunk's values pointer, loaded by the caller inside the
      *        write session; it decides whether to materialise.
@@ -525,7 +525,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        constant? If so, the write is a genuine no-op.
      * @tparam U Type of the value being assigned.
      * @param value Value being assigned.
-     * @return true if v == zero and the chunk is already compressed.
+     * @return true if @p value == zero and the chunk is already compressed.
      * @note Never while the chunk has a deferred op pending (pending_any()):
      *       that op, older than this write in program order, would replay
      *       AFTER it -- the engine's WAW guard retires it first, and this
@@ -538,7 +538,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Core of operator=(): writes `v`, with an early-out when the chunk
+     * @brief Core of operator=(): writes @p value, with an early-out when the chunk
      *        is already compressed to it; maintains the zero counter in
      *        counter-mode builds.
      * @tparam U Type of the value being assigned.
@@ -630,8 +630,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Re-state the owning chunk's zero count after a BULK fill that did
      *        not go through this write path.
      *
-     * @details nb_val_eq_zero is maintained per write, and manage_full_zero()
-     *          fires on `nb_val_eq_zero == chunk_size` exactly. A direct store
+     * @details nb_val_eq_zero_ is maintained per write, and manage_full_zero()
+     *          fires on `nb_val_eq_zero_ == chunk_size` exactly. A direct store
      *          into the buffer leaves the counter wrong, and a later write can
      *          then compress a chunk that is not all zero. The counter is in a
      *          private base of Chunk<T> befriending only this proxy, hence the
@@ -661,7 +661,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     [[nodiscard]] bool fold_if_full_zero() const;
 
     /**
-     * @brief Add `v` to this element in place.
+     * @brief Add @p operand to this element in place.
      * @tparam U Type of the operand.
      * @param operand Operand to add.
      * @return This proxy. Converting it to T reads the resulting value,
@@ -676,7 +676,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Subtract `v` from this element in place.
+     * @brief Subtract @p operand from this element in place.
      * @tparam U Type of the operand.
      * @param operand Operand to subtract.
      * @return This proxy. Converting it to T reads the resulting value,
@@ -691,9 +691,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Divide this element by `v` in place.
+     * @brief Divide this element by @p operand in place.
      * @tparam U Type of the operand.
-     * @param operand Divisor. Integer element: check builds stop on v == 0
+     * @param operand Divisor. Integer element: check builds stop on operand == 0
      *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
@@ -708,7 +708,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Multiply this element by `v` in place.
+     * @brief Multiply this element by @p operand in place.
      * @tparam U Type of the operand.
      * @param operand Multiplier.
      * @return This proxy. Converting it to T reads the resulting value,
@@ -723,10 +723,10 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Compute this element modulo `v` in place. Integral T only; a
-     *        no-op passthrough (returns v unchanged) for non-integral T.
+     * @brief Compute this element modulo @p operand in place. Integral T only; a
+     *        no-op passthrough (the element unchanged) for non-integral T.
      * @tparam U Type of the operand.
-     * @param operand Modulus. Check builds stop on v == 0
+     * @param operand Modulus. Check builds stop on operand == 0
      *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,

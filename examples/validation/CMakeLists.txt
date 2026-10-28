@@ -454,7 +454,7 @@ foreach(_geom IN LISTS _rt_geometries)
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
                       shrink-to-smaller all-same all-different val2-grow val2-shrink
                       invalid-size-refused active-size-refused multiple-of-64-chain index-split
-                      sliced-grow sliced-shrink)
+                      bool-grow bool-shrink bool-uneven sliced-grow sliced-shrink)
           validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
         endforeach()
       elseif (_h STREQUAL "dyn_geometry_validation")

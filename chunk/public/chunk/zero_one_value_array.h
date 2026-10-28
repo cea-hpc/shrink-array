@@ -76,14 +76,14 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     friend Base2;                 ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<Array>; ///< For swap_identity().
 
-    // RechunkHooks::rechunk_reown_after_swap copies the private ind_cst_val2.
+    // RechunkHooks::rechunk_reown_after_swap copies the private ind_cst_val2_.
     template <typename, bool>
     friend class shrink_array::zero_one_value::RechunkHooks;
 
     // Re-declared, not only inherited: the mixins declare them too, and an
     // outside `Arr::ChunkType` would be ambiguous between base subobjects.
     using Traits      = Base2::Traits;      ///< ArrayChunkTraits<Array>.
-    using ChunkType   = Base2::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list.
+    using ChunkType   = Base2::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list_.
     using ManagerType = Base2::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
     using ProxyType   = Base2::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
     using value_type  = T;                  ///< Stored element type.
@@ -189,7 +189,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *            at this address inherits our num_tab and second value
      *            (PointerMap's first-match lookup); rechunk_to()'s @c tmp
      *            makes address reuse routine.
-     *          - erase_inf_array_by_ptr(&inf_array): map_inf_array entries
+     *          - erase_inf_array_by_ptr(&inf_array): map_inf_array_ entries
      *            pointing at our inf_array MEMBER would be dereferenced by the
      *            next array's terminal sweep (use after free). Fast-block,
      *            non-bool only; rechunk_to() re-points its value onto the
@@ -262,11 +262,11 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /**
      * @brief Resize the array, preserving the elements that still fit.
      * @details Drains the compression candidates and deferred ops first: both
-     *          hold `&chunk_list[j]` pointers a reallocation would dangle.
+     *          hold `&chunk_list_[j]` pointers a reallocation would dangle.
      * @param newsz new element count
      * @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
      *       freed serially, parked in the geometry's reuse list under OpenMP);
-     *       chunk_list keeps its capacity.
+     *       chunk_list_ keeps its capacity.
      */
     void resize(IntType newsz);
 
@@ -402,7 +402,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
         inf_array_ = this->get_info_second_value();
     }
 
-    /// @brief Make the T{} key drainable: its tuple in map_inf_array and a
+    /// @brief Make the T{} key drainable: its tuple in map_inf_array_ and a
     ///        candidate list per rank, if this type has none yet. Idempotent;
     ///        fast-block builds only (the serial path has no lists).
     void register_no_second_value_key();
@@ -411,7 +411,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief The identity step of swap(): the registry tuple (second value,
      *        its index, num_tab), which is what zero_one_value reads its identity
      *        from, then the members that mirror it.
-     * @details num_tab is not swapped (zero_one_value never reads it). map_inf_array
+     * @details num_tab is not swapped (zero_one_value never reads it). map_inf_array_
      *          points each second value at an array's inf_array MEMBER, which
      *          now holds the other tuple: both values are re-pointed.
      */
@@ -424,14 +424,14 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     ///          create(), set_second_value(), the identity swaps. Write proxies
     ///          are armed with its address, keeping the registry scan off the
     ///          write path.
-    /// @warning map_inf_array holds a POINTER to this member, so the destructor
+    /// @warning map_inf_array_ holds a POINTER to this member, so the destructor
     ///          must erase that entry -- see its documentation.
     InfArrayT inf_array_;
 
     /**
      * @brief The (T{}, no_second_value_index) tuple every array without a
      *        second value is drained under.
-     * @details The compression pass walks map_inf_array; an array with no
+     * @details The compression pass walks map_inf_array_; an array with no
      *          second value queues under T{}, which needs this tuple and a list
      *          per rank (register_no_second_value_key()). Never erased.
      */

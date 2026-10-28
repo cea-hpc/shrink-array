@@ -120,7 +120,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                        public RechunkSupport<Derived>
 {
   public:
-    // RechunkSupport swaps chunk_list / m_size / nb_chunk / size_policy_ with the
+    // RechunkSupport swaps chunk_list_ / m_size / nb_chunk / size_policy_ with the
     // fresh array; as a base it cannot reach these protected members through a
     // Derived object without friendship (both specialisations: <typename, bool>).
     template <typename, bool>
@@ -133,7 +133,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T           = Traits::value_type;        ///< Stored element type.
     using IndType     = Traits::IndexType;         ///< Signed global index type.
-    using ChunkType   = Traits::ChunkType;         ///< Chunk type held in @ref chunk_list.
+    using ChunkType   = Traits::ChunkType;         ///< Chunk type held in @ref chunk_list_.
     using ProxyType   = Traits::ProxyType;         ///< Write proxy returned by the non-const accessors.
     using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the compression machinery.
     using Core        = ArrayChunkCore<ChunkType>; ///< The index-independent part (array_chunk_core.h).
@@ -358,10 +358,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         void check_no_write_since_entry() const noexcept;
 
         /**
-         * @brief Point chunk_ at chunk_list[num_chunk_] and sync it once.
+         * @brief Point chunk_ at chunk_list_[num_chunk_] and sync it once.
          * @details Guarded so the end() position (one past the last element) never
          *          dereferences an out-of-range chunk: at end, num_chunk_ may index
-         *          chunk_list.size().
+         *          chunk_list_.size().
          */
         void enter_chunk() noexcept;
 
@@ -606,7 +606,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          iterator, so every element still goes through the const operator[].
      * @param first first index, inclusive (clamped to [0, size()])
      * @param last  last index, exclusive (clamped to size())
-     * @param func     called as f(value); its return value is ignored
+     * @param func  called as func(value); its return value is ignored
      * @warning Same contract as the iterator: no other thread may write the
      *          array during the call. Check builds stop on a write deferred
      *          onto the chunk being read. Callable from a parallel region,
@@ -627,13 +627,13 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *        block, in order: the loop over the span can be vectorised.
      *
      * @details for_each_value() by blocks of up to bulk_block elements. When @p func
-     *          is also callable as f(const T& v, std::size_t count), a compressed
+     *          is also callable as func(const T& value, std::size_t count), a compressed
      *          chunk is passed that way in O(1); other callables get it as spans.
      *          Stats and NaN-check builds fill blocks through the iterator and
-     *          never call f(v, count).
+     *          never call func(value, count).
      * @param first first index, inclusive (clamped to [0, size()])
      * @param last  last index, exclusive (clamped to size())
-     * @param func     called as f(std::span<const T>), and f(v, count) when it
+     * @param func  called as func(std::span<const T>), and func(value, count) when it
      *              accepts it; its return value is ignored. A span is only
      *              valid during its call.
      * @warning for_each_value()'s contract: no other thread may write the
@@ -799,7 +799,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
      *          -DSHRINK_AGGRESSIVE_INLINE, never nvc++) pulls the whole read path in.
      *
-     * @param index global element index; the caller guarantees 0 <= i < size()
+     * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](this const Derived& self, IndType index) noexcept;
@@ -807,7 +807,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /**
      * @brief Unchecked write access: THE write entry of the container.
      *
-     * @param index global element index; the caller guarantees 0 <= i < size()
+     * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the write proxy for that element, armed with the owning array and
      *         chunk number
      * @warning The proxy is a HANDLE into this array's chunk storage, not a
@@ -827,7 +827,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @brief The write proxy of element @p index, in every build: operator[]'s
      *        work, for the library code that names the proxy (operator[]
      *        wraps it in an ElementRef).
-     * @param index global element index; the caller guarantees 0 <= i < size()
+     * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the write proxy for that element, armed as operator[]'s
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(this Derived& self, IndType index) noexcept;
@@ -859,19 +859,19 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * the narrowing, valid while size() < INT_MAX * chunk_size().
      * @{
      */
-    /// @brief The chunk holding element @p index (>= 0): i / chunk_size() (SizePolicy::chunk_of).
+    /// @brief The chunk holding element @p index (>= 0): index / chunk_size() (ActiveSizePolicy::chunk_of).
     [[nodiscard]] int chunk_index_of(IndType index) const noexcept
     {
         return static_cast<int>(size_policy_.chunk_of(index));
     }
 
-    /// @brief Element @p index's (>= 0) offset inside its chunk: i % chunk_size() (SizePolicy::offset_of).
+    /// @brief Element @p index's (>= 0) offset inside its chunk: index % chunk_size() (ActiveSizePolicy::offset_of).
     [[nodiscard]] int offset_in_chunk(IndType index) const noexcept
     {
         return static_cast<int>(size_policy_.offset_of(index));
     }
 
-    /// @brief Chunks allocated for @p count elements: n / chunk_size() + 1 (the last
+    /// @brief Chunks allocated for @p count elements: count / chunk_size() + 1 (the last
     ///        chunk is never full -- see capacity()).
     [[nodiscard]] int chunks_for(IndType count) const noexcept
     {
@@ -1020,9 +1020,9 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
 
     /**
      * @brief Is chunk @p num_chunk materialised?
-     * @details Routes to Derived::chunk_written(j) when it exists (zero_one_value::Array,
+     * @details Routes to Derived::chunk_written(num_chunk) when it exists (zero_one_value::Array,
      *          whose chunks need the second-value index), else asks
-     *          chunk_list[j].written() directly.
+     *          chunk_list_[num_chunk].written() directly.
      * @param num_chunk CHUNK index
      * @return true if chunk @p num_chunk has been written (i.e. is not constant)
      * @see has_chunk_written_v

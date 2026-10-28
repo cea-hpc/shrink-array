@@ -665,6 +665,16 @@ template <typename T, typename Derived>
         {
             break;
         }
+        if (scan.first != scan.second)
+        {
+            // One hypothesis left (zero_any: from the first block, its second_v
+            // being element 0): one compare per element for the rest, not two.
+            const ConstantWalk rest = walk_constant(vals, scan.first ? first_v : second_v, i, count);
+            i                       = rest.end;
+            scan.first              = scan.first && rest.holds;
+            scan.second             = scan.second && rest.holds;
+            break;
+        }
     }
     if constexpr (chunk_config::stats)
     {
@@ -690,9 +700,20 @@ ChunkBase<T, Derived>::is_constant_to(this const Derived& self, InT<T> value, un
         return bits::scan_words(internal::as_words(self.values_load()), count) ==
                (static_cast<bool>(value) ? bits::Uniform::all_true : bits::Uniform::all_false);
     }
+    const ConstantWalk walk = walk_constant(self.values_load(), value, 0, count);
+    if constexpr (chunk_config::stats)
+    {
+        add_chunk_scan_read<Derived>(static_cast<long>(walk.end)); // block granularity
+    }
+    return walk.holds;
+}
+
+template <typename T, typename Derived>
+[[nodiscard]] typename ChunkBase<T, Derived>::ConstantWalk
+ChunkBase<T, Derived>::walk_constant(const T* vals, InT<T> value, unsigned int from, unsigned int count) noexcept
+{
     // Same shape as scan_constants(): branch-free blocks, exit between them.
-    const T*     vals = self.values_load();
-    unsigned int i    = 0;
+    unsigned int i = from;
     while (i < count)
     {
         const unsigned int block_end = std::min(count, i + scan_block);
@@ -705,18 +726,10 @@ ChunkBase<T, Derived>::is_constant_to(this const Derived& self, InT<T> value, un
         i = block_end;
         if (bad != 0)
         {
-            if constexpr (chunk_config::stats)
-            {
-                add_chunk_scan_read<Derived>(static_cast<long>(i));
-            }
-            return false;
+            return ConstantWalk{false, i};
         }
     }
-    if constexpr (chunk_config::stats)
-    {
-        add_chunk_scan_read<Derived>(static_cast<long>(count));
-    }
-    return true;
+    return ConstantWalk{true, count};
 }
 
 template <typename T, typename Derived>
@@ -1176,7 +1189,7 @@ template <typename T, typename Derived>
 
 template <typename T, typename Derived>
 template <bool Relaxed>
-[[nodiscard]] T ChunkBase<T, Derived>::element_at(this const Derived& self, int offset) noexcept
+[[nodiscard]] CHUNK_FORCE_INLINE T ChunkBase<T, Derived>::element_at(this const Derived& self, int offset) noexcept
 {
     // A pure read is bracketed by a ReadSection (read_reclaim.h): a
     // compression pass running in the same region waits for it before it

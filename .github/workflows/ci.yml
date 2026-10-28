@@ -193,7 +193,10 @@ jobs:
     env:
       CC: gcc-14
       CXX: g++-14
-      # The runner's 4 vCPUs: the build is most of the job (30 min at 2).
+      # The runner's 4 vCPUs: the build is most of the job (30 min at 2). The
+      # unity harnesses, the ones that take gigabytes under ThreadSanitizer, two
+      # at a time (the heavy pool, Configure): four of them at once exhausted the
+      # runner's 16 GB -- the build killed (exit 143), or the runner lost.
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
     steps:
@@ -215,6 +218,8 @@ jobs:
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
           -DCHUNK_CHECK_EXCLUDE=_1thr$
+          -DCMAKE_JOB_POOLS=heavy=2
+          -DCHUNK_HEAVY_JOB_POOL=heavy
       # Two steps, so the job's timings tell the build from the tests.
       - name: Build the validation harnesses (check_build target)
         run: cmake --build build --target check_build

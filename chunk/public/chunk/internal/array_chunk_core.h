@@ -49,14 +49,14 @@
 #include <string>      // std::string (debug_name_)
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::move (set_debug_name)
-#include <vector>      // std::vector (chunk_list)
+#include <vector>      // std::vector (chunk_list_)
 
 #include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
 #include "chunk/chunk_traits.h"                      // ChunkTraits (ProxyType, ManagerType)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
 #include "chunk/internal/array_chunk_for.h"          // ArrayKey (registry_key)
-#include "chunk/internal/parallel_storage_init.h"    // NoInitAllocator (chunk_list)
+#include "chunk/internal/parallel_storage_init.h"    // NoInitAllocator (chunk_list_)
 
 namespace shrink_array
 {
@@ -106,7 +106,7 @@ struct RechunkStorageScope
 };
 } // namespace alloc_affinity_detail
 
-// chunk_list's allocator is NoInitAllocator (parallel_storage_init.h): resize() only
+// chunk_list_'s allocator is NoInitAllocator (parallel_storage_init.h): resize() only
 // reserves, and the init loops construct each chunk (ArrayChunkCore::construct_chunk) on
 // the thread that initialises it -- first touch and NUMA placement there, not a serial
 // value-init sweep on the calling thread. The resize sites and their init loops:
@@ -118,8 +118,8 @@ template <typename ChunkT>
 class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
 {
   public:
-    using ChunkType     = ChunkT;                                             ///< Chunk type held in chunk_list.
-    using ChunkListType = std::vector<ChunkType, NoInitAllocator<ChunkType>>; ///< chunk_list's type.
+    using ChunkType     = ChunkT;                                             ///< Chunk type held in chunk_list_.
+    using ChunkListType = std::vector<ChunkType, NoInitAllocator<ChunkType>>; ///< chunk_list_'s type.
     using ProxyType     = ChunkTraits<ChunkT>::ProxyType;                     ///< Proxy type owning the per-T registry.
     using ManagerType   = ChunkTraits<ChunkT>::ManagerType;                   ///< Per-T manager owning the allocators.
 
@@ -165,7 +165,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      *          (one decision per chunk, not per element). Everything else goes
      *          through operator[].
      *
-     * @param index chunk index; the caller guarantees 0 <= i < nb_chunk
+     * @param index chunk index; the caller guarantees 0 <= index < nb_chunk
      */
     [[nodiscard]] auto& chunk_ref(this auto& self, std::size_t index) noexcept
     {
@@ -203,23 +203,23 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     void assign_alloc_key();
 
     /**
-     * @brief Size chunk_list to @p count chunks (reserve only: see construct_chunk()).
+     * @brief Size chunk_list_ to @p count chunks (reserve only: see construct_chunk()).
      *
      * @details Always a buffer of its own: a re-chunk's new storage no longer takes
      *          the buffer the previous re-chunk's old storage left. That spare (the
      *          former CHUNK_RECHUNK_REUSE_LIST) outlived the re-chunk, one per chunk
      *          type, and a coarsening -- which needs a SMALLER list -- took a buffer
      *          up to four times too large and kept it resident whole: the old
-     *          geometry's chunk_list never came back.
+     *          geometry's chunk_list_ never came back.
      * @param count the chunk count
      */
     void acquire_chunk_list(std::size_t count);
 
     /**
-     * @brief Construct chunk @p index of chunk_list in place, value-initialised.
+     * @brief Construct chunk @p index of chunk_list_ in place, value-initialised.
      * @details For the init loops after a growing resize(), so that the chunk
      *          is first written by the thread that initialises it.
-     * @param index the chunk index, below chunk_list.size()
+     * @param index the chunk index, below chunk_list_.size()
      * @return the chunk
      */
     ChunkType& construct_chunk(int index) noexcept
@@ -228,7 +228,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     }
 
     /**
-     * @brief Empty chunk_list at the end of a teardown (its chunks destroyed;
+     * @brief Empty chunk_list_ at the end of a teardown (its chunks destroyed;
      *        the buffer goes with the vector).
      */
     void release_chunk_list();
@@ -243,7 +243,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 
     ChunkListType chunk_list_;  ///< The chunks, in index order.
-    int           nb_chunk_{0}; ///< Number of live chunks in `chunk_list`.
+    int           nb_chunk_{0}; ///< Number of live chunks in `chunk_list_`.
 
     int num_tab_{0}; ///< Identity of this array in the per-type registries.
     /// @brief Number of arrays of this element type created so far (source of

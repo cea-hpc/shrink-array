@@ -447,8 +447,8 @@ décision du **décideur** (`ChunkSizeAdvisor::analyze`, qui estime la mémoire 
 2. vider les listes de réutilisation et préparer les réserves à la nouvelle taille ;
 3. construire un **tableau temporaire** à la nouvelle taille (initialisation des chunks en
    parallèle) ;
-4. le **remplir en parallèle** par tranches (`rechunk_refill`, ordonnancement réglable par
-   `CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut) : une tranche dont toutes les sources
+4. le **remplir en parallèle** par tranches (`rechunk_refill`, ordonnancement
+   `guided,16`) : une tranche dont toutes les sources
    sont à la première valeur est sautée ; sinon les valeurs sont relues puis réécrites par
    `copy_range`, et un nouveau chunk dont toutes les sources étaient compressées est
    **replié** tout de suite (`compress()` de la variante sur ce chunk, qui refuse si les
@@ -534,7 +534,7 @@ le laisser sur le chemin élément par élément :
   d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de `zero_one_value` sont indexées par
   elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
 - en mode compteur (les builds serial), une écriture directe doit **recompter** les deux
-  compteurs du chunk, `nb_val_eq_first_value` et `nb_val_eq_second_value`, que zero_one_value::Proxy tient
+  compteurs du chunk, `nb_val_eq_first_value_` et `nb_val_eq_second_value_`, que zero_one_value::Proxy tient
   sinon à jour écriture par écriture (`internal::resync_counters`, comme le compte des zéros de
   `zero`).
 
@@ -575,7 +575,6 @@ La liste complète, avec les macros et les options CMake, est dans
 
 | variable | effet |
 |---|---|
-| `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | ordonnancement de la reconstruction du rechunk (`guided,16` par défaut) |
 | `CHUNK_LOG=rechunk=debug` | temps des phases du rechunk (`memory=debug` : repliements) |
 | `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
 | `shrink_bench --rechunk_dry_run` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses ; `RechunkPolicy::dry_run`) |
