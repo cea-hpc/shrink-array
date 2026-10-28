@@ -513,6 +513,15 @@ else
         run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-oneapi/$arch $ONEAPI_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
     launch_build "$build_rep/cmake-build-std-oneapi/$arch" $BUILD_FLAGS
+
+    # The std allocator under icpx (CHUNK_STD_ALLOC: every buffer a real
+    # malloc, no fast_allocators pools), the twin of omp-llvm-std-alloc and
+    # omp-gnu-std-alloc: the pool-vs-malloc comparison with this compiler too.
+    set_build_header 'Compiling oneapi openmp std_alloc:'
+    if [ "$BUILD_ONLY" = false ]; then
+        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi-std-alloc/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+    fi
+    launch_build "$build_rep/cmake-build-omp-oneapi-std-alloc/$arch" $BUILD_FLAGS
 fi
 
 set_build_header 'Compiling oneapi debug openmp:'
@@ -520,6 +529,21 @@ if [ "$BUILD_ONLY" = false ]; then
     run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi-debug/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DOMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
 launch_build "$build_rep/cmake-build-omp-oneapi-debug/$arch" $BUILD_FLAGS
+
+# Debug + std allocator, OpenMP and serial, no sanitizer: the icpx twins of
+# omp-llvm-debug-std-alloc and llvm-debug-std-alloc (gdb / ledger runs of the
+# std-alloc path, without the sanitizers' slowdown and allocator interposition).
+set_build_header 'Compiling oneapi debug openmp std_alloc:'
+if [ "$BUILD_ONLY" = false ]; then
+    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi-debug-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+fi
+launch_build "$build_rep/cmake-build-omp-oneapi-debug-std-alloc/$arch" $BUILD_FLAGS
+
+set_build_header 'Compiling oneapi debug std_alloc (no openmp):'
+if [ "$BUILD_ONLY" = false ]; then
+    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-oneapi-debug-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DOMP:BOOL=OFF -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+fi
+launch_build "$build_rep/cmake-build-oneapi-debug-std-alloc/$arch" $BUILD_FLAGS
 
 else
     echo "[SKIP] oneapi builds disabled (enable_oneapi=$enable_oneapi, is_arm=$is_arm)"
