@@ -1110,10 +1110,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                           // so the bypassed gate guards nothing. Per-thread
                           // (thread_local), so it lives inside the region.
                           const typename CompressionManager<T, ChunkType>::FlushReplayGuard rechunk_replay_guard;
-                          std::vector<T> buf(static_cast<std::size_t>(new_size));
-                          RebuildTally   tally; // this thread's fold counts for this slice
-                                                // schedule(runtime): guided,16
-                                                // (internal::rebuild_schedule).
+                          std::vector<T>               buf(static_cast<std::size_t>(new_size));
+                          RebuildTally                 tally; // this thread's fold counts for this slice
+                                                              // schedule(runtime): guided,16
+                                                              // (internal::rebuild_schedule).
                           const SliceClock::time_point sp_w0 = sp_on ? SliceClock::now() : SliceClock::time_point{};
                           // nowait + the explicit barrier below: the same closing barrier,
                           // with each thread's loop end observable (rechunk=debug).
