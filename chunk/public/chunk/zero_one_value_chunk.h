@@ -232,7 +232,7 @@ class ChunkCounterPolicy
     ///        constant (the chunk is a candidate for type-2 compression).
     /// @param size Chunk geometry; defaults to the compile-time size (callers that know the
     ///             runtime geometry, e.g. under DynamicChunkSize, pass it).
-    /// @return true if nb_val_eq_second_value == size.
+    /// @return true if nb_val_eq_second_value_ == size.
     [[nodiscard]] bool is_full_second_value(unsigned int size = static_chunk_size) const noexcept
     {
         return nb_val_eq_second_value_ == size;
@@ -282,7 +282,7 @@ class ChunkCounterPolicy
     /// @brief Whether every element in the chunk currently equals the first
     ///        constant (the chunk is a candidate for type-1 compression).
     /// @param size Chunk geometry; see is_full_second_value().
-    /// @return true if nb_val_eq_first_value == size.
+    /// @return true if nb_val_eq_first_value_ == size.
     [[nodiscard]] bool is_full_first_value(unsigned int size = static_chunk_size) const noexcept
     {
         return nb_val_eq_first_value_ == size;

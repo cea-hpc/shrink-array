@@ -449,7 +449,7 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
     else
     {
         // Serial path. assign_impl's counter block above ALREADY maintained
-        // nb_val_eq_zero. Do NOT go through lbd_equal_core ->
+        // nb_val_eq_zero_. Do NOT go through lbd_equal_core ->
         // perform_core_assignment: its counter block would count a SECOND time,
         // and manage_full_zero would fire on a chunk that is not all-zero.
         // Apply the write directly (arm + store), with only the arm-time
@@ -478,7 +478,7 @@ template <typename T>
 template <typename Lambda>
 void zero::Proxy<T>::execute_simple_operation(Lambda operation)
 {
-    // Snapshot BEFORE any arming, to maintain nb_val_eq_zero across the write
+    // Snapshot BEFORE any arming, to maintain nb_val_eq_zero_ across the write
     // for an ALREADY-ARMED chunk (0 -> non-zero must decrement it, else the
     // counter drifts up and manage_full_zero() compresses a non-zero chunk).
     // Mirrors execute_inplace_operation.

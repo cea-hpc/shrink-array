@@ -279,7 +279,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // variants scan and compress at that size.
         //
         // What makes keeping them correct across the swap below:
-        //  - the tuples point into tmp.chunk_list's storage, which the
+        //  - the tuples point into tmp.chunk_list_'s storage, which the
         //    std::swap hands to *this unchanged (buffer swap, no move);
         //  - they carry tmp's num_tab, and rechunk_swap_identity() makes that
         //    *this's identity (member swap for zero/zero_any, registry swap for
@@ -287,12 +287,12 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    num_chunk) lands on the row allocated for tmp at new_size;
         //  - tmp's own destruction removes candidates by ITS post-swap num_tab
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()
-        //    above) and, for zero_any, by the OLD chunk_list's pointer range --
+        //    above) and, for zero_any, by the OLD chunk_list_'s pointer range --
         //    neither touches these.
         // The next end-of-phase sweep folds the constant ones back.
 
         // Re-drain THIS array's deferred ops before swapping storage out.
-        // FORCED: the ops are keyed by the OLD chunk_list's addresses, about to
+        // FORCED: the ops are keyed by the OLD chunk_list_'s addresses, about to
         // be destroyed with tmp, and any_pending_ops() can read 0 while ops are
         // still queued -- left behind, they would be replayed against a
         // recycled, wrong-size chunk. Flush while the old geometry is in place.
@@ -329,7 +329,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         (void)ok;
 
         // Variant finalisation after the swap (zero_one_value re-owns its
-        // map_inf_array entry so it does not dangle when tmp dies).
+        // map_inf_array_ entry so it does not dangle when tmp dies).
         self().rechunk_reown_after_swap(tmp, state);
 
         // Restore the active geometry BEFORE tmp is destroyed, so tmp (now
@@ -352,7 +352,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // and parks its OLD-geometry blocks by size. Without the end-of-life
         // census: tmp's death is not an exit (ArrayChunkBase::exit_census_).
         tmp.exit_census_ = false;
-        // Its chunk_list (the OLD geometry's) is freed with it.
+        // Its chunk_list_ (the OLD geometry's) is freed with it.
     }
     const auto t5 = t_now(); // tmp destroyed
     r_teardown    = rss_now();

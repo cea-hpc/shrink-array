@@ -25,10 +25,10 @@
 namespace shrink_array
 {
 
-/// @brief Backing type for the per-chunk counters (nb_val_eq_zero,
+/// @brief Backing type for the per-chunk counters (nb_val_eq_zero_,
 ///        nb_val_eq_*_value).
 /// @details These count cells within a chunk, so they must be able to represent values
-///          up to static_chunk_size (a full chunk of zeros has nb_val_eq_zero == static_chunk_size,
+///          up to static_chunk_size (a full chunk of zeros has nb_val_eq_zero_ == static_chunk_size,
 ///          tested by is_full_zero()). Do not narrow it to `unsigned char`: past 255 the
 ///          count wraps, is_full_zero() never holds and cells read back as garbage, even
 ///          single-threaded. `unsigned short` covers every realistic chunk size in 2 bytes.

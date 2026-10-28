@@ -105,7 +105,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                        public RechunkSupport<Derived>
 {
   public:
-    // RechunkSupport swaps chunk_list / m_size / nb_chunk / size_policy_ with the
+    // RechunkSupport swaps chunk_list_ / m_size / nb_chunk / size_policy_ with the
     // fresh array; as a base it cannot reach these protected members through a
     // Derived object without friendship (both specialisations: <typename, bool>).
     template <typename, bool>
@@ -118,7 +118,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T           = Traits::value_type;        ///< Stored element type.
     using IndType     = Traits::IndexType;         ///< Signed global index type.
-    using ChunkType   = Traits::ChunkType;         ///< Chunk type held in @ref chunk_list.
+    using ChunkType   = Traits::ChunkType;         ///< Chunk type held in @ref chunk_list_.
     using ProxyType   = Traits::ProxyType;         ///< Write proxy returned by the non-const accessors.
     using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the compression machinery.
     using Core        = ArrayChunkCore<ChunkType>; ///< The index-independent part (array_chunk_core.h).
@@ -343,10 +343,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         void check_no_write_since_entry() const noexcept;
 
         /**
-         * @brief Point chunk_ at chunk_list[num_chunk_] and sync it once.
+         * @brief Point chunk_ at chunk_list_[num_chunk_] and sync it once.
          * @details Guarded so the end() position (one past the last element) never
          *          dereferences an out-of-range chunk: at end, num_chunk_ may index
-         *          chunk_list.size().
+         *          chunk_list_.size().
          */
         void enter_chunk() noexcept;
 
@@ -831,13 +831,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * the narrowing, valid while size() < INT_MAX * chunk_size().
      * @{
      */
-    /// @brief The chunk holding element @p index (>= 0): index / chunk_size() (SizePolicy::chunk_of).
+    /// @brief The chunk holding element @p index (>= 0): index / chunk_size() (ActiveSizePolicy::chunk_of).
     [[nodiscard]] int chunk_index_of(IndType index) const noexcept
     {
         return static_cast<int>(size_policy_.chunk_of(index));
     }
 
-    /// @brief Element @p index's (>= 0) offset inside its chunk: index % chunk_size() (SizePolicy::offset_of).
+    /// @brief Element @p index's (>= 0) offset inside its chunk: index % chunk_size() (ActiveSizePolicy::offset_of).
     [[nodiscard]] int offset_in_chunk(IndType index) const noexcept
     {
         return static_cast<int>(size_policy_.offset_of(index));
@@ -994,7 +994,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @brief Is chunk @p num_chunk materialised?
      * @details Routes to Derived::chunk_written(num_chunk) when it exists (zero_one_value::Array,
      *          whose chunks need the second-value index), else asks
-     *          chunk_list[num_chunk].written() directly.
+     *          chunk_list_[num_chunk].written() directly.
      * @param num_chunk CHUNK index
      * @return true if chunk @p num_chunk has been written (i.e. is not constant)
      * @see has_chunk_written_v

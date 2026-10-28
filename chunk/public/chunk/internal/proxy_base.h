@@ -480,7 +480,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Set up pointer to this chunk's compression tracking flag
      * @pre num_tab and num_chunk must be valid
-     * @post ptr_is_inside_chunk_list_to_compress points to correct atomic flag
+     * @post ptr_is_inside_chunk_list_to_compress_ points to correct atomic flag
      */
     void set_ptr_is_inside_chunk_list_to_compress() noexcept
     {

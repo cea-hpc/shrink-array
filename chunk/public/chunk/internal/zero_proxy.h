@@ -623,8 +623,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Re-state the owning chunk's zero count after a BULK fill that did
      *        not go through this write path.
      *
-     * @details nb_val_eq_zero is maintained per write, and manage_full_zero()
-     *          fires on `nb_val_eq_zero == chunk_size` exactly. A direct store
+     * @details nb_val_eq_zero_ is maintained per write, and manage_full_zero()
+     *          fires on `nb_val_eq_zero_ == chunk_size` exactly. A direct store
      *          into the buffer leaves the counter wrong, and a later write can
      *          then compress a chunk that is not all zero. The counter is in a
      *          private base of Chunk<T> befriending only this proxy, hence the

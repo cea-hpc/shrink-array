@@ -103,7 +103,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(InT<value_t
 template <typename Derived>
 bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
-    // The num_tab, ind_cst_val2 and inf_array MEMBERS are NOT swapped: the
+    // The num_tab, ind_cst_val2_ and inf_array MEMBERS are NOT swapped: the
     // identity comes from share_info_array, and the members may be
     // uninitialized (swapping would read indeterminate values). The mirrors are
     // re-read in rechunk_reown_after_swap().
@@ -113,7 +113,7 @@ bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived&
 template <typename Derived>
 void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<value_type> state)
 {
-    // Re-own the registration of `state`: map_inf_array[state] points at
+    // Re-own the registration of `state`: map_inf_array_[state] points at
     // &tmp.inf_array, which dangles once the stack tmp dies, and the next
     // compression of `state` would dereference it. Copy tmp's (value, ind) and
     // re-point the map at this array's member. Only when the fresh array

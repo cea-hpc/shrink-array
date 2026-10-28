@@ -52,7 +52,7 @@ class DeferredOpsStorage
     /**
      * @brief Allocates the per-thread map array (idempotent, thread-safe).
      *
-     * Double-checked locking on arr_raw, under alloc_mutex. Do not use std::call_once with a
+     * Double-checked locking on arr_raw_, under alloc_mutex_. Do not use std::call_once with a
      * dynamically initialised member (e.g. unique_ptr<once_flag>): allocate() can run before
      * that init (static-init order). std::mutex is constant-initialized, so the instance
      * needs no dynamic init at all.
@@ -80,7 +80,7 @@ class DeferredOpsStorage
 
     /**
      * @brief Destroys the maps and invalidates the raw pointer. Serialized against
-     * allocate() by alloc_mutex; a later allocate() re-allocates.
+     * allocate() by alloc_mutex_; a later allocate() re-allocates.
      */
     void destroy()
     {

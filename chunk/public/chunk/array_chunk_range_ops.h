@@ -144,8 +144,8 @@ inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_
  * @details In counter mode (use_compression_with_counter, i.e. without fast
  *          block compression -- the serial builds) the compression of a chunk
  *          is decided by counters the proxy maintains INCREMENTALLY: zero's
- *          nb_val_eq_zero, zero_one_value's nb_val_eq_first_value and
- *          nb_val_eq_second_value. A raw store moves none of them, and nothing
+ *          nb_val_eq_zero_, zero_one_value's nb_val_eq_first_value_ and
+ *          nb_val_eq_second_value_. A raw store moves none of them, and nothing
  *          detects the drift: the full tests compare to chunk_size() exactly,
  *          so a chunk that is NOT all constant compresses when a count lands
  *          there, and every read then returns the constant. Recount, don't

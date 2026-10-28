@@ -227,7 +227,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     }
 
     // Drain any deferred write still targeting this array's chunks before
-    // chunk_list is freed below. force=true (see
+    // chunk_list_ is freed below. force=true (see
     // ParallelSupportCommon::flush_pending_deferred_ops): the non-force path is
     // gated on CM::any_pending_ops() and on the per-chunk dirty bit, and when
     // either misreads NOTHING is flushed -- the audit below then scans a chunk
@@ -251,9 +251,9 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     ManagerChunk2A::remove_from_compress_list_chunk2a_by_num_tab(num_tab_);
 
     // Also drop any candidate whose chunk pointer lies in THIS array's
-    // chunk_list span: the by-num_tab removal misses a tuple whose num_tab was
+    // chunk_list_ span: the by-num_tab removal misses a tuple whose num_tab was
     // shifted by a rechunk swap, and a later compress pass would double-free its
-    // buffer. Must run before the terminal sweep and before chunk_list.clear().
+    // buffer. Must run before the terminal sweep and before chunk_list_.clear().
     if (!chunk_list_.empty())
     {
         ManagerChunk2A::remove_from_compress_list_chunk2a_by_ptr_range(

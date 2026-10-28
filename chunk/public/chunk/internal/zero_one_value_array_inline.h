@@ -70,7 +70,7 @@
  * enforces them:
  *
  *  - **Drain before restructuring.** The compression-candidate lists and the
- *    deferred-op maps hold raw `&chunk_list[j]` pointers. Any operation that
+ *    deferred-op maps hold raw `&chunk_list_[j]` pointers. Any operation that
  *    reallocates or frees the chunk list must flush them first, or leave
  *    dangling pointers a later pass will walk.
  *  - **Pin the geometry, do not inherit it.** Under dynamic geometry the
@@ -570,9 +570,9 @@ void zero_one_value::Array<T, IntType>::clear_core()
     }
 
     // Drain any deferred write still targeting this array's chunks before
-    // chunk_list is freed below. See SecondValueArrayBase::flush_pending_deferred_ops()
+    // chunk_list_ is freed below. See SecondValueArrayBase::flush_pending_deferred_ops()
     // for the full rationale (dangling chunk refs in the global deferred maps).
-    // Safe here: nb_chunk / chunk_list / the dirty bitset are unchanged at this
+    // Safe here: nb_chunk / chunk_list_ / the dirty bitset are unchanged at this
     // point, so the dirty-bit scan stays in bounds.
     // force: the pending-op counter can read 0 while ops are still queued
     // (array_chunk_parallel_common_inline.h); a sequential point that

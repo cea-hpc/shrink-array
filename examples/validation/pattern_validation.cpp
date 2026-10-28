@@ -60,8 +60,8 @@
  *          names any more, and only that: the values of the other array
  *          still read back after the freed identifiers are handed out again.
  *
- *          Then the motif state, chunks put in it by install_motif_for_test()
- *          (the compression to motifs is stage 2 of the note), every third chunk
+ *          Then the motif state, chunks put in it directly by
+ *          install_motif_for_test() (the compression to motifs is M to Q), every third chunk
  *          the same motif with an offset of its own (negative ones, and for
  *          short past the type's range: the arithmetic wraps), for int, long,
  *          unsigned and short:

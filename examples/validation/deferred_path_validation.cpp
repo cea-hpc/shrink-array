@@ -72,7 +72,7 @@
 //   region take the same gate, so the hook defers them too, and no region end
 //   drains them), then a growth, a shrink and a growth, each straight after
 //   writes, with no explicit flush. resize() must drain the queue itself
-//   before it reallocates chunk_list (otherwise a queued op references a
+//   before it reallocates chunk_list_ (otherwise a queued op references a
 //   freed chunk).
 //
 // WHAT IT DOES NOT COVER
@@ -746,7 +746,7 @@ static int run(const char* label, long count, const Scenario<T>& sc)
  * @details The writes are OUTSIDE any parallel region: they take the same
  *          gate, the hook defers them all the same, and there is no region end
  *          to drain the queue before the resize. Growth reallocates
- *          chunk_list under the queued ops; the shrink drops chunks that may
+ *          chunk_list_ under the queued ops; the shrink drops chunks that may
  *          hold some. New elements read the first constant, T{}.
  * @return 0 if every element matched after every resize, 1 otherwise.
  */

@@ -157,7 +157,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     using Traits      = Base2::Traits;      ///< ArrayChunkTraits<Derived>.
     using T           = Base2::T;           ///< Stored element type.
     using IntType     = Base2::IndType;     ///< Index type used for sizes and element positions.
-    using ChunkType   = Base2::ChunkType;   ///< The chunk type held in chunk_list (zero_any::Chunk<T>).
+    using ChunkType   = Base2::ChunkType;   ///< The chunk type held in chunk_list_ (zero_any::Chunk<T>).
     using ManagerType = Base2::ManagerType; ///< The per-type manager (ManagerChunk<zero_any::Chunk, T>).
     using ProxyType   = Base2::ProxyType;   ///< The write proxy of the non-const accessors (zero_any::Proxy<T>).
     using value_type  = T;                  ///< Stored element type.
@@ -246,7 +246,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      * @param newsz new element count
      * @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
      *       freed serially, parked in the geometry's reuse list under OpenMP);
-     *       chunk_list keeps its capacity.
+     *       chunk_list_ keeps its capacity.
      */
     void resize(IntType newsz);
 

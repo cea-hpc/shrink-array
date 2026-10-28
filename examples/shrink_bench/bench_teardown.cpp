@@ -102,7 +102,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // per live array, so a count taken mid-run cannot tell five live arrays
     // from five leaked entries. Here every array is gone, and anything left is
     // an entry that outlived the array that put it there -- erase_inf_array_by_ptr()
-    // acts on map_inf_array, and nothing erases from `vec`.
+    // acts on map_inf_array_, and nothing erases from `vec`.
     //
     // A handful: the scan is short and the cost is the CALL RATE, which caching
     // the per-array-invariant result would fix. Hundreds: the list grew.

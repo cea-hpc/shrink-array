@@ -393,7 +393,7 @@ int run_mul_zero_case()
 }
 
 // ── Compound operators on a compressed chunk (zero, counter mode) ───────────
-// zero arms a compressed chunk at nb_val_eq_zero = chunk_size - 1, betting that
+// zero arms a compressed chunk at nb_val_eq_zero_ = chunk_size - 1, betting that
 // the element written turns non-zero. An operator that leaves it at 0 (0 &= x,
 // 0 <<= k, 0 >>= k, 0 += 0, 0 -= 0, 0 |= 0, 0 ^= 0) lost the bet with nothing
 // to correct it: one zero short for good, the chunk could never be compressed

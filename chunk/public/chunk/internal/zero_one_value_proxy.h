@@ -119,7 +119,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @details Retrieves (second_value, ind, num_tab) record from share_info_array
      *          using ptr_on_array as key. Also initializes compression flag pointer.
      * @pre ptr_on_array must point to valid array
-     * @post second_value, ind, num_tab, and ptr_is_inside_chunk_list_to_compress are valid
+     * @post second_value, ind, num_tab, and ptr_is_inside_chunk_list_to_compress_ are valid
      * @note For bool specialization, this is a no-op as metadata is fixed
      */
 
@@ -1004,7 +1004,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @brief Initialize both tab number and compression flag pointer
      * @details Convenience method combining set_num_tab() and
      *          set_ptr_is_inside_chunk_list_to_compress()
-     * @post Both num_tab and ptr_is_inside_chunk_list_to_compress are valid
+     * @post Both num_tab and ptr_is_inside_chunk_list_to_compress_ are valid
      *
      * @note No build-mode guard: the sole caller
      *       (SecondValueProxyBase::write_with_optional_lock_with_set_ptr) is under

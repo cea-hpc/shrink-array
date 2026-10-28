@@ -216,7 +216,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_tab_is_int(int nb_tab)
 // existing entries, but tab_is_inside_chunk_list_to_compress is REALLOCATED:
 // every "queued for compression" flag goes back to 0. Safe only if no chunk of
 // this tab is queued -- a queued chunk with a cleared flag could be queued twice
-// (pointing into the chunk_list just reallocated).
+// (pointing into the chunk_list_ just reallocated).
 // SecondValueArrayBase::resize_common() guarantees it by flushing the deferred ops
 // (whose replay can queue chunks) BEFORE the compression pass that empties every
 // list. Do not swap those two steps. Asserted below (flag 1 <=> entry in a list).

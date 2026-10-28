@@ -38,7 +38,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
 
   public:
     using Traits      = Base::Traits;      ///< Traits specialisation of the concrete array.
-    using ChunkType   = Base::ChunkType;   ///< Chunk type held in chunk_list.
+    using ChunkType   = Base::ChunkType;   ///< Chunk type held in chunk_list_.
     using ManagerType = Base::ManagerType; ///< Per-type manager owning the compression machinery.
     using T           = Base::T;           ///< Stored element type.
     using IndType     = Base::IndType;     ///< Signed global index type.
@@ -101,22 +101,22 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
   protected:
     /// @brief The part of resize() both second-value variants share: compress the
     ///        pending candidates, drain the deferred ops, then grow or shrink
-    ///        chunk_list (with its dirty bitset and the manager's counters).
+    ///        chunk_list_ (with its dirty bitset and the manager's counters).
     ///        The variant's resize() materialises or seeds the new chunks.
     void resize_common(IndType newsz)
     {
-        // Drain deferred ops on the CURRENT chunks while nb_chunk, chunk_list and the dirty
+        // Drain deferred ops on the CURRENT chunks while nb_chunk, chunk_list_ and the dirty
         // bitset still have the OLD size (after nb_chunk grows, is_chunk_dirty(j) would read
         // past the old bitset).
         //
         // And BEFORE the compression pass below: a replayed write can queue a chunk again
-        // (&chunk_list[j] pushed, flag 1); flushed after the pass, that entry would dangle
-        // after chunk_list.resize() and the chunk could be queued twice.
+        // (&chunk_list_[j] pushed, flag 1); flushed after the pass, that entry would dangle
+        // after chunk_list_.resize() and the chunk could be queued twice.
         // force: see flush_pending_deferred_ops (array_chunk_parallel_common.h).
         derived().flush_pending_deferred_ops(/*force=*/true);
 
-        // Compress the pending list BEFORE chunk_list is reallocated: the candidate lists hold
-        // &chunk_list[j] pointers that a reallocation would leave dangling. Needed in non-OMP
+        // Compress the pending list BEFORE chunk_list_ is reallocated: the candidate lists hold
+        // &chunk_list_[j] pointers that a reallocation would leave dangling. Needed in non-OMP
         // too, where the sequential compression path also queues chunks. This pass queues
         // nothing, so afterwards every list is empty and every dedup flag 0 -- the
         // precondition of zero_any::Proxy::resize_tab_is_int(num_tab, ...).
