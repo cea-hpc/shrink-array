@@ -30,6 +30,7 @@
 #include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
+#include "chunk/internal/chunk_stats.h"           // increm_chunk_dirty_gate (sync_chunk, CHUNK_STATS)
 
 namespace shrink_array
 {
@@ -754,7 +755,13 @@ ArrayChunkBase<Derived>::sync_chunk(const ChunkType& chunk_t, int num_chunk, int
         if (derived().is_chunk_dirty(num_chunk)) [[unlikely]]
         {
             // precise per-chunk gate (DeferredReadGate, chunk_base.h).
-            if (chunk_t.read_gate_should_wait(offset)) [[unlikely]]
+            const bool should_wait = chunk_t.read_gate_should_wait(offset);
+            // CHUNK_STATS: dirty_open / dirty_gate is the share the sticky bit costs for nothing.
+            if constexpr (chunk_config::stats)
+            {
+                increm_chunk_dirty_gate<ChunkType>(!should_wait);
+            }
+            if (should_wait) [[unlikely]]
             {
                 chunk_t.wait_for_availability(offset);
             }

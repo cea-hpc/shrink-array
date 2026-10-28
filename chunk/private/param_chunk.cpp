@@ -167,6 +167,8 @@ void ParamChunk::chunk_stats()
         all.read_cst += stats.read_cst;
         all.read_sync += stats.read_sync;
         all.read_sync_cross += stats.read_sync_cross;
+        all.dirty_gate += stats.dirty_gate;
+        all.dirty_open += stats.dirty_open;
         all.create += stats.create;
         all.list += stats.list;
         all.bytes_alloc += stats.bytes_alloc;
@@ -226,6 +228,13 @@ void ParamChunk::chunk_stats()
                      "    cross-rank   of those, the ones that needed the expensive walk\n"
                      "                 across every rank rather than just their own\n";
     }
+    if (all.dirty_gate != 0)
+    {
+        std::cout << "   dirty         accesses on a chunk whose dirty bit was set, so the\n"
+                     "                 precise read gate was tested\n"
+                     "    open         of those, the gate open: no deferred op left on the\n"
+                     "                 chunk, the bit stayed set (it is cleared per phase)\n";
+    }
     std::cout << "  read/write     reads per write: the access profile of the run\n"
                  "  create         chunks materialised (a buffer was attached)\n"
                  "  compress (during exec) chunks compressed: a materialised buffer\n"
@@ -278,8 +287,8 @@ void ParamChunk::chunk_stats()
         const bool any = stats.alloc != 0 || stats.write != 0 || stats.read != 0 || stats.read_cst != 0 ||
                          stats.create != 0 || stats.list != 0 || stats.teardown_clear != 0 || stats.compress != 0 ||
                          stats.compress_attempt != 0 || stats.rechunk != 0 || stats.read_sync != 0 ||
-                         stats.mark_ok != 0 || stats.mark_refused != 0 || stats.gate_start != 0 ||
-                         stats.gate_flush != 0 || stats.gate_driver != 0;
+                         stats.dirty_gate != 0 || stats.mark_ok != 0 || stats.mark_refused != 0 ||
+                         stats.gate_start != 0 || stats.gate_flush != 0 || stats.gate_driver != 0;
         if (!any)
         {
             continue;
@@ -340,6 +349,22 @@ void ParamChunk::chunk_stats()
             std::cout << "     cross-rank  = " << stats.read_sync_cross << "  (" << std::fixed << std::setprecision(1)
                       << 100.0 * static_cast<double>(stats.read_sync_cross) / static_cast<double>(stats.read_sync)
                       << "% of sync)\n"
+                      << std::defaultfloat;
+        }
+        // Accesses on a dirty chunk, and of those the ones its sticky bit cost for nothing.
+        if (stats.dirty_gate != 0)
+        {
+            std::cout << "    dirty        = " << stats.dirty_gate;
+            if (reads_all != 0)
+            {
+                std::cout << "  (" << std::fixed << std::setprecision(1)
+                          << 100.0 * static_cast<double>(stats.dirty_gate) / static_cast<double>(reads_all)
+                          << "% of reads)" << std::defaultfloat;
+            }
+            std::cout << "\n";
+            std::cout << "     open        = " << stats.dirty_open << "  (" << std::fixed << std::setprecision(1)
+                      << 100.0 * static_cast<double>(stats.dirty_open) / static_cast<double>(stats.dirty_gate)
+                      << "% of dirty)\n"
                       << std::defaultfloat;
         }
         if (stats.write != 0)
