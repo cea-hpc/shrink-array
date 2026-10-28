@@ -388,6 +388,8 @@ the tag's checksum to the recipe.
 - The former `CHUNK_VARIANTS` values (a CMake deprecation message), library names (INTERFACE
   targets with a `DEPRECATION` property, installed), `CHUNK_VARIANT_V*` macros (defined from the new
   ones, and the other way round) and `chunk_config::use_chunk*` constants (`[[deprecated]]`), until 1.0.
+- `zero_any::ChunkDef::factor_div_somme_chunk_buffer_resuse`, a misspelling: now
+  `factor_div_somme_chunk_buffer_reuse`, the old name a `[[deprecated]]` constant until 1.0.
 
 ### Removed
 

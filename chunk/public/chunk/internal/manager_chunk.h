@@ -439,7 +439,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     /// @brief Divisor of the proportional reuse budget: a rank parks up to
     ///        chunks / (this * threads) buffers. CHUNK_REUSE_SHARE_DIV, by
-    ///        default zero_any::ChunkDef::factor_div_somme_chunk_buffer_resuse.
+    ///        default zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse.
     /// @details The chunks counted are all the chunks created, compressed
     ///          ones included: at 99 % compression the default parks about
     ///          twice the buffers actually materialised.
@@ -447,7 +447,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         static const long div =
             std::max(1L, env_number<long>("CHUNK_REUSE_SHARE_DIV",
-                                          static_cast<long>(zero_any::ChunkDef::factor_div_somme_chunk_buffer_resuse)));
+                                          static_cast<long>(zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse)));
         return div;
     }
 
