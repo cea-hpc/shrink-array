@@ -48,10 +48,7 @@
 #include "chunk/config.h"                       // build_config::threaded, chunk_dynamic
 #include "chunk/zero_any_chunk.h"               // zero_any::ChunkImpl
 
-namespace shrink_array
-{
-
-namespace pattern
+namespace shrink_array::pattern
 {
 
 /**
@@ -184,8 +181,6 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
     static inline thread_local std::vector<T>              motif_scratch_;    ///< The scan's normalised motif.
 };
 
-} // namespace pattern
-
-} // namespace shrink_array
+} // namespace shrink_array::pattern
 
 #include "chunk/internal/pattern_chunk_inline.h" // the template bodies

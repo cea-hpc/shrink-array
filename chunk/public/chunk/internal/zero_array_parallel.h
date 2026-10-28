@@ -39,10 +39,7 @@
 #include "chunk/chunk_traits.h" // ArrayChunkTraits
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
 
-namespace shrink_array
-{
-
-namespace zero
+namespace shrink_array::zero
 {
 
 /**
@@ -134,6 +131,4 @@ class FastBlockSupport<Derived, false>
     static void make_block_compression() noexcept {}
 };
 
-} // namespace zero
-
-} // namespace shrink_array
+} // namespace shrink_array::zero

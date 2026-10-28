@@ -37,10 +37,7 @@
 #include "chunk/chunk_traits.h"  // ArrayChunkTraits
 #include "chunk/internal/in_t.h" // InT<T>: the captured state
 
-namespace shrink_array
-{
-
-namespace zero_one_value
+namespace shrink_array::zero_one_value
 {
 
 /**
@@ -153,6 +150,4 @@ class RechunkHooks<Derived, false>
     void rechunk_reown_after_swap(Derived& /*tmp*/, InT<value_type> /*state*/) const noexcept {}
 };
 
-} // namespace zero_one_value
-
-} // namespace shrink_array
+} // namespace shrink_array::zero_one_value
