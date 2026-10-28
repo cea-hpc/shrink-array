@@ -493,6 +493,8 @@ void packed_chunk_store(Arr&         arr,
  *          - fully covered and @p fill_value is the compressible constant: make the
  *            chunk constant outright. A materialised chunk releases its buffer;
  *            an already-constant one costs nothing. No allocation either way.
+ *          - already at the first value and @p fill_value is that value, over
+ *            all of it or part: nothing to write, one test for the chunk.
  *          - otherwise: arm the chunk with real proxy writes until it
  *            materialises, then store the remainder straight into its buffer
  *            and restore the zero counter the bulk store bypassed.
@@ -628,6 +630,16 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // walks the whole range without materialising, the chunk is
             // constant and nothing is left to do. "Materialises" is written(),
             // not !is_cst_val1(): see internal::materialised.
+            //
+            // Already at the first value and filled with it: every one of those
+            // writes would take the proxy's early-out
+            // (is_cst_val1_and_v_equal_first_value), so none is made -- whole
+            // chunk or part of one. Not while an op is pending: an older op
+            // would replay over the fill, the proxy's own condition.
+            if (value_is_cst1 && ch.is_cst_val1() && !ch.pending_any())
+            {
+                continue;
+            }
             std::size_t i = lo;
             while (i < hi && !internal::materialised(arr, ch, ind2))
             {
