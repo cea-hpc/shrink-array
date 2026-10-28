@@ -10,4 +10,8 @@ if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_test(NAME soa_array_validation COMMAND soa_array_validation)
   set_property(TEST soa_array_validation PROPERTY ENVIRONMENT "OMP_NUM_THREADS=4")
   set_property(TEST soa_array_validation PROPERTY LABELS validation)
+  # shrink-build-stamp: the executable prints the build stamp and is built by
+  # `check` (cmake/shrink_build_stamp.cmake); its test carries the validation
+  # label, so `check` runs it. Not standalone: the stamp lives in the project.
+  shrink_stamp_directory_targets()
 endif()
