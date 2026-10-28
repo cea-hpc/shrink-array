@@ -193,7 +193,8 @@ jobs:
     env:
       CC: gcc-14
       CXX: g++-14
-      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      # The runner's 4 vCPUs: the build is most of the job (30 min at 2).
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
       TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
     steps:
       - uses: actions/checkout@v5
@@ -214,7 +215,10 @@ jobs:
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
           -DCHUNK_CHECK_EXCLUDE=_1thr$
+      # Two steps, so the job's timings tell the build from the tests.
+      - name: Build the validation harnesses (check_build target)
+        run: cmake --build build --target check_build
       # The _1thr tests run in the other jobs: one thread, no race for
       # ThreadSanitizer to see, and its cost all the same.
-      - name: Build and run the validation harnesses (check target)
+      - name: Run the validation harnesses (check target)
         run: cmake --build build --target check

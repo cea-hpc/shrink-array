@@ -20,7 +20,10 @@
 # changes (or HEAD moves); the generated .cpp is replaced only if its content
 # differs, so an unchanged tree recompiles and relinks nothing.
 #
-# `check`: builds every executable of those directories, then runs
+# `check_build`: builds every executable of those directories, nothing more
+# (the CI times it apart from the tests).
+#
+# `check`: builds them (check_build), then runs
 # `ctest -L validation --output-on-failure -j ${CHUNK_CHECK_JOBS}`, less the
 # tests matching CHUNK_CHECK_EXCLUDE (ctest -E) when set. A bare `ctest`
 # rebuilds nothing: a binary older than its source is tested as is.
@@ -145,7 +148,9 @@ function(shrink_add_check_target)
     COMMENT "Build the validation executables, then ctest -L validation"
     USES_TERMINAL
     VERBATIM)
+  add_custom_target(check_build COMMENT "Build the validation executables")
   if(_deps)
-    add_dependencies(check ${_deps})
+    add_dependencies(check_build ${_deps})
   endif()
+  add_dependencies(check check_build)
 endfunction()
