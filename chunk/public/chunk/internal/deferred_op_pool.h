@@ -16,8 +16,6 @@
 
 #pragma once
 
-#include <algorithm>   // std::max (slab sizing)
-#include <bit>         // std::has_single_bit (the FOREIGN-block report schedule)
 #include <cassert>     // assert
 #include <cstddef>     // std::byte, std::size_t
 #include <cstdint>     // std::uintptr_t (the block probe)
@@ -27,7 +25,6 @@
 #include <utility>     // std::move
 #include <vector>      // std::vector
 #include <sys/mman.h>  // msync / MS_ASYNC (the block probe)
-#include <unistd.h>    // sysconf (same)
 
 #include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity

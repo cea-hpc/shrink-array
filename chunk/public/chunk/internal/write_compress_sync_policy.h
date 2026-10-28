@@ -19,7 +19,6 @@
 #include <vector>  // std::vector
 #include <atomic>  // std::atomic, std::atomic_thread_fence, std::memory_order
 #include <cstdint> // uint32_t (the ring_log payloads)
-#include <mutex>   // std::once_flag / std::call_once — NOT just std::mutex; do not remove again
 
 #include "chunk/config.h"            // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
 #include "chunk/PMP_CHUNK.h"         // CHUNK_PMP_THREAD_CAPACITY
@@ -66,7 +65,7 @@ namespace dekker
 /// Written once, before the parallel regions, by register_membarrier();
 /// atomic so the readers need no other ordering (a relaxed load is a plain
 /// load on every target).
-inline std::atomic<bool> membarrier_ready{false};
+inline std::atomic membarrier_ready{false};
 
 /// @brief Register MEMBARRIER_CMD_PRIVATE_EXPEDITED for this process.
 /// @return true if heavy_barrier() will use it; idempotent.

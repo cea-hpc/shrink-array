@@ -15,6 +15,9 @@
  */
 
 #pragma once
+
+#include <mutex> // std::once_flag, std::call_once (ensure_initialized)
+
 #include "chunk/internal/write_compress_sync_policy.h" // the class these bodies belong to
 
 namespace shrink_array

@@ -32,9 +32,7 @@
  *          Integers only.
  */
 
-#include <atomic>      // std::atomic_ref (the offset's release store)
 #include <cstddef>     // std::size_t
-#include <cstdint>     // std::uint64_t (the motif hash)
 #include <tuple>       // std::tuple (the motif candidates)
 #include <type_traits> // std::is_integral_v, std::is_same_v, std::make_unsigned_t
 #include <vector>      // std::vector (the motif candidates, the scan buffer)

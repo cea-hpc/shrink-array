@@ -210,7 +210,7 @@ template <typename Arr, typename ChunkClass>
     if constexpr (track_chunk2_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
     {
         using IndType     = decltype(arr.size());
-        using T           = typename Arr::value_type;
+        using T           = Arr::value_type;
         const bool first  = ch.is_full_first_value(chunk_sz);
         const bool second = !first && ch.is_full_second_value(chunk_sz) &&
                             !(static_cast<T>(arr.get_second_value()) == static_cast<T>(ChunkClass::first_value));
@@ -647,7 +647,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             {
                 continue;
             }
-            const bool bit = static_cast<bool>(value);
+            const auto bit = static_cast<bool>(value);
             internal::packed_chunk_store(
                 arr, ch, c_begin, lo, hi, chunk_sz, ind2, [&](std::size_t) { return static_cast<T>(value); },
                 [bit](bits::WordT* words, std::size_t from, std::size_t to)

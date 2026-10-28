@@ -200,7 +200,7 @@ class ChunkCounterPolicy
     /// @return true when the count has reached @p size -- the compression trigger
     [[nodiscard]] bool is_full_zero(unsigned int size = static_chunk_size) const noexcept
     {
-        return nb_val_eq_zero_ == size;
+        return static_cast<CounterValueT>(nb_val_eq_zero_) == size;
     }
 
   private:
