@@ -1330,13 +1330,15 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 {
                     compressed = compressed || ch.is_cst_val2();
                 }
-                else if constexpr (chunk_config::use_zero_one_value && Derived::is_not_bool)
+                else if constexpr (chunk_config::use_zero_one_value)
                 {
                     // Nested, like the four sites above: `&&` short-circuits
                     // evaluation, never name lookup, so Derived::is_not_bool is
                     // still looked up for a zero Derived that has no such member.
-
-                    compressed = compressed || ch.is_cst_val2(inf_new2.ind);
+                    if constexpr (Derived::is_not_bool)
+                    {
+                        compressed = compressed || ch.is_cst_val2(inf_new2.ind);
+                    }
                 }
                 if (!compressed)
                 {
