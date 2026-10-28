@@ -114,7 +114,7 @@ class RechunkSupport<Derived, true>
      *
      * @details Chunk-level rebuild: each new chunk is rebuilt from the old
      *          chunks its span covers, in parallel over the new chunks (schedule
-     *          from CHUNK_RECHUNK_SCHEDULE) and, for zero with the fast allocator
+     *          guided,16) and, for zero with the fast allocator
      *          under OpenMP, in slices with a drain between them
      *          (CHUNK_RECHUNK_SLICES). A span whose sources are all cst1 stays
      *          compressed; a zero_any span whose sources are all the same second

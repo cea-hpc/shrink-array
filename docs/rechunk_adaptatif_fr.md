@@ -124,7 +124,7 @@ mesure à données constantes et la possibilité de revenir en arrière.
 1. **prologue** : à l'ancienne géométrie, vider les écritures différées du tableau, puis
    compresser ses candidats en attente avant de les retirer des listes ;
 2. **tmp create** : construire le nouveau stockage, à la nouvelle taille ;
-3. **refill** : le remplir en parallèle (`CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut).
+3. **refill** : le remplir en parallèle (ordonnancement `guided,16`).
    Un nouveau chunk dont toutes les sources sont à la première valeur est sauté. Un nouveau
    chunk dont toutes les sources étaient compressées est **replié** tout de suite. Pour
    **`zero_any`**, si toutes ses sources sont à la **même** seconde constante, elle est
@@ -152,8 +152,7 @@ détruit, ses slabs se vident entièrement et sont rendus au système.
 
 Le prix : un slab entamé par couple (rang, tableau, taille). Avec les slabs de 1 Mio de l'ancien
 plancher de seize pages (pages de 64 Kio), c'était ~780 Mio sur les 16 tableaux du banc à 64 threads ;
-les slabs y font maintenant 256 Kio, le quart (`CHUNK_SLAB_MIN_PAGES=16` rétablit le plancher, voir
-[reglages_developpeur_fr.md](reglages_developpeur_fr.md)).
+les slabs y font maintenant 256 Kio, le quart.
 
 D'où deux modes, dont le choix par défaut dépend de la variante :
 

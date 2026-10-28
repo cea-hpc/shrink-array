@@ -119,6 +119,11 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `zero` re-chunk: the recycled slabs the last slice of the rebuild did not take stay resident
+  for the next allocations, instead of being given back to the system (the former
+  `CHUNK_RECHUNK_KEEP_RECYCLED=1`, now the only behaviour). Milan, `zero_dyn`, 64 threads, three
+  runs each: 11.7 s against 13.2 s of computation, for +0.1% of memory at the end of the run and
+  +0.3% at the peak.
 - The re-chunk decider reads no environment variable: its thresholds and its test hooks are
   `RechunkPolicy` fields only, which a program sets. New fields: `advisor_grid_bits` (the
   advisor's grid between the powers of two, 2), and the forced re-chunk of the tests,
@@ -230,6 +235,16 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- Developer settings measured on Milan (64 threads, `zero`, `zero_any` and `zero_one_value`
+  dyn, three runs each) and fixed at the value that won or that changed nothing:
+  `CHUNK_RECHUNK_RECYCLE` (recycling is always on: 29% slower without),
+  `CHUNK_RECHUNK_KEEP_RECYCLED` and `CHUNK_RECHUNK_KEEP_RECYCLED_MB` (see Changed),
+  `CHUNK_RECHUNK_SCHEDULE` (`guided,16`: `static` and `dynamic,64` within 1% except
+  `zero_one_value`, where `static` is 7.6% slower), `CHUNK_THP` (the kernel's THP mode decides:
+  `never` and `1` changed neither time nor memory) and `CHUNK_SLAB_MIN_PAGES` (no measurable
+  effect; its removal was planned). `alloc_config::thp_advise()`, `thp_never()` and
+  `advise_thp_region()` go with `CHUNK_THP`. `scripts/bench_recycle.sh` loses its recycling
+  dimension, and `diag_zero_rechunk_slowdown.py` its `dyn_static1` and `dyn_norecycle` runs.
 - `CHUNK_RECHUNK_DRY_RUN` (a user setting of `docs/environment_variables.md`): set
   `RechunkPolicy::dry_run` (`shrink_bench --rechunk_dry_run`).
 - The decider's developer variables `CHUNK_RECHUNK_MAX_COARSEN`, `CHUNK_ADVISOR_MIN_GAIN_MB`,

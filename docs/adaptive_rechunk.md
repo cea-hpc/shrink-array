@@ -124,7 +124,7 @@ measurement at unchanged data and the ability to go back.
 1. **prologue**: at the old geometry, flush the array's deferred writes, then
    compress its pending candidates before removing them from the lists;
 2. **tmp create**: build the new storage, at the new size;
-3. **refill**: fill it in parallel (`CHUNK_RECHUNK_SCHEDULE`, `guided,16` by default).
+3. **refill**: fill it in parallel (schedule `guided,16`).
    A new chunk whose sources are all at the first value is skipped. A new
    chunk whose sources were all compressed is **folded** right away. For
    **`zero_any`**, if all its sources are at the **same** second constant, that constant is
@@ -152,8 +152,7 @@ destroyed, its slabs empty completely and are returned to the system.
 
 The price: one partly used slab per (rank, array, size) triple. With the 1 MiB slabs of the
 former sixteen-page floor (64 KiB pages), this was ~780 MiB over the 16 arrays of the benchmark at
-64 threads; the slabs are 256 KiB there now, a quarter of it (`CHUNK_SLAB_MIN_PAGES=16` restores the
-floor, see [developer_settings.md](developer_settings.md)).
+64 threads; the slabs are 256 KiB there now, a quarter of it.
 
 Hence two modes, whose default depends on the variant:
 

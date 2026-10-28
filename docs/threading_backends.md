@@ -110,7 +110,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    the manager drains (`manager_chunk.h`, `manager_chunk_inline.h`, its
    orphaned `single` on `current_team()`), the sweep and the teardown free
    team of `all_type_chunk.cpp`, and the size advisor's region. *4c done*:
-   `Team::for_runtime` (`schedule(runtime)`: `CHUNK_RECHUNK_SCHEDULE`); the
+   `Team::for_runtime` (`schedule(runtime)`: the refill's `guided,16`); the
    rechunk refill's slice team and `drain_reuse_list_for_size_team`, which now
    takes the team it runs on. *4d done*: `Team::for_static_chunks`
    (`schedule(static, chunk)`) on the OpenMP and serial backends (the std

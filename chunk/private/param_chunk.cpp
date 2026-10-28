@@ -34,7 +34,6 @@
 #include <iostream>  // std::cout
 #include <mutex>     // std::scoped_lock (CHUNK_STATS report only: the size distribution)
 #include <utility>   // std::cmp_greater
-#include <unistd.h>  // sysconf(_SC_PAGESIZE): CHUNK_SLAB_MIN_PAGES
 
 #include "chunk/config.h"                              // build_config::chunk_dynamic, threaded
 #include "chunk/singleton.h"                           // SingletonChk
@@ -46,7 +45,6 @@
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
 #include "chunk/all_type_chunk.h"                      // AllTypeChunk
 #include "chunk/log.h"                                 // CHUNK_LOG
-#include "chunk/internal/env_parse.h"                  // env_number (CHUNK_SLAB_MIN_PAGES)
 
 namespace shrink_array
 {
@@ -78,9 +76,8 @@ template struct ParamChunkParallelInterface<build_config::threaded, AllTypeChunk
  * @copydoc ParamChunk::init_indexes
  *
  * @details Block size = 2 MiB (15 MiB with @p big_chunk_block) divided by the
- *          thread count, floored at 240 KiB (and at CHUNK_SLAB_MIN_PAGES pages
- *          when set). Each element type scales it to its width and floors it at
- *          one page (value_slab_request).
+ *          thread count, floored at 240 KiB. Each element type scales it to its
+ *          width and floors it at one page (value_slab_request).
  *
  * @warning A chunk larger than one block cannot be allocated; only a warning,
  *          as the caller cannot fix the compile-time geometry at run time.
@@ -106,15 +103,8 @@ void ParamChunk::init_indexes(bool big_chunk_block)
     // (EmptySlabSweep), so the floor only cost memory -- on 64 KiB pages it
     // made the slabs 1 MiB at 64 threads instead of 256 KiB: a partly-used
     // slab per (rank, element type, array, size), and a slab kept resident by
-    // its last few live buffers. CHUNK_SLAB_MIN_PAGES=16 restores it (A/B).
-    if (const int min_pages = env_number<int>("CHUNK_SLAB_MIN_PAGES", 0); min_pages > 0)
-    {
-        if (const long ps = ::sysconf(_SC_PAGESIZE); ps > 0)
-        {
-            const long long floor_bytes = std::min(static_cast<long long>(min_pages) * ps, 1LL << 30);
-            sz                          = std::max(sz, static_cast<int>(floor_bytes));
-        }
-    }
+    // its last few live buffers. (The A/B switch CHUNK_SLAB_MIN_PAGES is gone:
+    // on x86 a floor of 16 pages changed nothing measurable.)
 
     set_block_size(sz);
 

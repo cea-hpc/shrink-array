@@ -81,29 +81,9 @@
 #include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/immortal.h"             // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/log.h"                           // CHUNK_LOG (the identifier and index warnings)
-#if CHUNK_OPT_FAST_ALLOC
-    #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
-#endif
 
 namespace shrink_array
 {
-
-/// @brief CHUNK_THP for the cst2 region: alloc_config::thp_advise() in a
-///        fast-alloc build, always false in a std-alloc build.
-///
-/// alloc_config.h belongs to fast_allocators, which a std-alloc build neither
-/// builds nor puts on the include path. The name cannot be written unguarded
-/// in region_init() either: it is not dependent, so it is looked up when the
-/// template is defined, `if constexpr` or not (see build_config's
-/// reclaim_empty_slabs mirror in config.h).
-inline bool cst2_thp_advise() noexcept
-{
-#if CHUNK_OPT_FAST_ALLOC
-    return fast_alloc::alloc_config::thp_advise();
-#else
-    return false;
-#endif
-}
 
 /**
  * @brief One block of the registry chain: 64 slots and a link to the next.

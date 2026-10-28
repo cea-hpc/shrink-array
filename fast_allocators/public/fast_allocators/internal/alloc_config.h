@@ -28,15 +28,12 @@
 
 #include <charconv>     // std::from_chars (CHUNK_RECLAIM_MIN_SLABS)
 #include <cstddef>      // std::size_t
-#include <cstdio>       // std::fopen, std::fscanf (the huge page size)
 #include <cstdlib>      // std::getenv
 #include <cstring>      // std::strlen, std::strcmp (env_switch)
 #include <system_error> // std::errc
 
-#include <sys/mman.h> // madvise, MADV_HUGEPAGE / MADV_NOHUGEPAGE (advise_thp_region)
-
 #include "fast_allocators/build_options.h"        // FAST_ALLOC_OPT_*: the options the library was built with
-#include "fast_allocators/internal/log_core.h"    // CHUNK_LOG (the CHUNK_RECLAIM_MIN_SLABS and CHUNK_THP messages)
+#include "fast_allocators/internal/log_core.h"    // CHUNK_LOG (the CHUNK_RECLAIM_MIN_SLABS message)
 #include "fast_allocators/internal/pmp_runtime.h" // pmp::threaded (checked against FAST_ALLOC_OPT_THREADED)
 
 namespace fast_alloc::alloc_config
@@ -175,109 +172,6 @@ inline bool slab_fullest_first() noexcept
     return on;
 }
 
-
-/**
- * @brief CHUNK_THP: advise transparent huge pages on the slab arenas and the
- *        cst2 region? EXPERIMENTAL, off by default.
- *
- * @details Read once. `1` (any value but empty, `0` or `never`) asks for
- *          madvise(MADV_HUGEPAGE) on each arena reservation (SlabArena::grow) and the cst2
- *          region. Honoured only when the PMD huge page is no larger than a slab (2 MiB);
- *          with 64 KiB base pages it is 512 MiB, and the switch is ignored with a message.
- *          The kernel's THP mode must be `madvise` or `always`.
- *
- * @warning A slab becomes resident whole at its first touch. Measure the exact RSS
- *          (smaps_rollup) along with the time.
- */
-inline bool thp_advise() noexcept
-{
-    static const bool on = []() -> bool
-    {
-        const char* env = std::getenv("CHUNK_THP");
-        if (env == nullptr || env[0] == '\0' || env[0] == '0' || std::strcmp(env, "never") == 0)
-        {
-            return false; // `never`: thp_never(), below
-        }
-        long pmd = -1;
-        if (std::FILE* file = std::fopen("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size", "r"))
-        {
-            if (std::fscanf(file, "%ld", &pmd) != 1)
-            {
-                pmd = -1;
-            }
-            std::fclose(file);
-        }
-        constexpr long slab_bytes = 2L << 20;
-        if (pmd <= 0 || pmd > slab_bytes)
-        {
-            if (pmd <= 0)
-            {
-                CHUNK_LOG(warn, env, "CHUNK_THP={} ignored: the huge page size is unknown here", env);
-            }
-            else
-            {
-                CHUNK_LOG(warn, env, "CHUNK_THP={} ignored: the huge page is {} MiB here, not a 2 MiB slab's size", env,
-                          pmd >> 20);
-            }
-            return false;
-        }
-        CHUNK_LOG(info, env, "CHUNK_THP: MADV_HUGEPAGE on the slab arenas and the cst2 region ({} KiB)", pmd >> 10);
-        return true;
-    }();
-    return on;
-}
-
-/**
- * @brief CHUNK_THP=never: madvise(MADV_NOHUGEPAGE) on the slab arenas and the
- *        ladder's mappings. Read once.
- *
- * @details Without advice the kernel's THP mode decides; under `always` (RHEL / AlmaLinux
- *          default) a 2 MiB-aligned slab is resident WHOLE at first touch (a 16-byte element
- *          slab uses only 512 KiB of it, the side-link cap), and khugepaged collapses partly
- *          touched ranges. `never` keeps base pages. The default stays the kernel's until
- *          measured (RSS, AnonHugePages in smaps_rollup, time).
- */
-inline bool thp_never() noexcept
-{
-    static const bool on = []() -> bool
-    {
-        const char* env = std::getenv("CHUNK_THP");
-        if (env == nullptr || std::strcmp(env, "never") != 0)
-        {
-            return false;
-        }
-#ifdef MADV_NOHUGEPAGE
-        CHUNK_LOG(info, env, "CHUNK_THP=never: MADV_NOHUGEPAGE on the slab arenas");
-        return true;
-#else
-        CHUNK_LOG(warn, env, "CHUNK_THP=never ignored: no MADV_NOHUGEPAGE on this system");
-        return false;
-#endif
-    }();
-    return on;
-}
-
-/**
- * @brief Apply the CHUNK_THP advice to a fresh slab mapping: MADV_HUGEPAGE
- *        (`1`), MADV_NOHUGEPAGE (`never`), or nothing (unset: the kernel's
- *        mode). Advice only: a failure is ignored.
- */
-inline void advise_thp_region([[maybe_unused]] void* base, [[maybe_unused]] std::size_t len) noexcept
-{
-#ifdef MADV_HUGEPAGE
-    if (thp_advise())
-    {
-        (void)::madvise(base, len, MADV_HUGEPAGE);
-        return;
-    }
-#endif
-#ifdef MADV_NOHUGEPAGE
-    if (thp_never())
-    {
-        (void)::madvise(base, len, MADV_NOHUGEPAGE);
-    }
-#endif
-}
 
 /// @brief int_alloc / int_free go through the aligned allocation (-DFAST_ALLOC_ALIGN).
 inline constexpr bool alloc_align =

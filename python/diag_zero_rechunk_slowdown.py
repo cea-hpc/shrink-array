@@ -19,19 +19,14 @@ Part 1 -- A/B on the rebuild's state (always). shrink_bench_zero_1024
 (static) and shrink_bench_zero_dyn under:
     dyn            the default
     dyn_1slice     CHUNK_RECHUNK_SLICES=1
-    dyn_static1    CHUNK_RECHUNK_SLICES=1 CHUNK_RECHUNK_SCHEDULE=static
                    The default rebuild slices the array in 16 and spreads
                    each slice over ALL ranks (guided,16): a new chunk's
                    buffer is allocated, first-touched and owned (slab owner,
                    NUMA node) by an arbitrary rank, unrelated to the ranks
-                   that use it afterwards. One pass in static gives each rank
-                   one contiguous 1/T of the array instead. Neither is the
-                   bench's own mapping (fill: one thread per array; compute:
-                   schedule(static,1) blocks), so a gain here points at the
-                   placement / ownership left by the rebuild, not a cure.
-    dyn_norecycle  CHUNK_RECHUNK_RECYCLE=0       no slab recycling between
-                   slices (recycled slabs keep the OLD geometry's pages, and
-                   their NUMA placement)
+                   that use it afterwards. (The rebuild's schedule and its
+                   slab recycling are fixed now: CHUNK_RECHUNK_SCHEDULE and
+                   CHUNK_RECHUNK_RECYCLE are gone, with dyn_static1 and
+                   dyn_norecycle.)
     dyn_lazy       CHUNK_ALLOC_AFFINITY_EAGER=0  per-array slab sets at the
                    first re-chunk, not at creation
     dyn_dryrun     --rechunk_dry_run         the advisor analyses, never moves
@@ -84,8 +79,6 @@ CONFIGS = [
     ("static", "shrink_bench_zero_1024", {}, []),
     ("dyn", "shrink_bench_zero_dyn", {}, []),
     ("dyn_1slice", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1"}, []),
-    ("dyn_static1", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_SLICES": "1", "CHUNK_RECHUNK_SCHEDULE": "static"}, []),
-    ("dyn_norecycle", "shrink_bench_zero_dyn", {"CHUNK_RECHUNK_RECYCLE": "0"}, []),
     ("dyn_lazy", "shrink_bench_zero_dyn", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}, []),
     # the advisor's own share: analyses without any re-chunk, and none at all
     ("dyn_dryrun", "shrink_bench_zero_dyn", {}, ["--rechunk_dry_run"]),

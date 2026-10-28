@@ -37,11 +37,13 @@
 //   first  -- fill_range, then one first value;
 //   second -- fill_range, then one second value (zero_one_value / zero_any);
 //   copy   -- copy_range from a plain source, then one first value.
+// Then fill_range over chunks already constant (run_fill_constant_case).
 // Then the compound operators on a compressed chunk (run_compound_case).
 // In an OpenMP build the counters do not exist and the cases simply pass.
 //
 // Exit 0 = every check holds. Any thread count.
 
+#include <algorithm>   // std::fill (run_fill_constant_case's reference)
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
@@ -207,6 +209,131 @@ int run_case(Case test_case)
                 case_name(test_case), chunk_sz, test_case == Case::second ? "second" : "first");
     }
     return bad ? 1 : 0;
+}
+
+/// fill_range over chunks already constant: the value a chunk already holds
+/// (whole chunk, part of one, across two), and the values it does not -- the
+/// first value onto a second-constant chunk, the second onto a first-constant
+/// one, and on zero_any a second value onto a chunk at ANOTHER second value.
+/// Every element against a reference after each fill, then after a pass; a
+/// fill of the chunk's own constant must leave it constant.
+int run_fill_constant_case()
+{
+    const bool second_applies = chunk_config::use_zero_one_value || chunk_config::use_zero_any;
+
+    Array<double> arr;
+    const long    csz   = static_cast<long>(arr.chunk_size());
+    const long    count = 6 * csz;
+    arr.resize(static_cast<int>(count));
+    maybe_set_second_value(arr, second_value);
+    std::vector<double> ref(static_cast<std::size_t>(count), 0.0);
+
+    const auto fill = [&](long lo, long hi, double value)
+    {
+        shrink_array::fill_range(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), value);
+        std::fill(ref.begin() + lo, ref.begin() + hi, value);
+    };
+    const auto constant = [&](long c)
+    {
+        return !shrink_array::internal::materialised(arr, arr.chunk_ref(static_cast<std::size_t>(c)),
+                                                     shrink_array::internal::second_value_index(arr));
+    };
+    int        bad   = 0;
+    const auto check = [&](const char* step)
+    {
+        long wrong = 0;
+        for (long i = 0; i < count; ++i)
+        {
+            const double got = std::as_const(arr)[static_cast<int>(i)];
+            if (got != ref[static_cast<std::size_t>(i)])
+            {
+                if (wrong < 5)
+                {
+                    println("[{}/fill-constant] FAIL {}: [{}] = {:g}, expected {:g}", variant_name(), step, i, got,
+                            ref[static_cast<std::size_t>(i)]);
+                }
+                ++wrong;
+            }
+        }
+        bad += wrong != 0 ? 1 : 0;
+    };
+    const auto expect_constant = [&](long c, const char* step)
+    {
+        if (!constant(c))
+        {
+            println("[{}/fill-constant] FAIL {}: chunk {} materialised", variant_name(), step, c);
+            ++bad;
+        }
+    };
+
+    // Chunks 0, 4, 5 at the first constant; 1 at the second value (2.0);
+    // 2 at 3.0 (zero_any: a second constant of its own; plain elsewhere);
+    // 3 mixed.
+    fill(1 * csz, 2 * csz, second_applies ? second_value : plain_value);
+    fill(2 * csz, 3 * csz, 3.0);
+    fill(3 * csz, 4 * csz, plain_value);
+    arr[static_cast<int>(3 * csz)]         = 0.0;
+    ref[static_cast<std::size_t>(3 * csz)] = 0.0;
+    compress_in_region(arr);
+    // Serial zero_any has no between-region pass: the writers' pass folds the
+    // uniform chunks (as pattern_validation's end_phase).
+    if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
+    {
+        Array<double>::make_block_compression();
+    }
+    check("setup");
+    expect_constant(0, "setup");
+    if (second_applies)
+    {
+        expect_constant(1, "setup");
+    }
+    if (chunk_config::use_zero_any)
+    {
+        expect_constant(2, "setup");
+    }
+
+    // The chunk's own constant: nothing to write, the chunk stays constant.
+    fill(0, csz, 0.0);
+    check("first value, whole cst1 chunk");
+    expect_constant(0, "first value, whole cst1 chunk");
+    fill(4 * csz + 3, 5 * csz - 5, 0.0);
+    check("first value, part of a cst1 chunk");
+    expect_constant(4, "first value, part of a cst1 chunk");
+    fill(5 * csz - 7, 6 * csz, 0.0);
+    check("first value, across two cst1 chunks");
+    expect_constant(4, "first value, across two cst1 chunks");
+    expect_constant(5, "first value, across two cst1 chunks");
+    if (second_applies)
+    {
+        fill(csz + 5, 2 * csz - 3, second_value);
+        check("second value, part of its cst2 chunk");
+        expect_constant(1, "second value, part of its cst2 chunk");
+        fill(csz, 2 * csz, second_value);
+        check("second value, its whole cst2 chunk");
+        expect_constant(1, "second value, its whole cst2 chunk");
+    }
+
+    // A value the chunk does not hold: written.
+    if (chunk_config::use_zero_any)
+    {
+        fill(2 * csz + 2, 3 * csz - 9, second_value); // onto the chunk at 3.0
+        check("second value onto another cst2 chunk");
+    }
+    fill(csz + 1, csz + 11, 0.0);
+    check("first value onto a cst2 chunk");
+    fill(5 * csz + 4, 5 * csz + 20, second_value);
+    check("second value onto a cst1 chunk");
+    fill(3 * csz + 1, 3 * csz + csz / 2, 0.0);
+    check("first value onto a mixed chunk");
+
+    compress_in_region(arr);
+    check("after the pass");
+
+    if (bad == 0)
+    {
+        println("[{}/fill-constant] OK: fill_range over constant chunks, {} elements read back", variant_name(), count);
+    }
+    return bad != 0 ? 1 : 0;
 }
 
 /// `second * 0` through the proxy (zero_one_value): the element leaves the second value
@@ -376,6 +503,7 @@ int run(int /*argc*/, char** /*argv*/)
     fails += run_case(Case::first);
     fails += run_case(Case::second);
     fails += run_case(Case::copy);
+    fails += run_fill_constant_case();
     fails += run_mul_zero_case();
     for (const Op op : {Op::and_, Op::shl, Op::shr, Op::add0, Op::sub0, Op::or0, Op::xor0})
     {

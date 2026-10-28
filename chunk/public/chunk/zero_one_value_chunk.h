@@ -118,11 +118,11 @@ class ChunkSpec
 
   protected:
     /*!
-     * \brief Whether `v` is ANY of the registered second-constant pointers,
+     * \brief Whether `vals` is ANY of the registered second-constant pointers,
      *        regardless of index. For teardown, where the chunk's own index is not
      *        to hand: is_cst_val2(v, ind) with a wrong index would read the marker
      *        of a chunk compressed at another index as a live buffer.
-     * \param v Pointer to test.
+     * \param vals Pointer to test.
      * \return True if v matches the second constant at some index.
      */
     [[nodiscard]] static bool is_cst_val2_any(const T* vals) noexcept;

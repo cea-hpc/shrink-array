@@ -29,17 +29,11 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | variable | default | effect |
 |---|---|---|
 | `CHUNK_ALLOC_AFFINITY_EAGER` | depends on the variant | `1`: each large array has its own set of allocators from its creation (default for `zero`); `0`: only from its first rechunk (default for `zero_one_value` and `zero_any`). See [adaptive_rechunk.md](adaptive_rechunk.md) §5 |
-| `CHUNK_RECHUNK_SCHEDULE` | `guided,16` | OpenMP schedule of the rebuild (`kind[,chunk]`) |
 | `CHUNK_RECHUNK_SLICES` | 16 | number of slices in the `zero` rebuild |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | a sweep gives empty slabs back to the system only if there are at least this many |
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()` |
 | `CHUNK_RECLAIM_PARTIAL` | 1 | a sweep (`trim_reuse_pools`, `CHUNK_RECLAIM_PHASE_KEEP`) also gives back the free pages of the value slabs still in use, as `malloc_trim` does in glibc's heaps (the last page of each slab, its back-pointer, is kept); `0`: only the empty slabs, as before. `CHUNK_ARENA_REPORT` prints them on its `partial` line |
 | `CHUNK_SLAB_FULLEST_FIRST` | 1 | a sweep re-chains the value slabs with room fullest first, so the next allocations fill the dense slabs and the sparse ones drain; `0`: the order is left as it is |
-| `CHUNK_SLAB_MIN_PAGES` | unset | floor of the value slabs' size, in pages; unset: none (each element type's slab is still at least one page). `16` is the former default: 1 MiB slabs at 64 threads on 64 KiB pages instead of 256 KiB, for an A/B of the resident memory. *Removal planned: 2026-12-31.* |
-| `CHUNK_RECHUNK_RECYCLE` | on | `zero` rebuild: the slabs a slice has just emptied go to the next slice instead of back to the system; `0` turns it off. *Removal planned: 2026-12-31.* |
-| `CHUNK_RECHUNK_KEEP_RECYCLED_MB` | 0 | `zero` rebuild: at its end, up to this many MiB per arena of the recycled slabs no slice took stay resident (split evenly over the ranks) for the next allocations, instead of going back to the system; `0`: all go back |
-| `CHUNK_RECHUNK_KEEP_RECYCLED` | off | `1`: the same, with no cap (the RSS keeps every leftover until reused) |
-| `CHUNK_THP` | 0 | unset: the kernel's THP mode decides. `never`: no transparent huge pages on the slab arenas (`MADV_NOHUGEPAGE`) -- under the mode `always` a slab otherwise becomes resident whole at its first touch; compare the two with the RSS and AnonHugePages of `smaps_rollup`. Experimental: `1` requests them (`MADV_HUGEPAGE`) on the slab arenas and the cst2 region. Ignored, with a message, when the huge page is larger than 2 MiB (kernel with 64 KiB pages: 512 MiB). Cost: a slab that has been started becomes fully resident. *Removal planned: 2026-12-31.* |
 | `CHUNK_REUSE_SHARE_DIV` | 50 | fast allocator: a rank keeps parked for reuse up to chunks / (this × threads) freed buffers per element type (per array for an array with its own allocators); the chunks counted include the compressed ones |
 | `CHUNK_REUSE_FLOOR_KB` | unset | floor of that budget in KiB per rank, converted to buffers at the chunk size; unset: 500 buffers (100 for an array with its own allocators), whatever their size; `0`: no floor |
 | `CHUNK_RECLAIM_PHASE_KEEP` | unset | `K`: after every compression pass, give the empty slabs back to the system (`madvise`), keeping `K` per allocator instance; unset: only at a re-chunk, a destruction, `shrink_to_fit()` |

@@ -65,7 +65,7 @@
 #include <system_error>  // std::errc (std::from_chars)
 
 #include "fast_allocators/internal/raw_memory.h"   // address_bits
-#include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
+#include "fast_allocators/internal/alloc_config.h" // reclaim_min_empty_slabs
 #include "fast_allocators/internal/pmp_alloc.h"    // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
 #include "fast_allocators/internal/fatal.h"        // FAST_ALLOC_FATAL
 #include "fast_allocators/internal/log_core.h"     // CHUNK_LOG, CHUNK_LOG_ALWAYS (CHUNK_ARENA_REPORT)
@@ -519,8 +519,9 @@ class SlabArena
      *        touched there.
      * @details Unlike deallocate(), the slabs KEEP their pages: the re-chunk's
      *          next slice allocates about as much at the same slab size, and a
-     *          resident slab costs no page fault nor kernel zeroing. What the next
-     *          slice does not take is given back by advise_recycled().
+     *          resident slab costs no page fault nor kernel zeroing. What the last
+     *          slice does not take stays resident too, for the next allocations
+     *          (the re-chunk no longer calls advise_recycled()).
      * @note An unknown or already-freed slab warns and is dropped, as in
      *       deallocate().
      */
@@ -534,7 +535,6 @@ class SlabArena
      *        Each rank keeps its newest ones -- the end of its list, which
      *        allocate() takes first -- and its resident slabs are moved
      *        behind its advised ones, so they are handed out first.
-     *        CHUNK_RECHUNK_KEEP_RECYCLED_MB sets it for the re-chunk.
      * @return Number of slabs advised.
      * @details The slabs stay on their rank's list, without pages (a later
      *          allocate() still takes them first). Each slab is advised once.

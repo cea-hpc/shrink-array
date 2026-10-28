@@ -923,7 +923,7 @@ static int run_body(int argc, char** argv)
         // only from 8192 new chunks on (n_new / 4096 slices, up to 16), which
         // no case above reaches. Every slice boundary drains the old geometry's
         // parked blocks and recycles the slabs they empty into the next slice's
-        // allocations (CHUNK_RECHUNK_RECYCLE): stale buffers that must come
+        // allocations (always, since CHUNK_RECHUNK_RECYCLE is gone): stale buffers that must come
         // back zero-filled where the data is zero, and exact elsewhere. Mostly
         // distinct values (no constant chunk to fold) with zero spans; grown
         // (4 slices) and shrunk (8 slices), then rewritten and recompressed.
