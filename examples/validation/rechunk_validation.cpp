@@ -210,7 +210,8 @@ constexpr const char* variant_name()
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
+    // bool's second value is true, always: zero_one_value warns on the call.
+    if constexpr (!std::is_same_v<Val, bool> && requires(Arr probe) { probe.set_second_value(value); })
     {
         arr.set_second_value(value);
     }
@@ -765,6 +766,21 @@ int check_multiple_of_64_chain(const char* label)
 namespace
 {
 /// @brief One case: its name (--case), the geometry it starts from, its body.
+/// bool content for the bool cases: runs of false, runs of true, and varied
+/// spans, 3000 elements each.
+bool bool_runs(long i)
+{
+    switch ((i / 3000) % 3)
+    {
+        case 0:
+            return false;
+        case 1:
+            return true;
+        default:
+            return i % 3 == 0;
+    }
+}
+
 struct Case
 {
     const char*          name;
@@ -911,6 +927,20 @@ static int run_body(int argc, char** argv)
         // back zero-filled where the data is zero, and exact elsewhere. Mostly
         // distinct values (no constant chunk to fold) with zero spans; grown
         // (4 slices) and shrunk (8 slices), then rewritten and recompressed.
+        // bool, one byte per element: the refill's bulk read (memcpy per source
+        // chunk, zero_any's shared array of true filled as a constant). Runs of
+        // false, runs of true and varied spans; grown, shrunk, and to a size the
+        // old one does not divide (768), whose new chunks straddle old ones.
+        {"bool-grow", 512,
+         []
+         {
+             return check_invariance<bool>("bool-grow-512-to-2048", 1000000L, 2048, bool_runs, /*sv_value=*/true,
+                                           /*post_rounds=*/1);
+         }},
+        {"bool-shrink", 512,
+         [] { return check_invariance<bool>("bool-shrink-512-to-64", 1000000L, 64, bool_runs, /*sv_value=*/true); }},
+        {"bool-uneven", 512,
+         [] { return check_invariance<bool>("bool-uneven-512-to-768", 1000000L, 768, bool_runs, /*sv_value=*/true); }},
         {"sliced-grow", 64,
          []
          {
