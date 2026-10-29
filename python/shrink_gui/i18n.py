@@ -81,6 +81,9 @@ EN = {
         "different sizes or modes: compare the speedups, not the times",
     "couleur : la variante (vector en gris) · forme : la taille (rond dyn, carré 1024, triangle 256, losange 64)":
         "colour: the variant (vector in grey) · shape: the size (dot dyn, square 1024, triangle 256, diamond 64)",
+    "trait mixte : le bench TBB (shrink_bench_tbb_*), tiret-point-point pour B":
+        "dash-dot line: the TBB bench (shrink_bench_tbb_*), dash-dot-dot for B",
+    "trait mixte : le bench TBB (shrink_bench_tbb_*)": "dash-dot line: the TBB bench (shrink_bench_tbb_*)",
     "Superpose un autre run de bench_and_test.py de la même architecture (en pointillés) et donne le "
     "rapport B / A sur leurs points communs":
         "Overlays another bench_and_test.py run of the same architecture (dashed) and gives the "

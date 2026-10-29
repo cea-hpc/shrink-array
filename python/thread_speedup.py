@@ -47,9 +47,10 @@ Examples (from python/, on a compute node):
 (zero_any@dyn -> shrink_bench_zero_any_dyn), or "vector" (shrink_bench_vector_perf),
 as bench_and_test.py names them. --all-exec takes every one the target has
 for this machine: vector, then zero / zero_one_value / zero_any in each size
-(--size narrows it); with --int64 their 64-bit declinations
+(--size narrows it), then the TBB bench of each (shrink_bench_tbb_<variant>_<size>,
+in std builds made with oneTBB); with --int64 their 64-bit declinations
 (shrink_bench_*_int64_*, the only ones past INT_MAX elements: --multiply 2
-and up).
+and up; the TBB bench has none).
 
 --mode perf (the default) is the measurement: 1e9 elements x --multiply,
 --no_io. --mode check runs the correctness mode (5e6 elements, read back
@@ -131,11 +132,16 @@ def glob_execs(root, target, pattern):
 
 def all_execs(root, target, a):
     """--all-exec: the executables the target has for this machine, vector
-    first, then each variant in each size (--size), 32-bit or --int64."""
+    first, then each variant in each size (--size), 32-bit or --int64, then
+    the TBB bench of each (32-bit only: it has no int64 declination). Those
+    the target has not built are left out, the TBB bench of a build without
+    oneTBB among them."""
     specs = ["vector_int64_perf" if a.int64 else "vector"]
     for v in VARIANTS:
         for sz in a.size or SIZES:
             specs.append("%s%s@%s" % (v, "_int64" if a.int64 else "", sz))
+    if not a.int64:
+        specs += ["tbb_%s@%s" % (v, sz) for v in VARIANTS for sz in a.size or SIZES]
     out = []
     for spec in specs:
         name = exe_name(spec if not spec.startswith("vector_int64") else "shrink_bench_" + spec, a.mode)
@@ -440,7 +446,8 @@ def parse_args(argv=None):
                         "(shrink_bench_zero_any_*), or a path")
     p.add_argument("--all-exec", action="store_true",
                    help="every executable the target has here: vector, then zero / zero_one_value / "
-                        "zero_any in each size (with --exec: added to them)")
+                        "zero_any in each size, then their TBB bench (shrink_bench_tbb_*, when the build has "
+                        "it; not with --int64) (with --exec: added to them)")
     p.add_argument("--size", type=lambda v: [x for x in v.split(",") if x], default=None,
                    metavar="dyn,1024,...", help="--all-exec: these sizes only (default: %s)" % ",".join(SIZES))
     p.add_argument("--int64", action="store_true",

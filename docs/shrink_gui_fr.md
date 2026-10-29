@@ -121,7 +121,8 @@ quoi qui fasse tourner les threads -- OpenMP, le backend std::thread ou TBB ; an
 de même en batch seulement, avec les mêmes boutons « Choisir… ». Son avancement et ses erreurs
 s'affichent comme ceux de `bench_and_test.py` ; le Résumé donne son `summary.csv`, et le
 Graphique ses courbes (speedup avec la droite idéale, efficacité ou temps ; couleur = la
-variante, forme = la taille). « Comparer avec » superpose un autre run (un autre compilateur,
+variante, forme = la taille, trait mixte = le bench TBB, que `--all-exec` prend aussi quand le
+build l'a). « Comparer avec » superpose un autre run (un autre compilateur,
 un autre commit) et donne le rapport B / A. Ses sorties vont dans
 `$CCCWORKDIR/thread_speedup/` (sinon `~/thread_speedup/`) ; les runs enregistrés sous
 l'ancien nom sont lus comme les siens.

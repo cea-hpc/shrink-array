@@ -123,6 +123,10 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `thread_speedup.py --all-exec` takes the TBB bench too (`shrink_bench_tbb_<variant>_<size>`,
+  after the other executables, in the std builds made with oneTBB; none with `--int64`, it has
+  no 64-bit declination). shrink_gui's speedup chart reads its names: the colour of its variant,
+  the shape of its size, a dash-dot line (dash-dot-dot for B) -- they were grey stars.
 - `python/omp_speedup.py` is `python/thread_speedup.py`: its curves are not OpenMP's only, the
   std::thread backend's (`std-*` targets) and the TBB bench's (`shrink_bench_tbb_*`) too. Its
   default output directory is `$CCCWORKDIR/thread_speedup/` (else `~/thread_speedup/`).

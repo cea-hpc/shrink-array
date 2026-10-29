@@ -28,7 +28,8 @@ from shrink_gui.widgets import ScatterView, TLabel
 VARIANT_SLOT = {"zero": 0, "zero_one_value": 1, "zero_any": 2}
 SIZE_SHAPES = ["dyn", "1024", "256", "64"]
 # The old names too (shrink_bench_chunk2a_dyn), read as the new ones; longest first.
-EXE_RE = re.compile(r"^shrink_bench_(vector|std_alloc|zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)"
+# The TBB bench (shrink_bench_tbb_zero_any_1024) is its variant and size, drawn dash-dot.
+EXE_RE = re.compile(r"^shrink_bench_(?:tbb_)?(vector|std_alloc|zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)"
                     r"(?:_int64)?(?:_(\w+))?$")
 
 # What the y axis shows: (row index in speedup_points, axis title, log scale by default).
@@ -43,6 +44,11 @@ def is_speedup_chart(meta):
     """Drawn as thread_speedup.py's (meta "chart", set from PROGRAMS; an old run
     under its former name, omp_speedup.py, too)."""
     return meta.get("chart") == "speedup" or program_of(meta) == "thread_speedup.py"
+
+
+def is_tbb(exe):
+    """The TBB bench's executable (shrink_bench_tbb_<variant>_<size>)."""
+    return exe.startswith("shrink_bench_tbb_")
 
 
 def exe_key(exe):
@@ -230,7 +236,9 @@ class SpeedupChart:
                 short = exe.replace("shrink_bench_", "")
                 ln = QLineSeries()
                 pen = QPen(color, 2)
-                if dashed:
+                if is_tbb(exe):
+                    pen.setStyle(Qt.DashDotDotLine if dashed else Qt.DashDotLine)
+                elif dashed:
                     pen.setStyle(Qt.DashLine)
                 ln.setPen(pen)
                 ln.append([QPointF(x, y) for x, y in pts])
@@ -319,4 +327,7 @@ class SpeedupChart:
         notes.insert(0, head)
         notes.append("couleur : la variante (vector en gris) · forme : la taille (rond dyn, carré 1024, "
                      "triangle 256, losange 64)")
+        if any(is_tbb(k[0]) for k in list(va) + list(vb)):
+            notes.append("trait mixte : le bench TBB (shrink_bench_tbb_*), tiret-point-point pour B" if rb
+                         else "trait mixte : le bench TBB (shrink_bench_tbb_*)")
         self.sc_note.setText("\n".join(T(n) for n in notes))

@@ -117,7 +117,8 @@ runs the threads -- OpenMP, the std::thread backend or TBB; formerly `omp_speedu
 `--exec` or `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) likewise runs as a
 batch job only, with the same "Choose…" buttons. Its progress and errors show as
 `bench_and_test.py`'s do; the Summary gives its `summary.csv`, and the Chart its curves
-(speedup with the ideal line, efficiency or time; colour = the variant, shape = the size).
+(speedup with the ideal line, efficiency or time; colour = the variant, shape = the size, a
+dash-dot line = the TBB bench, which `--all-exec` takes too when the build has it).
 "Compare with" overlays another run (another compiler, another commit) and gives the B / A
 ratio. Its outputs go to `$CCCWORKDIR/thread_speedup/` (else `~/thread_speedup/`); the runs
 recorded under the old name are read as its own.
