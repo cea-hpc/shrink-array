@@ -196,7 +196,10 @@ class SpeedupChart:
         chart.setTitle(("Comparaison — " if rb else "") + title + " — " + (info.get("target") or ""))
         chart.setTitleBrush(QBrush(QColor(V["ink"])))
         chart.legend().setLabelColor(QColor(V["ink2"]))
-        chart.legend().setAlignment(Qt.AlignTop)
+        # On the right, one entry a line: a dozen executables in one row at the
+        # top left no room for any label. Hover gives a label cut all the same.
+        chart.legend().setAlignment(Qt.AlignRight)
+        chart.legend().setShowToolTips(True)
         chart.legend().setMarkerShape(QLegend.MarkerShapeFromSeries)
 
         va = {k: v for k, v in self.speedup_values(r, col).items() if self._speedup_keep(k[0])}
@@ -213,6 +216,7 @@ class SpeedupChart:
             ideal.append([QPointF(x, x / tmin if metric == "speedup" else 1.0) for x in xs])
             chart.addSeries(ideal)
 
+        execs_a = {k[0] for k in va}
         for dset, vals, dashed in ((r, va, False), (rb, vb, True)):
             if not dset:
                 continue
@@ -224,7 +228,6 @@ class SpeedupChart:
                 pts = sorted((k[1], v) for k, v in vals.items() if k[0] == exe)
                 short = exe.replace("shrink_bench_", "")
                 ln = QLineSeries()
-                ln.setName(short + ((" · B" if dashed else " · A") if rb else ""))
                 pen = QPen(color, 2)
                 if dashed:
                     pen.setStyle(Qt.DashLine)
@@ -232,6 +235,10 @@ class SpeedupChart:
                 ln.append([QPointF(x, y) for x, y in pts])
                 chart.addSeries(ln)
                 dots = QScatterSeries()
+                # The legend entry is the marker, colour and shape, which say the
+                # variant and the size; one entry per executable: B's dashed twin
+                # of an A curve adds none (the note says A solid, B dashed).
+                dots.setName(short + (" · B" if dashed else ""))
                 dots.setMarkerShape(_shape(size))
                 dots.setMarkerSize(9)
                 dots.setColor(QColor(V["surface"]) if dashed else color)    # B: hollow markers
@@ -239,8 +246,11 @@ class SpeedupChart:
                 dots.setPen(QPen(color, 1.5))
                 dots.append([QPointF(x, y) for x, y in pts])
                 chart.addSeries(dots)
-                for m in chart.legend().markers(dots):
+                for m in chart.legend().markers(ln):
                     m.setVisible(False)
+                if dashed and exe in execs_a:
+                    for m in chart.legend().markers(dots):
+                        m.setVisible(False)
                 other = va if dashed else vb
                 for th, v in pts:
                     k = (exe, th)

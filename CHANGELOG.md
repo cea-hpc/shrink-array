@@ -268,6 +268,11 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- shrink_gui: the legends of the Graphique tab are readable again. Set in one row at the top,
+  they cut every label short -- with `omp_speedup.py --all-exec` (a dozen executables, twice
+  over in a comparison) no label was left. They sit on the right now, one entry a line, with the
+  full label on hover; the speedup chart has one entry per executable, its marker (colour: the
+  variant, shape: the size), B's dashed twin of an A curve adding none.
 - The teardown verbs (`release_chunk_pools()`, `destroy_block_chunk()`, `delete_chunk_allocator()`,
   `clear_all_list_block_free_thr()`, `delete_list_block_chunk_free_itself()`) and
   `shrink_to_fit()`'s pool trim refused a call from inside a parallel region in check builds

@@ -222,7 +222,10 @@ class ChartTab:
         chart.setTitle(("Comparaison — " if rb else "") + "temps par run selon le nombre de threads — " + what)
         chart.setTitleBrush(QBrush(QColor(V["ink"])))
         chart.legend().setLabelColor(QColor(V["ink2"]))
-        chart.legend().setAlignment(Qt.AlignTop)
+        # On the right, one entry a line (as the speedup chart): in one row at
+        # the top the labels are cut short. Hover gives a label cut all the same.
+        chart.legend().setAlignment(Qt.AlignRight)
+        chart.legend().setShowToolTips(True)
         chart.legend().setMarkerShape(QLegend.MarkerShapeFromSeries)   # dot, triangle, line
 
         def scatter(name, pts, color, size, shape, alpha=170, ring=True):
